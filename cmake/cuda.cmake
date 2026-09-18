@@ -102,27 +102,14 @@ if (ENABLE_GPU)
     gpu_cuda_library (GPU_NVJITLINK_LIBRARY      nvJitLink_static)
     gpu_cuda_library (GPU_NVPTXCOMPILER_LIBRARY  nvptxcompiler_static)
 
-    # What FindCUDAToolkit would have attached to CUDA::cudart_static, both halves of it.
-    #
-    # The link half: consumers link this rather than naming the archive, or the first
-    # executable to pull one in fails on pthread_*, dl* and clock_gettime.
-    # Threads::Threads arrives with cmake/linux/default_libs.cmake, later than this file -
-    # fine, it is resolved at generate time.
-    #
-    # The include half: CUDA::cudart_static also carries CUDAToolkit_INCLUDE_DIRS, and the
-    # RAPIDS libraries lean on that in their public headers - rmm/cuda_stream_view.hpp and
-    # rmm/detail/error.hpp include <cuda_runtime_api.h>, so every consumer of
-    # ch_contrib::rmm needs the toolkit include dir, not just RMM's own translation units.
-    # Those compile as CUDA (gpu_island_target) and so get the headers from nvcc
-    # implicitly, which hides the gap from the RAPIDS targets themselves; an ordinary C++
-    # TU including an rmm header does not. SYSTEM as well, since the toolkit headers do not
-    # survive ClickHouse's warning set.
+    # What FindCUDAToolkit would have attached to CUDA::cudart_static. Consumers link this
+    # rather than naming the archive, or the first executable to pull one in fails on
+    # pthread_*, dl* and clock_gettime. Threads::Threads arrives with
+    # cmake/linux/default_libs.cmake, later than this file - fine, it is resolved at
+    # generate time.
     add_library (ch_gpu::cudart INTERFACE IMPORTED GLOBAL)
-    set_target_properties (ch_gpu::cudart PROPERTIES
-        INTERFACE_LINK_LIBRARIES
-            "${GPU_CUDART_LIBRARY};${GPU_CULIBOS_LIBRARY};Threads::Threads;${CMAKE_DL_LIBS};rt"
-        INTERFACE_INCLUDE_DIRECTORIES "${GPU_CUDA_ROOT}/include"
-        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GPU_CUDA_ROOT}/include")
+    set_target_properties (ch_gpu::cudart PROPERTIES INTERFACE_LINK_LIBRARIES
+        "${GPU_CUDART_LIBRARY};${GPU_CULIBOS_LIBRARY};Threads::Threads;${CMAKE_DL_LIBS};rt")
 
     set (CMAKE_CUDA_RUNTIME_LIBRARY None)
 
@@ -178,60 +165,12 @@ if (ENABLE_GPU)
         endforeach ()
     endfunction ()
 
-    # Build-time tools on the island - the rtcx embed generators - are executables, and CMake
-    # links a CUDA-language executable through the host compiler. That link must not see
-    # ClickHouse's flags either. CMAKE_EXE_LINKER_FLAGS carries lld's whole-archive of
-    # llvm-libc and compiler-rt, and the transitive link libraries of any ClickHouse target
-    # bring libc++, libc++abi and glibc-compatibility - all wrong for a program compiled
-    # against gcc's libstdc++ and run on this machine's own glibc. So the link rule is the
-    # host compiler with its own defaults, and gpu_island_executable clears what a target
-    # inherits. Link ClickHouse archives into such a tool by file ($<TARGET_FILE:...>), not
-    # by target, or the target's interface brings global-group along.
-    set (CMAKE_CUDA_LINK_EXECUTABLE "<CMAKE_CUDA_HOST_LINK_LAUNCHER> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
-
-    function (gpu_island_executable target)
-        gpu_island_target (${target})
-        set_target_properties (${target} PROPERTIES LINKER_LANGUAGE CUDA LINK_OPTIONS "")
-        target_link_libraries (${target} PRIVATE ch_gpu::cudart)
-    endfunction ()
-
-    # The island's host code is compiled against gcc's libstdc++, and an archive has to be linked
-    # with the runtime it was compiled against - so a binary carrying the island holds two C++
-    # standard libraries: ClickHouse's static libc++ and this shared libstdc++. Their std:: types
-    # live in disjoint namespaces (std::__1 and std::__cxx11) and never meet, which is what the C
-    # boundary in src/GPU/GPUAggregationABI.h is for.
-    #
-    # What they do share is the Itanium ABI runtime underneath - `__cxa_throw`,
-    # `__gxx_personality_v0`, the `std::exception` family - and there the two are not
-    # interchangeable: each recognizes only its own exception class. Which definition the
-    # executable ends up with is decided by link order, and getting it wrong breaks exception
-    # handling for the whole server rather than for the island alone. See the end of
-    # cmake/linux/default_libs.cmake, which is where this library is appended and why.
-    #
-    # Shared rather than static, so that the frames inside libstdc++ keep their own personality
-    # routine while the executable binds libc++abi's. One static runtime would have to serve both
-    # worlds, and the other world's typed `catch` clauses would stop matching. It is a run-time dependency on
-    # the host's libstdc++.so.6, like libcuda.so.1 is.
-    #
-    # The island also compiles against the host's glibc headers while the executable links
-    # against the sysroot's glibc 2.31; the few newer symbols that come out of that are
-    # provided by base/glibc-compatibility.
-    execute_process (
-        COMMAND "${CMAKE_CUDA_HOST_COMPILER}" -print-file-name=libstdc++.so
-        OUTPUT_VARIABLE GPU_LIBSTDCXX_LIBRARY
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        COMMAND_ERROR_IS_FATAL ANY)
-    if (NOT IS_ABSOLUTE "${GPU_LIBSTDCXX_LIBRARY}" OR NOT EXISTS "${GPU_LIBSTDCXX_LIBRARY}")
-        message (FATAL_ERROR "${CMAKE_CUDA_HOST_COMPILER} has no libstdc++.so (got '${GPU_LIBSTDCXX_LIBRARY}').")
-    endif ()
-
     message (STATUS "GPU engine: ENABLED")
     message (STATUS "  CUDA:          ${CMAKE_CUDA_COMPILER_VERSION} at ${GPU_CUDA_ROOT}")
     message (STATUS "  nvcc:          ${CMAKE_CUDA_COMPILER}")
     message (STATUS "  host compiler: ${CMAKE_CUDA_HOST_COMPILER}")
     message (STATUS "  architectures: ${CMAKE_CUDA_ARCHITECTURES}")
     message (STATUS "  cudart:        ${GPU_CUDART_LIBRARY}")
-    message (STATUS "  libstdc++:     ${GPU_LIBSTDCXX_LIBRARY}")
 else ()
     message (STATUS "GPU engine: disabled (use -DENABLE_GPU=1)")
 endif ()
