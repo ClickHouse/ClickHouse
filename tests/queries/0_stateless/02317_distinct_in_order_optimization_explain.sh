@@ -12,7 +12,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
 
 [ ! -z "$CLICKHOUSE_CLIENT_REDEFINED" ] && CLICKHOUSE_CLIENT=$CLICKHOUSE_CLIENT_REDEFINED
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
+# This test checks which `DISTINCT` variant the in-order optimization picks; disable external `DISTINCT` so
+# that the final `DISTINCT` stays a plain `DistinctTransform` instead of `ExternalDistinctTransform`.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy --max_bytes_ratio_before_external_distinct=0"
 
 DISABLE_OPTIMIZATION="set optimize_distinct_in_order=0"
 ENABLE_OPTIMIZATION="set optimize_distinct_in_order=1"

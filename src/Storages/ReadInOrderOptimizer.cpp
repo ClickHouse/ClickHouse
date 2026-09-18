@@ -1,6 +1,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -124,9 +125,10 @@ struct MatchResult
 /// the sort description direction would normally imply. We multiply direction by
 /// reverse_indicator so the match reflects the actual physical read direction.
 MatchResult matchSortDescriptionAndKey(
-    const ExpressionActions::Actions & actions,
+    const ExpressionActions & elements_actions,
     const SortColumnDescription & sort_column,
     const String & sorting_key_column,
+    const DataTypePtr & sorting_key_type,
     int reverse_indicator)
 {
     /// If required order depend on collation, it cannot be matched with primary key order.
@@ -138,14 +140,22 @@ MatchResult matchSortDescriptionAndKey(
 
     /// For the path: order by (sort_column, ...)
     if (sort_column.column_name == sorting_key_column)
+    {
+        /// The key is resolved twice, by the table and by the query, and the settings in force can
+        /// give the two resolutions different result types; equal names then denote different
+        /// calculations, with different NULL handling, and so different orders.
+        const auto * node = elements_actions.getActionsDAG().tryFindInOutputs(sort_column.column_name);
+        if (node && !node->result_type->equals(*sorting_key_type))
+            return {};
         return result;
+    }
 
     /// For the path: order by (function(sort_column), ...)
     /// Allow only one simple monotonic functions with one argument
     /// Why not allow multi monotonic functions?
     bool found_function = false;
 
-    for (const auto & action : actions)
+    for (const auto & action : elements_actions.getActions())
     {
         if (action.node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
@@ -155,6 +165,9 @@ MatchResult matchSortDescriptionAndKey(
 
         found_function = true;
         if (action.node->children.size() != 1 || action.node->children.at(0)->result_name != sorting_key_column)
+            return {};
+
+        if (!action.node->children.at(0)->result_type->equals(*sorting_key_type))
             return {};
 
         const auto & func = *action.node->function_base;
@@ -212,8 +225,11 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     const ContextPtr & context,
     UInt64 limit) const
 {
-    const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    const auto & sorting_key_reverse_flags = metadata_snapshot->getSortingKey().reverse_flags;
+    const auto & sorting_key = metadata_snapshot->getSortingKey();
+    /// data_types is built from the key's own sample block, so it is parallel to column_names.
+    const Names & sorting_key_columns = sorting_key.column_names;
+    const DataTypes & sorting_key_types = sorting_key.data_types;
+    const auto & sorting_key_reverse_flags = sorting_key.reverse_flags;
     /// read_direction will be set from the first non-constant ORDER BY column
     int read_direction = 0;
 
@@ -231,7 +247,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
 
         int reverse_indicator = (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos]) ? -1 : 1;
-        auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos], reverse_indicator);
+        auto match = matchSortDescriptionAndKey(
+            *actions[desc_pos], description[desc_pos], sorting_key_columns[key_pos], sorting_key_types[key_pos], reverse_indicator);
 
         /// If the ORDER BY column matches a fixed (constant) key column,
         /// add it to the sort description but don't let it set read_direction.
