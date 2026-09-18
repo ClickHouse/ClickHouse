@@ -161,9 +161,9 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope) const;
 
-    static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
+    void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const;
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
@@ -318,19 +318,19 @@ private:
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
-      * A view keeps its name as a qualifier once inlined, exactly as it does without inlining: `v.c` and
-      * `db.v.c` address it, and an alias of its own does not take that name away.
+      * An inlined view keeps behaving as a table expression with that name, exactly as it does without
+      * inlining: `v.c` and `db.v.c` address it, `SELECT *` qualifies its columns with it when they need
+      * qualification, it may repeat in a `FROM` section, an alias of its own does not take the name away,
+      * and it needs no alias where a subquery does. The name is qualifier metadata, not an alias: a user
+      * alias is unique in the `FROM` section, a table name is not.
       */
-    struct InlinedViewName
-    {
-        StorageID storage_id;
-        /// The view had no alias of its own, so its name became the alias of the inlined subquery. Unlike
-        /// a user-provided alias, a table name may repeat in a `FROM` section, so a duplicate of it is
-        /// resolved the way a duplicate table name is instead of being rejected.
-        bool is_the_alias_as_well;
-    };
+    std::unordered_map<const IQueryTreeNode *, StorageID> table_expression_to_inlined_view_name;
 
-    std::unordered_map<const IQueryTreeNode *, InlinedViewName> table_expression_to_inlined_view_name;
+    const StorageID * getInlinedViewName(const IQueryTreeNode * table_expression_node) const
+    {
+        auto it = table_expression_to_inlined_view_name.find(table_expression_node);
+        return it == table_expression_to_inlined_view_name.end() ? nullptr : &it->second;
+    }
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
