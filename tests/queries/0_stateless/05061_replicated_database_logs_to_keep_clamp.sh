@@ -76,6 +76,30 @@ wait_for_initialization() {
     echo "timed out waiting for the replica to initialize"
 }
 
+# Both waits below report a timeout on stdout, so that giving up shows up in the reference diff and
+# names its reason. Without that, a timeout of the cleanup wait is a false pass: the count it gates
+# cannot tell "the pass ran and deleted nothing" - what the clamp is expected to produce - from "the
+# pass never ran".
+wait_for_cleanup() {
+    for _ in $(seq 1 50); do
+        if [ "$(cleanups)" -gt "$1" ]; then
+            return
+        fi
+        sleep 0.3
+    done
+    echo "timed out waiting for a cleanup pass"
+}
+
+wait_for_log_entries_deleted() {
+    for _ in $(seq 1 100); do
+        if [ "$(log_entries)" -le "$1" ]; then
+            return
+        fi
+        sleep 0.3
+    done
+    echo "timed out waiting for the log entries to be deleted"
+}
+
 echo -n "log entries: "
 log_entries
 
@@ -105,12 +129,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM SYNC DATABASE REPLICA $node_db"
 # worker runs one right away: the main thread sets `cleanup_event` before its first `scheduleTasks`,
 # and the first pass is not gated by `cleanup_delay_period` - so this exits on the first check in
 # practice, the loop bound is a failure cap only.
-for _ in $(seq 1 50); do
-    if [ "$(cleanups)" -gt "$cleanups_before" ]; then
-        break
-    fi
-    sleep 0.3
-done
+wait_for_cleanup "$cleanups_before"
 
 echo -n "attached: "
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '$node_db'"
@@ -177,12 +196,7 @@ lost_warnings
 
 # Here the deletion itself is the completion signal, so the log count is polled directly - no
 # `text_log` round-trips.
-for _ in $(seq 1 100); do
-    if [ "$(log_entries)" -le 5 ]; then
-        break
-    fi
-    sleep 0.3
-done
+wait_for_log_entries_deleted 5
 
 echo -n "log entries after cleanup with 4: "
 log_entries
