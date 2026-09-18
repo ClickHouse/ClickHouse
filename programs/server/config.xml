@@ -902,6 +902,18 @@
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
 
+        <!-- By default any user can call any SQL function. To require an explicit
+             GRANT FUNCTION ON <name> for selected functions, list their names here
+             (canonical names from system.functions, or user-defined function names).
+             Empty by default for backward compatibility. GRANT ALL includes FUNCTION ON *. Example:
+             <functions_requiring_grant>
+                 <function>decrypt</function>
+                 <function>tryDecrypt</function>
+                 <function>aes_decrypt_mysql</function>
+             </functions_requiring_grant>
+        -->
+        <functions_requiring_grant></functions_requiring_grant>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>

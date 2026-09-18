@@ -67,6 +67,7 @@ public:
         NAMED_COLLECTION,
         USER_NAME,
         DEFINER,
+        FUNCTION,
     };
     ParameterType getParameterType() const;
     std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
@@ -121,6 +122,9 @@ public:
 
     /// Returns all the flags related to a table engine.
     static AccessFlags allTableEngineFlags();
+
+    /// Returns all the flags related to executing a SQL function.
+    static AccessFlags allFunctionFlags();
 
     /// Returns all the flags related to a source.
     static AccessFlags allSourceFlags();
