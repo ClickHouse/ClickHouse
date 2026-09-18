@@ -33,6 +33,14 @@ set key per needle type	0	1
 set key per needle type reversed	1	0
 set key per needle type disjoint	1	1
 set key per needle type disjoint reversed	1	1
+scalar shape getscalar	1
+scalar shape in	1
+scalar shape getscalar folded	0
+scalar shape in folded	1
+lowcardinality scalar shape getscalar	1
+lowcardinality scalar shape in	1
+lowcardinality scalar shape getscalar folded	0
+lowcardinality scalar shape in folded	1
 empty scalar array	0
 empty scalar array kept as has	1
 null element scalar array	3

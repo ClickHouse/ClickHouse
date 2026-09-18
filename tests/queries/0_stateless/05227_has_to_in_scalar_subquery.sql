@@ -3,6 +3,7 @@
 
 SET enable_analyzer = 1;
 SET optimize_rewrite_has_to_in = 1;
+SET enable_scalar_subquery_optimization = 1;
 SET explain_query_plan_default = 'legacy';
 
 -- Rewritten shapes: the plan must contain in(), and the result must be the same as without the rewrite.
@@ -104,6 +105,51 @@ WITH (SELECT groupUniqArray(x) FROM (SELECT CAST(arrayJoin([-1, 200]), 'Int16') 
 SELECT 'set key per needle type disjoint', countIf(has(a, toInt8(number - 1))), countIf(has(a, toUInt8(number + 200))) FROM numbers(1);
 WITH (SELECT groupUniqArray(x) FROM (SELECT CAST(arrayJoin([-1, 200]), 'Int16') AS x)) AS a
 SELECT 'set key per needle type disjoint reversed', countIf(has(a, toUInt8(number + 200))), countIf(has(a, toInt8(number - 1))) FROM numbers(1);
+
+-- The rows above are all satisfied by a rewrite of a folded literal array, so on their own they do
+-- not say that the array reached the pass as a scalar subquery. These count the nodes of the
+-- post-pass tree instead: a rewritten scalar shape keeps the __getScalar call as the set source
+-- beside the in(). The `folded` rows are the negative control that makes the other rows
+-- discriminating: with the scalar folded to a literal the rewrite still happens, through the
+-- pre-existing branch, so in() is still there and __getScalar must be gone.
+
+SELECT 'scalar shape getscalar', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number))
+    ) WHERE explain LIKE '%__getScalar%';
+SELECT 'scalar shape in', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number))
+    ) WHERE explain LIKE '%function_name: in,%';
+SELECT 'scalar shape getscalar folded', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number))
+    SETTINGS enable_scalar_subquery_optimization = 0
+    ) WHERE explain LIKE '%__getScalar%';
+SELECT 'scalar shape in folded', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number))
+    SETTINGS enable_scalar_subquery_optimization = 0
+    ) WHERE explain LIKE '%function_name: in,%';
+
+SELECT 'lowcardinality scalar shape getscalar', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)))
+    ) WHERE explain LIKE '%__getScalar%';
+SELECT 'lowcardinality scalar shape in', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)))
+    ) WHERE explain LIKE '%function_name: in,%';
+SELECT 'lowcardinality scalar shape getscalar folded', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)))
+    SETTINGS enable_scalar_subquery_optimization = 0
+    ) WHERE explain LIKE '%__getScalar%';
+SELECT 'lowcardinality scalar shape in folded', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20)
+    WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)))
+    SETTINGS enable_scalar_subquery_optimization = 0
+    ) WHERE explain LIKE '%function_name: in,%';
 
 -- Shapes that must NOT be rewritten, with results unchanged.
 

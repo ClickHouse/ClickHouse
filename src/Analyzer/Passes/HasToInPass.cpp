@@ -42,8 +42,8 @@ public:
         if (has_function_arguments_nodes.size() != 2)
             return;
 
-        /// Verify that the first argument is a constant array. An Array-typed scalar subquery is a
-        /// constant too, but it is a `__getScalar` call reading the context, never a `ConstantNode`.
+        /// Verify that the first argument is a constant array. An Array-typed scalar subquery is a constant too,
+        /// but a context-reading `__getScalar` call rather than a `ConstantNode` while `enable_scalar_subquery_optimization` is on.
         ColumnPtr first_arg_column;
         if (const auto * first_arg_constant = has_function_arguments_nodes[0]->as<ConstantNode>())
             first_arg_column = first_arg_constant->getColumn();

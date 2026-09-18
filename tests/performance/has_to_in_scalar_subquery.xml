@@ -1,4 +1,6 @@
 <test>
+    <settings><enable_scalar_subquery_optimization>1</enable_scalar_subquery_optimization></settings>
+
     <!-- has() over a constant array is a linear Field scan per row, so these queries are only fast
          when RewriteHasToInPass turns them into a Set membership test. An Array-typed scalar
          subquery and a LowCardinality needle are the two shapes it used to refuse.

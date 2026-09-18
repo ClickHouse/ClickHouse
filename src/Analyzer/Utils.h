@@ -99,8 +99,8 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
 
 /// If the node is a `__getScalar` call whose scalar the query context knows, returns that scalar's
-/// single-row column, otherwise nullptr. `enable_scalar_subquery_optimization` gives an Array, Tuple,
-/// LowCardinality or AggregateFunction typed scalar subquery that shape instead of a literal.
+/// single-row column, otherwise nullptr. `enable_scalar_subquery_optimization` gives a container-,
+/// `LowCardinality`- or state-typed scalar subquery that shape instead of a literal.
 ColumnPtr tryGetScalarSubqueryColumn(const QueryTreeNodePtr & node, const ContextPtr & context);
 
 /** Add table expression in tables in select query children.

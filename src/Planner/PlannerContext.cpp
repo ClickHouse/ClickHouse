@@ -212,6 +212,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
     }
 
     /// A subquery, a table or a StorageSet: the left operand is cast to the type of the set source, so no difference in types.
+    /// These are `subquery_or_table` in `PlannerActionsVisitor::makeSetForInFunction`, which picks the matching lookup: keep in sync.
     return "__set_" + toString(set_source_hash);
 }
 
