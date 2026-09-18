@@ -102,6 +102,7 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
 "
 bytes_report "${ROOT}/bytes_part"
 echo "partition directories: $(find "${ROOT}/bytes_part" -maxdepth 1 -type d -name 'p=*' | wc -l | tr -d ' ')"
+echo "partitions with more than one data file: $(for d in "${ROOT}"/bytes_part/p=*; do find "${d}" -name '*.parquet' | wc -l; done | awk '$1 > 1' | wc -l | tr -d ' ')"
 
 echo "-- default limits (1M rows, 1 GiB): the same INSERT stays in a single file"
 bootstrap "${ROOT}/defaults" '[]'
