@@ -9,14 +9,17 @@
 
 #include <base/arithmeticOverflow.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -40,6 +43,11 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsBool iceberg_tolerate_conflicting_manifest_schemas;
+}
+
 namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
@@ -53,104 +61,8 @@ using namespace DB;
 
 namespace
 {
-    /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-    /// using the minimum number of bytes for the value
-    /// Our decimal binary representation is little endian
-    /// so we cannot reuse our default code for parsing it.
-    ///
-    /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-    /// are stored rounded, without fractional part. What is more strange
-    /// the integer part is rounded mathematically correctly according to fractional part.
-    /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-    /// I've checked two implementations: Spark and Amazon Athena and both of them
-    /// do this.
-    ///
-    /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-    /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-    /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-    /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-    ///
-    /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-    /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-    /// but at least it doesn't lead to incorrect results.
-    /// `compensate_rounding` widens the bound as described above; pass false to read the value exactly
-    /// as the manifest declares it.
-    template <typename DecimalType>
-    std::optional<DB::Field>
-    deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound, bool compensate_rounding = true)
-    {
-        using NativeType = typename DecimalType::NativeType;
-        using UnsignedType = make_unsigned_t<NativeType>;
-
-        if (str.size() > sizeof(NativeType))
-            return std::nullopt;
-
-        /// Accumulate into the unsigned counterpart, pre-filled with the sign bits,
-        /// so that the sign extension comes out of the shifts themselves.
-        UnsignedType unscaled = (str[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
-        for (const auto byte : str)
-            unscaled = (unscaled << 8) | static_cast<UInt8>(byte);
-
-        NativeType unscaled_value = static_cast<NativeType>(unscaled);
-
-        if (compensate_rounding && scale)
-        {
-            NativeType scaler = lower_bound ? -10 : 10;
-            for (UInt32 i = 1; i < scale; ++i)
-                scaler *= 10;
-
-            /// The bound is stored as raw bytes and is never checked against the declared precision, so
-            /// widening it can leave the type. A value that has no widened form is not a usable bound.
-            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
-                return std::nullopt;
-        }
-
-        return DB::DecimalField<DecimalType>(unscaled_value, scale);
-    }
-
-    /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
-    /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
-    std::optional<DB::Field> deserializeFieldFromBinaryRepr(
-        std::string str, DB::DataTypePtr expected_type, bool lower_bound, bool compensate_rounding = true)
-    {
-        auto non_nullable_type = DB::removeNullable(expected_type);
-        auto column = non_nullable_type->createColumn();
-        if (DB::WhichDataType(non_nullable_type).isDecimal())
-        {
-            if (str.empty())
-                return std::nullopt;
-
-            const UInt32 scale = DB::getDecimalScale(*non_nullable_type);
-            if (DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound, compensate_rounding);
-            if (DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound, compensate_rounding);
-            if (DB::checkDecimal<DB::Decimal128>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound, compensate_rounding);
-            if (DB::checkDecimal<DB::Decimal256>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound, compensate_rounding);
-            return std::nullopt;
-        }
-        else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
-        {
-            return std::nullopt;
-        }
-        else
-        {
-            /// For all other types except decimal binary representation
-            /// matches our internal representation
-            column->insertData(str.data(), str.length());
-            DB::Field result;
-            column->get(0, result);
-            return result;
-        }
-    }
-
-}
-
-namespace
-{
-    std::optional<DB::Range> getMaterializedRowLineageRange(const ParsedManifestFileEntry & parsed_entry, Int32 field_id)
+    std::optional<DB::Range> getMaterializedRowLineageRange(
+        const ParsedManifestFileEntry & parsed_entry, Int32 field_id, const IcebergPathFromMetadata & path_to_manifest_file)
     {
         auto bounds = parsed_entry.value_bounds.find(field_id);
         if (bounds == parsed_entry.value_bounds.end())
@@ -172,6 +84,21 @@ namespace
         if (!left || !right)
             return std::nullopt;
 
+        /// An inverted pair is dropped rather than repaired, for the reason spelled out at the guard for
+        /// ordinary columns below. Returning nothing here leaves the caller's fallback range, which
+        /// bounds every value the file can hold, a materialized one from an earlier write included.
+        if (accurateLess(*right, *left))
+        {
+            LOG_WARNING(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a lower bound above the upper bound for row lineage column id "
+                "{} of data file '{}'; ignoring the declared bounds for this column",
+                path_to_manifest_file,
+                field_id,
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
+        }
+
         return DB::Range(*left, true, *right, true);
     }
 
@@ -183,14 +110,22 @@ namespace
         return false;
     }
 
-    void addRowLineageHyperrectangles(std::unordered_map<Int32, DB::Range> & hyperrectangles, const ProcessedManifestFileEntry & entry)
+    void addRowLineageHyperrectangles(
+        std::unordered_map<Int32, DB::Range> & hyperrectangles,
+        const ProcessedManifestFileEntry & entry,
+        const IcebergPathFromMetadata & path_to_manifest_file)
     {
         const auto & parsed_entry = *entry.parsed_entry;
         if (!entry.first_row_id.has_value() || parsed_entry.record_count <= 0 || entry.sequence_number < 0)
             return;
 
         const UInt64 inherited_sequence_number = static_cast<UInt64>(entry.sequence_number);
-        const UInt64 last_inherited_row_id = *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1;
+        /// `first_row_id` and `record_count` are both writer-declared, so the block of row ids they span
+        /// need not be representable, and a wrapped last row id would sit below the block's own first one.
+        UInt64 last_inherited_row_id = 0;
+        if (common::addOverflow<UInt64>(
+                *entry.first_row_id, static_cast<UInt64>(parsed_entry.record_count) - 1, last_inherited_row_id))
+            return;
         const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
         const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
 
@@ -210,7 +145,7 @@ namespace
                     continue;
                 }
             }
-            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
+            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
             {
                 hyperrectangles.emplace(field_id, *range);
                 continue;
@@ -375,13 +310,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Poco::Dynamic::Var partition_spec_json = parser.parse(*partition_spec_json_string);
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
-    DB::NamesAndTypesList partition_columns_description;
-    std::unordered_set<String> partition_columns_seen;
-    auto partition_key_ast = make_intrusive<ASTFunction>();
-    partition_key_ast->name = "tuple";
-    partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
-    partition_key_ast->children.push_back(partition_key_ast->arguments);
-
     auto schema_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema);
     if (!schema_json_string.has_value())
         throw Exception(
@@ -394,45 +322,16 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    schema_processor.addIcebergTableSchema(
+        schema_object,
+        IcebergSchemaProcessor::SchemaSource::ManifestFile,
+        context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
 
     /// Every entry of this manifest carries one partition value per spec field, including the
-    /// fields skipped below, so this count is the arity its partition tuples must have.
+    /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
     const size_t partition_spec_fields_count = partition_specification->size();
 
-    PartitionSpecification partition_spec_vec;
-    for (size_t i = 0; i != partition_specification->size(); ++i)
-    {
-        auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
-
-        auto source_id = partition_specification_field->getValue<Int32>(f_source_id);
-        /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
-        /// we use column internal number as it's name.
-        auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
-            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
-        if (!manifest_file_column_characteristics.has_value())
-            continue;
-        auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
-        auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
-        partition_spec_vec.emplace_back(source_id, transform_name, partition_name, static_cast<Int32>(i));
-        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
-        /// Unsupported partition key expression
-        if (partition_ast == nullptr)
-            continue;
-
-        partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
-        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
-        /// against these input columns, which must contain each source column at most once.
-        if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
-    }
-
-    std::optional<DB::KeyDescription> partition_key_description;
-    if (!partition_columns_description.empty())
-        partition_key_description.emplace(
-            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context_));
+    auto partition_key = buildPartitionKeyFromSpec(partition_specification, manifest_schema_id, schema_processor, context_);
 
     size_t total_rows = manifest_file_deserializer_->rows();
 
@@ -447,8 +346,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         inherited_first_row_id_,
         context_,
         manifest_schema_id,
-        std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
-        std::move(partition_key_description),
+        std::make_shared<const PartitionSpecification>(std::move(partition_key.partition_specification)),
+        std::move(partition_key.key_description),
         partition_spec_fields_count,
         total_rows,
         std::move(filter_dag_),
@@ -650,9 +549,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
-                    /// form can still be a value the column holds, so this is not on its own a malformed
-                    /// manifest and stays out of the warning log.
+                    /// Pruning is skipped either way, but a bound narrower than the column is what a promotion
+                    /// (`int` -> `long`) leaves stored, and at scale 38 a bound that only loses its widened form
+                    /// can still be a value the column holds, so this is not on its own a malformed manifest.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
@@ -694,7 +593,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
 
-            addRowLineageHyperrectangles(hyperrectangles, *entry);
+            addRowLineageHyperrectangles(hyperrectangles, *entry, path_to_manifest_file);
         }
 
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
@@ -750,9 +649,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
         *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);
-    auto * raw_ptr = pruner.get();
-    pruners_by_schema_id.emplace(schema_id, std::move(pruner));
-    return raw_ptr;
+    return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
 bool ManifestFileIterator::isInitialized() const
