@@ -7,6 +7,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropHistogramValues.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -54,11 +55,8 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
         case StoreMethod::CONST_SCALAR:
         case StoreMethod::SINGLE_SCALAR:
         {
-            /// For const scalar:
-            /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
-            ///
-            /// For single scalar:
-            /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
+            /// Const scalar: SELECT CAST(0, 'UInt64') AS `group`, arrayResize([], <count_of_time_steps>, <scalar_value>) AS `values`;
+            /// single scalar: same, but reading `value` FROM <subquery>.
             SelectQueryBuilder builder;
 
             builder.select_list.push_back(makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64")));
@@ -116,10 +114,17 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             return std::move(query_piece);
         }
 
+        case StoreMethod::HISTOGRAM_GRID:
+        {
+            /// Converting a combined grid to a plain float grid drops the histogram payloads.
+            return dropHistogramValues(std::move(query_piece), context);
+        }
+
         case StoreMethod::CONST_STRING:
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
         {
-            /// toVectorGrid() can only be called with store method CONST_SCALAR or SCALAR_GRID or VECTOR_GRID.
+            /// toVectorGrid() can only be called with store method CONST_SCALAR or SCALAR_GRID or VECTOR_GRID or HISTOGRAM_GRID.
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "toVectorGrid: Cannot convert expression {} to {} because of its store method {}",
                             getPromQLText(query_piece, context), StoreMethod::VECTOR_GRID, query_piece.store_method);
