@@ -656,13 +656,22 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    /// For a partitioned table the write schema, and with it these paths, come from `snapshot`, while the
-    /// transaction always commits against the latest version. A pinned snapshot can therefore describe a
-    /// column the current schema declares `timestamp`, so annotate nothing in that case.
+    /// The transaction commits against the latest table version, so a pinned snapshot need not describe
+    /// the schema a reader resolves this data file against: annotate only when the pinned version IS the
+    /// latest one. The kernel opens the table at its latest version for the transaction anyway.
+    std::unordered_set<String> table_timestamp_ntz_paths;
+    if (snapshot_version.has_value())
+    {
+        auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
+            /* version */ std::nullopt, kernel_helper, object_storage, log);
+        if (latest_snapshot->getVersion() == *snapshot_version)
+            table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+    }
+    else
+        table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(
-        kernel_helper,
-        snapshot->getTableSchema(),
-        snapshot_version.has_value() ? std::unordered_set<String>{} : snapshot->getTimestampNtzPaths());
+        kernel_helper, snapshot->getTableSchema(), std::move(table_timestamp_ntz_paths));
     delta_transaction->create(partition_columns);
 
     /// Only Parquet reads these paths; ORC and Avro read any mapper as Iceberg metadata, so do not hand

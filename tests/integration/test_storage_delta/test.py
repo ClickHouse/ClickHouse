@@ -6497,8 +6497,8 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
         "2024-06-01 12:00:00.000000\tabc"
     )
 
-    # Version 1 is what the INSERT above committed. A pinned snapshot may not describe the table the
-    # transaction commits into, so the annotation is skipped and the write keeps the UTC-adjusted default.
+    # Version 1 is what the INSERT above committed, i.e. the latest version, so this pinned snapshot does
+    # describe the schema the transaction commits against and the annotation applies.
     instance.query(
         f"INSERT INTO {table_name} VALUES "
         "(2, '2024-06-02 12:00:00.000000', '2024-06-02 12:00:00.000000', "
@@ -6519,15 +6519,56 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
     LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
 
     pinned_written = pq.read_schema(pinned_files[0])
-    assert pinned_written.field("ts_ntz").type == pa.timestamp(
+    assert pinned_written.field("ts_ntz").type == pa.timestamp("us"), pinned_written
+    assert pinned_written.field("ts_ntz_nullable").type == pa.timestamp(
+        "us"
+    ), pinned_written
+    assert pinned_written.field("ts_tz").type == pa.timestamp(
         "us", tz="UTC"
     ), pinned_written
 
+    # Spark reads the whole table, so the pinned-version file is genuinely conforming, not just annotated.
+    pinned_rows = sorted(
+        spark.read.format("delta").load(result_file).collect(),
+        key=lambda row: row["id"],
+    )
+    assert len(pinned_rows) == 2, pinned_rows
+    assert str(pinned_rows[0]["ts_ntz"]) == "2024-06-01 12:00:00", pinned_rows
+    assert str(pinned_rows[1]["ts_ntz"]) == "2024-06-02 12:00:00", pinned_rows
+
+    # Version 0 is older than the version this INSERT commits against, so the pin cannot be proven to
+    # describe that schema and the write keeps the UTC-adjusted default.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(3, '2024-06-03 12:00:00.000000', '2024-06-03 12:00:00.000000', "
+        "'2024-06-03 12:00:00.000000', 'ghi')",
+        settings={"session_timezone": "UTC", "delta_lake_snapshot_version": 0},
+    )
+
+    stale_found = (
+        instance.exec_in_container(
+            ["bash", "-c", f"find {result_file}/id=3 -name '*.parquet'"]
+        )
+        .strip()
+        .split("\n")
+    )
+    stale_files = [name for name in stale_found if name.endswith(".parquet")]
+    assert len(stale_files) == 1, stale_found
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    stale_written = pq.read_schema(stale_files[0])
+    assert stale_written.field("ts_ntz").type == pa.timestamp(
+        "us", tz="UTC"
+    ), stale_written
+
+    # No Spark read past this point: that last file deliberately contradicts the Delta schema.
     assert instance.query(
         f"SELECT id, ts_ntz FROM {table_name} ORDER BY id",
         settings={"session_timezone": "UTC"},
     ).strip() == (
-        "1\t2024-06-01 12:00:00.000000\n2\t2024-06-02 12:00:00.000000"
+        "1\t2024-06-01 12:00:00.000000\n2\t2024-06-02 12:00:00.000000\n"
+        "3\t2024-06-03 12:00:00.000000"
     )
 
     instance.query(f"DROP TABLE {table_name}")
