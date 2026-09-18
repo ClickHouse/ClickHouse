@@ -75,10 +75,13 @@ SharedMemoryImpl::SharedMemoryImpl(const std::string& name, std::size_t size, Sh
 		if (_mode != PAGE_READONLY || dwRetVal != 5)
 			throw SystemException(format("Cannot create shared memory object %s [Error %d: %s]", _name, static_cast<int>(dwRetVal), Error::getMessage(dwRetVal)));
 
+		/// `OpenFileMapping` takes `FILE_MAP_*` access flags, not the `PAGE_*` page-protection
+		/// constants of `CreateFileMapping`: `PAGE_READONLY` has the same value as
+		/// `FILE_MAP_WRITE` and would re-request write access on the read-only fallback.
 #if defined (POCO_WIN32_UTF8)
-		_memHandle = OpenFileMappingW(PAGE_READONLY, 0, utf16name.c_str());
+		_memHandle = OpenFileMappingW(FILE_MAP_READ, 0, utf16name.c_str());
 #else
-		_memHandle = OpenFileMappingA(PAGE_READONLY, 0, _name.c_str());
+		_memHandle = OpenFileMappingA(FILE_MAP_READ, 0, _name.c_str());
 #endif
 		if (!_memHandle)
 		{
