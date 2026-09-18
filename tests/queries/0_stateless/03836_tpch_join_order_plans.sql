@@ -4,6 +4,10 @@
 -- Verifies join order and distributed execution strategies for all TPC-H queries
 -- using SF100 cardinalities injected via `_internal_join_table_stat_hints`.
 
+-- Pin aggregation pushdown off so the asserted plans are stable; the pushdown-enabled
+-- twin of this test is `tpch_join_order_plans_aggregation_pushdown`.
+SET cascades_aggregation_pushdown = 0;
+
 DROP TABLE IF EXISTS region;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS part;

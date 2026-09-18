@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 namespace DB::JemallocJITArena
 {
 
@@ -16,6 +18,11 @@ namespace DB::JemallocJITArena
 /// `mallctl("thread.arena", ...)`) using `ScopedJemallocThreadArena` for the duration
 /// of any block that calls into LLVM. See `ScopedJemallocThreadArena` in `Common/Jemalloc.h`.
 unsigned getArenaIndex();
+
+/// Arena index if the arena has already been created, `std::nullopt` otherwise.
+/// Unlike `getArenaIndex`, never creates the arena — for read-only inspection
+/// paths (e.g. system tables) that must not mutate allocator state.
+std::optional<unsigned> tryGetCreatedArenaIndex();
 
 /// Whether the dedicated JIT arena is available (jemalloc compiled in, embedded compiler
 /// enabled, and `arenas.create` succeeded on first call).

@@ -642,7 +642,7 @@ Two flags on the operator manager control the upgrade-check loop globally:
 
 | Flag                              | Default | Effect                                                                                                                                           |
 |-----------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| `--version-update-interval`       | `24h`   | How often the operator re-fetches the upstream version list                                                                                      |
+| `--version-update-interval`       | `24h`   | How often the operator re-fetches the upstream version list. Must be greater than zero when version update checks are enabled                      |
 | `--disable-version-update-checks` | `false` | Disables the upgrade checker entirely. The `VersionUpgraded` condition is not set, and no outbound HTTP traffic to `clickhouse.com` is generated |
 
 Set `--disable-version-update-checks=true` in air-gapped environments or when egress to `clickhouse.com` is not allowed.
@@ -976,4 +976,17 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## Periodic resync {#periodic-resync}
+
+Besides reacting to Kubernetes events, the operator re-reconciles every cluster on a fixed interval. This keeps status conditions fresh for state that no watch can observe — ClickHouse replica health, Keeper quorum — and retries remediation such as stuck-pod cleanup.
+
+The interval is controlled by the operator's `RESYNC_PERIOD` environment variable (default `30s`). It applies to `KeeperCluster` resources, where `0` disables the periodic resync. `ClickHouseCluster` resources poll ClickHouse `system.warnings` every 30 seconds, which already re-triggers reconciliation, so `RESYNC_PERIOD` currently has no effect on them.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
 ```

@@ -201,6 +201,9 @@ private:
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
 
+    /// The same after writing records, when a failure must not be reported as a failure of the operation
+    void rotateAndDropIfNeededAfterWrite();
+
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
 };

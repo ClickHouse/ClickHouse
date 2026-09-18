@@ -44,6 +44,7 @@ Let's look at the section of the 'users.xml' file that defines quotas.
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 By default, the quota tracks resource consumption for each hour, without limiting usage.
@@ -153,6 +154,7 @@ Quotas can use the "quota key" feature to report on resources for multiple keys 
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 You can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket. In the XML configuration this is written as `<keyed_by_normalized_query_hash />`:

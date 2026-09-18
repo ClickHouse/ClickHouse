@@ -247,8 +247,11 @@ public:
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
+    /// The result may share the original column. Use `IColumn::mutate` before modifying it.
     [[nodiscard]] virtual Ptr cut(size_t start, size_t length) const
     {
+        if (start == 0 && length == size())
+            return getPtr();
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
         return res;
@@ -406,9 +409,6 @@ public:
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
-
-    /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    virtual void skipSerializedInArena(ReadBuffer & in) const = 0;
 
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
@@ -727,6 +727,10 @@ public:
 
     /// Returns number of values in column, that are equal to default value of column.
     [[nodiscard]] virtual UInt64 getNumberOfDefaultRows() const = 0;
+
+    /// Returns true if every value in the column is the type-default value.
+    /// Optimized for early exit and may use bulk memory checks for fixed-size types.
+    [[nodiscard]] virtual bool hasOnlyTypeDefaults() const = 0;
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -1081,6 +1085,9 @@ private:
 
     /// Devirtualize isDefaultAt.
     UInt64 getNumberOfDefaultRows() const override;
+
+    /// Devirtualize isDefaultAt — early-exit loop.
+    bool hasOnlyTypeDefaults() const override;
 
     /// Devirtualize isDefaultAt.
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
