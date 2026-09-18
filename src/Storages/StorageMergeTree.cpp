@@ -2393,8 +2393,21 @@ enum class PartitionScope
 };
 
 static PartitionScope getPartitionScope(
-    const MergeTreeData & storage, const ASTAlterCommand * alter, const String & partition_id, const ContextPtr & context)
+    const MergeTreeData & storage,
+    const ASTAlterCommand * alter,
+    const std::optional<NameSet> & resolved_partition_ids,
+    const String & partition_id,
+    const ContextPtr & context)
 {
+    /// The partitions of a scoped command were resolved when the mutation entry was created or loaded,
+    /// so the scope is read off the command here instead of evaluating the partition expression again.
+    if (resolved_partition_ids)
+    {
+        return resolved_partition_ids->contains(partition_id)
+            ? PartitionScope::ThisPartition
+            : PartitionScope::OtherPartitions;
+    }
+
     if (!alter)
         return PartitionScope::Unscoped;
 
@@ -2427,7 +2440,7 @@ static bool isMaterializedByMerge(
     return std::all_of(commands.begin(), commands.end(), [&](const auto & command)
     {
         auto alter = command.ast();
-        auto scope = getPartitionScope(storage, alter.get(), partition_id, context);
+        auto scope = getPartitionScope(storage, alter.get(), command.partition_ids, partition_id, context);
 
         /// A command scoped to other partitions is not applied to this part: `MutateTask` skips it
         /// through `canSkipMutationCommandForPart` and clones the untouched part forward to the

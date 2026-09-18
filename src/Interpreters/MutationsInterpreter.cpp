@@ -1,3 +1,5 @@
+#include <set>
+
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -154,7 +156,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     for (const MutationCommand & command : commands)
     {
         auto alter = command.ast();
-        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context))
+        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids, storage, context))
             conditions.push_back(std::move(condition));
     }
 
@@ -257,7 +259,15 @@ IsStorageTouched isStorageTouchedByMutations(
                 return all_rows;
             }
 
-            if (alter->partition)
+            /// The partitions of a scoped command were resolved when the mutation entry was created or
+            /// loaded; reading them here keeps this answer consistent with the filter the command is
+            /// executed with, and evaluates no user SQL.
+            if (command.partition_ids)
+            {
+                if (command.partition_ids->contains(source_part->info.getPartitionId()))
+                    all_commands_can_be_skipped = false;
+            }
+            else if (alter->partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 if (partition_id == source_part->info.getPartitionId())
@@ -333,12 +343,43 @@ IsStorageTouched isStorageTouchedByMutations(
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
+    const std::optional<NameSet> & resolved_partition_ids,
     const StoragePtr & storage,
     ContextPtr context
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    if (alter && alter->partitions)
+
+    /// The partitions of a command scoped with `IN PARTITION` are resolved exactly once, when the
+    /// mutation entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and
+    /// they are the source of truth here. A partition expression is arbitrary user SQL, so evaluating it
+    /// again would let the rows the mutation touches drift from the ones the pending on-the-fly reads
+    /// have already been answering from, and the expression may even contain a subquery over the table
+    /// that is being read. The expression is evaluated below only for an entry left unresolved.
+    if (resolved_partition_ids && !resolved_partition_ids->empty())
+    {
+        /// Ordered, so that the built filter does not depend on the iteration order of the set.
+        const std::set<String> partition_ids(resolved_partition_ids->begin(), resolved_partition_ids->end());
+
+        if (partition_ids.size() == 1)
+        {
+            partition_predicate_as_ast_func = makeASTOperator("equals",
+                        make_intrusive<ASTIdentifier>("_partition_id"),
+                        make_intrusive<ASTLiteral>(*partition_ids.begin())
+            );
+        }
+        else
+        {
+            auto func = makeASTFunction("in");
+            func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
+            auto tuple_func = makeASTFunction("tuple");
+            for (const auto & partition_id : partition_ids)
+                tuple_func->arguments->children.push_back(make_intrusive<ASTLiteral>(partition_id));
+            func->arguments->children.push_back(std::move(tuple_func));
+            partition_predicate_as_ast_func = std::move(func);
+        }
+    }
+    else if (alter && alter->partitions)
     {
         auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
         auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
@@ -1043,7 +1084,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             auto alter = command.ast();
-            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get()))
+            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids))
                 all_filters.push_back(std::move(filter));
         }
 
@@ -1075,7 +1116,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!settings.return_mutated_rows)
             {
                 auto alter = command.ast();
-                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
+                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids);
                 predicate = makeASTFunction("isZeroOrNull", predicate);
                 stages.back().filters.push_back(predicate);
             }
@@ -1102,7 +1143,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// For a single command with returned mutated rows it is already checked by the prefilter.
             ASTPtr base_condition = condition_checked_by_prefilter
                 ? nullptr
-                : getPartitionAndPredicateExpressionForMutationCommand(alter.get());
+                : getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.partition_ids);
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -2752,9 +2793,10 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     return sort_description;
 }
 
-ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const
+ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(
+    const ASTAlterCommand * alter, const std::optional<NameSet> & resolved_partition_ids) const
 {
-    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, source.getStorage(), context);
+    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, resolved_partition_ids, source.getStorage(), context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
