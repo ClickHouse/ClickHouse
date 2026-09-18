@@ -1,6 +1,5 @@
 #include <Storages/ColumnCodecAST.h>
 
-#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -28,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -240,10 +238,6 @@ ColumnCodecPatch tupleElementCodecPatchFromAST(
             }
 
             const auto & element_codec = operation->getCodec();
-            if (tryExtractQuantizedCodecParams(element_codec))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Quantized codec on Tuple elements is not supported yet because its custom serialization must be path-aware");
             if (!result.emplace(element_path, ColumnCodecPatchOperation{ColumnCodecPatchKind::Set, element_codec}).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate CODEC operation for Tuple element");
         });

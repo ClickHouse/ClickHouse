@@ -19,9 +19,15 @@
 #include <Storages/ColumnCodecResolver.h>
 #include <Storages/ColumnCodecValidation.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
 
@@ -384,6 +390,43 @@ TEST(ColumnCodecDescription, VersionedColumnsMetadata)
         migrated.get("payload").codec.getCodecs().at(CodecPath{"id"})->formatWithSecretsOneLine(),
         "CODEC(ZSTD(3))");
     EXPECT_TRUE(migrated.toString(/* include_comments = */ true).starts_with("columns format version: 2\n"));
+}
+
+TEST(ColumnCodecDescription, QuantizedTupleElementIsRejectedDuringMetadataLoad)
+{
+    const auto root_parsed = parseColumnDeclaration(
+        "vector Array(Float32) CODEC(Quantized('rabitq', 8))");
+    const auto & root_declaration = root_parsed->as<ASTColumnDeclaration &>();
+    const auto vector_type = DataTypeFactory::instance().get(root_declaration.getType());
+    const auto root_codec = codecDescriptionFromAST(
+        root_declaration, vector_type, CodecValidationSettings::trusted());
+
+    const auto tuple_type = DataTypeFactory::instance().get(
+        "Tuple(vector Array(Float32), text String)");
+    ColumnDescription tuple_column("payload", tuple_type);
+    tuple_column.codec.set(CodecPath{"vector"}, root_codec.getRoot());
+    ColumnsDescription tuple_columns;
+    tuple_columns.add(tuple_column);
+    const auto tuple_serialized = tuple_columns.toString(/* include_comments = */ true);
+    EXPECT_TRUE(tuple_serialized.starts_with("columns format version: 2\n"));
+
+    ColumnDescription root_column(root_declaration.name, vector_type);
+    root_column.codec = root_codec;
+    ColumnsDescription root_columns;
+    root_columns.add(root_column);
+    const auto root_serialized = root_columns.toString(/* include_comments = */ true);
+    const auto restored_root = ColumnsDescription::parse(root_serialized);
+    EXPECT_EQ(restored_root.get("vector").codec, root_codec);
+
+    try
+    {
+        static_cast<void>(ColumnsDescription::parse(tuple_serialized));
+        FAIL() << "Tuple-element Quantized metadata was accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 }
 
 }

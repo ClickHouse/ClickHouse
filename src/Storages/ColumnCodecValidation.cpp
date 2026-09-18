@@ -1,5 +1,6 @@
 #include <Storages/ColumnCodecValidation.h>
 
+#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
@@ -22,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 CodecPath getCodecPath(const ISerialization::SubstreamPath & path)
@@ -105,6 +107,10 @@ ColumnCodecDescription validatePolicy(
         auto canonical_path = declaration_path.empty() ? CodecPath{} : canonicalizeCodecPath(logical_type, declaration_path);
         if (canonical_policy.getCodecs().contains(canonical_path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for Tuple subcolumn");
+        if (!canonical_path.empty() && tryExtractQuantizedCodecParams(codec))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Quantized codec on Tuple elements is not supported yet because its custom serialization must be path-aware");
         canonical_policy.set(std::move(canonical_path), codec);
     }
 
