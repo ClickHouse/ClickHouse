@@ -524,7 +524,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context, token_info_vec);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context);
     param_visitor.visit(expression);
 
     UInt64 template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
