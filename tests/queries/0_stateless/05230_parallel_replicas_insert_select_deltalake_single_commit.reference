@@ -1,0 +1,6 @@
+commits after create: 1
+insert: ok
+commits after insert: 2
+rows	30000
+insert executions	1
+parallel read	1

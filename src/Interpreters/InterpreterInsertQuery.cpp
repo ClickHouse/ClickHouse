@@ -729,8 +729,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
-    // NOTE: should we limit it more here?
-    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
+    /// Each replica runs the whole INSERT over the rows its own coordinated read produced, which adds up
+    /// to a single logical INSERT only where replication makes every replica's write visible on all of them.
+    if (!table->isMergeTree() || !table->supportsReplication())
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
