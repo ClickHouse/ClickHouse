@@ -47,5 +47,24 @@ SELECT 'IN with UNION ALL and prefer_global_in_and_join';
 SELECT x FROM t_dist WHERE x IN (SELECT x FROM t_dist UNION ALL SELECT x FROM t_dist) ORDER BY x
 SETTINGS distributed_product_mode = 'deny', prefer_global_in_and_join = 1;
 
+-- https://github.com/ClickHouse/ClickHouse/issues/119623
+-- The depth recorded for a promoted IN counts enclosing SELECT queries, not UNION nodes, so pinning
+-- max_subquery_depth to what the query actually nests is enough. One level lower it is refused.
+SELECT 'Nested IN with a pinned max_subquery_depth';
+SET max_subquery_depth = 2;
+SELECT x FROM t_dist WHERE x IN (
+    SELECT x FROM t_dist WHERE x IN (SELECT x FROM t_dist UNION ALL SELECT x FROM t_dist)
+    UNION ALL
+    SELECT x FROM t_dist
+) ORDER BY x;
+
+SET max_subquery_depth = 1;
+SELECT x FROM t_dist WHERE x IN (
+    SELECT x FROM t_dist WHERE x IN (SELECT x FROM t_dist UNION ALL SELECT x FROM t_dist)
+    UNION ALL
+    SELECT x FROM t_dist
+) ORDER BY x; -- { serverError TOO_DEEP_SUBQUERIES }
+SET max_subquery_depth = DEFAULT;
+
 DROP TABLE t_dist;
 DROP TABLE t_local;
