@@ -132,7 +132,14 @@ void LoadedLibrary::mapAndParse()
     struct DescriptorCloser
     {
         int descriptor;
-        ~DescriptorCloser() { ::close(descriptor); }
+        ~DescriptorCloser()
+        {
+            /// The descriptor is opened read-only right above and nothing writes through it, so
+            /// `close` has no buffered data left to report on: a failure here can only mean the
+            /// descriptor was already closed or reused, which is a bug in this scope.
+            [[maybe_unused]] int err = ::close(descriptor);
+            chassert(!err);
+        }
     } descriptor_closer{file_descriptor};
 
     struct stat file_status;
