@@ -112,7 +112,7 @@ DataTypePtr DataTypesCache::getType(const String & type_name)
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->type;
 
-    return getCacheElement(type_name).type;
+    return getElement(type_name).type;
 }
 
 SerializationPtr DataTypesCache::getSerialization(const String & type_name)
@@ -121,7 +121,7 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
-    const auto & element = getCacheElement(type_name);
+    auto element = getElement(type_name);
     return element.serialization ? element.serialization : element.type->getDefaultSerialization();
 }
 
@@ -133,27 +133,30 @@ SerializationPtr DataTypesCache::getSerialization(const DataTypePtr & type)
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
-    const auto & element = getCacheElement(type_name, type);
+    auto element = getElement(type_name, type);
     return element.serialization ? element.serialization : element.type->getDefaultSerialization();
 }
 
-const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name, const DataTypePtr & known_type)
+DataTypesCache::Element DataTypesCache::getElement(const String & type_name, const DataTypePtr & known_type)
 {
     auto it = cache.find(type_name);
     if (it != cache.end())
         return it->second;
 
+    auto type = known_type ? known_type : DataTypeFactory::instance().get(type_name);
+
+    /// Elements outlive the query that created them, and a type that resolves the query context hands
+    /// it on to whoever reads the type, so such a type is built again per request rather than shared.
+    if (type->serializationDependsOnQueryContext())
+        return Element{type, nullptr};
+
     /// If cache is full, just clear it.
     if (cache.size() >= MAX_ELEMENTS)
         cache.clear();
 
-    auto type = known_type ? known_type : DataTypeFactory::instance().get(type_name);
-    /// A serialization that depends on the query context is not stored, only rebuilt on each request.
-    /// The type itself is always stored. Serializations that report `supportsPooling() == false` are
-    /// stored too: they are unpoolable because of mutable state, and this cache is thread-local.
-    auto serialization = type->serializationDependsOnQueryContext() ? nullptr : type->getDefaultSerialization();
-    it = cache.emplace(type_name, Element{type, std::move(serialization)}).first;
-    return it->second;
+    /// Serializations that report `supportsPooling() == false` are stored too: they are unpoolable
+    /// because of mutable state, and this cache is thread-local.
+    return cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first->second;
 }
 
 DataTypesCache & getDataTypesCache()

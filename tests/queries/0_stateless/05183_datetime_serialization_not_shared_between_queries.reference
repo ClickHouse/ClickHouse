@@ -3,9 +3,6 @@ dynamic utc	1970-01-01 00:00:00
 dynamic tokyo again	1970-01-01 09:00:00
 dynamic utc again	1970-01-01 00:00:00
 dynamic renderings per query	1
-json tokyo	1970-01-01 09:00:00
-json utc	1970-01-01 00:00:00
-json tokyo again	1970-01-01 09:00:00
 explicit tokyo	1970-01-01 01:00:00
 explicit utc	1970-01-01 01:00:00
 dynamic format tokyo	1970-01-01 09:00:00

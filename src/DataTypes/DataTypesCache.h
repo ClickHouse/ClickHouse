@@ -79,12 +79,13 @@ private:
     struct Element
     {
         DataTypePtr type;
-        /// Null when it depends on the query context; callers then rebuild it from `type`.
+        /// Null for an element that was not stored; callers then build it from `type`.
         SerializationPtr serialization;
     };
 
+    /// The stored element for `type_name`, or a fresh one that is deliberately not stored.
     /// `known_type`, when set, is the type whose `getName` produced `type_name`, so a miss uses it as is.
-    const Element & getCacheElement(const String & type_name, const DataTypePtr & known_type = {});
+    Element getElement(const String & type_name, const DataTypePtr & known_type = {});
 
     std::unordered_map<String, Element> cache;
 };
