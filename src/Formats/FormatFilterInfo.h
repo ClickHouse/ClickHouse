@@ -55,8 +55,7 @@ public:
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
     /// Paths whose lake type is a local (wall clock) timestamp, not an instant: Delta `timestamp_ntz`,
-    /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64 and a writer
-    /// preserving the distinction (Parquet isAdjustedToUTC) consults this. Empty means "nothing to clear".
+    /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64.
     void setLocalTimestampPaths(std::unordered_set<String> && local_timestamp_paths_)
     {
         local_timestamp_paths = std::move(local_timestamp_paths_);

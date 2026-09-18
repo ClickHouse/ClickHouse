@@ -25,8 +25,7 @@ struct TableSchemaResult
     /// Logical name to physical name mapping, for columnMapping.mode = 'name'.
     DB::NameToNameMap physical_names_map;
     /// Dotted paths of the `timestamp_ntz` leaves, spelled as the Parquet writer spells a column path:
-    /// a struct field's own name, `element` for an array child, `key`/`value` for a map's. Delta
-    /// `timestamp_ntz` and `timestamp` are both DateTime64(6), so the type cannot say which is which.
+    /// a struct field's own name, `element` for an array child, `key`/`value` for a map's.
     std::unordered_set<String> timestamp_ntz_paths;
 };
 
@@ -45,7 +44,6 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::Sha
 struct WriteSchemaResult
 {
     DB::NamesAndTypesList schema;
-    /// Spelled as in `TableSchemaResult`, but for the schema the data files are written against.
     std::unordered_set<String> timestamp_ntz_paths;
 };
 

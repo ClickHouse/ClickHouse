@@ -101,8 +101,8 @@ public:
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
         std::unordered_set<String> timestamp_ntz_paths;
-        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path. Such a
-        /// path cannot select an annotation and must keep the default one.
+        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: such a
+        /// path is ambiguous and keeps the default annotation.
         std::unordered_set<String> non_ntz_writer_paths;
     };
     SchemaResult getSchemaResult();
@@ -110,8 +110,7 @@ public:
 
 private:
     struct Field;
-    /// `element`/`key`/`value` are the Parquet writer's own words for array and map children; the
-    /// kernel's child names may differ.
+    /// `element`/`key`/`value` are the Parquet writer's words for array and map children; the kernel's differ.
     enum class ParentKind { Struct, Array, Map };
 
     DB::NamesAndTypesList getNamesAndTypesFromList(
@@ -594,7 +593,6 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
-        /// Only leaf paths are ever looked up (`preparePrimitiveColumn`), so only a leaf can claim one.
         if (field.is_timestamp_ntz)
             result.timestamp_ntz_paths.insert(field_writer_path);
         else if (is_leaf)

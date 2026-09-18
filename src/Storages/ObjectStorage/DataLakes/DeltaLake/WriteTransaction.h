@@ -57,7 +57,6 @@ private:
     /// Table logical schema, provided at construction. Used to create the table and, for partitioned
     /// tables, as the write schema (the kernel exposes no partitioned write context via FFI).
     const DB::NamesAndTypesList table_schema;
-    /// `timestamp_ntz` paths of `table_schema`, used as the write set for partitioned tables.
     const std::unordered_set<String> table_timestamp_ntz_paths;
     const LoggerPtr log;
     std::string path_prefix;
