@@ -19,7 +19,7 @@ namespace DB
 /// into each table, from a database into each table it makes. A later `set` clears them, so a setting
 /// belongs to whoever assigned it last: the table's own `SETTINGS` clause included. An assignment through
 /// `operator[]` and `resetToDefault` bypass `set` and keep the mark: engines use the first only to adjust a
-/// value in place, and a reset leaves the setting unchanged, which enumeration reports as the default.
+/// value in place, and a reset clears the changed bit, so enumeration reports the default.
 ///
 /// One bit per setting and source, as `SettingsImpl` in `Core/Settings.cpp` records its own `compatibility`
 /// marks: the number of settings is known at compile time, so this allocates nothing.

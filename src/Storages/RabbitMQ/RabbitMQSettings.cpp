@@ -1,6 +1,3 @@
-#include <Storages/SettingsWithRecordedOrigin.h>
-#include <Storages/loadSettingsFromNamedCollection.h>
-#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
@@ -8,6 +5,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 

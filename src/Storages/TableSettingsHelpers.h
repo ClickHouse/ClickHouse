@@ -41,8 +41,8 @@ SettingDescriptions withOriginFromDefinition(
 SettingDescriptions withOriginFromDefinition(
     SettingDescriptions settings, const SettingsChanges & stated, SettingNameNormalizer normalize = nullptr);
 
-/// Sets `origin` for every setting in `names`, matched by canonical name only, not by alias. For a source the
-/// settings object cannot record, because the engine assigns those settings outside its loaders.
+/// Sets `origin` for every setting in `names`, matched by canonical name only, not by alias. Used where the
+/// engine assigns settings outside its loaders, so the settings object cannot record the source.
 void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOrigin origin);
 
 /// Recomputes `origin` from the value alone: `Default` where it equals the compiled-in default and
