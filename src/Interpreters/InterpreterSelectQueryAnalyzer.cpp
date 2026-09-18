@@ -217,12 +217,15 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// the other replicas and the optimization would give up. Settings written after `FORMAT` land on
     /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
     /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
-    /// settings from the (cloned) AST so that the overrides above actually hold.
+    /// settings from the top-level `SETTINGS` carriers of the (cloned) AST so that the overrides above
+    /// actually hold. Nested carriers are left as written: a subquery's `SETTINGS` clause is part of its
+    /// query-node tree hash, and that hash is the identity its prepared set and its read step are
+    /// matched by against the single-node plan.
     static constexpr std::array settings_overridden_for_this_plan{
         std::string_view{"automatic_parallel_replicas_mode"},
         std::string_view{"force_primary_key"},
     };
-    removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
+    removeSettingsFromQueryTopLevel(ast, settings_overridden_for_this_plan);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
