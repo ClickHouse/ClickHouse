@@ -2217,10 +2217,10 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper,
     /// the metadata object and plain members of this storage.
     ///
-    /// It also reports whether it read the shared metadata: it returns an untouched object when this table
-    /// has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that state
-    /// nothing below came from Keeper, so neither the values nor the source may say it did. Taken from this
-    /// call rather than sampled again later, which would describe the table a moment later - a startup
+    /// `getSettings` also reports whether it read the shared metadata: it returns an untouched object when
+    /// this table has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that
+    /// state nothing below came from Keeper, so neither the values nor the source may say it did. Taken from
+    /// this call rather than sampled again later, which would describe the table a moment later - a startup
     /// finishing in between would put the stamp back on values that never came from there.
     ///
     /// Defensive rather than reachable from SQL today: reading a table whose startup threw waits on its
@@ -2245,7 +2245,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// definition states it: `registerQueueStorage` turns those into the table's `FormatSettings`, which the
     /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
     /// that distinction is visible, before `setOriginByValue` below overwrites it.
-
+    ///
     /// What the rebuild did not assign: the definition is then the only source of the value the table works
     /// with. The shared-metadata settings belong here only when the rebuild did not run - when it did, they
     /// carry what Keeper holds, which is what the table uses however its own `CREATE` query reads.
