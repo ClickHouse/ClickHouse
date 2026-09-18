@@ -713,6 +713,7 @@ These functions currently use the text index for filtering only if the index tok
 
 In order to use `LIKE` ([like](/reference/functions/regular-functions/string-search-functions#like)) and the [match](/reference/functions/regular-functions/string-search-functions#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
+With a preprocessor, these functions use the index only if the preprocessor is `lower` or `upper`, because the tokens to look up are taken from the preprocessed needle; any other preprocessor makes them fall back to row-level evaluation.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -738,7 +739,7 @@ See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for de
 #### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
 
 [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny) tests whether any of several regular expressions matches.
-These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
+These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, the list of needles must be constant, and a preprocessor, if present, must be `lower` or `upper`.
 A granule is read if any needle may be present in it.
 
 For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
@@ -768,6 +769,7 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 Similar to `LIKE`, functions [startsWith](/reference/functions/regular-functions/string-functions#startsWith) and [endsWith](/reference/functions/regular-functions/string-functions#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
 When a text index uses a postprocessor, these functions can still use the index in Hint mode if the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the index is not used for that predicate.
+With a preprocessor, they use the index only if the preprocessor is `lower` or `upper`; any other preprocessor makes them fall back to row-level evaluation.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
