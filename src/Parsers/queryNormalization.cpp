@@ -40,6 +40,14 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
                 continue;
             }
         }
+        else if (prev_comma && (token.type == TokenType::Plus || token.type == TokenType::Minus))
+        {
+            /// A sign right after a comma inside a literal sequence belongs to the following
+            /// literal, so fold it into the sequence. Keeps this hash consistent with
+            /// normalizeQueryToPODArray, which does the same, so that queries differing only in
+            /// the sign of list literals (e.g. [1, 2, 3] vs [1, -2, 3]) hash equally.
+            continue;
+        }
         else
         {
             if (num_literals_in_sequence > 1)
