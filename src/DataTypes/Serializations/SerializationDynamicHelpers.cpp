@@ -35,17 +35,22 @@ bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeO
     if (lhs.getSchemaFormat() != rhs.getSchemaFormat())
         return false;
 
-    /// For nested subcolumn reads the compatibility is path-local: missing or extra declared paths
-    /// don't affect the requested subcolumn. E.g. a request `d.JSON.a` must also see rows stored as
-    /// `JSON(a UInt64)` or `JSON(a UInt64, b String)`; a path missing in the stored value is simply
-    /// read as absent. A path declared by both types must still have compatible types, because the
-    /// stored value is cast to the requested type before the requested subcolumn is extracted.
+    /// On the read path the stored value (`lhs`) is cast to the requested type (`rhs`) before the
+    /// requested value or its subcolumn is extracted, so that cast must always succeed without
+    /// changing the data. It does when every path the requested type declares is declared by the
+    /// stored type with a compatible type: a stored typed path the requested type does not declare
+    /// just becomes a dynamic path. E.g. a request `d.JSON.a` also sees rows stored as
+    /// `JSON(a UInt64)` or `JSON(a UInt64, b String)`. The opposite direction is not compatible: a
+    /// plain `JSON` row is not read as `JSON(a UInt64)`, because parsing its `a` as `UInt64` could
+    /// fail (`{"a":"x"}`) or coerce the value (`{"a":"1"}`), while the `Dynamic` element contract is
+    /// that rows of another type read as absent. Skipped paths do not matter for reads: the cast to
+    /// the requested type drops what it skips and keeps what the stored type skipped absent.
     if (for_read)
     {
-        for (const auto & [path, lhs_type] : lhs.getTypedPaths())
+        for (const auto & [path, requested_path_type] : rhs.getTypedPaths())
         {
-            auto it = rhs.getTypedPaths().find(path);
-            if (it != rhs.getTypedPaths().end() && !areDynamicSubcolumnTypesCompatibleImpl(*lhs_type, *it->second, for_read))
+            auto it = lhs.getTypedPaths().find(path);
+            if (it == lhs.getTypedPaths().end() || !areDynamicSubcolumnTypesCompatibleImpl(*it->second, *requested_path_type, for_read))
                 return false;
         }
 

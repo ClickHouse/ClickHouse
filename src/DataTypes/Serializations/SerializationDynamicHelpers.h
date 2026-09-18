@@ -41,10 +41,12 @@ std::vector<size_t> getLimitsForFlattenedDynamicColumn(const IColumn & indexes_c
 /// even if only `max_dynamic_paths`/`max_dynamic_types` differ.
 bool areDynamicSubcolumnTypesCompatible(const DataTypePtr & lhs, const DataTypePtr & rhs);
 
-/// Same, but for nested subcolumn reads (e.g. `d.JSON.a`), where compatibility is path-local:
-/// stored values are converted to the requested type before the subcolumn is extracted, so
-/// `JSON(...)` variants with different declared (typed/skipped) path sets are also compatible.
-/// The same holds for a nested `Dynamic` carrier differing only in `max_dynamic_types`.
+/// Same, but for reads of a `Dynamic` subcolumn (`d.JSON`, `d.JSON.a`, `dynamicElement`), where the
+/// stored value is converted to the requested type before the value or its subcolumn is extracted.
+/// A stored `JSON(...)` type is compatible when it declares every typed path of the requested type
+/// with a compatible type (it may declare more, and the skipped path sets may differ), so the
+/// conversion always succeeds and never changes the data. The same holds for a nested `Dynamic`
+/// carrier differing only in `max_dynamic_types`.
 /// Do not use for insertion: values of such types cannot be stored in one variant column.
 bool areDynamicSubcolumnTypesCompatibleForRead(const DataTypePtr & stored_type, const DataTypePtr & requested_type);
 
