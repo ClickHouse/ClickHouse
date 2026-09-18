@@ -672,7 +672,7 @@ ALWAYS_INLINE void addExpressionStep(
     const SelectQueryOptions & select_query_options,
     const char (&step_description)[size],
     UsefulSets & useful_sets,
-    const InToJoinAnalysisResult & in_to_join = {})
+    const InToJoinAnalysisResults & in_to_join = {})
 {
     NameSet input_columns_set;
     for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
@@ -690,12 +690,15 @@ ALWAYS_INLINE void addExpressionStep(
         }
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
     }
-    if (auto key_actions = in_to_join.key_actions)
-        addExpressionStep(
-            planner_context, query_plan, key_actions, in_to_join.key_correlated_subtrees, select_query_options,
-            "Compute the left arguments of IN", useful_sets);
-    for (const auto & in_subquery : in_to_join.subqueries)
-        buildQueryPlanForUncorrelatedInSubquery(planner_context, query_plan, in_subquery, select_query_options);
+    for (const auto & in_to_join_subquery : in_to_join)
+    {
+        if (auto key_actions = in_to_join_subquery.key_actions)
+            addExpressionStep(
+                planner_context, query_plan, key_actions, in_to_join_subquery.key_correlated_subtrees,
+                select_query_options, "Compute the left arguments of IN", useful_sets);
+        buildQueryPlanForUncorrelatedInSubquery(
+            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options);
+    }
 
     auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
@@ -720,12 +723,15 @@ ALWAYS_INLINE void addFilterStep(
     {
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
     }
-    if (auto key_actions = filter_analysis_result.in_to_join.key_actions)
-        addExpressionStep(
-            planner_context, query_plan, key_actions, filter_analysis_result.in_to_join.key_correlated_subtrees,
-            select_query_options, "Compute the left arguments of IN", useful_sets);
-    for (const auto & in_subquery : filter_analysis_result.in_to_join.subqueries)
-        buildQueryPlanForUncorrelatedInSubquery(planner_context, query_plan, in_subquery, select_query_options);
+    for (const auto & in_to_join_subquery : filter_analysis_result.in_to_join)
+    {
+        if (auto key_actions = in_to_join_subquery.key_actions)
+            addExpressionStep(
+                planner_context, query_plan, key_actions, in_to_join_subquery.key_correlated_subtrees,
+                select_query_options, "Compute the left arguments of IN", useful_sets);
+        buildQueryPlanForUncorrelatedInSubquery(
+            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options);
+    }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)

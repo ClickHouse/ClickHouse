@@ -93,6 +93,20 @@ void CorrelatedSubtrees::assertEmpty(std::string_view reason) const
 namespace
 {
 
+/// The joins built during decorrelation are internal implementation details, not user joins, so
+/// the user's join size limits must not apply to them. In particular, under join_overflow_mode =
+/// 'break' a size limit lets the build side stop early and drop rows, which both yields a wrong
+/// subquery result and lets the probe side start before the build side has fully consumed its
+/// input (the source of the ChunkBuffer / runtime-filter "before all inputs are finished" logical
+/// errors). Run such joins unbounded with THROW.
+void makeInternalDecorrelationJoinUnbounded(JoinStepLogical & join_step)
+{
+    auto & join_settings = join_step.getJoinSettings();
+    join_settings.max_rows_in_join = 0;
+    join_settings.max_bytes_in_join = 0;
+    join_settings.join_overflow_mode = OverflowMode::THROW;
+}
+
 using CorrelatedPlanStepMap = std::unordered_map<QueryPlan::Node *, bool>;
 
 CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_plan)
@@ -641,7 +655,7 @@ QueryPlan decorrelateQueryPlan(
             JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
-        makeInternalJoinUnbounded(*decorrelated_join);
+        makeInternalDecorrelationJoinUnbounded(*decorrelated_join);
 
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
@@ -1126,7 +1140,7 @@ QueryPlan buildLogicalJoin(
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
-    makeInternalJoinUnbounded(*result_join);
+    makeInternalDecorrelationJoinUnbounded(*result_join);
 
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
     if (uses_in_memory_buffer)

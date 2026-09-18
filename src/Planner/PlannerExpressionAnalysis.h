@@ -16,22 +16,24 @@
 namespace DB
 {
 
+/// An `IN` the planner evaluates with a join, and the step that computes the columns the join keys on.
 struct InToJoinAnalysisResult
 {
-    bool notEmpty() const noexcept { return !subqueries.empty(); }
-
-    UncorrelatedInSubqueries subqueries;
+    UncorrelatedInSubquery subquery;
     /// The actions that compute the columns the joins key on.
     ActionsAndProjectInputsFlagPtr key_actions;
     /// The correlated subqueries those columns read, built below them.
     CorrelatedSubtrees key_correlated_subtrees;
 };
 
+/// Ordered so that an `IN` written inside the left argument of another comes first.
+using InToJoinAnalysisResults = std::vector<InToJoinAnalysisResult>;
+
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
     CorrelatedSubtrees correlated_subtrees;
-    InToJoinAnalysisResult in_to_join;
+    InToJoinAnalysisResults in_to_join;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;
@@ -41,7 +43,7 @@ struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
     CorrelatedSubtrees correlated_subtrees;
-    InToJoinAnalysisResult in_to_join;
+    InToJoinAnalysisResults in_to_join;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
@@ -49,7 +51,7 @@ struct FilterAnalysisResult
 struct AggregationAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
-    InToJoinAnalysisResult in_to_join;
+    InToJoinAnalysisResults in_to_join;
     Names aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
@@ -59,7 +61,7 @@ struct AggregationAnalysisResult
 struct WindowAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_window_actions;
-    InToJoinAnalysisResult in_to_join;
+    InToJoinAnalysisResults in_to_join;
     std::vector<WindowDescription> window_descriptions;
 };
 
@@ -68,14 +70,14 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
-    InToJoinAnalysisResult in_to_join = {};
+    InToJoinAnalysisResults in_to_join = {};
 };
 
 struct LimitByAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_limit_by_actions;
     Names limit_by_column_names;
-    InToJoinAnalysisResult in_to_join = {};
+    InToJoinAnalysisResults in_to_join = {};
 };
 
 struct LimitRangeAnalysisResult

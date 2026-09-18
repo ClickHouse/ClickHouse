@@ -84,6 +84,8 @@
 1	0
 0
 0
+-- A set size limit applies to the join the rewrite builds
+1	0
 -- IN subquery inside HAVING
 1	0
 [1,2]
@@ -120,6 +122,10 @@
 2	0
 1
 1
+-- An IN inside the left argument of another IN builds one join for each
+2	0
+2
+2
 -- Query with IN subquery and another correlated subquery
 1
 2

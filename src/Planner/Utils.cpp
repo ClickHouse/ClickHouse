@@ -1,7 +1,5 @@
 #include <Planner/Utils.h>
 
-#include <Processors/QueryPlan/JoinStepLogical.h>
-
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -947,14 +945,6 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
     step->setStepDescription("Project only used columns");
     return step;
-}
-
-void makeInternalJoinUnbounded(JoinStepLogical & join_step)
-{
-    auto & join_settings = join_step.getJoinSettings();
-    join_settings.max_rows_in_join = 0;
-    join_settings.max_bytes_in_join = 0;
-    join_settings.join_overflow_mode = OverflowMode::THROW;
 }
 
 }

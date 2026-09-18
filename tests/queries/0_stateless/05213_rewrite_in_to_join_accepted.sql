@@ -169,6 +169,15 @@ FROM (EXPLAIN SELECT count() FROM numbers(10) WHERE rand() % 2 IN (SELECT 1));
 SELECT countIf(r != c) FROM (SELECT rand() % 2 AS r, r IN (SELECT 1) AS c FROM numbers(200000)) SETTINGS rewrite_in_to_join = 0;
 SELECT countIf(r != c) FROM (SELECT rand() % 2 AS r, r IN (SELECT 1) AS c FROM numbers(200000)) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- A set size limit applies to the join the rewrite builds';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_rows_in_set = 1);
+
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_rows_in_set = 1, rewrite_in_to_join = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_rows_in_set = 1, rewrite_in_to_join = 1; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_bytes_in_set = 1, rewrite_in_to_join = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_bytes_in_set = 1, rewrite_in_to_join = 1; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
 SELECT '-- IN subquery inside HAVING';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id FROM t GROUP BY id HAVING id IN (SELECT k FROM s));
@@ -231,6 +240,13 @@ FROM (EXPLAIN keep_logical_steps = 1 SELECT count() FROM t WHERE (1 + (SELECT ma
 
 SELECT count() FROM t WHERE (1 + (SELECT max(v) FROM w WHERE w.k = t.id)) IN (SELECT k FROM s) SETTINGS rewrite_in_to_join = 0;
 SELECT count() FROM t WHERE (1 + (SELECT max(v) FROM w WHERE w.k = t.id)) IN (SELECT k FROM s) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- An IN inside the left argument of another IN builds one join for each';
+SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN keep_logical_steps = 1 SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)));
+
+SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)) SETTINGS rewrite_in_to_join = 0;
+SELECT count() FROM t WHERE (id IN (SELECT k FROM s)) IN (SELECT toUInt8(1)) SETTINGS rewrite_in_to_join = 1;
 
 SELECT '-- Query with IN subquery and another correlated subquery';
 SELECT countIf(explain LIKE '%Join%') > 1

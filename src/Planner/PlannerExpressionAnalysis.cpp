@@ -55,20 +55,26 @@ namespace
   * The columns the joins use as keys are added into the actions chain as a a separate step below the step
   * that reads the join result.
   */
-InToJoinAnalysisResult analyzeInToJoin(
+InToJoinAnalysisResults analyzeInToJoin(
     InToJoinScope scope,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
-    InToJoinAnalysisResult result;
+    InToJoinAnalysisResults result;
 
     NameSet input_column_names;
     for (const auto & column : input_columns)
         input_column_names.insert(column.name);
 
-    for (const auto & in_node : planner_context->getInSubqueriesForJoinRewrite(scope))
+    /// An `IN` before the ones its own key holds, so the joins are built in the opposite order.
+    auto in_nodes = planner_context->getInSubqueriesForJoinRewrite(scope);
+    std::reverse(in_nodes.begin(), in_nodes.end());
+
+    ColumnsWithTypeAndName key_input_columns = input_columns;
+
+    for (const auto & in_node : in_nodes)
     {
         /// Skip an `IN` that another step already delivers as an input column.
         auto action_node_name = calculateActionNodeName(in_node, *planner_context);
@@ -76,71 +82,61 @@ InToJoinAnalysisResult analyzeInToJoin(
             continue;
 
         const auto & function_node = in_node->as<const FunctionNode &>();
-        result.subqueries.emplace_back(
+        UncorrelatedInSubquery in_subquery(
             getInToJoinKeyElements(function_node),
             function_node.getArguments().getNodes()[1],
             action_node_name,
             function_node.getResultType(),
             function_node.getFunctionName() == "notIn");
-    }
 
-    if (result.subqueries.empty())
-        return result;
+        const size_t key_elements_count = in_subquery.key_elements.size();
+        auto [key_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            std::make_shared<ListNode>(in_subquery.key_elements),
+            key_input_columns,
+            planner_context,
+            correlated_columns_set);
 
-    QueryTreeNodes key_elements;
-    for (const auto & in_subquery : result.subqueries)
-        key_elements.insert(key_elements.end(), in_subquery.key_elements.begin(), in_subquery.key_elements.end());
+        /// One output per key, in the order the list was built.
+        if (key_dag.getOutputs().size() != key_elements_count)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The dag for the left arguments of `IN` has {} outputs. Expected {}",
+                key_dag.getOutputs().size(),
+                key_elements_count);
 
-    const size_t key_elements_count = key_elements.size();
-    auto [key_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-        std::make_shared<ListNode>(std::move(key_elements)),
-        input_columns,
-        planner_context,
-        correlated_columns_set);
-    result.key_correlated_subtrees = std::move(correlated_subtrees);
+        bool has_computed_key = false;
+        NameSet distinct_key_names;
+        ActionsDAG::NodeRawConstPtrs distinct_key_outputs;
 
-    /// One output per key, in the order the list was built.
-    if (key_dag.getOutputs().size() != key_elements_count)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "The dag for the left arguments of `IN` has {} outputs. Expected {}",
-            key_dag.getOutputs().size(),
-            key_elements_count);
-
-    auto key_outputs = key_dag.getOutputs();
-    size_t key_output_index = 0;
-    bool has_computed_key = false;
-
-    NameSet distinct_key_names;
-    ActionsDAG::NodeRawConstPtrs distinct_key_outputs;
-
-    for (auto & in_subquery : result.subqueries)
-    {
-        for (size_t i = 0; i < in_subquery.key_elements.size(); ++i)
+        for (const auto * key_output : key_dag.getOutputs())
         {
-            const auto * key_output = key_outputs[key_output_index++];
             has_computed_key |= key_output->type != ActionsDAG::ActionType::INPUT;
             in_subquery.key_column_names.push_back(key_output->result_name);
 
-            /// Two `IN` can key on the same expression, and a block cannot carry one column twice.
+            /// One `IN` can key on the same expression twice, and a block cannot carry one column twice.
             if (distinct_key_names.insert(key_output->result_name).second)
                 distinct_key_outputs.push_back(key_output);
         }
+
+        key_dag.getOutputs() = std::move(distinct_key_outputs);
+
+        auto key_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        key_actions->dag = std::move(key_dag);
+        actions_chain.addStep(std::make_unique<ActionsChainStep>(
+            key_actions,
+            /*use_actions_nodes_as_output_columns=*/true,
+            ColumnsWithTypeAndName{{nullptr, in_subquery.result_type, in_subquery.action_node_name}}));
+
+        InToJoinAnalysisResult analyzed{std::move(in_subquery), nullptr, {}};
+        if (has_computed_key || !correlated_subtrees.subqueries.empty())
+        {
+            analyzed.key_actions = std::move(key_actions);
+            analyzed.key_correlated_subtrees = std::move(correlated_subtrees);
+        }
+
+        key_input_columns = actions_chain.getLastStepAvailableOutputColumns();
+        result.push_back(std::move(analyzed));
     }
-
-    key_dag.getOutputs() = std::move(distinct_key_outputs);
-
-    ColumnsWithTypeAndName in_results;
-    in_results.reserve(result.subqueries.size());
-    for (const auto & in_subquery : result.subqueries)
-        in_results.emplace_back(nullptr, in_subquery.result_type, in_subquery.action_node_name);
-
-    auto key_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    key_actions->dag = std::move(key_dag);
-    actions_chain.addStep(std::make_unique<ActionsChainStep>(key_actions, /*use_actions_nodes_as_output_columns=*/true, std::move(in_results)));
-
-    if (has_computed_key || !result.key_correlated_subtrees.subqueries.empty())
-        result.key_actions = std::move(key_actions);
 
     return result;
 }
@@ -160,7 +156,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     FilterAnalysisResult result;
 
     result.in_to_join = analyzeInToJoin(scope, input_columns, planner_context, correlated_columns_set, actions_chain);
-    const auto & columns = result.in_to_join.notEmpty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
+    const auto & columns = !result.in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
 
     auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, columns, planner_context, correlated_columns_set);
 
@@ -250,7 +246,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     Names aggregation_keys;
 
     auto in_to_join = analyzeInToJoin(InToJoinScope::Aggregation, input_columns, planner_context, correlated_columns_set, actions_chain);
-    const auto & columns = in_to_join.notEmpty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
+    const auto & columns = !in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
 
     ActionsAndProjectInputsFlagPtr before_aggregation_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     /// Here it is OK to materialize const columns: if column is used in GROUP BY, it may be expected to become non-const
@@ -436,7 +432,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
     auto in_to_join = analyzeInToJoin(InToJoinScope::Window, input_columns, planner_context, correlated_columns_set, actions_chain);
-    const auto & columns = in_to_join.notEmpty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
+    const auto & columns = !in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
 
     ActionsAndProjectInputsFlagPtr before_window_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_window_actions->dag = ActionsDAG(columns);
@@ -566,7 +562,7 @@ ProjectionAnalysisResult analyzeProjection(
     ActionsChain & actions_chain)
 {
     auto in_to_join = analyzeInToJoin(InToJoinScope::Projection, input_columns, planner_context, correlated_columns_set, actions_chain);
-    const auto & columns = in_to_join.notEmpty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
+    const auto & columns = !in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
 
     auto [projection_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
         query_node.getProjectionNode(),
@@ -627,7 +623,7 @@ SortAnalysisResult analyzeSort(
     ActionsChain & actions_chain)
 {
     auto in_to_join = analyzeInToJoin(InToJoinScope::OrderBy, input_columns, planner_context, correlated_columns_set, actions_chain);
-    const auto & columns = in_to_join.notEmpty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
+    const auto & columns = !in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
 
     auto before_sort_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_sort_actions->dag = ActionsDAG(columns);
@@ -737,7 +733,7 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     ActionsChain & actions_chain)
 {
     auto in_to_join = analyzeInToJoin(InToJoinScope::LimitBy, input_columns, planner_context, correlated_columns_set, actions_chain);
-    const auto & columns = in_to_join.notEmpty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
+    const auto & columns = !in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
 
     auto [before_limit_by_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
         query_node.getLimitByNode(),
