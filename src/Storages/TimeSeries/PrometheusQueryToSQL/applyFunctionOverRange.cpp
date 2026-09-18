@@ -161,9 +161,19 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
-            /// stddev_over_time"
-            /// stdvar_over_time
             /// mad_over_time
             /// ts_of_last_over_time
             /// first_over_time
