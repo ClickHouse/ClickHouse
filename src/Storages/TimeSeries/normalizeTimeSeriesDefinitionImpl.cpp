@@ -629,7 +629,10 @@ namespace
                 {
                     if (!is_timestamp_type(*type))
                         return false;
-                    return !codec || is_version_0 || (codec->formatWithSecretsOneLine() == "CODEC(DoubleDelta, ZSTD(1))");
+                    if (!codec || is_version_0)
+                        return true;
+                    auto codec_name = codec->formatWithSecretsOneLine();
+                    return (codec_name == "CODEC(DoubleDelta, ZSTD(1))") || (codec_name == "CODEC(Delta, T64, ZSTD(3))");
                 }
 
                 if (name == TimeSeriesColumnNames::Value)
@@ -965,11 +968,15 @@ namespace
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Generated `timestamp` and `value` columns use `DoubleDelta` and `ALP`, respectively,
-                /// followed by `ZSTD`. Explicitly declared columns keep the user's codecs.
+                /// Generated `timestamp` columns use `Delta`, `T64`, and `ZSTD(3)`.
+                /// Generated `value` columns use `ALP` and `ZSTD(3)`.
+                /// Explicitly declared columns keep the user's codecs.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
                     timestamp_decl->setCodec(makeASTFunction(
-                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
+                        "CODEC",
+                        make_intrusive<ASTIdentifier>("Delta"),
+                        make_intrusive<ASTIdentifier>("T64"),
+                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
                     value_decl->setCodec(makeASTFunction(
                         "CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
