@@ -22,6 +22,7 @@ from .generate_compliance_data import (
     generate as generate_openmetrics,
     BASE_TIME,
 )
+from . import promqltest_loader as promqltest
 
 
 # ── Cluster setup ────────────────────────────────────────────────────────────
@@ -495,6 +496,22 @@ class ComplianceResult:
 
 # ── Fixtures and test ────────────────────────────────────────────────────────
 
+_SUITE_RESULTS = {}
+
+
+def _write_combined_results():
+    out_path = os.environ.get("COMPLIANCE_RESULT_FILE")
+    if not out_path or not _SUITE_RESULTS:
+        return
+    payload = {
+        "schema_version": 2,
+        "suites": dict(_SUITE_RESULTS),
+    }
+    with open(out_path, "w") as out_f:
+        json.dump(payload, out_f, indent=2)
+        out_f.write("\n")
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -508,6 +525,7 @@ def start_cluster():
         _ingest_openmetrics(data_path)
 
         yield cluster
+        _write_combined_results()
     finally:
         cluster.shutdown()
 
@@ -619,18 +637,90 @@ def test_promql_compliance():
                     print(f"               → {r_short}")
 
     breakdown = {cat: len(entries) for cat, entries in categories.items()}
-    out_path = os.environ.get("COMPLIANCE_RESULT_FILE")
-    if out_path:
-        record = {
-            "passed": result.passed,
-            "failed": result.failed,
-            "unsupported": result.unsupported,
-            "total": result.total,
-            "pct": round(result.score, 4),
-            "breakdown": breakdown,
-        }
-        with open(out_path, "w") as out_f:
-            json.dump(record, out_f, indent=2)
-            out_f.write("\n")
+    _SUITE_RESULTS["compliance"] = {
+        "passed": result.passed,
+        "failed": result.failed,
+        "unsupported": result.unsupported,
+        "total": result.total,
+        "pct": round(result.score, 4),
+        "breakdown": breakdown,
+    }
+    _write_combined_results()
 
+    print()
+
+
+def _run_promql_sql(sql: str):
+    try:
+        return node.query(sql), None
+    except Exception as e:
+        return "", str(e)
+
+
+def _reset_extended_table():
+    table = promqltest.TABLE_NAME
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(f"CREATE TABLE {table} ENGINE=TimeSeries")
+
+
+def test_promql_extended_support():
+    """Score ClickHouse against pinned upstream promqltest expected results."""
+    meta = promqltest.load_snapshot_meta()
+    scenarios = promqltest.parse_all_files()
+    promqltest.assert_manifest_complete(scenarios)
+    seen = []
+    record = promqltest.empty_suite_record(
+        meta["commit"], list(meta.get("excluded_files") or [])
+    )
+
+    table = promqltest.TABLE_NAME
+    _reset_extended_table()
+    try:
+        for scenario in scenarios:
+            _reset_extended_table()
+            for block in scenario.loads:
+                for series in block.series:
+                    sql = promqltest.series_insert_sql(table, block.interval_s, series)
+                    if sql is None:
+                        continue
+                    tsv, err = _run_promql_sql(sql)
+                    if err:
+                        print(f"INSERT failed {scenario.file_name}:{block.line}: {err}")
+            for case in scenario.evals:
+                seen.append(case.eval_id)
+                excluded = promqltest.classify_eval(case)
+                if excluded:
+                    promqltest.update_suite_record(record, excluded, case.exclusion_reason() or "")
+                    continue
+                sql = promqltest.eval_sql(table, case)
+                tsv, err = _run_promql_sql(sql)
+                status, reason = promqltest.compare_eval(case, tsv, err)
+                promqltest.update_suite_record(record, status, reason)
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+    expected_ids = promqltest.manifest_eval_ids(scenarios)
+    missing = [eid for eid in expected_ids if eid not in seen]
+    if missing:
+        raise AssertionError(f"in-scope evals missing from run: {missing[:20]}")
+
+    _SUITE_RESULTS["extended_support"] = record
+    _write_combined_results()
+
+    print("\n" + "=" * 80)
+    print("PromQL EXTENDED SUPPORT REPORT")
+    print("=" * 80)
+    print(f"Upstream:    {record['upstream_sha']}")
+    print(f"Total:       {record['total']}")
+    print(f"Passed:      {record['passed']}")
+    print(f"Failed:      {record['failed']}")
+    print(f"Unsupported: {record['unsupported']}")
+    print(f"Score:       {record['pct']:.1f}%")
+    print(f"Excluded NH: {record['excluded_native_histogram']}")
+    print(f"Excluded as: {record['excluded_assertions']}")
+    print("=" * 80)
+    if record["breakdown"]:
+        print("FAILURE BREAKDOWN")
+        for key, count in sorted(record["breakdown"].items(), key=lambda kv: -kv[1])[:20]:
+            print(f"  [{count:3d}] {key}")
     print()
