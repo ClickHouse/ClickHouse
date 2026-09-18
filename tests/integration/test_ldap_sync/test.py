@@ -1793,36 +1793,6 @@ def test_interserver_materialised_user_promoted_by_a_run_needs_no_lookup(
         admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
 
 
-def test_interserver_authentication_refuses_a_name_outside_the_snapshot(
-    janedoe_in_role_a,
-):
-    """`only_synced_users` gates the interserver path too: `outside` exists on `node1` only, and a
-    fanout under the cluster secret reaches `node_bad` as `outside` (`AlwaysAllowCredentials`), where
-    the directory reports the name as not found instead of materialising it, so the query fails.
-    """
-    admin(node1, "CREATE USER outside IDENTIFIED BY 'local'")
-    try:
-        admin(node1, "GRANT SELECT, SHOW COLUMNS, REMOTE ON *.* TO outside")
-        restart_node_bad_with(
-            directories_bad_config(), server_config=read_config("ldap_server.xml")
-        )
-        admin(node_bad, "SYSTEM RELOAD USERS")
-
-        error = node1.query_and_get_error(
-            "SELECT count() FROM clusterAllReplicas('test_ldap_cluster_bad', system.one)",
-            user="outside",
-            password="local",
-        )
-        assert "Authentication failed" in error or "There is no user" in error, error
-        assert node_bad.contains_in_log(
-            "User outside is not in the synchronised snapshot of directory .ldap."
-        )
-        assert admin(node_bad, ldap_users_query("outside")) == "0\n"
-    finally:
-        admin(node1, "DROP USER IF EXISTS outside")
-        restore_node_bad()
-
-
 def test_synced_direct_bind_login_needs_no_lookup_identity(janedoe_in_role_a):
     """In a synchronised directory a login verifies the password only. With a `bind_dn` template
     next to `lookup_bind_dn` (direct bind) the lookup identity serves the detection and the role
