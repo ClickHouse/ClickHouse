@@ -34,6 +34,7 @@
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.", ValueType::Bytes) \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.", ValueType::Number) \
     M(AsyncInsertCacheHits, "Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.", ValueType::Number) \
+    M(AsyncInsertFlush, "Number of flushes of the asynchronous INSERT queue. Every flush inserts a batch of asynchronous INSERT queries as a single part. Compare with AsyncInsertQuery to see how many queries are batched together on average.", ValueType::Number) \
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
@@ -835,6 +836,10 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
+    \
+    M(MetadataTransactionRollbacks, "Number of metadata transactions that failed to commit and were rolled back.", ValueType::Number) \
+    M(MetadataTransactionRollbacksFailed, "Number of metadata transaction rollbacks that did not run to completion, so the metadata keeps a part of a transaction that was reported as failed.", ValueType::Number) \
     \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
@@ -1381,7 +1386,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
     M(StreamingExchangeSendBytes, "Bytes written to the sockets of the streaming exchanges of a distributed query plan. `NetworkSendBytes` does not count them.", ValueType::Bytes) \
     M(StreamingExchangeReceiveBytes, "Bytes read from the sockets of the streaming exchanges of a distributed query plan. `NetworkReceiveBytes` does not count them.", ValueType::Bytes) \
-    M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. The packets of a send buffer are counted when the whole buffer is written; a buffer cut short because the receiver needed no more data counts none of its packets.", ValueType::Number) \
+    M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. A packet is counted when it is written whole; a packet cut short because the receiver needed no more data is not counted.", ValueType::Number) \
     M(StreamingExchangePacketsReceived, "Data packets read from streaming exchanges, one per chunk plus one end-of-stream packet per stream.", ValueType::Number) \
     M(StreamingExchangeSerializedBytes, "Bytes of the Native blocks in streaming exchange packets before compression, counted once per packet where it is serialized. Against `StreamingExchangeSendBytes` this gives the compression ratio of a shuffle or a gather; a broadcast sends every packet to each destination, so there `StreamingExchangeSendBytes` grows with the number of destinations.", ValueType::Bytes) \
     M(StreamingExchangeSerializeMicroseconds, "Time spent serializing and compressing chunks into streaming exchange packets.", ValueType::Microseconds) \
