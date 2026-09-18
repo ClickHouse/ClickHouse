@@ -253,9 +253,13 @@ private:
         /// Whether another replica has a "request-<replica>" znode: a SYSTEM REFRESH VIEW it accepted
         /// but hasn't started. Ours is `out_of_schedule_refresh_requested` instead.
         bool other_replica_request_znode_exists = false;
-        /// Bumped on every read of the znodes above, so that `wait` can tell a read made after it
-        /// started from a possibly stale copy.
-        UInt64 znodes_read_count = 0;
+        /// Bumped when a read of the znodes above starts, and copied when it finishes: `wait` needs a read
+        /// that started after it began, i.e. `znode_reads_finished` above the `znode_reads_started` it saw.
+        UInt64 znode_reads_started = 0;
+        UInt64 znode_reads_finished = 0;
+        /// Bumped on every scheduling pass that failed with a Keeper error, so that `wait` reports the
+        /// failure of the read it asked for instead of waiting for Keeper to come back.
+        UInt64 scheduling_keeper_errors = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -459,7 +463,8 @@ private:
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
-    /// The same from a scheduling pass: also retracts our request znode and sets the state to Disabled.
+    /// The same from a scheduling pass: first retracts our request znode (a throw retries the pass), then
+    /// sets the state to Disabled.
     void giveUpCoordination(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, std::unique_lock<std::mutex> & lock);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);

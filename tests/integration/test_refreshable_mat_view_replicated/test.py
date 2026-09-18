@@ -895,7 +895,6 @@ def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables)
             with_append=True,
             on_cluster="default",
             empty=True,
-            settings={"refresh_retries": "0"},
         )
     )
 
@@ -919,6 +918,16 @@ def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables)
     waiter.assert_finished()
     assert node.query("SELECT count() FROM tgt1").strip() == "15"
 
+    # The wait reads the coordination state from Keeper first; if that fails, it must fail rather than hang.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        assert "KEEPER_EXCEPTION" in node2.query_and_get_error(
+            "SYSTEM WAIT VIEW test_rmv"
+        )
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+
 
 def test_wait_view_with_refresh_requested_on_stopped_replica(fn3_setup_tables):
     node.query(
@@ -930,7 +939,6 @@ def test_wait_view_with_refresh_requested_on_stopped_replica(fn3_setup_tables):
             with_append=True,
             on_cluster="default",
             empty=True,
-            settings={"refresh_retries": "0"},
         )
     )
     zk = cluster.get_kazoo_client("zoo1")
@@ -1009,12 +1017,17 @@ def test_refresh_request_does_not_outlive_its_replica(started_cluster):
         node2.query("SYSTEM WAIT VIEW detach_db.mv", timeout=30)
         node.query("ATTACH DATABASE detach_db")
 
-        # Coordination given up (Keeper lost a required feature flag) while a request was pending.
+        # Coordination given up (Keeper lost a required feature flag) while a request was pending. The
+        # first retraction fails, so the znode must be gone thanks to the retry.
         node.query("SYSTEM STOP VIEW detach_db.mv")
         node.query("SYSTEM REFRESH VIEW detach_db.mv")
         assert request_znodes(zk, path) == ["request-1"]
-        fp = "refresh_mv_force_scheduling_feature_flags_missing"
-        node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+        fps = [
+            "refresh_mv_fail_request_retract_once",
+            "refresh_mv_force_scheduling_feature_flags_missing",
+        ]
+        for fp in fps:
+            node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
         try:
             node.query("SYSTEM START VIEW detach_db.mv")
             wait_condition(
@@ -1024,7 +1037,9 @@ def test_refresh_request_does_not_outlive_its_replica(started_cluster):
                 delay=0.2,
             )
         finally:
-            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+            for fp in fps:
+                node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+        assert node.contains_in_log("Injected by refresh_mv_fail_request_retract_once")
         assert (
             node.query(
                 "SELECT status FROM system.view_refreshes WHERE database = 'detach_db' AND view = 'mv'"

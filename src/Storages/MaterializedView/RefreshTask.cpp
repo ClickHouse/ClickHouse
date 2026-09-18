@@ -83,6 +83,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int TABLE_UUID_MISMATCH;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace
@@ -125,6 +126,10 @@ namespace FailPoints
     /// Pauses SYSTEM REFRESH VIEW just before it publishes its request znode, so that a shutdown
     /// (e.g. DETACH) can overtake it.
     extern const char refresh_mv_pause_before_publishing_refresh_request[];
+    /// Fails the request znode retraction of `giveUpCoordination` once, to check that it is retried.
+    extern const char refresh_mv_fail_request_retract_once[];
+    /// Fails every read of the coordination znodes, to check that `wait` reports it instead of hanging.
+    extern const char refresh_mv_fail_znodes_read[];
     /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
     /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
     /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
@@ -292,14 +297,18 @@ void RefreshTask::markCoordinationUnavailable()
 void RefreshTask::giveUpCoordination(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, std::unique_lock<std::mutex> & lock)
 {
     chassert(lock.owns_lock());
-    markCoordinationUnavailable();
 
-    /// Retract our request znode: nothing would run or retract it anymore. Not under the mutex, as
-    /// every Keeper call here; if it throws, the next pass still converges to Disabled.
+    /// Retract our request znode before becoming unavailable: no pass touches Keeper afterwards, so a throw
+    /// here must retry the pass. Under `request_mutex`, so that `run` can't publish one in between.
     lock.unlock();
+    std::lock_guard request_guard(request_mutex);
+    fiu_do_on(FailPoints::refresh_mv_fail_request_retract_once, {
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Injected by refresh_mv_fail_request_retract_once");
+    });
     zookeeper->tryRemove(requestZnodePath());
     lock.lock();
 
+    markCoordinationUnavailable();
     setState(RefreshState::Disabled, lock);
 }
 
@@ -733,16 +742,18 @@ void RefreshTask::wait(const ContextPtr & context)
     /// Have the scheduling pass, the only reader of these znodes, read them once more, and wait for that.
     if (coordination.coordinated && !coordination.unavailable)
     {
-        const UInt64 seen_reads = coordination.znodes_read_count;
+        const UInt64 seen_reads = coordination.znode_reads_started;
+        const UInt64 seen_errors = coordination.scheduling_keeper_errors;
         coordination.watches->should_reread_znodes.store(true);
         scheduling_task->schedule();
+        bool fresh_read = false;
         wait_cv.wait(lock, [&]
             {
-                /// A pass that was already past its read when the flag was set counts too, but leaves
-                /// the flag set for the next one: only a read that cleared the flag is fresh.
-                return (coordination.znodes_read_count != seen_reads && !coordination.watches->should_reread_znodes.load())
-                    || !view || coordination.unavailable;
+                fresh_read = coordination.znode_reads_finished > seen_reads;
+                return fresh_read || coordination.scheduling_keeper_errors != seen_errors || !view || coordination.unavailable;
             });
+        if (!fresh_read && view && !coordination.unavailable)
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Keeper error while reading the refresh coordination state, see the server log");
     }
 
     /// If out-of-schedule refreshes were requested, on any replica, wait for the last of them to *start*.
@@ -1298,6 +1309,8 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         chassert(state == RefreshState::Scheduling);
         coordination.watches->should_reread_znodes.store(true);
+        ++coordination.scheduling_keeper_errors;
+        wait_cv.notify_all();
         scheduling_task->scheduleAfter(5000);
     }
     catch (...)
@@ -1839,6 +1852,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         return;
 
     coordination.watches->should_reread_znodes.store(false);
+    ++coordination.znode_reads_started;
 
     /// Whether our request znode should exist: a refresh is requested here and something would still
     /// run it, i.e. not on a `read_only` replica (see `run`) and not after `shutdown`.
@@ -1847,6 +1861,9 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
 
     lock.unlock();
 
+    fiu_do_on(FailPoints::refresh_mv_fail_znodes_read, {
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Injected by refresh_mv_fail_znodes_read");
+    });
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
@@ -1902,7 +1919,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     coordination.running_znode_exists = running_znode_exists;
     coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
     coordination.other_replica_request_znode_exists = other_request_znode;
-    ++coordination.znodes_read_count;
+    coordination.znode_reads_finished = coordination.znode_reads_started;
 
     notifyDependentsIfNeeded(lock);
     wait_cv.notify_all();
