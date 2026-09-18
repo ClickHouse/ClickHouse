@@ -81,3 +81,12 @@ SELECT (SELECT count() FROM (WITH r_113711 AS MATERIALIZED (SELECT id FROM defau
 SELECT id FROM default.src_113711
 -- PREWHERE, SAMPLE and FINAL inside the CTE are still rejected in a materialized view definition
 -- a CTE-backed first UNION arm does not hide FINAL in a later arm
+-- materialized view with a CTE named like its source table: only the inserted block is read, once
+71	1
+72	1
+-- an expansion copy of a plain CTE is classified with the scope of its declaration
+1
+2
+3
+WITH p AS (SELECT * FROM default.t2_113711) SELECT * FROM (WITH t2_113711 AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM p)
+-- a view definition that fixes enable_global_with_statement bakes in the nested-reference failure

@@ -4,12 +4,11 @@
 -- Every `same` column below compares rand64() taken from two references of the same CTE:
 -- 1 means both references read the same materialization.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
-DROP TABLE IF EXISTS src_113711, r_113711, dst_113711, dst_chain_113711, dst_forward_113711, dst_inner_113711, dst_pinned_113711, dst_bad_113711, src_final_113711;
-DROP TABLE IF EXISTS v_113711, v_settings_113711, pv_113711, v_self_113711, v_chain_113711, v_in_113711, v_in_chain_113711, v_forward_113711, v_union_113711, v_union2_113711, v_sibling_113711, v_nested_113711;
-DROP TABLE IF EXISTS mv_113711, mv_chain_113711, mv_forward_113711, mv_inner_113711, mv_pinned_113711, mv_bad_113711;
+DROP TABLE IF EXISTS src_113711, src2_113711, t2_113711, r_113711, dst_113711, dst_chain_113711, dst_forward_113711, dst_inner_113711, dst_pinned_113711, dst_self_113711, dst_bad_113711, src_final_113711;
+DROP TABLE IF EXISTS v_113711, v_settings_113711, pv_113711, v_self_113711, v_chain_113711, v_in_113711, v_in_chain_113711, v_forward_113711, v_union_113711, v_union2_113711, v_sibling_113711, v_nested_113711, v_copy_113711, v_baked_113711;
+DROP TABLE IF EXISTS mv_113711, mv_chain_113711, mv_forward_113711, mv_inner_113711, mv_pinned_113711, mv_self_113711, mv_bad_113711;
 
 CREATE TABLE src_113711 (id UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO src_113711 VALUES (1), (2), (3);
@@ -194,5 +193,31 @@ CREATE MATERIALIZED VIEW mv_bad_113711 TO dst_bad_113711 AS WITH b AS MATERIALIZ
 SELECT '-- a CTE-backed first UNION arm does not hide FINAL in a later arm';
 CREATE MATERIALIZED VIEW mv_bad_113711 TO dst_bad_113711 AS WITH r AS MATERIALIZED (SELECT id FROM src_final_113711) SELECT id FROM r UNION ALL SELECT id FROM src_final_113711 FINAL; -- { serverError QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW }
 
-DROP TABLE v_nested_113711, v_sibling_113711, v_union2_113711, v_union_113711, v_in_chain_113711, v_in_113711, v_forward_113711, v_chain_113711, v_self_113711, pv_113711, v_settings_113711, v_113711;
-DROP TABLE src_final_113711, dst_bad_113711, dst_pinned_113711, dst_inner_113711, dst_forward_113711, dst_chain_113711, dst_113711, r_113711, src_113711;
+SELECT '-- materialized view with a CTE named like its source table: only the inserted block is read, once';
+CREATE TABLE src2_113711 (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO src2_113711 VALUES (1), (2), (3);
+CREATE TABLE dst_self_113711 (id UInt32, same UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_self_113711 TO dst_self_113711 AS
+WITH src2_113711 AS MATERIALIZED (SELECT id, rand64() AS x FROM src2_113711)
+SELECT a.id AS id, a.x = b.x AS same FROM src2_113711 AS a INNER JOIN src2_113711 AS b ON a.id = b.id;
+INSERT INTO src2_113711 VALUES (71), (72);
+SELECT * FROM dst_self_113711 ORDER BY id;
+DROP TABLE mv_self_113711;
+
+SELECT '-- an expansion copy of a plain CTE is classified with the scope of its declaration';
+CREATE TABLE t2_113711 (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t2_113711 VALUES (1), (2), (3);
+CREATE VIEW v_copy_113711 AS
+WITH p AS (SELECT * FROM t2_113711)
+SELECT * FROM (WITH t2_113711 AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM p);
+SELECT * FROM v_copy_113711 ORDER BY x;
+SELECT replaceRegexpOne(create_table_query, '.*AS WITH', 'WITH') FROM system.tables WHERE database = currentDatabase() AND name = 'v_copy_113711';
+
+SELECT '-- a view definition that fixes enable_global_with_statement bakes in the nested-reference failure';
+CREATE VIEW v_baked_113711 AS
+WITH r AS MATERIALIZED (SELECT 1 AS x)
+SELECT * FROM (SELECT * FROM r)
+SETTINGS enable_global_with_statement = 0; -- { serverError UNKNOWN_TABLE }
+
+DROP TABLE v_copy_113711, v_nested_113711, v_sibling_113711, v_union2_113711, v_union_113711, v_in_chain_113711, v_in_113711, v_forward_113711, v_chain_113711, v_self_113711, pv_113711, v_settings_113711, v_113711;
+DROP TABLE src_final_113711, dst_bad_113711, dst_self_113711, dst_pinned_113711, dst_inner_113711, dst_forward_113711, dst_chain_113711, dst_113711, t2_113711, r_113711, src2_113711, src_113711;
