@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -53,8 +52,6 @@ public:
     }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -70,24 +67,10 @@ private:
 
     void setChild(Child child, ASTPtr node)
     {
-        auto it = positions.find(child);
         if (node == nullptr)
-        {
-            /// Remove the child, shifting down the positions of the children stored after it.
-            if (it != positions.end())
-            {
-                const size_t removed_pos = it->second;
-                children.erase(children.begin() + removed_pos);
-                positions.erase(it);
-                for (auto & [_, pos] : positions)
-                {
-                    if (pos > removed_pos)
-                        --pos;
-                }
-            }
             return;
-        }
 
+        auto it = positions.find(child);
         if (it != positions.end())
         {
             children[it->second] = node;
@@ -116,8 +99,6 @@ public:
 
     String getID(char) const override { return "StorageOrderByElement"; }
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

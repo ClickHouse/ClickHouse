@@ -20,7 +20,7 @@ namespace DB
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
+    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -104,7 +104,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToModifiedJulianDay final : public IFunctionBase
+    class FunctionBaseToModifiedJulianDay : public IFunctionBase
     {
     public:
         explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -135,7 +135,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return !nullOnErrors;
+            return true;
         }
 
         bool hasInformationAboutMonotonicity() const override
@@ -145,9 +145,6 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            /// The OrNull variant maps multiple invalid inputs to NULL, breaking monotonicity.
-            if constexpr (nullOnErrors)
-                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
@@ -157,7 +154,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
+    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -205,7 +202,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return !nullOnErrors;
+            return true;
         }
     };
 
@@ -267,12 +264,12 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         )",
             R"(
-┌─toModifiedJulianDayOrNull('2020-01-01')─┐
-│                                   58849 │
-└─────────────────────────────────────────┘
-┌─toModifiedJulianDayOrNull('0000-00-00')─┐
-│                                    ᴺᵁᴸᴸ │
-└─────────────────────────────────────────┘
+┌─toModifiedJu⋯020-01-01')─┐
+│                    58849 │
+└──────────────────────────┘
+┌─toModifiedJu⋯000-00-00')─┐
+│                     ᴺᵁᴸᴸ │
+└──────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};

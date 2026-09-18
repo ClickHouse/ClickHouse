@@ -1,3 +1,0 @@
-INSERT INTO t VALUES (1, 'hello'), (2, 'world')
-INSERT INTO t VALUES (1, 'hello'), (2, 'world')
-

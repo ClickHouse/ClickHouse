@@ -16,7 +16,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -25,24 +24,19 @@ namespace
 /// Implements the function ifNull which takes 2 arguments and returns
 /// the value of the 1st argument if it is not null. Otherwise it returns
 /// the value of the 2nd argument.
-class FunctionIfNull final : public IFunction
+class FunctionIfNull : public IFunction
 {
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(ContextPtr context, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_)
-        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
-        , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
-        , if_function(FunctionFactory::instance().get("if", context))
+    explicit FunctionIfNull(ContextPtr context_, bool use_variant_as_common_type_)
+        : context(context_)
         , use_variant_as_common_type(use_variant_as_common_type_)
-        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {}
 
     static FunctionPtr create(ContextPtr context)
     {
-        const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionIfNull>(
-            context, settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        return std::make_shared<FunctionIfNull>(context, context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     std::string getName() const override
@@ -83,8 +77,8 @@ public:
         auto args = DataTypes{removeNullable(arguments[0]), arguments[1]};
         bool has_variant = std::any_of(args.begin(), args.end(), [](const auto & t) { return isVariant(t); });
         if (use_variant_as_common_type || has_variant)
-            return getLeastSupertypeOrVariant(args, allow_lossy_numeric_supertype);
-        return getLeastSupertype(args, allow_lossy_numeric_supertype);
+            return getLeastSupertypeOrVariant(args);
+        return getLeastSupertype(args);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -101,28 +95,28 @@ public:
 
         ColumnsWithTypeAndName columns{arguments[0]};
 
+        auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(columns);
         auto is_not_null_type = std::make_shared<DataTypeUInt8>();
-        auto is_not_null_res = is_not_null->build(columns)->execute(columns, is_not_null_type, input_rows_count, /* dry_run = */ false);
+        auto is_not_null_res = is_not_null->execute(columns, is_not_null_type, input_rows_count, /* dry_run = */ false);
 
+        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(columns);
         auto assume_not_null_type = removeNullable(arguments[0].type);
-        auto assume_not_null_res = assume_not_null->build(columns)->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
+        auto assume_nut_null_res = assume_not_null->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
 
         ColumnsWithTypeAndName if_columns
         {
                 {is_not_null_res, is_not_null_type, ""},
-                {assume_not_null_res, assume_not_null_type, ""},
+                {assume_nut_null_res, assume_not_null_type, ""},
                 arguments[1],
         };
 
-        return if_function->build(if_columns)->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
+        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
+        return func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
 private:
-    FunctionOverloadResolverPtr is_not_null;
-    FunctionOverloadResolverPtr assume_not_null;
-    FunctionOverloadResolverPtr if_function;
+    ContextPtr context;
     bool use_variant_as_common_type = false;
-    bool allow_lossy_numeric_supertype = false;
 };
 
 }

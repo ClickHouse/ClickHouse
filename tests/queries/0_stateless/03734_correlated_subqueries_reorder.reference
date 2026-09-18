@@ -90,9 +90,7 @@ Positions: 1
                     ReadType: Default
                     Parts: 1
                     Granules: 1
-                  Distinct
-                  Columns: __table2.p_partkey
-                    ReadFromCommonBuffer
+                  ReadFromCommonBuffer
           SaveSubqueryResultToBuffer
             JoinLogical
             Join: part[10000] ⋈ lineitem[100]
@@ -138,7 +136,7 @@ Positions: 1
                 JoinLogical
                 Type: INNER
                     ReadFromMergeTree (default.lineitem)
-                    ReadFromCommonBuffer
+                  ReadFromCommonBuffer
           SaveSubqueryResultToBuffer
               JoinLogical
               Type: INNER
@@ -150,7 +148,7 @@ Positions: 1
                 JoinLogical (JOIN to evaluate correlated expression)
                 Type: INNER
                     ReadFromMergeTree (default.lineitem)
-                    ReadFromCommonBuffer
+                  ReadFromCommonBuffer
           SaveSubqueryResultToBuffer
               JoinLogical
               Type: INNER

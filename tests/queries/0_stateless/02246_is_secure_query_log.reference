@@ -2,7 +2,7 @@ native plain
 native secure
 http plain
 http secure
-TCP	0
-TCP	1
-HTTP	0
-HTTP	1
+1	0
+1	1
+2	0
+2	1

@@ -1,5 +1,4 @@
 -- Tests that min-max statistics created over negative values work
-SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -16,7 +15,7 @@ CREATE TABLE tab (
 )
 ENGINE = MergeTree()
 ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic';
+SETTINGS auto_statistics_types = 'minmax';
 
 -- Insert a bunch of negative values
 INSERT INTO tab VALUES (-100, -100, -100, -100, -100, -100, -100.0, -100.0, -100.0), (-50, -50, -50, -50, -50, -50, -50.0, -50.0, -50.0), (-1, -1, -1, -1, -1, -1, -1.0, -1.0, -1.0);
