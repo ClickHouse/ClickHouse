@@ -3635,6 +3635,10 @@ def test_count_from_cache(started_cluster):
             f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+    explain = instance.query(
+        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert "ReadFromPreparedSource (Optimized trivial count)" in explain, explain
 
     # The legacy Delta metadata never reports a total row count, so on the very same table
     # count() falls back to per-file row counts, which is what the row count cache holds.
@@ -3653,6 +3657,12 @@ def test_count_from_cache(started_cluster):
             f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{legacy_query_id}' and type = 'QueryFinish'"
         )
     )
+    legacy_explain = legacy_instance.query(
+        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert (
+        "ReadFromPreparedSource (Optimized trivial count)" not in legacy_explain
+    ), legacy_explain
 
     assert (
         "3\t3"
