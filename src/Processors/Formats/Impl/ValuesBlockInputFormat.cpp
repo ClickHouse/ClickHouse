@@ -591,7 +591,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (templates[column_idx])
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
                                 std::to_string(column_idx));
-        std::exception_ptr & exception = template_exception;
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
@@ -628,15 +627,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         }
         catch (...)
         {
-            exception = std::current_exception();
+            template_exception = std::current_exception();
         }
         if (!format_settings.values.interpret_expressions)
         {
-            if (exception)
+            if (template_exception)
             {
                 try
                 {
-                    std::rethrow_exception(exception);
+                    std::rethrow_exception(template_exception);
                 }
                 catch (Exception & e)
                 {
