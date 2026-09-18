@@ -267,60 +267,9 @@ public:
     /// fixed defaults. An engine with settings of its own overrides this to report every one of them with its
     /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
     /// It is a method on the storage rather than a static enumeration of the settings type because some values
-    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`.
+    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. Overrides build their answer
+    /// with the helpers in `Storages/TableSettingsHelpers.h`.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
-
-    /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
-    /// the two are the same. For an engine that accepts legacy spellings its loader rewrites -
-    /// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
-    /// without declaring them as aliases, so nothing else can know they refer to the same setting.
-    using SettingNameNormalizer = std::function<std::optional<std::string_view>(std::string_view)>;
-
-    /// Marks as `Definition` every setting the table's own `SETTINGS` clause names, and leaves the
-    /// rest as enumerated. Enough for an engine whose settings can only come from its defaults or
-    /// its definition; an engine with a further source - a config section, a named collection,
-    /// replicated metadata - attributes that itself before or after calling this.
-    SettingDescriptions attributeSettingsStatedInDefinition(
-        SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
-
-    /// Replaces the reported value of every setting in `only_these` that the table's own `SETTINGS` clause
-    /// names with the value the clause states. For an engine that keeps no settings object and rebuilds one
-    /// from its own state: what the rebuild does not assign carries a compiled-in default, while the table
-    /// works with what its definition said - see `StorageObjectStorageQueue`.
-    ///
-    /// `only_these` must hold settings whose value the engine derives from nothing but the definition. This
-    /// sets the value and leaves `origin` alone, so a setting the engine does derive - from replicated
-    /// metadata, a config section, a named collection - would keep a source naming where the value did not
-    /// come from. An engine that reconstructs its settings must also account for the states in which the
-    /// reconstruction does not run, where every setting looks unassigned.
-    SettingDescriptions reportValuesStatedInDefinition(
-        SettingDescriptions settings, ContextPtr context, const NameSet & only_these,
-        const SettingNameNormalizer & normalize = {}) const;
-
-    /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
-    /// enumeration masks it, and sets `origin` when given. For an engine that derives its working values after
-    /// loading its settings - by macro expansion, a generated default or a server config fallback.
-    static void reportEffectiveValue(
-        SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin = {});
-
-    /// The same for a value the engine takes from a server config section when the table's own is empty: reported
-    /// as coming from the config when `stated` is empty and `value` is not.
-    static void reportEffectiveValueWithConfigFallback(
-        SettingDescriptions & settings, std::string_view name, const String & stated, const String & value);
-
-    /// Marks as `NamedCollection` every setting in `supplied_by_collection`, which the engine's creator takes
-    /// from the collection it was built from - see `settingsSuppliedByNamedCollection`. Recorded there and not
-    /// looked up here on purpose: the engine arguments may override a collection's key, and the collection may
-    /// be altered afterwards, so what it holds at read time answers for neither this table nor this value.
-    /// Empty for a table whose arguments were positional.
-    static void attributeSettingsFromNamedCollection(SettingDescriptions & settings, const NameSet & supplied_by_collection);
-
-    /// Recomputes `origin` from the value alone: `Default` where it equals the compiled-in default and
-    /// `Other` where it does not. For an engine whose loader assigns every setting from the session -
-    /// `PostgreSQLSettings::loadFromQueryContext` does - which marks them all as changed even where the
-    /// session holds the compiled-in default, so the change alone says nothing about where a value is from.
-    /// Call before attributing the definition, which overrides both.
-    static void reportOriginByValue(SettingDescriptions & settings);
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

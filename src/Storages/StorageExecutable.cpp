@@ -31,6 +31,7 @@
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/TableSettingsHelpers.h>
 
 
 namespace DB
@@ -747,7 +748,7 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
 
 SettingDescriptions StorageExecutable::getTableSettings(ContextPtr query_context) const
 {
-    return attributeSettingsStatedInDefinition(settings->enumerateSettings(), query_context);
+    return withOriginFromDefinition(settings->enumerateSettings(), getStorageID(), query_context);
 }
 
 }

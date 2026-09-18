@@ -53,6 +53,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/TableSettingsHelpers.h>
 
 namespace CurrentMetrics
 {
@@ -1577,7 +1578,7 @@ SettingDescriptions StorageHive::getTableSettings(ContextPtr query_context) cons
 {
     /// `HiveSettings::loadFromConfig` exists but nothing calls it, so despite the `hive` config
     /// section a `Hive` table's settings can only come from its defaults or its definition.
-    return attributeSettingsStatedInDefinition(storage_settings->enumerateSettings(), query_context);
+    return withOriginFromDefinition(storage_settings->enumerateSettings(), getStorageID(), query_context);
 }
 
 }

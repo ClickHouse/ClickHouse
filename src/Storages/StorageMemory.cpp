@@ -19,6 +19,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -875,7 +876,7 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 
 SettingDescriptions StorageMemory::getTableSettings(ContextPtr query_context) const
 {
-    return attributeSettingsStatedInDefinition(memory_settings->enumerateSettings(), query_context);
+    return withOriginFromDefinition(memory_settings->enumerateSettings(), getStorageID(), query_context);
 }
 
 }

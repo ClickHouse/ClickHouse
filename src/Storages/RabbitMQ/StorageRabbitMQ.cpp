@@ -29,6 +29,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
@@ -1784,19 +1785,19 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
 {
     /// See `SettingOrigin::NamedCollection`.
     auto settings = rabbitmq_settings->enumerateSettings();
-    attributeSettingsFromNamedCollection(settings, settings_from_named_collection);
-    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    setOrigin(settings, settings_from_named_collection, SettingOrigin::NamedCollection);
+    settings = withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 
     /// What the table works with. The constructor expands macros in these, and lets the `rabbitmq` server config
     /// section's `vhost` override the table's.
-    reportEffectiveValue(settings, "rabbitmq_exchange_name", exchange_name);
-    reportEffectiveValue(settings, "rabbitmq_format", format_name);
-    reportEffectiveValue(settings, "rabbitmq_routing_key_list", boost::algorithm::join(routing_keys, ","));
-    reportEffectiveValue(settings, "rabbitmq_schema", schema_name);
-    reportEffectiveValue(settings, "rabbitmq_queue_base", queue_base);
-    reportEffectiveValue(settings, "rabbitmq_queue_settings_list", boost::algorithm::join(queue_settings_list, ","));
-    reportEffectiveValue(settings, "rabbitmq_address", configuration.connection_string);
-    reportEffectiveValue(
+    setEffectiveValue(settings, "rabbitmq_exchange_name", exchange_name);
+    setEffectiveValue(settings, "rabbitmq_format", format_name);
+    setEffectiveValue(settings, "rabbitmq_routing_key_list", boost::algorithm::join(routing_keys, ","));
+    setEffectiveValue(settings, "rabbitmq_schema", schema_name);
+    setEffectiveValue(settings, "rabbitmq_queue_base", queue_base);
+    setEffectiveValue(settings, "rabbitmq_queue_settings_list", boost::algorithm::join(queue_settings_list, ","));
+    setEffectiveValue(settings, "rabbitmq_address", configuration.connection_string);
+    setEffectiveValue(
         settings, "rabbitmq_vhost", configuration.vhost,
         getContext()->getConfigRef().has("rabbitmq.vhost") ? std::optional(SettingOrigin::Config) : std::nullopt);
 
@@ -1804,9 +1805,9 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
     /// none. A `rabbitmq_address` table takes them from the address, and these two settings are not used.
     if (!configuration.host.empty())
     {
-        reportEffectiveValueWithConfigFallback(
+        setEffectiveValueWithConfigFallback(
             settings, "rabbitmq_username", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
-        reportEffectiveValueWithConfigFallback(
+        setEffectiveValueWithConfigFallback(
             settings, "rabbitmq_password", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
     }
     return settings;

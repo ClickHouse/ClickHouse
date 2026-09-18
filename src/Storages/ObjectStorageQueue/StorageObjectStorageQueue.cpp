@@ -39,6 +39,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/TableSettingsHelpers.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
@@ -2238,7 +2240,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// carries the shared format settings, is left at a compiled-in default even when the table's own
     /// definition states it: `registerQueueStorage` turns those into the table's `FormatSettings`, which the
     /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
-    /// that distinction is visible, before the loop below overwrites it.
+    /// that distinction is visible, before `setOriginByValue` below overwrites it.
     ///
     /// `getSettings` reports whether it read the shared metadata: it returns an untouched object when this
     /// table has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that
@@ -2262,23 +2264,30 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
     /// and distinguishes nothing - the same reason `dumpToSystemEngineSettingsColumns` compares
     /// against the table metadata instead. Recover the distinction by value.
-    for (auto & setting : settings)
-        setting.origin = setting.value == setting.default_value
-            ? SettingOrigin::Default
-            : SettingOrigin::Other;
+    setOriginByValue(settings);
+
+    /// Read once: the names mark the origin and the values fill in what the rebuild left out, and both have
+    /// to come from the same reading of the definition, or an `ALTER` in between would split them.
+    const auto stated = getSettingsStatedInDefinition(getStorageID(), query_context);
 
     /// The definition may spell a setting the way this engine used to accept it - with the
     /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
     /// those rather than declaring them as aliases. Attribution has to read them the same way, or a
     /// table created with a legacy spelling reports its settings as coming from nowhere.
-    settings = attributeSettingsStatedInDefinition(
-        std::move(settings), query_context, ObjectStorageQueueSettings::adjustSettingName);
+    settings = withOriginFromDefinition(std::move(settings), stated, ObjectStorageQueueSettings::adjustSettingName);
 
     /// For a setting the rebuild does not assign, the definition is the only source of the value the table
-    /// works with, so reporting the rebuilt default would say the table ignores a setting it honours.
-    /// Disjoint from the shared metadata below, which the rebuild does assign.
-    settings = reportValuesStatedInDefinition(
-        std::move(settings), query_context, not_assigned_by_rebuild, ObjectStorageQueueSettings::adjustSettingName);
+    /// works with, so reporting the rebuilt default would say the table ignores a setting it honours. Only
+    /// the value: the origin is already `Definition`. Disjoint from the shared metadata below, which the
+    /// rebuild does assign - see `not_assigned_by_rebuild`.
+    for (const auto & change : stated)
+    {
+        std::string_view name = change.name;
+        if (const auto canonical = ObjectStorageQueueSettings::adjustSettingName(name))
+            name = *canonical;
+        if (not_assigned_by_rebuild.contains(String{name}))
+            setEffectiveValue(settings, name, convertFieldToString(change.value));
+    }
 
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
@@ -2286,9 +2295,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// read it, though - otherwise these rows carry what the definition states, as every other
     /// unassigned setting does, and saying `shared_metadata` would name a source never consulted.
     if (rebuilt_from_shared_metadata)
-        for (auto & setting : settings)
-            if (held_in_shared_metadata.contains(setting.name))
-                setting.origin = SettingOrigin::SharedMetadata;
+        setOrigin(settings, held_in_shared_metadata, SettingOrigin::SharedMetadata);
 
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
     /// so the rebuilt settings object always carries its default. Report what the table actually
@@ -2296,7 +2303,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// origin. The origin is taken even when the value is the default: they are one setting after the
     /// fold, and `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
     if (const auto mode = std::ranges::find(settings, "partitioning_mode", &SettingDescription::name); mode != settings.end())
-        reportEffectiveValue(settings, "use_hive_partitioning", mode->value == "hive" ? "1" : "0", mode->origin);
+        setEffectiveValue(settings, "use_hive_partitioning", mode->value == "hive" ? "1" : "0", mode->origin);
 
     return settings;
 }

@@ -95,6 +95,7 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -2884,7 +2885,7 @@ SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_contex
         if (setting.origin == SettingOrigin::Other && changed_by_config.contains(setting.name))
             setting.origin = SettingOrigin::Config;
 
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 }
 
 }

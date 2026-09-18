@@ -14,20 +14,23 @@ namespace DB
 /// Where the effective value of a table setting came from. Exposed as `system.table_settings.source`.
 ///
 /// When several sources wrote a setting, the one reported is whichever wrote it last, and that order is the
-/// engine's, not this list's. Most engines apply the table's own `SETTINGS` clause last, so `Definition`
-/// outranks `Config`, `Compatibility` and `NamedCollection`. `S3Queue` and `AzureQueue` apply `SharedMetadata`
-/// after the definition, deliberately: an `ALTER ... MODIFY SETTING` on another replica has already changed
-/// the value this replica uses while its own `CREATE` query still states the old one. An engine that adds a
-/// source has to decide where it belongs relative to the definition.
+/// engine's. The values are declared in the order the engines apply them - each later source overriding the
+/// earlier ones, as when the table is built - and the column is an `Enum8` of them, so `ORDER BY source` sorts
+/// by that precedence: keep it when adding a value. Most engines apply the table's own `SETTINGS` clause after
+/// a config section, `compatibility` and a named collection, so `Definition` outranks those. `S3Queue` and
+/// `AzureQueue` apply `SharedMetadata` after the definition, deliberately: an `ALTER ... MODIFY SETTING` on
+/// another replica has already changed the value this replica uses while its own `CREATE` query still states
+/// the old one. An engine that adds a source has to decide where it belongs relative to the definition.
 enum class SettingOrigin : uint8_t
 {
     Default,          /// the engine's compiled-in default
     Config,           /// a server config section, e.g. <merge_tree> or <distributed>
     Compatibility,    /// rolled back to an older release's default by the `compatibility` setting
-    Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
-    /// A named collection referenced in the engine arguments. Only an engine that keeps the collection's
-    /// name can report it (`Kafka`); the others report `Other` for a setting the collection changed.
+    /// A named collection the table was built from, for the settings it actually supplied - not those the
+    /// engine arguments overrode. Reported by the engines that record them when the table is created: `Kafka`,
+    /// `PostgreSQL`, `MySQL`, `NATS` and `RabbitMQ`.
     NamedCollection,
+    Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
     SharedMetadata,   /// replicated table metadata, e.g. Keeper for S3Queue and AzureQueue
     /// Adjusted by the engine while it runs, and not written back to its settings - the case
     /// `SHOW CREATE TABLE` cannot serve. ⚠️ Reserved: nothing reports it yet. The intended first

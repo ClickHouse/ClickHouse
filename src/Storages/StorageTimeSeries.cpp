@@ -30,6 +30,7 @@
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
 #include <boost/algorithm/string.hpp>
@@ -1363,7 +1364,7 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
 
 SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr query_context) const
 {
-    return attributeSettingsStatedInDefinition(storage_settings.get()->enumerateSettings(), query_context);
+    return withOriginFromDefinition(storage_settings.get()->enumerateSettings(), getStorageID(), query_context);
 }
 
 }

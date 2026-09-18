@@ -2,6 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/Context.h>
@@ -208,7 +209,7 @@ SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) cons
     for (auto & setting : persistenceSettings())
         settings.push_back(std::move(setting));
 
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 }
 
 SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)

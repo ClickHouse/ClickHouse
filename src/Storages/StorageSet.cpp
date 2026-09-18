@@ -4,6 +4,7 @@
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -221,7 +222,7 @@ SettingDescriptions StorageSet::getTableSettings(ContextPtr query_context) const
     /// them with the values it holds. Unstated, they are the struct's fixed defaults - not server settings, unlike
     /// `StorageJoin`'s. The format settings `SetSettings` also declares are accepted and never read, so a row for one
     /// would describe nothing the table does.
-    return attributeSettingsStatedInDefinition(persistenceSettings(), query_context);
+    return withOriginFromDefinition(persistenceSettings(), getStorageID(), query_context);
 }
 
 SetPtr StorageSet::getSet() const

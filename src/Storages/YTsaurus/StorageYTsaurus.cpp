@@ -10,6 +10,7 @@
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
 #include <Processors/Sources/YTsaurusSource.h>
@@ -300,7 +301,7 @@ SELECT * FROM yt_saurus;
 SettingDescriptions StorageYTsaurus::getTableSettings(ContextPtr query_context) const
 {
     /// See `SettingOrigin::NamedCollection`.
-    return attributeSettingsStatedInDefinition(settings.enumerateSettings(), query_context);
+    return withOriginFromDefinition(settings.enumerateSettings(), getStorageID(), query_context);
 }
 
 }

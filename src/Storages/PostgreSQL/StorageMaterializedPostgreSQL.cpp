@@ -38,6 +38,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -162,15 +163,13 @@ SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr q
     /// `materialized_postgresql_tables_list`, which the constructor sets to this table's remote name - the
     /// value the replication handler works with, reported as `other` since the definition did not state it.
     SettingDescriptions settings = replication_settings->enumerateSettings();
-    reportOriginByValue(settings);
-    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    setOriginByValue(settings);
+    settings = withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 
     /// The constructor replaced this one with the table's own remote name, so the value reported is the
     /// handler's rather than the clause's even where the clause states it - and `definition` promises the
     /// value came from the clause. Say `other` instead, as for anything else the engine assigned itself.
-    for (auto & setting : settings)
-        if (setting.name == "materialized_postgresql_tables_list")
-            setting.origin = SettingOrigin::Other;
+    setOrigin(settings, {"materialized_postgresql_tables_list"}, SettingOrigin::Other);
 
     return settings;
 }

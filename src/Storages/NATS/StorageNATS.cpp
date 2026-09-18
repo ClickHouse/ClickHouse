@@ -33,6 +33,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -1705,25 +1706,25 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) cons
 {
     /// See `SettingOrigin::NamedCollection`.
     auto settings = nats_settings->enumerateSettings();
-    attributeSettingsFromNamedCollection(settings, settings_from_named_collection);
-    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    setOrigin(settings, settings_from_named_collection, SettingOrigin::NamedCollection);
+    settings = withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no
     /// authentication of its own, takes it from the `nats` server config section.
-    reportEffectiveValue(settings, "nats_subjects", boost::algorithm::join(subjects, ","));
-    reportEffectiveValue(settings, "nats_format", format_name);
-    reportEffectiveValue(settings, "nats_schema", schema_name);
-    reportEffectiveValue(settings, "nats_url", configuration.url);
-    reportEffectiveValue(settings, "nats_server_list", boost::algorithm::join(configuration.servers, ","));
-    reportEffectiveValue(settings, "nats_credentials", configuration.credentials);
-    reportEffectiveValue(settings, "nats_ca_file", configuration.ca_file);
-    reportEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
-    reportEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
+    setEffectiveValue(settings, "nats_subjects", boost::algorithm::join(subjects, ","));
+    setEffectiveValue(settings, "nats_format", format_name);
+    setEffectiveValue(settings, "nats_schema", schema_name);
+    setEffectiveValue(settings, "nats_url", configuration.url);
+    setEffectiveValue(settings, "nats_server_list", boost::algorithm::join(configuration.servers, ","));
+    setEffectiveValue(settings, "nats_credentials", configuration.credentials);
+    setEffectiveValue(settings, "nats_ca_file", configuration.ca_file);
+    setEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
+    setEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
 
-    reportEffectiveValueWithConfigFallback(settings, "nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
-    reportEffectiveValueWithConfigFallback(settings, "nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
-    reportEffectiveValueWithConfigFallback(settings, "nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
-    reportEffectiveValueWithConfigFallback(
+    setEffectiveValueWithConfigFallback(settings, "nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
+    setEffectiveValueWithConfigFallback(settings, "nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
+    setEffectiveValueWithConfigFallback(settings, "nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
+    setEffectiveValueWithConfigFallback(
         settings, "nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
     return settings;
 }

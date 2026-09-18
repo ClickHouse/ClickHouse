@@ -140,6 +140,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
@@ -14144,7 +14145,7 @@ SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) co
     merge_tree_settings->applyConstraints(settings, constraints_and_profiles->constraints);
 
     /// Last: the table's own `SETTINGS` clause is applied after everything above.
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 }
 
 }

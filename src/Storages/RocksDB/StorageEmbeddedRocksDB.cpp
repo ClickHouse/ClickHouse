@@ -13,6 +13,7 @@
 #include <Storages/KVStorageUtils.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1769,7 +1770,7 @@ void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands
 
 SettingDescriptions StorageEmbeddedRocksDB::getTableSettings(ContextPtr query_context) const
 {
-    return attributeSettingsStatedInDefinition(storage_settings.get()->enumerateSettings(), query_context);
+    return withOriginFromDefinition(storage_settings.get()->enumerateSettings(), getStorageID(), query_context);
 }
 
 }

@@ -52,6 +52,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
@@ -135,13 +136,13 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
     /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
     /// nothing here and the source has to come from the value.
     SettingDescriptions descriptions = settings.enumerateSettings();
-    reportOriginByValue(descriptions);
+    setOriginByValue(descriptions);
 
     /// Except for what a named collection supplied, which is neither the session's nor a default - and which
     /// the value cannot reveal, since a collection may well state the default.
-    attributeSettingsFromNamedCollection(descriptions, settings_from_named_collection);
+    setOrigin(descriptions, settings_from_named_collection, SettingOrigin::NamedCollection);
 
-    return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
+    return withOriginFromDefinition(std::move(descriptions), getStorageID(), query_context);
 }
 
 VirtualColumnsDescription StoragePostgreSQL::createVirtuals()

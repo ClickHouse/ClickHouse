@@ -35,6 +35,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 
 
@@ -969,8 +970,8 @@ ColumnsDescription doQueryResultStructure(
 SettingDescriptions StorageMySQL::getTableSettings(ContextPtr query_context) const
 {
     auto settings = mysql_settings->enumerateSettings();
-    attributeSettingsFromNamedCollection(settings, settings_from_named_collection);
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    setOrigin(settings, settings_from_named_collection, SettingOrigin::NamedCollection);
+    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 }
 
 }

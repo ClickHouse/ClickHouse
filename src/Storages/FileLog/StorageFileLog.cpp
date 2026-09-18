@@ -27,6 +27,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -1207,7 +1208,7 @@ bool StorageFileLog::updateFileInfos()
 
 SettingDescriptions StorageFileLog::getTableSettings(ContextPtr query_context) const
 {
-    return attributeSettingsStatedInDefinition(filelog_settings->enumerateSettings(), query_context);
+    return withOriginFromDefinition(filelog_settings->enumerateSettings(), getStorageID(), query_context);
 }
 
 }

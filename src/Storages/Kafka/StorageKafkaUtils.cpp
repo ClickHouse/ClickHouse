@@ -25,6 +25,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
@@ -1182,7 +1183,7 @@ namespace DB::StorageKafkaUtils
 {
 
 /// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values.
-/// Both befriend this: the `IStorage` helpers it composes are public, but the state it reports - the collection
+/// Both befriend this: the helpers it composes are free functions, but the state it reports - the collection
 /// name, the expanded topics, the brokers, the group, the format, the schema and the generated client id - is
 /// private to each storage, and neither exposes all of it.
 template <typename KafkaStorage>
@@ -1197,19 +1198,19 @@ SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr qu
     ///
     /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
     /// guessing `named_collection` for it would be wrong, and there is no source to name.
-    KafkaStorage::attributeSettingsFromNamedCollection(settings, storage.settings_from_named_collection);
+    setOrigin(settings, storage.settings_from_named_collection, SettingOrigin::NamedCollection);
 
     /// The `SETTINGS` clause is applied last and so wins over the collection.
-    settings = storage.attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    settings = withOriginFromDefinition(std::move(settings), storage.getStorageID(), query_context);
 
     /// What the table works with: the constructor expands macros in these, and generates a client id when none is
     /// given - a value nothing but the engine set.
-    KafkaStorage::reportEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(storage.topics, ","));
-    KafkaStorage::reportEffectiveValue(settings, "kafka_broker_list", storage.brokers);
-    KafkaStorage::reportEffectiveValue(settings, "kafka_group_name", storage.group);
-    KafkaStorage::reportEffectiveValue(settings, "kafka_format", storage.format_name);
-    KafkaStorage::reportEffectiveValue(settings, "kafka_schema", storage.schema_name);
-    KafkaStorage::reportEffectiveValue(
+    setEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(storage.topics, ","));
+    setEffectiveValue(settings, "kafka_broker_list", storage.brokers);
+    setEffectiveValue(settings, "kafka_group_name", storage.group);
+    setEffectiveValue(settings, "kafka_format", storage.format_name);
+    setEffectiveValue(settings, "kafka_schema", storage.schema_name);
+    setEffectiveValue(
         settings, "kafka_client_id", storage.client_id,
         (*storage.kafka_settings)[KafkaSetting::kafka_client_id].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
     return settings;

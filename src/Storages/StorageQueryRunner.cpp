@@ -23,6 +23,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/QueryRunnerSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -805,8 +806,8 @@ SettingDescriptions StorageQueryRunner::getTableSettings(ContextPtr query_contex
     /// The engine reads its settings from the definition alone, so what the definition does not state is at
     /// the compiled-in default.
     SettingDescriptions descriptions = settings.enumerateSettings();
-    reportOriginByValue(descriptions);
-    return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
+    setOriginByValue(descriptions);
+    return withOriginFromDefinition(std::move(descriptions), getStorageID(), query_context);
 }
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
