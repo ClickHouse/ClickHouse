@@ -166,11 +166,7 @@ public:
         BlockMissingValues * block_missing_values = nullptr);
 
     void orcColumnsToCHChunk(
-        Chunk & res,
-        NameToColumnPtr & name_to_column_ptr,
-        const Names & orc_field_names,
-        size_t num_rows,
-        BlockMissingValues * block_missing_values = nullptr);
+        Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
 private:
     ColumnWithTypeAndName readColumnFromORCColumn(

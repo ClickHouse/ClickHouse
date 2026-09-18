@@ -42,8 +42,6 @@ public:
         bool is_failed = false;
         /// Query was discarded (low-selectivity hint, pattern bypass).
         bool is_bypassed = false;
-        /// The dictionary scan stopped early, so the matched tokens are incomplete and nothing can be pruned.
-        bool is_analysis_incomplete = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
@@ -85,6 +83,7 @@ public:
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
+    size_t memoryUsageBytes() const;
 
 private:
     using QueryHashes = absl::flat_hash_set<UInt128>;

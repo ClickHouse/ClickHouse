@@ -4,14 +4,10 @@ Output: a, b, x, y
 Join (JOIN FillRightFirst)
 │  t1 ⋈ t2
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
-│  Cost: estimated no stats
-│  Selectivity: estimated (NDV) no stats
-│  Output rows: estimated no stats
-│  Left: rows estimated no stats
-│  Right: rows estimated no stats
 │  Join conditions: a = x
-│  Input (left): a, b
-│  Input (right): x, y
+│  Output:
+│    Left:  a, b
+│    Right: x, y
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -26,14 +22,10 @@ Output: a, b, x, y
 Join (JOIN FillRightFirst)
 │  t1 ⋈ t2
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
-│  Cost: estimated no stats
-│  Selectivity: estimated (NDV) no stats
-│  Output rows: estimated no stats
-│  Left: rows estimated no stats
-│  Right: rows estimated no stats
 │  Join conditions: a <=> x
-│  Input (left): a, b
-│  Input (right): x, y
+│  Output:
+│    Left:  a, b
+│    Right: x, y
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
