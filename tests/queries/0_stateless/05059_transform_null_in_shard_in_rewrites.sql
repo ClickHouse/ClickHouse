@@ -263,6 +263,15 @@ SELECT 'correlated key value, setting off', count() FROM t2_120650 WHERE dictGet
 SELECT 'correlated key value, rewrite off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'correlated key not hinted', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
 
+-- A key expression that needs a conversion keeps its comparison: `dictGet` casts it to the key type
+-- with `castColumnAccurate`, while both rewrite arms would compare it against bare key values in a
+-- common supertype, so the cast that must throw for an out-of-range value would never run.
+SELECT 'int64 key value', count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x'),
+       sum(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032;
+SELECT 'int64 key value, rewrite off', count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x'),
+       sum(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'int64 key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+
 -- A complex key is a tuple of declared columns whatever its width, and the set holds bare key values,
 -- so a complex-key dictionary keeps its comparison at any width.
 DROP DICTIONARY IF EXISTS cd_120650;

@@ -89,6 +89,9 @@ correlated key value	3
 correlated key value, setting off	3
 correlated key value, rewrite off	3
 correlated key not hinted	0
+int64 key value	100	3
+int64 key value, rewrite off	100	3
+int64 key not rewritten	0
 complex key like value	90	3
 complex key like value, rewrite off	90	3
 complex key where	3
