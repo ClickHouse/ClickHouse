@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <base/types.h>
 
 constexpr size_t MAX_FIXEDSTRING_SIZE = 0xFFFFFF;
 constexpr size_t MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS = 256;
@@ -10,10 +11,23 @@ namespace DB
 
 class ColumnFixedString;
 
+enum class FixedStringTextRepresentation : UInt8
+{
+    Raw,
+    Hex,
+    Base64,
+    Base64URL,
+    Base58,
+};
+
+String fixedStringTextRepresentationToString(FixedStringTextRepresentation representation);
+FixedStringTextRepresentation parseFixedStringTextRepresentation(const String & representation);
+
 class DataTypeFixedString final : public IDataType
 {
 private:
     size_t n;
+    FixedStringTextRepresentation text_representation;
 
 public:
     using ColumnType = ColumnFixedString;
@@ -21,7 +35,7 @@ public:
     static constexpr bool is_parametric = true;
     static constexpr auto type_id = TypeIndex::FixedString;
 
-    explicit DataTypeFixedString(size_t n_);
+    explicit DataTypeFixedString(size_t n_, FixedStringTextRepresentation text_representation_ = FixedStringTextRepresentation::Raw);
 
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return type_id; }
@@ -31,6 +45,16 @@ public:
     size_t getN() const
     {
         return n;
+    }
+
+    FixedStringTextRepresentation getTextRepresentation() const
+    {
+        return text_representation;
+    }
+
+    bool hasCustomTextRepresentation() const
+    {
+        return text_representation != FixedStringTextRepresentation::Raw;
     }
 
     MutableColumnPtr createColumn() const override;
