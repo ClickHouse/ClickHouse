@@ -410,6 +410,70 @@ TEST_F(AggregatorParallelPartitionMerge, LowCardinalityStringKey)
     EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4), expected);
 }
 
+/// The parallel two-level `mergeBlocks` path shares one result method between bucket workers. Each worker
+/// must use a bucket-local dictionary-position cache because the partial `LowCardinality` columns have
+/// different dictionaries and their mapped values belong to different bucket hash tables.
+TEST_F(AggregatorParallelPartitionMerge, LowCardinalityBucketCachesAreIsolated)
+{
+    const DataTypePtr lc_type = std::make_shared<DataTypeLowCardinality>(uint64_type);
+    auto params = makeParams({"k"}, {makeAggregate("sum", {"v"}, {uint64_type})});
+    params.group_by_two_level_threshold = 1;
+    params.max_threads = 4;
+    Scenario scenario(makeHeader(lc_type), std::move(params));
+
+    auto make_block = [&](UInt64 offset)
+    {
+        std::vector<Field> keys;
+        keys.reserve(60000);
+        for (UInt64 key = 0; key < 60000; ++key)
+            keys.emplace_back(offset + key);
+        return Columns{makeColumn(lc_type, keys), makeColumn(uint64_type, keys)};
+    };
+
+    auto first = scenario.aggregate({make_block(0)});
+    auto second = scenario.aggregate({make_block(60000)});
+    ASSERT_TRUE(first->isTwoLevel());
+    ASSERT_TRUE(second->isTwoLevel());
+
+    Aggregator::BucketToChunks bucket_to_chunks;
+    size_t input_rows = 0;
+    auto append_chunks = [&](AggregatedDataVariants & variants)
+    {
+        for (auto & chunk : scenario.aggregator.convertToChunks(variants, /*final=*/false))
+        {
+            EXPECT_GE(chunk.bucket_num, 0);
+            input_rows += chunk.chunk.getNumRows();
+            bucket_to_chunks[chunk.bucket_num].push_back(std::move(chunk));
+        }
+    };
+    append_chunks(*first);
+    append_chunks(*second);
+    ASSERT_EQ(input_rows, 120000u);
+    ASSERT_GT(bucket_to_chunks.size(), 1u);
+
+    AggregatedDataVariants merged;
+    std::atomic<bool> cancelled{false};
+    scenario.aggregator.mergeBlocks(std::move(bucket_to_chunks), merged, cancelled);
+
+    UInt64 groups = 0;
+    UInt64 total_sum = 0;
+    UInt64 key_sum = 0;
+    for (auto & chunk : scenario.aggregator.convertToChunks(merged, /*final=*/true))
+    {
+        const auto & columns = chunk.chunk.getColumns();
+        for (size_t row = 0; row < chunk.chunk.getNumRows(); ++row)
+        {
+            ++groups;
+            key_sum += columns[0]->getUInt(row);
+            total_sum += columns[1]->getUInt(row);
+        }
+    }
+
+    EXPECT_EQ(groups, 120000u);
+    EXPECT_EQ(total_sum, 7199940000u);
+    EXPECT_EQ(key_sum, 7199940000u);
+}
+
 /// Heavy per-key states (`uniqExact`): first-seen keys adopt the state pointer, split keys go
 /// through the batched merge of the state sets.
 TEST_F(AggregatorParallelPartitionMerge, UniqExactHeavyStates)

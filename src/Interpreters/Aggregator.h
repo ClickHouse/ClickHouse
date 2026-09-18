@@ -1185,7 +1185,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys = nullptr) const;
+        Arena * arena_for_keys = nullptr,
+        AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache_override = nullptr) const;
 
     template <typename Method, typename Table>
     void mergeStreamsImpl(
@@ -1200,7 +1201,8 @@ private:
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache_override = nullptr) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         const Columns & columns,
