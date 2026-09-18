@@ -41,7 +41,7 @@ echo "-- POPULATE runs with the setting pinned"
 ${CLICKHOUSE_CLIENT} --enable_global_with_statement 0 --enable_materialized_cte 1 -q "CREATE MATERIALIZED VIEW mv_populate_113711 TO dst_populate_113711 POPULATE AS WITH r AS MATERIALIZED (SELECT id, rand64() AS x FROM src_113711_sh) SELECT a.id AS id, a.x = b.x AS same FROM (SELECT id, x FROM r) AS a INNER JOIN r AS b ON a.id = b.id"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = (SELECT count() FROM src_113711_sh), min(same), max(same) FROM dst_populate_113711"
 
-echo "-- a refreshable view runs with the setting pinned"
+echo "-- a refreshable view reads the CTE when its definition enables enable_materialized_cte"
 ${CLICKHOUSE_CLIENT} --enable_global_with_statement 0 --enable_materialized_cte 1 -q "CREATE MATERIALIZED VIEW mv_refresh_113711 REFRESH EVERY 1 YEAR TO dst_refresh_113711 AS WITH r AS MATERIALIZED (SELECT id, rand64() AS x FROM src_113711_sh) SELECT a.id AS id, a.x = b.x AS same FROM (SELECT id, x FROM r) AS a INNER JOIN r AS b ON a.id = b.id SETTINGS enable_materialized_cte = 1"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM REFRESH VIEW mv_refresh_113711"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW mv_refresh_113711"

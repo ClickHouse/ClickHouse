@@ -1,0 +1,10 @@
+-- a full-definition ATTACH is fresh input: fixing enable_global_with_statement is rejected
+NOT_IMPLEMENTED
+0
+-- without the clause it is accepted and keeps the reference, so the nested reference reads the CTE, not the same-named table
+81	1
+82	1
+-- POPULATE runs with the setting pinned
+1	1	1
+-- a refreshable view reads the CTE when its definition enables enable_materialized_cte
+1	1	1

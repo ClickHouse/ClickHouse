@@ -1,0 +1,83 @@
+-- view: both join sides read one materialization
+1	1
+2	1
+3	1
+1
+WITH r AS MATERIALIZED (SELECT id, rand64() AS x FROM default.src_113711) SELECT a.id AS id, a.x = b.x AS same FROM r AS a INNER JOIN r AS b ON a.id = b.id
+-- the same through analyzer_inline_views
+1	1
+2	1
+3	1
+-- the setting inside the definition is enough
+1	1
+2	1
+3	1
+-- with the setting disabled the keyword is ignored, as in a plain query
+1	0
+2	0
+3	0
+-- parameterized view
+2	1
+3	1
+-- CTE named like its source table: the body reads the table, the query reads the CTE
+WITH src_113711 AS MATERIALIZED (SELECT id, rand64() AS x FROM default.src_113711) SELECT a.id AS id, a.x = b.x AS same FROM src_113711 AS a INNER JOIN src_113711 AS b ON a.id = b.id
+1	1
+2	1
+3	1
+-- a materialized CTE over another one, and a plain one over a materialized one (expanded copy carries the reference)
+1	1
+2	1
+3	1
+WITH r AS MATERIALIZED (SELECT id, rand64() AS x FROM default.src_113711), q AS MATERIALIZED (SELECT id, x FROM r), p AS (SELECT id, x FROM q) SELECT a.id AS id, a.x = b.x AS same FROM p AS a INNER JOIN r AS b ON a.id = b.id
+-- forward reference: the materialized CTE is declared after the one that uses it
+1	1
+2	1
+3	1
+WITH b AS MATERIALIZED (SELECT id, x FROM a), a AS MATERIALIZED (SELECT id, rand64() AS x FROM default.src_113711) SELECT b1.id AS id, b1.x = a1.x AS same FROM b AS b1 INNER JOIN a AS a1 ON b1.id = a1.id
+-- reference through IN
+2
+WITH r AS MATERIALIZED (SELECT id FROM default.src_113711 WHERE id > 1) SELECT count() AS c FROM default.src_113711 WHERE (id IN (r)) AND (id IN (SELECT id FROM r))
+-- a plain CTE carrying a materialized reference, expanded through IN
+2
+WITH q AS MATERIALIZED (SELECT id FROM default.src_113711 WHERE id > 1), p AS (SELECT id FROM q) SELECT count() AS c FROM default.src_113711 WHERE (id IN (p)) AND (id IN (SELECT id FROM q))
+-- UNION: the WITH list is copied into every branch and merged back into one materialization
+1	6
+-- UNION branches declaring same-named materialized CTEs with different bodies, named like the source table
+a	1	3
+b	1	3
+WITH src_113711 AS MATERIALIZED (SELECT id, rand64() AS x FROM default.src_113711) SELECT \'a\' AS branch, a.x = b.x AS same FROM src_113711 AS a INNER JOIN src_113711 AS b ON a.id = b.id UNION ALL WITH src_113711 AS MATERIALIZED (SELECT id + 100 AS id, rand64() AS x FROM default.src_113711) SELECT \'b\', a.x = b.x FROM src_113711 AS a INNER JOIN src_113711 AS b ON a.id = b.id
+-- a materialized CTE of one subquery does not hide a same-named table in a sibling subquery
+3	7
+SELECT (SELECT count() FROM (WITH r_113711 AS MATERIALIZED (SELECT id FROM default.src_113711) SELECT a.id FROM r_113711 AS a INNER JOIN r_113711 AS b ON a.id = b.id)) AS from_cte, (SELECT count() FROM default.r_113711) AS from_table
+-- enable_global_with_statement = 0: references in the declaring SELECT work, a nested one fails like in a plain query
+1	1
+2	1
+3	1
+3
+-- DETACH / ATTACH reloads the stored definition
+1	1
+2	1
+3	1
+-- materialized view: only the inserted block is read, once; also after MODIFY QUERY
+10	1
+11	1
+10	1
+11	1
+21	1
+22	1
+-- materialized view fed through two chained materialized CTEs
+31	1
+32	1
+-- materialized view whose first table is a forward-referenced materialized CTE
+41	1
+42	1
+-- materialized view: an inner same-named plain CTE whose body reads the enclosing materialized CTE
+51	1
+52	1
+-- materialized view: enable_global_with_statement is pinned, a same-named table does not capture a nested reference
+61	1
+62	1
+-- the setting cannot be fixed in a fresh materialized view definition
+SELECT id FROM default.src_113711
+-- PREWHERE, SAMPLE and FINAL inside the CTE are still rejected in a materialized view definition
+-- a CTE-backed first UNION arm does not hide FINAL in a later arm
