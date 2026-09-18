@@ -253,7 +253,6 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
             if (table_expression)
             {
                 scope.expression_join_tree_node = table_expression;
-                scope.allow_matcher_from_expression_join_tree_node = true;
                 scope.registered_table_expression_nodes.insert(table_expression);
                 /// Mark table expression as being in resolve process to prevent
                 /// premature access during ALIAS column resolution in
@@ -1849,12 +1848,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     const auto * nearest_query_scope = scope.getNearestQueryScope();
     if (nearest_query_scope)
         table_expression_data = &nearest_query_scope->getTableExpressionDataOrThrow(table_expression_node);
-    else if (scope.expression_join_tree_node)
-    {
-        /// An expression resolved against a single table expression (`additional_table_filters`, a row
-        /// policy, a column `DEFAULT`) has no query scope, and its table expression data is on this scope.
-        table_expression_data = &scope.getTableExpressionDataOrThrow(table_expression_node);
-    }
 
     QueryTreeNodes matched_column_nodes;
 
@@ -1920,11 +1913,6 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     /// If there are no parent query scope or query scope does not have join tree
     if (!nearest_query_scope_query_node || !nearest_query_scope_query_node->getJoinTreeNode())
     {
-        /// An expression resolved against a single table expression has no join tree, hence no `USING`
-        /// key whose type a join could have changed.
-        if (scope.expression_join_tree_node && scope.allow_matcher_from_expression_join_tree_node)
-            return;
-
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "There are no table sources. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
@@ -2222,18 +2210,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
 
-    /** An expression can also be resolved against a single table expression instead of a query:
-      * `additional_table_filters`, `additional_result_filter`, a row policy or a column `DEFAULT`.
-      * Such a scope has no query scope and no join tree, and the matcher expands the columns of that
-      * table expression, so that the filter sees the same columns as the equivalent `WHERE` predicate.
-      */
-    QueryTreeNodePtr matcher_join_tree_node;
-    if (nearest_query_scope_query_node && nearest_query_scope_query_node->getJoinTreeNode())
-        matcher_join_tree_node = nearest_query_scope_query_node->getJoinTreeNode();
-    else if (scope.allow_matcher_from_expression_join_tree_node)
-        matcher_join_tree_node = scope.expression_join_tree_node;
-
-    if (!matcher_join_tree_node)
+    /// If there are no parent query scope or query scope does not have join tree
+    if (!nearest_query_scope_query_node || !nearest_query_scope_query_node->getJoinTreeNode())
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Unqualified matcher {} cannot be resolved. There are no table sources. In scope {}",
@@ -2249,7 +2227,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
       * expressions that have same names as columns in USING clause must be skipped.
       */
 
-    auto table_expressions_stack = buildTableExpressionsStack(matcher_join_tree_node);
+    auto table_expressions_stack = buildTableExpressionsStack(nearest_query_scope_query_node->getJoinTreeNode());
     std::vector<QueryTreeNodesWithNames> table_expressions_column_nodes_with_names_stack;
 
     std::unordered_set<std::string> table_expression_column_names_to_skip;
@@ -2263,7 +2241,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
         /// Old-analyzer parity: under two or more JOINs a list-form `COLUMNS` item keeps the written
         /// identifier. Recorded on a clone, so the shared resolved node keeps its own name.
-        bool keep_written_names = nearest_query_scope && nearest_query_scope->joins_count >= 2
+        bool keep_written_names = nearest_query_scope->joins_count >= 2
             && scope.context->getSettingsRef()[Setting::analyzer_compatibility_multiple_joins_qualify_column_names];
 
         for (const auto & identifier : identifiers)
@@ -2299,9 +2277,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
     for (auto & table_expression : table_expressions_stack)
     {
-        /// Without a query scope the table expressions being resolved are tracked on this scope.
-        const auto & resolve_process_scope = nearest_query_scope ? *nearest_query_scope : scope;
-        bool table_expression_in_resolve_process = resolve_process_scope.table_expressions_in_resolve_process.contains(table_expression.get());
+        bool table_expression_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(table_expression.get());
 
         if (table_expression->as<ArrayJoinNode>())
         {
