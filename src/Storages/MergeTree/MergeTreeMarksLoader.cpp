@@ -14,6 +14,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
+#include <base/sleep.h>
 
 #include <chrono>
 #include <thread>
@@ -49,6 +50,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char marks_loader_hold_task_until_canceled[];
+    extern const char merge_tree_marks_load_sync_sleep[];
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -302,6 +304,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 {
+    fiu_do_on(FailPoints::merge_tree_marks_load_sync_sleep, { sleepForMilliseconds(100); });
+
     MarkCache::MappedPtr loaded_marks;
 
     auto data_part_storage = data_part_reader->getDataPartStorage();
