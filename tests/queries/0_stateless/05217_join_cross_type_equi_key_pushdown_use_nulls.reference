@@ -1,0 +1,13 @@
+widened right input
+4	\N	\N
+widened left input
+\N	3	\N
+in-range control: types the JOIN does not change
+4	0	
+push-down is live
+2
+0
+renamed replacement converts nothing
+1
+low cardinality key pair
+d	\N	\N
