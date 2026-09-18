@@ -306,6 +306,10 @@ add_contrib (rmm-cmake rmm)
 add_contrib (nanoarrow-cmake nanoarrow)
 add_contrib (kvikio-cmake kvikio)
 add_contrib (librtcx-cmake librtcx)
+# nvcomp takes no base folder: the library is not vendored here and contrib/nvcomp does not
+# exist in a fresh checkout. See contrib/nvcomp-cmake/CMakeLists.txt.
+add_contrib (nvcomp-cmake)
+add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
