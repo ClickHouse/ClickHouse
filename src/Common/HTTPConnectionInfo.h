@@ -45,10 +45,11 @@ struct HTTPConnectionInfo
     /// idle in the pool before being handed out for this request. 0 on a socket's first request.
     UInt64 idle_microseconds = 0;
 
-    /// False when no blob storage request has been made on this thread since the last one was
-    /// accounted for: an operation on local object storage, a request that failed before reaching
-    /// the wire, or the tail events of a batch that shared a single request (a batched delete
-    /// attributes the connection to its first event).
+    /// False when no single blob storage request can be attributed to the entry being written: an
+    /// operation on local object storage, a request that failed before reaching the wire, the tail
+    /// events of a batch that shared a single request (a batched delete attributes the connection
+    /// to its first event), or an entry that covers several HTTP requests at once, such as a
+    /// retried write.
     bool has_value = false;
 };
 
@@ -68,9 +69,14 @@ UInt64 nextHTTPConnectionId();
 /// whenever no scope is open, which is what lets a row for local or HDFS object storage - which uses
 /// no HTTP connection at all - report zeroes.
 ///
-/// When several requests go out inside one scope, the last one wins: an SDK retry supersedes the
-/// failed attempt it replaces, and a credential refresh made on the way is superseded by the request
-/// it was made for.
+/// When several requests go out inside one scope - retries inside an SDK call, a credential refresh
+/// made on the way - the entry that the scope covers reports no connection at all. It cannot report
+/// a meaningful one: its elapsed time spans every attempt, including the backoff sleeps between
+/// them, while at most one socket can be named. Pairing the whole sequence with the identity and
+/// idle time of the attempt that happened to be last would make the columns describe a different
+/// request from the one they are logged next to, which is exactly the correlation this feature
+/// exists to support. A logging site that wants per-attempt connections has to open a scope per
+/// attempt and write a row per attempt, the way the S3 and Azure read paths do.
 class HTTPConnectionInfoScope
 {
 public:
@@ -82,6 +88,7 @@ public:
 
 private:
     bool previously_enabled;
+    size_t previous_requests_in_scope;
 };
 
 /// Publish the connection that is about to serve a request on this thread. Called by the pooled
@@ -95,9 +102,11 @@ void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
 /// carried it.
 void clearCurrentHTTPConnectionInfo();
 
-/// Return the info for the most recent recorded request on this thread, and clear it. Clearing is
-/// deliberate: a batched delete writes one entry per object for a single request, and only the
-/// first of them should carry the connection. Must be called inside the scope that made the request.
+/// Return the info for the request made on this thread, and clear it. Clearing is deliberate: a
+/// batched delete writes one entry per object for a single request, and only the first of them
+/// should carry the connection. Returns an empty info when more than one request went out inside
+/// the scope - see `HTTPConnectionInfoScope`. Must be called inside the scope that made the
+/// request.
 HTTPConnectionInfo takeCurrentHTTPConnectionInfo();
 
 }

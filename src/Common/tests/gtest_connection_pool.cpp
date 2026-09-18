@@ -744,6 +744,31 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
     ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
 }
 
+/// A row whose timing covers several requests - an SDK that retried a write, a credential refresh
+/// made on the way to it - cannot honestly name a connection: `elapsed_microseconds` describes the
+/// whole sequence, including the backoff sleeps, while at most one of the sockets could be named.
+/// The retrying Azure write paths log exactly one such row, so the columns must come out empty
+/// there rather than describing whichever attempt happened to be last.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsEmptyWhenScopeSpansSeveralRequests)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope;
+        echoRequest("Hello", *connection);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    /// And the ambiguity does not outlive the scope that had it: the next single request is
+    /// recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_EQ(2, info.requests_served);
+}
+
 TEST_F(ConnectionPoolTest, ReceiveTimeout)
 {
     setSlowDown(2);

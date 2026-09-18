@@ -166,6 +166,9 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
                 error_message);
     };
 
+    /// One row is written for the whole retry sequence, so when the operation is retried the
+    /// connection columns of that row report zeroes: its elapsed time covers every attempt, and no
+    /// single socket describes it.
     HTTPConnectionInfoScope connection_info_scope;
     Stopwatch watch;
     size_t backoff_ms = 100;
