@@ -3905,3 +3905,61 @@ def test_full_attach_table_definition_requires_experimental_setting(started_clus
     assert (
         "test_attach_table_experimental" not in instance.query("SHOW TABLES").split()
     )
+
+
+def test_coordinated_schema_drift_aborts_startup_instead_of_skipping(started_cluster):
+    # A table whose PostgreSQL structure no longer matches its nested ClickHouse table is skipped from
+    # replication in a plain setup, and the user brings it back with DETACH PERMANENTLY + ATTACH. In
+    # coordinated mode that repair is rejected, and a consumer running with only a part of the table set
+    # keeps confirming the *shared* replication slot, so the WAL of the skipped table would be
+    # acknowledged in PostgreSQL and lost. Resuming replication must therefore be aborted as a whole,
+    # exactly like a failed snapshot load is, and the leadership released so a peer can try.
+    skip_line = "is skipped from replication because its structure does not match"
+    release_line = "Released replication leadership after a failed startup attempt"
+
+    pg_manager.create_postgres_table("drift_table")
+    pg_manager.create_postgres_table("stable_table")
+    instance.query(
+        "INSERT INTO postgres_database.drift_table SELECT number, number FROM numbers(50)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.stable_table SELECT number, number FROM numbers(50)"
+    )
+
+    create_coordinated_db("drift_table,stable_table")
+    for node in (instance, instance2):
+        check_tables_are_synchronized(node, "drift_table")
+        check_tables_are_synchronized(node, "stable_table")
+
+    skip_baselines = {
+        node.name: count_in_all_logs(node, skip_line) for node in (instance, instance2)
+    }
+    release_baselines = {
+        node.name: count_in_all_logs(node, release_line) for node in (instance, instance2)
+    }
+
+    # Change the structure of one table while nobody is replicating, so both replicas hit the mismatch
+    # when they resume from the shared slot.
+    for node in (instance, instance2):
+        node.stop_clickhouse()
+    pg_query("ALTER TABLE drift_table ADD COLUMN extra Int4")
+    for node in (instance, instance2):
+        node.start_clickhouse()
+
+    # Whichever replica wins the election aborts its startup and gives the leadership back.
+    wait_for_new_log_occurrence(
+        instance, release_line, release_baselines[instance.name], timeout=120
+    )
+
+    # The drifted table is never marked as skipped, so the slot is not advanced past its changes.
+    for node in (instance, instance2):
+        assert count_in_all_logs(node, skip_line) == skip_baselines[node.name]
+
+    # Reconciling the PostgreSQL schema lets the retrying startup succeed, and both tables converge again.
+    pg_query("ALTER TABLE drift_table DROP COLUMN extra")
+    pg_query("INSERT INTO drift_table SELECT i, i FROM generate_series(50, 99) AS t(i)")
+    pg_query("INSERT INTO stable_table SELECT i, i FROM generate_series(50, 99) AS t(i)")
+    for node in (instance, instance2):
+        check_tables_are_synchronized(node, "drift_table")
+        check_tables_are_synchronized(node, "stable_table")
+        assert int(node.query("SELECT count() FROM test_database.drift_table")) == 100

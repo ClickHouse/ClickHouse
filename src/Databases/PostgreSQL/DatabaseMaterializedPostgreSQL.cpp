@@ -1881,6 +1881,12 @@ A `DROP DATABASE` that fails (for example because a nested table cannot be remov
 
 This automatic repair is not possible for a user-managed replication slot (see [`materialized_postgresql_replication_slot`](#materialized-postgresql-replication-slot) and the section below): a snapshot cannot be exported from a slot ClickHouse does not manage, and the snapshot identifier passed in [`materialized_postgresql_snapshot`](#materialized-postgresql-snapshot) is only valid as long as the exporting PostgreSQL transaction is open. If a failed `DROP DATABASE` of such a database has already removed some of the replicated tables, replication is not resumed - the removed tables would be silently skipped while the replication slot advances past their changes, losing their data. The refusal is reported in the server log and the database has to be dropped and recreated with a freshly created replication slot and the snapshot exported with it.
 
+### Schema changes in PostgreSQL {#postgresql-schema-changes}
+
+Changing the structure of a replicated table in PostgreSQL (for example, adding or dropping a column) is not propagated to the nested ClickHouse table. Without coordination such a table is skipped from replication - the other tables keep replicating, and the skipped one is brought back with `DETACH TABLE ... PERMANENTLY` followed by `ATTACH TABLE`, which recreates it from a fresh snapshot.
+
+In coordinated mode that per-table repair is not available, so a table whose structure no longer matches is not skipped: starting replication is aborted instead and the replication leadership is released, letting a peer try. This is deliberate - a consumer running with only a part of the table set keeps confirming the shared replication slot, so the changes of the skipped table would be acknowledged in PostgreSQL and lost. Reconcile the PostgreSQL schema with the replicated tables, or recreate the database to reload it from a fresh snapshot.
+
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
 
 Logical Replication Slots which exist on the primary are not available on standby replicas.

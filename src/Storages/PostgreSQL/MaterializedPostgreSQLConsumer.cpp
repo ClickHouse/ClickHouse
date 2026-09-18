@@ -94,24 +94,29 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
         {
             /// The structure of the PostgreSQL table might no longer match the structure of
             /// the nested ClickHouse table (for example, a column was added or dropped in
-            /// PostgreSQL while the server was down). Do not fail the whole consumer because
-            /// of a single out-of-sync table: skip it and keep replicating the rest of the tables.
-            /// In a non-coordinated setup the user can repair the table with `DETACH`/`ATTACH`;
-            /// a coordinated setup must instead be recreated, because a per-table change would
-            /// affect only the local replica. Only the expected
-            /// structure-mismatch error is handled this way; any other error is a real problem
-            /// and must propagate.
+            /// PostgreSQL while the server was down). Only the expected structure-mismatch error
+            /// is handled here; any other error is a real problem and must propagate.
             if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
                 throw;
 
+            /// In coordinated mode a single out-of-sync table must abort the whole attempt, exactly
+            /// like a failed snapshot load does in `PostgreSQLReplicationHandler::startSynchronization`:
+            /// a consumer started with a partial table set keeps advancing the shared slot's
+            /// `confirmed_flush_lsn` on every commit, so the WAL of the skipped table is acknowledged
+            /// and discarded - and `DETACH`/`ATTACH`, the usual repair path, is rejected in coordinated
+            /// mode, so nothing could heal the subset. Throwing here makes `coordinationFunc` release
+            /// the leadership, so a healthy peer can take over before any WAL is advanced.
+            if (coordinated)
+                throw;
+
+            /// Without coordination the remaining tables still get a consumer, and the user can bring
+            /// the skipped one back with `DETACH`/`ATTACH`.
             tryLogCurrentException(
                 log,
                 fmt::format("Table {} is skipped from replication because its structure does not match "
-                            "the structure of the nested ClickHouse table. {}",
-                            table_name,
-                            coordinated
-                                ? "Recreate the coordinated database after reconciling the PostgreSQL schema"
-                                : "Please perform manual DETACH and ATTACH of the table to bring it back"));
+                            "the structure of the nested ClickHouse table. "
+                            "Please perform manual DETACH and ATTACH of the table to bring it back",
+                            table_name));
         }
     }
 
@@ -992,9 +997,12 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             auto log_table_structure_changed = [&](const std::string & reason)
             {
                 LOG_INFO(log, "Table structure of the table {} changed ({}), "
-                         "will mark it as skipped from replication. "
-                         "Please perform manual DETACH and ATTACH of the table to bring it back",
-                         table_name, reason);
+                         "will mark it as skipped from replication. {}",
+                         table_name, reason,
+                         coordinated
+                             ? "Recreate the coordinated database after reconciling the PostgreSQL schema "
+                               "to resume replication"
+                             : "Please perform manual DETACH and ATTACH of the table to bring it back");
             };
 
             Int16 num_columns = readInt16(replication_message, pos, size);

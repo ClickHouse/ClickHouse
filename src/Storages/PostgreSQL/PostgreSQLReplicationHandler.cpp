@@ -1516,7 +1516,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 e.addMessage("while loading table {}.{}", postgres_database, table_name);
                 tryLogCurrentException(log);
 
-                if (throw_on_error)
+                /// Same contract as the snapshot path above: in coordinated mode a table that cannot be
+                /// resumed aborts the whole attempt instead of leaving the shared slot to be advanced by a
+                /// consumer that replicates only a part of the table set.
+                if (coordination_enabled || throw_on_error)
                     throw;
             }
         }
