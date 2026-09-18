@@ -164,16 +164,10 @@ public:
     ASTPtr readSpecialFunctionChild(const char * key, const char * function_name) const;
 
     /// Read a child AST node filling a parser-produced *expression* slot, and reject an `ASTFunction`
-    /// without an `arguments` list anywhere in the subtree reachable through `IAST::children`. Inside an
-    /// expression the parser builds a function only after an opening parenthesis (`ParserFunction::parseImpl`),
-    /// so it always owns an argument list; outside one it does not, because `setNoEmptyArgs` clears an empty
-    /// list - a table engine, a `CODEC`/`STATISTICS` element and an index `TYPE` are argument-less functions,
-    /// which `writeJSON` serializes with no `"arguments"` member at all. So `ASTFunction::readJSON` has to
-    /// accept a missing member and only the slot's owner can require one, while a consumer reading an
-    /// expression before analysis dereferences it unconditionally (`TreeCNFConverter::splitMultiLogic`,
-    /// `ComparisonGraph`'s `getArguments`). Those consumers also reach nodes only through `children`, so an
-    /// AST owned outside it (`ASTColumnsApplyTransformer`'s `parameters`, `lambda`) is as far beyond their
-    /// reach as it is beyond this check's. Returns nullptr when the key is absent.
+    /// without an `arguments` list anywhere under its `children`: a consumer of an unanalyzed expression
+    /// dereferences that list unconditionally, while `ASTFunction::readJSON` cannot require the member,
+    /// because a function without arguments is legitimate outside an expression (a table engine, a
+    /// `CODEC`/`STATISTICS` element, an index `TYPE`). Returns nullptr when the key is absent.
     ASTPtr readExpressionChild(const char * key) const;
 
     /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the

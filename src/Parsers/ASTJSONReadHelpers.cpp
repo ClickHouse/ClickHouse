@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
@@ -65,6 +66,8 @@ namespace
 
 void rejectArgumentlessFunctions(const IAST & ast, const char * key)
 {
+    checkStackSize();
+
     const auto * function = ast.as<ASTFunction>();
     if (function && !function->arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
