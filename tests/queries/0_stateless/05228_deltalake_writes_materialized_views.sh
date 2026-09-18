@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan, no-parallel-replicas
+# Tags: no-fasttest, no-msan
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
-# Tag no-parallel-replicas: INSERT SELECT from MergeTree into DeltaLake commits once per replica, https://github.com/ClickHouse/ClickHouse/issues/120714
 
 # Writes through a regular MV (setting must be on the inserting session) and a refreshable
 # `APPEND TO` MV (setting in the view's SETTINGS clause); one version per push, fail closed otherwise.
@@ -53,10 +52,11 @@ $CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --query "INSERT INTO src VALUES (
 versions
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM dl"
 
+# enable_parallel_replicas = 0 in the refresh definitions: https://github.com/ClickHouse/ClickHouse/issues/120714
 echo "-- refreshable MV APPEND TO delta with the setting off in its definition: the refresh fails, nothing committed"
 $CLICKHOUSE_CLIENT --query "
     CREATE MATERIALIZED VIEW rmv_nosetting REFRESH EVERY 100 YEAR SETTINGS refresh_retries = 0 APPEND TO dl
-    AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 0;
+    AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 0, enable_parallel_replicas = 0;
     SYSTEM REFRESH VIEW rmv_nosetting;
     SYSTEM WAIT VIEW rmv_nosetting;
 " 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
@@ -67,7 +67,7 @@ echo "-- refreshable MV APPEND TO delta with the setting on in its definition: o
 echo "-- triggered from a session that has writes off"
 $CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --query "
     CREATE MATERIALIZED VIEW rmv REFRESH EVERY 100 YEAR SETTINGS refresh_retries = 0 APPEND TO dl
-    AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 1;
+    AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 1, enable_parallel_replicas = 0;
     SYSTEM REFRESH VIEW rmv;
     SYSTEM WAIT VIEW rmv;
     SYSTEM REFRESH VIEW rmv;
