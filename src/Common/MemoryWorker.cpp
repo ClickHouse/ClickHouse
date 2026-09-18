@@ -982,10 +982,16 @@ void MemoryWorker::updateResidentMemoryThread()
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
+            ///
+            /// When the tracker is not corrected on this tick, refresh `MemoryTrackingUncorrected`
+            /// anyway, so that the metric stays a snapshot of the plain counter that is at most
+            /// one tick old in both modes.
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
                 MemoryTracker::updateAllocated(resident, /*log_change=*/true);
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
+            else
+                MemoryTracker::updateUncorrected();
 #else
             /// we don't update in the first run if we don't have jemalloc
             /// because we can only use resident memory information
@@ -994,6 +1000,8 @@ void MemoryWorker::updateResidentMemoryThread()
             /// before MemoryTracker initialization
             if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
+            else
+                MemoryTracker::updateUncorrected();
 #endif
 
             /// Capture the settings generation before reading ratio/ceiling. We re-read

@@ -1355,7 +1355,7 @@ Whether the background memory worker corrects the global memory tracker, on ever
 
 The global memory tracker is a counter: allocations add to it and deallocations subtract from it. Any accounting asymmetry stays in it for the lifetime of the process, because nothing else lowers it, and an upward drift is never worked off — the memory it describes has already been freed. Once the drift alone exceeds `max_server_memory_usage`, every allocation fails, down to the zero-byte check at the start of a connection, and the server rejects all queries while using a fraction of its limit. Correcting from a measurement bounds the lifetime of such a drift to one tick of the worker (`memory_worker_period_ms`, by default 50 ms when reading from cgroups and 100 ms when reading from jemalloc).
 
-The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the value the tracker would have had with no corrections applied, so `MemoryTrackingUncorrected - MemoryTracking` is the drift accumulated so far.
+The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the value the tracker would have had with no corrections applied (a snapshot of the plain counter, refreshed on every tick of the worker), so `MemoryTrackingUncorrected - MemoryTracking` is the drift accumulated so far.
 
 Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative.
 )", 0) \
