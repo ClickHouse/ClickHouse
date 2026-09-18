@@ -247,8 +247,11 @@ public:
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
+    /// The result may share the original column. Use `IColumn::mutate` before modifying it.
     [[nodiscard]] virtual Ptr cut(size_t start, size_t length) const
     {
+        if (start == 0 && length == size())
+            return getPtr();
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
         return res;
@@ -406,9 +409,6 @@ public:
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
-
-    /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    virtual void skipSerializedInArena(ReadBuffer & in) const = 0;
 
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,

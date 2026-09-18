@@ -9,9 +9,23 @@ namespace DB
 {
 
 using PlanMemo = std::unordered_map<BitSet, DPJoinEntryPtr>;
-using SelectivityCache = std::unordered_map<JoinActionRef, double>;
 
-inline size_t getColumnStats(
+/// Result of estimating how much a set of join predicates reduces the cross product.
+/// `reliable` tells whether `value` is backed by real column statistics; `has_equi` tells whether
+/// an equality predicate connects the two sides at all. Both are needed because a missing NDV must
+/// not be treated the same as a missing equi condition: the former still means a key lookup,
+/// the latter means a cross product.
+struct SelectivityEstimate
+{
+    double value = 1.0;
+    bool reliable = false;
+    bool has_equi = false;
+};
+
+using SelectivityCache = std::unordered_map<JoinActionRef, SelectivityEstimate>;
+
+/// Number of distinct values of a join-key column, or nullopt when no real statistics are available.
+inline std::optional<UInt64> getColumnStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     const BitSet & rels,
@@ -27,70 +41,148 @@ inline size_t getColumnStats(
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
                 return col_it->second.num_distinct_values;
-            return it->second->estimated_rows.value_or(0);
         }
-        return 0;
+        return {};
     }
 
-    const auto & relation_stat = relation_stats.at(rel_id.value());
-    const auto & col_stats = relation_stat.column_stats;
+    const auto & col_stats = relation_stats.at(rel_id.value()).column_stats;
     if (auto it = col_stats.find(column_name); it != col_stats.end())
         return it->second.num_distinct_values;
-    return relation_stat.estimated_rows.value_or(0);
+    return {};
 }
 
-inline double computeSelectivity(
+inline SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
     const JoinActionRef & edge)
 {
-    auto [it, inserted] = expression_selectivity.try_emplace(edge, 1.0);
-    auto & selectivity = it->second;
+    auto [it, inserted] = expression_selectivity.try_emplace(edge);
+    auto & estimate = it->second;
     if (!inserted)
-        return selectivity;
+        return estimate;
 
     auto [op, lhs, rhs] = edge.asBinaryPredicate();
 
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return 1.0;
+        return estimate;
 
-    UInt64 lhs_ndv = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
-    UInt64 rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
-    UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
+    estimate.has_equi = true;
+    auto lhs_ndv = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
+    auto rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
+    UInt64 max_ndv = std::max(lhs_ndv.value_or(0), rhs_ndv.value_or(0));
     if (max_ndv > 0)
-        selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
-    return selectivity;
+    {
+        estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
+        estimate.reliable = true;
+    }
+    return estimate;
 }
 
-inline double computeSelectivity(
+inline SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
     const std::vector<JoinActionRef *> & edges)
 {
-    double selectivity = 1.0;
+    SelectivityEstimate estimate;
     for (const auto & edge : edges)
-        selectivity = std::min(selectivity, computeSelectivity(query_graph, dp_table, expression_selectivity, *edge));
-    return selectivity;
+    {
+        auto edge_estimate = computeSelectivity(query_graph, dp_table, expression_selectivity, *edge);
+        estimate.value = std::min(estimate.value, edge_estimate.value);
+        estimate.reliable |= edge_estimate.reliable;
+        estimate.has_equi |= edge_estimate.has_equi;
+    }
+    return estimate;
+}
+
+/// Expected number of rows an inner join of `lhs_rows` x `rhs_rows` keeps under `selectivity`.
+/// Without reliable NDV an equi join is assumed to be FK->PK (the smaller side is a unique key),
+/// so it keeps the larger side; without any equi condition (cross or range-only join) the
+/// result is the full product.
+inline double estimateJoinedRows(const SelectivityEstimate & selectivity, double lhs_rows, double rhs_rows)
+{
+    if (selectivity.reliable)
+        return selectivity.value * lhs_rows * rhs_rows;
+    if (selectivity.has_equi)
+        return std::max(lhs_rows, rhs_rows);
+    return lhs_rows * rhs_rows;
+}
+
+/// The fraction of the cross product `estimateJoinedRows` keeps. Unlike `SelectivityEstimate::value`,
+/// which is 1 when no NDV is known, it reflects the FK->PK assumption and is therefore comparable
+/// with the actual cartesian selectivity reported by `EXPLAIN ANALYZE`.
+inline double effectiveSelectivity(const SelectivityEstimate & selectivity, double lhs_rows, double rhs_rows)
+{
+    double product = lhs_rows * rhs_rows;
+    if (product <= 0)
+        return selectivity.value;
+    return std::min(1.0, estimateJoinedRows(selectivity, lhs_rows, rhs_rows) / product);
+}
+
+inline double effectiveSelectivity(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
+{
+    return effectiveSelectivity(
+        selectivity, static_cast<double>(left->estimated_rows.value_or(1)), static_cast<double>(right->estimated_rows.value_or(1)));
 }
 
 /// Single source of truth for join cardinality estimation. For outer joins the result is
 /// floored by the number of rows from the preserved side(s), since those are always emitted
 /// (NULL-padded when there is no match): LEFT keeps all left rows, RIGHT all right rows, FULL both.
+///
+/// Semi/anti joins are filters on their preserved side (LEFT preserves the left input, RIGHT the
+/// right), so they never expand and must NOT be floored at the preserved side's row count. A
+/// semijoin keeps the fraction of preserved rows that have >= 1 match; an antijoin keeps the rest.
+/// Estimating them like outer joins (row count >= preserved side) is what makes the optimizer
+/// refuse to push a selective semi/anti join down.
 inline std::optional<UInt64> estimateJoinCardinality(
     std::optional<UInt64> left_rows,
     std::optional<UInt64> right_rows,
-    double selectivity,
-    JoinKind join_kind)
+    const SelectivityEstimate & selectivity,
+    JoinKind join_kind,
+    JoinStrictness strictness = JoinStrictness::All)
 {
-    if (!left_rows || !right_rows)
+    if (!left_rows && !right_rows)
         return {};
 
-    double lhs = static_cast<double>(*left_rows);
-    double rhs = static_cast<double>(*right_rows);
+    double lhs = static_cast<double>(left_rows.value_or(0));
+    double rhs = static_cast<double>(right_rows.value_or(0));
 
-    double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+    {
+        if (!left_rows || !right_rows)
+            return {};
+
+        /// Preserved side is the left input for LEFT (and Inner/Cross, defensively), the right
+        /// input for RIGHT; the other side is only probed for existence.
+        const bool preserve_left = !isRight(join_kind);
+        const double preserved = preserve_left ? lhs : rhs;
+        const double other = preserve_left ? rhs : lhs;
+        /// Expected fraction of preserved rows with at least one match. `selectivity.value` is ~1/ndv,
+        /// so `selectivity.value * other` approximates matches per preserved row; cap at 1. Without
+        /// reliable statistics the value is 1, i.e. every preserved row is assumed to have a match.
+        const double match_fraction = std::min(1.0, selectivity.value * other);
+        const double kept = (strictness == JoinStrictness::Semi)
+            ? preserved * match_fraction
+            : preserved * (1.0 - match_fraction);
+        const double semi_rows = std::max(kept, 1.0);
+        if (semi_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
+            return std::numeric_limits<UInt64>::max();
+        return static_cast<UInt64>(semi_rows);
+    }
+
+    double joined_rows = 1.0;
+    if (!left_rows || !right_rows)
+    {
+        /// One side is unknown: for an equi join assume FK->PK, so the join keeps the known side.
+        /// For a cross or range-only join the result is a product with an unknown multiplier;
+        /// returning the known side would make the cross product look deceptively small.
+        if (!selectivity.has_equi)
+            return {};
+        joined_rows = std::max(lhs, rhs);
+    }
+    else
+        joined_rows = std::max(estimateJoinedRows(selectivity, lhs, rhs), 1.0);
 
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
@@ -112,16 +204,17 @@ inline std::optional<UInt64> estimateJoinCardinality(
 inline std::optional<UInt64> estimateJoinCardinality(
     const DPJoinEntryPtr & left,
     const DPJoinEntryPtr & right,
-    double selectivity,
+    const SelectivityEstimate & selectivity,
     JoinKind join_kind = JoinKind::Inner)
 {
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, double selectivity)
+inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
 {
-    return left->cost + right->cost
-        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    double lhs = static_cast<double>(left->estimated_rows.value_or(1));
+    double rhs = static_cast<double>(right->estimated_rows.value_or(1));
+    return left->cost + right->cost + estimateJoinedRows(selectivity, lhs, rhs);
 }
 
 }

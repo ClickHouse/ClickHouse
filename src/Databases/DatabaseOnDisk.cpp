@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -27,6 +28,8 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -77,6 +80,9 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_TABLES;
+    extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -448,6 +454,32 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     }
 }
 
+/// How many table-like objects a cross-database `RENAME` moves. Usually one, but a
+/// `MaterializedView` and a `TimeSeries` table own inner tables, and when one side of the rename is
+/// an `Ordinary` database the inner table names embed the outer table name, so `renameInMemory`
+/// moves the inner tables too, with nested `RENAME` queries. All of them have to be accounted for
+/// at once: otherwise the first inner tables are moved and a later one is rejected by the quota,
+/// leaving them behind in the destination.
+static size_t getNumberOfTablesToMove(const StoragePtr & table, const ContextPtr & local_context)
+{
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        return (materialized_view->hasInnerTable() && materialized_view->tryGetTargetTable()) ? 2 : 1;
+
+    if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
+    {
+        size_t result = 1;
+        if (time_series->hasInnerTables())
+        {
+            for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                if (time_series->isInnerTable(target_kind) && time_series->tryGetTargetTable(target_kind, local_context))
+                    ++result;
+        }
+        return result;
+    }
+
+    return 1;
+}
+
 void DatabaseOnDisk::renameTable(
         ContextPtr local_context,
         const String & table_name,
@@ -489,6 +521,21 @@ void DatabaseOnDisk::renameTable(
     StoragePtr table = getTable(table_name, local_context);
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+
+    /// Check the destination `max_tables` quota before detaching the source table and moving its
+    /// data, because from that point on the rename cannot be undone safely. Keep the check after
+    /// the source table is resolved and validated, so that a full destination does not mask
+    /// `UNKNOWN_TABLE` and other source-side errors.
+    if (this != &to_database)
+    {
+        if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+        {
+            /// The destination may still be loading, in which case its table list is incomplete
+            /// and the check would undercount.
+            target_db->waitDatabaseStarted();
+            target_db->checkTablesLimit(getNumberOfTablesToMove(table, local_context));
+        }
+    }
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
@@ -953,6 +1000,60 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
+}
+
+void DatabaseOnDisk::checkTablesLimit(size_t tables_to_add) const
+{
+    std::lock_guard lock(mutex);
+    checkTablesLimitUnlocked(tables_to_add);
+}
+
+void DatabaseOnDisk::checkTablesLimitUnlocked(size_t tables_to_add) const
+{
+    const UInt64 limit = max_tables.load(std::memory_order_relaxed);
+
+    /// Every table-like object of the database - a table, a view, a dictionary - lives in `tables`
+    /// and counts toward the limit.
+    /// NOTE: The check is best-effort: it runs before the operation starts, so concurrent queries
+    /// can push the database slightly over the limit. This is the same as `max_table_num_to_throw`
+    /// and the other server-wide limits in `InterpreterCreateQuery::throwIfTooManyEntities`.
+    /// NOTE: `getDatabaseName` would take `mutex` again and deadlock, so read the name directly.
+    if (limit != 0 && tables.size() + tables_to_add > limit)
+        throw Exception(
+            ErrorCodes::TOO_MANY_TABLES,
+            "Too many tables in database {}. The limit (database setting `max_tables`) is set to {}, the current number is {}",
+            backQuote(database_name), limit, tables.size());
+}
+
+void DatabaseOnDisk::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
+{
+    /// Altering database settings is only supported for the on-disk engines that keep all their
+    /// tables in the in-memory `tables` map and store their metadata in a local `.sql` file that
+    /// `modifySettingsMetadata` can rewrite: `Atomic` and `Ordinary`. Other engines derived from
+    /// this class are rejected.
+    if (getEngineName() != "Atomic" && getEngineName() != "Ordinary")
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ALTER DATABASE ... MODIFY SETTING is not supported for the {} database engine", getEngineName());
+
+    /// Validate and normalize the whole list before persisting or applying anything.
+    SettingsChanges normalized_changes = settings_changes;
+    for (auto & change : normalized_changes)
+    {
+        if (change.name != "max_tables")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Database engine {} does not support altering setting `{}`", getEngineName(), change.name);
+        /// The value arrives from the parser as an untyped literal. Convert it to the setting's type the
+        /// same way `SETTINGS max_tables = ...` is converted at CREATE time, letting conversion errors
+        /// (e.g. `CANNOT_CONVERT_TYPE`) propagate so both paths report the same error for an invalid value.
+        change.value = SettingFieldUInt64(change.value).value;
+    }
+
+    modifySettingsMetadata(normalized_changes, query_context);
+
+    for (const auto & change : normalized_changes)
+        max_tables.store(change.value.safeGet<UInt64>(), std::memory_order_relaxed);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const

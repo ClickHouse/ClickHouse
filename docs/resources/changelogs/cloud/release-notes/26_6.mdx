@@ -9,9 +9,15 @@ doc_type: 'changelog'
 
 ## Backward Incompatible Changes {#backward-incompatible-changes}
 
+### Query and syntax changes {#query-and-syntax-changes}
+
+* The window functions `RANK` and `DENSE_RANK` now reject arguments and throw `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`, in line with the SQL standard. Previously, queries such as `RANK(x) OVER (ORDER BY id)` were silently accepted with the argument ignored, which was a frequent source of user confusion. To restore the previous lenient behavior, set `allow_rank_dense_rank_arguments = 1`. [#104324](https://github.com/ClickHouse/ClickHouse/pull/104324) ([groeneai](https://github.com/groeneai)).
+
 ### Data type changes {#data-type-changes}
 
 * `icebergHash` and `icebergBucket` now reject `Int128`, `UInt128`, `Int256`, `UInt256`, and `Decimal256` arguments with an explicit error. Previously they silently truncated wider values and produced colliding hashes. The Iceberg spec only defines hashing for 32/64-bit integers and decimals with precision up to 38; cast to `Int64` or `Decimal128` to keep the previous behaviour for values that fit. [#105866](https://github.com/ClickHouse/ClickHouse/pull/105866) ([Algunenano](https://github.com/Algunenano)).
+* `toUUID`, `toUUIDOrNull`, `toUUIDOrZero`, `toUUIDOrDefault`, `CAST` to `UUID` and `Nullable(UUID)`, `accurateCastOrNull` to `UUID`, and the input formats that parse a UUID from text (`Avro`, `MsgPack`, `JSONExtract`, ...) now reject strings that have the right length but contain non-hexadecimal characters. Previously such inputs were silently turned into a fabricated UUID by walking off the end of the hex digit lookup table. Now `toUUID` throws `CANNOT_PARSE_UUID`, and the `Or*` variants return `NULL` / the zero UUID / the supplied default. [#104370](https://github.com/ClickHouse/ClickHouse/pull/104370) ([groeneai](https://github.com/groeneai)).
+* `Dynamic` and `Variant` types are now validated in the window `PARTITION BY` clause; this was not checked before when `allow_suspicious_types_in_group_by` is disabled. Queries partitioning a window over a `Dynamic` or `Variant` column now throw unless `allow_suspicious_types_in_group_by = 1`. [#105450](https://github.com/ClickHouse/ClickHouse/pull/105450) ([Avogar](https://github.com/Avogar)).
 
 ### Storage and index changes {#storage-and-index-changes}
 
@@ -21,6 +27,7 @@ doc_type: 'changelog'
 
 ### Removed features {#removed-features}
 
+* You can no longer use the obsolete Arrow-based Parquet reader and writer. The native implementation is always used instead. The settings that selected the old implementations or tuned them are now obsolete and ignored: `input_format_parquet_use_native_reader_v3`, `output_format_parquet_use_custom_encoder`, `output_format_parquet_version`, `output_format_parquet_compliant_nested_types`, and `output_format_parquet_unsupported_types_as_binary`. The native writer always writes Parquet V2.6+ with compliant nested types, and throws `UNKNOWN_TYPE` for unsupported types instead of writing them as raw binary. [#100949](https://github.com/ClickHouse/ClickHouse/pull/100949) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Removed the obsolete `allow_experimental_query_deduplication` setting and its unsupported experimental query-deduplication behavior. [#99398](https://github.com/ClickHouse/ClickHouse/pull/99398) ([devcrafter](https://github.com/devcrafter)).
 * `ALTER TABLE ... REPLACE PARTITION ... FROM ...` no longer silently drops the destination partition's data when the source table has no parts in the requested partition. Previously such a request removed the destination partition and wrote nothing in its place. It is now rejected with `BAD_ARGUMENTS` by default. This is a backward incompatible change: a `REPLACE PARTITION` from an empty source that used to succeed (clearing the destination) will now throw after upgrade. To restore the previous silent-clear behavior, set the new setting `allow_replace_partition_from_empty_source = 1` (per query or in the profile), or set `compatibility` to `26.5` or lower. To explicitly drop destination data, use `ALTER TABLE ... DROP PARTITION ...`. [#104939](https://github.com/ClickHouse/ClickHouse/pull/104939) ([groeneai](https://github.com/groeneai)).
 * Removed the experimental KQL (Kusto) functions `array_sort_asc` and `array_sort_desc`, and their SQL backends `kql_array_sort_asc` and `kql_array_sort_desc`. These functions were experimental, implemented with low quality, and the source of correctness and parser bugs. Queries using these names now return `UNKNOWN_FUNCTION`. [#108101](https://github.com/ClickHouse/ClickHouse/pull/108101) ([groeneai](https://github.com/groeneai)).
