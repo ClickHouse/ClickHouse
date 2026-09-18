@@ -540,8 +540,19 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 
 NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
 {
+    if (auto res = tryConvertToSubcolumns(names_and_types))
+        return std::move(*res);
+    return names_and_types;
+}
+
+std::optional<NamesAndTypesList> tryConvertToSubcolumns(const NamesAndTypesList & names_and_types)
+{
     auto nested_types = getSubcolumnsOfNested(names_and_types);
+    if (nested_types.empty())
+        return std::nullopt;
+
     auto res = names_and_types;
+    bool changed = false;
 
     for (auto & name_type : res)
     {
@@ -567,7 +578,10 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
                 {
                     auto new_subcolumn = concatenateName(storage_split.second, name_type.getSubcolumnName());
                     if (auto subcolumn_type = it->second->tryGetSubcolumnType(new_subcolumn))
+                    {
                         name_type = NameAndTypePair{storage_split.first, new_subcolumn, it->second, subcolumn_type};
+                        changed = true;
+                    }
                 }
             }
             continue;
@@ -575,9 +589,17 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
 
         auto it = nested_types.find(split.first);
         if (it != nested_types.end())
-            name_type = NameAndTypePair{split.first, split.second, it->second, it->second->getSubcolumnType(split.second)};
+        {
+            /// The subcolumn type of a Nested member is `Array(<element type>)`, which is exactly the type of this
+            /// plain entry (the element type was taken from it); asking the Nested type would build its
+            /// whole serialization tree only to reconstruct the same thing.
+            name_type = NameAndTypePair{split.first, split.second, it->second, name_type.type};
+            changed = true;
+        }
     }
 
+    if (!changed)
+        return std::nullopt;
     return res;
 }
 
