@@ -1,22 +1,22 @@
 -- filter on status
-2934	12559530
-2934	12559530
+2934	12564662
+2934	12564662
 -- filter on timestamp range
-1000	1871000
-1000	1871000
+1000	1879000
+1000	1879000
 -- combined filter
-366	1391435
-366	1391435
+367	1395441
+367	1395441
 -- small row limit (fallback)
-2934	12559530
+2934	12564662
 -- small byte limit (fallback)
-2934	12559530
+2934	12564662
 -- prewhere
-732	2874310.5
-732	2874310.5
+733	2878316.5
+733	2878316.5
 -- row policy
-1893	8020974.5
-1893	8020974.5
+1893	8026106.5
+1893	8026106.5
 -- plan: optimization has InputSelector
 1
 -- plan: no optimization has no InputSelector
