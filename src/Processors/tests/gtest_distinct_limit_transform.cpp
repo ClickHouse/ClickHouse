@@ -75,7 +75,7 @@ TEST(DistinctLimitTransform, KeepsStreamsSeparateAndHonorsDemand)
         limit.prepare();
         ASSERT_TRUE(source->canPush());
         auto chunk = makeChunk(stream * 10);
-        DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, true);
+        DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
         static_cast<ISimpleTransform &>(distinct).transform(chunk);
         chunk.getChunkInfos().add(std::make_shared<TestChunkInfo>());
         source->push(std::move(chunk));
@@ -116,7 +116,7 @@ TEST(DistinctLimitTransform, GlobalBreakStopsIdlePartitionsAfterEmittingTheLastC
             sink.setNeeded();
         EXPECT_EQ(limit.prepare(), IProcessor::Status::NeedData);
 
-        DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, true);
+        DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
         auto chunk = makeChunk(10);
         static_cast<ISimpleTransform &>(distinct).transform(chunk);
         chunk.getChunkInfos().add(std::make_shared<TestChunkInfo>());
@@ -156,8 +156,8 @@ TEST(DistinctLimitTransform, ClosedOutputDoesNotPreventGlobalBreakOnOtherStreams
         sink.setNeeded();
     limit.prepare();
 
-    DistinctTransform first(limit.header, {}, 0, Names{"k"}, false, false, true);
-    DistinctTransform second(limit.header, {}, 0, Names{"k"}, false, false, true);
+    DistinctTransform first(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
+    DistinctTransform second(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
     auto discarded = makeChunk(0);
     static_cast<ISimpleTransform &>(first).transform(discarded);
     limit.upstream.front().push(std::move(discarded));
@@ -188,8 +188,8 @@ TEST(DistinctLimitTransform, ThrowLimitCountsKeysAcrossStreams)
         sink.setNeeded();
     limit.prepare();
 
-    DistinctTransform first(limit.header, {}, 0, Names{"k"}, false, false, true);
-    DistinctTransform second(limit.header, {}, 0, Names{"k"}, false, false, true);
+    DistinctTransform first(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
+    DistinctTransform second(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
     auto first_chunk = makeChunk(0);
     auto second_chunk = makeChunk(10);
     static_cast<ISimpleTransform &>(first).transform(first_chunk);
@@ -224,7 +224,7 @@ TEST(DistinctLimitTransform, CountsConstantKeysWithoutSetAllocations)
     const ColumnPtr constant = ColumnConst::create(ColumnUInt64::create(1, UInt64(7)), 4);
     const auto header
         = std::make_shared<const Block>(Block{ColumnWithTypeAndName(constant->cloneEmpty(), std::make_shared<DataTypeUInt64>(), "k")});
-    DistinctTransform distinct(header, {}, 0, Names{"k"}, false, false, true);
+    DistinctTransform distinct(header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
     Chunk chunk(Columns{constant}, 4);
     static_cast<ISimpleTransform &>(distinct).transform(chunk);
     limit.downstream.front().setNeeded();
@@ -248,7 +248,7 @@ TEST(DistinctLimitTransform, GlobalBreakStopsWithinUpdatedBatch)
         UInt64 value = 0;
         for (auto & source : limit.upstream)
         {
-            DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, true);
+            DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
             auto chunk = makeChunk(value);
             static_cast<ISimpleTransform &>(distinct).transform(chunk);
             source.push(std::move(chunk));
@@ -299,7 +299,7 @@ TEST(DistinctLimitTransform, ByteLimitUsesRetainedSetAllocations)
             sink.setNeeded();
         limit.prepare();
 
-        DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, true);
+        DistinctTransform distinct(limit.header, {}, 0, Names{"k"}, false, false, /*max_bytes_before_pass_through_=*/ 0, /*report_set_size_=*/ true);
         auto chunk = makeChunk(10);
         static_cast<ISimpleTransform &>(distinct).transform(chunk);
         limit.upstream.back().push(std::move(chunk));

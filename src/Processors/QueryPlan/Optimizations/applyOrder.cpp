@@ -75,10 +75,13 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
-        /// Preserve an established global ordering even when deduplication does not use that order.
+        /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
+        /// which may spill, has to restore the order after the spill (see
+        /// `DistinctStep::preserveInputOrder`). The preliminary `DISTINCT` never spills, and an empty
+        /// description carries no order to preserve.
         if (properties->sort_scope == SortingProperty::SortScope::Global)
         {
-            if (!distinct_step->isPreliminary())
+            if (!distinct_step->isPreliminary() && !properties->sort_description.empty())
                 distinct_step->preserveInputOrder();
             return *properties;
         }

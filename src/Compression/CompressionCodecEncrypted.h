@@ -109,7 +109,7 @@ public:
     };
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
     bool isCompression() const override { return false; }

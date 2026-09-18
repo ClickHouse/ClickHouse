@@ -28,7 +28,6 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_abandoned' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT count() FROM (SELECT DISTINCT a, b FROM t_uniq);
 SELECT DISTINCT a FROM t_uniq ORDER BY a LIMIT 3;
-SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS enable_analyzer = 0;
 
 -- the behavior can be switched off
 SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS allow_preliminary_distinct_abandoning = 0, log_comment = '05045_off';

@@ -101,7 +101,7 @@ TEST(DistinctStepInputOrder, OnlyExplicitOrderRequirementsPreventParallelization
                     SCOPED_TRACE(
                         ::testing::Message() << "preserve_order=" << preserve_order << ", disjoint=" << disjoint
                                              << ", initial_hint=" << initial_hint << ", updated_hint=" << updated_hint);
-                    DistinctStep step(makeHeader(), SizeLimits{}, initial_hint, Names{"k"}, false);
+                    DistinctStep step(makeHeader(), DistinctStep::Settings{}, initial_hint, Names{"k"}, false);
                     step.enableParallelDistinct();
                     if (disjoint)
                         step.skipStreamMerging();
@@ -133,10 +133,10 @@ TEST(DistinctStepInputOrder, DeserializedStepsDeriveOrderFromTheirInput)
                     ::testing::Message() << "preliminary=" << preliminary << ", sorted=" << sorted
                                          << ", distinct_in_order=" << distinct_in_order);
                 const auto header = makeHeader();
-                DistinctStep step(header, SizeLimits{}, 0, Names{"k"}, preliminary);
+                DistinctStep step(header, DistinctStep::Settings{}, 0, Names{"k"}, preliminary);
                 auto restored = roundTrip(step);
                 auto * distinct = static_cast<DistinctStep *>(restored.get());
-                EXPECT_FALSE(distinct->mustPreserveInputOrder());
+                EXPECT_FALSE(distinct->preservesInputOrder());
 
                 QueryPlan plan;
                 plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(header))));
@@ -153,7 +153,7 @@ TEST(DistinctStepInputOrder, DeserializedStepsDeriveOrderFromTheirInput)
                 QueryPlanOptimizationSettings settings(context);
                 settings.distinct_in_order = distinct_in_order;
                 QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode());
-                EXPECT_EQ(distinct->mustPreserveInputOrder(), sorted && !preliminary);
+                EXPECT_EQ(distinct->preservesInputOrder(), sorted && !preliminary);
 
                 if (!distinct_in_order)
                 {
@@ -173,7 +173,7 @@ TEST(DistinctStepInputOrderDeathTest, GlobalOrderRequiresSingleInputStream)
 TEST(DistinctStepInputOrder, GlobalOrderRequiresSingleInputStream)
 #endif
 {
-    DistinctStep step(makeHeader(), SizeLimits{}, 0, Names{"k"}, false);
+    DistinctStep step(makeHeader(), DistinctStep::Settings{}, 0, Names{"k"}, false);
     step.preserveInputOrder();
     auto pipeline = makePipeline(step.getInputHeaders().front(), 4);
 

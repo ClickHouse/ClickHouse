@@ -1,24 +1,56 @@
 #pragma once
+#include <Core/Defines.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
 
-/// Preliminary hashing `DISTINCT` reduces the rows each stream sends to final deduplication. At one
-/// effective thread it only hashes every row a second time, so the caller should omit that step.
+struct Settings;
+
+/// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
+/// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
+/// single-stream DISTINCT has fewer rows left to merge, which takes a second stream to be worth
+/// anything: at one thread it only hashes every row a second time.
 bool preliminaryDistinctIsUseful(size_t max_threads);
 
 /// Execute DISTINCT for specified columns.
 class DistinctStep : public ITransformingStep
 {
 public:
+    struct Settings
+    {
+        /// Restrictions on the maximum size of the `DISTINCT` set.
+        SizeLimits set_size_limits;
+
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+
+        /// The pipeline combines these thresholds into the smaller enabled spill trigger.
+        /// Setting both to zero disables external `DISTINCT`.
+        UInt64 max_bytes_before_external_distinct = 0;
+        double max_bytes_ratio_before_external_distinct = 0.;
+
+        /// Internal steps serialize these settings through `updatePlanSettings` even when spilling is
+        /// disabled. Defaults match the query settings, including the required nonzero buffer size.
+        size_t min_free_disk_space = 0;
+        String temporary_files_codec = "LZ4";
+        UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+        /// Disables external `DISTINCT` for internal operations, such as merge deduplication, that do
+        /// not use query settings or query memory tracking.
+        Settings() = default;
+        explicit Settings(const DB::Settings & settings_);
+        explicit Settings(const QueryPlanSerializationSettings & settings_);
+
+        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const;
+    };
+
     DistinctStep(
         const SharedHeader & input_header_,
-        const SizeLimits & set_size_limits_,
+        Settings settings_,
         UInt64 limit_hint_,
         const Names & columns_,
-        /// If enabled, reduce duplicates within each input stream before final deduplication. This
+        /// If enabled, execute the `DISTINCT` for separate streams, otherwise for merged streams. The
         /// per-stream deduplication is best-effort: duplicates from different streams pass through it
         /// in any case, so a deduplicating consumer must follow, and on mostly-unique input the
         /// transform may abandon deduplication entirely (see `allow_preliminary_distinct_abandoning`).
@@ -32,14 +64,14 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
-    void describeActions(FormatSettings & settings) const override;
+    void describeActions(FormatSettings & format_settings) const override;
 
     bool isPreliminary() const { return pre_distinct; }
 
     UInt64 getLimitHint() const { return limit_hint; }
     void updateLimitHint(UInt64 hint);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -49,7 +81,7 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
+    const Settings & getSettings() const { return settings; }
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
@@ -60,14 +92,17 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
-    /// Allow final deduplication to run in parallel by partitioning streams by the hash of the
-    /// `DISTINCT` columns. Input-order requirements and sorted deduplication take precedence.
-    void enableParallelDistinct() { parallel_distinct = true; }
-
-    /// Preserve the established global ordering of the input during final deduplication.
-    /// The input pipeline must already have a single stream.
+    /// The step must return the rows in their input order: it runs above the `ORDER BY` sorting of its
+    /// query (set by the planners), or the optimizer propagates a global order through it, which the steps
+    /// above may rely on (set by the `applyOrder` optimization). The in-memory `DISTINCT` keeps the order
+    /// by construction; a spilling one restores it after merging its runs (see
+    /// `ExternalDistinctTransform`).
     void preserveInputOrder() { preserve_input_order = true; }
-    bool mustPreserveInputOrder() const { return preserve_input_order; }
+    bool preservesInputOrder() const { return preserve_input_order; }
+
+    /// Allow final deduplication to run in parallel by partitioning streams by the hash of the `DISTINCT`
+    /// columns. Input-order requirements and sorted deduplication take precedence.
+    void enableParallelDistinct() { parallel_distinct = true; }
 
 private:
     void updateOutputHeader() override;
@@ -76,7 +111,7 @@ private:
     /// non-constant keys. Return whether partitioning was applied; otherwise leave the pipeline intact.
     bool tryScatterStreams(QueryPipelineBuilder & pipeline) const;
 
-    SizeLimits set_size_limits;
+    Settings settings;
     UInt64 limit_hint;
     const Names columns;
     bool pre_distinct;

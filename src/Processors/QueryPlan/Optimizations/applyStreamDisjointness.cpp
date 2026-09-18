@@ -74,7 +74,7 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
             return property;
 
         /// Preserving global input order requires final `DISTINCT` to keep its single input stream.
-        if (distinct->mustPreserveInputOrder())
+        if (distinct->preservesInputOrder())
             return {};
 
         /// Disjoint inputs can be deduplicated independently. `DistinctStep` enforces size limits on
