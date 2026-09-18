@@ -171,7 +171,7 @@ Materializing ensures all references see the same data.
 If a materialized CTE is only referenced once, ClickHouse automatically inlines it back into a regular subquery to avoid unnecessary overhead.
 </Tip>
 
-Materialized CTEs can be used in the definitions of views, parameterized views and materialized views; the CTE is materialized when the view is read (or, for a materialized view, when its query runs on insert, `POPULATE` or refresh). As in a plain query, a reference from a nested subquery or from another CTE to a CTE of an enclosing `SELECT` requires `enable_global_with_statement`; the query of a materialized view is always analyzed and executed with this setting enabled, and a new materialized view definition cannot set it.
+Materialized CTEs can be used in the definitions of views, parameterized views and materialized views; the CTE is materialized when the view is read (or, for a materialized view, when its query runs on insert, `POPULATE` or refresh), as long as `enable_materialized_cte` is enabled where that query runs: in the reading or inserting session, or in the definition's own `SETTINGS` clause (a refresh runs with the server defaults, so a refreshable materialized view needs the clause). As in a plain query, a reference from a nested subquery or from another CTE to a CTE of an enclosing `SELECT` requires `enable_global_with_statement`; the query of a materialized view is always analyzed and executed with this setting enabled, and a new materialized view definition cannot set it.
 
 ### Examples {#materialized-common-table-expressions-examples}
 
