@@ -14,17 +14,16 @@ namespace DB
 class ReadFromGPUCompressedColumns : public ISourceStep
 {
 public:
-    struct ColumnToSum
+    struct ColumnToReduce
     {
         NameAndTypePair column;
         DataTypePtr result_type;
-        int element_type;
-        int sum_type;
+        int aggregation;
     };
 
     ReadFromGPUCompressedColumns(
         SharedHeader output_header_,
-        std::vector<ColumnToSum> columns_,
+        std::vector<ColumnToReduce> columns_,
         DataPartsVector parts_,
         StorageSnapshotPtr storage_snapshot_,
         ContextPtr context_,
@@ -39,7 +38,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
 private:
-    std::vector<ColumnToSum> columns;
+    std::vector<ColumnToReduce> columns;
     DataPartsVector parts;
 
     StorageSnapshotPtr storage_snapshot;

@@ -31,11 +31,11 @@ namespace ErrorCodes
 namespace
 {
 
-using ColumnToSum = ReadFromGPUCompressedColumns::ColumnToSum;
+using ColumnToReduce = ReadFromGPUCompressedColumns::ColumnToReduce;
 
 struct SharedState
 {
-    std::vector<ColumnToSum> columns;
+    std::vector<ColumnToReduce> columns;
     DataPartsVector parts;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
@@ -74,22 +74,22 @@ protected:
         if (result_columns.size() != state->columns.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "A row of {} per-part sums does not fit an output header of {} columns",
+                "A row of {} per-part results does not fit an output header of {} columns",
                 state->columns.size(),
                 result_columns.size());
 
         for (size_t i = 0; i < state->columns.size(); ++i)
-            result_columns[i]->insert(sumColumn(*part, state->columns[i]));
+            result_columns[i]->insert(reduceColumn(*part, state->columns[i]));
 
         return Chunk(std::move(result_columns), 1);
     }
 
 private:
-    Field sumColumn(const IMergeTreeDataPart & part, const ColumnToSum & column) const
+    Field reduceColumn(const IMergeTreeDataPart & part, const ColumnToReduce & column) const
     {
         MergeTreeCompressedBlockReader reader(part, column.column, state->read_settings);
 
-        std::optional<GPU::SumAccumulator> accumulator;
+        std::optional<GPU::GPUAccumulator> accumulator;
         size_t rows_read = 0;
 
         while (const auto block = reader.next())
@@ -106,7 +106,7 @@ private:
                         part.name,
                         static_cast<UInt16>(method));
 
-                accumulator.emplace(*column.column.type, *column.result_type, state->batch_bytes, *codec);
+                accumulator.emplace(*column.column.type, *column.result_type, column.aggregation, state->batch_bytes, *codec);
             }
 
             accumulator->addBlock(block->payload, block->compressed_bytes, block->decompressed_bytes);
@@ -143,7 +143,7 @@ private:
 
 ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     SharedHeader output_header_,
-    std::vector<ColumnToSum> columns_,
+    std::vector<ColumnToReduce> columns_,
     DataPartsVector parts_,
     StorageSnapshotPtr storage_snapshot_,
     ContextPtr context_,

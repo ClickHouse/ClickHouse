@@ -4,6 +4,8 @@
 
 #if USE_GPU
 
+#include <GPU/GPUAggregationCudf.h>
+
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
@@ -18,16 +20,16 @@ const String & deviceProbeError();
 
 std::optional<int> elementTypeOf(const IDataType & type);
 
-std::optional<int> sumTypeOf(const IDataType & type);
-
 std::optional<int> codecOf(UInt8 method_byte);
+
+std::optional<int> aggregationOf(const String & aggregate_function_name);
 
 size_t elementSizeOf(int element_type);
 
 
 void * resizeForElementType(IColumn & column, size_t num_rows, int element_type);
 
-bool canSumOnDevice(const IDataType & argument_type, const IDataType & result_type);
+bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result_type, int aggregation);
 
 class PinnedBuffer
 {
@@ -59,12 +61,13 @@ private:
 };
 
 
-class SumAccumulator
+class GPUAccumulator
 {
 public:
-    SumAccumulator(
+    GPUAccumulator(
         const IDataType & argument_type,
         const IDataType & result_type,
+        int aggregation_,
         size_t batch_bytes_,
         std::optional<int> codec_ = {});
 
@@ -79,10 +82,13 @@ private:
 
     void flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes);
 
-    void sumBatchOnDevice();
+    void reduceBatchOnDevice();
+
+    void combine(UInt64 batch_result);
 
     const int element_type;
-    const int sum_type;
+    const int result_type;
+    const int aggregation;
     const size_t element_size;
     const size_t batch_bytes;
     const std::optional<int> codec;
@@ -95,23 +101,32 @@ private:
 
     size_t staged_values_bytes = 0;
 
-    UInt64 integer_sum = 0;
-    Float64 float_sum = 0;
+    UInt64 integer_result = 0;
+    Float64 float_result = 0;
+    bool has_result = false;
 };
 
 
-bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types);
+bool canGroupByReduceOnDevice(
+    const DataTypes & key_types,
+    const DataTypes & argument_types,
+    const DataTypes & result_types,
+    const std::vector<int> & aggregations);
 
-class GroupBySumAccumulator
+class GroupByGPUAccumulator
 {
 public:
-    GroupBySumAccumulator(
-        const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types, size_t batch_bytes);
+    GroupByGPUAccumulator(
+        const DataTypes & key_types,
+        const DataTypes & argument_types,
+        const DataTypes & result_types,
+        const std::vector<int> & aggregations,
+        size_t batch_bytes);
 
-    ~GroupBySumAccumulator();
+    ~GroupByGPUAccumulator();
 
-    GroupBySumAccumulator(const GroupBySumAccumulator &) = delete;
-    GroupBySumAccumulator & operator=(const GroupBySumAccumulator &) = delete;
+    GroupByGPUAccumulator(const GroupByGPUAccumulator &) = delete;
+    GroupByGPUAccumulator & operator=(const GroupByGPUAccumulator &) = delete;
 
     void add(const Columns & key_columns, const Columns & value_columns);
 
@@ -126,7 +141,8 @@ private:
 
     std::vector<int> key_element_types;
     std::vector<int> value_element_types;
-    std::vector<int> value_sum_types;
+    std::vector<int> value_result_types;
+    std::vector<int> value_aggregations;
 
     std::vector<size_t> key_element_sizes;
     std::vector<size_t> value_element_sizes;

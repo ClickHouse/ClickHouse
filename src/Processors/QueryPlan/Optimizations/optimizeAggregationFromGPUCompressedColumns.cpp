@@ -37,7 +37,7 @@ namespace
 #define GPU_COMPRESSED_REFUSE(reason) \
     do \
     { \
-        LOG_TRACE(getLogger("GPUCompressedColumns"), "Not summing compressed columns on the device: {}", (reason)); \
+        LOG_TRACE(getLogger("GPUCompressedColumns"), "Not aggregating compressed columns on the device: {}", (reason)); \
         return {}; \
     } while (false)
 
@@ -71,7 +71,13 @@ namespace
 
 constexpr size_t max_rows_per_part = (1UL << 31) - 1;
 
-std::optional<Names> collectSummedArguments(const GPUAggregatingStep & aggregating)
+struct ReducedAggregates
+{
+    Names arguments;
+    std::vector<int> aggregations;
+};
+
+std::optional<ReducedAggregates> collectReducedAggregates(const GPUAggregatingStep & aggregating)
 {
     const Aggregator::Params & params = aggregating.getParams();
 
@@ -84,18 +90,17 @@ std::optional<Names> collectSummedArguments(const GPUAggregatingStep & aggregati
     if (params.only_merge || params.overflow_row || params.max_rows_to_group_by != 0)
         GPU_COMPRESSED_REFUSE("the aggregation merges states, has an overflow row or a group limit");
 
+    auto aggregations = gpuAggregationsOf(params);
+    if (!aggregations)
+        GPU_COMPRESSED_REFUSE("an aggregate the device cannot reduce by on its own");
+
     Names arguments;
     arguments.reserve(params.aggregates.size());
 
     for (const auto & aggregate : params.aggregates)
-    {
-        if (aggregate.function->getName() != "sum" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1)
-            GPU_COMPRESSED_REFUSE("an aggregate that is not a single-argument `sum`");
-
         arguments.push_back(aggregate.argument_names.front());
-    }
 
-    return arguments;
+    return ReducedAggregates{.arguments = std::move(arguments), .aggregations = std::move(*aggregations)};
 }
 
 std::optional<String> passedThroughInputName(const ActionsDAG & dag, const String & name)
@@ -160,7 +165,7 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
         {
             const auto input_name = passedThroughInputName(dag, name);
             if (!input_name)
-                GPU_COMPRESSED_REFUSE("an expression that computes a summed column instead of passing it through");
+                GPU_COMPRESSED_REFUSE("an expression that computes an aggregated column instead of passing it through");
 
             name = *input_name;
         }
@@ -169,67 +174,75 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
     }
 }
 
-std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToSum>> matchSummedColumns(
-    const GPUAggregatingStep & aggregating, const ReadFromMergeTree & reading, const std::unordered_map<String, String> & read_names)
+std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToReduce>> matchReducedColumns(
+    const GPUAggregatingStep & aggregating,
+    const ReadFromMergeTree & reading,
+    const std::unordered_map<String, String> & read_names,
+    const std::vector<int> & aggregations)
 {
     const Block & read_header = *reading.getOutputHeader();
     const StorageMetadataPtr metadata = reading.getStorageMetadata();
     const ColumnsDescription & table_columns = metadata->getColumns();
 
-    NameSet summed_names;
+    const auto & aggregates = aggregating.getParams().aggregates;
 
-    for (const auto & aggregate : aggregating.getParams().aggregates)
+    std::unordered_map<String, int> aggregation_by_read_name;
+
+    for (size_t i = 0; i < aggregates.size(); ++i)
     {
+        const auto & aggregate = aggregates[i];
+        const int aggregation = aggregations[i];
+
         const auto read_name = read_names.find(aggregate.argument_names.front());
         if (read_name == read_names.end())
-            GPU_COMPRESSED_REFUSE("a summed column the descent did not translate");
+            GPU_COMPRESSED_REFUSE("an aggregated column the descent did not translate");
 
         const String & name = read_name->second;
 
         const ColumnWithTypeAndName * read_column = read_header.findByName(name);
         if (!read_column)
-            GPU_COMPRESSED_REFUSE("a summed column that is not in the read step's header");
+            GPU_COMPRESSED_REFUSE("an aggregated column that is not in the read step's header");
 
         if (metadata->virtuals.has(name))
-            GPU_COMPRESSED_REFUSE("a summed column that is a virtual column");
+            GPU_COMPRESSED_REFUSE("an aggregated column that is a virtual column");
 
         if (!table_columns.hasPhysical(name))
-            GPU_COMPRESSED_REFUSE("a summed column that is not a stored column of the table");
+            GPU_COMPRESSED_REFUSE("an aggregated column that is not a stored column of the table");
 
         const DataTypePtr & type = read_column->type;
         if (!table_columns.getPhysical(name).type->equals(*type))
-            GPU_COMPRESSED_REFUSE("a summed column whose type differs from the table's");
+            GPU_COMPRESSED_REFUSE("an aggregated column whose type differs from the table's");
 
         if (!aggregate.function->getResultType()->equals(*type))
-            GPU_COMPRESSED_REFUSE("a sum whose type differs from its argument's");
+            GPU_COMPRESSED_REFUSE("an aggregate whose result type differs from its argument's");
 
-        if (!GPU::canSumOnDevice(*type, *type))
-            GPU_COMPRESSED_REFUSE("a summed column of a type the device does not sum into itself");
+        if (!GPU::canReduceOnDevice(*type, *type, aggregation))
+            GPU_COMPRESSED_REFUSE("an aggregated column of a type the device does not reduce into itself");
 
         if (table_columns.hasCompressionCodec(name))
-            GPU_COMPRESSED_REFUSE("a summed column with a CODEC of its own");
+            GPU_COMPRESSED_REFUSE("an aggregated column with a CODEC of its own");
 
-        summed_names.insert(name);
+        const auto [seen, inserted] = aggregation_by_read_name.emplace(name, aggregation);
+        if (!inserted && seen->second != aggregation)
+            GPU_COMPRESSED_REFUSE("a column that two aggregates reduce by different aggregate functions");
     }
 
-    std::vector<ReadFromGPUCompressedColumns::ColumnToSum> columns;
+    std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> columns;
     columns.reserve(read_header.columns());
 
     for (const auto & read_column : read_header)
     {
-        if (!summed_names.contains(read_column.name))
-            GPU_COMPRESSED_REFUSE("the read produces a column nothing sums");
+        const auto aggregation = aggregation_by_read_name.find(read_column.name);
+        if (aggregation == aggregation_by_read_name.end())
+            GPU_COMPRESSED_REFUSE("the read produces a column nothing aggregates");
 
-        const auto element_type = GPU::elementTypeOf(*read_column.type);
-        const auto sum_type = GPU::sumTypeOf(*read_column.type);
-        if (!element_type || !sum_type)
+        if (!GPU::elementTypeOf(*read_column.type))
             GPU_COMPRESSED_REFUSE("a column of a type the device has no element type for");
 
         columns.push_back({
             .column = NameAndTypePair(read_column.name, read_column.type),
             .result_type = read_column.type,
-            .element_type = *element_type,
-            .sum_type = *sum_type,
+            .aggregation = aggregation->second,
         });
     }
 
@@ -238,7 +251,8 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToSum>> matchSumme
 
 bool readIsOfWholeParts(const ReadFromMergeTree & reading)
 {
-    /// Any of these filters rows, and a filtered part's sum is not the sum of its column. A filter
+    /// Any of these filters rows, and a filtered part's result is not the result over its whole
+    /// column. A filter
     /// pushed into the read is `filter_actions_dag`; `PREWHERE` and the row-level filter have
     /// places of their own, and each has a deferred form that a lazy `FINAL` plan leaves behind.
     if (reading.getFilterActionsDAG() || reading.getPrewhereInfo() || reading.getRowLevelFilter())
@@ -247,7 +261,7 @@ bool readIsOfWholeParts(const ReadFromMergeTree & reading)
     if (reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter())
         GPU_COMPRESSED_REFUSE("a deferred PREWHERE or row-level filter in the read");
 
-    /// `FINAL` collapses rows across parts, so a per-part sum is not a partial result of anything.
+    /// `FINAL` collapses rows across parts, so a per-part result is not a partial result of anything.
     /// Sampling reads a fraction of each part and scales the result.
     if (reading.isQueryWithFinal() || reading.isQueryWithSampling())
         GPU_COMPRESSED_REFUSE("the read is FINAL or sampled");
@@ -268,7 +282,7 @@ bool readIsOfWholeParts(const ReadFromMergeTree & reading)
     if (reading.willOutputEachPartitionThroughSeparatePort())
         GPU_COMPRESSED_REFUSE("the read outputs each partition through its own port");
 
-    /// Every replica would sum every part it is given, and the coordination that keeps them from
+    /// Every replica would reduce every part it is given, and the coordination that keeps them from
     /// reading the same rows twice is in the reader this replaces.
     if (reading.isParallelReadingFromReplicas() || reading.isParallelReadingEnabled() || reading.getDistributedReadBucketCount() > 0)
         GPU_COMPRESSED_REFUSE("the read is distributed across replicas");
@@ -306,7 +320,8 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
 
     /// With `break`, a query that runs out of time stops reading and returns what it has. A part
     /// whose read stopped half way has no partial answer here - the row the source emits claims to
-    /// be that part's whole sum - so this path only takes queries whose time limit throws.
+    /// be the result over that part's every row - so this path only takes queries whose time limit
+    /// throws.
     if (settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
         || settings[Setting::timeout_overflow_mode_leaf] != OverflowMode::THROW)
         GPU_COMPRESSED_REFUSE("`timeout_overflow_mode` is not `throw`");
@@ -335,7 +350,7 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
         }
     }
 
-    /// A row policy filters rows that a part's whole sum ignores. Without a database name the
+    /// A row policy filters rows that a part's whole result ignores. Without a database name the
     /// policy cannot be looked up, so that case is refused rather than assumed to be empty.
     const StorageID storage_id = reading.getStorageID();
     if (!storage_id.hasDatabase())
@@ -350,7 +365,7 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
 }
 
 std::optional<DataPartsVector> matchWholeParts(
-    const ReadFromMergeTree & reading, const std::vector<ReadFromGPUCompressedColumns::ColumnToSum> & columns)
+    const ReadFromMergeTree & reading, const std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> & columns)
 {
     const MergeTreeData::MutationsSnapshotPtr & mutations = reading.getMutationsSnapshot();
 
@@ -403,10 +418,10 @@ std::optional<DataPartsVector> matchWholeParts(
         {
             const auto part_column = part->tryGetColumn(column.column.name);
             if (!part_column || !part_column->type->equals(*read_header.getByName(column.column.name).type))
-                GPU_COMPRESSED_REFUSE("a part that does not store a summed column with the table's type");
+                GPU_COMPRESSED_REFUSE("a part that does not store an aggregated column with the table's type");
 
             if (!part->hasColumnFiles(*part_column))
-                GPU_COMPRESSED_REFUSE("a part that has no files for a summed column");
+                GPU_COMPRESSED_REFUSE("a part that has no files for an aggregated column");
         }
 
         parts.push_back(part);
@@ -430,11 +445,11 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!aggregating)
         return false;
 
-    auto arguments = collectSummedArguments(*aggregating);
-    if (!arguments)
+    const auto reduced = collectReducedAggregates(*aggregating);
+    if (!reduced)
         return false;
 
-    auto chain = matchChain(node, *arguments);
+    auto chain = matchChain(node, reduced->arguments);
     if (!chain)
         return false;
 
@@ -450,7 +465,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!readIsOfWholeParts(*reading))
         return false;
 
-    auto columns = matchSummedColumns(*aggregating, *reading, chain->read_names);
+    auto columns = matchReducedColumns(*aggregating, *reading, chain->read_names, reduced->aggregations);
     if (!columns)
         return false;
 
@@ -482,7 +497,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
 
     LOG_DEBUG(
         getLogger("GPUCompressedColumns"),
-        "Summing compressed columns on the device: {} whole parts, {} columns",
+        "Aggregating compressed columns on the device: {} whole parts, {} columns",
         parts->size(),
         columns->size());
 
@@ -503,7 +518,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
         reading->getNumStreams());
 
     source_node.step->setStepDescription(
-        "Sums of compressed columns decompressed on the device, one row per part", settings.max_step_description_length);
+        "Compressed columns decompressed and reduced on the device, one row per part", settings.max_step_description_length);
 
     chain->above_read->children.front() = &source_node;
     return true;

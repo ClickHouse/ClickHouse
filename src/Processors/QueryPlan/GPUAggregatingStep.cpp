@@ -28,6 +28,26 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
+std::optional<std::vector<int>> gpuAggregationsOf(const Aggregator::Params & params)
+{
+    std::vector<int> aggregations;
+    aggregations.reserve(params.aggregates.size());
+
+    for (const auto & aggregate : params.aggregates)
+    {
+        if (!aggregate.parameters.empty() || aggregate.argument_names.size() != 1)
+            return {};
+
+        const auto aggregation = GPU::aggregationOf(aggregate.function->getName());
+        if (!aggregation)
+            return {};
+
+        aggregations.push_back(*aggregation);
+    }
+
+    return aggregations;
+}
+
 GPUAggregatingStep::GPUAggregatingStep(const SharedHeader & input_header_, Aggregator::Params params_, size_t batch_bytes_)
     : ITransformingStep(
         input_header_,
@@ -49,6 +69,10 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
     if (params.aggregates.empty())
         return false;
 
+    const auto aggregations = gpuAggregationsOf(params);
+    if (!aggregations)
+        return false;
+
     DataTypes argument_types;
     DataTypes result_types;
     argument_types.reserve(params.aggregates.size());
@@ -56,9 +80,6 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
 
     for (const auto & aggregate : params.aggregates)
     {
-        if (aggregate.function->getName() != "sum" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1)
-            return false;
-
         const auto * argument = input_header.findByName(aggregate.argument_names.front());
         if (!argument)
             return false;
@@ -71,7 +92,7 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
     {
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
-            if (!GPU::canSumOnDevice(*argument_types[i], *result_types[i]))
+            if (!GPU::canReduceOnDevice(*argument_types[i], *result_types[i], (*aggregations)[i]))
                 return false;
         }
 
@@ -90,7 +111,7 @@ bool GPUAggregatingStep::canRunOnDevice(const Block & input_header, const Aggreg
         key_types.push_back(key_column->type);
     }
 
-    return GPU::canGroupBySumOnDevice(key_types, argument_types, result_types);
+    return GPU::canGroupByReduceOnDevice(key_types, argument_types, result_types, *aggregations);
 }
 
 void GPUAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

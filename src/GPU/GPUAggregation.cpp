@@ -206,7 +206,7 @@ size_t elementSizeOf(int element_type)
 namespace
 {
 
-std::optional<int> sumTypeFor(int element_type)
+std::optional<int> resultTypeFor(int element_type)
 {
     switch (element_type)
     {
@@ -214,30 +214,53 @@ std::optional<int> sumTypeFor(int element_type)
         case CLICKHOUSE_GPU_ELEMENT_UINT16:
         case CLICKHOUSE_GPU_ELEMENT_UINT32:
         case CLICKHOUSE_GPU_ELEMENT_UINT64:
-            return CLICKHOUSE_GPU_SUM_UINT64;
+            return CLICKHOUSE_GPU_RESULT_UINT64;
         case CLICKHOUSE_GPU_ELEMENT_INT8:
         case CLICKHOUSE_GPU_ELEMENT_INT16:
         case CLICKHOUSE_GPU_ELEMENT_INT32:
         case CLICKHOUSE_GPU_ELEMENT_INT64:
-            return CLICKHOUSE_GPU_SUM_INT64;
+            return CLICKHOUSE_GPU_RESULT_INT64;
         case CLICKHOUSE_GPU_ELEMENT_FLOAT32:
         case CLICKHOUSE_GPU_ELEMENT_FLOAT64:
-            return CLICKHOUSE_GPU_SUM_FLOAT64;
+            return CLICKHOUSE_GPU_RESULT_FLOAT64;
         default:
             return {};
     }
 }
-}
 
-std::optional<int> sumTypeOf(const IDataType & type)
+std::optional<int> resultTypeOf(const IDataType & type)
 {
     switch (type.getTypeId())
     {
-        case TypeIndex::UInt64: return CLICKHOUSE_GPU_SUM_UINT64;
-        case TypeIndex::Int64: return CLICKHOUSE_GPU_SUM_INT64;
-        case TypeIndex::Float64: return CLICKHOUSE_GPU_SUM_FLOAT64;
+        case TypeIndex::UInt64: return CLICKHOUSE_GPU_RESULT_UINT64;
+        case TypeIndex::Int64: return CLICKHOUSE_GPU_RESULT_INT64;
+        case TypeIndex::Float64: return CLICKHOUSE_GPU_RESULT_FLOAT64;
         default: return {};
     }
+}
+
+String aggregationName(int aggregation)
+{
+    switch (aggregation)
+    {
+        case CLICKHOUSE_GPU_AGGREGATION_SUM: return "sum";
+        case CLICKHOUSE_GPU_AGGREGATION_MIN: return "min";
+        case CLICKHOUSE_GPU_AGGREGATION_MAX: return "max";
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU aggregation {}", aggregation);
+    }
+}
+}
+
+std::optional<int> aggregationOf(const String & aggregate_function_name)
+{
+    if (aggregate_function_name == "sum")
+        return CLICKHOUSE_GPU_AGGREGATION_SUM;
+    if (aggregate_function_name == "min")
+        return CLICKHOUSE_GPU_AGGREGATION_MIN;
+    if (aggregate_function_name == "max")
+        return CLICKHOUSE_GPU_AGGREGATION_MAX;
+
+    return {};
 }
 
 std::optional<int> codecOf(UInt8 method_byte)
@@ -263,43 +286,60 @@ const String & deviceProbeError()
     return error;
 }
 
-bool canSumOnDevice(const IDataType & argument_type, const IDataType & result_type)
+bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result_type, int aggregation)
 {
     const auto element_type = elementTypeOf(argument_type);
     if (!element_type)
         return false;
 
-    const auto result_sum_type = sumTypeOf(result_type);
-    return result_sum_type && result_sum_type == sumTypeFor(*element_type);
+    if (aggregation == CLICKHOUSE_GPU_AGGREGATION_SUM)
+    {
+        const auto result = resultTypeOf(result_type);
+        return result && result == resultTypeFor(*element_type);
+    }
+
+    return elementTypeOf(result_type) == element_type;
 }
 
 namespace
 {
-int elementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type)
+int aggregationOrThrow(int aggregation)
 {
-    if (const auto element_type = elementTypeOf(argument_type); element_type && canSumOnDevice(argument_type, result_type))
-        return *element_type;
+    aggregationName(aggregation);
+    return aggregation;
+}
+
+int elementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type, int aggregation)
+{
+    if (canReduceOnDevice(argument_type, result_type, aggregation))
+        return *elementTypeOf(argument_type);
 
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "Cannot sum a column of {} into {} on a GPU",
+        "Cannot reduce a column of {} into {} by `{}` on a GPU",
         argument_type.getName(),
-        result_type.getName());
+        result_type.getName(),
+        aggregationName(aggregation));
 }
 
-int sumTypeOrThrow(const IDataType & result_type)
+int resultTypeOrThrow(int element_type)
 {
-    if (const auto sum_type = sumTypeOf(result_type))
-        return *sum_type;
+    if (const auto result_type = resultTypeFor(element_type))
+        return *result_type;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "A sum of {} cannot come back from a GPU", result_type.getName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
 }
 }
 
-SumAccumulator::SumAccumulator(
-    const IDataType & argument_type, const IDataType & result_type, size_t batch_bytes_, std::optional<int> codec_)
-    : element_type(elementTypeOrThrow(argument_type, result_type))
-    , sum_type(sumTypeOrThrow(result_type))
+GPUAccumulator::GPUAccumulator(
+    const IDataType & argument_type,
+    const IDataType & result_type_,
+    int aggregation_,
+    size_t batch_bytes_,
+    std::optional<int> codec_)
+    : element_type(elementTypeOrThrow(argument_type, result_type_, aggregationOrThrow(aggregation_)))
+    , result_type(resultTypeOrThrow(element_type))
+    , aggregation(aggregation_)
     , element_size(elementSizeOf(element_type))
     , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
     , codec(codec_)
@@ -308,17 +348,17 @@ SumAccumulator::SumAccumulator(
         staged.reserve(batch_bytes);
 }
 
-void SumAccumulator::flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes)
+void GPUAccumulator::flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes)
 {
     if (staged_values_bytes == 0)
         return;
 
     if (staged_values_bytes + incoming_bytes > batch_bytes
         || staged_values_bytes / element_size + incoming_rows > max_batch_rows)
-        sumBatchOnDevice();
+        reduceBatchOnDevice();
 }
 
-void SumAccumulator::add(const IColumn & column)
+void GPUAccumulator::add(const IColumn & column)
 {
     if (!block_offsets.empty())
         throw Exception(ErrorCodes::GPU_ERROR, "A batch of compressed blocks cannot also take plain values");
@@ -339,23 +379,16 @@ void SumAccumulator::add(const IColumn & column)
     staged_values_bytes += raw.size();
 
     if (staged_values_bytes >= batch_bytes)
-        sumBatchOnDevice();
+        reduceBatchOnDevice();
 }
 
-void SumAccumulator::addBlock(const char * payload, size_t compressed_bytes, size_t decompressed_bytes)
+void GPUAccumulator::addBlock(const char * payload, size_t compressed_bytes, size_t decompressed_bytes)
 {
     if (!codec)
         throw Exception(ErrorCodes::GPU_ERROR, "A compressed block needs a codec the device can expand");
 
     if (staged_values_bytes != 0 && block_offsets.empty())
         throw Exception(ErrorCodes::GPU_ERROR, "A batch of plain values cannot also take compressed blocks");
-
-    if (decompressed_bytes % element_size != 0)
-        throw Exception(
-            ErrorCodes::GPU_ERROR,
-            "A compressed block expands to {} bytes, which is not a whole number of {}-byte values",
-            decompressed_bytes,
-            element_size);
 
     flushIfBatchWouldOverflow(decompressed_bytes / element_size, decompressed_bytes);
 
@@ -366,36 +399,43 @@ void SumAccumulator::addBlock(const char * payload, size_t compressed_bytes, siz
     staged_values_bytes += decompressed_bytes;
 }
 
-void SumAccumulator::sumBatchOnDevice()
+void GPUAccumulator::reduceBatchOnDevice()
 {
     if (staged_values_bytes == 0)
         return;
 
     const size_t num_rows = staged_values_bytes / element_size;
 
-    UInt64 batch_sum = 0;
+    UInt64 batch_result = 0;
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
     const int status = block_offsets.empty()
-        ? clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error))
-        : clickhouseGPUSumCompressed(
+        ? clickhouseGPUReduce(
+              element_type, result_type, aggregation, staged.data(), num_rows, &batch_result, error, sizeof(error))
+        : clickhouseGPUReduceCompressed(
               *codec,
               element_type,
-              sum_type,
+              result_type,
+              aggregation,
               staged.data(),
               block_offsets.data(),
               block_compressed_sizes.data(),
               block_decompressed_sizes.data(),
               block_offsets.size(),
               num_rows,
-              &batch_sum,
+              &batch_result,
               error,
               sizeof(error));
     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot sum {} values on the device: {}", num_rows, error);
+        throw Exception(
+            ErrorCodes::GPU_ERROR,
+            "Cannot reduce {} values by `{}` on the device: {}",
+            num_rows,
+            aggregationName(aggregation),
+            error);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -407,30 +447,75 @@ void SumAccumulator::sumBatchOnDevice()
     block_decompressed_sizes.clear();
     staged_values_bytes = 0;
 
-    if (sum_type == CLICKHOUSE_GPU_SUM_FLOAT64)
-        float_sum += std::bit_cast<Float64>(batch_sum);
-    else
-        integer_sum += batch_sum;
+    combine(batch_result);
 }
 
-Field SumAccumulator::finalize()
+void GPUAccumulator::combine(UInt64 batch_result)
 {
-    sumBatchOnDevice();
-
-    switch (sum_type)
+    if (aggregation == CLICKHOUSE_GPU_AGGREGATION_SUM)
     {
-        case CLICKHOUSE_GPU_SUM_UINT64:
-            return Field(integer_sum);
-        case CLICKHOUSE_GPU_SUM_INT64:
-            return Field(static_cast<Int64>(integer_sum));
+        if (result_type == CLICKHOUSE_GPU_RESULT_FLOAT64)
+            float_result += std::bit_cast<Float64>(batch_result);
+        else
+            integer_result += batch_result;
+
+        has_result = true;
+        return;
+    }
+
+    const bool take_smaller = aggregation == CLICKHOUSE_GPU_AGGREGATION_MIN;
+
+    switch (result_type)
+    {
+        case CLICKHOUSE_GPU_RESULT_UINT64:
+        {
+            integer_result = !has_result
+                ? batch_result
+                : (take_smaller ? std::min(integer_result, batch_result) : std::max(integer_result, batch_result));
+            break;
+        }
+        case CLICKHOUSE_GPU_RESULT_INT64:
+        {
+            const Int64 running = static_cast<Int64>(integer_result);
+            const Int64 value = static_cast<Int64>(batch_result);
+            integer_result = static_cast<UInt64>(
+                !has_result ? value : (take_smaller ? std::min(running, value) : std::max(running, value)));
+            break;
+        }
         default:
-            return Field(float_sum);
+        {
+            const Float64 value = std::bit_cast<Float64>(batch_result);
+            float_result = !has_result ? value : (take_smaller ? std::min(float_result, value) : std::max(float_result, value));
+            break;
+        }
+    }
+
+    has_result = true;
+}
+
+Field GPUAccumulator::finalize()
+{
+    reduceBatchOnDevice();
+
+    switch (result_type)
+    {
+        case CLICKHOUSE_GPU_RESULT_UINT64:
+            return Field(integer_result);
+        case CLICKHOUSE_GPU_RESULT_INT64:
+            return Field(static_cast<Int64>(integer_result));
+        default:
+            return Field(float_result);
     }
 }
 
-bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types)
+bool canGroupByReduceOnDevice(
+    const DataTypes & key_types,
+    const DataTypes & argument_types,
+    const DataTypes & result_types,
+    const std::vector<int> & aggregations)
 {
-    if (key_types.empty() || argument_types.empty() || argument_types.size() != result_types.size())
+    if (key_types.empty() || argument_types.empty() || argument_types.size() != result_types.size()
+        || argument_types.size() != aggregations.size())
         return false;
 
     for (const auto & key_type : key_types)
@@ -445,7 +530,7 @@ bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argume
 
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
-        if (!canSumOnDevice(*argument_types[i], *result_types[i]))
+        if (!canReduceOnDevice(*argument_types[i], *result_types[i], aggregations[i]))
             return false;
     }
 
@@ -495,14 +580,14 @@ void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
 
 namespace
 {
-void * resizeForSumType(IColumn & column, size_t num_rows, int sum_type)
+void * resizeForResultType(IColumn & column, size_t num_rows, int result_type)
 {
-    switch (sum_type)
+    switch (result_type)
     {
-        case CLICKHOUSE_GPU_SUM_UINT64: return resizeAndGetValueBytes<UInt64>(column, num_rows);
-        case CLICKHOUSE_GPU_SUM_INT64: return resizeAndGetValueBytes<Int64>(column, num_rows);
-        case CLICKHOUSE_GPU_SUM_FLOAT64: return resizeAndGetValueBytes<Float64>(column, num_rows);
-        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU sum type {}", sum_type);
+        case CLICKHOUSE_GPU_RESULT_UINT64: return resizeAndGetValueBytes<UInt64>(column, num_rows);
+        case CLICKHOUSE_GPU_RESULT_INT64: return resizeAndGetValueBytes<Int64>(column, num_rows);
+        case CLICKHOUSE_GPU_RESULT_FLOAT64: return resizeAndGetValueBytes<Float64>(column, num_rows);
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU result type {}", result_type);
     }
 }
 
@@ -523,33 +608,27 @@ std::vector<int> keyElementTypesOrThrow(const DataTypes & key_types)
     return element_types;
 }
 
-std::vector<int> valueElementTypesOrThrow(const DataTypes & argument_types, const DataTypes & result_types)
+std::vector<int> valueElementTypesOrThrow(
+    const DataTypes & argument_types, const DataTypes & result_types, const std::vector<int> & aggregations)
 {
-    if (argument_types.size() != result_types.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A grouped sum of {} arguments returning {} results",
-            argument_types.size(),
-            result_types.size());
-
     std::vector<int> element_types;
     element_types.reserve(argument_types.size());
 
     for (size_t i = 0; i < argument_types.size(); ++i)
-        element_types.push_back(elementTypeOrThrow(*argument_types[i], *result_types[i]));
+        element_types.push_back(elementTypeOrThrow(*argument_types[i], *result_types[i], aggregationOrThrow(aggregations[i])));
 
     return element_types;
 }
 
-std::vector<int> sumTypesOrThrow(const DataTypes & result_types)
+std::vector<int> resultTypesOrThrow(const std::vector<int> & element_types)
 {
-    std::vector<int> sum_types;
-    sum_types.reserve(result_types.size());
+    std::vector<int> result_types;
+    result_types.reserve(element_types.size());
 
-    for (const auto & result_type : result_types)
-        sum_types.push_back(sumTypeOrThrow(*result_type));
+    for (const int element_type : element_types)
+        result_types.push_back(resultTypeOrThrow(element_type));
 
-    return sum_types;
+    return result_types;
 }
 
 std::vector<size_t> elementSizesOf(const std::vector<int> & element_types)
@@ -570,11 +649,16 @@ size_t rowBytesOf(const std::vector<size_t> & key_element_sizes, const std::vect
 }
 }
 
-GroupBySumAccumulator::GroupBySumAccumulator(
-    const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types, size_t batch_bytes)
+GroupByGPUAccumulator::GroupByGPUAccumulator(
+    const DataTypes & key_types,
+    const DataTypes & argument_types,
+    const DataTypes & result_types,
+    const std::vector<int> & aggregations,
+    size_t batch_bytes)
     : key_element_types(keyElementTypesOrThrow(key_types))
-    , value_element_types(valueElementTypesOrThrow(argument_types, result_types))
-    , value_sum_types(sumTypesOrThrow(result_types))
+    , value_element_types(valueElementTypesOrThrow(argument_types, result_types, aggregations))
+    , value_result_types(resultTypesOrThrow(value_element_types))
+    , value_aggregations(aggregations)
     , key_element_sizes(elementSizesOf(key_element_types))
     , value_element_sizes(elementSizesOf(value_element_types))
     , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_sizes, value_element_sizes), size_t{1}, max_batch_rows))
@@ -582,11 +666,12 @@ GroupBySumAccumulator::GroupBySumAccumulator(
     , staged_values(value_element_types.size())
 {
     char error[error_buffer_size] = {};
-    const int status = clickhouseGPUGroupBySumCreate(
+    const int status = clickhouseGPUGroupByCreate(
         key_element_types.data(),
         key_element_types.size(),
         value_element_types.data(),
-        value_sum_types.data(),
+        value_result_types.data(),
+        value_aggregations.data(),
         value_element_types.size(),
         &handle,
         error,
@@ -601,25 +686,13 @@ GroupBySumAccumulator::GroupBySumAccumulator(
         staged_values[i].reserve(batch_rows * value_element_sizes[i]);
 }
 
-GroupBySumAccumulator::~GroupBySumAccumulator()
+GroupByGPUAccumulator::~GroupByGPUAccumulator()
 {
-    clickhouseGPUGroupBySumDestroy(handle);
+    clickhouseGPUGroupByDestroy(handle);
 }
 
-void GroupBySumAccumulator::add(const Columns & key_columns, const Columns & value_columns)
+void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & value_columns)
 {
-    if (num_groups)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A row set was added to a grouped sum that was already finalized");
-
-    if (key_columns.size() != staged_keys.size() || value_columns.size() != staged_values.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A row set of {} keys and {} values, where the grouped sum has {} and {}",
-            key_columns.size(),
-            value_columns.size(),
-            staged_keys.size(),
-            staged_values.size());
-
     const size_t num_rows = key_columns.front()->size();
     if (num_rows == 0)
         return;
@@ -645,7 +718,7 @@ void GroupBySumAccumulator::add(const Columns & key_columns, const Columns & val
         sendBatchToDevice();
 }
 
-void GroupBySumAccumulator::sendBatchToDevice()
+void GroupByGPUAccumulator::sendBatchToDevice()
 {
     if (staged_rows == 0)
         return;
@@ -662,7 +735,7 @@ void GroupBySumAccumulator::sendBatchToDevice()
 
     Stopwatch watch;
     const int status
-        = clickhouseGPUGroupBySumAddBatch(handle, key_data.data(), value_data.data(), staged_rows, error, sizeof(error));
+        = clickhouseGPUGroupByAddBatch(handle, key_data.data(), value_data.data(), staged_rows, error, sizeof(error));
     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (status != 0)
@@ -680,48 +753,35 @@ void GroupBySumAccumulator::sendBatchToDevice()
     staged_rows = 0;
 }
 
-size_t GroupBySumAccumulator::finalize()
+size_t GroupByGPUAccumulator::finalize()
 {
-    if (num_groups)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A grouped sum was finalized twice");
-
     sendBatchToDevice();
 
     size_t groups = 0;
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    const int status = clickhouseGPUGroupBySumFinalize(handle, &groups, error, sizeof(error));
+    const int status = clickhouseGPUGroupByFinalize(handle, &groups, error, sizeof(error));
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
     if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot finalize a grouped sum on the device: {}", error);
+        throw Exception(ErrorCodes::GPU_ERROR, "Cannot finalize a grouped aggregation on the device: {}", error);
 
     num_groups = groups;
     return groups;
 }
 
-void GroupBySumAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns)
+void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns)
 {
-    if (!num_groups)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a grouped sum were asked for before it was finalized");
-
-    if (key_columns.size() != staged_keys.size() || value_columns.size() != staged_values.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Room for {} keys and {} sums, where the grouped sum has {} and {}",
-            key_columns.size(),
-            value_columns.size(),
-            staged_keys.size(),
-            staged_values.size());
-
     std::vector<void *> key_data(key_columns.size());
     for (size_t i = 0; i < key_columns.size(); ++i)
         key_data[i] = resizeForElementType(*key_columns[i], *num_groups, key_element_types[i]);
 
     std::vector<void *> value_data(value_columns.size());
     for (size_t i = 0; i < value_columns.size(); ++i)
-        value_data[i] = resizeForSumType(*value_columns[i], *num_groups, value_sum_types[i]);
+        value_data[i] = value_aggregations[i] == CLICKHOUSE_GPU_AGGREGATION_SUM
+            ? resizeForResultType(*value_columns[i], *num_groups, value_result_types[i])
+            : resizeForElementType(*value_columns[i], *num_groups, value_element_types[i]);
 
     if (*num_groups == 0)
         return;
@@ -729,7 +789,7 @@ void GroupBySumAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    const int status = clickhouseGPUGroupBySumCopyOut(handle, key_data.data(), value_data.data(), error, sizeof(error));
+    const int status = clickhouseGPUGroupByCopyOut(handle, key_data.data(), value_data.data(), error, sizeof(error));
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
     if (status != 0)

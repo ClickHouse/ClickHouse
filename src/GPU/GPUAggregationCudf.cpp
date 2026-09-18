@@ -77,74 +77,123 @@ ElementLayout elementLayoutOf(int element_type)
     }
 }
 
-cudf::data_type sumTypeOf(int sum_type)
+cudf::data_type resultTypeOf(int result_type)
 {
-    switch (sum_type)
+    switch (result_type)
     {
-        case CLICKHOUSE_GPU_SUM_UINT64: return cudf::data_type{cudf::type_id::UINT64};
-        case CLICKHOUSE_GPU_SUM_INT64: return cudf::data_type{cudf::type_id::INT64};
-        case CLICKHOUSE_GPU_SUM_FLOAT64: return cudf::data_type{cudf::type_id::FLOAT64};
-        default: throw std::logic_error("unknown sum type " + std::to_string(sum_type));
+        case CLICKHOUSE_GPU_RESULT_UINT64: return cudf::data_type{cudf::type_id::UINT64};
+        case CLICKHOUSE_GPU_RESULT_INT64: return cudf::data_type{cudf::type_id::INT64};
+        case CLICKHOUSE_GPU_RESULT_FLOAT64: return cudf::data_type{cudf::type_id::FLOAT64};
+        default: throw std::logic_error("unknown result type " + std::to_string(result_type));
     }
 }
 
-void writeSum(const cudf::scalar & sum, int sum_type, void * result, rmm::cuda_stream_view stream)
+template <typename Result>
+Result scalarValueAs(const cudf::scalar & value, rmm::cuda_stream_view stream)
 {
-    if (!sum.is_valid(stream))
-        throw std::runtime_error("the device returned no sum for a non-empty batch of values without nulls");
-
-    if (sum.type() != sumTypeOf(sum_type))
-        throw std::logic_error(
-            "the device returned a sum of type " + std::to_string(static_cast<int32_t>(sum.type().id()))
-            + ", expected " + std::to_string(static_cast<int32_t>(sumTypeOf(sum_type).id())));
-
-    switch (sum_type)
+    switch (value.type().id())
     {
-        case CLICKHOUSE_GPU_SUM_UINT64:
+        case cudf::type_id::UINT8:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint8_t> &>(value).value(stream));
+        case cudf::type_id::UINT16:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint16_t> &>(value).value(stream));
+        case cudf::type_id::UINT32:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint32_t> &>(value).value(stream));
+        case cudf::type_id::UINT64:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint64_t> &>(value).value(stream));
+        case cudf::type_id::INT8:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int8_t> &>(value).value(stream));
+        case cudf::type_id::INT16:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int16_t> &>(value).value(stream));
+        case cudf::type_id::INT32:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int32_t> &>(value).value(stream));
+        case cudf::type_id::INT64:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int64_t> &>(value).value(stream));
+        case cudf::type_id::FLOAT32:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<float> &>(value).value(stream));
+        case cudf::type_id::FLOAT64:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<double> &>(value).value(stream));
+        default:
+            throw std::logic_error(
+                "the device returned a scalar of cuDF type " + std::to_string(static_cast<int32_t>(value.type().id()))
+                + ", which is not one this path reduces into");
+    }
+}
+
+void writeResult(const cudf::scalar & value, int result_type, void * result, rmm::cuda_stream_view stream)
+{
+    if (!value.is_valid(stream))
+        throw std::runtime_error("the device returned nothing for a non-empty batch of values without nulls");
+
+    switch (result_type)
+    {
+        case CLICKHOUSE_GPU_RESULT_UINT64:
         {
-            const auto value = static_cast<const cudf::numeric_scalar<uint64_t> &>(sum).value(stream);
-            std::memcpy(result, &value, sizeof(value));
+            const uint64_t widened = scalarValueAs<uint64_t>(value, stream);
+            std::memcpy(result, &widened, sizeof(widened));
             return;
         }
-        case CLICKHOUSE_GPU_SUM_INT64:
+        case CLICKHOUSE_GPU_RESULT_INT64:
         {
-            const auto value = static_cast<const cudf::numeric_scalar<int64_t> &>(sum).value(stream);
-            std::memcpy(result, &value, sizeof(value));
+            const int64_t widened = scalarValueAs<int64_t>(value, stream);
+            std::memcpy(result, &widened, sizeof(widened));
             return;
         }
-        case CLICKHOUSE_GPU_SUM_FLOAT64:
+        case CLICKHOUSE_GPU_RESULT_FLOAT64:
         {
-            const auto value = static_cast<const cudf::numeric_scalar<double> &>(sum).value(stream);
-            std::memcpy(result, &value, sizeof(value));
+            const double widened = scalarValueAs<double>(value, stream);
+            std::memcpy(result, &widened, sizeof(widened));
             return;
         }
         default:
-            throw std::logic_error("unknown sum type " + std::to_string(sum_type));
+            throw std::logic_error("unknown result type " + std::to_string(result_type));
     }
 }
 
-
-void reduceIntoSum(const cudf::column_view & column, int sum_type, void * result, rmm::cuda_stream_view stream)
+std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(int aggregation)
 {
-    const auto aggregation = cudf::make_sum_aggregation<cudf::reduce_aggregation>();
-    const auto sum = cudf::reduce(column, *aggregation, sumTypeOf(sum_type), stream);
-
-    writeSum(*sum, sum_type, result, stream);
+    switch (aggregation)
+    {
+        case CLICKHOUSE_GPU_AGGREGATION_SUM: return cudf::make_sum_aggregation<cudf::reduce_aggregation>();
+        case CLICKHOUSE_GPU_AGGREGATION_MIN: return cudf::make_min_aggregation<cudf::reduce_aggregation>();
+        case CLICKHOUSE_GPU_AGGREGATION_MAX: return cudf::make_max_aggregation<cudf::reduce_aggregation>();
+        default: throw std::logic_error("unknown aggregation " + std::to_string(aggregation));
+    }
 }
 
-constexpr size_t sum_type_size = 8;
+cudf::data_type reduceOutputTypeOf(int element_type, int result_type, int aggregation)
+{
+    if (aggregation == CLICKHOUSE_GPU_AGGREGATION_SUM)
+        return resultTypeOf(result_type);
+
+    return elementLayoutOf(element_type).type;
+}
 
 void reduceDeviceValues(
-    const void * device_values, int element_type, int sum_type, size_t num_rows, void * result, rmm::cuda_stream_view stream)
+    const void * device_values,
+    int element_type,
+    int result_type,
+    int aggregation,
+    size_t num_rows,
+    void * result,
+    rmm::cuda_stream_view stream)
 {
     const ElementLayout element = elementLayoutOf(element_type);
     const cudf::column_view column(
         element.type, static_cast<cudf::size_type>(num_rows), device_values, nullptr, 0);
-    reduceIntoSum(column, sum_type, result, stream);
+
+    const std::unique_ptr<cudf::reduce_aggregation> reduction = reduceAggregationFor(aggregation);
+    const std::unique_ptr<cudf::scalar> value
+        = cudf::reduce(column, *reduction, reduceOutputTypeOf(element_type, result_type, aggregation), stream);
+
+    writeResult(*value, result_type, result, stream);
 }
 
-cudf::data_type cudfGroupBySumTargetTypeFor(cudf::data_type source)
+cudf::data_type groupByTargetTypeFor(cudf::data_type source, int aggregation)
 {
+    if (aggregation != CLICKHOUSE_GPU_AGGREGATION_SUM)
+        return source;
+
     switch (source.id())
     {
         case cudf::type_id::UINT8:
@@ -162,21 +211,35 @@ cudf::data_type cudfGroupBySumTargetTypeFor(cudf::data_type source)
             return cudf::data_type{cudf::type_id::FLOAT64};
         default:
             throw std::logic_error(
-                "cuDF type " + std::to_string(static_cast<int32_t>(source.id())) + " is not one this path groups by or sums");
+                "cuDF type " + std::to_string(static_cast<int32_t>(source.id())) + " is not one this path groups by or reduces");
     }
 }
 
-cudf::data_type deviceSumTypeOf(int sum_type)
+cudf::data_type groupByDeviceTypeOf(int element_type, int result_type, int aggregation)
 {
-    switch (sum_type)
+    if (aggregation != CLICKHOUSE_GPU_AGGREGATION_SUM)
+        return elementLayoutOf(element_type).type;
+
+    switch (result_type)
     {
-        case CLICKHOUSE_GPU_SUM_UINT64:
-        case CLICKHOUSE_GPU_SUM_INT64:
+        case CLICKHOUSE_GPU_RESULT_UINT64:
+        case CLICKHOUSE_GPU_RESULT_INT64:
             return cudf::data_type{cudf::type_id::INT64};
-        case CLICKHOUSE_GPU_SUM_FLOAT64:
+        case CLICKHOUSE_GPU_RESULT_FLOAT64:
             return cudf::data_type{cudf::type_id::FLOAT64};
         default:
-            throw std::logic_error("unknown sum type " + std::to_string(sum_type));
+            throw std::logic_error("unknown result type " + std::to_string(result_type));
+    }
+}
+
+std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(int aggregation)
+{
+    switch (aggregation)
+    {
+        case CLICKHOUSE_GPU_AGGREGATION_SUM: return cudf::make_sum_aggregation<cudf::groupby_aggregation>();
+        case CLICKHOUSE_GPU_AGGREGATION_MIN: return cudf::make_min_aggregation<cudf::groupby_aggregation>();
+        case CLICKHOUSE_GPU_AGGREGATION_MAX: return cudf::make_max_aggregation<cudf::groupby_aggregation>();
+        default: throw std::logic_error("unknown aggregation " + std::to_string(aggregation));
     }
 }
 
@@ -188,10 +251,19 @@ void checkNoNulls(const cudf::column_view & column, const std::string & what)
             + ", where the input had no null mask at all");
 }
 
-std::unique_ptr<cudf::table> groupBySum(
+struct GroupByValue
+{
+    ElementLayout element;
+
+    int aggregation;
+    cudf::data_type device_type;
+    size_t device_type_size;
+};
+
+std::unique_ptr<cudf::table> groupByAggregate(
     const cudf::table_view & keys,
     const std::vector<cudf::column_view> & values,
-    const std::vector<cudf::data_type> & sum_types,
+    const std::vector<GroupByValue> & value_descriptions,
     rmm::cuda_stream_view stream)
 {
     std::vector<cudf::groupby::aggregation_request> requests;
@@ -199,15 +271,19 @@ std::unique_ptr<cudf::table> groupBySum(
 
     for (size_t i = 0; i < values.size(); ++i)
     {
-        if (cudfGroupBySumTargetTypeFor(values[i].type()) != sum_types[i])
+        const GroupByValue & description = value_descriptions[i];
+
+        if (groupByTargetTypeFor(values[i].type(), description.aggregation) != description.device_type)
             throw std::logic_error(
                 "a groupby over a value column of cuDF type " + std::to_string(static_cast<int32_t>(values[i].type().id()))
-                + " sums into type " + std::to_string(static_cast<int32_t>(cudfGroupBySumTargetTypeFor(values[i].type()).id()))
-                + ", not into the expected " + std::to_string(static_cast<int32_t>(sum_types[i].id())));
+                + " leaves a group in type "
+                + std::to_string(
+                    static_cast<int32_t>(groupByTargetTypeFor(values[i].type(), description.aggregation).id()))
+                + ", not in the expected " + std::to_string(static_cast<int32_t>(description.device_type.id())));
 
         cudf::groupby::aggregation_request request;
         request.values = values[i];
-        request.aggregations.push_back(cudf::make_sum_aggregation<cudf::groupby_aggregation>());
+        request.aggregations.push_back(groupByAggregationFor(description.aggregation));
         requests.push_back(std::move(request));
     }
 
@@ -221,28 +297,27 @@ std::unique_ptr<cudf::table> groupBySum(
     {
         if (results[i].results.size() != 1)
             throw std::logic_error(
-                "the device returned " + std::to_string(results[i].results.size()) + " results for one requested sum");
+                "the device returned " + std::to_string(results[i].results.size()) + " results for one requested aggregation");
 
-        std::unique_ptr<cudf::column> & sum = results[i].results.front();
+        std::unique_ptr<cudf::column> & aggregated = results[i].results.front();
 
-        if (sum->type() != sum_types[i])
+        if (aggregated->type() != value_descriptions[i].device_type)
             throw std::logic_error(
-                "the device returned a sum of cuDF type " + std::to_string(static_cast<int32_t>(sum->type().id()))
-                + ", expected " + std::to_string(static_cast<int32_t>(sum_types[i].id())));
+                "the device returned a column of cuDF type " + std::to_string(static_cast<int32_t>(aggregated->type().id()))
+                + ", expected " + std::to_string(static_cast<int32_t>(value_descriptions[i].device_type.id())));
 
-        checkNoNulls(sum->view(), "a column of partial sums");
-        columns.push_back(std::move(sum));
+        checkNoNulls(aggregated->view(), "a column of partial results");
+        columns.push_back(std::move(aggregated));
     }
 
     return std::make_unique<cudf::table>(std::move(columns));
 }
 
-struct GroupBySumState
+struct GroupByState
 {
     std::vector<ElementLayout> keys;
 
-    std::vector<ElementLayout> values;
-    std::vector<cudf::data_type> sum_types;
+    std::vector<GroupByValue> values;
     std::unique_ptr<cudf::table> partial;
 
     bool finalized = false;
@@ -283,9 +358,10 @@ int clickhouseGPUProbeDevice(char * error, size_t error_size)
     return 0;
 }
 
-int clickhouseGPUSum(
+int clickhouseGPUReduce(
     int element_type,
-    int sum_type,
+    int result_type,
+    int aggregation,
     const void * host_data,
     size_t num_rows,
     void * result,
@@ -295,7 +371,7 @@ int clickhouseGPUSum(
     try
     {
         if (num_rows == 0)
-            throw std::logic_error("nothing to sum");
+            throw std::logic_error("nothing to reduce");
 
         if (num_rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
             throw std::logic_error("a batch of " + std::to_string(num_rows) + " rows is too large for cuDF");
@@ -308,7 +384,7 @@ int clickhouseGPUSum(
 
         const rmm::device_buffer device_data(host_data, num_rows * element.size, stream);
 
-        reduceDeviceValues(device_data.data(), element_type, sum_type, num_rows, result, stream);
+        reduceDeviceValues(device_data.data(), element_type, result_type, aggregation, num_rows, result, stream);
         return 0;
     }
     catch (const std::exception & e)
@@ -323,10 +399,11 @@ int clickhouseGPUSum(
     }
 }
 
-int clickhouseGPUSumCompressed(
+int clickhouseGPUReduceCompressed(
     int codec,
     int element_type,
-    int sum_type,
+    int result_type,
+    int aggregation,
     const void * host_data,
     const size_t * compressed_offsets,
     const size_t * compressed_bytes,
@@ -340,7 +417,7 @@ int clickhouseGPUSumCompressed(
     try
     {
         if (num_blocks == 0 || num_rows == 0)
-            throw std::logic_error("nothing to sum");
+            throw std::logic_error("nothing to reduce");
 
         checkRowCountFitsCudf(num_rows, "a batch");
 
@@ -449,7 +526,7 @@ int clickhouseGPUSumCompressed(
                     + std::to_string(decompressed_bytes[i]));
         }
 
-        reduceDeviceValues(device_values.data(), element_type, sum_type, num_rows, result, stream);
+        reduceDeviceValues(device_values.data(), element_type, result_type, aggregation, num_rows, result, stream);
         return 0;
     }
     catch (const std::exception & e)
@@ -464,11 +541,12 @@ int clickhouseGPUSumCompressed(
     }
 }
 
-int clickhouseGPUGroupBySumCreate(
+int clickhouseGPUGroupByCreate(
     const int * key_element_types,
     size_t num_keys,
     const int * value_element_types,
-    const int * value_sum_types,
+    const int * value_result_types,
+    const int * value_aggregations,
     size_t num_values,
     void ** handle,
     char * error,
@@ -484,20 +562,26 @@ int clickhouseGPUGroupBySumCreate(
         if (num_keys == 0)
             throw std::logic_error("a keyed aggregation with no keys");
         if (num_values == 0)
-            throw std::logic_error("a keyed aggregation with nothing to sum");
+            throw std::logic_error("a keyed aggregation with nothing to aggregate");
 
-        auto state = std::make_unique<GroupBySumState>();
+        auto state = std::make_unique<GroupByState>();
 
         state->keys.reserve(num_keys);
         for (size_t i = 0; i < num_keys; ++i)
             state->keys.push_back(elementLayoutOf(key_element_types[i]));
 
         state->values.reserve(num_values);
-        state->sum_types.reserve(num_values);
         for (size_t i = 0; i < num_values; ++i)
         {
-            state->values.push_back(elementLayoutOf(value_element_types[i]));
-            state->sum_types.push_back(deviceSumTypeOf(value_sum_types[i]));
+            const cudf::data_type device_type
+                = groupByDeviceTypeOf(value_element_types[i], value_result_types[i], value_aggregations[i]);
+
+            state->values.push_back({
+                .element = elementLayoutOf(value_element_types[i]),
+                .aggregation = value_aggregations[i],
+                .device_type = device_type,
+                .device_type_size = cudf::size_of(device_type),
+            });
         }
 
         setUpDeviceMemoryResourceOnce();
@@ -517,7 +601,7 @@ int clickhouseGPUGroupBySumCreate(
     }
 }
 
-int clickhouseGPUGroupBySumAddBatch(
+int clickhouseGPUGroupByAddBatch(
     void * handle,
     const void * const * key_host_data,
     const void * const * value_host_data,
@@ -530,7 +614,7 @@ int clickhouseGPUGroupBySumAddBatch(
         if (handle == nullptr)
             throw std::logic_error("no handle");
 
-        GroupBySumState & state = *static_cast<GroupBySumState *>(handle);
+        GroupByState & state = *static_cast<GroupByState *>(handle);
 
         if (state.finalized)
             throw std::logic_error("a batch added after the partial result was finalized");
@@ -561,25 +645,27 @@ int clickhouseGPUGroupBySumAddBatch(
         value_buffers.reserve(state.values.size());
         value_views.reserve(state.values.size());
 
-        for (size_t i = 0; i < state.values.size(); ++i)
+        for (const GroupByValue & value : state.values)
         {
-            value_buffers.emplace_back(value_host_data[i], num_rows * state.values[i].size, stream);
+            const size_t i = value_views.size();
+
+            value_buffers.emplace_back(value_host_data[i], num_rows * value.element.size, stream);
 
             const cudf::column_view uploaded(
-                state.values[i].type, batch_rows, value_buffers.back().data(), nullptr, 0);
+                value.element.type, batch_rows, value_buffers.back().data(), nullptr, 0);
 
-            if (cudfGroupBySumTargetTypeFor(uploaded.type()) == state.sum_types[i])
+            if (groupByTargetTypeFor(uploaded.type(), value.aggregation) == value.device_type)
             {
                 value_views.push_back(uploaded);
                 continue;
             }
 
-            widened_values.push_back(cudf::cast(uploaded, state.sum_types[i], stream));
+            widened_values.push_back(cudf::cast(uploaded, value.device_type, stream));
             value_views.push_back(widened_values.back()->view());
         }
 
         std::unique_ptr<cudf::table> batch
-            = groupBySum(cudf::table_view(key_views), value_views, state.sum_types, stream);
+            = groupByAggregate(cudf::table_view(key_views), value_views, state.values, stream);
 
         if (!state.partial)
         {
@@ -594,12 +680,12 @@ int clickhouseGPUGroupBySumAddBatch(
         for (size_t i = 0; i < state.keys.size(); ++i)
             key_indices[i] = static_cast<cudf::size_type>(i);
 
-        std::vector<cudf::column_view> partial_sum_views;
-        partial_sum_views.reserve(state.values.size());
+        std::vector<cudf::column_view> partial_value_views;
+        partial_value_views.reserve(state.values.size());
         for (size_t i = 0; i < state.values.size(); ++i)
-            partial_sum_views.push_back(concatenated->view().column(static_cast<cudf::size_type>(state.keys.size() + i)));
+            partial_value_views.push_back(concatenated->view().column(static_cast<cudf::size_type>(state.keys.size() + i)));
 
-        state.partial = groupBySum(concatenated->select(key_indices), partial_sum_views, state.sum_types, stream);
+        state.partial = groupByAggregate(concatenated->select(key_indices), partial_value_views, state.values, stream);
         return 0;
     }
     catch (const std::exception & e)
@@ -614,35 +700,29 @@ int clickhouseGPUGroupBySumAddBatch(
     }
 }
 
-int clickhouseGPUGroupBySumFinalize(void * handle, size_t * num_groups, char * error, size_t error_size)
+int clickhouseGPUGroupByFinalize(void * handle, size_t * num_groups, char * error, size_t error_size)
 {
-    try
+    if (handle == nullptr)
     {
-        if (handle == nullptr)
-            throw std::logic_error("no handle");
-        if (num_groups == nullptr)
-            throw std::logic_error("nowhere to put the number of groups");
-
-        GroupBySumState & state = *static_cast<GroupBySumState *>(handle);
-
-        state.finalized = true;
-
-        *num_groups = state.partial ? static_cast<size_t>(state.partial->num_rows()) : 0;
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        writeError(error, error_size, e.what());
+        writeError(error, error_size, "no handle");
         return 1;
     }
-    catch (...)
+
+    if (num_groups == nullptr)
     {
-        writeError(error, error_size, "unknown exception");
+        writeError(error, error_size, "nowhere to put the number of groups");
         return 1;
     }
+
+    GroupByState & state = *static_cast<GroupByState *>(handle);
+
+    state.finalized = true;
+
+    *num_groups = state.partial ? static_cast<size_t>(state.partial->num_rows()) : 0;
+    return 0;
 }
 
-int clickhouseGPUGroupBySumCopyOut(
+int clickhouseGPUGroupByCopyOut(
     void * handle,
     void * const * key_host_data,
     void * const * value_host_data,
@@ -654,7 +734,7 @@ int clickhouseGPUGroupBySumCopyOut(
         if (handle == nullptr)
             throw std::logic_error("no handle");
 
-        GroupBySumState & state = *static_cast<GroupBySumState *>(handle);
+        GroupByState & state = *static_cast<GroupByState *>(handle);
 
         if (!state.finalized)
             throw std::logic_error("the groups were copied out before the partial result was finalized");
@@ -687,8 +767,8 @@ int clickhouseGPUGroupBySumCopyOut(
             copyColumnOut(
                 groups.column(static_cast<cudf::size_type>(state.keys.size() + i)),
                 value_host_data[i],
-                sum_type_size,
-                "a column of sums");
+                state.values[i].device_type_size,
+                "a column of aggregated values");
 
         stream.synchronize();
         return 0;
@@ -705,9 +785,9 @@ int clickhouseGPUGroupBySumCopyOut(
     }
 }
 
-void clickhouseGPUGroupBySumDestroy(void * handle)
+void clickhouseGPUGroupByDestroy(void * handle)
 {
-    delete static_cast<GroupBySumState *>(handle);
+    delete static_cast<GroupByState *>(handle);
 }
 
 int clickhouseGPUAllocPinned(size_t bytes, void ** host_ptr, char * error, size_t error_size)

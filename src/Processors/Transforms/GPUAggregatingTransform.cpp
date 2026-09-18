@@ -6,11 +6,17 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
+#include <Processors/QueryPlan/GPUAggregatingStep.h>
 
 #include <utility>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 GPUAggregatingTransform::GPUAggregatingTransform(
     const SharedHeader & input_header_,
@@ -20,6 +26,11 @@ GPUAggregatingTransform::GPUAggregatingTransform(
     : IAccumulatingTransform(input_header_, output_header_)
     , empty_result_for_empty_set(params.empty_result_for_aggregation_by_empty_set)
 {
+    const auto aggregations = gpuAggregationsOf(params);
+    if (!aggregations)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "A GPU aggregation of aggregate functions the device does not have reached the pipeline");
+
     argument_positions.reserve(params.aggregates.size());
 
     DataTypes argument_types;
@@ -40,7 +51,7 @@ GPUAggregatingTransform::GPUAggregatingTransform(
     {
         accumulators.reserve(params.aggregates.size());
         for (size_t i = 0; i < argument_types.size(); ++i)
-            accumulators.emplace_back(*argument_types[i], *result_types[i], batch_bytes);
+            accumulators.emplace_back(*argument_types[i], *result_types[i], (*aggregations)[i], batch_bytes);
 
         return;
     }
@@ -55,7 +66,7 @@ GPUAggregatingTransform::GPUAggregatingTransform(
         key_types.push_back(input_header_->getByName(key).type);
     }
 
-    group_by_accumulator.emplace(key_types, argument_types, result_types, batch_bytes);
+    group_by_accumulator.emplace(key_types, argument_types, result_types, *aggregations, batch_bytes);
 }
 
 void GPUAggregatingTransform::consume(Chunk chunk)

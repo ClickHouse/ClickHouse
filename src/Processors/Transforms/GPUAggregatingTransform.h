@@ -35,8 +35,8 @@ private:
     std::vector<size_t> key_positions;
     std::vector<size_t> argument_positions;
 
-    std::vector<GPU::SumAccumulator> accumulators;
-    std::optional<GPU::GroupBySumAccumulator> group_by_accumulator;
+    std::vector<GPU::GPUAccumulator> accumulators;
+    std::optional<GPU::GroupByGPUAccumulator> group_by_accumulator;
 
     const bool empty_result_for_empty_set;
 

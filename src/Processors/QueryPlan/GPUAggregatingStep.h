@@ -7,8 +7,13 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
+#include <optional>
+#include <vector>
+
 namespace DB
 {
+
+std::optional<std::vector<int>> gpuAggregationsOf(const Aggregator::Params & params);
 
 class GPUAggregatingStep : public ITransformingStep
 {

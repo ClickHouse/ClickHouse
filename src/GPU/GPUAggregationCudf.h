@@ -20,56 +20,19 @@ enum ClickHouseGPUElementType
     CLICKHOUSE_GPU_ELEMENT_FLOAT64 = 9,
 };
 
-enum ClickHouseGPUSumType
+enum ClickHouseGPUResultType
 {
-    CLICKHOUSE_GPU_SUM_UINT64 = 0,
-    CLICKHOUSE_GPU_SUM_INT64 = 1,
-    CLICKHOUSE_GPU_SUM_FLOAT64 = 2,
+    CLICKHOUSE_GPU_RESULT_UINT64 = 0,
+    CLICKHOUSE_GPU_RESULT_INT64 = 1,
+    CLICKHOUSE_GPU_RESULT_FLOAT64 = 2,
 };
 
-int clickhouseGPUProbeDevice(char * error, size_t error_size);
-
-int clickhouseGPUSum(
-    int element_type,
-    int sum_type,
-    const void * host_data,
-    size_t num_rows,
-    void * result,
-    char * error,
-    size_t error_size);
-
-int clickhouseGPUGroupBySumCreate(
-    const int * key_element_types,
-    size_t num_keys,
-    const int * value_element_types,
-    const int * value_sum_types,
-    size_t num_values,
-    void ** handle,
-    char * error,
-    size_t error_size);
-
-int clickhouseGPUGroupBySumAddBatch(
-    void * handle,
-    const void * const * key_host_data,
-    const void * const * value_host_data,
-    size_t num_rows,
-    char * error,
-    size_t error_size);
-
-int clickhouseGPUGroupBySumFinalize(void * handle, size_t * num_groups, char * error, size_t error_size);
-
-int clickhouseGPUGroupBySumCopyOut(
-    void * handle,
-    void * const * key_host_data,
-    void * const * value_host_data,
-    char * error,
-    size_t error_size);
-
-void clickhouseGPUGroupBySumDestroy(void * handle);
-
-int clickhouseGPUAllocPinned(size_t bytes, void ** host_ptr, char * error, size_t error_size);
-
-void clickhouseGPUFreePinned(void * host_ptr);
+enum ClickHouseGPUAggregation
+{
+    CLICKHOUSE_GPU_AGGREGATION_SUM = 0,
+    CLICKHOUSE_GPU_AGGREGATION_MIN = 1,
+    CLICKHOUSE_GPU_AGGREGATION_MAX = 2,
+};
 
 enum ClickHouseGPUCodec
 {
@@ -77,10 +40,23 @@ enum ClickHouseGPUCodec
     CLICKHOUSE_GPU_CODEC_ZSTD = 1,
 };
 
-int clickhouseGPUSumCompressed(
+int clickhouseGPUProbeDevice(char * error, size_t error_size);
+
+int clickhouseGPUReduce(
+    int element_type,
+    int result_type,
+    int aggregation,
+    const void * host_data,
+    size_t num_rows,
+    void * result,
+    char * error,
+    size_t error_size);
+
+int clickhouseGPUReduceCompressed(
     int codec,
     int element_type,
-    int sum_type,
+    int result_type,
+    int aggregation,
     const void * host_data,
     const size_t * compressed_offsets,
     const size_t * compressed_bytes,
@@ -90,5 +66,39 @@ int clickhouseGPUSumCompressed(
     void * result,
     char * error,
     size_t error_size);
+
+int clickhouseGPUGroupByCreate(
+    const int * key_element_types,
+    size_t num_keys,
+    const int * value_element_types,
+    const int * value_result_types,
+    const int * value_aggregations,
+    size_t num_values,
+    void ** handle,
+    char * error,
+    size_t error_size);
+
+int clickhouseGPUGroupByAddBatch(
+    void * handle,
+    const void * const * key_host_data,
+    const void * const * value_host_data,
+    size_t num_rows,
+    char * error,
+    size_t error_size);
+
+int clickhouseGPUGroupByFinalize(void * handle, size_t * num_groups, char * error, size_t error_size);
+
+int clickhouseGPUGroupByCopyOut(
+    void * handle,
+    void * const * key_host_data,
+    void * const * value_host_data,
+    char * error,
+    size_t error_size);
+
+void clickhouseGPUGroupByDestroy(void * handle);
+
+int clickhouseGPUAllocPinned(size_t bytes, void ** host_ptr, char * error, size_t error_size);
+
+void clickhouseGPUFreePinned(void * host_ptr);
 
 }
