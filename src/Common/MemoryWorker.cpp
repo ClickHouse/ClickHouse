@@ -578,8 +578,9 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     }
 
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
-    /// Sanitizer memory overhead (redzones, ...) makes RSS exceed application allocations;
-    // use allocator bytes for MEMORY_LIMIT_EXCEEDED, resident for RSS/cgroup limit sizing.
+    /// `allocated` is used only to correct `total_memory_tracker`. `MemoryTracker` does not count
+    /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
+    /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
     usage.allocated = __sanitizer_get_current_allocated_bytes();
 #else
     usage.allocated = usage.resident;
