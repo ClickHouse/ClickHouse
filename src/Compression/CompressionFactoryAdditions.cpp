@@ -360,7 +360,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "Codec {} requires the column type to compress and can only be specified for a column",
                         codec_family_name);
 
-                codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
+                codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
             }
 
             /// A codec that was not resolved per substream is the same one for all of them.
@@ -410,7 +410,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Too many codecs in the codec chain: {}. The size they reserve for compressing a block "
                             "overflows 4 GiB at codec {} ({}), so no block could be compressed. Use fewer codecs.",
-                            chain.size(), i + 1, chain[i]->getCodecDesc()->formatForErrorMessage());
+                            chain.size(), i + 1, chain[i]->getCodecDescription()->formatForErrorMessage());
                     reserve_size = next_reserve_size;
                 }
             }

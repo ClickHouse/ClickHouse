@@ -40,6 +40,8 @@ public:
 
     uint8_t getMethodByte() const override;
 
+    ASTPtr getCodecDescription() const override;
+
     void updateHash(SipHash & hash) const override;
 
     static constexpr UInt8 DEFAULT_COMPRESSION_LEVEL = 8;
@@ -147,7 +149,6 @@ UInt8 widthOfPcoType(UInt8 type_byte)
 CompressionCodecPco::CompressionCodecPco(UInt8 data_bytes_size_, UInt8 pco_type_byte_, UInt8 compression_level_)
     : data_bytes_size(data_bytes_size_), pco_type_byte(pco_type_byte_), compression_level(compression_level_)
 {
-    setCodecDescription("PCO", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 uint8_t CompressionCodecPco::getMethodByte() const
@@ -155,9 +156,14 @@ uint8_t CompressionCodecPco::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::PCO);
 }
 
+ASTPtr CompressionCodecPco::getCodecDescription() const
+{
+    return makeCodecDescription("PCO", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
+}
+
 void CompressionCodecPco::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/true);
     /// `PCO` is type-dependent: the element width and the pcodec number-type byte (which also
     /// distinguishes signed/unsigned/float at the same width) determine the produced stream. Compact
     /// parts group substreams by `getHash`, so without these a `UInt32`, `Int64` and `Float64` column

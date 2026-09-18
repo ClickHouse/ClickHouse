@@ -25,8 +25,11 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
 
     return PartProperties::GeneralTTLInfo{
         .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
+        .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
+        .has_any_non_finished_column_ttls = part->ttl_infos.hasAnyNonFinishedColumnTTLs(),
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
+        .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
     };
 }
 
@@ -52,7 +55,7 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
 
         bool will_change_codec = false;
         const auto & current_codec_ptr = part->on_disk_default_codec ? part->on_disk_default_codec : part->default_codec;
-        const std::string current_codec = astToString(current_codec_ptr->getFullCodecDesc());
+        const std::string current_codec = astToString(current_codec_ptr->getFullCodecDescription());
         if (CompressionCodecFactory::containsDefaultCodecAlias(ttl_description->recompression_codec))
         {
             /// A `Default` alias — exact `CODEC(Default)`, or inside a chain like `CODEC(Delta, Default)` —
@@ -65,7 +68,7 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
             const auto resolved_codec
                 = part->storage.getCompressionCodecForPart(metadata_snapshot, part->getBytesOnDisk(), part->ttl_infos, current_time)
                       .codec;
-            will_change_codec = astToString(resolved_codec->getFullCodecDesc()) != current_codec;
+            will_change_codec = astToString(resolved_codec->getFullCodecDescription()) != current_codec;
         }
         else
         {

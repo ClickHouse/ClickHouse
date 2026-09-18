@@ -156,7 +156,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
@@ -190,6 +190,10 @@ namespace ProfileEvents
     extern const Event MergesThrottlerSleepMicroseconds;
     extern const Event MutationsThrottlerBytes;
     extern const Event MutationsThrottlerSleepMicroseconds;
+    extern const Event DistrCacheReadThrottlerBytes;
+    extern const Event DistrCacheReadThrottlerSleepMicroseconds;
+    extern const Event DistrCacheWriteThrottlerBytes;
+    extern const Event DistrCacheWriteThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
     extern const Event QueryLocalReadThrottlerSleepMicroseconds;
     extern const Event QueryLocalWriteThrottlerBytes;
@@ -319,6 +323,7 @@ namespace Setting
     extern const SettingsBool enable_filesystem_read_prefetches_log;
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
+    extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
@@ -430,6 +435,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_thread_pool_size;
+    extern const ServerSettingsUInt64 max_distributed_cache_read_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
@@ -1141,7 +1148,7 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_async_insert_queue.reset();
 
-        TransactionLog::shutdownIfAny();
+        TransactionManager::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
@@ -1390,6 +1397,18 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
+
+        // Distributed cache client throttling.
+        // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
+        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
+            distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+        else
+            distributed_cache_read_throttler = remote_read_throttler;
+
+        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
+            distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+        else
+            distributed_cache_write_throttler = remote_write_throttler;
     }
 };
 
@@ -1485,6 +1504,7 @@ ContextData::ContextData(const ContextData &o) :
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
+    streaming_cursor(o.streaming_cursor),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -3193,7 +3213,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
+            auto sample_block = getSettingsRef()[Setting::allow_experimental_analyzer]
+                ? InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context)
+                : InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -4518,6 +4540,16 @@ std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
     return const_cast<Context *>(this)->getBackupsInMemory();
+}
+
+void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
+{
+    streaming_cursor = std::move(cursor);
+}
+
+std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
+{
+    return streaming_cursor;
 }
 
 
@@ -5947,11 +5979,26 @@ ThrottlerPtr Context::getMergesThrottler() const
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
 {
-    return shared->distributed_cache_read_throttler;
+    ThrottlerPtr throttler;
+    {
+        SharedLockGuard lock(shared->mutex);
+        throttler = shared->distributed_cache_read_throttler;
+    }
+
+    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
+    /// Writes do not need this here: `WriteBufferFromDistributedCache` also flushes through the
+    /// underlying object-storage writer, whose `write_settings.remote_throttler` already carries the
+    /// user-level throttler via `getRemoteWriteThrottler`. Splicing it onto the send socket too would
+    /// account each byte twice against the same token bucket.
+    if (auto process_list_element = getProcessListElementSafe())
+        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
+
+    return throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
 {
+    SharedLockGuard lock(shared->mutex);
     return shared->distributed_cache_write_throttler;
 }
 
@@ -5999,6 +6046,33 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
 
     if (shared->local_write_throttler)
         std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
+}
+
+void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
+{
+    std::lock_guard lock(shared->mutex);
+
+    /// While distributed cache throttling is off the member aliases the remote throttler
+    /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
+    if (read_bandwidth)
+    {
+        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
+            shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+        else // Update throttler
+            std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
+    }
+    else if (shared->distributed_cache_read_throttler != shared->remote_read_throttler) // Delete throttler
+        shared->distributed_cache_read_throttler = shared->remote_read_throttler;
+
+    if (write_bandwidth)
+    {
+        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
+            shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+        else // Update throttler
+            std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
+    }
+    else if (shared->distributed_cache_write_throttler != shared->remote_write_throttler) // Delete throttler
+        shared->distributed_cache_write_throttler = shared->remote_write_throttler;
 }
 
 bool Context::hasDistributedDDL() const
@@ -7116,6 +7190,16 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
     return shared->system_logs->session_log;
 }
 
+
+bool Context::hasSystemLogs() const
+{
+    std::lock_guard lock(mutex_shared_context);
+    if (!shared)
+        return false;
+
+    SharedLockGuard lock2(shared->mutex);
+    return shared->system_logs != nullptr;
+}
 
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
@@ -8864,6 +8948,9 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.allow_background_download_during_fetch
         = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
     res.filesystem_cache_settings.prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
+
+    if (settings_ref[Setting::filesystem_cache_boundary_alignment])
+        res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
 
     res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
     res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit

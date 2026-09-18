@@ -24,6 +24,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
 
     actions_settings = ExpressionActionsSettings(settings, CompileExpressions::yes);
     process_list_element = from->getProcessListElement();
+    temp_data_on_disk = from->getTempDataOnDisk();
     progress_callback = from->getProgressCallback();
 
     max_threads = getMaxThreadsForAvailableMemory(
