@@ -65,6 +65,11 @@ WAIT_FAILPOINT = "keeper_local_logs_preprocessing_wait"
 NEVER_PAUSE_FAILPOINT = "keeper_never_pause_appending_entries"
 # Enabled from the config rather than over SQL, because the replay - and with it the first wait -
 # starts as the server comes up, before a query could reach it.
+NEVER_PAUSE_ONLY = (
+    "<fail_points_active>"
+    f"<{NEVER_PAUSE_FAILPOINT}>1</{NEVER_PAUSE_FAILPOINT}>"
+    "</fail_points_active>"
+)
 FAILPOINTS_ACTIVE = (
     "<fail_points_active>"
     f"<{WAIT_FAILPOINT}>1</{WAIT_FAILPOINT}>"
@@ -393,11 +398,10 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
     node2.stop_clickhouse(kill=True)
 
     try:
-        # 2) Take the hint away from node2 only, so the leader keeps entries coming, and hold the
-        #    first waiting thread so the second one meets an occupied gate. The deadline and the
-        #    interval after which the leader re-sends are both 100 ms, so whether the two overlap
-        #    on timing alone is a coin flip; the second of these makes the refusal certain.
-        node2.replace_in_config(NODE2_CONFIG, CONFIG_END, FAILPOINTS_ACTIVE + CONFIG_END)
+        # 2) Take the hint away from node2 only, so the leader keeps entries coming and threads
+        #    reach the wait one after another. Nothing holds them here, so each one runs its own
+        #    course - which is the only way to see the wait end on its deadline.
+        node2.replace_in_config(NODE2_CONFIG, CONFIG_END, NEVER_PAUSE_ONLY + CONFIG_END)
 
         zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
         try:
@@ -407,6 +411,42 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             zk.stop()
             zk.close()
 
+        node2.start_clickhouse(start_wait_sec=240)
+        keeper_utils.wait_until_connected(cluster, node2, timeout=240)
+
+        assert not grep_log(node2, NO_REPLAY_NEEDED), (
+            "node2 restarted with nothing to replay, so this test checks nothing"
+        )
+
+        # The wait is bounded, and this is the assertion that says so: it came back with the logs
+        # still not preprocessed, which only a deadline can produce. An unbounded wait also ends
+        # eventually - the commit thread notifies it - so a wait that merely ended proves nothing.
+        for _ in range(240):
+            if count_in_log(node2, f"{WAIT_STOPPED}, preprocessed=false"):
+                break
+            time.sleep(0.5)
+        else:
+            raise Exception("no wait for log preprocessing ended on its deadline")
+
+        # 3) Now the bound on how many threads may wait at once, which needs one of them held
+        #    while another arrives. The deadline is shorter than the interval after which the
+        #    leader re-sends, by construction, so that overlap cannot be produced by timing -
+        #    hence the failpoint, and hence a second restart: armed from the start it parks the
+        #    first wait, and then no wait would have run its course above.
+        zk = get_fake_zk(keeper_utils.get_leader(cluster, ALL_NODES))
+        try:
+            zk.create("/unpaused_parked")
+            for transaction in range(TRANSACTIONS):
+                request = zk.transaction()
+                for i in range(CREATES_PER_TRANSACTION):
+                    request.create(f"/unpaused_parked/n{transaction:05d}_{i:05d}", b"")
+                request.commit()
+        finally:
+            zk.stop()
+            zk.close()
+
+        node2.stop_clickhouse(kill=True)
+        node2.replace_in_config(NODE2_CONFIG, NEVER_PAUSE_ONLY, FAILPOINTS_ACTIVE)
         node2.start_clickhouse(start_wait_sec=240)
         keeper_utils.wait_until_connected(cluster, node2, timeout=240)
 
@@ -425,7 +465,7 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
                 "no thread reached the admission gate while one was parked at the failpoint"
             )
 
-        # Release it, so the wait it goes on to do is a real one and the replay can finish.
+        # Release it, so the replay can finish.
         node2.query(f"SYSTEM DISABLE FAILPOINT {WAIT_FAILPOINT}")
 
         # The refusal has to have happened, or the leader backed off for some other reason and
@@ -480,3 +520,4 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             except Exception as e:  # the server may be gone; this must not mask the real failure
                 logging.info("could not disable %s: %s", fail_point, e)
         node2.replace_in_config(NODE2_CONFIG, FAILPOINTS_ACTIVE + CONFIG_END, CONFIG_END)
+        node2.replace_in_config(NODE2_CONFIG, NEVER_PAUSE_ONLY + CONFIG_END, CONFIG_END)
