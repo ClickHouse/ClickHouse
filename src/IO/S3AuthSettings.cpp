@@ -87,6 +87,8 @@ S3AuthSettings::S3AuthSettings(
         }
     }
 
+    resetObsoleteSettings();
+
     headers = getHTTPHeaders(config_prefix, config, "header");
     access_headers = getHTTPHeaders(config_prefix, config, "access_header");
 
@@ -150,6 +152,17 @@ void S3AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_c
             field.setValue(settings.get(setting_name));
         }
     }
+
+    resetObsoleteSettings();
+}
+
+void S3AuthSettings::resetObsoleteSettings()
+{
+    for (const auto & field : impl->all())
+    {
+        if (field.getTier() == SettingsTierType::OBSOLETE && field.isValueChanged())
+            impl->resetToDefault(field.getName());
+    }
 }
 
 bool S3AuthSettings::hasUpdates(const S3AuthSettings & other) const
@@ -180,6 +193,8 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
         || settings.server_side_encryption_kms_config.encryption_context.has_value()
         || settings.server_side_encryption_kms_config.key_id.has_value())
         server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
+
+    resetObsoleteSettings();
 }
 
 void S3AuthSettings::clearServerManagedRequestAuth()
@@ -253,6 +268,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
     S3AuthSettings result;
     result.impl = std::make_unique<S3AuthSettingsImpl>();
     result.impl->readBinary(in);
+    result.resetObsoleteSettings();
 
     size_t headers_size = 0;
     readVarUInt(headers_size, in);
