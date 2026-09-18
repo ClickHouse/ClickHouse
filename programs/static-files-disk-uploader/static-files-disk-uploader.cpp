@@ -12,6 +12,8 @@
 #include <IO/copyData.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
+#include <Poco/URI.h>
+
 #include <boost/program_options.hpp>
 #include <filesystem>
 #include <iostream>
@@ -48,6 +50,18 @@ static String joinDestinationPath(const String & base, const String & suffix)
     return base + "/" + suffix;
 }
 
+/// In test mode the destination is a URL and `Poco::URI` percent-decodes whatever path it is
+/// given. Physical file names already carry `%XX` produced by `escapeForFileName` - a quoted
+/// column `a-b` is stored as `a%2Db.bin` - so the relative path has to be percent-encoded before
+/// it becomes part of the URL, otherwise the file would be uploaded under its decoded name.
+static String encodeUrlPath(const String & path)
+{
+    String encoded;
+    /// `/` stays a separator; `%` is illegal in a URL and is encoded by `Poco::URI::encode` itself.
+    Poco::URI::encode(path, "?#", encoded);
+    return encoded;
+}
+
 static void processFile(const fs::path & file_path, const String & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
@@ -67,7 +81,7 @@ static void processFile(const fs::path & file_path, const String & dst_path, boo
     if (is_directory)
         return;
 
-    auto dst_file_path = joinDestinationPath(dst_path, remote_path);
+    auto dst_file_path = joinDestinationPath(dst_path, test_mode ? encodeUrlPath(remote_path) : remote_path);
 
     if (link)
     {
@@ -109,7 +123,7 @@ static void processTableFiles(const fs::path & data_path, String dst_path, bool 
     if (test_mode)
     {
         dst_path = joinDestinationPath(dst_path, "store");
-        auto files_root = joinDestinationPath(dst_path, prefix);
+        auto files_root = joinDestinationPath(dst_path, encodeUrlPath(prefix));
         root_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(files_root, ".index")))
                       .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                       .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
@@ -136,7 +150,7 @@ static void processTableFiles(const fs::path & data_path, String dst_path, bool 
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(joinDestinationPath(dst_path, directory_prefix), ".index")))
+                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(joinDestinationPath(dst_path, encodeUrlPath(directory_prefix)), ".index")))
                                     .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                                     .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
                                     .create();
