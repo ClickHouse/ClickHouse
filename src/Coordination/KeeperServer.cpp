@@ -759,13 +759,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->keeper_context = keeper_context;
 
-    /// Entries are dropped while the local logs are not preprocessed, so the leader is only
-    /// producing work that is thrown away - but it may be asked to stop only once the node knows
-    /// its replay can finish from what it already has. A node whose local tail diverges from the
-    /// leader's still needs requests carrying entries to learn where the two logs match, and
-    /// `get_target_committed_log_idx` can be rolled back, so this has to be read at the moment
-    /// the answer is used rather than remembered from the last request that arrived.
+    /// Only for the test that puts the bound of one waiting thread under pressure.
     const bool never_pause = coordination_settings[CoordinationSetting::nuraft_test_disable_append_entries_pause];
+
+    /// Silencing the leader is only safe once the commit index it has already sent covers the
+    /// whole on-disk tail: the replay can then finish without it, while a node whose tail
+    /// diverges still needs requests carrying entries to learn where the two logs match.
     state_machine->setAppendEntriesPauseCondition([this, never_pause]
     {
         return !never_pause
