@@ -456,8 +456,19 @@ extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
     return 0;
 }
 
-DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & root)
+DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
 {
+    /// Apply the identifier rewrite to the input itself as well (deterministically, seeded by its
+    /// serialized form): seeds mined from the test suite reference their own tables and columns and
+    /// would otherwise never resolve against the fixture. Mutations are rewritten by the post-processor
+    /// already; a second pass is a no-op for them.
+    json_ast_fuzzer::Node root = original_root;
+    if (!getenv("JSON_AST_FUZZER_NO_FIXUP")) // NOLINT(concurrency-mt-unsafe)
+    {
+        std::mt19937 rng(static_cast<unsigned int>(std::hash<std::string>{}(original_root.SerializeAsString())));
+        fixIdentifiers(root, rng);
+    }
+
     DB::JSONASTFuzzer::PipelineInput input;
     DB::ASTPtr ast = DB::JSONASTFuzzer::generateSQL(root, input);
     if (!ast)
