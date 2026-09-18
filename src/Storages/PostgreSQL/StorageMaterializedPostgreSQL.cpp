@@ -48,7 +48,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_materialized_postgresql_table;
+    extern const SettingsBool enable_materialized_postgresql_table;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
 }
@@ -956,9 +956,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
 
         if (is_fresh_table_definition
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_materialized_postgresql_table])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_materialized_postgresql_table])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
-                                " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
+                                " You can enable it with the `enable_materialized_postgresql_table` setting");
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -1079,20 +1079,20 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+</Note>
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
-:::note
-This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
+<Note>
+This table engine is experimental. To use it, set `enable_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
 
 ```sql
-SET allow_experimental_materialized_postgresql_table=1
+SET enable_materialized_postgresql_table=1
 ```
 The setting is required for every fresh table definition: for `CREATE TABLE`, and also for an `ATTACH TABLE` that spells out the full table definition. Only replaying an already-persisted definition - server startup, and the short `ATTACH TABLE name` syntax - does not need it, so a table created earlier keeps loading after the setting has been turned off.
-:::
+</Note>
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
@@ -1192,9 +1192,9 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::note
+<Note>
 [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
-:::
+</Note>
 )DOCS_MD",
             .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password') ORDER BY key",
             .related = {"PostgreSQL"}});
