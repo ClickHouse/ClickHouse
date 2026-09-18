@@ -78,6 +78,14 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override;
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override;
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -159,7 +167,7 @@ private:
     /// Shared implementation of the batch add overrides. Hoists the per-element column pointers, so
     /// no per-row unwrapping work remains in the row loop.
     /// `get_place` returns the aggregation state for a row, or nullptr when the row has none.
-    template <bool has_null_map, typename GetPlace>
+    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
     void addBatchImpl(
         size_t row_begin,
         size_t row_end,
