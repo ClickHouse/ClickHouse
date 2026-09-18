@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 DROP TABLE IF EXISTS t_dist_rio_array_join;
 
 -- Three parts with fully interleaved key ranges, so an ordered result needs a real merge across the
