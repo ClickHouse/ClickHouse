@@ -379,6 +379,50 @@ def test_prometheus_response_buffer_limit_and_recovery(
         run_endpoint(endpoint, user)
 
 
+@pytest.mark.parametrize(
+    "route,params,status",
+    [
+        ("parse_query", {"query": "1"}, 400),
+        ("unknown_endpoint", {}, 404),
+        ("query", {"query": ")"}, 400),
+        ("metadata", {"limit": "invalid"}, 400),
+    ],
+)
+@pytest.mark.parametrize("allocation", ["context", "response"])
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+@pytest.mark.parametrize(
+    "limit,level",
+    [("max_memory_usage", "Query"), ("max_memory_usage_for_user", "User")],
+)
+def test_prometheus_error_response_limit_and_recovery(
+    route, params, status, allocation, batching_limit, limit, level
+):
+    profile = (
+        "context_memory_payload" if allocation == "context" else "context_memory_control"
+    )
+    buffer_size = PAYLOAD_SIZE if allocation == "response" else 65536
+    with payload_user(limit, batching_limit, profile) as user:
+        def request():
+            return requests.post(
+                f"http://{node.ip_address}:{PORTS['prometheus']}/api/v1/{route}",
+                auth=(user, ""),
+                params={
+                    **params,
+                    "log_comment": "",
+                    "http_response_buffer_size": buffer_size,
+                },
+                timeout=30,
+            )
+
+        response = request()
+        assert response.status_code >= 400
+        assert f"{level} memory limit exceeded" in response.text
+        node.query(f"ALTER USER {user} MODIFY SETTINGS {limit} = 0")
+        response = request()
+        assert response.status_code == status, response.text
+        assert response.json()["status"] == "error", response.text
+
+
 def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=None):
     with payload_user("max_memory_usage", batching_limit, profile) as user:
         node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")

@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
@@ -194,6 +195,12 @@ protected:
 
     ProcessList::EntryPtr admitRequest(const String & description)
     {
+        if (auto query_status = context->getProcessListElementSafe())
+        {
+            if (auto entry = query_status->getProcessListEntry())
+                return entry;
+        }
+
         /// Some protocol operations do not pass through `executeQuery`.
         auto entry = context->getProcessList().insert(description, 0, nullptr, context, Stopwatch{}.getStart(), false);
         context->setProcessListElement(entry->getQueryStatus());
@@ -610,6 +617,7 @@ public:
             }
             else
             {
+                auto process_list_entry = admitRequest("Prometheus unknown API request");
                 LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
@@ -620,8 +628,12 @@ public:
             /// Once the response header has been sent we can no longer produce
             /// a well-formed Prometheus error response. So we let the outer handler
             /// abort the chunked stream via cancelWithException() instead.
-            if (response.sent())
+            /// Memory-limit failures also use its bounded error response without retrying the allocation.
+            if (response.sent() || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 throw;
+
+            /// Parsing and dispatch can fail before `executeQuery` admits the request.
+            auto process_list_entry = admitRequest("Prometheus API error response");
 
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
@@ -848,6 +860,12 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         /// A rejected response-buffer allocation must not be retried at the requested size.
         http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        /// A remote-write response uses plain framing, so an error body must end with the connection.
+        if (!response.getChunkedTransferEncoding() && !response.hasContentLength())
+        {
+            MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
+            response.setKeepAlive(false);
+        }
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
