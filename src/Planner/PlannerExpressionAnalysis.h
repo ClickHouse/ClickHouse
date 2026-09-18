@@ -64,12 +64,14 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    InToJoinAnalysisResult in_to_join = {};
 };
 
 struct LimitByAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_limit_by_actions;
     Names limit_by_column_names;
+    InToJoinAnalysisResult in_to_join = {};
 };
 
 struct LimitRangeAnalysisResult

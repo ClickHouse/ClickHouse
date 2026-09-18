@@ -190,6 +190,20 @@ FROM (EXPLAIN SELECT id, row_number() OVER (ORDER BY id) AS r FROM t QUALIFY id 
 SELECT groupArray(id) FROM (SELECT id, row_number() OVER (ORDER BY id) AS r FROM t QUALIFY id IN (SELECT k FROM s) ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(id) FROM (SELECT id, row_number() OVER (ORDER BY id) AS r FROM t QUALIFY id IN (SELECT k FROM s) ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- IN subquery inside ORDER BY';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id FROM t ORDER BY id IN (SELECT k FROM s), id);
+
+SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id IN (SELECT k FROM s), id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id IN (SELECT k FROM s), id) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- IN subquery inside LIMIT BY';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s));
+
+SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- Query with IN subquery and another correlated subquery';
 SELECT countIf(explain LIKE '%Join%') > 1
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id));

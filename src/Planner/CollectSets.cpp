@@ -215,10 +215,11 @@ private:
         if (join_rewrite_root)
             return;
 
-        /// Whether this node roots one of the four expressions the IN to JOIN rewrite can insert its join under.
+        /// Whether this node roots one of the expressions the IN to JOIN rewrite can insert its join under.
         const auto & typed_query_node = query_node->as<const QueryNode &>();
         if (node == typed_query_node.getWhere() || node == typed_query_node.getHaving()
-            || node == typed_query_node.getQualify() || node == typed_query_node.getProjectionNode())
+            || node == typed_query_node.getQualify() || node == typed_query_node.getProjectionNode()
+            || node == typed_query_node.getOrderByNode() || node == typed_query_node.getLimitByNode())
             join_rewrite_root = node.get();
     }
 
@@ -255,8 +256,6 @@ private:
         if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
             return true;
 
-        /// `PREWHERE` is computed by the reading step, `JOIN ON` and `ARRAY JOIN` by the join tree, the
-        /// grouping keys by the aggregation step and the window definitions by the window step.
         const auto & typed_query_node = query_node->as<const QueryNode &>();
         if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode()
             || node == typed_query_node.getGroupByNode() || node == typed_query_node.getWindowNode())

@@ -890,13 +890,13 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         }
     }
 
-    auto in_to_join = analyzeInToJoin(
+    auto projection_in_to_join = analyzeInToJoin(
         query_node.getProjectionNode(),
         current_output_columns,
         planner_context,
         correlated_columns_set,
         actions_chain);
-    if (in_to_join.notEmpty())
+    if (projection_in_to_join.notEmpty())
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     auto projection_analysis_result = analyzeProjection(
@@ -905,18 +905,28 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         planner_context,
         correlated_columns_set,
         actions_chain);
-    projection_analysis_result.in_to_join = std::move(in_to_join);
+    projection_analysis_result.in_to_join = std::move(projection_in_to_join);
     current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
     {
+        auto in_to_join = analyzeInToJoin(
+            query_node.getOrderByNode(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (in_to_join.notEmpty())
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
         sort_analysis_result_optional = analyzeSort(
             query_node,
             current_output_columns,
             planner_context,
             correlated_columns_set,
             actions_chain);
+        sort_analysis_result_optional->in_to_join = std::move(in_to_join);
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
@@ -955,6 +965,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
                 required_output_nodes_names.insert(output_node->result_name);
         }
 
+        auto in_to_join = analyzeInToJoin(
+            query_node.getLimitByNode(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (in_to_join.notEmpty())
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
         limit_by_analysis_result_optional = analyzeLimitBy(
             query_node,
             current_output_columns,
@@ -962,6 +981,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             required_output_nodes_names,
             correlated_columns_set,
             actions_chain);
+        limit_by_analysis_result_optional->in_to_join = std::move(in_to_join);
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
