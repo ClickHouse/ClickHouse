@@ -250,7 +250,10 @@ public:
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext());
+        auto format_settings = getFormatSettings(storage->getContext());
+        format_settings.values.use_mysql_compatible_escaping = true;
+        auto writer = FormatFactory::instance().getOutputFormat(
+            "Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext(), format_settings);
         writer->write(block);
 
         if (!storage->on_duplicate_clause.empty())
