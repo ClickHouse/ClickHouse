@@ -6,105 +6,6 @@ SET allow_parallel_distinct = 1;
 SET max_rows_in_distinct = 0;
 SET max_bytes_in_distinct = 0;
 
-SET enable_analyzer = 1;
-
--- Unordered consumers permit hash partitioning.
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) OFFSET 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT -5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 0.1);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) LIMIT 1 BY g);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT count() FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000)));
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT * FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000)) LIMIT 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT number % 100 AS k FROM numbers_mt(100000) UNION DISTINCT SELECT number % 100 AS k FROM numbers_mt(100000) SETTINGS limit = 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT * FROM (SELECT number % 100 AS k FROM numbers_mt(100000) UNION DISTINCT SELECT number % 100 AS k FROM numbers_mt(100000)) LIMIT 1 BY k);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number FROM numbers_mt(100000) LIMIT AFTER number = 10 UNTIL number = 20);
-
-SET optimize_distinct_in_order = 1;
-
--- A global sort order remains valid across final deduplication.
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM (SELECT number % 100 AS k FROM numbers_mt(100000) ORDER BY k) OFFSET 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 1 BY g);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 5);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 5 OFFSET 2);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) OFFSET 5);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT -5);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 0.1);
-
-SELECT count(), uniqExact(g) FROM (SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) LIMIT 1 BY g);
-
-SELECT groupArray(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 5 OFFSET 2);
-
-SELECT groupArray(k) FROM (SELECT DISTINCT k FROM (SELECT number % 100 AS k FROM numbers_mt(100000) ORDER BY k) LIMIT -5);
-
-SELECT groupArray(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT AFTER k = 10 UNTIL k = 20);
-
-SELECT arraySort(groupArray((g, k))) FROM (SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 1 BY g);
-
-SET optimize_distinct_in_order = 0;
-
--- A global sort order remains valid across final deduplication.
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM (SELECT number % 100 AS k FROM numbers_mt(100000) ORDER BY k) OFFSET 5);
-
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 1 BY g);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 5);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 5 OFFSET 2);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) OFFSET 5);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT -5);
-
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 0.1);
-
-SELECT count(), uniqExact(g) FROM (SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) LIMIT 1 BY g);
-
-SELECT groupArray(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 5 OFFSET 2);
-
-SELECT groupArray(k) FROM (SELECT DISTINCT k FROM (SELECT number % 100 AS k FROM numbers_mt(100000) ORDER BY k) LIMIT -5);
-
-SELECT groupArray(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT AFTER k = 10 UNTIL k = 20);
-
-SELECT arraySort(groupArray((g, k))) FROM (SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 1 BY g);
-
-SET enable_analyzer = 0;
-
 -- Unordered consumers permit hash partitioning.
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 100 AS k FROM numbers_mt(100000) LIMIT 5);
@@ -201,10 +102,6 @@ SELECT groupArray(k) FROM (SELECT DISTINCT number % 100 AS k FROM numbers_mt(100
 SELECT arraySort(groupArray((g, k))) FROM (SELECT DISTINCT number % 2 AS g, number % 100 AS k FROM numbers_mt(100000) ORDER BY k LIMIT 1 BY g);
 
 -- Limit hints bound an unbounded input without requiring an order on its distinct values.
-SET enable_analyzer = 1;
-SELECT count(), uniqExact(number) FROM (SELECT DISTINCT number FROM system.numbers_mt LIMIT 5)
-SETTINGS max_execution_time = 10;
-SET enable_analyzer = 0;
 SELECT count(), uniqExact(number) FROM (SELECT DISTINCT number FROM system.numbers_mt LIMIT 5)
 SETTINGS max_execution_time = 10;
 
@@ -219,14 +116,6 @@ DROP TABLE IF EXISTS distinct_order_requirements;
 CREATE TABLE distinct_order_requirements (k UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY k % 4;
 INSERT INTO distinct_order_requirements SELECT number % 100 FROM numbers(10000);
 
-SET enable_analyzer = 1;
-SELECT countIf(explain LIKE '%Skip stream merging: 1%') > 0
-FROM (EXPLAIN actions = 1 SELECT DISTINCT k FROM distinct_order_requirements LIMIT 5);
-SELECT count(), uniqExact(k) FROM (SELECT DISTINCT k FROM distinct_order_requirements LIMIT 5 OFFSET 2);
-SELECT count(), uniqExact(g) FROM (SELECT DISTINCT k, k % 2 AS g FROM distinct_order_requirements LIMIT 1 BY g);
-SELECT groupArray(k) FROM (SELECT DISTINCT k FROM distinct_order_requirements ORDER BY k LIMIT 5);
-
-SET enable_analyzer = 0;
 SELECT countIf(explain LIKE '%Skip stream merging: 1%') > 0
 FROM (EXPLAIN actions = 1 SELECT DISTINCT k FROM distinct_order_requirements LIMIT 5);
 SELECT count(), uniqExact(k) FROM (SELECT DISTINCT k FROM distinct_order_requirements LIMIT 5 OFFSET 2);
