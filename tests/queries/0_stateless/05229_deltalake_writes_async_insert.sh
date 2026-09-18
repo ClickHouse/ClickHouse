@@ -39,6 +39,13 @@ $CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --async_insert=1 --wait_for_async
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM dl"
 versions
 
+echo "-- async insert with the writes setting off and no wait: nothing is committed"
+echo "-- (the INSERT itself is still acknowledged, https://github.com/ClickHouse/ClickHouse/issues/120717)"
+$CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --async_insert=1 --wait_for_async_insert=0 --async_insert_use_adaptive_busy_timeout=0 --async_insert_busy_timeout_ms=600000 --query "INSERT INTO dl VALUES (5)" 2>/dev/null
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH ASYNC INSERT QUEUE dl" 2>/dev/null
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM dl"
+versions
+
 echo "-- two concurrent async inserts with identical settings both land (one or two flushes)"
 ASYNC="--allow_delta_lake_writes=1 --async_insert=1 --wait_for_async_insert=1 --async_insert_busy_timeout_min_ms=3000 --async_insert_busy_timeout_max_ms=3000"
 $CLICKHOUSE_CLIENT ${ASYNC} --query "INSERT INTO dl VALUES (10)" &

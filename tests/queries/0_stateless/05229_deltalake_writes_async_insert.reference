@@ -5,6 +5,10 @@ versions: 3
 SUPPORT_IS_DISABLED
 3
 versions: 3
+-- async insert with the writes setting off and no wait: nothing is committed
+-- (the INSERT itself is still acknowledged, https://github.com/ClickHouse/ClickHouse/issues/120717)
+3
+versions: 3
 -- two concurrent async inserts with identical settings both land (one or two flushes)
 5	27
 versions in [4, 5]: 1
