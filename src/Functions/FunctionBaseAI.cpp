@@ -5,6 +5,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <algorithm>
+#include <exception>
 #include <future>
 #include <optional>
 #include <utility>
@@ -340,13 +341,17 @@ void FunctionBaseAI::embedTexts(
 {
     result.embeddings.resize(inputs.size());
 
-    const size_t batch_count = (inputs.size() + max_batch_size - 1) / max_batch_size;
+    /// Rounded up without `inputs.size() + max_batch_size`, which overflows for an adversarially
+    /// large `ai_function_embedding_max_batch_size` and would leave every input unembedded.
+    const size_t batch_count = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
     const size_t concurrency = std::min(max_concurrent_requests, batch_count);
 
     /// Batches go out in waves of `concurrency` and each completed wave is applied before the next
     /// one starts, so at most that many of this call's requests are in flight at a time.
     VectorWithMemoryTracking<std::future<std::optional<AIEmbeddingResponse>>> wave;
+    VectorWithMemoryTracking<std::optional<AIEmbeddingResponse>> responses;
     wave.reserve(concurrency);
+    responses.reserve(concurrency);
 
     auto batch_bounds = [&](size_t batch)
     {
@@ -382,16 +387,37 @@ void FunctionBaseAI::embedTexts(
             wave.push_back(ai_service.submitEmbedding(provider, std::move(ai_embedding_request), policy, quota));
         }
 
+        /// Wait for the whole wave before applying any of it, and keep draining past a failure:
+        /// every request the wave issued was dispatched and billed, and only a drained future has
+        /// reported its API-call and token usage.
+        responses.assign(wave.size(), std::nullopt);
+        std::exception_ptr error;
+        for (size_t k = 0; k < wave.size(); ++k)
+        {
+            if (!wave[k].valid())
+                continue;
+
+            try
+            {
+                responses[k] = wave[k].get();
+            }
+            catch (...)
+            {
+                if (!error)
+                    error = std::current_exception();
+            }
+        }
+
+        if (error)
+            std::rethrow_exception(error);
+
         for (size_t k = 0; k < wave.size(); ++k)
         {
             auto [begin, end] = batch_bounds(wave_begin + k);
 
             /// Nothing when no request was issued for this batch, or when it failed and
             /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
-            std::optional<AIEmbeddingResponse> ai_embedding_response;
-            if (wave[k].valid())
-                ai_embedding_response = wave[k].get();
-
+            auto & ai_embedding_response = responses[k];
             if (!ai_embedding_response)
             {
                 result.texts_skipped += end - begin;
@@ -425,8 +451,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
 
-    /// Shared with the requests in flight, which may outlive this call when an earlier request of
-    /// the block throws and the rest of its wave is left to finish on its own.
+    /// Shared with the submitted requests so each one is self-contained and nothing dangles even
+    /// if this call stops waiting for a future it handed out.
     std::shared_ptr<IAIProvider> provider = createAIProvider(
         params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
@@ -470,7 +496,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// which gives up a little throughput next to a sliding window, but keeps row ordering, quota
     /// accounting and error propagation identical to issuing the requests one at a time.
     VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
+    VectorWithMemoryTracking<std::optional<AIResponse>> responses;
     wave.reserve(concurrency);
+    responses.reserve(concurrency);
 
     for (size_t wave_begin = 0; wave_begin < input_rows_count; wave_begin += concurrency)
     {
@@ -499,25 +527,46 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             wave.push_back(ai_service.submit(provider, std::move(ai_request), policy, quota_tracker));
         }
 
+        /// Wait for the whole wave before applying any of it, and keep draining past a failure:
+        /// every request the wave issued was dispatched and billed, and only a drained future has
+        /// reported its API-call and token usage.
+        responses.assign(wave.size(), std::nullopt);
+        std::exception_ptr error;
+        for (size_t k = 0; k < wave.size(); ++k)
+        {
+            if (!wave[k].valid())
+                continue;
+
+            try
+            {
+                responses[k] = wave[k].get();
+            }
+            catch (...)
+            {
+                if (!error)
+                    error = std::current_exception();
+            }
+        }
+
+        if (error)
+            std::rethrow_exception(error);
+
         for (size_t k = 0; k < wave.size(); ++k)
         {
             const size_t row = wave_begin + k;
 
-            /// No request was issued for this row: either its prompt was NULL, or the quota was
-            /// already exhausted when the wave was submitted.
-            if (!wave[k].valid())
+            /// A NULL prompt produces NULL without a request.
+            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
             {
                 result_col->insertDefault();
-                if (prompt_nullable && prompt_nullable->getNullMapData()[row])
-                    null_map_col->getData()[row] = 1;
-                else
-                    ++rows_skipped;
+                null_map_col->getData()[row] = 1;
                 continue;
             }
 
-            /// Nothing when the API-call quota is exhausted, or the request failed and
-            /// `ai_function_throw_on_error` is disabled; either way the row keeps its default value.
-            auto ai_response = wave[k].get();
+            /// Nothing when no request was issued because the API-call quota was exhausted, or when
+            /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
+            /// keeps its default value.
+            const auto & ai_response = responses[k];
             if (!ai_response)
             {
                 result_col->insertDefault();

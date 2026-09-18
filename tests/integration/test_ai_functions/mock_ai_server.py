@@ -9,9 +9,9 @@ Endpoints:
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
   GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
-      the requests seen since the last `/reset-concurrency`, where `max_concurrency` is the highest
-      number that were ever being served at the same moment. Used to assert that
-      `ai_function_max_concurrent_requests` actually controls how many requests are in flight.
+      the requests the slow endpoints below have served since the last `/reset-concurrency`, where
+      `max_concurrency` is the highest number that were ever being served at the same moment. Used
+      to assert that `ai_function_max_concurrent_requests` controls how many requests are in flight.
   GET  /reset-concurrency            — zeroes the counters above
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
       before answering, so overlapping requests are observable in `/concurrency`.
@@ -87,8 +87,8 @@ FLAKY = {"fails_remaining": 0}
 # observably, short enough not to slow the test down.
 SLOW_RESPONSE_SECONDS = 0.5
 
-# Requests seen, and the high-water mark of requests being served simultaneously, since the last
-# `/reset-concurrency`. Guarded by `_LOCK`.
+# Requests the slow endpoints have served, and the high-water mark of how many they were serving
+# simultaneously, since the last `/reset-concurrency`. Guarded by `_LOCK`.
 CONCURRENCY = {"requests": 0, "in_flight": 0, "max_concurrency": 0}
 
 
@@ -294,26 +294,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["path"] = parsed.path
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
-            CONCURRENCY["requests"] += 1
-            CONCURRENCY["in_flight"] += 1
-            CONCURRENCY["max_concurrency"] = max(
-                CONCURRENCY["max_concurrency"], CONCURRENCY["in_flight"]
-            )
-        try:
-            self._handle_post(parsed, body)
-        finally:
-            with _LOCK:
-                CONCURRENCY["in_flight"] -= 1
 
-    def _handle_post(self, parsed, body):
         if parsed.path == "/v1/chat/slow":
-            time.sleep(SLOW_RESPONSE_SECONDS)
-            self._send_json(200, make_success_response(extract_user_message(body)))
+            self._serve_slowly(lambda: make_success_response(extract_user_message(body)))
             return
 
         if parsed.path == "/v1/embeddings_slow":
-            time.sleep(SLOW_RESPONSE_SECONDS)
-            self._send_json(200, make_embeddings_response(body))
+            self._serve_slowly(lambda: make_embeddings_response(body))
             return
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
@@ -490,6 +477,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         self.send_response(404)
         self.end_headers()
+
+    def _serve_slowly(self, make_response):
+        """Sleep, then answer, counting the request as in flight for the duration of the sleep.
+        The window closes before the response is written, so a handler that has already answered
+        can never overlap in `max_concurrency` with the request that answer unblocks."""
+        with _LOCK:
+            CONCURRENCY["requests"] += 1
+            CONCURRENCY["in_flight"] += 1
+            CONCURRENCY["max_concurrency"] = max(
+                CONCURRENCY["max_concurrency"], CONCURRENCY["in_flight"]
+            )
+        try:
+            time.sleep(SLOW_RESPONSE_SECONDS)
+            response = make_response()
+        finally:
+            with _LOCK:
+                CONCURRENCY["in_flight"] -= 1
+
+        self._send_json(200, response)
 
     def _send_json(self, status, obj):
         body = json.dumps(obj).encode("utf-8")

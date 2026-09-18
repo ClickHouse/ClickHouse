@@ -180,9 +180,13 @@ AIService::AIService(size_t pool_size, size_t queue_size)
         CurrentMetrics::AIServiceThreadsActive,
         CurrentMetrics::AIServiceThreadsScheduled,
         pool_size,
-        pool_size,
+        /*max_free_threads=*/ 0,
         queue_size))
 {
+    /// A worker spends its life blocked on one HTTP request, so idle ones are released rather than
+    /// parked: creating a thread costs nothing next to the request it is about to wait for, and AI
+    /// traffic is bursty enough that keeping `pool_size` threads alive would hold that many global
+    /// thread pool slots for the rest of the server's life.
 }
 
 AIService::~AIService() = default;

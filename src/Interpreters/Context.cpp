@@ -9143,7 +9143,8 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
 
 AIService & Context::getAIService() const
 {
-    callOnce(shared->ai_service_initialized, [&] {
+    callOnce(shared->ai_service_initialized, [&]
+    {
         shared->ai_service = std::make_unique<AIService>(
             shared->server_settings[ServerSetting::ai_service_threadpool_pool_size],
             shared->server_settings[ServerSetting::ai_service_threadpool_queue_size]);

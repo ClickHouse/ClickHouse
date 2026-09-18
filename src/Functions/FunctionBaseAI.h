@@ -151,7 +151,7 @@ public:
     /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching
     /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call, and
     /// up to `max_concurrent_requests` of those calls are in flight at once.
-    /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
+    /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
     static void embedTexts(
         AIService & ai_service,
         const std::shared_ptr<IAIProvider> & provider,
