@@ -933,6 +933,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
+        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
+        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
+        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+        /// are marked with `attach_short_syntax` (see `createTableFromAST`). A `Replicated` database
+        /// follower replays committed metadata and can use either `SECONDARY_CREATE` or `ATTACH` for a
+        /// full-definition `ATTACH`; the metadata replay markers identify that independently of the
+        /// loading strictness. These definitions may have been accepted by an older server and must
+        /// remain loadable during a rolling upgrade, including when replayed through Shared Catalog.
+        const bool validate_text_indices_as_new = args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax
+            && !args.is_restore_from_backup && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !is_ddl_replay
+            && !is_shared_catalog_replay;
+
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
         /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
@@ -1033,6 +1045,25 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (const auto & index : args.query.columns_list->indices->children)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                auto & added_index = metadata.secondary_indices.back();
+
+                /// `MergeTreeData` passes `attach = true` to index validators for every full-definition
+                /// `ATTACH`, so validate a newly submitted text-index definition explicitly. Metadata
+                /// replay remains loadable for compatibility; the unsupported legacy index stays active,
+                /// preserving its existing runtime behavior until the user drops it.
+                if (validate_text_indices_as_new && added_index.type == TEXT_INDEX_NAME)
+                {
+                    try
+                    {
+                        MergeTreeIndexFactory::instance().validate(added_index, /* attach = */ false, *storage_settings);
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage("When validating secondary index '{}'", added_index.name);
+                        throw;
+                    }
+                }
+
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =
