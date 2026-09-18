@@ -195,6 +195,11 @@ DEFINE_ICEBERG_FIELD_COMPOUND(partitions, lower_bound);
 DEFINE_ICEBERG_FIELD_COMPOUND(partitions, upper_bound);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, first_row_id);
 
+/// Order id 0 is reserved for the unsorted order, so a sort order with fields starts at 1
+/// (`TableMetadata.INITIAL_SORT_ORDER_ID` in the Java implementation).
+constexpr Int32 unsorted_sort_order_id = 0;
+constexpr Int32 initial_sort_order_id = 1;
+
 constexpr Int32 row_id_field_id = 2147483540;
 constexpr Int32 last_updated_sequence_number_field_id = 2147483539;
 
