@@ -425,7 +425,10 @@ def test_prometheus_error_response_limit_and_recovery(
 
 def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=None):
     with payload_user("max_memory_usage", batching_limit, profile) as user:
-        node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")
+        # Keep retained `query_metric_log` bookkeeping out of the context balance.
+        node.query(
+            f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0, query_metric_log_interval = 0"
+        )
         sentinel_id = str(uuid.uuid4())
         sentinel = node.get_query_request(
             "SELECT repeat('ssssssssssssssssssssssssssssssss', 524288), sleep(600) "
