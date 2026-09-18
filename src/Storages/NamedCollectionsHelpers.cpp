@@ -165,6 +165,15 @@ std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
     return params;
 }
 
+NameSet settingsSuppliedByNamedCollection(const NamedCollection & collection)
+{
+    NameSet supplied;
+    for (const auto & key : collection.getKeys())
+        if (!collection.isQueryOverridden(key))
+            supplied.insert(key);
+    return supplied;
+}
+
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,

@@ -174,7 +174,8 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
-    const String & collection_name_)
+    const String & collection_name_,
+    NameSet settings_from_named_collection_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
@@ -195,6 +196,7 @@ StorageKafka::StorageKafka(
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
+    , settings_from_named_collection(std::move(settings_from_named_collection_))
 {
     kafka_settings->sanityCheck(getContext());
 

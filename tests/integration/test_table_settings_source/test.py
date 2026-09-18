@@ -66,5 +66,21 @@ def test_config_assignment_is_reported_for_replicated(started_cluster):
     assert source_of("merge_max_block_size", "tr") == "config"
     assert source_of("merge_max_block_size_bytes", "tr") == "default"
 
+    # A setting the `<replicated_merge_tree>` section alone assigns: the replicated baseline must carry it,
+    # and the plain one must not, which is what keeps the two baselines and their sources apart.
+    assert source_of("max_replicated_merges_in_queue", "tr") == "config"
+    assert (
+        node.query(
+            "SELECT value FROM system.table_settings WHERE database = currentDatabase() "
+            "AND table = 'tr' AND name = 'max_replicated_merges_in_queue'"
+        ).strip()
+        == "77"
+    )
+
+    node.query("DROP TABLE IF EXISTS t_plain SYNC")
+    node.query("CREATE TABLE t_plain (x UInt64) ENGINE = MergeTree ORDER BY x")
+    assert source_of("max_replicated_merges_in_queue", "t_plain") == "default"
+    node.query("DROP TABLE t_plain SYNC")
+
     node.query("DROP TABLE tr SYNC")
 

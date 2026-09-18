@@ -123,11 +123,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & comment,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
         LoadingStrictnessLevel mode,
-        String collection_name_)
+        NameSet settings_from_named_collection_)
         : IStreamingStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
-        , collection_name(std::move(collection_name_))
+        , settings_from_named_collection(std::move(settings_from_named_collection_))
         , exchange_name(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_exchange_name]))
         , format_name(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format]))
         , exchange_type(defineExchangeType(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_exchange_type])))
@@ -1531,13 +1531,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     {
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
 
-        String collection_name;
+        NameSet settings_from_named_collection;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             rabbitmq_settings->loadFromNamedCollection(named_collection);
-            if (!args.engine_args.empty())
-                if (const auto * identifier = args.engine_args[0]->as<ASTIdentifier>())
-                    collection_name = identifier->name();
+            settings_from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
@@ -1555,7 +1553,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         return std::make_shared<StorageRabbitMQ>(
             args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode,
-            std::move(collection_name));
+            std::move(settings_from_named_collection));
     };
 
     factory.registerStorage(
@@ -1786,7 +1784,7 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) 
 {
     /// See `SettingOrigin::NamedCollection`.
     auto settings = rabbitmq_settings->enumerateSettings();
-    attributeSettingsFromNamedCollection(settings, collection_name);
+    attributeSettingsFromNamedCollection(settings, settings_from_named_collection);
     settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
 
     /// What the table works with. The constructor expands macros in these, and lets the `rabbitmq` server config

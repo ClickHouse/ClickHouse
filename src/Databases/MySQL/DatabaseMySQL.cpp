@@ -121,6 +121,7 @@ DatabaseMySQL::DatabaseMySQL(
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
     std::unique_ptr<MySQLSettings> settings_,
+    NameSet settings_from_named_collection_,
     mysqlxx::PoolWithFailover && pool,
     bool attach,
     UUID uuid)
@@ -130,6 +131,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
+    , settings_from_named_collection(std::move(settings_from_named_collection_))
     , mysql_pool(std::move(pool)) /// NOLINT
     , db_uuid(uuid)
 {
@@ -424,7 +426,8 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 ConstraintsDescription{},
                 String{},
                 getContext(),
-                MySQLSettings{}));
+                *mysql_settings,
+                settings_from_named_collection));
     }
 }
 
@@ -787,8 +790,10 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
 
+        NameSet settings_from_named_collection;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
         {
+            settings_from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
         }
         else
@@ -839,6 +844,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 engine_define,
                 configuration.database,
                 std::move(mysql_settings),
+                std::move(settings_from_named_collection),
                 std::move(mysql_pool),
                 args.create_query.attach,
                 args.uuid);

@@ -33,7 +33,7 @@ public:
         const StoragePostgreSQL::Configuration & configuration,
         postgres::PoolWithFailoverPtr pool_,
         PostgreSQLSettings storage_settings_,
-        String collection_name_,
+        NameSet settings_from_named_collection_,
         bool cache_tables_,
         UUID uuid);
 
@@ -81,7 +81,7 @@ private:
     /// The settings the database was created with, handed to every table it makes: they govern the shared
     /// pool, so they describe each of its tables as well, along with the collection that supplied them.
     PostgreSQLSettings storage_settings;
-    String collection_name;
+    NameSet settings_from_named_collection;
     const bool cache_tables;
 
     mutable Tables cached_tables;

@@ -896,6 +896,26 @@ def test_table_settings_of_a_database_table(started_cluster):
     )
 
     node1.query("DROP DATABASE postgres_database")
+
+    # From a named collection instead: the database hands what the collection supplied to every table it
+    # makes, and the tables say so - including for a key whose value is the compiled-in default, which no
+    # comparison of values could attribute.
+    # The collection names another PostgreSQL database, so point this one at the database the table above
+    # lives in; overriding an argument does not change which settings the collection supplies.
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, database = 'postgres_database')"
+    )
+    assert "test_settings_table" in node1.query("SHOW TABLES FROM postgres_database")
+    node1.query("SELECT count() FROM postgres_database.test_settings_table")
+    assert (
+        node1.query(
+            "SELECT value, source FROM system.table_settings WHERE database = 'postgres_database' "
+            "AND table = 'test_settings_table' AND name = 'postgresql_connection_pool_size'"
+        ).strip()
+        == "16\tnamed_collection"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
     cursor.execute("DROP TABLE IF EXISTS test_settings_table")
 
 

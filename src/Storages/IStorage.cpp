@@ -292,18 +292,21 @@ NameSet getSettingNamesStatedInDefinition(const StorageID & table_id, ContextPtr
 
 }
 
-void IStorage::attributeSettingsFromNamedCollection(SettingDescriptions & settings, const String & collection_name)
+void IStorage::attributeSettingsFromNamedCollection(SettingDescriptions & settings, const NameSet & supplied_by_collection)
 {
-    if (collection_name.empty())
-        return;
-
-    const auto collection = NamedCollectionFactory::instance().tryGet(collection_name);
-    if (!collection)
+    if (supplied_by_collection.empty())
         return;
 
     for (auto & setting : settings)
-        if (collection->has(setting.name))
+    {
+        /// A collection may name a setting by any of its aliases, as a definition may - see
+        /// `attributeSettingsStatedInDefinition`, which matches the same way.
+        const bool supplied = supplied_by_collection.contains(setting.name)
+            || std::any_of(setting.aliases.begin(), setting.aliases.end(),
+                           [&](std::string_view alias) { return supplied_by_collection.contains(String{alias}); });
+        if (supplied)
             setting.origin = SettingOrigin::NamedCollection;
+    }
 }
 
 void IStorage::reportOriginByValue(SettingDescriptions & settings)

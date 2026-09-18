@@ -1678,7 +1678,9 @@ def test_nats_table_settings_report_the_named_collection(nats_cluster):
         """
     )
 
-    # Stated by the clause, supplied by the collection, and left at the engine's default.
+    # Stated by the clause, supplied by the collection, and left at the engine's default. The collection
+    # holds `nats_max_rows_per_message` too, so this also pins that the clause wins over the collection -
+    # and it holds it at the compiled-in default, which no comparison of values could have attributed.
     rows = instance.query(
         "SELECT name, value, source FROM system.table_settings "
         "WHERE database = 'test' AND table = 'nats_collection' "
@@ -1689,6 +1691,23 @@ def test_nats_table_settings_report_the_named_collection(nats_cluster):
         "nats_skip_broken_messages\t111\tnamed_collection\n"
         "nats_subjects\tnamed\tnamed_collection\n"
     )
+
+    # An engine argument overriding a collection key is not the collection either: the engine took the
+    # value from the argument list, and cannot say more than `other` about it.
+    instance.query(
+        """
+        CREATE TABLE test.nats_override (key UInt64, value UInt64)
+            ENGINE = NATS(nats1, nats_skip_broken_messages = 222);
+        """
+    )
+    assert (
+        instance.query(
+            "SELECT value, source FROM system.table_settings WHERE database = 'test' "
+            "AND table = 'nats_override' AND name = 'nats_skip_broken_messages'"
+        ).strip()
+        == "222\tother"
+    )
+    instance.query("DROP TABLE test.nats_override")
 
     # Everything the collection does not mention and the clause does not state keeps its own default.
     assert (

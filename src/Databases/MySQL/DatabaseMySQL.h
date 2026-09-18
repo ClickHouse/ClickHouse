@@ -50,6 +50,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
         std::unique_ptr<MySQLSettings> settings_,
+        NameSet settings_from_named_collection_,
         mysqlxx::PoolWithFailover && pool,
         bool attach,
         UUID uuid);
@@ -102,6 +103,9 @@ private:
     ASTPtr database_engine_define;
     String database_name_in_mysql;
     std::unique_ptr<MySQLSettings> mysql_settings;
+    /// Which of them the named collection supplied, if the database was created from one: the tables this
+    /// database makes work with these settings, so they report them and where they came from.
+    NameSet settings_from_named_collection;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;

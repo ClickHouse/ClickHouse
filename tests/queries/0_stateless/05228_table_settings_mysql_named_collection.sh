@@ -20,19 +20,26 @@ SET send_logs_level = 'fatal';
 DROP TABLE IF EXISTS mysql_collection;
 DROP NAMED COLLECTION IF EXISTS ${NC};
 
+-- \`connection_wait_timeout\` is stated at its own compiled-in default, so nothing but the reported
+-- source can say the collection is where it came from.
 CREATE NAMED COLLECTION ${NC} AS
     host = 'localhost', port = 3306, database = 'db', table = 'tbl', user = 'u', password = 'p',
-    connection_pool_size = 16, connect_timeout = 7;
+    connection_pool_size = 16, connect_timeout = 7, connection_wait_timeout = 5;
 
-CREATE TABLE mysql_collection (x Int32) ENGINE = MySQL(${NC})
-    SETTINGS read_write_timeout = 1234;
+-- \`connect_timeout\` is stated by both the collection and the clause, and \`connection_pool_size\` is
+-- overridden in the engine arguments - the two cases where naming the collection would be wrong.
+CREATE TABLE mysql_collection (x Int32) ENGINE = MySQL(${NC}, connection_pool_size = 42)
+    SETTINGS read_write_timeout = 1234, connect_timeout = 99;
 
-SELECT '-- the collection, the clause and the default are told apart';
+SELECT '-- the collection, the clause, an engine-argument override and the default are told apart';
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'mysql_collection'
-  AND name IN ('connection_pool_size', 'connect_timeout', 'read_write_timeout')
+  AND name IN ('connection_pool_size', 'connect_timeout', 'read_write_timeout', 'connection_wait_timeout')
 ORDER BY name;
+"
 
-DROP TABLE mysql_collection;
-DROP NAMED COLLECTION ${NC};
+# Unconditionally, so that a failure above cannot leave a server-wide collection behind for later tests.
+$CLICKHOUSE_CLIENT -q "
+DROP TABLE IF EXISTS mysql_collection;
+DROP NAMED COLLECTION IF EXISTS ${NC};
 "

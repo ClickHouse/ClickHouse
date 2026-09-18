@@ -23,20 +23,29 @@ DROP NAMED COLLECTION IF EXISTS ${NC};
 
 -- 16 is also the compiled-in default of \`postgresql_connection_pool_size\`, so a report derived from the value
 -- alone would call it \`default\`; 4 differs from the default of \`postgresql_connection_pool_retries\`.
+-- \`postgresql_connection_attempt_timeout\` is stated at its own compiled-in default and the session
+-- sets it to something else below: the collection wins, and only the source can say so.
 CREATE NAMED COLLECTION ${NC} AS
     host = 'localhost', port = 5432, database = 'db', table = 'tbl', user = 'u', password = 'p',
-    postgresql_connection_pool_size = 16, postgresql_connection_pool_retries = 4;
+    postgresql_connection_pool_size = 16, postgresql_connection_pool_retries = 4,
+    postgresql_connection_attempt_timeout = 2;
 
 SET postgresql_connection_attempt_timeout = 7;
 
-CREATE TABLE pg_collection (x Int32) ENGINE = PostgreSQL(${NC})
-    SETTINGS postgresql_connection_pool_wait_timeout = 3000;
+-- \`postgresql_connection_pool_retries\` is stated by both the collection and the clause, and
+-- \`postgresql_connection_pool_size\` is overridden in the engine arguments: naming the collection for
+-- either would be wrong, and no comparison of values could tell.
+CREATE TABLE pg_collection (x Int32) ENGINE = PostgreSQL(${NC}, postgresql_connection_pool_size = 42)
+    SETTINGS postgresql_connection_pool_wait_timeout = 3000, postgresql_connection_pool_retries = 9;
 
-SELECT '-- the collection, the clause, the session and the default are all told apart';
+SELECT '-- the collection, the clause, an engine-argument override, the session and the default';
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'pg_collection'
 ORDER BY name;
+"
 
-DROP TABLE pg_collection;
-DROP NAMED COLLECTION ${NC};
+# Unconditionally, so that a failure above cannot leave a server-wide collection behind for later tests.
+$CLICKHOUSE_CLIENT -q "
+DROP TABLE IF EXISTS pg_collection;
+DROP NAMED COLLECTION IF EXISTS ${NC};
 "

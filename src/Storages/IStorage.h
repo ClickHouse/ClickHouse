@@ -308,11 +308,12 @@ public:
     static void reportEffectiveValueWithConfigFallback(
         SettingDescriptions & settings, std::string_view name, const String & stated, const String & value);
 
-    /// Marks as `NamedCollection` every setting the collection of this name supplies, for an engine built from
-    /// one. The collection is looked up now rather than kept, so a collection since dropped or changed simply
-    /// stops explaining a value - what a table holds is what it was built with, which cannot be looked up.
-    /// Does nothing when the name is empty, i.e. when the engine's arguments were positional.
-    static void attributeSettingsFromNamedCollection(SettingDescriptions & settings, const String & collection_name);
+    /// Marks as `NamedCollection` every setting in `supplied_by_collection`, which the engine's creator takes
+    /// from the collection it was built from - see `settingsSuppliedByNamedCollection`. Recorded there and not
+    /// looked up here on purpose: the engine arguments may override a collection's key, and the collection may
+    /// be altered afterwards, so what it holds at read time answers for neither this table nor this value.
+    /// Empty for a table whose arguments were positional.
+    static void attributeSettingsFromNamedCollection(SettingDescriptions & settings, const NameSet & supplied_by_collection);
 
     /// Recomputes `origin` from the value alone: `Default` where it equals the compiled-in default and
     /// `Other` where it does not. For an engine whose loader assigns every setting from the session -

@@ -100,7 +100,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & comment,
     ContextPtr context_,
     PostgreSQLSettings settings_,
-    String collection_name_,
+    NameSet settings_from_named_collection_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -109,7 +109,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
     , settings(std::move(settings_))
-    , collection_name(std::move(collection_name_))
+    , settings_from_named_collection(std::move(settings_from_named_collection_))
     , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -138,9 +138,8 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
     reportOriginByValue(descriptions);
 
     /// Except for what a named collection supplied, which is neither the session's nor a default - and which
-    /// the value cannot reveal, since a collection may well state the default. Looked up by name, as
-    /// `StorageKafka` does: the collection is not kept, and may since have changed.
-    attributeSettingsFromNamedCollection(descriptions, collection_name);
+    /// the value cannot reveal, since a collection may well state the default.
+    attributeSettingsFromNamedCollection(descriptions, settings_from_named_collection);
 
     return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
 }
@@ -829,14 +828,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
 }
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
-    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, String * collection_name)
+    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, NameSet * from_named_collection)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        if (collection_name && !engine_args.empty())
-            if (const auto * identifier = engine_args[0]->as<ASTIdentifier>())
-                *collection_name = identifier->name();
+        if (from_named_collection)
+            *from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
 
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
@@ -908,9 +906,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        String collection_name;
+        NameSet settings_from_named_collection;
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, &collection_name);
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, &settings_from_named_collection);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
@@ -935,7 +933,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.comment,
             args.getContext(),
             std::move(postgresql_settings),
-            std::move(collection_name),
+            std::move(settings_from_named_collection),
             configuration.schema,
             configuration.on_conflict);
     },

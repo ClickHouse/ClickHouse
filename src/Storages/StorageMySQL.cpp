@@ -84,7 +84,7 @@ StorageMySQL::StorageMySQL(
     const String & comment,
     ContextPtr context_,
     const MySQLSettings & mysql_settings_,
-    String collection_name_)
+    NameSet settings_from_named_collection_)
     : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
@@ -92,7 +92,7 @@ StorageMySQL::StorageMySQL(
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(std::make_unique<MySQLSettings>(mysql_settings_))
-    , collection_name(std::move(collection_name_))
+    , settings_from_named_collection(std::move(settings_from_named_collection_))
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
     , log(getLogger("StorageMySQL (" + table_id_.getFullTableName() + ")"))
 {
@@ -539,14 +539,13 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 }
 
 StorageMySQL::Configuration StorageMySQL::getConfiguration(
-    ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id, String * collection_name)
+    ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id, NameSet * from_named_collection)
 {
     StorageMySQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
     {
-        if (collection_name && !engine_args.empty())
-            if (const auto * identifier = engine_args[0]->as<ASTIdentifier>())
-                *collection_name = identifier->name();
+        if (from_named_collection)
+            *from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
 
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
@@ -622,9 +621,9 @@ void registerStorageMySQL(StorageFactory & factory)
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        String collection_name;
+        NameSet settings_from_named_collection;
         auto configuration = StorageMySQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, &collection_name);
+            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, &settings_from_named_collection);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
@@ -651,7 +650,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.comment,
             args.getContext(),
             mysql_settings,
-            std::move(collection_name));
+            std::move(settings_from_named_collection));
     },
     {
         .supports_settings = true,
@@ -970,7 +969,7 @@ ColumnsDescription doQueryResultStructure(
 SettingDescriptions StorageMySQL::getTableSettings(ContextPtr query_context) const
 {
     auto settings = mysql_settings->enumerateSettings();
-    attributeSettingsFromNamedCollection(settings, collection_name);
+    attributeSettingsFromNamedCollection(settings, settings_from_named_collection);
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);
 }
 

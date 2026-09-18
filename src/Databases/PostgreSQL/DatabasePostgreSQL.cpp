@@ -97,7 +97,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     const StoragePostgreSQL::Configuration & configuration_,
     postgres::PoolWithFailoverPtr pool_,
     PostgreSQLSettings storage_settings_,
-    String collection_name_,
+    NameSet settings_from_named_collection_,
     bool cache_tables_,
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(dbname_)
@@ -107,7 +107,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , storage_settings(std::move(storage_settings_))
-    , collection_name(std::move(collection_name_))
+    , settings_from_named_collection(std::move(settings_from_named_collection_))
     , cache_tables(cache_tables_)
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
     , db_uuid(uuid)
@@ -281,7 +281,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, storage_settings, collection_name, configuration.schema, configuration.on_conflict);
+                context_, storage_settings, settings_from_named_collection, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
         {
@@ -657,12 +657,10 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.context);
 
-        String collection_name;
+        NameSet settings_from_named_collection;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            if (!engine_args.empty())
-                if (const auto * identifier = engine_args[0]->as<ASTIdentifier>())
-                    collection_name = identifier->name();
+            settings_from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
 
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
@@ -747,7 +745,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             configuration,
             pool,
             std::move(postgresql_settings),
-            std::move(collection_name),
+            std::move(settings_from_named_collection),
             use_table_cache,
             args.uuid);
     };

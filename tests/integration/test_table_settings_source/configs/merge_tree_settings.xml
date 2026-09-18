@@ -9,5 +9,8 @@
     </merge_tree>
     <replicated_merge_tree>
         <merge_max_block_size>8192</merge_max_block_size>
+        <!-- Only here, so that the replicated section is pinned on its own: a plain `MergeTree` table must
+             not see it, and the replicated baseline must not lose it. -->
+        <max_replicated_merges_in_queue>77</max_replicated_merges_in_queue>
     </replicated_merge_tree>
 </clickhouse>

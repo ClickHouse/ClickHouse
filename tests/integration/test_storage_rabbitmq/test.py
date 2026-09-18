@@ -3858,6 +3858,23 @@ def test_rabbitmq_table_settings_report_the_named_collection(rabbitmq_cluster, d
         "rabbitmq_skip_broken_messages\t111\tnamed_collection\n"
     )
 
+    # An engine argument overriding a collection key is not the collection either: the engine took the
+    # value from the argument list, and cannot say more than `other` about it.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq_override (key UInt64, value UInt64)
+            ENGINE = RabbitMQ(rabbit1, rabbitmq_skip_broken_messages = 222);
+        """
+    )
+    assert (
+        instance.query(
+            f"SELECT value, source FROM system.table_settings WHERE database = '{db}' "
+            f"AND table = 'rabbitmq_override' AND name = 'rabbitmq_skip_broken_messages'"
+        ).strip()
+        == "222\tother"
+    )
+    instance.query(f"DROP TABLE {db}.rabbitmq_override")
+
     assert (
         instance.query(
             f"SELECT countIf(source = 'named_collection'), countIf(source = 'default') > 0 "

@@ -31,7 +31,7 @@ public:
             const String & comment,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
             LoadingStrictnessLevel mode,
-            String collection_name_);
+            NameSet settings_from_named_collection_);
 
     ~StorageRabbitMQ() override;
 
@@ -97,9 +97,8 @@ public:
 private:
     ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
-    /// The named collection the table was built from, empty when its arguments were positional. Kept so that
-    /// `system.table_settings` can say which of the settings the collection supplied.
-    String collection_name;
+    /// Which settings the named collection supplied, recorded when the table was built.
+    NameSet settings_from_named_collection;
 
     const String exchange_name;
     const String format_name;

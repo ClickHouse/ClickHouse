@@ -42,7 +42,9 @@ public:
         const String & comment,
         ContextPtr context_,
         const MySQLSettings & mysql_settings_,
-        String collection_name_ = {});
+        /// Not defaulted: a creator that has a named collection must say which settings came from it, and one
+        /// that has none says so explicitly. See `settingsSuppliedByNamedCollection`.
+        NameSet settings_from_named_collection_);
 
     std::string getName() const override { return "MySQL"; }
 
@@ -84,11 +86,11 @@ public:
         String addresses_expr;
     };
 
-    /// `collection_name`, when given, receives the name of the named collection the configuration was built
-    /// from, and is left as it was when the arguments were positional.
+    /// `from_named_collection`, when given, receives the settings the named collection supplied - empty when
+    /// the arguments were positional, or when they overrode every key of the collection.
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id = nullptr,
-        String * collection_name = nullptr);
+        NameSet * from_named_collection = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
@@ -127,9 +129,8 @@ private:
     std::string on_duplicate_clause;
 
     std::unique_ptr<MySQLSettings> mysql_settings;
-    /// The named collection the table was built from, empty when its arguments were positional. Kept so that
-    /// `system.table_settings` can say which of the settings the collection supplied.
-    String collection_name;
+    /// Which settings the named collection supplied, recorded when the table was built.
+    NameSet settings_from_named_collection;
 
     mysqlxx::PoolWithFailoverPtr pool;
 

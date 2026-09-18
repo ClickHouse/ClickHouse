@@ -15,6 +15,9 @@ cat > "$CONFIG" <<'EOF'
         <merge_max_block_size>1234</merge_max_block_size>
         <!-- Its default: an explicit assignment of the value a setting already has. -->
         <max_suspicious_broken_parts>100</max_suspicious_broken_parts>
+        <!-- Rolled back by `compatibility` too, so that the two sources meet on one setting. -->
+        <compute_exact_num_defaults_for_sparse_columns>0</compute_exact_num_defaults_for_sparse_columns>
+        <index_granularity>4096</index_granularity>
     </merge_tree>
     <distributed><bytes_to_throw_insert>1000000</bytes_to_throw_insert></distributed>
     <remote_servers>
@@ -57,6 +60,24 @@ CREATE TABLE d AS src ENGINE = Distributed('c1', currentDatabase(), 'src')
     SETTINGS bytes_to_throw_insert = 7, monitor_batch_inserts = 1;
 SELECT name, value, source FROM system.table_settings
 WHERE table = 'd' AND name IN ('bytes_to_throw_insert', 'background_insert_batch') ORDER BY name;"
+
+echo "-- the config section wins where it and the compatibility setting touch one setting"
+# The two are applied in that order, and this is the only place they meet: `compute_exact_num_defaults_for_
+# sparse_columns` is rolled back by 23.3 and then assigned by the config to the same value the roll-back gave
+# it, which no comparison of values could tell from either source alone.
+$CLICKHOUSE_LOCAL --config-file "$CONFIG" --compatibility=23.3 -q "
+CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a;
+SELECT name, value, source FROM system.table_settings
+WHERE table = 'mt' AND name IN ('compute_exact_num_defaults_for_sparse_columns', 'merge_max_block_size')
+ORDER BY name;"
+
+echo "-- an engine argument is not the config, even for a setting the config also sets"
+# The old syntax passes `index_granularity` as the third engine argument, which assigns it after the
+# server's baseline; the baseline's mark must not survive that.
+$CLICKHOUSE_LOCAL --config-file "$CONFIG" -q "
+SET allow_deprecated_syntax_for_merge_tree = 1;
+CREATE TABLE mt (d Date, a UInt64) ENGINE = MergeTree(d, a, 16384);
+SELECT name, value, source FROM system.table_settings WHERE table = 'mt' AND name = 'index_granularity';"
 
 echo "-- settings compatibility rolled back, against the current defaults"
 $CLICKHOUSE_LOCAL --compatibility=23.3 -q "
