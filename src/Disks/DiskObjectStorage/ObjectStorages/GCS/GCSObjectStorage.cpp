@@ -379,13 +379,20 @@ void GCSObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, *client_ptr, blob_storage_log);
 }
 
-void GCSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void GCSObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
 {
     /// GCS has no batch-delete API (see https://issuetracker.google.com/issues/162653700), delete one by one.
     auto client_ptr = getClient();
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     for (const auto & object : objects)
+    {
+        /// A removal that fails throws, and the caller is told which objects were removed before it did:
+        /// the `S3` backend reports its partial successes the same way, so a caller cleaning metadata up
+        /// does not forget the objects that are already gone.
         removeObjectImpl(object, *client_ptr, blob_storage_log);
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 ObjectMetadata GCSObjectStorage::getObjectMetadata(const std::string & path, bool /*with_tags*/) const
