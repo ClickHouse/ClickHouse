@@ -30,6 +30,10 @@ inline constexpr UInt64 DEFAULT_GCS_CONNECT_TIMEOUT_MS = 1000;
 inline constexpr UInt64 DEFAULT_GCS_REQUEST_TIMEOUT_MS = 30000;
 /// Same value as `S3::DEFAULT_MAX_CONNECTIONS`, repeated for the same reason.
 inline constexpr UInt64 DEFAULT_GCS_MAX_CONNECTIONS = 1024;
+/// Keep-alive policy of the pooled HTTP connections. Same values as `S3::DEFAULT_KEEP_ALIVE_TIMEOUT`
+/// and `S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS`, repeated for the same reason.
+inline constexpr UInt64 DEFAULT_GCS_KEEP_ALIVE_TIMEOUT = 5;
+inline constexpr UInt64 DEFAULT_GCS_KEEP_ALIVE_MAX_REQUESTS = 100;
 /// How many times a failed request is retried before the error is reported. The SDK's own default is
 /// `LimitedTimeRetryPolicy(15 minutes)`, which sits *above* `request_timeout_ms` and does not observe
 /// query cancellation, so a transient failure could keep a cancelled query retrying for a quarter of
@@ -95,6 +99,13 @@ struct GCSObjectStorageSettings
     /// only pooled on release, so this bounds the retained ones rather than the concurrent ones —
     /// the same meaning `ConnectionPoolSizeOption` has for the upstream transports.
     UInt64 max_connections = DEFAULT_GCS_MAX_CONNECTIONS;
+    /// For how long, and for how many requests, a pooled connection is reused, from the
+    /// `http_keep_alive_timeout` / `http_keep_alive_max_requests` keys of the shared argument grammar
+    /// (the same keys the S3-compatibility path hands to its Poco sessions). `Poco::Net::HTTPClientSession`
+    /// enforces both and reconnects when either is reached, so an operator's keep-alive policy survives
+    /// switching `use_native_gcs` on. 0 means "no bound of this kind".
+    UInt64 http_keep_alive_timeout = DEFAULT_GCS_KEEP_ALIVE_TIMEOUT;
+    UInt64 http_keep_alive_max_requests = DEFAULT_GCS_KEEP_ALIVE_MAX_REQUESTS;
     /// Upper bound on the retries of one request, from the `retry_attempts` key of a disk section.
     /// 0 means "do not retry".
     UInt64 retry_attempts = DEFAULT_GCS_RETRY_ATTEMPTS;
@@ -180,6 +191,13 @@ void validateGCSRefreshTokenTriple(const GCSObjectStorageSettings & settings);
 /// a rotating proxy list or a remote resolver behaves the same way it does for S3 and HTTP. Returns
 /// an empty function for a null resolver, which the transport reads as "no proxy".
 std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & resolver);
+
+/// The other half of that plumbing (`ClickHouse::PocoRestProxyErrorReportOption`): a failed request is
+/// reported back to the resolver that handed the proxy out, which is what makes
+/// `RemoteProxyConfigurationResolver` drop the proxy it cached instead of keeping it until the TTL of
+/// its list expires. Returns an empty function for a null resolver.
+std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)> makeGCSProxyErrorReporter(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver);
 
 /// Build the GCS credentials the settings authenticate with, following the priority order of

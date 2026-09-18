@@ -201,6 +201,39 @@ std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigPro
     return [resolver] { return proxyConfigurationToPocoProxyConfig(resolver->resolve()); };
 }
 
+/// The other half of the proxy plumbing: a request that failed is reported back to the resolver that
+/// handed the proxy out. `RemoteProxyConfigurationResolver` caches the proxy it fetched for the whole
+/// TTL of its list, and this is what makes it drop that cache and ask again, so a proxy that went down
+/// is failed over from rather than retried until the TTL expires. The transport speaks Poco's
+/// `ProxyConfig`, so the fields `errorReport` matches the cached entry on -- protocol, host and port --
+/// are translated back here.
+std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)> makeGCSProxyErrorReporter(
+    const std::shared_ptr<ProxyConfigurationResolver> & resolver)
+{
+    if (!resolver)
+        return {};
+
+    return [resolver](const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy)
+    {
+        if (poco_proxy.host.empty())
+            return;
+
+        ProxyConfiguration proxy_configuration;
+        proxy_configuration.host = poco_proxy.host;
+        proxy_configuration.port = poco_proxy.port;
+        /// Only the two protocols `proxyConfigurationToPocoProxyConfig` ever writes can identify a
+        /// resolved proxy; anything else cannot match a cached entry, so there is nothing to invalidate.
+        if (poco_proxy.protocol == "http")
+            proxy_configuration.protocol = ProxyConfiguration::Protocol::HTTP;
+        else if (poco_proxy.protocol == "https")
+            proxy_configuration.protocol = ProxyConfiguration::Protocol::HTTPS;
+        else
+            return;
+
+        resolver->errorReport(proxy_configuration);
+    };
+}
+
 GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
@@ -282,6 +315,10 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.request_timeout_ms = config.getUInt64(config_prefix + ".request_timeout_ms", DEFAULT_GCS_REQUEST_TIMEOUT_MS);
     result.max_connections = config.getUInt64(config_prefix + ".max_connections", DEFAULT_GCS_MAX_CONNECTIONS);
     result.retry_attempts = config.getUInt64(config_prefix + ".retry_attempts", DEFAULT_GCS_RETRY_ATTEMPTS);
+    result.http_keep_alive_timeout
+        = config.getUInt64(config_prefix + ".http_keep_alive_timeout", DEFAULT_GCS_KEEP_ALIVE_TIMEOUT);
+    result.http_keep_alive_max_requests
+        = config.getUInt64(config_prefix + ".http_keep_alive_max_requests", DEFAULT_GCS_KEEP_ALIVE_MAX_REQUESTS);
 
     /// The same lookup order an S3 disk uses (`S3Settings::loadFromConfigForObjectStorage`): the
     /// disk-local `<proxy>` section first, then the server-wide `<proxy>` configuration, then the
@@ -338,6 +375,8 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && request_timeout_ms == other.request_timeout_ms
         && max_connections == other.max_connections
         && retry_attempts == other.retry_attempts
+        && http_keep_alive_timeout == other.http_keep_alive_timeout
+        && http_keep_alive_max_requests == other.http_keep_alive_max_requests
         /// Resolvers are compared by identity: two of them can hand out different proxies (and a
         /// remote one cannot be asked what it would answer without querying it), so only the very
         /// same resolver object is known to describe the same transport. The cost of the
@@ -503,6 +542,16 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     if (settings.max_connections)
         options.set<gc::rest_internal::ConnectionPoolSizeOption>(static_cast<std::size_t>(settings.max_connections));
 
+    /// `http_keep_alive_timeout` / `http_keep_alive_max_requests` of the shared argument grammar. They
+    /// are read from the same `<s3>` endpoint section and the same disk section the S3-compatibility
+    /// path reads them from, so an operator who bounded the lifetime of a pooled connection -- because
+    /// a load balancer in front of the endpoint closes long-lived connections, or to spread the
+    /// requests over the backends behind it -- keeps that bound after switching `use_native_gcs` on
+    /// instead of silently falling back to the transport's own defaults.
+    options.set<::ClickHouse::PocoRestKeepAliveOption>(
+        {std::chrono::seconds(settings.http_keep_alive_timeout),
+         static_cast<std::size_t>(settings.http_keep_alive_max_requests)});
+
     /// Bound the SDK's retry loop. It sits above the per-request timeouts set just above and does not
     /// observe query cancellation, so its default -- `LimitedTimeRetryPolicy(15 minutes)` -- would let a
     /// transient failure keep a cancelled query or a disk operation retrying long after the caller gave
@@ -540,6 +589,7 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         proxy_resolver = ProxyConfigurationResolverProvider::get(
             gcsProxyProtocol(settings.endpoint_override), context->getConfigRef());
     options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(proxy_resolver));
+    options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(proxy_resolver));
 
     /// A listing is paged lazily inside `ListObjectsReader`, so the call site sees one call while the
     /// library issues one `objects.list` request per page. Count them where they are actually sent,

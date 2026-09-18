@@ -73,6 +73,34 @@ struct PocoRestSessionStaleCheckOption
     using Type = std::function<bool(Poco::Net::HTTPClientSession &)>;
 };
 
+/// Keep-alive policy of the pooled sessions, in the shape ClickHouse configures it everywhere else
+/// (`http_keep_alive_timeout` / `http_keep_alive_max_requests` of the shared `s3`/disk grammar).
+/// `Poco::Net::HTTPClientSession` enforces both itself -- it counts the requests it served and
+/// reconnects once either bound is reached -- so the transport only has to apply them to every
+/// session it hands out, and to stop pooling a session that has already reached them. A zero value
+/// of either field means "keep the transport default for it".
+struct PocoRestKeepAliveOption
+{
+    struct KeepAlive
+    {
+        std::chrono::seconds timeout{0};
+        std::size_t max_requests = 0;
+    };
+
+    using Type = KeepAlive;
+};
+
+/// Called with the proxy configuration a request was sent through, whenever that request failed with
+/// a transport error or a server-side (5xx) error. `RemoteProxyConfigurationResolver` caches the
+/// proxy it resolved for the whole TTL of its list, and this is how it is told to drop that cache and
+/// ask the proxy resolver again, so a dead proxy is failed over from rather than retried until the
+/// TTL expires. The S3 transport wires the same callback (`PocoHTTPClientConfiguration::error_report`).
+/// The callback runs on the thread issuing the request and must not throw.
+struct PocoRestProxyErrorReportOption
+{
+    using Type = std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)>;
+};
+
 /// Called by the transport right before every HTTP request it sends, with the request method and
 /// its path-and-query. It lets ClickHouse count the REST calls the storage library makes on its own
 /// (the library pages `objects.list` lazily behind a `ListObjectsReader`, so the call site cannot

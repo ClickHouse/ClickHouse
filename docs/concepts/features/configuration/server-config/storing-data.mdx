@@ -517,7 +517,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 
 ### Using Native Google Cloud Storage (Experimental) {#native-gcs-storage}
 
-Starting from `26.8`, `MergeTree` family table engines can store data in [Google Cloud Storage](https://cloud.google.com/storage) through a native client based on the GCS JSON API (`google-cloud-cpp`), using a disk with type `gcs` (or `type = object_storage` with `object_storage_type = gcs`). This backend is experimental. The S3-compatible route described [above](/operations/storing-data#s3-storage) remains the recommended way to use GCS in production.
+Starting from `26.10`, `MergeTree` family table engines can store data in [Google Cloud Storage](https://cloud.google.com/storage) through a native client based on the GCS JSON API (`google-cloud-cpp`), using a disk with type `gcs` (or `type = object_storage` with `object_storage_type = gcs`). This backend is experimental. The S3-compatible route described [above](/operations/storing-data#s3-storage) remains the recommended way to use GCS in production.
 
 Configuration markup:
 
@@ -537,9 +537,11 @@ Configuration markup:
 </storage_configuration>
 ```
 
-The same disk can be created dynamically:
+The same disk can be created dynamically. A dynamic disk comes from user SQL, so it is gated by the experimental session setting [`use_native_gcs`](/reference/settings/session-settings/use#use_native_gcs) and is rejected without it (a disk defined in the server configuration above needs no session setting):
 
 ```sql
+SET use_native_gcs = 1;
+
 CREATE TABLE table_name (a UInt64) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
     name = 'gcs_disk',
@@ -553,11 +555,13 @@ SETTINGS disk = disk(
 
 #### Parameters {#native-gcs-storage-parameters}
 
+These are the parameters of a disk defined in the server configuration. A dynamic `disk(...)` definition created from user SQL understands the same ones except the credential parameters that would make the server read a local file or act as itself: `service_account_key_file` is rejected outright (use `service_account_key` to pass the key inline), and `service_account_key`, `google_adc_*` and `use_environment_credentials = 1` are subject to [`s3_allow_server_credentials_in_user_queries`](/reference/settings/session-settings/s3-allow#s3_allow_server_credentials_in_user_queries).
+
 | Parameter                   | Description                                                                                                                                        | Default Value |
 |-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `endpoint` (Required)       | GCS endpoint in `https://storage.googleapis.com/bucket-name/root-path/` form. A non-Google host is treated as an endpoint override (for emulators). | -             |
 | `service_account_key`       | Contents of a service account JSON key for authentication.                                                                                          | -             |
-| `service_account_key_file`  | Path to a service account JSON key file.                                                                                                            | -             |
+| `service_account_key_file`  | Path to a service account JSON key file. Server configuration only: a dynamic disk created from user SQL is rejected with `ACCESS_DENIED`, because it would make the server open a local file of the query's choosing. | -             |
 | `google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token` | A Google "authorized user" refresh-token triple. All three must be given together. The access token minted from it is renewed as it nears expiry, so it is usable by a long-lived disk. | -             |
 | `google_adc_token_uri`      | Where the refresh token is exchanged. Only applies together with the triple above; validated against `remote_url_allow_hosts`.                       | `https://oauth2.googleapis.com/token` |
 | `no_sign_request`           | If `true`, send anonymous (unsigned) requests.                                                                                                       | `false`       |
@@ -567,6 +571,8 @@ SETTINGS disk = disk(
 | `request_timeout_ms`        | Request (transfer stall) timeout, in milliseconds.                                                                                                   | `30000`       |
 | `list_object_keys_size`     | Maximum number of objects requested per listing page.                                                                                                | `1000`        |
 | `max_connections`           | Upper bound on the keep-alive connections retained per endpoint.                                                                                     | `1024`        |
+| `http_keep_alive_timeout`    | For how many seconds a pooled connection is reused before it is reconnected. `0` removes the bound.                                                  | `5`           |
+| `http_keep_alive_max_requests` | How many requests a pooled connection serves before it is reconnected. `0` removes the bound.                                                      | `100`         |
 | `retry_attempts`            | How many times a failed request is retried before the error is reported. `0` disables retries.                                                       | `10`          |
 | `readonly`                  | Only allow reading from the disk.                                                                                                                    | `false`       |
 | `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply.      | -             |
