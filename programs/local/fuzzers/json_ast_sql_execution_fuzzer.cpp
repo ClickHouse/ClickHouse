@@ -37,6 +37,8 @@
 #include <Parsers/fuzzers/json_ast_sql_parser_fuzzer/JSONASTFuzzerPipeline.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -52,6 +54,8 @@
 #include <json_ast.pb.h>
 
 #include <cctype>
+#include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -105,7 +109,7 @@ bool isDeterministicForOracle(const std::string & sql_original)
     static const char * forbidden[] = {
         /// lower case; clauses whose result is not a multiset of rows or depends on the plan, randomness,
         /// time, environment, ordering-dependent or sampling aggregates and their aliases, approximate
-        /// algorithms, floating point (accumulation order and JIT differ between the variants)
+        /// algorithms. Floating point values are allowed: they are hashed rounded (see `hashRow`).
         " limit ", " offset ", " fetch ", " over (", " over ", " window ", " settings ", " format ", "into outfile", "system.", "rand",
         "generateuuid", "generaterandom", "generateserialid", "now(", "now64(", "today(", "yesterday(",
         "currentdatabase(", "currentuser(", "hostname(", "uptime(", "version(", "timezone(", "servertimezone(",
@@ -117,9 +121,7 @@ bool isDeterministicForOracle(const std::string & sql_original)
         "windowfunnel", "retention", "kolmogorov", "studentttest", "welchttest", "mannwhitney", "largesttriangle",
         "sparkbar", "exponential", "arrayenumerateuniq", "arrayenumeratedense", "blocknumber(", "rownumber",
         "runningdifference", "runningaccumulate", "neighbor(", "isconstant(", "throwif", "defaultvalueofargumenttype",
-        "dumpcolumnstructure", "bytesize", "tofloat", "float32", "float64", "e()", "pi()", "/ ", "divide(", "avg(",
-        "avgweighted", "corr", "covar", "stddev", "varpop", "varsamp", "skew", "kurt", "geo", "point", "polygon",
-        "sum(", "sumkahan", "sumwithoverflow", "deltasum", "ifnotfinite", "array_agg", "grouparraysample",
+        "dumpcolumnstructure", "bytesize", "array_agg", "grouparraysample",
         "grouparraylast", "arrayconcatagg", "any_value", "anyrespectnulls", "any_respect_nulls",
         "anylastrespectnulls", "approx_top", "groupbitmap", "sumdistinct", "sum_distinct", "avgdistinct",
         "groupnumericindexedvector", "mapagg", "maparg", "distinctdynamictypes", "distinctjsonpaths", "string_agg",
@@ -134,11 +136,60 @@ bool isDeterministicForOracle(const std::string & sql_original)
 struct OracleResult
 {
     bool ok = false;
+    bool comparable = true; /// false when a column type cannot be compared across plans (nested floats)
     UInt64 rows = 0;
     UInt64 hash = 0;
     int error_code = 0;
     std::string error;
 };
+
+/// Floating point results legitimately differ in the last bits between the variants (accumulation
+/// order, JIT); compare them rounded to nine significant digits. NaN and infinities hash as themselves.
+UInt64 roundedFloatHash(Float64 value)
+{
+    if (std::isnan(value))
+        return 0x7ff8000000000001ULL;
+    if (std::isinf(value))
+        return value > 0 ? 0x7ff0000000000000ULL : 0xfff0000000000000ULL;
+    if (value == 0)
+        return 0;
+    const Float64 scale = std::pow(10.0, 8 - std::floor(std::log10(std::fabs(value))));
+    const Float64 rounded = std::round(value * scale) / scale;
+    UInt64 bits;
+    memcpy(&bits, &rounded, sizeof(bits));
+    return bits;
+}
+
+/// Order-independent hash of one row. Returns false when a column cannot be compared.
+bool hashRow(const DB::Block & block, size_t row, SipHash & row_hash)
+{
+    for (const auto & column : block)
+    {
+        const auto type_id = column.type->getTypeId();
+        if (type_id == DB::TypeIndex::Float32 || type_id == DB::TypeIndex::Float64)
+        {
+            row_hash.update(roundedFloatHash(column.column->getFloat64(row)));
+            continue;
+        }
+        if (column.type->getName().find("Float") != std::string::npos)
+        {
+            /// Nullable(Float) is handled by the branch below only when not null; nested floats
+            /// (arrays, tuples, maps of floats) cannot be rounded generically.
+            if (const auto * nullable = typeid_cast<const DB::DataTypeNullable *>(column.type.get());
+                nullable && (nullable->getNestedType()->getTypeId() == DB::TypeIndex::Float32 || nullable->getNestedType()->getTypeId() == DB::TypeIndex::Float64))
+            {
+                if (column.column->isNullAt(row))
+                    row_hash.update(0xdeadbeefULL);
+                else
+                    row_hash.update(roundedFloatHash(column.column->getFloat64(row)));
+                continue;
+            }
+            return false;
+        }
+        column.column->updateHashWithValue(row, row_hash);
+    }
+    return true;
+}
 
 /// Runs `sql` with `settings` appended and folds every row into an order-independent hash.
 OracleResult runOracleQuery(DB::ContextMutablePtr session_context, const std::string & sql, const std::string & settings)
@@ -160,8 +211,8 @@ OracleResult runOracleQuery(DB::ContextMutablePtr session_context, const std::st
             for (size_t row = 0; row < block.rows(); ++row)
             {
                 SipHash row_hash;
-                for (const auto & column : block)
-                    column.column->updateHashWithValue(row, row_hash);
+                if (!hashRow(block, row, row_hash))
+                    result.comparable = false;
                 result.hash += row_hash.get64();
                 ++result.rows;
             }
@@ -236,6 +287,8 @@ void runOracle(const std::string & sql, const std::string & json)
         const OracleResult & other = results[i];
         if (baseline.ok && other.ok)
         {
+            if (!baseline.comparable || !other.comparable)
+                continue;
             if (baseline.rows == other.rows && baseline.hash == other.hash)
                 continue;
             ++oracle_mismatches;
