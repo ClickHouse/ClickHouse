@@ -56,7 +56,7 @@ public:
     CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
     std::optional<UInt32> tryGetCompressedSize(const char * source, UInt32 source_size) const override;
 
@@ -987,7 +987,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
 {
 }
 
-ASTPtr CompressionCodecT64::getCodecDesc() const
+ASTPtr CompressionCodecT64::getCodecDescription() const
 {
     if (variant == Variant::Byte)
         return makeCodecDescription("T64");
@@ -996,7 +996,7 @@ ASTPtr CompressionCodecT64::getCodecDesc() const
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }
