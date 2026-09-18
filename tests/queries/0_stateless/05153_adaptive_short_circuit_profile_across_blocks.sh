@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the `Parquet` row-subgroup case below needs the Parquet format, which the
+# fast-test build does not have.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
