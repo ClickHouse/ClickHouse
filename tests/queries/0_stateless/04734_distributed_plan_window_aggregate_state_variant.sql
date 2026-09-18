@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- The plan header encoding does not carry the aggregate function state variant, so a Window-variant
 -- state (CrossTab family) was decoded as an Aggregation-variant one and the deserialized plan header
 -- was rejected. Results must match the non-distributed plan.
