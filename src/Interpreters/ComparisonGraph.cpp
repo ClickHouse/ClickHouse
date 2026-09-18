@@ -584,6 +584,10 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::atomToCompareResult(const Fo
     if (tryGetFunctionNode(node) != nullptr)
     {
         auto expected = functionNameToCompareResult(functionName(node));
+        /// Inverting by name is not NaN-safe in general (NOT (x < c) is not x >= c for
+        /// x = NaN), but here it is only compared against graph facts, and every edge of
+        /// the graph comes from a constraint comparison that is false for NaN, so a NaN
+        /// row would already violate its constraint.
         if (atom.negative)
             expected = inverseCompareResult(expected);
         return expected;

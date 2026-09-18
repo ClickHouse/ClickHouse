@@ -93,7 +93,11 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
 bool checkIfGroupAlwaysTrueAtoms(const CNFQuery::OrGroup & group)
 {
     /// Filters out groups containing mutually exclusive atoms,
-    /// since these groups are always True
+    /// since these groups are always True.
+    /// Note: "atom OR NOT atom" is not a tautology in three-valued logic (both sides are
+    /// NULL for a NULL value). The Analyzer version of this check skips atoms with a
+    /// nullable result type; here the AST carries no type information, so the old
+    /// analyzer keeps the unsound elimination for nullable predicates.
 
     for (const auto & atom : group)
     {
