@@ -15,11 +15,10 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     const FileEncryption::Header & header_,
     size_t old_file_size,
     bool use_adaptive_buffer_size_,
-    size_t adaptive_buffer_initial_size,
-    bool header_already_written)
+    size_t adaptive_buffer_initial_size)
     : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buffer_size_), nullptr, 0)
     , header(header_)
-    , flush_header(!old_file_size && !header_already_written)
+    , flush_header(!old_file_size)
     , encryptor(header.algorithm, key_, header.init_vector)
 {
     enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buffer_size_);

@@ -90,25 +90,32 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
     FileEncryption::Header header;
     String key;
     UInt64 old_file_size = 0;
-    bool header_is_on_disk = false;
     if (mode == WriteMode::Append && delegate_disk->existsFile(wrapped_path))
     {
         size_t size = delegate_disk->getFileSize(wrapped_path);
 
-        if (size >= FileEncryption::Header::kSize)
+        if (size > FileEncryption::Header::kSize)
         {
-            /// Append mode: we continue to use the same header. A file that holds nothing but the
-            /// header - what an interrupted first write leaves behind, and what creating a file
-            /// without writing to it leaves behind - is appended to the same way: generating a new
-            /// header for it would write that header after the one already there, and the payload
-            /// following it would then be deciphered with the initialization vector of the leftover
-            /// header. Nothing detects that, and the file can never be read again: the garbage the
-            /// wrong key produces is reported by the compression layer as an unknown codec.
+            /// Append mode: we continue to use the same header.
             old_file_size = size - FileEncryption::Header::kSize;
             auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
             key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
-            header_is_on_disk = true;
+        }
+        else if (size == FileEncryption::Header::kSize)
+        {
+            /// The file holds nothing but the header, which is what a write interrupted before the payload reached
+            /// the disk leaves behind, or a file that was truncated to its header. There is no payload to keep, so
+            /// the file is started over: the delegate is opened in rewrite mode and gets a fresh header below.
+            ///
+            /// Neither of the two other options is acceptable. Appending a fresh header after the existing one
+            /// would make the reader decipher the second header and the payload with the initialization vector of
+            /// the first one: nothing detects that, and the file could never be read again (the garbage that the wrong
+            /// initialization vector produces is reported by the compression layer as an unknown codec). Continuing the
+            /// existing header would encrypt the new payload from offset 0 with the initialization vector that the old
+            /// payload, if there was one before the truncation, was encrypted with: for the counter mode ciphers this
+            /// is keystream reuse, and anyone who has both ciphertexts learns the XOR of both plaintexts.
+            mode = WriteMode::Rewrite;
         }
         else if (size > 0)
         {
@@ -123,7 +130,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
                 FileEncryption::Header::kSize);
         }
     }
-    if (!header_is_on_disk)
+    if (!old_file_size)
     {
         /// Rewrite mode: we generate a new header.
         header.algorithm = current_settings.current_algorithm;
@@ -136,15 +143,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
         ? delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings)
         : delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
 
-    return std::make_unique<WriteBufferFromEncryptedFile>(
-        buf_size,
-        std::move(buffer),
-        key,
-        header,
-        old_file_size,
-        settings.use_adaptive_write_buffer,
-        settings.adaptive_write_buffer_initial_size,
-        header_is_on_disk);
+    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size, settings.use_adaptive_write_buffer, settings.adaptive_write_buffer_initial_size);
 }
 
 }

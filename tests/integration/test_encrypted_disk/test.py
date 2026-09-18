@@ -391,13 +391,15 @@ def test_log_family():
 
 
 def test_append_to_file_without_payload():
-    # An interrupted first write leaves behind a file that holds the 64 byte encryption header and no
-    # payload: the header is written inline right before the first ciphertext byte, and the file is
-    # only fsynced at the end. Appending to such a file used to write a second header after the first
-    # one, so the payload that followed was deciphered with the initialization vector of the leftover
-    # header - garbage that the compression layer reports as `UNKNOWN_CODEC`, from an `INSERT` that
-    # returned success. A file whose length falls inside the header has neither a header to continue
-    # nor a payload to keep, and is refused instead.
+    # An interrupted first write, or a truncation, leaves behind a file that holds the 64 byte
+    # encryption header and no payload: the header is written inline right before the first ciphertext
+    # byte, and the file is only fsynced at the end. Appending to such a file used to write a second
+    # header after the first one, so the payload that followed was deciphered with the initialization
+    # vector of the leftover header - garbage that the compression layer reports as `UNKNOWN_CODEC`,
+    # from an `INSERT` that returned success. Now the file is started over with a fresh header: it has
+    # no payload to keep, and continuing the old header would reuse its initialization vector, hence
+    # the keystream, for the new payload. A file whose length falls inside the header has neither a
+    # header to continue nor a payload to keep, and is refused instead.
     def backing_file(table):
         table_uuid = node.query(
             f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table}'"
@@ -424,15 +426,25 @@ def test_append_to_file_without_payload():
     plain_path = node.query(
         "SELECT data_paths[1] FROM system.tables WHERE database = 'default' AND name = 'plain_test'"
     ).strip()
+
+    def header_of(path):
+        return node.exec_in_container(
+            ["bash", "-c", f"head -c 64 {path} | od -A n -t x1 | tr -d ' \\n'"],
+            privileged=True,
+            user="root",
+        )
+
     truncate_to(f"{plain_path}id.bin", 0)
     truncate_to(backing_file("encrypted_test"), 64)
+    old_header = header_of(backing_file("encrypted_test"))
+    assert old_header.startswith("454e43")  # "ENC"
 
     assert node.query("SELECT count() FROM encrypted_test") == node.query("SELECT count() FROM plain_test")
 
     node.query("INSERT INTO encrypted_test SELECT number FROM numbers(30)")
     node.query("INSERT INTO plain_test SELECT number FROM numbers(30)")
 
-    # No `UNKNOWN_CODEC`: the file still holds one header, and the rows read back.
+    # No `UNKNOWN_CODEC`: the file holds one header, and the rows read back.
     assert node.query("SELECT count(), sum(id) FROM encrypted_test") == node.query(
         "SELECT count(), sum(id) FROM plain_test"
     )
@@ -442,6 +454,13 @@ def test_append_to_file_without_payload():
         user="root",
     )
     assert second_header != "ENC"
+
+    # The header is a fresh one, with a fresh initialization vector: the payload that was there before the
+    # truncation was encrypted with the old one, and encrypting the new payload with it from the same offset
+    # would reuse the keystream.
+    new_header = header_of(backing_file("encrypted_test"))
+    assert new_header.startswith("454e43")
+    assert new_header != old_header
 
     # A file that ends inside its own header is refused, and says so.
     truncate_to(backing_file("encrypted_test"), 30)
