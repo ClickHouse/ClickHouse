@@ -463,8 +463,9 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             "a thread of the Raft event loop is still waiting for log preprocessing"
         )
 
-        # A thread that is turned away still has to let the commit index advance, since that is
-        # what lets the replay finish at all, and node2 still has to catch up with the rest.
+        # A turned-away thread must not cost the replay its progress: its request is handled to
+        # the end rather than declined, so the commit index it carries still lands. Catching up
+        # does not isolate that from the admitted thread's request, but losing it would show here.
         zk = get_fake_zk(node2)
         try:
             for i in range(10):
