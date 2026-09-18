@@ -1,11 +1,11 @@
 {
-  "openapi": "3.1.2",
+  "openapi": "3.1.1",
   "info": {
     "title": "OpenAPI spec for ClickHouse Cloud",
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1108755",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1130983",
       "email": "support@clickhouse.com"
     }
   },
@@ -37,6 +37,9 @@
     },
     {
       "name": "Backup"
+    },
+    {
+      "name": "Snapshot"
     },
     {
       "name": "API keys"
@@ -257,7 +260,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Returns details of a single organization. In order to get the details, the auth key must belong to the organization."
+          "content": "Returns details of a single organization. In order to get the details, the auth key must belong to the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -368,7 +371,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Updates organization fields. Requires ADMIN auth key role."
+          "content": "Updates organization fields. Requires ADMIN auth key role.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -784,7 +787,7 @@
           "Role Management"
         ],
         "x-mint": {
-          "content": "Creates a new custom role for an organization with specified policies and actors."
+          "content": "Creates a new custom role for an organization with specified policies and actors.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -1019,7 +1022,7 @@
           "Role Management"
         ],
         "x-mint": {
-          "content": "Updates an existing custom role. System roles cannot be updated. All fields are optional - only provided fields will be updated."
+          "content": "Updates an existing custom role. System roles cannot be updated. All fields are optional - only provided fields will be updated.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -1128,7 +1131,7 @@
           "Role Management"
         ],
         "x-mint": {
-          "content": "Deletes an existing custom role. System roles cannot be deleted. This operation will remove the role and all its associated policies."
+          "content": "Deletes an existing custom role. System roles cannot be deleted. This operation will remove the role and all its associated policies.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -1479,7 +1482,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure. The list is empty when the organization tier does not include custom hardware profiles."
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure. The list is empty when the organization tier does not include custom hardware profiles.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -1713,7 +1716,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously."
+          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -1827,7 +1830,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns a service that belongs to the organization"
+          "content": "Returns a service that belongs to the organization\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -2057,7 +2060,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Deletes the service. The service must be in stopped state and is deleted asynchronously after this method call."
+          "content": "Deletes the service. The service must be in stopped state and is deleted asynchronously after this method call.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:delete` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -2171,7 +2174,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Information required to set up a private endpoint"
+          "content": "Information required to set up a private endpoint\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view-private-endpoints` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -2285,7 +2288,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Get the configuration for the service query endpoint that allows executing queries via API."
+          "content": "Get the configuration for the service query endpoint that allows executing queries via API.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view-query-api-endpoints` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -2394,7 +2397,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Removes the service query endpoint."
+          "content": "Removes the service query endpoint.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-query-api-endpoints` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -2515,7 +2518,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Create the service query endpoint that allows executing queries via API."
+          "content": "Create the service query endpoint that allows executing queries via API.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-query-api-endpoints` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -2882,7 +2885,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For vertical autoscaling, please contact support to enable adjustment of numReplicas. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization."
+          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For vertical autoscaling, please contact support to enable adjustment of numReplicas. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -3128,7 +3131,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Create a new private endpoint. The private endpoint will be associated with this service and organization"
+          "content": "Create a new private endpoint. The private endpoint will be associated with this service and organization\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-private-endpoints` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -3236,7 +3239,7 @@
           "Prometheus"
         ],
         "x-mint": {
-          "content": "Returns prometheus metrics for a service."
+          "content": "Returns prometheus metrics for a service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -3703,7 +3706,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the configured upgrade window for a service.\n\nErrors:\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:view` on the service.\n- 404: service does not exist, is not visible to the caller, or no upgrade window has been configured."
+          "content": "Returns the configured upgrade window for a service.\n\nErrors:\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:view` on the service.\n- 404: service does not exist, is not visible to the caller, or no upgrade window has been configured.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
         }
       },
       "put": {
@@ -3824,7 +3827,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates or fully replaces the upgrade window for a service. The upgrade window currently lasts 6 hours from `startHourUtc`. The upgrade window can only be set on primary services; secondary services inherit the primary service window.\n\nErrors:\n- 400: invalid field values (`weekday` not in 0–6, `startHourUtc` not in \\{0, 6, 12, 18\\}), or the service is a secondary service.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the scheduled upgrades feature enabled.\n- 404: service does not exist or is not visible to the caller."
+          "content": "Creates or fully replaces the upgrade window for a service. The upgrade window currently lasts 6 hours from `startHourUtc`. The upgrade window can only be set on primary services; secondary services inherit the primary service window.\n\nErrors:\n- 400: invalid field values (`weekday` not in 0–6, `startHourUtc` not in \\{0, 6, 12, 18\\}), or the service is a secondary service.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the scheduled upgrades feature enabled.\n- 404: service does not exist or is not visible to the caller.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -3933,7 +3936,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Deletes the upgrade window for a service, restoring the default scheduling behaviour. The upgrade window can only be deleted on primary services. Deletion succeeds even if the organization has lost the scheduled upgrades entitlement, so a window can be cleared after entitlement loss.\n\nErrors:\n- 400: the service is a secondary service.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service.\n- 404: service does not exist, is not visible to the caller, or no upgrade window is configured."
+          "content": "Deletes the upgrade window for a service, restoring the default scheduling behaviour. The upgrade window can only be deleted on primary services. Deletion succeeds even if the organization has lost the scheduled upgrades entitlement, so a window can be cleared after entitlement loss.\n\nErrors:\n- 400: the service is a secondary service.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service.\n- 404: service does not exist, is not visible to the caller, or no upgrade window is configured.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -4655,7 +4658,7 @@
           "Backup"
         ],
         "x-mint": {
-          "content": "Returns a list of all backups for the service. The most recent backups comes first in the list."
+          "content": "Returns a list of all backups for the service. The most recent backups comes first in the list.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view-backups` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -4779,8 +4782,255 @@
           "Backup"
         ],
         "x-mint": {
-          "content": "Returns a single backup info."
+          "content": "Returns a single backup info.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view-backups` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/snapshots": {
+      "get": {
+        "summary": "List of service snapshots",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of all snapshots for the service. The most recent snapshots come first in the list.",
+        "operationId": "snapshotGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the snapshot.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service the snapshot was created from.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Snapshot"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Snapshot"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/snapshots/{snapshotId}": {
+      "get": {
+        "summary": "Get snapshot details",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a single snapshot info.",
+        "operationId": "snapshotGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the snapshot.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service the snapshot was created from.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "snapshotId",
+            "description": "ID of the requested snapshot.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/Snapshot"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Snapshot"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration": {
@@ -4893,7 +5143,7 @@
           "Backup"
         ],
         "x-mint": {
-          "content": "Returns the service backup configuration."
+          "content": "Returns the service backup configuration.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view-backups` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -5014,7 +5264,7 @@
           "Backup"
         ],
         "x-mint": {
-          "content": "Updates service backup configuration. Requires ADMIN auth key role. Setting the properties with null value, will reset the properties to theirs default values."
+          "content": "Updates service backup configuration. Requires ADMIN auth key role. Setting the properties with null value, will reset the properties to theirs default values.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-backups` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -5598,7 +5848,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Returns a list of all keys in the organization."
+          "content": "Returns a list of all keys in the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -5709,7 +5959,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Creates new API key."
+          "content": "Creates new API key.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-api-keys` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -5823,7 +6073,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Returns a single key details."
+          "content": "Returns a single key details.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -6160,7 +6410,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Returns a list of all members in the organization."
+          "content": "Returns a list of all members in the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -6274,7 +6524,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Returns a single organization member details."
+          "content": "Returns a single organization member details.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -6395,7 +6645,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Updates organization member role."
+          "content": "Updates organization member role.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -6504,7 +6754,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Removes a user from the organization"
+          "content": "Removes a user from the organization\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -6611,7 +6861,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Returns list of all organization invitations."
+          "content": "Returns list of all organization invitations.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -6722,7 +6972,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Creates organization invitation."
+          "content": "Creates organization invitation.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -6836,7 +7086,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Returns details for a single organization invitation."
+          "content": "Returns details for a single organization invitation.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -6945,7 +7195,7 @@
           "User management"
         ],
         "x-mint": {
-          "content": "Deletes a single organization invitation."
+          "content": "Deletes a single organization invitation.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -7323,7 +7573,7 @@
           "Billing"
         ],
         "x-mint": {
-          "content": "Returns a grand total and a list of daily, per-entity organization usage cost records for the organization in the queried time period (maximum 31 days). All days in both the request and the response are evaluated based on the UTC timezone."
+          "content": "Returns a grand total and a list of daily, per-entity organization usage cost records for the organization in the queried time period (maximum 31 days). All days in both the request and the response are evaluated based on the UTC timezone.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -24618,6 +24868,12 @@
             ],
             "example": "cdc"
           },
+          "initialLoadParallelism": {
+            "description": "Number of parallel workers to use per collection in the initial snapshot phase.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 1
+          },
           "snapshotNumRowsPerPartition": {
             "description": "Number of rows per partition during the snapshot phase.",
             "type": "integer",
@@ -25449,6 +25705,12 @@
           "primaryKey": {
             "description": "Primary key of SQL expression.",
             "type": "string"
+          },
+          "ttl": {
+            "description": "TTL SQL expression of the destination table.",
+            "type": "string",
+            "example": "toDateTime(event_time) + INTERVAL 30 DAY",
+            "minLength": 1
           }
         }
       },
@@ -26723,6 +26985,72 @@
           },
           "bucket": {
             "description": "Backup bucket where the backup is stored.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AwsBackupBucketProperties"
+              },
+              {
+                "$ref": "#/components/schemas/GcpBackupBucketProperties"
+              },
+              {
+                "$ref": "#/components/schemas/AzureBackupBucketProperties"
+              }
+            ]
+          }
+        }
+      },
+      "Snapshot": {
+        "properties": {
+          "id": {
+            "description": "Unique snapshot ID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "description": "Status of the snapshot: 'done', 'error', 'in_progress', 'throttled'. 'throttled' means snapshot creation was rate-limited and will be retried.",
+            "type": "string",
+            "enum": [
+              "done",
+              "error",
+              "in_progress",
+              "throttled"
+            ]
+          },
+          "serviceId": {
+            "description": "ID of the service the snapshot was created from.",
+            "type": "string"
+          },
+          "startedAt": {
+            "description": "Snapshot start timestamp. ISO-8601.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "description": "Snapshot finish timestamp. ISO-8601. Available only for finished snapshots",
+            "type": "string",
+            "format": "date-time"
+          },
+          "sizeInBytes": {
+            "description": "Size of the snapshot in bytes.",
+            "type": "number"
+          },
+          "durationInSeconds": {
+            "description": "Time in seconds it took to perform the snapshot. If the status is in_progress or throttled, this is the time in seconds since the snapshot started until now.",
+            "type": "number"
+          },
+          "type": {
+            "description": "Snapshot type. Always \"full\" — snapshots never chain off a parent.",
+            "type": "string",
+            "enum": [
+              "full"
+            ]
+          },
+          "backupName": {
+            "description": "Snapshot name on the external backup bucket.",
+            "type": "string"
+          },
+          "bucket": {
+            "description": "Backup bucket where the snapshot is stored.",
             "oneOf": [
               {
                 "$ref": "#/components/schemas/AwsBackupBucketProperties"
@@ -31786,7 +32114,7 @@
             "type": "string"
           },
           "expiration": {
-            "description": "Expiration timestamp. ISO-8601.",
+            "description": "Expiration timestamp, inherited from the organization's licensing terms. Absent when the organization has no licensing terms configured. ISO-8601.",
             "type": "string",
             "format": "date-time"
           },
@@ -36015,6 +36343,10 @@
           },
           "settings": {
             "$ref": "#/components/schemas/ClickPipeSettings"
+          },
+          "startPaused": {
+            "description": "Create the ClickPipe in the Stopped state instead of starting ingestion immediately. Start it later with the state endpoint. Not supported for database ClickPipes.",
+            "type": "boolean"
           }
         }
       },
@@ -36304,22 +36636,7 @@
               "arguments": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "description": "Name of the argument. Required for Native and JSONEachRow formats.",
-                      "type": "string",
-                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-                    },
-                    "type": {
-                      "description": "ClickHouse data type of the argument.",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "type"
-                  ]
+                  "$ref": "#/components/schemas/UdfArgument"
                 }
               },
               "returnType": {
@@ -36395,8 +36712,13 @@
                 "const": "executable"
               },
               "poolSize": {
+                "description": "Always null — an executable UDF has no command pool.",
                 "default": null,
-                "type": "null"
+                "anyOf": [
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "maxCommandExecutionTime": {
                 "default": 10,
@@ -36443,22 +36765,7 @@
               "arguments": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "description": "Name of the argument. Required for Native and JSONEachRow formats.",
-                      "type": "string",
-                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-                    },
-                    "type": {
-                      "description": "ClickHouse data type of the argument.",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "type"
-                  ]
+                  "$ref": "#/components/schemas/UdfArgument"
                 }
               },
               "returnType": {
@@ -36560,6 +36867,24 @@
         ],
         "type": "object"
       },
+      "UdfArgument": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Name of the argument. Required for Native and JSONEachRow formats.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "type": {
+            "description": "ClickHouse data type of the argument.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
       "UdfVersionCreateRequest": {
         "oneOf": [
           {
@@ -36581,22 +36906,7 @@
               "arguments": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "description": "Name of the argument. Required for Native and JSONEachRow formats.",
-                      "type": "string",
-                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-                    },
-                    "type": {
-                      "description": "ClickHouse data type of the argument.",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "type"
-                  ]
+                  "$ref": "#/components/schemas/UdfArgument"
                 }
               },
               "returnType": {
@@ -36672,8 +36982,13 @@
                 "const": "executable"
               },
               "poolSize": {
+                "description": "Always null — an executable UDF has no command pool.",
                 "default": null,
-                "type": "null"
+                "anyOf": [
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "maxCommandExecutionTime": {
                 "default": 10,
@@ -36715,22 +37030,7 @@
               "arguments": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "description": "Name of the argument. Required for Native and JSONEachRow formats.",
-                      "type": "string",
-                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-                    },
-                    "type": {
-                      "description": "ClickHouse data type of the argument.",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "type"
-                  ]
+                  "$ref": "#/components/schemas/UdfArgument"
                 }
               },
               "returnType": {
@@ -37140,23 +37440,7 @@
             "description": "Arguments passed to the UDF command.",
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "description": "Name of the argument. Required for Native and JSONEachRow formats.",
-                  "type": "string",
-                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-                },
-                "type": {
-                  "description": "ClickHouse data type of the argument.",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name",
-                "type"
-              ],
-              "additionalProperties": false
+              "$ref": "#/components/schemas/UdfArgumentOutput"
             }
           },
           "returnType": {
@@ -37363,6 +37647,25 @@
           "pagination"
         ],
         "additionalProperties": false
+      },
+      "UdfArgumentOutput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Name of the argument. Required for Native and JSONEachRow formats.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "type": {
+            "description": "ClickHouse data type of the argument.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -37390,6 +37693,7 @@
       "tags": [
         "Service",
         "Backup",
+        "Snapshot",
         "Query API endpoints"
       ]
     },

@@ -198,7 +198,6 @@ def run_tests(
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
-    "old analyzer": "--analyzer",
     "s3 storage": "--s3-storage",
     "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
