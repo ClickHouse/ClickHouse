@@ -237,7 +237,7 @@ void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
         if (it != changes.begin())
             ostr << ", ";
 
-        ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        ostr << it->name << " = " << applyVisitor(FieldVisitorToSettingValueString(), it->value);
     }
     ostr << ")";
 }

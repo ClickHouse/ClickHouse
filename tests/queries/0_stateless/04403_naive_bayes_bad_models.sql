@@ -147,8 +147,8 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
--- A class id past even the 64-bit range becomes a floating-point literal and is rejected as a non-integer
--- class id, not wrapped to a small class.
+-- A class id past even the 64-bit range becomes a big integer literal and is rejected as an
+-- out-of-range class id, not wrapped to a small class.
 CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(18446744073709551616, 0.5), (1, 0.5)])) LIFETIME(0);
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }

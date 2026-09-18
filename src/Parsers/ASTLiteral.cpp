@@ -113,7 +113,9 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
     {
         SipHash hash;
-        applyVisitor(FieldVisitorHash(hash), value);
+        /// Hash the resolved value so any nested NumberLiteral matches its concrete numeric value
+        /// (and stays identical across server versions), same as the non-hashed branch below.
+        applyVisitor(FieldVisitorHash(hash), value.resolveNumberLiteral());
         UInt64 low = 0;
         UInt64 high = 0;
         hash.get128(low, high);
@@ -133,7 +135,10 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         }
         else
         {
-            String column_name = applyVisitor(FieldVisitorToString(), value);
+            /// Resolve any NumberLiteral to its concrete value so the column name matches the
+            /// resolved type (and stays identical across server versions in distributed queries),
+            /// instead of leaking the original literal text.
+            String column_name = applyVisitor(FieldVisitorToString(), value.resolveNumberLiteral());
             writeString(column_name, ostr);
         }
     }
@@ -150,7 +155,9 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
     {
         SipHash hash;
-        applyVisitor(FieldVisitorHash(hash), value);
+        /// Hash the resolved value so any nested NumberLiteral matches its concrete numeric value
+        /// (and stays identical across server versions), same as the non-hashed branch below.
+        applyVisitor(FieldVisitorHash(hash), value.resolveNumberLiteral());
         UInt64 low = 0;
         UInt64 high = 0;
         hash.get128(low, high);
@@ -162,7 +169,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
     else
     {
-        String column_name = applyVisitor(FieldVisitorToColumnName(), value);
+        String column_name = applyVisitor(FieldVisitorToColumnName(), value.resolveNumberLiteral());
         writeString(column_name, ostr);
     }
 }

@@ -608,11 +608,11 @@ struct SettingFieldCustom final
     Field value;
     bool changed = false;
 
-    explicit SettingFieldCustom(const Field & f = {}) : value(f) {}
+    explicit SettingFieldCustom(const Field & f = {}) : value(f.resolveNumberLiteral()) {}
     SettingFieldCustom(const SettingFieldCustom &) = default;
     SettingFieldCustom & operator=(const SettingFieldCustom &) = default;
 
-    SettingFieldCustom & operator =(const Field & f) { value = f; changed = true; return *this; }
+    SettingFieldCustom & operator =(const Field & f) { value = f.resolveNumberLiteral(); changed = true; return *this; }
 
     bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
