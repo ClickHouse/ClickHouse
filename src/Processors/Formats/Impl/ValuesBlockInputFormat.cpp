@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
@@ -678,9 +679,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
     catch (const Exception & e)
     {
-        /// `TYPE_MISMATCH` only means there is no rule for these types, while the template already
-        /// evaluated the same expression and named the actual offending value.
-        if (template_exception && e.code() == ErrorCodes::TYPE_MISMATCH)
+        /// `TYPE_MISMATCH` only means there is no rule for these types, so it must not hide a template
+        /// that already evaluated the same expression and found the value itself out of range.
+        if (e.code() == ErrorCodes::TYPE_MISMATCH && template_exception
+            && getExceptionErrorCode(template_exception) == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
             std::rethrow_exception(template_exception);
         throw;
     }
