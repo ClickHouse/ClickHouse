@@ -42,8 +42,8 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 16;
 
--- No `distributed_plan_execute_locally` here: only a dispatched fragment gets its own
--- process-list entry, and so its own counters. Either counter can carry the slot depending on
+-- No `distributed_plan_execute_locally` here: a fragment running in the initiator's own process is an
+-- internal query, so it reserves no slot of its own. Either counter can carry the slot depending on
 -- the allocator, so the assertion sums them. A zero on the initiator means slots went unmetered
 -- server-wide, which no fragment can cause, so the assertion stands aside instead of guessing.
 SELECT '-- dispatched worker fragments arbitrate CPU slots and honor the thread limit';

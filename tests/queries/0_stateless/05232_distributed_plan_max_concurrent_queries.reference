@@ -1,0 +1,6 @@
+distributed_plan_execute_locally = 1
+an independent query is refused while the plan is still reading
+distributed_plan_execute_locally = 0
+an independent query is refused while the plan is still reading
+parallel replicas
+one statement reading the table on several replicas is served

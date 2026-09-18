@@ -80,6 +80,9 @@ SELECT
     -- The initiator reads only what the exchanges hand it, one aggregate state per reader bucket, so
     -- its own row must stay far below the 150000 rows the tasks read (measured: 1).
     throwIf(initiator_read_rows > 1000, 'dispatched execution: the initiator row also reports the rows its tasks read'),
+    -- The other half of that contract: the volume has to be reported somewhere, and the task rows are
+    -- where it now is (measured: 150187 dispatched, 300184 in-process, 8 for a plan matching no row).
+    throwIf(sum(read_rows) < 75000, 'dispatched execution: the task rows do not report the rows the query read'),
     throwIf(count() = 0, 'dispatched execution logged no task row for the query'),
     throwIf(uniqExact(query_id) != count(), 'task rows do not carry a query_id of their own'),
     -- Three reader buckets, each selecting the fixture's two parts.
@@ -119,6 +122,7 @@ SELECT
     -- Same bound as above, and here it is what the tasks running in the initiator's own process must
     -- no longer add to its row (measured: 1 with the tasks attributed, 300185 without).
     throwIf(initiator_read_rows > 1000, 'in-process execution: the initiator row also reports the rows its tasks read'),
+    throwIf(sum(read_rows) < 75000, 'in-process execution: the task rows do not report the rows the query read'),
     throwIf(count() = 0, 'in-process execution logged no task row for the query'),
     throwIf(uniqExact(query_id) != count(), 'task rows do not carry a query_id of their own'),
     throwIf(sum(ProfileEvents['SelectedParts']) != 6, 'the parts a task read are not reported in its own row'),
@@ -170,14 +174,55 @@ SELECT count() FROM t_dp_task_metrics_limited WHERE k < 150000
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
-    use_query_condition_cache = 0
+    use_query_condition_cache = 0, log_comment = '05231_limit_in_process'
 FORMAT Null;
 
 SELECT count() FROM t_dp_task_metrics_limited WHERE k < 150000
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 0,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
-    use_query_condition_cache = 0
+    use_query_condition_cache = 0, log_comment = '05231_limit_dispatched'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Not throwing is only half of it: the queries above would also pass if the plan fell back to local
+-- execution or collapsed to a single task, which is how a per-fragment slot would come back unseen.
+-- Three reader buckets put the table in three of the task rows (measured; one bucket puts it in one).
+WITH (
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND log_comment = '05231_limit_in_process' AND is_initial_query AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1
+) AS initiator
+SELECT
+    throwIf(initiator = '', 'in-process execution: the initiator row of the limited table was not found'),
+    throwIf(countIf(ProfileEvents['SelectedParts'] > 0) < 2,
+            'in-process execution: fewer than two fragments read the limited table')
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+  AND initial_query_id = initiator
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
+FORMAT Null;
+
+WITH (
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND log_comment = '05231_limit_dispatched' AND is_initial_query AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1
+) AS initiator
+SELECT
+    throwIf(initiator = '', 'dispatched execution: the initiator row of the limited table was not found'),
+    throwIf(countIf(ProfileEvents['SelectedParts'] > 0) < 2,
+            'dispatched execution: fewer than two fragments read the limited table')
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+  AND initial_query_id = initiator
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
 FORMAT Null;
 
 DROP TABLE t_dp_task_metrics_limited;
