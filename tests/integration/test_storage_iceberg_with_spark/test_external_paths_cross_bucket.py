@@ -11,9 +11,11 @@ from .external_paths_utils import (
     _create_iceberg_s3_table,
     _distribute_table_components,
     _download_table_for_relocation,
+    _external_delete_files_in_another_bucket,
     _rewrite_manifests_and_reupload,
     external_bucket,
     find_files,
+    get_query_args,
     modify_avro_file,
     relocate_data_files_to_bucket,
 )
@@ -245,3 +247,14 @@ def test_unsupported_scheme_is_still_reported_by_system_iceberg_files(started_cl
     assert "Unsupported storage scheme" in instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
 
     instance.query(f"DETACH TABLE {TABLE_NAME}")
+
+
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r4039927348
+def test_cluster_function_reads_external_delete_file(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_cluster_external_delete_{get_uuid_str()}"
+    base_path, _, _ = _external_delete_files_in_another_bucket(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
+    assert instance.query(f"SELECT * FROM icebergS3Cluster('cluster_simple', {args}) ORDER BY id") == "1\talpha\n3\tgamma\n"
