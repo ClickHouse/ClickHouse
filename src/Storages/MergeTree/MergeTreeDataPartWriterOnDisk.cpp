@@ -752,7 +752,7 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
     const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const
 {
     const auto & substream_type = substream_path.back().data.type;
-    /// The column's codec is meant for its values. Structural substreams drop its type-specific codecs.
+    /// The column's codec is meant for its values. Structural substreams keep only its generic codecs (`only_generic`).
     /// The type is omitted so the codecs about to be dropped are not validated against it.
     const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
     auto codec = CompressionCodecFactory::instance().get(

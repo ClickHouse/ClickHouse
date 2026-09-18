@@ -2246,11 +2246,11 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
                 /// with the default codec alone the recovered frame codec is that stage itself; for a
                 /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
                 /// codec is its single generic-compression stage (a valid pipeline has at most one).
-                /// A structural substream (`Array` offsets, null map, ...) is written without the
-                /// type-specific stages of the pipeline, so search for the generic stage instead of
-                /// matching the declared pipeline by position. `NONE` counts too: it is not a generic
-                /// compression, but a default of `NONE` produces a plain `NONE` frame that identifies
-                /// the default exactly.
+                /// A structural substream (`Array` offsets, null map, ...) is written with the
+                /// generic stages only, dropping the rest of the pipeline, so search for the generic
+                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
+                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
+                /// frame that identifies the default exactly.
                 if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
                 {
                     for (const auto & stage : multiple->getCodecs())

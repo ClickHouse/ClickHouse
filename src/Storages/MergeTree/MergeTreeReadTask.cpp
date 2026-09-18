@@ -31,12 +31,12 @@ namespace
 /// Resolves the codecs to use for estimating the compressed size of a whole column.
 ///
 /// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
-/// substream's type and, for structural substreams (`Array` offsets, null map, ...), drops the
-/// type-specific codecs and ignores the type entirely. The estimation these codecs feed serializes the
-/// whole column into a single buffer, so a type-specific codec can only be used when the column consists
-/// of a single stream carrying the column type itself, i.e. a plain numeric or date column. For every
-/// other column drop the type-specific codecs - the generic ones dominate the ratio anyway - exactly as
-/// the writer does for structural substreams.
+/// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
+/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
+/// column into a single buffer, so a type-specific codec can only be used when the column consists of a
+/// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
+/// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
+/// structural substreams.
 ///
 /// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
 /// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has

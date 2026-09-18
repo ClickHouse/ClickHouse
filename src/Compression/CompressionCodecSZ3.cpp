@@ -42,7 +42,7 @@ public:
 protected:
     bool isCompression() const override { return true; }
     /// SZ3 only applies to floating-point data, so it is not a generic codec. This also prevents it
-    /// from being selected for structural substreams (e.g. array sizes), which drop the type-specific codecs.
+    /// from being selected for structural substreams (e.g. array sizes) where only generic codecs are allowed.
     bool isGenericCompression() const override { return false; }
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.

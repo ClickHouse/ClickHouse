@@ -67,7 +67,7 @@ RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 ///
 /// The writer resolves a `CODEC` per substream: a type-specific codec (`ALP`, `T64`, `Delta`, ...) is
 /// applied only to a substream that carries the column type itself, and structural substreams (`Array`
-/// offsets, null map, sparse offsets, ...) drop the type-specific codecs. The estimate serializes a whole
+/// offsets, null map, sparse offsets, ...) keep only the generic codecs. The estimate serializes a whole
 /// column into a single buffer, so `type_specific` describes that buffer only when it holds exactly one
 /// stream of `type_specific_for`. Neither is a property of the table metadata alone: the serialization is
 /// chosen per block from the column at hand, and an unfinished `ALTER MODIFY COLUMN` leaves the part
