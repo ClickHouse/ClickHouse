@@ -511,9 +511,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     if (insert_query.table_id)
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
-    /// The storage's own refusal is not an access check and is not covered by the table function's
-    /// access check, so it is asked for unconditionally: the sink, where it would otherwise be
-    /// raised, is created in a background flush, after the query has reported success.
+    /// Asked for table functions too: the storage's own refusal is not an access check.
     table->checkInsertIsAllowed(query_context);
 
     insert_query.columns = make_intrusive<ASTExpressionList>();

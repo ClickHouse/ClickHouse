@@ -714,9 +714,7 @@ void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_cont
 
 void StorageMaterializedView::checkInsertIsAllowed(ContextPtr local_context) const
 {
-    /// The context is derived exactly as `write` derives it: for a `DEFINER` view that is a copy of
-    /// the global context, whose settings differ from the query context's, so any other derivation
-    /// could answer differently from the sink the write ends up in.
+    /// The context is derived exactly as `write` derives it, so the check answers as the sink would.
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
     getTargetTable()->checkInsertIsAllowed(context);

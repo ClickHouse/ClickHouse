@@ -255,8 +255,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
 
-    /// Must not need the metadata, which the initiator has not loaded. Plain object storage refuses
-    /// nothing on these grounds, hence the empty default.
+    /// Must not need the metadata, which the initiator has not loaded.
     virtual void checkInsertIsPossible(ContextPtr /*context*/) const {}
 
     virtual void checkAlterIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const AlterCommands & commands)

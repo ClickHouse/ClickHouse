@@ -96,7 +96,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context);
 
-    /// The refusals decidable from the configuration and the query context alone.
     static void checkInsertIsPossible(
         const StorageObjectStorageConfigurationPtr & configuration, const ContextPtr & context);
 
