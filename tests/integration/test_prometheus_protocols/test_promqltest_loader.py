@@ -1,0 +1,183 @@
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from . import promqltest_loader as loader
+
+
+def test_parse_duration():
+    assert loader.parse_duration("0") == 0.0
+    assert loader.parse_duration("50m") == 3000.0
+    assert loader.parse_duration("1m30s") == 90.0
+    assert loader.parse_duration("15s") == 15.0
+    assert loader.parse_duration("1ms") == 0.001
+
+
+def test_expand_arithmetic_samples():
+    samples = loader.expand_sample_token("0+10x10")
+    assert len(samples) == 11
+    assert samples[0].value == 0
+    assert samples[-1].value == 100
+
+
+def test_expand_missing_and_stale():
+    assert loader.expand_sample_token("_")[0].missing is True
+    assert loader.expand_sample_token("stale")[0].stale is True
+
+
+def test_native_histogram_token():
+    samples = loader.expand_sample_token("{{schema:0 sum:1 count:1}}x9")
+    assert len(samples) == 10
+    assert all(s.native_histogram for s in samples)
+
+
+def test_parse_sort_ordered_and_trig_and_fail(tmp_path: Path):
+    text = textwrap.dedent(
+        """
+        load 5m
+          http_requests{group="production", instance="0"} 0+10x10
+          http_requests{group="canary", instance="1"} 0+40x10
+
+        eval instant at 50m sort(http_requests)
+            expect ordered
+            http_requests{group="production", instance="0"} 100
+            http_requests{group="canary", instance="1"} 400
+
+        eval instant at 50m sort_desc(http_requests)
+            expect ordered
+            http_requests{group="canary", instance="1"} 400
+            http_requests{group="production", instance="0"} 100
+
+        eval instant at 0 acos(vector(1))
+            {} 0
+
+        eval instant at 50m present_over_time(http_requests[5m])
+            {group="production", instance="0"} 1
+            {group="canary", instance="1"} 1
+
+        eval instant at 0 label_replace(http_requests, "~invalid", "", "src", "(.*)")
+            expect fail
+
+        eval instant at 50m resets(http_requests_histogram[6m])
+            {path="/foo"} 0
+
+        load 5m
+          http_requests_histogram{path="/foo"} {{schema:0 sum:1 count:1}}x9
+
+        eval instant at 50m resets(http_requests_histogram[6m])
+            {path="/foo"} {{schema:0 sum:1 count:1}}
+        """
+    )
+    path = tmp_path / "fixture.test"
+    path.write_text(text)
+    scenarios = loader.parse_test_file(path)
+    evals = [ev for sc in scenarios for ev in sc.evals]
+    by_expr = {ev.expr: ev for ev in evals}
+    assert by_expr["sort(http_requests)"].expect_ordered is True
+    assert by_expr["sort_desc(http_requests)"].expect_ordered is True
+    assert by_expr["acos(vector(1))"].expected_series[0].samples[0].value == 0
+    assert any("present_over_time" in expr for expr in by_expr)
+    assert by_expr['label_replace(http_requests, "~invalid", "", "src", "(.*)")'].expect_fail
+    hist = [ev for ev in evals if ev.expr.startswith("resets(http_requests_histogram")]
+    assert hist[-1].exclusion_reason() is not None
+    assert loader.classify_eval(hist[-1]) == "excluded_native_histogram"
+
+
+def test_snapshot_manifest_is_complete():
+    scenarios = loader.parse_all_files()
+    loader.assert_manifest_complete(scenarios)
+    ids = loader.manifest_eval_ids(scenarios)
+    assert len(ids) == 1129
+
+
+def test_clear_isolates_scenarios(tmp_path: Path):
+    text = textwrap.dedent(
+        """
+        load 15s
+          bar 0 1 10
+        eval range from 0 to 1m step 30s sum_over_time(bar[30s])
+          {} 0 11
+        clear
+        load 15s
+          baz 5
+        eval instant at 0 baz
+          baz 5
+        """
+    )
+    path = tmp_path / "iso.test"
+    path.write_text(text)
+    scenarios = loader.parse_test_file(path)
+    assert len(scenarios) == 2
+    assert scenarios[0].evals[0].kind == "range"
+    assert scenarios[1].evals[0].expr == "baz"
+
+
+def test_compare_ordered_pass_and_fail():
+    case = loader.EvalCase(
+        eval_id="t:1",
+        file_name="t.test",
+        line=1,
+        kind="instant",
+        expr="sort(m)",
+        time_s=50,
+        expect_ordered=True,
+        expected_series=[
+            loader.parse_series_line('m{g="a"} 1'),
+            loader.parse_series_line('m{g="b"} 2'),
+        ],
+    )
+    tsv_ok = (
+        "[('__name__','m'),('g','a')]\t1970-01-01 00:00:50.000\t1\n"
+        "[('__name__','m'),('g','b')]\t1970-01-01 00:00:50.000\t2\n"
+    )
+    status, _ = loader.compare_eval(case, tsv_ok, None)
+    assert status == "passed"
+    tsv_bad = (
+        "[('__name__','m'),('g','b')]\t1970-01-01 00:00:50.000\t2\n"
+        "[('__name__','m'),('g','a')]\t1970-01-01 00:00:50.000\t1\n"
+    )
+    status, _ = loader.compare_eval(case, tsv_bad, None)
+    assert status == "failed"
+
+
+def test_compare_expect_fail():
+    case = loader.EvalCase(
+        eval_id="t:2",
+        file_name="t.test",
+        line=2,
+        kind="instant",
+        expr="bad()",
+        time_s=0,
+        expect_fail=True,
+    )
+    status, _ = loader.compare_eval(case, "", "DB::Exception: boom")
+    assert status == "passed"
+    status, _ = loader.compare_eval(case, "[('__name__','x')]\t0\t1\n", None)
+    assert status == "failed"
+
+
+def test_unsupported_not_implemented():
+    case = loader.EvalCase(
+        eval_id="t:3",
+        file_name="t.test",
+        line=3,
+        kind="instant",
+        expr="foo()",
+        time_s=0,
+    )
+    status, _ = loader.compare_eval(case, "", "Function foo is not implemented")
+    assert status == "unsupported"
+
+
+def test_insert_sql_skips_native_histogram():
+    spec = loader.parse_series_line(
+        'http_requests_histogram{path="/foo"} {{schema:0 sum:1 count:1}}x2'
+    )
+    assert spec.native_histogram
+    assert loader.series_insert_sql("t", 300, spec) is None
+    spec2 = loader.parse_series_line('http_requests{path="/foo"} 1 2 3')
+    sql = loader.series_insert_sql("t", 300, spec2)
+    assert sql is not None
+    assert "toDateTime64(0, 9)" in sql
+    assert "toDateTime64(600, 9)" in sql
