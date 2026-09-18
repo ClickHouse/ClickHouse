@@ -227,6 +227,7 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/search_indexes.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/server_api.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/server_error.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/string_options.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/text_options.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/tls.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/transaction_options.cpp
