@@ -1644,13 +1644,15 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64), [Time](/reference/data-types/time), [Time64](/reference/data-types/time64) or numeric values (integers and floating-point numbers) are converted into `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` or `Time64` but the value cannot be represented in the result type. `Decimal` values can be converted only into `DateTime64` and `Time64`, and those conversions follow this setting as well; a `Decimal` converted into `Date`, `Date32`, `DateTime` or `Time` is rejected regardless of the setting.
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. Result are undefined.
+- `ignore` — Silently ignore overflows. For conversions between date and time types the result is undefined (the value may wrap around); a numeric value is saturated to the range boundaries of the result type.
 - `throw` — Throw an exception in case of overflow.
 - `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+The accurate casts (`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`) do not depend on this setting: an unrepresentable value is always rejected, reported as `NULL` or replaced with the default value, respectively.
 
 Default value: `ignore`.
 )", 0) \
