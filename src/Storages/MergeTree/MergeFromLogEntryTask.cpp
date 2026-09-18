@@ -247,7 +247,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true, !patch_parts.empty());
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -271,6 +271,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
             backQuote(future_merged_part->name), backQuote(entry.new_part_name));
     }
+
+    /// Pre-patch move infos must not pick the destination (a patch can move the TTL either way);
+    /// the infos recalculated by the merge let the background mover relocate the part instead.
+    if (!patch_parts.empty())
+        ttl_infos.moves_ttl.clear();
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
     ReservationSharedPtr reserved_space = storage.balancedReservation(
