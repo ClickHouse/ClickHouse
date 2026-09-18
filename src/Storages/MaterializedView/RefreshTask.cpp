@@ -117,6 +117,10 @@ namespace FailPoints
     /// so a test can hold a replica in the window where a refresh has been requested and accepted
     /// but no attempt is visible to anyone yet.
     extern const char refresh_mv_pause_inside_coordination_write[];
+    /// Pauses the thread running SYSTEM REFRESH VIEW just before it publishes its request znode, so
+    /// a test can let a shutdown (e.g. DETACH TABLE) overtake the publishing and check that the
+    /// request znode does not outlive the table.
+    extern const char refresh_mv_pause_before_publishing_refresh_request[];
     /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
     /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
     /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
@@ -227,7 +231,7 @@ RefreshTask::RefreshTask(
             if (!attach && !is_restore_from_backup)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
 
-            markCoordinationUnavailable();
+            markCoordinationUnavailable(/*zookeeper=*/ nullptr);
             return;
         }
 
@@ -269,7 +273,7 @@ RefreshTask::RefreshTask(
     }
 }
 
-void RefreshTask::markCoordinationUnavailable()
+void RefreshTask::markCoordinationUnavailable(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper)
 {
     /// Enter a permanent, non-resumable "coordination unavailable" state. `coordinated` is left
     /// true so the view never degrades into an uncoordinated local refresh (that would corrupt the
@@ -279,6 +283,8 @@ void RefreshTask::markCoordinationUnavailable()
     coordination.unavailable = true;
     scheduling.stop_requested = true;
     scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
+    if (zookeeper)
+        zookeeper->tryRemove(coordination.path + "/" + requestZnodeName());
 }
 
 void RefreshTask::createLogger(const StorageID & storage_id)
@@ -358,6 +364,7 @@ void RefreshTask::shutdown()
             return; // already shut down
 
         scheduling.stop_requested = true;
+        scheduling.shutdown_requested = true;
         /// So that the final scheduling pass below retracts our request znode if we owe a refresh.
         coordination.watches->should_reread_znodes.store(true);
         interruptExecution();
@@ -636,7 +643,8 @@ void RefreshTask::run()
         /// Nothing to publish if the request is already pending (it was published then), if the
         /// view isn't coordinated, or if we must not touch Keeper at all. Then behave as before.
         const bool publish = coordination.coordinated && !coordination.unavailable
-            && !scheduling.out_of_schedule_refresh_requested && view != nullptr;
+            && !scheduling.out_of_schedule_refresh_requested && !scheduling.shutdown_requested
+            && view != nullptr;
         if (!publish)
         {
             if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
@@ -653,6 +661,7 @@ void RefreshTask::run()
     /// `SYSTEM WAIT VIEW` on every replica can see that a refresh is owed - even though no attempt
     /// exists yet, and even if this replica is the only one that will run it. The znode is
     /// ephemeral, so the request disappears with this replica, like the flag below does.
+    FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_before_publishing_refresh_request);
     try
     {
         auto code = zookeeper->tryCreate(request_path, coordination.replica_name, zkutil::CreateMode::Ephemeral);
@@ -666,17 +675,23 @@ void RefreshTask::run()
         throw;
     }
 
-    std::lock_guard guard(mutex);
-    --coordination.publishing_requests;
-    if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
-        return;
-    coordination.our_request_znode_exists = true;
-    coordination.out_of_schedule_request_znode_exists = true;
-    ++coordination.request_znode_epoch;
-    /// Re-read, so that the published request also reaches `system.view_refreshes` consumers and
-    /// the aggregate below settles even if Keeper's own watch is slow.
-    coordination.watches->should_reread_znodes.store(true);
-    scheduleRefresh(guard);
+    bool retract_request = false;
+    {
+        std::lock_guard guard(mutex);
+        --coordination.publishing_requests;
+        if (scheduling.shutdown_requested)
+        {
+            scheduling.out_of_schedule_refresh_requested = true;
+            retract_request = true;
+        }
+        else if (!std::exchange(scheduling.out_of_schedule_refresh_requested, true))
+        {
+            coordination.watches->should_reread_znodes.store(true);
+            scheduleRefresh(guard);
+        }
+    }
+    if (retract_request)
+        zookeeper->tryRemove(request_path);
 }
 
 String RefreshTask::requestZnodeName() const
@@ -687,7 +702,8 @@ String RefreshTask::requestZnodeName() const
 bool RefreshTask::outOfScheduleRefreshPending() const
 {
     return scheduling.out_of_schedule_refresh_requested
-        || (coordination.coordinated && coordination.out_of_schedule_request_znode_exists);
+        || (coordination.coordinated && !coordination.unavailable
+            && coordination.other_replica_request_znode_exists);
 }
 
 void RefreshTask::cancel()
@@ -736,7 +752,11 @@ void RefreshTask::wait(const ContextPtr & context)
     /// *start* (or for the view to be disabled / shut down).
     wait_cv.wait(lock, [&]
         {
-            return !outOfScheduleRefreshPending() || !view || state == RefreshState::Disabled;
+            if (!view || !outOfScheduleRefreshPending())
+                return true;
+            if (state != RefreshState::Disabled)
+                return false;
+            return coordination.paused_znode_exists || !coordination.other_replica_request_znode_exists;
         });
     /// Wait for currently running refresh to complete.
     auto seen_success_end_time = coordination.root_znode.last_success_end_time;
@@ -986,7 +1006,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
                     {
                         LOG_INFO(getLogger(), "Replica '{}' owns the refresh coordination state now, discarding the local result while giving up coordination on this Keeper.", coordination.root_znode.last_attempt_replica);
                         execution.state = ExecutionState::State::None;
-                        markCoordinationUnavailable();
+                        markCoordinationUnavailable(zookeeper);
                         setState(RefreshState::Disabled, lock);
                         return;
                     }
@@ -1050,12 +1070,12 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 else if (execution.state != ExecutionState::State::None)
                     interruptExecution();
 
-                markCoordinationUnavailable();
+                markCoordinationUnavailable(zookeeper);
                 setState(RefreshState::Disabled, lock);
                 return;
             }
         }
-        readZnodesIfNeeded(zookeeper, lock, is_shutdown);
+        readZnodesIfNeeded(zookeeper, lock);
         chassert(lock.owns_lock());
 
         /// Sync 3 pieces of information about currently running refresh:
@@ -1811,7 +1831,7 @@ void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)
         wait_cv.notify_all();
 }
 
-void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool is_shutdown)
+void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock)
 {
     chassert(lock.owns_lock());
     if (!coordination.coordinated || !coordination.watches->should_reread_znodes.load())
@@ -1819,15 +1839,9 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
 
     coordination.watches->should_reread_znodes.store(false);
 
-    /// Whether this replica owes an out-of-schedule refresh, i.e. whether its request znode should
-    /// exist. Read while holding the lock; if it changes while we are in Keeper, the epoch check
-    /// after re-locking discards this pass's conclusions and a later pass reconciles.
-    const UInt64 epoch = coordination.request_znode_epoch;
-    /// Not while shutting down: the znode is ephemeral, so on server stop it goes away on its own,
-    /// but on DETACH the session lives on and nobody would retract it - and a request nobody can
-    /// run would block `SYSTEM WAIT VIEW` on the other replicas.
-    const bool want_request_znode = (scheduling.out_of_schedule_refresh_requested
-        || coordination.publishing_requests > 0) && !is_shutdown;
+    /// Whether our request znode should exist. Not while shutting down: see `shutdown_requested`.
+    const bool want_request_znode = !scheduling.shutdown_requested
+        && (scheduling.out_of_schedule_refresh_requested || coordination.publishing_requests > 0);
     const String our_request_name = requestZnodeName();
     const String our_request_path = coordination.path + "/" + our_request_name;
     const String replica_name = coordination.replica_name;
@@ -1859,15 +1873,16 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     CoordinationZnode znode;
     znode.parse(responses[0].data, running_znode_exists, getLogger());
 
-    bool any_request_znode = false;
+    bool other_request_znode = false;
     bool our_request_znode = false;
     for (const String & child : children)
     {
         if (!child.starts_with("request-"))
             continue;
-        any_request_znode = true;
         if (child == our_request_name)
             our_request_znode = true;
+        else
+            other_request_znode = true;
     }
 
     /// Republish or retract our own request znode if it disagrees with the counter: it is retracted
@@ -1878,24 +1893,18 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         auto code = zookeeper->tryCreate(our_request_path, replica_name, zkutil::CreateMode::Ephemeral);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
             throw Coordination::Exception::fromPath(code, our_request_path);
-        any_request_znode = our_request_znode = true;
     }
     else if (!want_request_znode && our_request_znode)
     {
         /// A run() may have published a request while we were reading. Re-check before retracting,
-        /// so that a request accepted moments ago is not dropped from the published state.
+        /// so that a request accepted moments ago is not dropped from the published state. While
+        /// shutting down there is nothing to keep: a request in flight is retracted by run() too.
         lock.lock();
-        const bool still_unwanted = !scheduling.out_of_schedule_refresh_requested
-            && coordination.publishing_requests == 0
-            && epoch == coordination.request_znode_epoch;
+        const bool still_unwanted = scheduling.shutdown_requested
+            || (!scheduling.out_of_schedule_refresh_requested && coordination.publishing_requests == 0);
         lock.unlock();
         if (still_unwanted)
-        {
             zookeeper->tryRemove(our_request_path);
-            our_request_znode = false;
-            /// `any_request_znode` may still hold for another replica. Removing our znode fires the
-            /// children watch, and the read it triggers settles the aggregate.
-        }
     }
 
     lock.lock();
@@ -1904,11 +1913,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     coordination.root_znode.version = responses[0].stat.version;
     coordination.running_znode_exists = running_znode_exists;
     coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
-    if (epoch == coordination.request_znode_epoch)
-    {
-        coordination.out_of_schedule_request_znode_exists = any_request_znode;
-        coordination.our_request_znode_exists = our_request_znode;
-    }
+    coordination.other_replica_request_znode_exists = other_request_znode;
     ++coordination.znodes_read_count;
 
     notifyDependentsIfNeeded(lock);

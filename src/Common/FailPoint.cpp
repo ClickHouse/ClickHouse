@@ -201,6 +201,7 @@ static struct InitFiu
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     PAUSEABLE(refresh_mv_pause_inside_coordination_write) \
+    PAUSEABLE(refresh_mv_pause_before_publishing_refresh_request) \
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \

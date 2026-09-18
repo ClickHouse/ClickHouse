@@ -869,3 +869,63 @@ def test_refreshable_mv_unavailable_view_refuses_replicated_start(started_cluste
 
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("DROP DATABASE rdb9 SYNC")
+
+
+def test_giving_up_coordination_retracts_refresh_request(started_cluster):
+    # A request znode published by `SYSTEM REFRESH VIEW` must not outlive the moment this replica
+    # gives up coordination: no scheduling pass reads or writes Keeper afterwards, so the ephemeral
+    # znode would stay for as long as the Keeper session lives, and `SYSTEM WAIT VIEW` on the other
+    # replicas would keep waiting for a refresh that can never run here.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb10 ENGINE = Replicated('/clickhouse/rdb10', '{shard}', '{replica}')"
+    )
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW rdb10.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers(5)
+        """
+    )
+    uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'rdb10' AND name = 'mv'"
+    ).strip()
+    znode_path = f"/clickhouse/tables/{uuid}/1"
+    request_znodes = (
+        f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}'"
+        " AND name LIKE 'request-%'"
+    )
+
+    # Stopped, so the requested refresh stays owed and its znode stays published.
+    node.query("SYSTEM STOP VIEW rdb10.mv")
+    node.query("SYSTEM REFRESH VIEW rdb10.mv")
+    assert node.query(request_znodes).strip() == "1"
+
+    # SYSTEM START VIEW schedules the pass that finds the feature flags missing and gives up.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing"
+    )
+    node.query("SYSTEM START VIEW rdb10.mv")
+
+    deadline = time.time() + 30
+    while node.query(request_znodes).strip() != "0" and time.time() < deadline:
+        time.sleep(0.2)
+    assert (
+        node.query(request_znodes).strip() == "0"
+    ), "the request znode outlived the view's coordination"
+
+    # And it is gone because coordination was given up, not because the refresh ran after all.
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb10'"
+    ).strip()
+    assert status == "Disabled", status
+    assert node.query("SELECT count() FROM rdb10.mv").strip() == "0"
+
+    node.query(
+        "SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing"
+    )
+    node.query("DROP DATABASE rdb10 SYNC")
