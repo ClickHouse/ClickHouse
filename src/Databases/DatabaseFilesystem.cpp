@@ -21,8 +21,6 @@
 #include <Storages/StorageProxy.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Access/ContextAccess.h>
-#include <Access/Common/AccessFlags.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
 
