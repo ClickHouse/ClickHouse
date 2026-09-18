@@ -43,7 +43,7 @@ hello	\N	Dynamic	Nullable(UInt8)
 AST JSON roundtrip
 SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
 normalized AST JSON roundtrip
-SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
+SELECT 1 AS a UNION SELECT 2 AS a
 duplicate output names
 missing non-nullable-capable type
 recursive CTE
