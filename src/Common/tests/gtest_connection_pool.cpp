@@ -4,6 +4,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/Throttler.h>
+#include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
 #include <base/unit.h>
 
@@ -20,6 +22,7 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <atomic>
+#include <limits>
 
 #include <gtest/gtest.h>
 
@@ -1070,6 +1073,69 @@ TEST_F(ConnectionPoolTest, LegacyStreamApiHalfSentRequestIsNotPreserved)
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+namespace
+{
+
+/// Records every throttling request so that a test can tell whether the transport consulted it.
+class CountingThrottler : public DB::IThrottler
+{
+public:
+    bool throttle(size_t amount, size_t) override
+    {
+        bytes += amount;
+        return false;
+    }
+
+    bool isThrottling() const override { return false; }
+    Int64 getAvailable() override { return std::numeric_limits<Int64>::max(); }
+    UInt64 getMaxSpeed() const override { return 0; }
+    UInt64 getMaxBurst() const override { return 0; }
+
+    std::atomic<size_t> bytes{0};
+};
+
+}
+
+/// IO scheduling hooks and the per-thread throttlers have to be installed before any socket I/O of
+/// the exchange starts. `getConnection` hands out the full `Poco::Net::HTTPClientSession`, so that
+/// has to happen on the legacy `sendRequest` entrypoint as well, not only on `sendRequestHeaders` -
+/// otherwise a caller of the legacy API would do its network I/O outside of the throttling.
+TEST_F(ConnectionPoolTest, LegacyStreamApiIsThrottled)
+{
+    auto pool = getPool();
+
+    auto read_throttler = std::make_shared<CountingThrottler>();
+    auto write_throttler = std::make_shared<CountingThrottler>();
+
+    const auto data = String("Hello");
+
+    {
+        /// The throttlers live in the `ThreadStatus`, which a unit test does not have by default.
+        DB::ThreadStatus thread_status;
+
+        DB::CurrentThread::ReadThrottlingScope read_scope(read_throttler);
+        DB::CurrentThread::WriteThrottlingScope write_scope(write_throttler);
+
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        connection->sendRequest(request) << data;
+
+        Poco::Net::HTTPResponse response;
+        std::istream & response_body = connection->receiveResponse(response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        String result;
+        result.resize(data.size());
+        response_body.read(result.data(), static_cast<std::streamsize>(result.size()));
+        ASSERT_EQ(data, result);
+    }
+
+    ASSERT_GT(write_throttler->bytes.load(), 0);
+    ASSERT_GT(read_throttler->bytes.load(), 0);
 }
 
 /// A `PUT`, `POST` or `PATCH` with neither `Content-Length` nor chunked encoding carries a body

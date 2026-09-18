@@ -492,8 +492,9 @@ private:
             return now - Session::getLastRequest();
         }
 
-        Poco::Net::HTTPClientSession::BodyInfo
-        sendRequestHeaders(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
+        /// Installs IO scheduling hooks and per-thread throttlers on the session.
+        /// It has to run before any socket I/O of the exchange starts, so both send entrypoints call it.
+        void installTransportHooks(const Poco::Net::HTTPRequest & request)
         {
             // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
@@ -504,8 +505,21 @@ private:
                 Session::setReceiveThrottler(throttler);
             if (auto throttler = CurrentThread::getWriteThrottler())
                 Session::setSendThrottler(throttler);
+        }
 
+        Poco::Net::HTTPClientSession::BodyInfo
+        sendRequestHeaders(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
+        {
+            installTransportHooks(request);
             return Session::sendRequestHeaders(request, connect_time, first_byte_time);
+        }
+
+        /// `getConnection` hands out a full `Poco::Net::HTTPClientSession`, so callers may still use the
+        /// legacy iostream API. It does not go through `sendRequestHeaders`, hence the separate override.
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
+        {
+            installTransportHooks(request);
+            return Session::sendRequest(request, connect_time, first_byte_time);
         }
 
         ~PooledConnection() override

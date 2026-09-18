@@ -341,11 +341,15 @@ void UnityCatalog::createTable(
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
+
     try
     {
         auto response = postJSONRequest(
             TABLES_ENDPOINT,
-            [&](std::ostream & os) { body->stringify(os); });
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)
