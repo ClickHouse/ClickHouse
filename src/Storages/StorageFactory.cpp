@@ -73,10 +73,20 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     /// that is a query setting and not a setting of this engine, so a name that is neither is no
     /// setting at all.
     const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
-    for (const auto & change : args.storage_def->settings->changes)
-        if (!features.has_builtin_setting_fn(change.name) && !Settings::hasBuiltin(change.name))
+    chassert(features.has_builtin_setting_fn != nullptr);
+    auto check = [&](std::string_view name)
+    {
+        if (!features.has_builtin_setting_fn(name) && !Settings::hasBuiltin(name))
             throw Exception(
-                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", change.name, args.engine_name);
+                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
+    };
+
+    for (const auto & change : args.storage_def->settings->changes)
+        check(change.name);
+    /// `name = DEFAULT` is parsed into `default_settings`, not into `changes`, and is serialized back
+    /// into the stored definition, so a name that is a setting nowhere has to be refused in both forms.
+    for (const auto & name : args.storage_def->settings->default_settings)
+        check(name);
 }
 
 

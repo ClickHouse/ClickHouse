@@ -44,6 +44,11 @@ SELECT * FROM db.t;
 SELECT extract(create_table_query, 'not_a_setting_at_all') FROM system.tables WHERE database = 'db' AND name = 't';
 "
 
+echo '--- a stored non-setting is inherited by CREATE TABLE AS, which is fresh input ---'
+# The stored clause is copied wholesale into the new definition, so it is stated rather than loaded.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" --send_logs_level fatal -q "
+CREATE TABLE db.t_copy AS db.t;" 2>&1 >/dev/null | grep -o -m 1 -F 'UNKNOWN_SETTING'
+
 echo '--- a format setting in the clause is applied, not merely accepted ---'
 # Read the file back as raw lines: a round trip through the same table would parse with the same
 # delimiter it wrote and pass whether or not the setting took effect.

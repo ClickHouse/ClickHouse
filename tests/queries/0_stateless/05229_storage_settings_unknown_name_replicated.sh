@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-ordinary-database
+# Tags: zookeeper, no-replicated-database
 # no-replicated-database: this test explicitly creates a Replicated database.
 
 # In a `Replicated` database the initiator holds a metadata transaction, and so does every secondary

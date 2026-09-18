@@ -1,6 +1,7 @@
 --- a name that is not a setting at all is rejected ---
 --- a setting of the engine is still accepted ---
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog\nSETTINGS disk = \'default\'
+CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog\nSETTINGS disk = \'default\', max_threads = DEFAULT
 --- a query setting is still accepted, and is not stored on the table ---
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog
