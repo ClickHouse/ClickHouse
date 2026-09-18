@@ -36,7 +36,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     CREATE TABLE tab
     (
         id UInt32,
-        data JSON,
+        data JSON(title String),
         INDEX json_idx JSONAllValues(data) TYPE text(tokenizer = array)
     )
     ENGINE = MergeTree
