@@ -91,6 +91,8 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<IPv4> *>(nullptr));
     if (which.isIPv6())
         return creator(static_cast<ColumnVector<IPv6> *>(nullptr));
+    if (which.isMacAddress())
+        return creator(static_cast<ColumnVector<MacAddress> *>(nullptr));
     if (which.isInterval())
         return creator(static_cast<DataTypeInterval::ColumnType *>(nullptr));
     if (which.isInt() || which.isUInt() || which.isFloat())

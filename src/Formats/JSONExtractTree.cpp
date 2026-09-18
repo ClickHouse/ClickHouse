@@ -1310,6 +1310,48 @@ public:
 };
 
 template <typename JSONParser>
+class MacAddressNode : public JSONExtractTreeNode<JSONParser>
+{
+public:
+    bool insertResultToColumn(
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings &,
+        const FormatSettings & format_settings,
+        String & error) const override
+    {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
+        if (!element.isString())
+        {
+            error = fmt::format("cannot read MacAddress value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            return false;
+        }
+
+        auto data = element.getString();
+        MacAddress value;
+        if (!tryParse(value, data))
+        {
+            error = fmt::format("cannot parse MacAddress value here: {}", data);
+            return false;
+        }
+
+        assert_cast<ColumnVector<MacAddress> &>(column).insert(value);
+        return true;
+    }
+
+    static bool tryParse(MacAddress & value, std::string_view data)
+    {
+        ReadBufferFromMemory buf(data);
+        return tryReadMacAddressText(value, buf) && buf.eof();
+    }
+};
+
+template <typename JSONParser>
 class NullableNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
@@ -2616,6 +2658,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<IPv4Node<JSONParser>>();
         case TypeIndex::IPv6:
             return std::make_unique<IPv6Node<JSONParser>>();
+        case TypeIndex::MacAddress:
+            return std::make_unique<MacAddressNode<JSONParser>>();
         case TypeIndex::Date:;
             return std::make_unique<DateNode<JSONParser, DayNum, UInt16>>();
         case TypeIndex::Date32:

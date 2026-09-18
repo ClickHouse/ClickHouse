@@ -151,6 +151,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::UInt32: [[fallthrough]];
         case TypeIndex::Int64: [[fallthrough]];
         case TypeIndex::UInt64: [[fallthrough]];
+        case TypeIndex::MacAddress: [[fallthrough]];
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::Decimal64: [[fallthrough]];
         case TypeIndex::DateTime64:
@@ -399,6 +400,11 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         case TypeIndex::IPv4:
         {
             writeBSONNumber<ColumnIPv4, Int32>(BSONType::INT32, column, row_num, name, out);
+            break;
+        }
+        case TypeIndex::MacAddress:
+        {
+            writeBSONNumber<ColumnVector<MacAddress>, Int64>(BSONType::INT64, column, row_num, name, out);
             break;
         }
         case TypeIndex::IPv6:
