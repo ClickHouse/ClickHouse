@@ -201,6 +201,14 @@ static bool containsBareSelectQuery(const IAST * node)
     return false;
 }
 
+static bool hasExpressionListChild(const IAST * node)
+{
+    const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
+    if (!list)
+        return false;
+    return std::ranges::any_of(list->children, [](const ASTPtr & child) { return child->as<ASTExpressionList>() != nullptr; });
+}
+
 void ASTFunction::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
@@ -326,6 +334,13 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         /// through `clickhouse_json` would fail. Canonicalize it the way the parser does.
         name = is_view ? "view" : "viewIfPermitted";
     }
+
+    /// A child of `arguments` or `parameters` is an expression, and an expression list is not one:
+    /// `QueryTreeBuilder::buildExpression` accepts identifier, literal, matcher, function and subquery
+    /// nodes only, while the formatter prints such a child's own children inline.
+    if (hasExpressionListChild(arguments.get()) || hasExpressionListChild(parameters.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'arguments' and 'parameters' cannot have an expression list child during AST JSON deserialization");
 
     r.readAlias(*this);
 }
