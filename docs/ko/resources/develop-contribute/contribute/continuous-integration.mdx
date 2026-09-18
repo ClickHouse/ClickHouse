@@ -285,17 +285,6 @@ Debug 및 일반 바이너리 구성에서도 전체 테스트 모음을 실행�
 자동으로 실행되는 검사 중 가장 오래 걸리며, 완료까지 6시간이 채 걸리지 않습니다.
 성능 테스트 보고서에 대한 자세한 설명은 [여기](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report)에 있습니다.
 
-## Revert pull requests {#revert-pull-requests}
-
-머지된 변경 사항을 되돌리는(되돌리다) 풀 리퀘스트는 즉시 통과 처리됩니다. 모든 CI 작업을 건너뛰고, `Ready For Merge` status가 성공으로 설정되며, 설명에 그 이유가 기재되어 되돌리기를 최대한 빠르게 머지할 수 있도록 합니다.
-그 이유는 다음과 같습니다. 되돌리기는 CI가 이미 검사를 마친 `master` 상태를 복원하는 반면, 되돌리기가 대체하는 현재 상태는 깨져 있으므로, 해당 풀 리퀘스트의 자체 검사에 쓰는 시간은 그만큼 `master`가 깨진 상태로 머무는 시간이 됩니다.
-머지 큐는 여전히 자체적인 (소규모) 검사를 실행하며, 머지 후에는 `master`에서 전체 CI가 실행됩니다.
-
-풀 리퀘스트는 정규 shape에만 근거해 되돌리기로 간주되며, 이는 `git revert`, GitHub의 &quot;되돌리기&quot; 버튼, 그리고 [되돌리기 CI regressions](#revert-ci-regressions) job이 생성하는 형태입니다. 즉, 제목이 `Revert "..."`이거나, 설명에 `Reverts ClickHouse/ClickHouse#<number>` 줄이 포함된 경우입니다.
-본문에서 되돌리기를 단순히 언급하기만 한 풀 리퀘스트는 평소와 같이 테스트됩니다.
-
-되돌리기 풀 리퀘스트에서도 전체 CI를 실행하려면(예: 되돌리기 과정에서 충돌을 해결해야 했거나 올바른 수정인지 확신이 없는 경우), `ci-force-all` 레이블을 추가하고 빈 커밋을 푸시하여 검사를 다시 시작하십시오.
-
 ## CI 회귀 되돌리기 {#revert-ci-regressions}
 
 이 작업은 풀 리퀘스트를 검사하는 작업이 아닙니다. 매시간 `master`에서 실행되며, 이미 머지된 풀 리퀘스트를 되돌릴 수 있습니다.

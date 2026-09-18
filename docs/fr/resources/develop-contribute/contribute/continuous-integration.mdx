@@ -286,17 +286,6 @@ Mesurez les changements de performance des requêtes.
 C&#39;est la vérification la plus longue et son exécution prend un peu moins de 6 heures.
 Le rapport du test de performance est décrit en détail [ici](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).
 
-## Annulation de pull requests {#revert-pull-requests}
-
-Une pull request qui annule un changement fusionné obtient immédiatement le feu vert : tous les jobs d&#39;intégration continue sont ignorés, le statut `Ready For Merge` est défini comme réussi, et sa description en explique la raison, afin que l&#39;annulation puisse être fusionnée au plus vite.
-L&#39;idée est qu&#39;une annulation rétablit un état de `master` que l&#39;intégration continue a déjà validé, alors que l&#39;état qu&#39;elle remplace est cassé : chaque minute consacrée aux vérifications de la pull request elle-même est une minute de plus pendant laquelle `master` reste cassé.
-La merge queue exécute néanmoins son propre (petit) ensemble de vérifications, et l&#39;intégration continue complète s&#39;exécute sur `master` après la fusion.
-
-Une pull request n&#39;est considérée comme une annulation que d&#39;après sa forme canonique, c&#39;est-à-dire celle que produisent `git revert`, le bouton « Revert » de GitHub et le job [Revert CI regressions](#revert-ci-regressions) : le titre `Revert "..."`, ou la ligne `Reverts ClickHouse/ClickHouse#<number>` dans la description.
-Une pull request qui ne fait que mentionner une annulation dans son texte est testée comme d&#39;habitude.
-
-Pour exécuter malgré tout l&#39;intégration continue complète sur une pull request d&#39;annulation, par exemple lorsque l&#39;annulation a nécessité de résoudre des conflicts ou que vous doutez qu&#39;il s&#39;agisse du bon correctif, ajoutez le label `ci-force-all` et poussez un commit vide pour relancer les vérifications.
-
 ## Annuler les régressions d’intégration continue {#revert-ci-regressions}
 
 Il ne s’agit pas d’une vérification de votre pull request : elle s’exécute sur `master` toutes les heures et peut annuler une pull request déjà fusionnée.

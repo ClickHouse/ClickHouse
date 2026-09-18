@@ -286,17 +286,6 @@ python -m ci.praktika run "Build (amd_debug)"
 これは最も時間のかかるチェックで、実行には 6 時間弱かかります。
 パフォーマンステストレポートの詳細については、[こちら](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report)を参照してください。
 
-## リバート用プルリクエスト {#revert-pull-requests}
-
-マージ済みの変更をリバートするプルリクエストは、ただちにグリーンになります。CI ジョブはすべてskipされ、`Ready For Merge` statusは成功に設定され、その理由が説明文に記載されます。これにより、リバートを可能な限り迅速にマージできます。
-その理由は次のとおりです。リバートはCIで既にvalidate済みの`master`のstateを復元するものであり、一方で置き換えられる側のstateは壊れています。つまり、プルリクエスト自体のcheckに費やす1分は、`master`が壊れたままになる1分でもあるからです。
-なお、マージqueueでは引き続き独自の (小規模な) checkのsetが実行され、マージ後には`master`上で完全なCIが実行されます。
-
-プルリクエストがリバートとみなされるのは、canonicalなshapeを持つ場合のみです。これは`git revert`、GitHubの「Revert」ボタン、および[CIのリグレッションをリバートする](#revert-ci-regressions) jobが生成する形式、すなわちタイトルが`Revert "..."`であるか、説明文に`Reverts ClickHouse/ClickHouse#<number>`というlineが含まれる場合を指します。
-文章中で単にリバートに言及しているだけのプルリクエストは、通常どおりテストされます。
-
-リバート用プルリクエストでもあえて完全なCIを実行したい場合、たとえばリバート時に競合を解決する必要があった場合や、それが正しい修正か疑わしい場合には、`ci-force-all` labelを追加し、空のコミットをpushしてcheckを再実行してください。
-
 ## CIのリグレッションをリバートする {#revert-ci-regressions}
 
 これはプルリクエストに対するチェックではありません。`master` で毎時実行され、すでにマージされたプルリクエストをリバートする場合があります。

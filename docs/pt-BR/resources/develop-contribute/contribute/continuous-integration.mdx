@@ -286,17 +286,6 @@ Meça as mudanças no desempenho das consultas.
 Esta é a verificação mais demorada e leva pouco menos de 6 horas para ser executada.
 O relatório do teste de desempenho é descrito em detalhes [aqui](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).
 
-## Reversão de pull requests {#revert-pull-requests}
-
-Um pull request que faz a reversão de uma alteração já mesclada recebe luz verde de imediato: todos os jobs de CI são ignorados, o status `Ready For Merge` é definido como bem-sucedido e a descrição explica o motivo, para que a reversão possa ser mesclada o mais rápido possível.
-A lógica é que uma reversão restaura um estado do `master` que o CI já validou, enquanto o estado que ele substitui está quebrado, e cada minuto gasto nas verificações do próprio pull request é um minuto em que o `master` continua quebrado.
-A merge queue ainda executa seu próprio (pequeno) conjunto de verificações, e o CI completo é executado no `master` depois da mesclagem.
-
-Um pull request só é considerado uma reversão pela sua shape canônica, que é o que `git revert`, o botão &quot;Revert&quot; do GitHub e o job [Revert CI regressions](#revert-ci-regressions) produzem: o título `Revert "..."` ou a linha `Reverts ClickHouse/ClickHouse#<number>` na descrição.
-Um pull request que apenas menciona uma reversão em texto corrido é testado normalmente.
-
-Para executar o CI completo em um pull request de reversão mesmo assim — por exemplo, quando a reversão precisou resolver conflicts ou quando você tem dúvidas se é a correção adequada —, adicione o rótulo `ci-force-all` e envie um commit vazio para reiniciar as verificações.
-
 ## Reverter regressões na CI {#revert-ci-regressions}
 
 Esta não é uma verificação do seu pull request: ela é executada em `master` a cada hora e pode reverter um pull request já mesclado.
