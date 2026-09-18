@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
+    extern const Event AsyncInsertFlush;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -135,7 +136,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
-    , query_str(query->formatWithSecretsOneLine())
+    , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
     , external_roles(external_roles_)
@@ -212,7 +213,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
 {
     query = other.query->clone();
-    query_str = other.query_str;
+    query_str_with_secrets = other.query_str_with_secrets;
     user_id = other.user_id;
     current_roles = other.current_roles;
     external_roles = other.external_roles;
@@ -233,7 +234,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
     if (this != &other)
     {
         query = other.query->clone();
-        query_str = other.query_str;
+        query_str_with_secrets = other.query_str_with_secrets;
         user_id = other.user_id;
         current_roles = other.current_roles;
         external_roles = other.external_roles;
@@ -1190,6 +1191,10 @@ try
     else
         query_scope = QueryScope::create(insert_context);
 
+    /// Count the flush inside its own query scope, so that it lands on the same
+    /// `system.query_log` row as the rest of the flush accounting, whatever triggered it.
+    ProfileEvents::increment(ProfileEvents::AsyncInsertFlush);
+
     LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
     LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
@@ -1281,10 +1286,7 @@ try
             return it->second;
         };
 
-        if (entry->chunk.getDataKind() == AsynchronousInsertQueueDataKind::Parsed)
-            elem.query_for_logging = key.query_str;
-        else
-            elem.query_for_logging = get_query_by_format(entry->format);
+        elem.query_for_logging = get_query_by_format(entry->format);
 
         if (is_flush_error)
         {

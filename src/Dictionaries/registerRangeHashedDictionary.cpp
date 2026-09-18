@@ -165,6 +165,7 @@ RANGE(MIN discount_start_date MAX discount_end_date)
         <type>Date</type>
     </range_max>
     ...
+</structure>
 ```
 
 </Tab>
