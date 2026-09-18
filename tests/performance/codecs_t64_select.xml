@@ -30,6 +30,7 @@
                 <value>uint64_prefix_six_byte</value>
                 <value>uint64_sequential_bit</value>
                 <value>uint64_jittered_bit</value>
+                <value>uint64_jittered_byte</value>
             </values>
         </substitution>
     </substitutions>
@@ -49,6 +50,7 @@
     <create_query>CREATE TABLE t64_select_uint64_prefix_six_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
     <create_query>CREATE TABLE t64_select_uint64_sequential_bit (n UInt64 CODEC(T64('bit'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
     <create_query>CREATE TABLE t64_select_uint64_jittered_bit (n UInt64 CODEC(T64('bit'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
+    <create_query>CREATE TABLE t64_select_uint64_jittered_byte (n UInt64 CODEC(T64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS {table_settings}</create_query>
 
     <fill_query>INSERT INTO t64_select_uint8_one_byte SELECT number % 2 FROM numbers(100000000)</fill_query>
     <fill_query>INSERT INTO t64_select_uint16_one_byte SELECT number % 2 FROM numbers(100000000)</fill_query>
@@ -65,6 +67,7 @@
     <fill_query>INSERT INTO t64_select_uint64_prefix_six_byte SELECT toUInt64(1125899906842624) + number % 64 FROM numbers(100000000)</fill_query>
     <fill_query>INSERT INTO t64_select_uint64_sequential_bit SELECT number FROM numbers(100000000)</fill_query>
     <fill_query>INSERT INTO t64_select_uint64_jittered_bit SELECT number * 512 + intHash64(number) % 512 FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO t64_select_uint64_jittered_byte SELECT number * 512 + intHash64(number) % 512 FROM numbers(100000000)</fill_query>
 
     <fill_query>OPTIMIZE TABLE t64_select_{case} FINAL SETTINGS optimize_throw_if_noop=1</fill_query>
 
@@ -83,6 +86,7 @@
     <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_six_byte) WHERE ignore(n) = 0 LIMIT 1597000000)</query>
     <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_sequential_bit) WHERE ignore(n) = 0 LIMIT 765000000)</query>
     <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_bit) WHERE ignore(n) = 0 LIMIT 543000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_byte) WHERE ignore(n) = 0 LIMIT 927000000)</query>
 
     <drop_query>DROP TABLE IF EXISTS t64_select_{case} SYNC</drop_query>
 </test>
