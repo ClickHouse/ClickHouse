@@ -1,4 +1,5 @@
 import uuid
+import time
 import threading
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -39,6 +40,18 @@ def _loaded_stats_us(node, tag):
     _flush_logs(node)
     v = _query(node, f"""
         SELECT toInt64(coalesce(max(ProfileEvents['LoadedStatisticsMicroseconds']), 0))
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND type = 'QueryFinish'
+          AND log_comment = '{tag}'
+        FORMAT TabSeparated
+    """).strip()
+    return int(v or "0")
+
+def _profile_event(node, tag, event):
+    _flush_logs(node)
+    v = _query(node, f"""
+        SELECT toInt64(coalesce(max(ProfileEvents['{event}']), 0))
         FROM system.query_log
         WHERE current_database = currentDatabase()
           AND type = 'QueryFinish'
@@ -185,7 +198,11 @@ def test_session_toggle_does_not_corrupt_cache():
         "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='toggle-hit2' FORMAT Null"
     )
 
-def test_interval_zero_disables_cache():
+def test_interval_zero_disables_only_background_refresh():
+    # The statistics caches are populated by the queries themselves and keyed by the immutable
+    # parts, so `refresh_statistics_interval = 0` only disables the background prewarm: the
+    # cached entries survive both the setting change and a reattach, and the session setting
+    # `use_statistics_cache = 0` is the way to bypass them.
     _create_tbl(ch1, "z_tbl", 1)
     _wait_hit(
         ch1, "z-warm",
@@ -193,10 +210,63 @@ def test_interval_zero_disables_cache():
     )
     _query_retry(ch1, "ALTER TABLE z_tbl MODIFY SETTING refresh_statistics_interval = 0")
     _query_retry(ch1, "DETACH TABLE z_tbl; ATTACH TABLE z_tbl")
-    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-load1' FORMAT Null")
-    _assert_load(ch1, "z-load1")
-    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-load2' FORMAT Null")
-    _assert_load(ch1, "z-load2")
+    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-hit' FORMAT Null")
+    _assert_hit(ch1, "z-hit")
+    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=0, log_comment='z-bypass' FORMAT Null")
+    _assert_load(ch1, "z-bypass")
+
+def test_reattached_part_with_replaced_content_is_reloaded():
+    # A detached part directory can be re-attached under the same path with different files.
+    # The entry the old part object left in the part statistics cache is removed only when that
+    # object is destroyed, so the key must also depend on the part contents for the re-attached
+    # part to never be served the statistics of the old bytes. `system.parts_columns` reads the
+    # estimates through the cache for all columns, so it both populates and observes it.
+    def _create(table, offset):
+        _query_retry(ch1, f"DROP TABLE IF EXISTS {table} SYNC")
+        _query_retry(ch1, f"""
+            CREATE TABLE {table} (k UInt32, v Float64)
+            ENGINE=MergeTree
+            ORDER BY k
+            SETTINGS refresh_statistics_interval = 0, auto_statistics_types = ''
+        """)
+        _query(ch1, f"INSERT INTO {table} SELECT number, number + {offset} FROM numbers({ROWS_SMALL})")
+        _query_retry(ch1, f"ALTER TABLE {table} ADD STATISTICS v TYPE MinMax")
+        _query_retry(ch1, f"ALTER TABLE {table} MATERIALIZE STATISTICS ALL")
+
+    def _estimated_max(table, tag):
+        return float(_query(ch1, f"""
+            SELECT estimates.max FROM system.parts_columns
+            WHERE database = currentDatabase() AND table = '{table}' AND active AND column = 'v'
+            SETTINGS log_comment = '{tag}'
+            FORMAT TabSeparated
+        """).strip())
+
+    def _single_active_part(table):
+        rows = _query(ch1, f"SELECT name, path FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active FORMAT TabSeparated").strip().splitlines()
+        assert len(rows) == 1, rows
+        return rows[0].split("\t")
+
+    _create("swap_tbl", 0)
+    _create("swap_src", 1_000_000)
+    # The mutation that materialized the statistics memoized the estimates on the parts;
+    # drop them so that the reads below go through the part statistics cache.
+    _query(ch1, "SYSTEM DROP STATISTICS CACHE")
+    assert _estimated_max("swap_tbl", "swap-warm") == ROWS_SMALL - 1
+    assert _profile_event(ch1, "swap-warm", "PartStatisticsCacheMisses") > 0
+    src_max = _estimated_max("swap_src", "swap-src")
+    assert src_max == 1_000_000 + ROWS_SMALL - 1
+
+    tbl_name, tbl_path = _single_active_part("swap_tbl")
+    src_name, src_path = _single_active_part("swap_src")
+    assert tbl_name == src_name
+
+    _query_retry(ch1, "DETACH TABLE swap_tbl")
+    ch1.exec_in_container(["bash", "-c", 'rm -rf -- "$1" && cp -r -- "$2" "$1"', "bash", tbl_path, src_path])
+    _query_retry(ch1, "ATTACH TABLE swap_tbl")
+
+    assert _estimated_max("swap_tbl", "swap-after") == src_max
+    assert _profile_event(ch1, "swap-after", "PartStatisticsCacheHits") == 0
+    assert _profile_event(ch1, "swap-after", "PartStatisticsCacheMisses") > 0
 
 def test_staleness_after_inserts_stays_hit():
     _create_tbl(ch1, "ins_tbl", 1)
@@ -209,6 +279,79 @@ def test_staleness_after_inserts_stays_hit():
         ch1, "ins-hit2",
         "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='ins-hit2' FORMAT Null"
     )
+
+def test_prewarm_runs_once_per_part_set():
+    # The background prewarm reads the statistics of every active part into the part statistics
+    # cache once per change of the active part set. On a stable table it does nothing, so after
+    # `SYSTEM DROP STATISTICS CACHE` the next query still loads from disk although the refresh
+    # interval has elapsed several times; a new part makes the prewarm run again.
+    _create_tbl(ch1, "once_tbl", 1)
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    # A skipped tick after the last part change proves the prewarm has caught up with the
+    # current part set, so no tick after the drop below can refill the cache.
+    for _ in range(50):
+        _query(ch1, "SYSTEM FLUSH LOGS text_log")
+        skipped = int(_query(ch1, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.once_tbl%'
+              AND message LIKE 'The parts in this storage did not change%'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if skipped:
+            break
+        time.sleep(0.2)
+    assert skipped, "the statistics prewarm never reported an unchanged part set"
+    _query(ch1, "SYSTEM DROP STATISTICS CACHE")
+    time.sleep(3)
+    _query(ch1, "SELECT count() FROM once_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='once-after-drop' FORMAT Null")
+    _assert_load(ch1, "once-after-drop")
+    _query(ch1, f"INSERT INTO once_tbl SELECT number+{ROWS_SMALL}, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
+    _wait_hit(
+        ch1, "once-after-insert",
+        "SELECT count() FROM once_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='once-after-insert' FORMAT Null"
+    )
+
+def test_reenabled_interval_prewarms_unchanged_table():
+    # Re-enabling the background refresh recreates its task, which must prewarm the cache again
+    # although the part set is unchanged since the last prewarm: the caches may have been dropped
+    # while the task was disabled, and nothing else would refill them on a stable table.
+    _create_tbl(ch1, "reenable_tbl", 1)
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    # A skipped tick proves the prewarm has completed for the current part set.
+    for _ in range(50):
+        _query(ch1, "SYSTEM FLUSH LOGS text_log")
+        skipped = int(_query(ch1, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.reenable_tbl%'
+              AND message LIKE 'The parts in this storage did not change%'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if skipped:
+            break
+        time.sleep(0.2)
+    assert skipped, "the statistics prewarm never reported an unchanged part set"
+    _query_retry(ch1, "ALTER TABLE reenable_tbl MODIFY SETTING refresh_statistics_interval = 0")
+    _query(ch1, "SYSTEM DROP STATISTICS CACHE")
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    _query_retry(ch1, "ALTER TABLE reenable_tbl MODIFY SETTING refresh_statistics_interval = 1")
+    for _ in range(50):
+        _query(ch1, "SYSTEM FLUSH LOGS text_log")
+        refreshed = int(_query(ch1, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.reenable_tbl%'
+              AND message = 'Refreshing statistics'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if refreshed:
+            break
+        time.sleep(0.2)
+    assert refreshed, "the statistics prewarm did not run after the refresh interval was re-enabled"
+    _query(ch1, "SELECT count() FROM reenable_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='reenable-post' FORMAT Null")
+    assert _profile_event(ch1, "reenable-post", "PartStatisticsCacheMisses") == 0
+    assert _profile_event(ch1, "reenable-post", "PartStatisticsCacheHits") > 0
 
 def test_mutation_optimize_replace_drop_keep_hit():
     _create_src_tbl(ch1, "mut_tbl", 1)
