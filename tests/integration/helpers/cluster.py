@@ -2182,8 +2182,15 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         extra_parameters=None,
+        with_ci_logs_export=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
+
+        with_ci_logs_export - whether the system log tables of the server are
+        exported to the CI Logs cluster in CI (see helpers/ci_logs_export.py).
+        Turn it off for a server whose memory or CPU budget the test measures:
+        the export materialises every log table at startup and keeps a sender
+        per table running.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
         base_config_dir - a directory with config.xml and users.xml files which will be copied to /etc/clickhouse-server/ directory
@@ -2317,6 +2324,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             extra_parameters=extra_parameters,
+            with_ci_logs_export=with_ci_logs_export,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -5002,6 +5010,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         extra_parameters=None,
+        with_ci_logs_export=True,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -5170,9 +5179,11 @@ class ClickHouseInstance:
         # helpers/ci_logs_export.py. Only for servers that run - or, for a
         # `with_installed_binary` instance, can be switched to - the binary
         # under test: a server of an old release may not support the configs
-        # and the DDL that the export needs.
+        # and the DDL that the export needs. A test can opt a server out, see
+        # add_instance.
         self.ci_logs_export_supported = (
             ci_logs_export.is_enabled()
+            and with_ci_logs_export
             and not cluster.with_dolor
             and ci_logs_export.supports_export(image, tag, with_installed_binary)
             and config_root_name == "clickhouse"

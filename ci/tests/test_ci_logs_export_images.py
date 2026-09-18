@@ -425,3 +425,15 @@ def test_a_graceful_stop_flushes_the_export_first():
     flush = body.index("ci_logs_export.flush_before_shutdown(self)")
     assert body[:flush].rstrip().endswith("if not kill:")
     assert flush < body.index('"pkill {} clickhouse"')
+
+
+def test_a_test_can_opt_a_server_out_of_the_export():
+    """A server on a memory diet (`max_server_memory_usage` around 1 GB, which
+    an ASan build fills at startup already) or one whose idle CPU time the test
+    measures cannot afford the export; `add_instance(with_ci_logs_export=False)`
+    must keep it off from the start, i.e. gate `ci_logs_export_supported`."""
+    source = CLUSTER_HELPER.read_text()
+    start = source.index("self.ci_logs_export_supported = (")
+    expression = source[start : source.index("\n        )\n", start)]
+    assert "and with_ci_logs_export" in expression
+    assert "with_ci_logs_export=True," in source
