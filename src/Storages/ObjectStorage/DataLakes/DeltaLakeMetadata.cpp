@@ -306,8 +306,7 @@ struct DeltaLakeMetadataImpl
 
                 auto current_schema = parseMetadata(fields_object);
                 validatePartitionColumns(metadata_object, fields_object);
-                /// The Delta protocol defines the table schema as the one carried by the latest
-                /// `metaData` action, and commits are replayed in ascending version order.
+                /// The Delta protocol defines the table schema as the one of the latest `metaData` action.
                 file_schema = current_schema;
             }
 
@@ -608,8 +607,7 @@ struct DeltaLakeMetadataImpl
                 }
                 else if (file_schema != current_schema)
                 {
-                    /// A checkpoint snapshots one version, so it carries one `metaData` action, and
-                    /// its row order is not version order: conflicting ones cannot be ranked.
+                    /// A checkpoint snapshots one version, so it carries one `metaData` action.
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                                     "Checkpoint contains conflicting `metaData` actions "
                                     "({} is different from {})",
@@ -908,8 +906,7 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
 
 void DeltaLakeMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
 {
-    /// A data file committed before ALTER ADD COLUMN does not contain the added column, so a
-    /// missing column is expected here rather than an error, whatever the user asked for.
+    /// A data file committed before a column was added does not contain that column.
     format_settings.parquet.allow_missing_columns = true;
 }
 
