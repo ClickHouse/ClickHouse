@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-workdir="${CLICKHOUSE_TMP}/05176_${CLICKHOUSE_DATABASE}"
+workdir="${CLICKHOUSE_TMP}/05227_${CLICKHOUSE_DATABASE}"
 rm -rf "${workdir}"
 mkdir -p "${workdir}"
 
@@ -34,6 +34,14 @@ do
     ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
     ALTER TABLE t_${part_type} ATTACH PART 'all_1_1_0';
     SELECT 'attached', key, payload FROM t_${part_type};
+    "
+
+    # The attached part still has no codec file, so loading it on the next start-up runs the same codec
+    # proof again. A separate invocation is a full restart of the table. A recovered codec is reported
+    # as `UNKNOWN` by `system.parts`, which also shows that the part was loaded without the file.
+    ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+    SELECT 'reloaded', key, payload FROM t_${part_type};
+    SELECT 'default_compression_codec', default_compression_codec FROM system.parts WHERE database = currentDatabase() AND table = 't_${part_type}' AND active;
     "
 done
 
