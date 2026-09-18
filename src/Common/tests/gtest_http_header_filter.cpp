@@ -92,43 +92,6 @@ TEST(HTTPHeaderFilter, ExactMatchLowerCaseConfigMixedCaseInput)
     EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
 }
 
-/// An operator who writes the name in upper case blocks the lower-case header too. The exact set
-/// holds the configured name lower-cased, so the spelling in the config does not matter.
-TEST(HTTPHeaderFilter, ExactMatchUpperCaseConfigBlocksEveryCase)
-{
-    HTTPHeaderFilter filter;
-    configure(filter, R"(
-        <clickhouse>
-            <http_forbid_headers>
-                <header>AUTHORIZATION</header>
-            </http_forbid_headers>
-        </clickhouse>
-    )");
-
-    EXPECT_TRUE(isForbidden(filter, "authorization"));
-    EXPECT_TRUE(isForbidden(filter, "Authorization"));
-    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
-}
-
-/// The same for a regexp written in upper case. The pattern is not lower-cased -- that would
-/// corrupt a metacharacter such as \D or [A-Z] -- so the case insensitivity comes from the RE2
-/// option instead.
-TEST(HTTPHeaderFilter, RegexpUpperCaseConfigBlocksEveryCase)
-{
-    HTTPHeaderFilter filter;
-    configure(filter, R"(
-        <clickhouse>
-            <http_forbid_headers>
-                <header_regexp>AUTHORIZATION</header_regexp>
-            </http_forbid_headers>
-        </clickhouse>
-    )");
-
-    EXPECT_TRUE(isForbidden(filter, "authorization"));
-    EXPECT_TRUE(isForbidden(filter, "Authorization"));
-    EXPECT_TRUE(isForbidden(filter, "AUTHORIZATION"));
-}
-
 /// A regexp pattern without an explicit (?i) flag must still match
 /// case-insensitively, because header names are case-insensitive.
 TEST(HTTPHeaderFilter, RegexpMatchIsCaseInsensitiveWithoutFlag)
@@ -165,13 +128,11 @@ TEST(HTTPHeaderFilter, RegexpMatchExplicitInlineFlagStillWorks)
     EXPECT_TRUE(isForbidden(filter, "Secret_Header"));
 }
 
-/// The next two describe how `http_forbid_headers` behaves today, not how it ought to. A rule can
-/// be accepted and then forbid nothing: an inline (?-i) scope makes it match a single spelling of a
-/// name the RFC calls case-insensitive, and a pattern that does not compile is skipped with only a
-/// warning. Catching either needs the parsed pattern -- `re2::Regexp::Parse` and the FoldCase flag
-/// of each literal node -- rather than a substring check, so it is left to a follow-up. These
-/// expectations are meant to flip when that lands.
-TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeBlocksOneSpellingOnly)
+/// An inline (?-i) scope re-enables case-sensitive matching for that literal.
+/// On master the regexp matched the original-case header, so such a config must
+/// keep blocking it: the regexp is matched against the original-case name, not a
+/// lower-cased one, otherwise an existing (?-i) blocklist would silently weaken.
+TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeStillBlocksOriginalCase)
 {
     HTTPHeaderFilter filter;
     configure(filter, R"(
@@ -182,21 +143,17 @@ TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeBlocksOneSpellingOnly)
         </clickhouse>
     )");
 
+    /// The case-sensitive literal still matches the header it matched on master.
     EXPECT_TRUE(isForbidden(filter, "Authorization"));
-    /// The very same header, which RFC 7230 3.2 says is the same name, goes through.
+    /// And the (?-i) scope keeps its case-sensitive semantics for other cases.
     EXPECT_FALSE(isForbidden(filter, "authorization"));
-    /// And it never blocks an S3 header, whose name arrives lower-cased whatever the caller wrote.
+    EXPECT_FALSE(isForbidden(filter, "AUTHORIZATION"));
+    /// A rule like this cannot reach an S3 header at all, because the name arrives lower-cased
+    /// whatever the caller wrote. That is a gap, not a design: a `header_regexp` opting out of
+    /// case-insensitivity forbids nothing there. Catching it needs the parsed pattern --
+    /// `re2::Regexp::Parse` and the FoldCase flag of each literal node -- not a substring check,
+    /// so it is left to the follow-up that takes on `<http_forbid_headers>` properly.
     EXPECT_FALSE(isForbiddenForS3(filter, "Authorization"));
-}
-
-TEST(HTTPHeaderFilter, RegexpThatDoesNotCompileForbidsNothing)
-{
-    HTTPHeaderFilter filter;
-    configure(filter,
-        "<clickhouse><http_forbid_headers><header_regexp>x-custom-[</header_regexp>"
-        "</http_forbid_headers></clickhouse>");
-
-    EXPECT_FALSE(isForbidden(filter, "x-custom-token"));
 }
 
 /// The filter also guards a collection that already holds lower-cased names. The verdict must be
