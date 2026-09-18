@@ -39,6 +39,7 @@ extern const Event AutoParallelReplicasMicroseconds;
 extern const Event AutoParallelReplicasPlanNotSuitable;
 extern const Event AutoParallelReplicasNoStatistics;
 extern const Event AutoParallelReplicasStatisticsDrifted;
+extern const Event AutoParallelReplicasDecisionSkippedByMode;
 extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
@@ -535,6 +536,12 @@ void considerEnablingParallelReplicas(
         else
         {
             table_data_drifted_significantly = false;
+            /// `apply_plan_with_parallel_replicas` starts as `mode != 2` and drift is the only other
+            /// thing that clears it, so here it is false exactly when the mode says to collect
+            /// statistics and never decide. The statistics are usable, there is simply no decision to
+            /// make - without this the attempt above would have no terminal outcome at all.
+            if (!apply_plan_with_parallel_replicas)
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasDecisionSkippedByMode);
         }
 
         if (apply_plan_with_parallel_replicas)
