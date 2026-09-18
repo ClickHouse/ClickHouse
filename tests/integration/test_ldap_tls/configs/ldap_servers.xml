@@ -106,13 +106,19 @@
              search that follows is not, so only `search_timeout` can end the wait; `operation_timeout`
              does not apply to searches. -->
         <stalled_search>
+            <!-- Search-and-bind: the login binds the service account (the fake server answers every bind) and then
+                 runs `user_dn_detection` to find the DN to bind as; the fake server never answers a search, so only
+                 `search_timeout` can end that search. A direct-bind login without role mapping runs no search at all
+                 (see the login gates), which is why this case needs `bind_dn` = `{user_dn}`. -->
             <host>127.0.0.1</host>
             <port>3891</port>
-            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
             <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=janedoe,ou=users,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>qwerty</lookup_password>
+            <bind_dn>{user_dn}</bind_dn>
             <user_dn_detection>
                 <base_dn>ou=users,dc=example,dc=org</base_dn>
-                <search_filter>(cn={user_name})</search_filter>
+                <search_filter>(uid={user_name})</search_filter>
             </user_dn_detection>
             <operation_timeout>20</operation_timeout>
             <network_timeout>20</network_timeout>

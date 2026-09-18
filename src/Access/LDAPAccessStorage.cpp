@@ -339,7 +339,7 @@ void LDAPAccessStorage::grantRoleByNameNoLock(const UUID & id, const String & ro
 }
 
 
-void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name)
+void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, UUID role_id, const String & role_name)
 {
     std::vector<UUID> user_ids;
 

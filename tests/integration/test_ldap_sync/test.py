@@ -1751,7 +1751,7 @@ def test_interserver_materialised_user_promoted_by_a_run_needs_no_lookup(
     ldap_add_user("promoted")
     admin(node1, "CREATE USER promoted IDENTIFIED BY 'local'")
     try:
-        admin(node1, "GRANT REMOTE ON *.* TO promoted")
+        admin(node1, "GRANT SELECT, SHOW COLUMNS, REMOTE ON *.* TO promoted")
         restart_node_bad_with(
             directories_bad_config(
                 only_synced_users="false",
@@ -1802,7 +1802,7 @@ def test_interserver_authentication_refuses_a_name_outside_the_snapshot(
     """
     admin(node1, "CREATE USER outside IDENTIFIED BY 'local'")
     try:
-        admin(node1, "GRANT REMOTE ON *.* TO outside")
+        admin(node1, "GRANT SELECT, SHOW COLUMNS, REMOTE ON *.* TO outside")
         restart_node_bad_with(
             directories_bad_config(), server_config=read_config("ldap_server.xml")
         )

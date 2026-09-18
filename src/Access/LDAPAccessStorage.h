@@ -113,7 +113,9 @@ private: // IAccessStorage implementations.
     static SyncParams parseSyncParams(const Poco::Util::AbstractConfiguration & config, const String & prefix, const LDAPClient::RoleSearchParamsList & role_search_params);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
-    void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
+    /// `role_id` is taken by value: a caller may pass a reference into `granted_role_ids`, which the revoke
+    /// branch erases before it uses `role_id`.
+    void applyRoleChangeNoLock(bool grant, UUID role_id, const String & role_name);
     void grantRoleByNameNoLock(const UUID & id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
