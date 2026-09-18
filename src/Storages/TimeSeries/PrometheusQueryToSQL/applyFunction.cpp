@@ -4,6 +4,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyClampFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionAbsent.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionDoubleExponentialSmoothing.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
@@ -69,6 +70,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
+
+    if (isDoubleExponentialSmoothing(function_name))
+        return applyDoubleExponentialSmoothing(function_node, std::move(arguments), context);
 
     if (isHistogramQuantile(function_name))
         return applyHistogramQuantile(function_node, std::move(arguments), context);
