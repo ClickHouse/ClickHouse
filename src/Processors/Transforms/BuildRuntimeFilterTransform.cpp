@@ -106,23 +106,48 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
 
 void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 {
-    ColumnPtr filter_column = chunk.getColumns()[filter_column_position];
-    if (cast_to_target_type)
-    {
-        filter_column = cast_to_target_type->execute(
-            {ColumnWithTypeAndName(filter_column, filter_column_original_type, "")},
-            filter_column_target_type,
-            filter_column->size(),
-            false);
-    }
+    /// `ISimpleTransform::work` turns an exception into port data without stopping input, so this
+    /// transform is re-entered on the chunks that follow a throw.
+    if (!built_filter)
+        return;
 
-    built_filter->insert(filter_column);
+    try
+    {
+        ColumnPtr filter_column = chunk.getColumns()[filter_column_position];
+        if (cast_to_target_type)
+        {
+            filter_column = cast_to_target_type->execute(
+                {ColumnWithTypeAndName(filter_column, filter_column_original_type, "")},
+                filter_column_target_type,
+                filter_column->size(),
+                false);
+        }
+
+        built_filter->insert(filter_column);
+    }
+    catch (...)
+    {
+        /// A merge on registration reads the filter's exact-value columns, which an interrupted
+        /// insert can leave mid-append.
+        built_filter.reset();
+        throw;
+    }
+}
+
+void BuildRuntimeFilterTransform::transform(std::exception_ptr &)
+{
+    /// This hook runs for an exception arriving from upstream: the build side never saw all its rows.
+    built_filter.reset();
 }
 
 void BuildRuntimeFilterTransform::finish()
 {
     /// A deserialized step has no random key and is never executed in practice; nothing to register.
     if (filter_key.empty())
+        return;
+    /// A filter missing from the lookup is all-pass on the probe side, so an abandoned build is
+    /// withheld rather than published.
+    if (!built_filter)
         return;
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterTransform");
