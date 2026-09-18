@@ -95,6 +95,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
 
 namespace Setting
@@ -1302,6 +1303,9 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     size_t timeout_ms = saturatedMilliseconds(context_copy->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()).count();
     waitForCommittingInsertsAndMutations(block_number, timeout_ms);
+
+    /// Here the block number of the update is reserved in `committing_blocks`, but its patch part is not committed yet.
+    FailPointInjection::pauseFailPoint(FailPoints::mt_lightweight_update_pause_after_block_allocation);
 
     for (const auto & partition_id : all_partitions)
     {
@@ -4079,9 +4083,18 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAnd
 
 void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
 {
-    std::lock_guard lock(committing_blocks_mutex);
-    committing_blocks.erase(block);
-    committing_blocks_cv.notify_one();
+    {
+        std::lock_guard lock(committing_blocks_mutex);
+        committing_blocks.erase(block);
+        committing_blocks_cv.notify_one();
+    }
+
+    /// `selectPartsToMutate` leaves a part alone while a lightweight update with a lower block number is
+    /// uncommitted, and the scheduler backs off when nothing is selected. The block is released on every
+    /// exit of the update, including the ones that write no patch part, so this is the one place where the
+    /// postponed mutation can be woken up as soon as it is allowed to run.
+    if (block.op == CommittingBlock::Op::Update)
+        background_operations_assignee.trigger();
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
