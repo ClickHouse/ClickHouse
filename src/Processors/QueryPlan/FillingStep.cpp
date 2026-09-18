@@ -265,8 +265,6 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);
 
-            /// Each output claims one destination column of the input header, so two outputs of the same
-            /// name would either take the pairing out of range or write one column twice per filled row.
             if (!result_column_names.emplace(column.name).second)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is an output of the interpolate expression more "

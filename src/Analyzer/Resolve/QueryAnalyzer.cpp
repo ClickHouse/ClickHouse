@@ -4246,8 +4246,8 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
 {
     auto & interpolate_node_list_typed = interpolate_node_list->as<ListNode &>();
 
-    /// The filling transform pairs each executed INTERPOLATE output with one destination column of its
-    /// input header, by position, so a column may be an INTERPOLATE output at most once.
+    /// `FillingTransform` pairs each executed `INTERPOLATE` output with one destination column of its
+    /// input header, by position, so a column may be an `INTERPOLATE` output at most once.
     NameSet interpolate_column_names;
 
     for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
