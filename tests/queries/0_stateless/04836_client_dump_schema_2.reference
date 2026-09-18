@@ -68,6 +68,7 @@ OK: local remote() source dumped before aac_remote_reader_merge
 OK: local remote() source dumped before aad_remote_mv
 OK: local remote() source dumped before aae_remote_reader_case
 OK: local remote() source dumped before aaf_remote_reader_case_port
+OK: local remote() source dumped before aag_remote_secure_reader
 --- a cluster() argument reading the session database is refused, not rebound ---
 session-database cluster() argument refused: 1
 --- a cluster() argument reading the session user is refused too ---

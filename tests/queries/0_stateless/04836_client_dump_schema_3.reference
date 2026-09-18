@@ -73,8 +73,16 @@ collections emitted into the dump: 0
 engine carrier dumped naming the collection: 1
 --- an RBAC-hidden named collection carrier is reported explicitly ---
 hidden carrier warned: 1
---- a Remote database stays visible when system.tables hides remote databases ---
-remote table present: 1
+--- Remote databases replay from database DDL, not proxy table DDL ---
+external source warning retained: 1
+Remote proxy table DDL emitted: 0
+RemoteSecure proxy table DDL emitted: 0
+OK: directory dump orders source, proxies, and readers
+OK: external database-only dump replayed
+replayed Remote table resolves: 1
+replayed RemoteSecure table resolves: 1
+replayed Remote reader exists: 1
+replayed RemoteSecure reader exists: 1
 --- a simple dump does not read protected cluster or macro metadata ---
 OK: system.clusters is denied
 OK: system.macros is denied

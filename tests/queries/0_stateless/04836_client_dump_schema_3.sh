@@ -500,25 +500,83 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 "
 rm -f "$ERR_FILE"
 
-echo '--- a Remote database stays visible when system.tables hides remote databases ---'
-REMOTE_SOURCE_DB="${DB}_remote_source"
-REMOTE_DB="${DB}_remote_proxy"
+echo '--- Remote databases replay from database DDL, not proxy table DDL ---'
+REMOTE_DB="${DB}_remote_a_proxy"
+REMOTE_SECURE_DB="${DB}_remote_b_secure_proxy"
+REMOTE_READER_DB="${DB}_remote_c_reader"
+REMOTE_SOURCE_DB="${DB}_remote_z_source"
 REMOTE_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_remote_database.sql"
+REMOTE_DUMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_remote_database_dir"
+REMOTE_DIR_OUTPUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_remote_database_dir.out"
 $CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${REMOTE_READER_DB};
+    DROP DATABASE IF EXISTS ${REMOTE_SECURE_DB};
     DROP DATABASE IF EXISTS ${REMOTE_DB};
     DROP DATABASE IF EXISTS ${REMOTE_SOURCE_DB};
     CREATE DATABASE ${REMOTE_SOURCE_DB};
     CREATE TABLE ${REMOTE_SOURCE_DB}.visible_table (id UInt64) ENGINE = MergeTree ORDER BY id;
-    CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${REMOTE_SOURCE_DB}', 'default', '');
+    CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${REMOTE_SOURCE_DB}');
+    CREATE DATABASE ${REMOTE_SECURE_DB} ENGINE = RemoteSecure('127.0.0.1:${CLICKHOUSE_PORT_TCP_SECURE}', '${REMOTE_SOURCE_DB}');
+    CREATE DATABASE ${REMOTE_READER_DB};
+    CREATE VIEW ${REMOTE_READER_DB}.from_remote AS SELECT * FROM ${REMOTE_DB}.visible_table;
+    CREATE VIEW ${REMOTE_READER_DB}.from_remote_secure AS SELECT * FROM ${REMOTE_SECURE_DB}.visible_table;
 "
 if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 --dump-schema="${REMOTE_DB}" \
     > "$REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
-    echo "remote table present: $(grep -c "CREATE TABLE ${REMOTE_DB}\.visible_table" "$REMOTE_DUMP_FILE")"
+    echo "external source warning retained: $(grep -c "${REMOTE_DB}\.visible_table depends on ${REMOTE_SOURCE_DB}\.visible_table" "$ERR_FILE")"
 else
     echo "FAIL: remote database dump rejected: $(cat "$ERR_FILE")"
 fi
-$CLICKHOUSE_CLIENT --multiquery --query "DROP DATABASE ${REMOTE_DB}; DROP DATABASE ${REMOTE_SOURCE_DB} SYNC;"
-rm -f "$REMOTE_DUMP_FILE" "$ERR_FILE"
+
+REMOTE_DATABASES="${REMOTE_READER_DB},${REMOTE_SECURE_DB},${REMOTE_DB},${REMOTE_SOURCE_DB}"
+if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 --dump-schema="$REMOTE_DATABASES" \
+    > "$REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
+    echo "Remote proxy table DDL emitted: $(grep -c "CREATE TABLE ${REMOTE_DB}\.visible_table" "$REMOTE_DUMP_FILE")"
+    echo "RemoteSecure proxy table DDL emitted: $(grep -c "CREATE TABLE ${REMOTE_SECURE_DB}\.visible_table" "$REMOTE_DUMP_FILE")"
+else
+    echo "FAIL: combined remote database dump rejected: $(cat "$ERR_FILE")"
+fi
+
+rm -rf "$REMOTE_DUMP_DIR"
+if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 --dump-schema="$REMOTE_DATABASES" \
+    --dump-schema-dir="$REMOTE_DUMP_DIR" > "$REMOTE_DIR_OUTPUT" 2>"$ERR_FILE"; then
+    SOURCE_LINE=$(grep -n "Dumped database ${REMOTE_SOURCE_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
+    REMOTE_LINE=$(grep -n "Dumped database ${REMOTE_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
+    SECURE_LINE=$(grep -n "Dumped database ${REMOTE_SECURE_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
+    READER_LINE=$(grep -n "Dumped database ${REMOTE_READER_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
+    if [ "$SOURCE_LINE" -lt "$REMOTE_LINE" ] && [ "$SOURCE_LINE" -lt "$SECURE_LINE" ] \
+        && [ "$REMOTE_LINE" -lt "$READER_LINE" ] && [ "$SECURE_LINE" -lt "$READER_LINE" ]; then
+        echo 'OK: directory dump orders source, proxies, and readers'
+    else
+        echo "FAIL: directory order source=$SOURCE_LINE remote=$REMOTE_LINE secure=$SECURE_LINE reader=$READER_LINE"
+    fi
+else
+    echo "FAIL: remote database directory dump rejected: $(cat "$ERR_FILE")"
+fi
+
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE ${REMOTE_READER_DB};
+    DROP DATABASE ${REMOTE_SECURE_DB};
+    DROP DATABASE ${REMOTE_DB};
+    DROP DATABASE ${REMOTE_SOURCE_DB} SYNC;
+"
+if $CLICKHOUSE_CLIENT --multiquery --queries-file "$REMOTE_DUMP_FILE" > /dev/null 2>"$ERR_FILE"; then
+    echo 'OK: external database-only dump replayed'
+    echo "replayed Remote table resolves: $($CLICKHOUSE_CLIENT -q "EXISTS TABLE ${REMOTE_DB}.visible_table")"
+    echo "replayed RemoteSecure table resolves: $($CLICKHOUSE_CLIENT -q "EXISTS TABLE ${REMOTE_SECURE_DB}.visible_table")"
+    echo "replayed Remote reader exists: $($CLICKHOUSE_CLIENT -q "EXISTS VIEW ${REMOTE_READER_DB}.from_remote")"
+    echo "replayed RemoteSecure reader exists: $($CLICKHOUSE_CLIENT -q "EXISTS VIEW ${REMOTE_READER_DB}.from_remote_secure")"
+else
+    echo "FAIL: remote database dump did not replay: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${REMOTE_READER_DB};
+    DROP DATABASE IF EXISTS ${REMOTE_SECURE_DB};
+    DROP DATABASE IF EXISTS ${REMOTE_DB};
+    DROP DATABASE IF EXISTS ${REMOTE_SOURCE_DB} SYNC;
+"
+rm -rf "$REMOTE_DUMP_DIR"
+rm -f "$REMOTE_DUMP_FILE" "$REMOTE_DIR_OUTPUT" "$ERR_FILE"
 
 echo '--- a simple dump does not read protected cluster or macro metadata ---'
 LEAN_DB="${DB}_lean_rbac"

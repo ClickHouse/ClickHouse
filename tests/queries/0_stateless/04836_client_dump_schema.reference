@@ -2,6 +2,7 @@
 legacy-named user table present: 1
 engine-owned helpers in dump: 0
 --- a dump containing gated object types replays into a default session ---
+dump enables the Ordinary setting: 1
 dump enables the TimeSeries setting: 1
 OK: replayed into a default session
 replayed TimeSeries table present: 1
