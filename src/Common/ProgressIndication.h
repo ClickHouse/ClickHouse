@@ -25,15 +25,13 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
-    /// Per-packet byte deltas for the live IO rate. IO sums block-device reads/writes
-    /// (`OSReadBytes`/`OSWriteBytes`), object-storage reads/writes (S3, Azure), HTTP payload
-    /// bytes, and ClickHouse's own network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
+    /// Per-packet IO byte deltas except `NetworkSendBytes`.
     UInt64 io_bytes = 0;
 
-    /// Bytes of `io_bytes` the server spent on the progress reporting itself (Progress,
-    /// ProfileEvents and Logs packets); subtracted, so that an idle or stalled query does not
-    /// show the meter's own traffic as query IO.
+    /// Per-packet `NetworkSendBytes` and the service-packet subset to subtract.
+    UInt64 network_send_bytes = 0;
     UInt64 protocol_service_bytes = 0;
+    bool has_protocol_service_bytes = false;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;

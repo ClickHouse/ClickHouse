@@ -1944,10 +1944,8 @@ function accumulateResourceEvents(state, events)
             continue;
         }
 
-        /// IO (disk + object storage + network) byte counters are per-packet increments; accumulate
-        /// them all into one sum to derive the live IO rate, like `clickhouse-client` - minus
-        /// `NetworkSendBytes`: this page always gets a compressed response, so its own framed service
-        /// packets are in that counter with no per-packet size to subtract (`FramingServiceBytes` is 0).
+        /// Exclude compressed `NetworkSendBytes`, whose service bytes cannot be separated; decoded
+        /// result payloads add the browser-download leg in `makeEventStreamHandler` instead.
         if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
             || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
             || e.name === 'ReadWriteBufferFromHTTPBytes' || e.name === 'WriteBufferFromHTTPBytes'
@@ -9900,7 +9898,8 @@ function plainOutputDropsTotalsAndExtremes(format)
 
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
 /// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
-/// reached); `options.resourceMeter`, if given, receives profile-event batches for the live meters;
+/// reached); `options.resourceMeter` receives profile-event batches and `options.payloadMeter`
+/// receives decoded result-payload byte counts for the live meters;
 /// `options.onBytes`, if given (a non-default output format under the base64 wire, see
 /// `makeVerbatimPayloadSink`), receives the base64-decoded payload bytes; `options.onException` is
 /// called when an `exception` packet arrives (the query failed even if the HTTP status was already
@@ -9951,6 +9950,11 @@ function makeEventStreamHandler(targetResultEl, options = {})
     {
         if (name === 'data' || name === 'totals' || name === 'extremes')
         {
+            const payload_bytes = options.base64
+                ? base64ToBytes(dataLines.join(''))
+                : new TextEncoder().encode(dataLines.join('\n'));
+            if (options.payloadMeter) options.payloadMeter(payload_bytes.length);
+
             /// Both verbatim modes below (the base64 bytes and the raw text) rebuild the output of
             /// the format itself by concatenating the payloads, so for a format whose plain output
             /// drops the totals and the extremes rows only the `data` packets belong to it - the
@@ -9964,11 +9968,11 @@ function makeEventStreamHandler(targetResultEl, options = {})
             /// off to the sink, which streams text incrementally or renders an image at the end.
             if (options.onBytes)
             {
-                options.onBytes(base64ToBytes(dataLines.join('')));
+                options.onBytes(payload_bytes);
                 return;
             }
             const payload = payload_decoder
-                ? payload_decoder.decode(base64ToBytes(dataLines.join('')), { stream: true })
+                ? payload_decoder.decode(payload_bytes, { stream: true })
                 : dataLines.join('\n');
             /// For a non-default output format (`options.rawText`), the payload is the format's own
             /// text (e.g. `Pretty`, `TSV`), shown verbatim: concatenating the payloads reproduces
@@ -10114,6 +10118,7 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, format, ta
         base64,
         replay: true,
         resourceMeter: tab ? (events) => accumulateResourceEvents(tab.resources, events) : undefined,
+        payloadMeter: tab ? (bytes) => { tab.resources.io_bytes += bytes; } : undefined,
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
@@ -10198,6 +10203,7 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
         rawText,
         format,
         base64,
+        payloadMeter: (bytes) => { tab.resources.io_bytes += bytes; },
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
         onException: () => { saw_exception = true; },
     });
