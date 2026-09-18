@@ -8385,10 +8385,13 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
   *
   * A patch is compared by its data version, as it is there: the mutation component of a patch part's
   * name is the highest data version it patches, so a patch that the base parts have already been
-  * mutated past - what `APPLY PATCHES` does - is no reason to refuse anything.
+  * mutated past - what `APPLY PATCHES` does - is no reason to refuse anything. The bound has to be the
+  * *lowest* data version among the base parts, exactly as in `assertNoPatchesForParts`: a part inserted
+  * after an update carries a higher version than the update's patch, so a bound taken from it would
+  * let that patch - still pending for the older parts - pass unnoticed.
   */
 static Strings findPatchPartsAboveDataVersion(
-    const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id, Int64 max_data_version)
+    const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id, Int64 data_version)
 {
     Strings patch_parts;
     for (const auto & part_name : part_names)
@@ -8397,33 +8400,33 @@ static Strings findPatchPartsAboveDataVersion(
         if (!part_info)
             continue;
 
-        if (isPatchForPartition(*part_info, partition_id) && part_info->getDataVersion() > max_data_version)
+        if (isPatchForPartition(*part_info, partition_id) && part_info->getDataVersion() > data_version)
             patch_parts.push_back(part_name);
     }
     return patch_parts;
 }
 
-static Int64 getMaxDataVersion(const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id)
+static Int64 getMinDataVersion(const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id)
 {
-    Int64 max_data_version = 0;
+    Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & part_name : part_names)
     {
         auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
         if (part_info && part_info->getPartitionId() == partition_id)
-            max_data_version = std::max(max_data_version, part_info->getDataVersion());
+            min_data_version = std::min(min_data_version, part_info->getDataVersion());
     }
-    return max_data_version;
+    return min_data_version;
 }
 
 static void assertSourceHasNoPatchesForPartition(
     const Strings & source_part_names,
     MergeTreeDataFormatVersion format_version,
     const String & partition_id,
-    Int64 max_data_version,
+    Int64 min_data_version,
     const String & source_path,
     std::string_view command)
 {
-    auto patch_parts = findPatchPartsAboveDataVersion(source_part_names, format_version, partition_id, max_data_version);
+    auto patch_parts = findPatchPartsAboveDataVersion(source_part_names, format_version, partition_id, min_data_version);
     if (patch_parts.empty())
         return;
 
@@ -8608,7 +8611,7 @@ void StorageReplicatedMergeTree::fetchPartition(
             parts,
             format_version,
             partition_id,
-            getMaxDataVersion(active_parts_set.getParts(), format_version, partition_id),
+            getMinDataVersion(active_parts_set.getParts(), format_version, partition_id),
             best_replica_path,
             "FETCH PARTITION " + partition_id + " FROM " + from_);
 
