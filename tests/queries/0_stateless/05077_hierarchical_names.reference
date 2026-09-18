@@ -9,8 +9,6 @@
 2	b
 1	a
 2	b
-1	a
-2	b
 --- creating a table in an existing namespace, but not in a new one
 2
 2
