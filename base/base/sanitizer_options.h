@@ -90,11 +90,20 @@ const char * __tsan_default_suppressions()
     /// `core::sync::atomic::fence` (unlike clang, which models `std::atomic_thread_fence`), so
     /// every such handover is reported as a race on the payload. Both the sending and the
     /// receiving side are named, because either can be the stack that a report is matched on.
+    ///
+    /// Only the three functions that touch the payload are named - `write_message`,
+    /// `take_message` and `drop_message` - plus the two callers they are inlined into, so that a
+    /// race anywhere else in the crate (the state machine, the waker, the allocation) is still
+    /// reported. `race:` matches any frame, so a wider pattern would also blind a
+    /// heap-use-after-free seen through it.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
            "race:^DB::getRequestBytesCost\n"
-           "race:oneshot::channel::Channel\n"
-           "race:oneshot::receiver::\n";
+           "race:oneshot::channel::Channel*::write_message\n"
+           "race:oneshot::channel::Channel*::take_message\n"
+           "race:oneshot::channel::Channel*::drop_message\n"
+           "race:oneshot::sender::Sender*::send\n"
+           "race:oneshot::receiver::Receiver*::poll\n";
 }
 #endif
 
