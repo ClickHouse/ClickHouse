@@ -79,6 +79,12 @@ void ConfigurationWithUsageTracking::markAsUsed(const String & key) const
     used_keys.insert(normalizeKey(key));
 }
 
+std::unordered_set<String> ConfigurationWithUsageTracking::getUsedKeys() const
+{
+    std::lock_guard lock(mutex);
+    return used_keys;
+}
+
 bool ConfigurationWithUsageTracking::isUsed(const String & key) const
 {
     std::lock_guard lock(mutex);

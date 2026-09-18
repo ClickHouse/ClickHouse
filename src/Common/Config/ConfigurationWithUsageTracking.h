@@ -31,6 +31,11 @@ public:
     /// Remember a key as used, for the keys that are read by someone else, not through this object.
     void markAsUsed(const String & key) const;
 
+    /// The keys that have been read through this object or marked as used, in a normalized form.
+    /// Only the set of names is returned: it does not touch the configuration behind this object,
+    /// which makes it usable when that configuration is already gone (after a configuration reload).
+    std::unordered_set<String> getUsedKeys() const;
+
     /// The leaf keys inside `prefix` that were neither read through this object nor marked as used.
     /// An empty prefix means the whole configuration. The names are returned relative to `prefix`.
     /// Reading a section itself does not make the keys inside it used: `has` of a section is only

@@ -177,7 +177,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         {
             auto disk = old_disks_minus_new_disks[disk_name];
 
-            disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
+            factory.applyNewSettings(disk, disk_name, config, disk_config_prefix, context, result->getDisksMap());
 
             old_disks_minus_new_disks.erase(disk_name);
         }

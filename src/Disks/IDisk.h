@@ -599,6 +599,13 @@ public:
         creation_config = std::move(config);
     }
 
+    /// The proxy the disk was created from, see `keepConfigurationAlive`. It is used to find out
+    /// which elements of the definition of the disk are read by this disk type.
+    std::shared_ptr<const ConfigurationWithUsageTracking> getCreationConfiguration() const
+    {
+        return creation_config;
+    }
+
 protected:
     const String name;
 

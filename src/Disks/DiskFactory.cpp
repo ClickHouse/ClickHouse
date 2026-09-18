@@ -92,6 +92,47 @@ DiskPtr DiskFactory::create(
     return disk;
 }
 
+void DiskFactory::applyNewSettings(
+    const DiskPtr & disk,
+    const String & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    const DisksMap & map) const
+{
+    /// The keys that were read while this disk was created. A key is remembered even when it is
+    /// absent from the configuration, so this is the set of the elements this disk type supports,
+    /// not only the set of the elements that were present. A disk of an unknown origin - one that
+    /// was not created by this factory, such as the implicit `default` disk - cannot be checked.
+    const auto creation_config = disk->getCreationConfiguration();
+
+    /// Only the names of the keys are taken from it: the configuration it was created from is
+    /// already replaced by the new one at this point.
+    auto tracked_config = std::make_shared<ConfigurationWithUsageTracking>(config);
+    if (creation_config)
+    {
+        for (const auto & key : creation_config->getUsedKeys())
+            tracked_config->markAsUsed(key);
+    }
+
+    /// `type` is read by the factory, not by the disk itself.
+    const auto disk_type = tracked_config->getString(config_prefix + ".type", "local");
+
+    /// Unlike the creation of a disk, `applyNewSettings` does not keep a reference to the
+    /// configuration anywhere: it reads the settings it supports and returns, so this proxy is not
+    /// kept alive after the call. The proxy of the creation must not be replaced by it either -
+    /// the parts of the disk that read the configuration later still refer to that one.
+    disk->applyNewSettings(*tracked_config, context, config_prefix, map);
+
+    if (!creation_config)
+        return;
+
+    /// An element added by the reload that neither the creation of this disk nor `applyNewSettings`
+    /// reads does nothing, exactly as it does nothing at the start of the server, where it is
+    /// reported as well. The elements that were already there have passed the same check already.
+    checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context);
+}
+
 void DiskFactory::checkForUnknownKeys(
     const ConfigurationWithUsageTracking & tracked_config,
     const String & name,
