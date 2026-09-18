@@ -34,6 +34,7 @@ SELECT id FROM k_has_lc WHERE has(m, toFixedString('K1', 3)) ORDER BY id;
 1
 SELECT id FROM k_has_lc WHERE mapContainsKey(m, toFixedString('K1', 3)) ORDER BY id;
 0
+1
 -- One logical value has several stored spellings among the `String` keys, so the index declines:
 -- no stage selects more than zero and fewer than all granules.
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_has_lc WHERE has(m, toFixedString('K1', 3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));

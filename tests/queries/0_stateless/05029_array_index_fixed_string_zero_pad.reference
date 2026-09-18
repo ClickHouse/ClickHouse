@@ -72,6 +72,11 @@ array elem hasSubstr	0	0
 array elem hasAny wider fs needle	1	1
 array elem indexOfAssumeSorted	0	0
 array elem indexOfAssumeSorted wider fs needle	1	1
+lc array elem, padded spelling	1	1
+lc array elem, plain spelling	1	1
+lc array elem indexOf	1	1
+lc array elem countEqual	1	1
+lc array elem, unpadded needle	1	1
 hasAny hasAll hasSubstr
 fs4 needle, const	1	1	1
 fs4 needle, materialized	1	1	1
@@ -90,6 +95,8 @@ has, array elem	1
 has, array elem materialized	1
 has, array elem wider fs needle	1
 has, map elem	1
+has, lc array elem	1
+has, lc array elem materialized	1
 has, nullable elem	1
 indexOf, const	1
 countEqual, const	1

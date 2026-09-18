@@ -218,6 +218,29 @@ select 'array elem indexOfAssumeSorted wider fs needle',
     indexOfAssumeSorted([[toFixedString('V0', 3)]], [toFixedString('V0', 4)]),
     indexOfAssumeSorted(materialize([[toFixedString('V0', 3)]]), [toFixedString('V0', 4)]);
 
+-- `Array(LowCardinality(T))` is searched by comparing dictionary indices, and one value under the
+-- rule spans several dictionary entries, so that path declines to the one comparing values. Every
+-- stored spelling of the key has to be found.
+select 'lc array elem, padded spelling',
+    has(cast(['K1\0'], 'Array(LowCardinality(String))'), toFixedString('K1', 3)),
+    has(materialize(cast(['K1\0'], 'Array(LowCardinality(String))')), toFixedString('K1', 3));
+select 'lc array elem, plain spelling',
+    has(cast(['K1'], 'Array(LowCardinality(String))'), toFixedString('K1', 3)),
+    has(materialize(cast(['K1'], 'Array(LowCardinality(String))')), toFixedString('K1', 3));
+select 'lc array elem indexOf',
+    indexOf(cast(['K1\0'], 'Array(LowCardinality(String))'), toFixedString('K1', 3)),
+    indexOf(materialize(cast(['K1\0'], 'Array(LowCardinality(String))')), toFixedString('K1', 3));
+select 'lc array elem countEqual',
+    countEqual(cast(['K1\0'], 'Array(LowCardinality(String))'), toFixedString('K1', 3)),
+    countEqual(materialize(cast(['K1\0'], 'Array(LowCardinality(String))')), toFixedString('K1', 3));
+-- A `LowCardinality(FixedString(N))` dictionary holds one spelling per value, so it keeps the
+-- dictionary comparison, and an over-wide constant still raises rather than being answered.
+select has(cast([toFixedString('K1', 3)], 'Array(LowCardinality(FixedString(3)))'), toFixedString('K1', 4)); -- { serverError TOO_LARGE_STRING_SIZE }
+-- An unpadded needle is unaffected and keeps the dictionary comparison.
+select 'lc array elem, unpadded needle',
+    has(cast(['K1'], 'Array(LowCardinality(String))'), 'K1'),
+    has(materialize(cast(['K1'], 'Array(LowCardinality(String))')), 'K1');
+
 -- `hasAny`, `hasAll` and `hasSubstr` share one comparison with `has` and must not disagree with it
 -- on the same operands. Every array argument here is a one-element array, so all four reduce to the
 -- same question. Both a constant and a materialized haystack, since that is the split the issue is
@@ -273,6 +296,11 @@ select 'has, array elem wider fs needle', has([[toFixedString('V0', 3)]], [toFix
     = ([toFixedString('V0', 3)] = [toFixedString('V0', 4)]);
 select 'has, map elem',     has([map('k', toFixedString('V0', 3))], map('k', 'V0\0'))
     = (map('k', toFixedString('V0', 3)) = map('k', 'V0\0'));
+select 'has, lc array elem',  has(cast(['K1\0'], 'Array(LowCardinality(String))'), toFixedString('K1', 3))
+    = ('K1\0' = toFixedString('K1', 3));
+select 'has, lc array elem materialized',
+    has(materialize(cast(['K1\0'], 'Array(LowCardinality(String))')), toFixedString('K1', 3))
+    = ('K1\0' = toFixedString('K1', 3));
 select 'has, nullable elem',
     has(cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'), toFixedString('V0', 4))
     = arrayExists(x -> x = toFixedString('V0', 4), cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'));

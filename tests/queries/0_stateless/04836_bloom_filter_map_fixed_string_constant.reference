@@ -76,6 +76,7 @@ SELECT (SELECT count() FROM k_lc WHERE mapContainsKey(m, toFixedString('K1', 3))
 1
 SELECT id FROM k_lc WHERE mapContainsKey(m, toFixedString('K1', 3)) ORDER BY id;
 0
+1
 -- `LowCardinality(FixedString(3))` keys: the direct cast to the dictionary type rejects an
 -- over-wide constant by width alone, so the index must decline and keep the error reachable
 -- instead of pruning everything into a silent 0.

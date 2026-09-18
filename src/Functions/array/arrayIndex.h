@@ -956,6 +956,14 @@ private:
             && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
             return nullptr;
 
+        /// `dictionaryIndexForConstant` is not padding-aware: it strips the needle's padding, then
+        /// matches one dictionary slot byte-exactly, which cannot cover a value with different padding.
+        /// Only bail for a `String` dictionary: a `FixedString(N)` has one consistent padded version, and
+        /// narrowing an over-wide constant to it raises `TOO_LARGE_STRING_SIZE`, which stays reachable.
+        /// TODO: keep the index comparison by collecting every matching dictionary entry.
+        if (zeroPaddedComparison(arguments) && isString(removeLowCardinalityAndNullable(array_type.getNestedType())))
+            return nullptr;
+
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
