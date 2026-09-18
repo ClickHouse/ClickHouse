@@ -5,6 +5,8 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteBuffer.h>
 
+#include <algorithm>
+#include <array>
 #include <charconv>
 #include <queue>
 
@@ -55,6 +57,12 @@ constexpr UInt32 invalid_code_point = 0xFFFFFFFFu;
 
 UInt32 codePointAt(std::string_view text, size_t pos, size_t & length)
 {
+    if (const auto byte = static_cast<UInt8>(text[pos]); byte < 0x80)
+    {
+        length = 1;
+        return byte;
+    }
+
     const size_t sequence_length = UTF8::seqLength(static_cast<UInt8>(text[pos]));
     if (sequence_length <= text.size() - pos)
     {
@@ -68,43 +76,73 @@ UInt32 codePointAt(std::string_view text, size_t pos, size_t & length)
     return invalid_code_point;
 }
 
-bool inCategories(UInt32 code_point, uint32_t mask)
+/// The classes the pre-tokenizers test. They are asked of every character of the text, several
+/// at a time, so for the Basic Multilingual Plane they are taken from ICU once and kept in a table;
+/// a class read from the table is the class ICU gives.
+namespace CharacterClass
 {
-    return code_point != invalid_code_point && (U_GET_GC_MASK(static_cast<UChar32>(code_point)) & mask) != 0;
+    constexpr UInt32 letter = 1;        /// `\p{L}`
+    constexpr UInt32 number = 2;        /// `\p{N}`
+    constexpr UInt32 whitespace = 4;    /// `\s`, the Unicode `White_Space` property: NBSP is in it, a zero width space is not
+    constexpr UInt32 uppercaseish = 8;  /// `[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]` of the `o200k` shape
+    constexpr UInt32 lowercaseish = 16; /// `[\p{Ll}\p{Lm}\p{Lo}\p{M}]` of the `o200k` shape
 }
 
-/// `\p{L}` and `\p{N}`.
-bool isLetter(UInt32 code_point) { return inCategories(code_point, U_GC_L_MASK); }
-bool isNumber(UInt32 code_point) { return inCategories(code_point, U_GC_N_MASK); }
+UInt32 classesFromICU(UInt32 code_point)
+{
+    const auto c = static_cast<UChar32>(code_point);
+    const uint32_t mask = U_GET_GC_MASK(c);
+    UInt32 classes = 0;
+    if (mask & U_GC_L_MASK)
+        classes |= CharacterClass::letter;
+    if (mask & U_GC_N_MASK)
+        classes |= CharacterClass::number;
+    if (u_hasBinaryProperty(c, UCHAR_WHITE_SPACE))
+        classes |= CharacterClass::whitespace;
+    if (mask & (U_GC_LU_MASK | U_GC_LT_MASK | U_GC_LM_MASK | U_GC_LO_MASK | U_GC_M_MASK))
+        classes |= CharacterClass::uppercaseish;
+    if (mask & (U_GC_LL_MASK | U_GC_LM_MASK | U_GC_LO_MASK | U_GC_M_MASK))
+        classes |= CharacterClass::lowercaseish;
+    return classes;
+}
 
-/// `[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]` and `[\p{Ll}\p{Lm}\p{Lo}\p{M}]` of the `o200k` shape. The two
-/// overlap in `\p{Lm}`, `\p{Lo}` and `\p{M}`, which is what makes that shape need backtracking.
-bool isUppercaseish(UInt32 code_point)
+UInt32 classesOf(UInt32 code_point)
 {
-    return inCategories(code_point, U_GC_LU_MASK | U_GC_LT_MASK | U_GC_LM_MASK | U_GC_LO_MASK | U_GC_M_MASK);
-}
-bool isLowercaseish(UInt32 code_point)
-{
-    return inCategories(code_point, U_GC_LL_MASK | U_GC_LM_MASK | U_GC_LO_MASK | U_GC_M_MASK);
+    static constexpr UInt32 table_size = 0x10000;
+    static const auto table = []
+    {
+        std::array<UInt8, table_size> result{};
+        for (UInt32 c = 0; c < table_size; ++c)
+            result[c] = static_cast<UInt8>(classesFromICU(c));
+        return result;
+    }();
+
+    if (code_point < table_size)
+        return table[code_point];
+    if (code_point == invalid_code_point)
+        return 0;
+    return classesFromICU(code_point);
 }
 
-/// `\s`, which in the regular expressions of `tiktoken` is the Unicode `White_Space` property, so
-/// it holds for NBSP but not for a zero width space.
-bool isWhitespace(UInt32 code_point)
-{
-    return code_point != invalid_code_point && u_hasBinaryProperty(static_cast<UChar32>(code_point), UCHAR_WHITE_SPACE);
-}
+bool isLetter(UInt32 code_point) { return classesOf(code_point) & CharacterClass::letter; }
+bool isNumber(UInt32 code_point) { return classesOf(code_point) & CharacterClass::number; }
+bool isWhitespace(UInt32 code_point) { return classesOf(code_point) & CharacterClass::whitespace; }
+
+/// The two overlap in `\p{Lm}`, `\p{Lo}` and `\p{M}`, which is what makes the `o200k` shape need
+/// backtracking.
+bool isUppercaseish(UInt32 code_point) { return classesOf(code_point) & CharacterClass::uppercaseish; }
+bool isLowercaseish(UInt32 code_point) { return classesOf(code_point) & CharacterClass::lowercaseish; }
 
 /// `[^\s\p{L}\p{N}]`.
 bool isPunctuationish(UInt32 code_point)
 {
-    return !isWhitespace(code_point) && !isLetter(code_point) && !isNumber(code_point);
+    return !(classesOf(code_point) & (CharacterClass::whitespace | CharacterClass::letter | CharacterClass::number));
 }
 
 /// `[^\r\n\p{L}\p{N}]`, the optional first character of a word in the `cl100k` and `o200k` shapes.
 bool isWordPrefix(UInt32 code_point)
 {
-    return code_point != '\r' && code_point != '\n' && !isLetter(code_point) && !isNumber(code_point);
+    return code_point != '\r' && code_point != '\n' && !(classesOf(code_point) & (CharacterClass::letter | CharacterClass::number));
 }
 
 bool isNewline(UInt32 code_point) { return code_point == '\r' || code_point == '\n'; }
@@ -114,7 +152,7 @@ size_t scanWhile(std::string_view text, size_t pos, Predicate && predicate)
 {
     while (pos < text.size())
     {
-        size_t length;
+        size_t length = 0;
         if (!predicate(codePointAt(text, pos, length)))
             break;
         pos += length;
@@ -168,7 +206,7 @@ WhitespaceRun scanWhitespace(std::string_view text, size_t pos)
     WhitespaceRun run{pos, pos, 0};
     while (run.end < text.size())
     {
-        size_t length;
+        size_t length = 0;
         const UInt32 code_point = codePointAt(text, run.end, length);
         if (!isWhitespace(code_point))
             break;
@@ -192,7 +230,7 @@ size_t nextPieceR50k(std::string_view text, size_t pos)
     const size_t start = text[pos] == ' ' ? pos + 1 : pos;
     if (start < text.size())
     {
-        size_t length;
+        size_t length = 0;
         const UInt32 code_point = codePointAt(text, start, length);
         if (isLetter(code_point))
             return scanWhile(text, start, isLetter) - pos;
@@ -208,7 +246,7 @@ size_t nextPieceR50k(std::string_view text, size_t pos)
     if (run.last_start > pos)
         return run.last_start - pos; /// `\s+(?!\S)`
 
-    size_t length;
+    size_t length = 0;
     codePointAt(text, pos, length);
     return length; /// `\s`
 }
@@ -219,7 +257,7 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
     if (size_t length = contractionLength(text, pos, /*case_insensitive=*/true))
         return length;
 
-    size_t first_length;
+    size_t first_length = 0;
     const UInt32 first = codePointAt(text, pos, first_length);
 
     /// `[^\r\n\p{L}\p{N}]?+\p{L}++`. The optional character is possessive: once it is taken and no
@@ -228,7 +266,7 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
         const size_t start = isWordPrefix(first) ? pos + first_length : pos;
         if (start < text.size())
         {
-            size_t length;
+            size_t length = 0;
             if (isLetter(codePointAt(text, start, length)))
                 return scanWhile(text, start, isLetter) - pos;
         }
@@ -240,7 +278,7 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
         size_t end = pos;
         for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
         {
-            size_t length;
+            size_t length = 0;
             if (!isNumber(codePointAt(text, end, length)))
                 break;
             end += length;
@@ -253,7 +291,7 @@ size_t nextPieceCl100k(std::string_view text, size_t pos)
         const size_t start = first == ' ' ? pos + 1 : pos;
         if (start < text.size())
         {
-            size_t length;
+            size_t length = 0;
             if (isPunctuationish(codePointAt(text, start, length)))
             {
                 const size_t end = scanWhile(text, start, isPunctuationish);
@@ -281,7 +319,7 @@ size_t matchO200kWord(std::string_view text, size_t pos)
 {
     size_t prefix_length = 0;
     {
-        size_t length;
+        size_t length = 0;
         if (isWordPrefix(codePointAt(text, pos, length)))
             prefix_length = length;
     }
@@ -302,7 +340,7 @@ size_t matchO200kWord(std::string_view text, size_t pos)
                 /// gives back starts a lower case run, which the first alternative needs.
                 for (size_t candidate = upper_end; candidate >= start;)
                 {
-                    size_t length;
+                    size_t length = 0;
                     if (candidate < text.size() && isLowercaseish(codePointAt(text, candidate, length)))
                     {
                         const size_t end = scanWhile(text, candidate, isLowercaseish);
@@ -336,7 +374,7 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
     if (size_t length = matchO200kWord(text, pos))
         return length;
 
-    size_t first_length;
+    size_t first_length = 0;
     const UInt32 first = codePointAt(text, pos, first_length);
 
     /// `\p{N}{1,3}`
@@ -345,7 +383,7 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
         size_t end = pos;
         for (size_t digit = 0; digit < 3 && end < text.size(); ++digit)
         {
-            size_t length;
+            size_t length = 0;
             if (!isNumber(codePointAt(text, end, length)))
                 break;
             end += length;
@@ -358,7 +396,7 @@ size_t nextPieceO200k(std::string_view text, size_t pos)
         const size_t start = first == ' ' ? pos + 1 : pos;
         if (start < text.size())
         {
-            size_t length;
+            size_t length = 0;
             if (isPunctuationish(codePointAt(text, start, length)))
             {
                 const size_t end = scanWhile(text, start, isPunctuationish);
@@ -404,7 +442,7 @@ size_t nextBPEPiece(BPEPretokenizer, std::string_view, size_t)
 
 std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view contents, BPEPretokenizer pretokenizer)
 {
-    auto vocabulary = std::shared_ptr<BPEVocabulary>(new BPEVocabulary);
+    auto vocabulary = std::make_shared<BPEVocabulary>();
     vocabulary->pretokenizer = pretokenizer;
 
     size_t line_number = 0;
@@ -492,13 +530,77 @@ std::shared_ptr<const BPEVocabulary> BPEVocabulary::parse(std::string_view conte
 
 UInt32 BPEVocabulary::rankOf(std::string_view piece) const
 {
-    const auto it = ranks.find(piece);
+    const auto * it = ranks.find(piece);
     return it == nullptr ? no_rank : it->getMapped();
 }
 
 void BPEVocabulary::encodePiece(std::string_view piece, PaddedPODArray<UInt32> & result) const
 {
-    /// The piece is taken apart into its bytes, and the adjacent pair whose concatenation has the
+    /// A short piece, which is what ordinary text is made of, is merged the way `tiktoken` merges:
+    /// after every merge the parts are scanned for the lowest ranked pair, the leftmost one on a tie.
+    /// The scan is quadratic in the length of the piece, but it runs on the stack, where the heap
+    /// below would ask the allocator for memory on every piece.
+    static constexpr size_t max_short_piece = 64;
+    if (piece.size() <= max_short_piece)
+    {
+        struct Part
+        {
+            UInt32 start;
+            /// The rank of the merge of this part with the next one.
+            UInt32 rank;
+        };
+
+        /// A piece of a single byte is a token, so it never gets here.
+        chassert(piece.size() >= 2);
+        const size_t size = piece.size();
+        std::array<Part, max_short_piece + 1> parts{};
+        size_t count = size + 1;
+        for (size_t i = 0; i + 1 < size; ++i)
+            parts[i] = {static_cast<UInt32>(i), rankOf(piece.substr(i, 2))};
+        parts[size - 1] = {static_cast<UInt32>(size - 1), no_rank};
+        parts[size] = {static_cast<UInt32>(size), no_rank};
+
+        /// The rank of the merge of part `i` with the two parts after it, taken before the second of
+        /// the three is removed.
+        const auto rank_after_merge = [&](size_t i) -> UInt32
+        {
+            if (i + 3 >= count)
+                return no_rank;
+            return rankOf(piece.substr(parts[i].start, parts[i + 3].start - parts[i].start));
+        };
+
+        while (true)
+        {
+            UInt32 min_rank = no_rank;
+            size_t min_index = 0;
+            for (size_t i = 0; i + 1 < count; ++i)
+            {
+                if (parts[i].rank < min_rank)
+                {
+                    min_rank = parts[i].rank;
+                    min_index = i;
+                }
+            }
+            if (min_rank == no_rank)
+                break;
+
+            if (min_index > 0)
+                parts[min_index - 1].rank = rank_after_merge(min_index - 1);
+            parts[min_index].rank = rank_after_merge(min_index);
+            std::copy(parts.begin() + min_index + 2, parts.begin() + count, parts.begin() + min_index + 1);
+            --count;
+        }
+
+        for (size_t i = 0; i + 1 < count; ++i)
+        {
+            const UInt32 rank = rankOf(piece.substr(parts[i].start, parts[i + 1].start - parts[i].start));
+            chassert(rank != no_rank);
+            result.push_back(rank);
+        }
+        return;
+    }
+
+    /// A long piece is taken apart into its bytes, and the adjacent pair whose concatenation has the
     /// lowest rank is merged, until no pair is a token of the vocabulary. A merge only changes the
     /// two pairs that touch it, so the candidates live in a heap rather than being rescanned; a
     /// piece can be as long as the text itself, which a quadratic scan would not survive.
