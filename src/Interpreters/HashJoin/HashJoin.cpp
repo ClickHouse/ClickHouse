@@ -643,7 +643,9 @@ JoinMapsKind HashJoin::getMapsKind() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    return isInnerOrRight(getKind()) && data->rows_to_join == 0;
+    /// A left semi join keeps only the left rows with a match, so it is empty for an empty right side too.
+    const bool empty_for_empty_right = isInnerOrRight(getKind()) || (isLeft(getKind()) && getStrictness() == JoinStrictness::Semi);
+    return empty_for_empty_right && data->rows_to_join == 0;
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -1463,8 +1465,8 @@ HashJoin::~HashJoin()
                         {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
             }
 
-            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished)
-                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, stats_collecting_params.match);
+            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
+                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, stats_collecting_params.match);
         }
     }
     catch (...)
@@ -2807,20 +2809,20 @@ void HashJoin::publishSharedRuntimeFilters()
         return;
 
     /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier. The descriptor's
-    /// first element is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
+    /// `filter_key` is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
     /// filter under and the probe-side `__applyFilter` looks it up by), not the stable display name.
-    for (const auto & [filter_key, descr_build_key] : descriptors)
+    for (const auto & descriptor : descriptors)
     {
-        if (descr_build_key != build_key_name)
+        if (descriptor.build_key_name != build_key_name)
             continue;
 
-        auto existing = lookup->find(filter_key);
+        auto existing = lookup->find(descriptor.filter_key);
         if (!existing)
             continue;
 
         /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
         /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
-        const auto target_type = removeNullable(existing->getFilterColumnTargetType());
+        const auto target_type = removeNullable(descriptor.common_type);
         WhichDataType target_which(target_type);
         if (!target_type->isValueRepresentedByInteger()
             || target_which.isInt128() || target_which.isUInt128()
@@ -2829,16 +2831,19 @@ void HashJoin::publishSharedRuntimeFilters()
             || target_which.isLowCardinality())
             continue;
 
-        auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
-            existing->getFilterColumnTargetType(),
-            existing->getPassRatioThresholdForDisabling(),
-            existing->getBlocksToSkipBeforeReenabling(),
-            probe_fn,
-            existing->getRecordedKeyRanges(),
-            existing->getRecordedKeyValues());
+        /// Metadata accessors expose data only after all stream-local filters have merged. If publication races
+        /// a late registration, they return no partial metadata; copied metadata is therefore complete or absent.
+        auto filter = std::make_unique<RuntimeFilter>(
+            /*filters_to_merge_=*/0,
+            existing->getConfig(),
+            RuntimeFilter::SharedFixedHashTable(
+                existing->getFilterColumnTargetType(),
+                probe_fn,
+                existing->getRecordedKeyRanges(),
+                existing->getRecordedKeyValues()));
         /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
-        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
-        lookup->replace(filter_key, std::move(filter));
+        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", descriptor.filter_key);
+        lookup->replace(descriptor.filter_key, std::move(filter));
     }
 }
 
