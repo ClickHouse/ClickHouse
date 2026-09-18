@@ -458,7 +458,7 @@ public:
     {
         /// Table sizes are reported approximately, so there is no need to pay for a Keeper round trip per table.
         Settings settings = context_->getSettingsCopy();
-        settings[Setting::select_sequential_consistency] = 0;
+        settings.set(Setting::select_sequential_consistency, 0);
         context_without_sequential_consistency->setSettings(settings);
 
         size_t size = tables_->size();

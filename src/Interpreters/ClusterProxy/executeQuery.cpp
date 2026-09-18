@@ -164,8 +164,8 @@ void stripDatabaseSetting(Settings & settings)
     /// default with `SET database = ''`), so the inter-server packet does not carry it.
     if (settings[Setting::database].changed || !settings[Setting::database].value.empty())
     {
-        settings[Setting::database] = "";
-        settings[Setting::database].changed = false;
+        settings.set(Setting::database, "");
+        settings.setChanged(Setting::database, false);
     }
 }
 
@@ -186,68 +186,68 @@ void stripInitiatorOnlySettings(Settings & settings)
     /// materialize these settings on the initiator before reaching the remote servers.
     if (settings[Setting::offset].changed || settings[Setting::offset] != 0)
     {
-        settings[Setting::offset] = 0;
-        settings[Setting::offset].changed = false;
+        settings.set(Setting::offset, 0);
+        settings.setChanged(Setting::offset, false);
     }
     if (settings[Setting::limit].changed || settings[Setting::limit] != 0)
     {
-        settings[Setting::limit] = 0;
-        settings[Setting::limit].changed = false;
+        settings.set(Setting::limit, 0);
+        settings.setChanged(Setting::limit, false);
     }
     if (settings[Setting::page].changed || settings[Setting::page] != 0)
     {
-        settings[Setting::page] = 0;
-        settings[Setting::page].changed = false;
+        settings.set(Setting::page, 0);
+        settings.setChanged(Setting::page, false);
     }
     if (settings[Setting::select].changed || !settings[Setting::select].value.empty())
     {
-        settings[Setting::select] = "";
-        settings[Setting::select].changed = false;
+        settings.set(Setting::select, "");
+        settings.setChanged(Setting::select, false);
     }
     if (settings[Setting::order].changed || !settings[Setting::order].value.empty())
     {
-        settings[Setting::order] = "";
-        settings[Setting::order].changed = false;
+        settings.set(Setting::order, "");
+        settings.setChanged(Setting::order, false);
     }
     if (settings[Setting::sort].changed || !settings[Setting::sort].value.empty())
     {
-        settings[Setting::sort] = "";
-        settings[Setting::sort].changed = false;
+        settings.set(Setting::sort, "");
+        settings.setChanged(Setting::sort, false);
     }
     if (settings[Setting::filter].changed || !settings[Setting::filter].value.empty())
     {
-        settings[Setting::filter] = "";
-        settings[Setting::filter].changed = false;
+        settings.set(Setting::filter, "");
+        settings.setChanged(Setting::filter, false);
     }
     if (settings[Setting::additional_result_filter].changed || !settings[Setting::additional_result_filter].value.empty())
     {
-        settings[Setting::additional_result_filter] = "";
-        settings[Setting::additional_result_filter].changed = false;
+        settings.set(Setting::additional_result_filter, "");
+        settings.setChanged(Setting::additional_result_filter, false);
     }
     if (settings[Setting::format].changed || !settings[Setting::format].value.empty())
     {
-        settings[Setting::format] = "";
-        settings[Setting::format].changed = false;
+        settings.set(Setting::format, "");
+        settings.setChanged(Setting::format, false);
     }
     if (settings[Setting::input_format].changed || !settings[Setting::input_format].value.empty())
     {
-        settings[Setting::input_format] = "";
-        settings[Setting::input_format].changed = false;
+        settings.set(Setting::input_format, "");
+        settings.setChanged(Setting::input_format, false);
     }
     if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
     {
-        settings[Setting::output_format] = "";
-        settings[Setting::output_format].changed = false;
+        settings.set(Setting::output_format, "");
+        settings.setChanged(Setting::output_format, false);
     }
     if (settings[Setting::default_format].changed || !settings[Setting::default_format].value.empty())
     {
-        settings[Setting::default_format] = "";
-        settings[Setting::default_format].changed = false;
+        settings.set(Setting::default_format, "");
+        settings.setChanged(Setting::default_format, false);
     }
     if (settings[Setting::compression].changed || !settings[Setting::compression].value.empty())
     {
-        settings[Setting::compression] = "";
-        settings[Setting::compression].changed = false;
+        settings.set(Setting::compression, "");
+        settings.setChanged(Setting::compression, false);
     }
 
     /// The HTTP/path-only settings are interpreted exclusively by the HTTP query-construction path on
@@ -259,29 +259,29 @@ void stripInitiatorOnlySettings(Settings & settings)
     /// `UNKNOWN_SETTING`. Strip them in the shared helper so every remote path has the same contract.
     if (settings[Setting::http_allow_database_as_path].changed || settings[Setting::http_allow_database_as_path])
     {
-        settings[Setting::http_allow_database_as_path] = false;
-        settings[Setting::http_allow_database_as_path].changed = false;
+        settings.set(Setting::http_allow_database_as_path, false);
+        settings.setChanged(Setting::http_allow_database_as_path, false);
     }
     if (settings[Setting::http_allow_table_as_file].changed || settings[Setting::http_allow_table_as_file])
     {
-        settings[Setting::http_allow_table_as_file] = false;
-        settings[Setting::http_allow_table_as_file].changed = false;
+        settings.set(Setting::http_allow_table_as_file, false);
+        settings.setChanged(Setting::http_allow_table_as_file, false);
     }
     if (settings[Setting::http_allow_filters_as_path].changed || settings[Setting::http_allow_filters_as_path])
     {
-        settings[Setting::http_allow_filters_as_path] = false;
-        settings[Setting::http_allow_filters_as_path].changed = false;
+        settings.set(Setting::http_allow_filters_as_path, false);
+        settings.setChanged(Setting::http_allow_filters_as_path, false);
     }
     if (settings[Setting::http_allow_filters_as_unrecognized_url_parameters].changed
         || settings[Setting::http_allow_filters_as_unrecognized_url_parameters])
     {
-        settings[Setting::http_allow_filters_as_unrecognized_url_parameters] = false;
-        settings[Setting::http_allow_filters_as_unrecognized_url_parameters].changed = false;
+        settings.set(Setting::http_allow_filters_as_unrecognized_url_parameters, false);
+        settings.setChanged(Setting::http_allow_filters_as_unrecognized_url_parameters, false);
     }
     if (settings[Setting::implicit_table_at_top_level].changed || !settings[Setting::implicit_table_at_top_level].value.empty())
     {
-        settings[Setting::implicit_table_at_top_level] = "";
-        settings[Setting::implicit_table_at_top_level].changed = false;
+        settings.set(Setting::implicit_table_at_top_level, "");
+        settings.setChanged(Setting::implicit_table_at_top_level, false);
     }
 
     /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
@@ -332,7 +332,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
 {
     ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings {settings};
-    new_settings[Setting::queue_max_wait_ms] = Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]);
+    new_settings.set(Setting::queue_max_wait_ms, Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]));
 
     /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.
     if (is_remote_function)
@@ -348,28 +348,28 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (!interserver_mode)
     {
         /// Does not matter on remote servers, because queries are sent under different user.
-        new_settings[Setting::max_concurrent_queries_for_user] = 0;
-        new_settings[Setting::max_memory_usage_for_user] = 0;
+        new_settings.set(Setting::max_concurrent_queries_for_user, 0);
+        new_settings.set(Setting::max_memory_usage_for_user, 0);
 
         /// Set as unchanged to avoid sending to remote server.
-        new_settings[Setting::max_concurrent_queries_for_user].changed = false;
-        new_settings[Setting::max_memory_usage_for_user].changed = false;
+        new_settings.setChanged(Setting::max_concurrent_queries_for_user, false);
+        new_settings.setChanged(Setting::max_memory_usage_for_user, false);
     }
 
     if (settings[Setting::force_optimize_skip_unused_shards_nesting] && settings[Setting::force_optimize_skip_unused_shards])
     {
         if (new_settings[Setting::force_optimize_skip_unused_shards_nesting] == 1)
         {
-            new_settings[Setting::force_optimize_skip_unused_shards] = false;
-            new_settings[Setting::force_optimize_skip_unused_shards].changed = false;
+            new_settings.set(Setting::force_optimize_skip_unused_shards, false);
+            new_settings.setChanged(Setting::force_optimize_skip_unused_shards, false);
 
             if (log)
                 LOG_TRACE(log, "Disabling force_optimize_skip_unused_shards for nested queries (force_optimize_skip_unused_shards_nesting exceeded)");
         }
         else
         {
-            --new_settings[Setting::force_optimize_skip_unused_shards_nesting].value;
-            new_settings[Setting::force_optimize_skip_unused_shards_nesting].changed = true;
+            new_settings.set(Setting::force_optimize_skip_unused_shards_nesting, new_settings[Setting::force_optimize_skip_unused_shards_nesting].value - 1);
+            new_settings.setChanged(Setting::force_optimize_skip_unused_shards_nesting, true);
 
             if (log)
                 LOG_TRACE(
@@ -381,16 +381,16 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     {
         if (new_settings[Setting::optimize_skip_unused_shards_nesting] == 1)
         {
-            new_settings[Setting::optimize_skip_unused_shards] = false;
-            new_settings[Setting::optimize_skip_unused_shards].changed = false;
+            new_settings.set(Setting::optimize_skip_unused_shards, false);
+            new_settings.setChanged(Setting::optimize_skip_unused_shards, false);
 
             if (log)
                 LOG_TRACE(log, "Disabling optimize_skip_unused_shards for nested queries (optimize_skip_unused_shards_nesting exceeded)");
         }
         else
         {
-            --new_settings[Setting::optimize_skip_unused_shards_nesting].value;
-            new_settings[Setting::optimize_skip_unused_shards_nesting].changed = true;
+            new_settings.set(Setting::optimize_skip_unused_shards_nesting, new_settings[Setting::optimize_skip_unused_shards_nesting].value - 1);
+            new_settings.setChanged(Setting::optimize_skip_unused_shards_nesting, true);
 
             if (log)
                 LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
@@ -399,21 +399,21 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
 
     if (!settings[Setting::skip_unavailable_shards].changed && distributed_settings)
     {
-        new_settings[Setting::skip_unavailable_shards] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value;
-        new_settings[Setting::skip_unavailable_shards].changed = true;
+        new_settings.set(Setting::skip_unavailable_shards, (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value);
+        new_settings.setChanged(Setting::skip_unavailable_shards, true);
     }
 
     if (!settings[Setting::skip_unavailable_shards_mode].changed && distributed_settings)
     {
-        new_settings[Setting::skip_unavailable_shards_mode] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards_mode].value;
-        new_settings[Setting::skip_unavailable_shards_mode].changed = true;
+        new_settings.set(Setting::skip_unavailable_shards_mode, (*distributed_settings)[DistributedSetting::skip_unavailable_shards_mode].value);
+        new_settings.setChanged(Setting::skip_unavailable_shards_mode, true);
     }
 
     /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
     /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
     stripInitiatorOnlySettings(new_settings);
 
-    new_settings[Setting::run_query_in_background] = false;
+    new_settings.set(Setting::run_query_in_background, false);
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
@@ -426,7 +426,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
         tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
-        new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
+        auto additional_table_filters = new_settings[Setting::additional_table_filters];
+        additional_table_filters.value.push_back(std::move(tuple));
+        new_settings.set(Setting::additional_table_filters, std::move(additional_table_filters));
     }
 
     /// disable parallel replicas if cluster contains only shards with 1 replica
@@ -438,7 +440,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
             if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
                 disable_parallel_replicas = true;
             else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+                new_settings.set(Setting::cluster_for_parallel_replicas, cluster.getName());
         }
 
         if (!disable_parallel_replicas)
@@ -455,28 +457,28 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         }
 
         if (disable_parallel_replicas)
-            new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+            new_settings.set(Setting::allow_experimental_parallel_reading_from_replicas, 0);
     }
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'
-        new_settings[Setting::max_execution_time] = settings[Setting::max_execution_time_leaf];
-        new_settings[Setting::timeout_overflow_mode] = settings[Setting::timeout_overflow_mode_leaf];
+        new_settings.set(Setting::max_execution_time, settings[Setting::max_execution_time_leaf]);
+        new_settings.set(Setting::timeout_overflow_mode, settings[Setting::timeout_overflow_mode_leaf]);
     }
 
     /// in case of parallel replicas custom key use round robing load balancing
     /// so custom key partitions will be spread over nodes in round-robin fashion
     if (context->canUseParallelReplicasCustomKeyForCluster(cluster) && !settings[Setting::load_balancing].changed)
     {
-        new_settings[Setting::load_balancing] = LoadBalancing::ROUND_ROBIN;
+        new_settings.set(Setting::load_balancing, LoadBalancing::ROUND_ROBIN);
     }
 
     /// disable plan serialization for sample and custom key modes
     /// until filter generation for these modes are done on query plan level
     if (context->canUseOffsetParallelReplicas())
-        new_settings[Setting::serialize_query_plan] = false;
+        new_settings.set(Setting::serialize_query_plan, false);
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

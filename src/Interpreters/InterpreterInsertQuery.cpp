@@ -583,19 +583,19 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         /// Use the effective value computed in the constructor: it is already capped by `max_threads`
         /// and reduced according to the available memory, while the raw setting is not.
-        new_settings[Setting::max_threads] = effective_max_insert_threads;
+        new_settings.set(Setting::max_threads, effective_max_insert_threads);
 
         if (prefer_large_blocks)
         {
             if (settings[Setting::min_insert_block_size_rows])
-                new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
+                new_settings.set(Setting::max_block_size, settings[Setting::min_insert_block_size_rows]);
             if (settings[Setting::min_insert_block_size_bytes])
             {
                 size_t block_size_bytes = settings[Setting::min_insert_block_size_bytes];
                 /// On low-memory systems, cap the input format block size.
                 if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
                     block_size_bytes = std::min<size_t>(block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
-                new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
+                new_settings.set(Setting::preferred_block_size_bytes, block_size_bytes);
             }
         }
 

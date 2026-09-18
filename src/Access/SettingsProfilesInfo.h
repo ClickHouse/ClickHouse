@@ -3,12 +3,14 @@
 #include <Access/SettingsConstraints.h>
 #include <Common/SettingsChanges.h>
 #include <Core/UUID.h>
+#include <mutex>
 #include <unordered_map>
 
 
 namespace DB
 {
 struct SettingsConstraintsAndProfileIDs;
+struct Settings;
 
 /// Information about the default settings which are applied to an user on login.
 struct SettingsProfilesInfo
@@ -42,7 +44,14 @@ struct SettingsProfilesInfo
 
     Strings getProfileNames() const;
 
+    /// One resolved login snapshot per immutable profile generation, keyed by its inherited input.
+    std::shared_ptr<const Settings> tryGetCachedSettings(const Settings & input, bool sanity_clamp) const;
+    std::shared_ptr<const Settings> cacheSettings(const Settings & input, const Settings & output, bool sanity_clamp) const;
+
 private:
+    struct CachedSettings;
+    mutable std::mutex cached_settings_mutex;
+    mutable std::shared_ptr<const CachedSettings> cached_settings;
     const AccessControl & access_control;
 };
 

@@ -155,13 +155,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         auto subquery_context = Context::createCopy(context);
 
         Settings subquery_settings = context->getSettingsCopy();
-        subquery_settings[Setting::max_result_rows] = 1;
-        subquery_settings[Setting::extremes] = false;
-        subquery_settings[Setting::implicit_table_at_top_level] = "";
+        subquery_settings.set(Setting::max_result_rows, 1);
+        subquery_settings.set(Setting::extremes, false);
+        subquery_settings.set(Setting::implicit_table_at_top_level, "");
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-        subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
-        subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        subquery_settings.set(Setting::use_structure_from_insertion_table_in_table_functions, false);
+        subquery_settings.set(Setting::allow_experimental_parallel_reading_from_replicas, 0);
         subquery_context->setSettings(subquery_settings);
 
         auto query_tree = node->clone();

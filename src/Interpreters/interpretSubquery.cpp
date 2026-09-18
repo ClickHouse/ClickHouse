@@ -70,11 +70,11 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
       */
     auto subquery_context = Context::createCopy(context);
     Settings subquery_settings = context->getSettingsCopy();
-    subquery_settings[Setting::max_result_rows] = 0;
-    subquery_settings[Setting::max_result_bytes] = 0;
+    subquery_settings.set(Setting::max_result_rows, 0);
+    subquery_settings.set(Setting::max_result_bytes, 0);
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
-    subquery_settings[Setting::extremes] = false;
-    subquery_settings[Setting::implicit_table_at_top_level] = "";
+    subquery_settings.set(Setting::extremes, false);
+    subquery_settings.set(Setting::implicit_table_at_top_level, "");
     subquery_context->setSettings(subquery_settings);
 
     auto subquery_options = options.subquery();

@@ -223,23 +223,23 @@ void HedgedConnections::sendQuery(
         /// overrides below, so all of them are marked changed afterwards and are serialized.
         prepareSecondaryQuerySettings(modified_settings);
 
-        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+        modified_settings.set(Setting::interactive_delay, scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],
-            distributed_fanout * offset_states.size());
+            distributed_fanout * offset_states.size()));
 
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.
-            modified_settings[Setting::group_by_two_level_threshold] = 0;
-            modified_settings[Setting::group_by_two_level_threshold_bytes] = 0;
+            modified_settings.set(Setting::group_by_two_level_threshold, 0);
+            modified_settings.set(Setting::group_by_two_level_threshold_bytes, 0);
         }
 
         const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
         if (offset_states.size() > 1 && enable_offset_parallel_processing)
         {
-            modified_settings[Setting::parallel_replicas_count] = offset_states.size();
-            modified_settings[Setting::parallel_replica_offset] = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
+            modified_settings.set(Setting::parallel_replicas_count, offset_states.size());
+            modified_settings.set(Setting::parallel_replica_offset, fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset);
         }
 
         /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.

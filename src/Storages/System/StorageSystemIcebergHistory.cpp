@@ -86,7 +86,7 @@ void StorageSystemIcebergHistory::fillData(
 #if USE_AVRO
     ContextMutablePtr context_copy = Context::createCopy(context);
     Settings settings_copy = context_copy->getSettingsCopy();
-    settings_copy[Setting::use_iceberg_metadata_files_cache] = false;
+    settings_copy.set(Setting::use_iceberg_metadata_files_cache, false);
     context_copy->setSettings(settings_copy);
 
     const auto access = context_copy->getAccess();
