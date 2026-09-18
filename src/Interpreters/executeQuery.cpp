@@ -3574,10 +3574,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Declare contexts outside try block so we can reset transactions on all paths.
-        /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
-        /// which uses getCurrentExceptionCode with bare `throw;` - that only works
-        /// inside a catch handler, not during stack unwinding.
+        /// Declare the contexts outside the try block so every path can reset their transactions:
+        /// a Context destroyed with a transaction still open rolls it back from its destructor.
         ContextMutablePtr fuzz_session_context;
         ContextMutablePtr fuzz_context;
 

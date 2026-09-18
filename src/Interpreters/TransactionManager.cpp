@@ -629,8 +629,10 @@ void TransactionManager::rollbackTransaction(const MergeTreeTransactionPtr & txn
 {
     auto component_guard = Coordination::setCurrentComponent("TransactionManager::rollbackTransaction");
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// Also runs from destructors during unwinding, where an exception is in flight but not being
+    /// handled: the in-flight exception's code cannot be retrieved here.
     LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
-              std::uncaught_exceptions() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode()) : "");
+              std::uncaught_exceptions() ? " due to uncaught exception" : "");
 
     const auto rollback_result = txn->rollback();
     if (rollback_result == MergeTreeTransaction::RollbackResult::NotNeeded)

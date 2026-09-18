@@ -95,6 +95,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_throw_after_background_transaction_begin[];
 }
 
 namespace Setting
@@ -2239,6 +2240,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
         txn = TransactionManager::instance().beginTransaction();
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
+
+        fiu_do_on(FailPoints::mt_throw_after_background_transaction_begin,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after beginning a background transaction");
+        });
     }
 
     bool has_mutations = false;
