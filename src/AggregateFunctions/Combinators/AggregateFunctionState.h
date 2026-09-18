@@ -157,12 +157,14 @@ public:
     {
         auto & column = assert_cast<ColumnAggregateFunction &>(to);
 
-        fiu_do_on(FailPoints::aggregate_function_state_transfer_throw,
+        /// Only once the column holds an aliased state, which is the partial transfer to undo.
+        if (unlikely(!column.empty()))
         {
-            /// Only once the column holds an aliased state, which is the partial transfer to undo.
-            if (!column.empty())
+            fiu_do_on(FailPoints::aggregate_function_state_transfer_throw,
+            {
                 throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionState::insertResultInto");
-        });
+            });
+        }
 
         column.getData().push_back(place);
     }
