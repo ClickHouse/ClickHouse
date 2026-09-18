@@ -37,32 +37,32 @@ Dado que la tabla `posts` será el destino de la mayoría de las consultas anal�
 ClickHouse ofrece la capacidad de inferir esquemas para identificar automáticamente los tipos de un dataset. Esto es compatible con todos los formatos de datos, incluido Parquet. Podemos aprovechar esta funcionalidad para identificar los tipos de ClickHouse de estos datos mediante la función de tabla s3 y el comando [`DESCRIBE`](/es/reference/statements/describe-table). Tenga en cuenta que a continuación usamos el patrón glob `*.parquet` para leer todos los archivos de la carpeta `stackoverflow/parquet/posts`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
 ```response
 ┌─name──────────────────┬─type───────────────────────────┐
-│ Id                    │ Nullable(Int64)               │
-│ PostTypeId            │ Nullable(Int64)               │
-│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ Id                    │ Nullable(Int64)                │
+│ PostTypeId            │ Nullable(Int64)                │
+│ AcceptedAnswerId      │ Nullable(Int64)                │
 │ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
-│ Score                 │ Nullable(Int64)               │
-│ ViewCount             │ Nullable(Int64)               │
-│ Body                  │ Nullable(String)              │
-│ OwnerUserId           │ Nullable(Int64)               │
-│ OwnerDisplayName      │ Nullable(String)              │
-│ LastEditorUserId      │ Nullable(Int64)               │
-│ LastEditorDisplayName │ Nullable(String)              │
+│ Score                 │ Nullable(Int64)                │
+│ ViewCount             │ Nullable(Int64)                │
+│ Body                  │ Nullable(String)               │
+│ OwnerUserId           │ Nullable(Int64)                │
+│ OwnerDisplayName      │ Nullable(String)               │
+│ LastEditorUserId      │ Nullable(Int64)                │
+│ LastEditorDisplayName │ Nullable(String)               │
 │ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
 │ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
-│ Title                 │ Nullable(String)              │
-│ Tags                  │ Nullable(String)              │
-│ AnswerCount           │ Nullable(Int64)               │
-│ CommentCount          │ Nullable(Int64)               │
-│ FavoriteCount         │ Nullable(Int64)               │
-│ ContentLicense        │ Nullable(String)              │
-│ ParentId              │ Nullable(String)              │
+│ Title                 │ Nullable(String)               │
+│ Tags                  │ Nullable(String)               │
+│ AnswerCount           │ Nullable(Int64)                │
+│ CommentCount          │ Nullable(Int64)                │
+│ FavoriteCount         │ Nullable(Int64)                │
+│ ContentLicense        │ Nullable(String)               │
+│ ParentId              │ Nullable(String)               │
 │ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
 │ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
 └───────────────────────┴────────────────────────────────┘
@@ -76,7 +76,7 @@ Esto nos proporciona un esquema inicial no optimizado. De forma predeterminada, 
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 Algunos puntos importantes:
@@ -123,7 +123,7 @@ ORDER BY tuple()
 Con el esquema inicial ya definido, podemos cargar los datos con un `INSERT INTO SELECT`, leyendo los datos mediante la función de tabla S3. A continuación se cargan los datos de `posts` en unos 2 min en una instancia de ClickHouse Cloud de 8 núcleos.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -275,10 +275,10 @@ LIMIT 3
 
 ```response
 ┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
-│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
-│ 78183948 │ About memory barrier                                               │               52 │
-│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
-└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+│ 78203063 │ How to avoid default initialization of objects in std::vector?    │           74 │
+│ 78183948 │ About memory barrier                                              │           52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │           49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────┘
 
 10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
 Peak memory usage: 429.38 MiB.
@@ -320,7 +320,7 @@ ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 COMMENT 'Ordering Key'
 
---rellenar la tabla desde la tabla existente
+--populate table from existing table
 
 INSERT INTO posts_v3 SELECT * FROM posts_v2
 ```
@@ -330,7 +330,7 @@ INSERT INTO posts_v3 SELECT * FROM posts_v2
 Peak memory usage: 6.41 GiB.
 ```
 
-La consulta anterior reduce el tiempo de respuesta en más de 3 veces:
+La consulta anterior mejora el tiempo de respuesta en más de 3 veces:
 
 ```sql
 SELECT

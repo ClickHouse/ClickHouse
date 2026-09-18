@@ -2,18 +2,19 @@
 position: 7
 slug: /clickhouse-operator/guides/network-policies
 title: Políticas de rede
-keywords: ['kubernetes', 'política de rede', 'segurança', 'métricas', 'webhook']
-description: 'Como o operator restringe o tráfego de entrada para o pod do controller manager com NetworkPolicies do Kubernetes para os endpoints de métricas e webhook, como habilitá-las e quais espaços de nomes de cliente você deve rotular.'
+keywords: ['kubernetes', 'política de rede', 'segurança', 'métricas', 'webhook', 'entrada']
+description: 'Como o operator gerencia NetworkPolicies do Kubernetes para clusters ClickHouse e Keeper, como permitir tráfego de clientes e monitoramento e como restringir o tráfego de entrada para o pod do Kubernetes do controller manager.'
 doc_type: 'guide'
 ---
 
-O operator fornece recursos opcionais de `NetworkPolicy` do Kubernetes que
-restringem quais tráfegos podem alcançar o **pod do controller manager** — o próprio
-processo do operator, não o servidor ClickHouse nem os pods do Keeper. Eles ficam
-desabilitados por padrão, então você só precisa ativá-los quando quiser isolar o tráfego de entrada do operator.
+O operator gerencia recursos de `NetworkPolicy` do Kubernetes em dois níveis, ambos
+desabilitados por padrão:
 
-As políticas abrangem as duas portas que o operator expõe a outros clientes: o endpoint de métricas
-e o admission webhook.
+* **Políticas de cluster** — políticas por cluster que abrangem o tráfego interno dos
+  recursos `ClickHouseCluster` e `KeeperCluster`, habilitadas por meio de
+  `spec.networkPolicy` em cada recurso personalizado.
+* **Políticas de pod do Kubernetes do operator** — políticas fornecidas pelo chart que restringem o tráfego de entrada para o
+  próprio pod do Kubernetes do controller manager nos endpoints de métricas e webhook.
 
 <Note>
   Uma `NetworkPolicy` só é aplicada quando o plugin de CNI do cluster a implementa
@@ -21,6 +22,115 @@ e o admission webhook.
   recursos são criados, mas não têm efeito, sem qualquer aviso — o Kubernetes não retorna
   erro. Confirme que sua CNI aplica políticas antes de depender delas.
 </Note>
+
+<div id="cluster-network-policies">
+  ## NetworkPolicies do cluster
+</div>
+
+Habilite a política gerenciada em cada cluster:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+```
+
+As políticas gerenciadas abrangem **somente o tráfego interno do cluster**. Ao selecionar os pods,
+elas passam a negar por padrão o tráfego de entrada, e o operator permite exatamente o necessário
+para o funcionamento dos clusters:
+
+| Cluster    | Origem permitida                                                                       | Portas permitidas                               |
+| ---------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| ClickHouse | Os próprios pods do cluster                                                            | `9009` (interserver), `9001` (gerenciamento)    |
+| ClickHouse | Pods do operator (rótulo `clickhouse.com/role: operator`, em qualquer espaço de nomes) | `9001`, `9002` (gerenciamento)                  |
+| Keeper     | Os próprios pods do cluster                                                            | `9234` (Raft)                                   |
+| Keeper     | Pods do operator e todo `ClickHouseCluster` que referencia este keeper                 | `2181`, `2281` (cliente), `9123` (HTTP control) |
+
+Um keeper admite clusters do ClickHouse com base em seu `keeperClusterRef` — adicionar
+ou remover uma referência atualiza automaticamente a política do keeper, inclusive
+referências de outros espaços de nomes.
+
+<div id="allowing-clients">
+  ### Permitir clientes e monitoramento
+</div>
+
+As conexões de clientes e a coleta de métricas **não** são contempladas: com a
+política gerenciada habilitada, nada pode acessar as portas de cliente (`9000`/`8123` ou as
+variantes TLS) nem a porta de métricas até que você as permita. As NetworkPolicies são cumulativas;
+portanto, conceda acesso com sua própria política ao lado da política gerenciada:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: <cluster-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <name>-clickhouse
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: my-app
+    ports:
+    - protocol: TCP
+      port: 9000
+```
+
+O mesmo padrão se aplica às coletas do Prometheus (porta `9363` no ClickHouse,
+`9090` no Keeper) — permita explicitamente o acesso do seu espaço de nomes de monitoramento.
+
+Definir `networkPolicy.policy: Disabled` (o padrão) remove a política gerenciada;
+as políticas definidas pelo usuário nunca são alteradas pelo operator, a menos que
+tenham o rótulo `app` do cluster.
+
+<div id="np-cluster-wide-disable">
+  ### Desativação em todo o cluster
+</div>
+
+O gerenciamento de NetworkPolicy também pode ser desabilitado em todo o cluster por meio da variável de ambiente `ENABLE_NETWORK_POLICY` do operator. Com `ENABLE_NETWORK_POLICY=false`,
+o operator ignora a etapa de reconciliação de NetworkPolicy para **todos os**
+ClickHouseCluster e KeeperCluster, independentemente de `spec.networkPolicy.policy`,
+e **não observa** recursos `NetworkPolicy`. Portanto, o
+ServiceAccount do operator não precisa de permissões RBAC em
+`networkpolicies.networking.k8s.io`, o que é útil ao executar o operator
+com um ServiceAccount restrito que deliberadamente não tem essas permissões.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_NETWORK_POLICY
+  value: "false"
+```
+
+Com o Helm, a mesma opção é definida como um valor do chart:
+
+```yaml
+# values.yaml
+controller:
+  networkPolicyManagement:
+    enabled: false
+```
+
+<div id="operator-pod-policies">
+  ## Políticas de pod do Kubernetes do operator
+</div>
+
+O chart também fornece políticas opcionais que restringem quais tráfegos podem alcançar o
+**pod do Kubernetes do controller manager** — o próprio processo do operator. Elas abrangem as duas
+portas que o operator expõe a outros clientes: o endpoint de métricas e o
+admission webhook.
 
 <div id="what-the-helm-chart-creates">
   ## O que o chart do Helm cria

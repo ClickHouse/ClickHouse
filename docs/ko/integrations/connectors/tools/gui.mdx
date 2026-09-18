@@ -432,6 +432,23 @@ doc_type: 'reference'
   ## 상용
 </div>
 
+<Accordion title="ProbeDeck">
+  [ProbeDeck](https://probedeck.app)은 ClickHouse를 모니터링하고 쿼리하는 iOS 및 iPadOS 클라이언트입니다.
+
+  기능:
+
+  * ProbeDeck은 실행 중인 쿼리, 레플리카, 파트, 머지, 뮤테이션, 디스크 및 서버 메트릭을 표시합니다.
+  * `KILL QUERY`로 쿼리를 중지하고 `KILL MUTATION`으로 뮤테이션을 중지할 수 있습니다.
+  * 스키마와 데이터를 탐색하거나 편집기에서 SQL을 실행할 수 있습니다.
+  * ProbeDeck은 기기 네트워크 또는 SSH 터널을 통해 HTTP(S)로 연결합니다.
+  * ProbeDeck은 iOS Keychain에 자격 증명을 저장하고 각 연결에 대해 읽기 전용 모드를 지원합니다.
+  * 앱에는 번들 데이터가 포함된 오프라인 데모가 제공됩니다.
+
+  무료 사용자는 서버를 모니터링하고 읽기 전용 SQL을 실행할 수 있습니다. 연결 1개를 저장할 수 있습니다. ProbeDeck Pro는 쿼리 및 뮤테이션 종료 제어, 쓰기, DDL, 무제한 저장 연결을 제공합니다.
+
+  연결 지침은 [ProbeDeck을 ClickHouse에 연결](/ko/integrations/connectors/sql-clients/probedeck)을 참조하십시오.
+</Accordion>
+
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/)은 ClickHouse를 전용으로 지원하는 JetBrains의 데이터베이스 IDE입니다. 또한 PyCharm, IntelliJ IDEA, GoLand, PhpStorm 등 다른 IntelliJ 기반 도구에도 내장되어 있습니다.
 
@@ -486,24 +503,24 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com)은 데이터 탐색과 운영 보고를 위한 셀프서비스 BI 도구입니다. Cloud 서비스와 자체 호스팅 버전으로 모두 사용할 수 있습니다. SeekTable의 보고서는 어떤 웹 앱에도 내장할 수 있습니다.
+  [SeekTable](https://www.seektable.com)은 데이터 탐색 및 운영 보고를 위한 셀프서비스 BI 도구입니다. 클라우드 서비스와 자체 호스팅 버전으로 제공됩니다. SeekTable 보고서는 모든 웹 앱에 임베드할 수 있습니다.
 
   기능:
 
-  * 비즈니스 사용자가 쉽게 사용할 수 있는 보고서 작성기.
-  * SQL 필터링과 보고서별 쿼리 맞춤 설정을 위한 강력한 보고서 매개변수.
-  * 네이티브 TCP/IP 엔드포인트와 HTTP(S) 인터페이스(서로 다른 2개의 드라이버) 모두를 통해 ClickHouse에 연결할 수 있습니다.
-  * 차원/측정값 정의에서 ClickHouse SQL 방언의 모든 기능을 활용할 수 있습니다.
-  * 자동화된 보고서 생성을 위한 [Web API](https://www.seektable.com/help/web-api-integration).
-  * 계정 데이터 [백업/복원](https://www.seektable.com/help/self-hosted-backup-restore)을 포함한 보고서 개발 워크플로를 지원합니다. 데이터 모델(큐브)과 보고서 구성은 사람이 읽을 수 있는 XML 형식이며 버전 관리 시스템에 저장할 수 있습니다.
+  * 비즈니스 사용자가 쉽게 사용할 수 있는 보고서 빌더.
+  * SQL 필터링 및 보고서별 쿼리 맞춤 설정을 위한 강력한 보고서 매개변수.
+  * 네이티브 TCP/IP 엔드포인트와 HTTP(S) 인터페이스(서로 다른 2개의 드라이버)를 통해 ClickHouse에 연결할 수 있습니다.
+  * 차원/측정값 정의에 ClickHouse SQL 방언의 모든 기능을 사용할 수 있습니다.
+  * 자동 보고서 생성을 위한 [Web API](https://www.seektable.com/help/web-api-integration).
+  * 계정 데이터 [백업/복원](https://www.seektable.com/help/self-hosted-backup-restore)을 통한 보고서 개발 워크플로를 지원합니다. 데이터 모델(큐브)/보고서 구성은 사람이 읽을 수 있는 XML 형식이며 버전 관리 시스템에 저장할 수 있습니다.
 
-  SeekTable은 개인용 사용의 경우 [무료](https://www.seektable.com/help/cloud-pricing)입니다.
+  SeekTable은 개인 사용자에게 [무료](https://www.seektable.com/help/cloud-pricing)로 제공됩니다.
 
   [SeekTable에서 ClickHouse 연결을 구성하는 방법](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin)은 현재 실행 중인 ClickHouse 클러스터의 쿼리와 관련 정보를 시각화하고, 필요에 따라 쿼리를 종료할 수 있는 간단한 UI입니다.
+  [Chadmin](https://github.com/bun4uk/chadmin)은 ClickHouse 클러스터에서 현재 실행 중인 쿼리와 관련 정보를 시각화하고, 필요에 따라 쿼리를 종료할 수 있는 간단한 UI입니다.
 </Accordion>
 
 <Accordion title="TABLUM.IO">
