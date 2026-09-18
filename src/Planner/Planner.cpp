@@ -692,7 +692,7 @@ ALWAYS_INLINE void addExpressionStep(
     }
     if (auto key_actions = in_to_join.key_actions)
         addExpressionStep(
-            planner_context, query_plan, key_actions, {}, select_query_options,
+            planner_context, query_plan, key_actions, in_to_join.key_correlated_subtrees, select_query_options,
             "Compute the left arguments of IN", useful_sets);
     for (const auto & in_subquery : in_to_join.subqueries)
         buildQueryPlanForUncorrelatedInSubquery(planner_context, query_plan, in_subquery, select_query_options);
@@ -722,8 +722,8 @@ ALWAYS_INLINE void addFilterStep(
     }
     if (auto key_actions = filter_analysis_result.in_to_join.key_actions)
         addExpressionStep(
-            planner_context, query_plan, key_actions, {}, select_query_options,
-            "Compute the left arguments of IN", useful_sets);
+            planner_context, query_plan, key_actions, filter_analysis_result.in_to_join.key_correlated_subtrees,
+            select_query_options, "Compute the left arguments of IN", useful_sets);
     for (const auto & in_subquery : filter_analysis_result.in_to_join.subqueries)
         buildQueryPlanForUncorrelatedInSubquery(planner_context, query_plan, in_subquery, select_query_options);
 

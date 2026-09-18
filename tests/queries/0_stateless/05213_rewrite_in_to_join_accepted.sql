@@ -225,6 +225,13 @@ FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s));
 SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- A correlated subquery inside the left argument';
+SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN keep_logical_steps = 1 SELECT count() FROM t WHERE (1 + (SELECT max(v) FROM w WHERE w.k = t.id)) IN (SELECT k FROM s));
+
+SELECT count() FROM t WHERE (1 + (SELECT max(v) FROM w WHERE w.k = t.id)) IN (SELECT k FROM s) SETTINGS rewrite_in_to_join = 0;
+SELECT count() FROM t WHERE (1 + (SELECT max(v) FROM w WHERE w.k = t.id)) IN (SELECT k FROM s) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- Query with IN subquery and another correlated subquery';
 SELECT countIf(explain LIKE '%Join%') > 1
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id));

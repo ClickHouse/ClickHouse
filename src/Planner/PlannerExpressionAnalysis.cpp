@@ -97,7 +97,7 @@ InToJoinAnalysisResult analyzeInToJoin(
         input_columns,
         planner_context,
         correlated_columns_set);
-    correlated_subtrees.assertEmpty("in the left argument of IN");
+    result.key_correlated_subtrees = std::move(correlated_subtrees);
 
     /// One output per key, in the order the list was built.
     if (key_dag.getOutputs().size() != key_elements_count)
@@ -139,7 +139,7 @@ InToJoinAnalysisResult analyzeInToJoin(
     key_actions->dag = std::move(key_dag);
     actions_chain.addStep(std::make_unique<ActionsChainStep>(key_actions, /*use_actions_nodes_as_output_columns=*/true, std::move(in_results)));
 
-    if (has_computed_key)
+    if (has_computed_key || !result.key_correlated_subtrees.subqueries.empty())
         result.key_actions = std::move(key_actions);
 
     return result;

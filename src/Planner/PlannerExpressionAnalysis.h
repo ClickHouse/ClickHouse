@@ -23,6 +23,8 @@ struct InToJoinAnalysisResult
     UncorrelatedInSubqueries subqueries;
     /// The actions that compute the columns the joins key on.
     ActionsAndProjectInputsFlagPtr key_actions;
+    /// The correlated subqueries those columns read, built below them.
+    CorrelatedSubtrees key_correlated_subtrees;
 };
 
 struct ProjectionAnalysisResult

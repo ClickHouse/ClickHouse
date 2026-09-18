@@ -182,19 +182,8 @@ void addStepForMarkerResult(
     query_plan.addStep(std::move(result_step));
 }
 
-bool containsSubquery(const QueryTreeNodePtr & expression_node)
-{
-    auto node_type = expression_node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-        return true;
-
-    for (const auto & child : expression_node->getChildren())
-        if (child && containsSubquery(child))
-            return true;
-
-    return false;
-}
-
+/// Decorrelation rewrites the plan of the subquery the expression belongs to, and it does not support a
+/// `JoinLogical` step on the path of a correlated column.
 bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns)
 {
     if (auto column_node = std::dynamic_pointer_cast<ColumnNode>(node))
@@ -262,9 +251,6 @@ bool canRewriteInToJoin(
     for (size_t i = 0; i < key_elements.size(); ++i)
         if (!isSetKeyComparableWithEquals(key_elements[i]->getResultType(), subquery_columns[i].type))
             return false;
-
-    if (containsSubquery(left_key))
-        return false;
 
     if (readsCorrelatedColumn(left_key, query_node->as<const QueryNode &>().getCorrelatedColumnsSet()))
         return false;
