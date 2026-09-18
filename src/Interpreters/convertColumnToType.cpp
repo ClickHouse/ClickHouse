@@ -154,8 +154,8 @@ bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePt
         return true;
 
     /// The lookup below ignores a source `Nullable`, while `CAST` cannot place a NULL in a target that
-    /// does not hold one, so such a pair stays on the `Field` path, which owns the "not representable"
-    /// answer for it. A `Variant` does hold a NULL, through its own discriminator.
+    /// does not hold one, so by type alone such a pair is refused and keeps the `Field` path, which owns
+    /// the "not representable" answer for it. A `Variant` does hold a NULL, through its own discriminator.
     if (isNullableOrLowCardinalityNullable(from) && !canContainNull(*to))
         return false;
 
@@ -217,7 +217,14 @@ bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePt
 std::optional<ColumnPtr> tryConvertVariantColumnNative(
     const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
 {
-    if (!carriesAmbiguousVariant(*to) || !variantAlternativeIsChosenByType(from, to))
+    if (!carriesAmbiguousVariant(*to))
+        return std::nullopt;
+
+    /// A `Nullable` that this row does not use holds no NULL for `CAST` to place, so the outermost one is
+    /// decided by the row; the levels below have no value here and keep the type-level answer.
+    const DataTypePtr source = value.isNullAt(0) ? from : removeNullableOrLowCardinalityNullable(from);
+
+    if (!variantAlternativeIsChosenByType(source, to))
         return std::nullopt;
 
     /// The value keeps its own type here, so it stays representable, and neither `strict` nor

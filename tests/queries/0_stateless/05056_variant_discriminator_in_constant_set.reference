@@ -17,6 +17,11 @@ in-nullable-target-under-tuple-equals	1
 in-nullable-target-under-map-value	1
 in-nullable-target-other-row	0
 in-nullable-target-null-element	0
+in-nonnull-nullable-source	1
+in-nonnull-nullable-source-equals	1
+in-nonnull-nullable-source-nested-array	1
+in-nonnull-nullable-source-other-row	0
+in-nonnull-nullable-source-null-element	0
 in-null-constant-nonnullable-target	0
 in-null-constant-nonnullable-target-nested	0
 or-chain-nested	1
@@ -26,6 +31,7 @@ or-chain-top-level	1
 or-chain-top-level-unrewritten	1
 or-chain-top-level-is-declined	0
 not-in-nested	0
+not-in-nested-is-declined	0
 or-chain-untyped-constants	1
 or-chain-untyped-constants-unrewritten	1
 or-chain-untyped-constants-is-declined	0

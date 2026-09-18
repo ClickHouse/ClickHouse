@@ -1,6 +1,6 @@
 -- A `Variant` value carries which alternative it occupies, and a `Field` does not. Building the set of
 -- an `IN` rebuilt every element from a `Field`, so a value stored as `UInt64` was re-selected into the
--- `Date` alternative and stopped matching the row it was built from. 29 of the 46 rows below answer
+-- `Date` alternative and stopped matching the row it was built from. 33 of the 52 rows below answer
 -- differently without the fix; the last two are controls that must not move. Every `OR` chain is asserted
 -- against the same chain un-rewritten as ground truth, and four of them against the plan as well, so a
 -- decline cannot pass for a fix.
@@ -38,9 +38,17 @@ SELECT 'in-nullable-target-under-tuple-equals', count() FROM (SELECT materialize
 SELECT 'in-nullable-target-under-map-value', count() FROM (SELECT materialize(CAST(map('k', tuple(1::UInt64)), 'Map(String, Nullable(Tuple(Variant(Date, UInt64))))')) AS m) WHERE m IN (CAST(map('k', tuple(1::UInt64)), 'Map(String, Tuple(UInt64))'));
 SELECT 'in-nullable-target-other-row', count() FROM (SELECT materialize(CAST([tuple(toDate(1))], 'Array(Nullable(Tuple(Variant(Date, UInt64))))')) AS a) WHERE a IN (CAST([tuple(1::UInt64)], 'Array(Tuple(UInt64))'));
 SELECT 'in-nullable-target-null-element', count() FROM (SELECT materialize(CAST([NULL], 'Array(Nullable(Tuple(Variant(Date, UInt64))))')) AS a) WHERE a IN (CAST([tuple(1::UInt64)], 'Array(Tuple(UInt64))'));
--- ... while a `Nullable` on the SOURCE side is only followed where the target holds a NULL of its own,
--- at any depth, since `CAST` cannot place one anywhere else. Such a constant keeps the `Field` path,
--- which answers "not representable" and has the set skip it rather than failing the query.
+-- ... while a `Nullable` on the SOURCE side is followed at the outer level whenever the constant's row is
+-- not NULL, since `CAST` then has no NULL to place, and below that level only where the target holds a NULL
+-- of its own. The `equals` row is again the ground truth, and the last row carries a nested NULL the target
+-- accepts only through a `Variant` discriminator.
+SELECT 'in-nonnull-nullable-source', count() FROM (SELECT materialize(CAST(tuple(1::UInt64), 'Tuple(Variant(Date, UInt64))')) AS t) WHERE t IN (CAST(tuple(1::UInt64), 'Nullable(Tuple(UInt64))'));
+SELECT 'in-nonnull-nullable-source-equals', count() FROM (SELECT materialize(CAST(tuple(1::UInt64), 'Tuple(Variant(Date, UInt64))')) AS t) WHERE t = CAST(tuple(1::UInt64), 'Nullable(Tuple(UInt64))');
+SELECT 'in-nonnull-nullable-source-nested-array', count() FROM (SELECT materialize(CAST(tuple([1::UInt64]), 'Tuple(Array(Variant(Date, UInt64)))')) AS t) WHERE t IN (CAST(tuple([1::UInt64]), 'Nullable(Tuple(Array(UInt64)))'));
+SELECT 'in-nonnull-nullable-source-other-row', count() FROM (SELECT materialize(CAST(tuple(toDate(1)), 'Tuple(Variant(Date, UInt64))')) AS t) WHERE t IN (CAST(tuple(1::UInt64), 'Nullable(Tuple(UInt64))'));
+SELECT 'in-nonnull-nullable-source-null-element', count() FROM (SELECT materialize(CAST(tuple(1::UInt64), 'Tuple(Variant(Date, UInt64))')) AS t) WHERE t IN (CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt64)))'));
+-- ... and a NULL row against a target that holds none keeps the `Field` path, which answers "not
+-- representable" and has the set skip it rather than failing the query.
 SELECT 'in-null-constant-nonnullable-target', count() FROM (SELECT materialize(CAST(tuple(1::UInt64), 'Tuple(Variant(Date, UInt64))')) AS t) WHERE t IN (CAST(NULL, 'Nullable(Tuple(UInt64))'));
 SELECT 'in-null-constant-nonnullable-target-nested', count() FROM (SELECT materialize(CAST([tuple(1::UInt64)], 'Array(Tuple(Variant(Date, UInt64)))')) AS a) WHERE a IN (CAST([NULL], 'Array(Nullable(Tuple(UInt64)))'));
 
@@ -71,6 +79,12 @@ WHERE explain ILIKE '%function_name: in%';
 -- The `notEquals` seam, whose first conjunct is false, so no row may survive.
 SELECT 'not-in-nested', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a, materialize(toUInt8(1)) AS x)
 WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64)) AND a != [7::UInt64]::Array(Variant(Date, UInt64)) AND x = 1;
+-- ... and that chain is declined too, so the row above is the un-rewritten chain's own answer and not a
+-- `notIn` that happens to agree with it.
+SELECT 'not-in-nested-is-declined', count() FROM (EXPLAIN QUERY TREE
+    SELECT count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a, materialize(toUInt8(1)) AS x)
+    WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64)) AND a != [7::UInt64]::Array(Variant(Date, UInt64)) AND x = 1)
+WHERE explain ILIKE '%function_name: notIn%';
 
 -- A constant whose type is not one of the alternatives has no faithful place in the set: `equals` is
 -- evaluated against each row's active alternative (it even throws when that alternative is not
