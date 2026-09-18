@@ -55,8 +55,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP QUOTA ${QUOTA}"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX written_rows = 3, written_bytes = 1000000 TO ${ROLE}"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE written_rows_05060"
 ${CLICKHOUSE_CLIENT} --user ${USER} -q "INSERT INTO written_rows_05060 VALUES ('a long string that costs many bytes but only one row')"
+BYTES_AFTER_FIRST_INSERT=$(${CLICKHOUSE_CLIENT} -q "SELECT written_bytes FROM system.quotas_usage WHERE quota_name = '${QUOTA}'")
 ${CLICKHOUSE_CLIENT} --user ${USER} -q "INSERT INTO written_rows_05060 VALUES ('x'), ('y'), ('z')" 2>&1 | grep -m1 -o QUOTA_EXCEEDED
-${CLICKHOUSE_CLIENT} -q "SELECT written_rows, max_written_rows, written_bytes < max_written_bytes FROM system.quotas_usage WHERE quota_name = '${QUOTA}'"
+# The rejected chunk is accounted in both counters: `written_bytes` grows even though `written_rows` is what overflowed.
+${CLICKHOUSE_CLIENT} -q "SELECT written_rows, max_written_rows, written_bytes < max_written_bytes, written_bytes > ${BYTES_AFTER_FIRST_INSERT} FROM system.quotas_usage WHERE quota_name = '${QUOTA}'"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM written_rows_05060"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS written_rows_05060"
