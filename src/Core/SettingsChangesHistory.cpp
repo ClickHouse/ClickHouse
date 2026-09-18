@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"input_format_netcdf_fill_value_as_null", false, false, "New setting that makes the NetCDF format read the values equal to the `_FillValue` or `missing_value` attribute of a variable as NULL"},
+            {"input_format_netcdf_add_dimension_columns", false, false, "New setting that makes the NetCDF format add a column with the index along every dimension that has no coordinate variable of the same name"},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
