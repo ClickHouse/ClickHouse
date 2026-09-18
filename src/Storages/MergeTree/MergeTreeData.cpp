@@ -71,7 +71,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/TableExpressionData.h>
@@ -142,6 +142,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
+#include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -204,6 +205,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
@@ -381,6 +383,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -395,6 +401,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char claim_inject_stale_part_dir[];
+    extern const char slowdown_system_parts_enumeration[];
 }
 
 namespace ErrorCodes
@@ -2280,11 +2287,11 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 return RollbackStatus::Committed;
 
             /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
-            csn = TransactionLog::getCSN(version_info.creation_tid);
+            csn = TransactionManager::getCSN(version_info.creation_tid);
             if (!csn
-                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+                && TransactionManager::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
             {
-                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
+                csn = TransactionManager::getCSN(version_info.creation_tid);  /// re-check after the race window
                 if (!csn)
                     return RollbackStatus::RolledBack;
             }
@@ -2537,7 +2544,7 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     if (!current_version_info.isRemoved())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
-        part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
+        part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
     }
 }
 
@@ -4629,7 +4636,7 @@ size_t MergeTreeData::clearEmptyParts()
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
             if (!part->version->getInfo().creation_tid.isNonTransactional()
-                && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
+                && !part->version->isVisible(TransactionManager::instance().getLatestSnapshot()))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -7043,7 +7050,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
     NonTransactionalRemovalLocks removal_locks;
     for (const DataPartPtr & part : remove)
         if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, removal_locks);
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, LockKind::REMOVAL, removal_locks);
     removal_locks.store();
 
     for (const DataPartPtr & part : remove)
@@ -7988,7 +7995,19 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
     }
 
-    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
+    size_t parts_count_in_partition = 0;
+    size_t size_of_partition = 0;
+    {
+        /// Smallest threshold that could trigger a throw or delay.
+        /// A zero parts_to_throw_insert means "throw on any part", so treat it as 1 to never skip.
+        UInt64 min_enabled_threshold = active_parts_to_throw_insert > 0 ? active_parts_to_throw_insert : 1;
+        if (active_parts_to_delay_insert > 0)
+            min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
+
+        /// If total number of parts is less than minimal threshold, avoid iterating over parts under lock
+        if (parts_count_in_total >= min_enabled_threshold)
+            std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
+    }
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     size_t active_parts_over_threshold = 0;
 
@@ -10183,10 +10202,40 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
+namespace
+{
+
+/// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
+/// is enabled, and even then it only affects the tables with a special name prefix, so that the
+/// tests using the failpoint do not affect concurrent queries over the tables of other tests.
+/// When active, the parts-snapshot walks below sleep on every enumerated element and poll
+/// `need_stop` on every element instead of every 8192, so a test with a fixture of a reasonable
+/// size can prove with a timed assertion that the walk itself honors `need_stop` (reaching the
+/// regular polling cadence would require a fixture with many thousands of parts).
+bool isPartsSnapshotSlowdownActive(const StorageID & storage_id)
+{
+    bool active = false;
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        active = storage_id.table_name.starts_with("t_slowdown_system_parts_snap");
+    });
+    return active;
+}
+
+void sleepForPartsSnapshotSlowdown()
+{
+    ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+    sleepForMilliseconds(500);
+}
+
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     DataPartsVector buf;
+    bool stopped = false;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
 
     for (auto state : affordable_states)
     {
@@ -10195,8 +10244,44 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
             auto range = getDataPartsStateRange(state, kind);
             std::swap(buf, res);
             res.clear();
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+
+            if (need_stop || slowdown)
+            {
+                /// Merge manually instead of std::merge to be able to check `need_stop`
+                /// periodically during the walk (the ranges can be arbitrarily large).
+                auto it = range.begin();
+                auto buf_it = buf.begin();
+                size_t counter = 0;
+                while (it != range.end() || buf_it != buf.end())
+                {
+                    ++counter;
+                    if (slowdown)
+                        sleepForPartsSnapshotSlowdown();
+                    if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+                    {
+                        stopped = true;
+                        break;
+                    }
+
+                    if (it == range.end())
+                        res.push_back(*buf_it++);
+                    else if (buf_it == buf.end() || !LessDataPart()(*buf_it, *it))
+                        res.push_back(*it++);
+                    else
+                        res.push_back(*buf_it++);
+                }
+            }
+            else
+            {
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+            }
+
+            if (stopped)
+                break;
         }
+
+        if (stopped)
+            break;
     }
 
     if (out_states != nullptr)
@@ -10209,10 +10294,10 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     auto lock = readLockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states);
+    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states, need_stop);
 }
 
 DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states) const
@@ -10263,19 +10348,34 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & pa
     return getPatchPartsVectorForPartition(partition_id, lock);
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     auto lock = readLockParts();
     ProjectionPartsVector res;
+    size_t counter = 0;
+    bool stopped = false;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (auto state : affordable_states)
     {
         auto range = getDataPartsStateRange(state);
         for (const auto & part : range)
         {
+            ++counter;
+            if (slowdown)
+                sleepForPartsSnapshotSlowdown();
+            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+            {
+                stopped = true;
+                break;
+            }
+
             res.data_parts.push_back(part);
             for (const auto & [_, projection_part] : part->getProjectionParts())
                 res.projection_parts.push_back(projection_part);
         }
+
+        if (stopped)
+            break;
     }
 
     if (out_states != nullptr)
@@ -10288,11 +10388,29 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForI
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     auto lock = readLockParts();
-    res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
+    if (need_stop || slowdown)
+    {
+        res.reserve(data_parts_by_info.size());
+        size_t counter = 0;
+        for (const auto & part : data_parts_by_info)
+        {
+            ++counter;
+            if (slowdown)
+                sleepForPartsSnapshotSlowdown();
+            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+                break;
+            res.push_back(part);
+        }
+    }
+    else
+    {
+        res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    }
     if (out_states != nullptr)
     {
         out_states->resize(res.size());
@@ -10355,12 +10473,20 @@ bool MergeTreeData::areAsynchronousInsertsEnabled() const
     return (*getSettings())[MergeTreeSetting::async_insert];
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     ProjectionPartsVector res;
     auto lock = readLockParts();
+    size_t counter = 0;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (const auto & part : data_parts_by_info)
     {
+        ++counter;
+        if (slowdown)
+            sleepForPartsSnapshotSlowdown();
+        if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+            break;
+
         res.data_parts.push_back(part);
         for (const auto & [p_name, projection_part] : part->getProjectionParts())
             res.projection_parts.push_back(projection_part);
@@ -11279,7 +11405,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             for (const auto & part : precommitted_parts)
             {
                 if (!covering_parts[idx])
-                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts_for_commit[idx], txn, removal_locks);
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(
+                        data.shared_from_this(), part, covered_parts_for_commit[idx], txn, LockKind::REMOVAL, removal_locks);
                 ++idx;
             }
             removal_locks.store();
@@ -11807,12 +11934,27 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
 }
 
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+namespace
 {
-    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
+
+/// Two streams that render to the same file name, and so end up written into one file.
+struct StreamFileNameCollision
+{
+    String stream_name;
+    String full_stream_name;
+    String other_full_stream_name;
+    NameAndTypePair column;
+    /// Not set when both streams belong to `column`.
+    std::optional<NameAndTypePair> other_column;
+};
+
+/// File names are rendered as they would be for a part written with the given serialization versions.
+std::optional<StreamFileNameCollision> findStreamFileNameCollision(
+    const NamesAndTypesList & columns_list,
+    const MergeTreeSettings & settings,
+    MergeTreeMapSerializationVersion map_serialization_version,
+    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version)
+{
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -11821,47 +11963,101 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
-        settings[MergeTreeSetting::map_serialization_version],
+        map_serialization_version,
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
+    enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
+    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
+    enumerate_settings.enumerate_dynamic_streams = false;
+
+    std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
+        std::optional<StreamFileNameCollision> collision;
 
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            column_streams.emplace(stream_name, full_stream_name);
+            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
+            /// Keep the first one: which later collision gets reported would depend on the enumeration order.
+            if (!inserted && !collision)
+                collision = StreamFileNameCollision{stream_name, full_stream_name, it->second, column, {}};
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
-        serialization->enumerateStreams(callback);
+        auto substream_data = ISerialization::SubstreamData(serialization);
+        serialization->enumerateStreams(enumerate_settings, callback, substream_data);
+
+        if (collision)
+            return collision;
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
-            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
+            auto [it, inserted] = stream_name_to_column.emplace(stream_name, std::pair{full_stream_name, column});
             if (!inserted)
             {
-                const auto & [other_full_name, other_column_name] = it->second;
-                auto other_type = columns.getPhysical(other_column_name).type;
-
-                auto message = fmt::format(
-                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
-
-                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
-
-                if (throw_on_error)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
-                return;
+                const auto & [other_full_stream_name, other_column] = it->second;
+                return StreamFileNameCollision{stream_name, full_stream_name, other_full_stream_name, column, other_column};
             }
         }
     }
+
+    return {};
+}
+
+}
+
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+{
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
+
+    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
+    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
+    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
+    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
+
+    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
+
+    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
+    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
+    /// configurations never share a file.
+    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
+        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
+
+    if (!collision)
+        return;
+
+    String message = collision->other_column.has_value()
+        ? fmt::format(
+            "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+            collision->column.name, collision->column.type->getName(),
+            collision->other_column->name, collision->other_column->type->getName(),
+            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name)
+        : fmt::format(
+            "Column '{} {}' has two streams ({} and {}) with collision in file name {}",
+            collision->column.name, collision->column.type->getName(),
+            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name);
+
+    /// Identical full names collide on their own; only distinct ones can have been merged by hashing.
+    if (collision->full_stream_name != collision->other_full_stream_name && settings[MergeTreeSetting::replace_long_file_name_to_hash])
+        message += collision->other_column.has_value()
+            ? ". It may be a collision between a filename for one column and a hash of filename for another column"
+              " (see setting 'replace_long_file_name_to_hash')"
+            : ". It may be a collision between a filename for one stream and a hash of filename for another stream"
+              " (see setting 'replace_long_file_name_to_hash')";
+
+    if (throw_on_error)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+    LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
