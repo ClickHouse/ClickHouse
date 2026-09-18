@@ -449,10 +449,7 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
 
     /// Everything downstream of this function reasons about the constant through a `Field`: the
     /// conversion below, its reversibility check, and the callers that use the result as a set element or
-    /// as a map key. None of that can express a `Variant` alternative, and the comparisons being replaced
-    /// are evaluated against each row's active alternative - so `equals` matches a numerically equal
-    /// value under another alternative (and throws where the two are not comparable) while a set element
-    /// keys on one discriminator, and two constants under different alternatives collide as map keys.
+    /// as a pruning map key. None of that can express which `Variant` alternative a value occupies.
     if (fieldCanLoseVariantAlternative(from_type, expr_type))
         return std::nullopt;
 

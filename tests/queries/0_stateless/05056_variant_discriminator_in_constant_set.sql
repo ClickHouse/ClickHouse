@@ -1,6 +1,6 @@
 -- A `Variant` value carries which alternative it occupies, and a `Field` does not. Building the set of
 -- an `IN` rebuilt every element from a `Field`, so a value stored as `UInt64` was re-selected into the
--- `Date` alternative and stopped matching the row it was built from. 24 of the 38 rows below answer
+-- `Date` alternative and stopped matching the row it was built from. 29 of the 46 rows below answer
 -- differently without the fix; the last two are controls that must not move. Every `OR` chain is asserted
 -- against the same chain un-rewritten as ground truth, and four of them against the plan as well, so a
 -- decline cannot pass for a fix.
@@ -27,6 +27,22 @@ SELECT 'in-nested-nullable-element', count() FROM (SELECT materialize([1::UInt64
 -- ... while a nested source type that names no alternative is one `CAST` refuses outright, so it stays on
 -- the `Field` path instead of becoming a conversion error.
 SELECT 'in-nested-no-such-alternative', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a) WHERE a IN ([1::UInt8]);
+
+-- A `Nullable` on the target side wraps a nested conversion `CAST` performs unchanged, so the alternative
+-- is chosen by type under one as well. A `Variant` cannot be inside `Nullable`; a composite carrying one
+-- can. The `equals` row is the ground truth for the `IN` above it, and the last two rows hold the other
+-- alternative and a NULL, so they must not match.
+SELECT 'in-nullable-target-under-array', count() FROM (SELECT materialize(CAST([tuple(1::UInt64)], 'Array(Nullable(Tuple(Variant(Date, UInt64))))')) AS a) WHERE a IN (CAST([tuple(1::UInt64)], 'Array(Tuple(UInt64))'));
+SELECT 'in-nullable-target-under-tuple', count() FROM (SELECT materialize(CAST(tuple(tuple(1::UInt64)), 'Tuple(Nullable(Tuple(Variant(Date, UInt64))))')) AS t) WHERE t IN (CAST(tuple(tuple(1::UInt64)), 'Tuple(Tuple(UInt64))'));
+SELECT 'in-nullable-target-under-tuple-equals', count() FROM (SELECT materialize(CAST(tuple(tuple(1::UInt64)), 'Tuple(Nullable(Tuple(Variant(Date, UInt64))))')) AS t) WHERE t = CAST(tuple(tuple(1::UInt64)), 'Tuple(Tuple(UInt64))');
+SELECT 'in-nullable-target-under-map-value', count() FROM (SELECT materialize(CAST(map('k', tuple(1::UInt64)), 'Map(String, Nullable(Tuple(Variant(Date, UInt64))))')) AS m) WHERE m IN (CAST(map('k', tuple(1::UInt64)), 'Map(String, Tuple(UInt64))'));
+SELECT 'in-nullable-target-other-row', count() FROM (SELECT materialize(CAST([tuple(toDate(1))], 'Array(Nullable(Tuple(Variant(Date, UInt64))))')) AS a) WHERE a IN (CAST([tuple(1::UInt64)], 'Array(Tuple(UInt64))'));
+SELECT 'in-nullable-target-null-element', count() FROM (SELECT materialize(CAST([NULL], 'Array(Nullable(Tuple(Variant(Date, UInt64))))')) AS a) WHERE a IN (CAST([tuple(1::UInt64)], 'Array(Tuple(UInt64))'));
+-- ... while a `Nullable` on the SOURCE side is only followed where the target holds a NULL of its own,
+-- at any depth, since `CAST` cannot place one anywhere else. Such a constant keeps the `Field` path,
+-- which answers "not representable" and has the set skip it rather than failing the query.
+SELECT 'in-null-constant-nonnullable-target', count() FROM (SELECT materialize(CAST(tuple(1::UInt64), 'Tuple(Variant(Date, UInt64))')) AS t) WHERE t IN (CAST(NULL, 'Nullable(Tuple(UInt64))'));
+SELECT 'in-null-constant-nonnullable-target-nested', count() FROM (SELECT materialize(CAST([tuple(1::UInt64)], 'Array(Tuple(Variant(Date, UInt64)))')) AS a) WHERE a IN (CAST([NULL], 'Array(Nullable(Tuple(UInt64)))'));
 
 -- The `OR` chain the optimizer turns into such an `IN`, with a `Variant` nested in an `Array`.
 SELECT 'or-chain-nested', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a)
@@ -76,10 +92,12 @@ SETTINGS allow_suspicious_variant_types = 1, optimize_min_equality_disjunction_c
 
 -- Comparison pruning reasons about the constants as `Field`s too, so two of them under different
 -- alternatives collided as map keys and one of two mutually exclusive conditions was dropped.
-SELECT 'pruning-different-alternatives', count() FROM VALUES('v Variant(Date, UInt64)', (toDate(1)), (1::UInt64))
+SELECT 'pruning-different-alternatives', count() FROM
+    (SELECT materialize(toDate(1)::Variant(Date, UInt64)) AS v UNION ALL SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v)
 WHERE v != toDate(1)::Variant(Date, UInt64) AND v != 1::UInt64::Variant(Date, UInt64)
 SETTINGS use_variant_default_implementation_for_comparisons = 0;
-SELECT 'pruning-different-alternatives-off', count() FROM VALUES('v Variant(Date, UInt64)', (toDate(1)), (1::UInt64))
+SELECT 'pruning-different-alternatives-off', count() FROM
+    (SELECT materialize(toDate(1)::Variant(Date, UInt64)) AS v UNION ALL SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v)
 WHERE v != toDate(1)::Variant(Date, UInt64) AND v != 1::UInt64::Variant(Date, UInt64)
 SETTINGS use_variant_default_implementation_for_comparisons = 0, optimize_redundant_comparisons = 0;
 

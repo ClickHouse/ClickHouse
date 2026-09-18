@@ -42,9 +42,8 @@ namespace DB
   * elements of a composite with no element type at hand, so a per-element alternative is never reached.
   *
   * A `Variant` target is the one deliberate divergence from `convertFieldToType`, which cannot express
-  * such a result at all: it returns the value unchanged, and the alternative is chosen only when the
-  * value is inserted into a `ColumnVariant`, by the first alternative that accepts it. `CAST` chooses the
-  * alternative by type instead, so the discriminator survives here and not there.
+  * such a result: it returns the value unchanged and the alternative is chosen only on insertion into a
+  * `ColumnVariant`, by the first one that accepts it. `CAST` chooses it by type instead.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
@@ -65,9 +64,7 @@ ColumnPtr tryConvertColumnToTypeOrNull(
 
 /// Whether a `Field` can lose which `Variant` alternative (or `Dynamic` element type) a value of either
 /// type occupies: a `Field` records the value and not the alternative, and `ColumnVariant::tryInsert`
-/// then takes the first alternative that accepts it. A single-alternative `Variant` has no choice to
-/// lose. A caller that reasons about such a value THROUGH a `Field` - comparing two of them, or building
-/// a set element from one - cannot answer anything about the alternative and has to give up.
+/// then takes the first alternative that accepts it. A single-alternative `Variant` has no choice to lose.
 bool fieldCanLoseVariantAlternative(const DataTypePtr & from, const DataTypePtr & to);
 
 /// Twin of `convertFieldToTypeOrThrow`: throws `TYPE_MISMATCH` for a NULL value that `to` cannot hold,

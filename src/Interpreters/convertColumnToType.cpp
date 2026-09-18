@@ -141,23 +141,30 @@ bool carriesAmbiguousVariant(const IDataType & type)
     return result;
 }
 
-/// `CAST` resolves a `Variant` target's alternatives BY NAME and refuses anything it cannot name, so it
-/// can choose the alternative for an identity conversion (at any nesting depth), for a source type that
-/// names one, and for a `Variant` source whose own alternatives are all present in the target (the
-/// extension `createVariantToVariantWrapper` allows). By name, not `equals`: `equals` conflates types the
-/// lookup does not (a `DateTime` timezone, an `AggregateFunction`'s serialization version). The source is
-/// normalized as `createColumnToVariantWrapper` normalizes it, so an ordinary `LowCardinality` survives -
-/// it can be an alternative itself. `Array`/`Map`/`Tuple` are converted element-wise, so the same question
-/// is asked of each element pair and one pair that does not qualify keeps the whole conversion on the
-/// `Field` path. Two tuples that both name their elements are paired by NAME by `CAST` (dropping and
-/// default-filling what does not match) and positionally by `convertFieldToType`, so they are admitted
-/// only where the two pairings are the same one.
+/// `CAST` resolves a `Variant` target's alternatives BY NAME, so it can choose the alternative for an
+/// identity conversion, for a source type that names one, and for a `Variant` source whose alternatives
+/// the target all names. By name, not `equals`: `equals` conflates types the lookup does not (a `DateTime`
+/// timezone, an `AggregateFunction`'s serialization version). An ordinary `LowCardinality` survives the
+/// source normalization, since it can be an alternative itself. Two tuples that both name their elements
+/// are paired by NAME by `CAST` and positionally by `convertFieldToType`, so they qualify only where the
+/// two pairings coincide.
 bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePtr & to)
 {
     if (from->getName() == to->getName())
         return true;
 
+    /// The lookup below ignores a source `Nullable`, while `CAST` cannot place a NULL in a target that
+    /// does not hold one, so such a pair stays on the `Field` path, which owns the "not representable"
+    /// answer for it. A `Variant` does hold a NULL, through its own discriminator.
+    if (isNullableOrLowCardinalityNullable(from) && !canContainNull(*to))
+        return false;
+
     const DataTypePtr source = removeNullableOrLowCardinalityNullable(from);
+
+    /// A `Nullable` target adds a NULL flag over a conversion `CAST` performs unchanged, so the nested
+    /// type answers the same question. Only a composite is reached: a `Variant` cannot be inside `Nullable`.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get()))
+        return variantAlternativeIsChosenByType(source, to_nullable->getNestedType());
 
     if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get()))
     {
@@ -205,19 +212,16 @@ bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePt
 }
 
 /// A `Field` cannot express a `Variant` result: `convertFieldToType` returns the value unchanged, and the
-/// alternative is then chosen when the value is inserted into a `ColumnVariant`, by the first one that
-/// accepts it (so `1 :: UInt64` lands in `Date` for `Variant(Date, UInt64)`). `CAST` chooses it by type.
-/// Returns std::nullopt when this path does not apply, and the caller falls back to the `Field` path.
+/// alternative is then chosen on insertion into a `ColumnVariant`, by the first one that accepts it (so
+/// `1 :: UInt64` lands in `Date` for `Variant(Date, UInt64)`). `CAST` chooses it by type.
 std::optional<ColumnPtr> tryConvertVariantColumnNative(
     const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
 {
     if (!carriesAmbiguousVariant(*to) || !variantAlternativeIsChosenByType(from, to))
         return std::nullopt;
 
-    /// The value keeps its own type here, so it stays representable (a NULL included, which a `Variant`
-    /// holds through its own discriminator) and neither `strict` nor `convert_inexact_floats` applies.
-    /// `castColumnAccurateOrNull` is not usable regardless: it wraps the target in `Nullable`, which
-    /// `Array(Variant(...))` rejects.
+    /// The value keeps its own type here, so it stays representable, and neither `strict` nor
+    /// `convert_inexact_floats` applies.
     return castColumn({value.getPtr(), from, ""}, to)->convertToFullColumnIfConst();
 }
 

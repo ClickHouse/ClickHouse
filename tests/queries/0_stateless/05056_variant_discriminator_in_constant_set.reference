@@ -11,6 +11,14 @@ in-tuple-element-typed-alternative	1
 in-nested-twice	1
 in-nested-nullable-element	1
 in-nested-no-such-alternative	0
+in-nullable-target-under-array	1
+in-nullable-target-under-tuple	1
+in-nullable-target-under-tuple-equals	1
+in-nullable-target-under-map-value	1
+in-nullable-target-other-row	0
+in-nullable-target-null-element	0
+in-null-constant-nonnullable-target	0
+in-null-constant-nonnullable-target-nested	0
 or-chain-nested	1
 or-chain-nested-unrewritten	1
 or-chain-nested-is-declined	0
