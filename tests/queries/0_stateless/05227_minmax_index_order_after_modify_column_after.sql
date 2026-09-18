@@ -1,3 +1,10 @@
+-- Random settings limits: parallel_replicas_local_plan=(1, None); optimize_aggregation_in_order=(0, 0)
+
+-- The two projection-use assertions read the initiator's own plan. With parallel replicas enabled
+-- (the ParallelReplicas job enables them for every query) that plan drops the implicit projection
+-- unless the initiator builds a local plan and aggregation-in-order is off, so the clamp above pins
+-- both settings to the values they already have by default.
+
 -- Part min-max index slots are addressed by position, so their order must not follow the table column
 -- order: ALTER TABLE ... MODIFY COLUMN ... AFTER on a partition-key column used to desynchronize the
 -- two and silently prune correct parts, no-op a DELETE, and misreport min_time / max_time.
@@ -95,6 +102,10 @@ SELECT 'T7 projection enabled', min(a), max(a), min(b), max(b) FROM t_minmax_ord
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT 'T7 projection disabled', min(a), max(a), min(b), max(b) FROM t_minmax_order_projection
 SETTINGS optimize_use_projections = 0, optimize_use_implicit_projections = 0;
+SELECT 'T7 projection used', count() > 0 FROM (
+    EXPLAIN SELECT min(a), max(a), min(b), max(b) FROM t_minmax_order_projection
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+) WHERE explain ILIKE '%_minmax_count_projection%';
 
 -- T8: guards the mechanism itself. No ALTER at all, but the table column order is not the sorted
 -- order, so the index slot order and the projection pair order must still be derived the same way.
@@ -106,6 +117,10 @@ SELECT 'T8 projection enabled', min(a), max(a), min(b), max(b) FROM t_minmax_ord
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT 'T8 projection disabled', min(a), max(a), min(b), max(b) FROM t_minmax_order_unsorted
 SETTINGS optimize_use_projections = 0, optimize_use_implicit_projections = 0;
+SELECT 'T8 projection used', count() > 0 FROM (
+    EXPLAIN SELECT min(a), max(a), min(b), max(b) FROM t_minmax_order_unsorted
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+) WHERE explain ILIKE '%_minmax_count_projection%';
 SELECT 'T8 pruning, b', count() FROM t_minmax_order_unsorted WHERE b = 250
 SETTINGS use_partition_pruning = 1, use_skip_indexes = 1, optimize_use_projections = 0, optimize_use_implicit_projections = 0;
 

@@ -12,6 +12,8 @@ T6 after merge	1
 T6 after reload	1
 T7 projection enabled	1	2	100	200
 T7 projection disabled	1	2	100	200
+T7 projection used	1
 T8 projection enabled	1	1	100	250
 T8 projection disabled	1	1	100	250
+T8 projection used	1
 T8 pruning, b	1
