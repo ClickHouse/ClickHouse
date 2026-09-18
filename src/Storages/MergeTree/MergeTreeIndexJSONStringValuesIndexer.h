@@ -25,7 +25,7 @@ public:
 private:
     void emitString(std::string_view path, std::string_view value);
     void processValue(std::string_view path, const IColumn & column, const DataTypePtr & type, size_t row);
-    void processObject(const ColumnObject & column_object, const DataTypeObject & type_object, size_t row);
+    void processObject(std::string_view prefix, const ColumnObject & column_object, const DataTypeObject & type_object, size_t row);
     void processDynamic(std::string_view path, const ColumnDynamic & column_dynamic, size_t row);
     void processSharedDataValue(std::string_view path, std::string_view value_data);
 

@@ -1871,7 +1871,8 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromMap(preprocessed_column, offset, rows_read);
     }
-    else if (isObject(index_column.type) && tokenizer->getType() == ITokenizer::Type::JSONStringValues)
+    else if (isObject(removeNullable(removeLowCardinality(index_column.type)))
+        && tokenizer->getType() == ITokenizer::Type::JSONStringValues)
     {
         addDocumentsFromJSON(preprocessed_column, index_column.type, offset, rows_read);
     }
@@ -1959,18 +1960,29 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
 
 void MergeTreeIndexAggregatorText::addDocumentsFromJSON(ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read)
 {
-    column = column->convertToFullIfWrapped();
-    const auto * column_object = typeid_cast<const ColumnObject *>(column.get());
+    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+
+    const auto * nullable = typeid_cast<const ColumnNullable *>(column.get());
+    const IColumn * nested = nullable ? &nullable->getNestedColumn() : column.get();
+    const auto * column_object = typeid_cast<const ColumnObject *>(nested);
     if (!column_object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "jsonStringValues text index expected a JSON column, got {}", column->getName());
 
-    const auto * type_object = typeid_cast<const DataTypeObject *>(removeNullable(type).get());
+    const auto * type_object = typeid_cast<const DataTypeObject *>(removeNullable(removeLowCardinality(type)).get());
     if (!type_object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "jsonStringValues text index expected type JSON, got {}", type->getName());
 
     JSONStringValuesIndexer indexer(granule_builder);
     for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        if (nullable && nullable->isNullAt(i))
+        {
+            granule_builder.incrementCurrentRow();
+            continue;
+        }
+
         indexer.addRow(*column_object, *type_object, i);
+    }
 }
 
 namespace

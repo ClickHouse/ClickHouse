@@ -78,7 +78,116 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE NOT hasToken(json.note, 'hell
 WHERE explain LIKE '%Name: idx%';
 SELECT id FROM tab WHERE NOT hasToken(json.note, 'hello') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
+SELECT '-- AND of typed String with NOT Nullable must not treat NULL as 0';
+SELECT 'idx', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.note, 'hello') ORDER BY id;
+SELECT 'scan', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.note, 'hello') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'idx', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.msg.:`String`, 'error') ORDER BY id;
+SELECT 'scan', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.msg.:`String`, 'error') ORDER BY id SETTINGS use_skip_indexes = 0;
+
+SELECT '-- direct read does not replace requires_positive_filter atoms';
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello'))
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(json.msg.:`String`, 'error'))
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
 DROP TABLE tab;
+
+SELECT '-- nested JSON keeps the parent path prefix';
+DROP TABLE IF EXISTS tab_nested;
+CREATE TABLE tab_nested
+(
+    id UInt32,
+    json JSON(a JSON(b String), extra JSON),
+    INDEX idx json TYPE text(tokenizer = 'jsonStringValues') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_nested VALUES
+    (0, '{"a": {"b": "hit"}, "extra": {"c": "nested"}}'),
+    (1, '{"a": {"b": "miss"}, "extra": {"c": "other"}}');
+
+SELECT 'typed nested', id FROM tab_nested WHERE hasToken(json.a.b, 'hit') ORDER BY id;
+SELECT 'typed nested scan', id FROM tab_nested WHERE hasToken(json.a.b, 'hit') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'nested dynamic', id FROM tab_nested WHERE hasToken(json.extra.c.:`String`, 'nested') ORDER BY id;
+SELECT 'nested dynamic scan', id FROM tab_nested WHERE hasToken(json.extra.c.:`String`, 'nested') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'no relative-path false match', count() FROM tab_nested WHERE hasToken(json.b.:`String`, 'hit');
+
+DROP TABLE tab_nested;
+
+SELECT '-- Nullable(JSON) skips NULL rows and still indexes String leaves';
+DROP TABLE IF EXISTS tab_null;
+CREATE TABLE tab_null
+(
+    id UInt32,
+    json Nullable(JSON(status String)),
+    INDEX idx json TYPE text(tokenizer = 'jsonStringValues') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_null VALUES
+    (0, '{"status": "error"}'),
+    (1, NULL),
+    (2, '{"status": "ok"}');
+
+SELECT 'idx', id FROM tab_null WHERE hasToken(json.status, 'error') ORDER BY id;
+SELECT 'scan', id FROM tab_null WHERE hasToken(json.status, 'error') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'null row', id FROM tab_null WHERE json IS NULL ORDER BY id;
+
+DROP TABLE tab_null;
+
+SELECT '-- shared-data String paths: JSON(max_dynamic_paths = 0)';
+DROP TABLE IF EXISTS tab_shared_paths;
+CREATE TABLE tab_shared_paths
+(
+    id UInt32,
+    json JSON(max_dynamic_paths = 0),
+    INDEX idx json TYPE text(tokenizer = 'jsonStringValues') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_shared_paths VALUES
+    (0, '{"msg": "fromshared", "n": 42}'),
+    (1, '{"msg": "other", "n": 1}');
+
+SELECT 'idx', id FROM tab_shared_paths WHERE hasToken(json.msg.:`String`, 'fromshared') ORDER BY id;
+SELECT 'scan', id FROM tab_shared_paths WHERE hasToken(json.msg.:`String`, 'fromshared') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'number not indexed', count() FROM tab_shared_paths WHERE hasToken(json.n.:`String`, '42');
+SELECT 'no cross-path FP', count() FROM tab_shared_paths WHERE hasToken(json.n.:`String`, 'fromshared');
+
+DROP TABLE tab_shared_paths;
+
+SELECT '-- Dynamic shared variant: JSON(max_dynamic_types = 1) evicts the minority String';
+DROP TABLE IF EXISTS tab_shared_variant;
+CREATE TABLE tab_shared_variant
+(
+    id UInt32,
+    json JSON(max_dynamic_types = 1),
+    INDEX idx json TYPE text(tokenizer = 'jsonStringValues') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_shared_variant VALUES
+    (0, '{"msg": 1}'),
+    (1, '{"msg": 2}'),
+    (2, '{"msg": 3}'),
+    (3, '{"msg": "evicted"}');
+
+SELECT 'in shared variant', id, isDynamicElementInSharedData(json.msg) FROM tab_shared_variant ORDER BY id;
+SELECT 'idx', id FROM tab_shared_variant WHERE hasToken(json.msg.:`String`, 'evicted') ORDER BY id;
+SELECT 'scan', id FROM tab_shared_variant WHERE hasToken(json.msg.:`String`, 'evicted') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'number not indexed', count() FROM tab_shared_variant WHERE hasToken(json.msg.:`String`, '1');
+
+DROP TABLE tab_shared_variant;
 
 SELECT '-- rejected index definitions';
 CREATE TABLE tab_bad (id UInt32, s String, INDEX idx s TYPE text(tokenizer = 'jsonStringValues')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }

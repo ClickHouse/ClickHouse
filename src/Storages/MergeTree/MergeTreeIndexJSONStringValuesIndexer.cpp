@@ -33,7 +33,7 @@ JSONStringValuesIndexer::JSONStringValuesIndexer(MergeTreeIndexTextGranuleBuilde
 void JSONStringValuesIndexer::addRow(const ColumnObject & column_object, const DataTypeObject & type_object, size_t row)
 {
     token_position = 0;
-    processObject(column_object, type_object, row);
+    processObject({}, column_object, type_object, row);
     granule_builder.incrementCurrentRow();
 }
 
@@ -81,6 +81,7 @@ void JSONStringValuesIndexer::processValue(std::string_view path, const IColumn 
             object_column = &nullable->getNestedColumn();
 
         processObject(
+            path,
             assert_cast<const ColumnObject &>(*object_column),
             assert_cast<const DataTypeObject &>(*unwrapped),
             row);
@@ -97,23 +98,45 @@ void JSONStringValuesIndexer::processValue(std::string_view path, const IColumn 
     }
 }
 
-void JSONStringValuesIndexer::processObject(const ColumnObject & column_object, const DataTypeObject & type_object, size_t row)
+void JSONStringValuesIndexer::processObject(
+    std::string_view prefix, const ColumnObject & column_object, const DataTypeObject & type_object, size_t row)
 {
+    /// Child ColumnObject paths are relative to this object. Prefix with the already-normalized
+    /// parent path bytes; do not assume the child stored a rooted path.
+    auto visit = [&](std::string_view child_path, const auto & fn)
+    {
+        if (prefix.empty())
+        {
+            fn(child_path);
+            return;
+        }
+
+        String full_path;
+        full_path.reserve(prefix.size() + 1 + child_path.size());
+        full_path.append(prefix);
+        full_path.push_back('.');
+        full_path.append(child_path);
+        fn(full_path);
+    };
+
     const auto & typed_path_types = type_object.getTypedPaths();
     const auto & typed_path_columns = column_object.getTypedPaths();
     for (const auto & [path, type] : typed_path_types)
-        processValue(path, *typed_path_columns.at(path), type, row);
+        visit(path, [&](std::string_view full_path) { processValue(full_path, *typed_path_columns.at(path), type, row); });
 
     const auto dynamic_type = column_object.getDynamicType();
     for (const auto & [path, column] : column_object.getDynamicPaths())
-        processValue(path, *column, dynamic_type, row);
+        visit(path, [&](std::string_view full_path) { processValue(full_path, *column, dynamic_type, row); });
 
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
     const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
     const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
     const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
     for (size_t j = start; j != end; ++j)
-        processSharedDataValue(shared_data_paths->getDataAt(j), shared_data_values->getDataAt(j));
+        visit(shared_data_paths->getDataAt(j), [&](std::string_view full_path)
+        {
+            processSharedDataValue(full_path, shared_data_values->getDataAt(j));
+        });
 }
 
 void JSONStringValuesIndexer::processDynamic(std::string_view path, const ColumnDynamic & column_dynamic, size_t row)

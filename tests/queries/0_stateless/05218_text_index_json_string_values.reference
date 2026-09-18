@@ -31,5 +31,36 @@ scan	1
 idx	4
 scan	4
 0
+-- AND of typed String with NOT Nullable must not treat NULL as 0
+idx	4
+scan	4
+idx	3
+scan	3
+-- direct read does not replace requires_positive_filter atoms
+0
+0
+-- nested JSON keeps the parent path prefix
+typed nested	0
+typed nested scan	0
+nested dynamic	0
+nested dynamic scan	0
+no relative-path false match	0
+-- Nullable(JSON) skips NULL rows and still indexes String leaves
+idx	0
+scan	0
+null row	1
+-- shared-data String paths: JSON(max_dynamic_paths = 0)
+idx	0
+scan	0
+number not indexed	0
+no cross-path FP	0
+-- Dynamic shared variant: JSON(max_dynamic_types = 1) evicts the minority String
+in shared variant	0	false
+in shared variant	1	false
+in shared variant	2	false
+in shared variant	3	true
+idx	3
+scan	3
+number not indexed	0
 -- rejected index definitions
 -- the tokenizer does not tokenize strings

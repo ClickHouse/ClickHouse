@@ -370,7 +370,20 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
     if (rpn_element.text_search_queries.size() != 1)
         return nullptr;
 
-    return rpn_element.text_search_queries.front();
+    auto query = rpn_element.text_search_queries.front();
+    /// Exact on Nullable / `.:String` is only valid in a positive filter: WHERE treats NULL like 0,
+    /// but `NOT NULL` is not `NOT 0`. Skip-index still uses Exact via the RPN; this path must not
+    /// replace the atom with a non-nullable `UInt8` virtual column.
+    if (rpn_element.requires_positive_filter)
+    {
+        return std::make_shared<TextSearchQuery>(
+            query->getFunctionName(),
+            query->getSearchMode(),
+            TextIndexDirectReadMode::None,
+            query->getTokens());
+    }
+
+    return query;
 }
 
 bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const

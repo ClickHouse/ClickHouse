@@ -114,7 +114,8 @@ public:
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
-    /// Create text search query for the function node if it is suitable for optimization.
+    /// Create a text search query for a single function node. Direct read has no parent polarity,
+    /// so `requires_positive_filter` atoms are returned with `DirectReadMode::None`.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
