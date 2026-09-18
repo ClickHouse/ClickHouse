@@ -55,6 +55,13 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// check the result.
 bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
+/// The same, but a set built from a subquery keeps its explicit elements when
+/// `use_index_for_in_with_subqueries` allows it (the way `buildOrderedSetsForDAG` builds it), so a
+/// condition on the set can still be read back afterwards - `extractConstantStringValuesForColumn`
+/// finds nothing in a set built without them. When the setting forbids that, the sets are built
+/// the plain way and stay ready for the filter to run.
+void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context);
+
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
 /// Those sets need external tables set up by ReadFromRemote before they can be built.

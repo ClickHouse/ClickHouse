@@ -167,12 +167,15 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
             { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
         };
 
+        /// Read the conditions on `database` and `table` before the filter below is built: that
+        /// build drops the elements of an `IN` over a subquery, and the extraction needs them (it
+        /// builds such a set itself, keeping them).
+        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
+        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
+
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-
-        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
-        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
     }
 }
 

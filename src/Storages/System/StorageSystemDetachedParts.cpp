@@ -356,8 +356,10 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
 
         filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+        /// `StoragesInfoStream` reads the condition on `table` back from this filter to narrow the
+        /// enumeration, which needs the elements of an `IN` over a subquery: keep them.
         if (filter)
-            VirtualColumnUtils::buildSetsForDAG(*filter, context);
+            VirtualColumnUtils::buildSetsForDAGKeepingElements(*filter, context);
     }
 }
 

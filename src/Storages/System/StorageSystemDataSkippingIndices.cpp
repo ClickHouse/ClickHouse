@@ -264,12 +264,14 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
 
+        /// A condition on `table` prunes the enumeration the same way the one on `database` does.
+        /// It is read before the filter below is built: that build drops the elements of an `IN`
+        /// over a subquery, and the extraction needs them (it builds such a set itself, keeping them).
+        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
+
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-
-        /// A condition on `table` prunes the enumeration the same way the one on `database` does.
-        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
     }
 }
 

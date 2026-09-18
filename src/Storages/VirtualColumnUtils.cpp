@@ -162,6 +162,14 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
     buildSetsForDagImpl(dag, context, /* ordered = */ true);
 }
 
+void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// The ordered build leaves a set alone when the setting forbids it; the plain build then
+    /// creates it, and skips the sets the first pass already created.
+    buildSetsForDagImpl(dag, context, /* ordered = */ true);
+    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);

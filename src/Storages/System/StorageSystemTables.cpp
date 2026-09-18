@@ -71,10 +71,20 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
         .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
         .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
+    /// The exact database names the query can ask for, when it pins them down. The block filter
+    /// below only sees `database`, so it cannot use a condition that names the database together
+    /// with the table, such as `(database, name) IN ((db, t))`; the extraction reads that shape
+    /// too, and shortlists the databases first. Then the block filter applies whatever else the
+    /// query says about `database` alone, `LIKE` included.
+    const auto database_name_filter = extractNameFilter(predicate, "database", context);
+
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// We don't want to show the internal database for temporary tables in system.tables
+
+        if (database_name_filter && !database_name_filter(database_name))
+            continue;
 
         column->insert(database_name);
     }
