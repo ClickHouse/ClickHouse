@@ -1,10 +1,8 @@
 -- A `COLUMNS` matcher matches `ALIAS` and `MATERIALIZED` columns when they are enabled with
 -- `asterisk_include_alias_columns` / `asterisk_include_materialized_columns`, the same way as `*`.
--- Without them, a table whose interface consists of alias columns (such as the `bucketed` schema
--- of `system.metric_log`) has nothing to match under the old analyzer, and, for example,
--- `arraySum([COLUMNS('...')])` fails with `ILLEGAL_TYPE_OF_ARGUMENT` on the empty array.
--- The new analyzer always matches them, so only the queries with both settings enabled have the
--- same result under both analyzers.
+-- A table whose interface consists of alias columns (such as the `bucketed` schema of
+-- `system.metric_log`) relies on it: otherwise, for example, `arraySum([COLUMNS('...')])` has an
+-- empty array to sum and fails with `ILLEGAL_TYPE_OF_ARGUMENT`.
 
 SET asterisk_include_alias_columns = 1, asterisk_include_materialized_columns = 1;
 
