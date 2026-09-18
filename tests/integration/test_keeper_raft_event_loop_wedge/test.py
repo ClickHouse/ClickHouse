@@ -462,7 +462,8 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
 
         # A turned-away thread must not cost the replay its progress: its request is handled to
         # the end rather than declined, so the commit index it carries still lands. Catching up
-        # does not isolate that from the admitted thread's request, but losing it would show here.
+        # does not isolate that contribution - a later request carries the same commit index or a
+        # newer one - so this asserts that the node recovers, not which request got it there.
         zk = get_fake_zk(node2)
         try:
             for i in range(10):

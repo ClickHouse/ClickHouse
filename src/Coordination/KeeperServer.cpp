@@ -1073,11 +1073,13 @@ void KeeperServer::waitForLocalLogsPreprocessing()
     /// The smaller limit binds: past `reconnect_limit_` the leader replaces the connection and
     /// discards the response this hint would ride on, past `response_limit_` the cluster counts
     /// this node as not responding. One heartbeat less, because the leader's timer started when
-    /// it sent and this one when the request arrived.
+    /// it sent and this one when the request arrived - and nothing at all once the smaller limit
+    /// is one or zero, because then there is no margin left to wait inside and the answer has to
+    /// go out now rather than exactly when the leader stops waiting for it.
     const auto raft_limits = nuraft::raft_server::get_raft_limits();
     const uint64_t heartbeats_to_wait = std::min<uint64_t>(raft_limits.response_limit_, raft_limits.reconnect_limit_);
     const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
-        * (heartbeats_to_wait > 1 ? heartbeats_to_wait - 1 : 1);
+        * (heartbeats_to_wait > 1 ? heartbeats_to_wait - 1 : 0);
 
     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
     bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);
