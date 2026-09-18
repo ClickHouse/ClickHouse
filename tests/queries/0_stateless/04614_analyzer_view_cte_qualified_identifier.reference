@@ -1,10 +1,18 @@
--- aliased CTE reference
+-- view created with enable_analyzer = 0, aliased CTE reference
+1
+1
+-- view created with enable_analyzer = 1
+1
 1
 -- qualification by both cte name and alias
 1	1
+1	1
 -- unaliased CTE reference
 1
+1
 -- UNION CTE body
+1
+2
 1
 2
 -- SHOW CREATE is unchanged
@@ -12,4 +20,5 @@ WITH c AS (SELECT 1 AS x) SELECT c.x AS f FROM c AS s
 -- two references to the same CTE with different aliases
 1
 -- materialized view with an aliased CTE reference
+1
 2

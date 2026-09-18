@@ -238,6 +238,5 @@ template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
 template class FieldToDataType<LeastSupertypeOnError::Variant>;
-template class FieldToDataType<LeastSupertypeOnError::Dynamic>;
 
 }

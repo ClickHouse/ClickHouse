@@ -218,7 +218,7 @@ Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
 
 :::note
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/reference/engines/table-engines/special/join).
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
 :::
 )";
     FunctionDocumentation::Syntax syntax_joinGet = "joinGet(join_storage_table_name, value_column, join_keys)";
@@ -232,26 +232,27 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [s
     {
         "Usage example",
         R"(
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGet(id_val, 'val', toUInt32(1));
+SELECT joinGet(db_test.id_val, 'val', toUInt32(1));
         )",
         R"(
-┌─joinGet('id_val', 'val', toUInt32(1))─┐
-│                                    11 │
-└───────────────────────────────────────┘
+┌─joinGet(db_test.id_val, 'val', toUInt32(1))─┐
+│                                          11 │
+└─────────────────────────────────────────────┘
         )"
     },
     {
         "Usage with table from current database",
         R"(
+USE db_test;
 SELECT joinGet(id_val, 'val', toUInt32(2));
         )",
         R"(
-┌─joinGet('id_val', 'val', toUInt32(2))─┐
-│                                    12 │
-└───────────────────────────────────────┘
+┌─joinGet(id_val, 'val', toUInt32(2))─┐
+│                                  12 │
+└─────────────────────────────────────┘
         )"
     },
     {
@@ -260,12 +261,12 @@ SELECT joinGet(id_val, 'val', toUInt32(2));
 CREATE TABLE some_table (id1 UInt32, id2 UInt32, name String) ENGINE = Join(ANY, LEFT, id1, id2);
 INSERT INTO some_table VALUES (1, 11, 'a') (2, 12, 'b') (3, 13, 'c');
 
-SELECT joinGet(some_table, 'name', toUInt32(1), toUInt32(11));
+SELECT joinGet(some_table, 'name', 1, 11);
         )",
         R"(
-┌─joinGet('some_table', 'name', toUInt32(1), toUInt32(11))─┐
-│ a                                                        │
-└──────────────────────────────────────────────────────────┘
+┌─joinGet(some_table, 'name', 1, 11)─┐
+│ a                                  │
+└────────────────────────────────────┘
         )"
     }
     };
@@ -279,7 +280,7 @@ Gets data from Join tables using the specified join key.
 Unlike [`joinGet`](#joinGet) it returns `NULL` when the key is missing.
 
 :::note
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/reference/engines/table-engines/special/join).
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
 :::
 )";
     FunctionDocumentation::Syntax syntax_joinGetOrNull = "joinGetOrNull(join_storage_table_name, value_column, join_keys)";
@@ -293,15 +294,15 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [s
     {
         "Usage example",
         R"(
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGetOrNull(id_val, 'val', toUInt32(1)), joinGetOrNull(id_val, 'val', toUInt32(999));
+SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.id_val, 'val', toUInt32(999));
         )",
         R"(
-┌─joinGetOrNull('id_val', 'val', toUInt32(1))─┬─joinGetOrNull('id_val', 'val', toUInt32(999))─┐
-│                                          11 │                                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+┌─joinGetOrNull(db_test.id_val, 'val', toUInt32(1))─┬─joinGetOrNull(db_test.id_val, 'val', toUInt32(999))─┐
+│                                                11 │                                                ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
         )"
     }
     };

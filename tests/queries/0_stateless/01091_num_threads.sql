@@ -31,9 +31,7 @@ WITH
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
--- `numbers` is a single-stream source and an aggregation without keys keeps a single
--- output stream, so this query must not fan out to `max_threads` worker threads.
-SELECT uniqExact(thread_id) <= 2
+SELECT uniqExact(thread_id) > 2
 FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 

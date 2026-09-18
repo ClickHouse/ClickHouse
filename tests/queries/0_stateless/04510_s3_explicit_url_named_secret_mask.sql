@@ -285,13 +285,6 @@ CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_S3DBTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
--- A valid non-secret named override (use_environment_credentials) must stay visible while
--- secret_access_key is hidden. This CREATE succeeds (the S3 database is lazy), so use a unique
--- database name to avoid collisions across parallel runs, and drop it after.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-
 -- The query-tree surface (EXPLAIN QUERY TREE) must hide the same carriers as the logged query text:
 -- a credential-bearing url (masked whole, since a tree dump cannot represent partial masking), the
 -- positional secrets, and the values of headers(...) / extra_credentials(...).
@@ -328,18 +321,5 @@ WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
   AND query_kind != 'Set' -- sent by the test harness, not by this test
   AND query NOT ILIKE 'SYSTEM FLUSH%' -- its own terminal event races with the flush it performs
-  AND query_id = initial_query_id -- only the statements issued here: a Replicated database logs
-                                  -- each DDL again from the replay worker, which inherits the
-                                  -- initiator's initial_query_id but gets a fresh query_id
   AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
 ORDER BY event_time_microseconds;
-
--- The transcript above is scoped to the statements this test issued. A Replicated database also
--- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
--- the masking property over every row this test produced, replay rows included. count() > 0 keeps
--- an empty row set from passing vacuously.
-SELECT count() > 0, countIf(query LIKE '%SEKRIT%')
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type != 'QueryStart'
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;

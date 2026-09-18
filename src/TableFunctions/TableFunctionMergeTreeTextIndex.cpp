@@ -1,5 +1,6 @@
 #include <Storages/StorageMergeTreeTextIndex.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -10,13 +11,16 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
+#include <Access/Common/AccessFlags.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -28,6 +32,10 @@ public:
     static constexpr auto name = "mergeTreeTextIndex";
     std::string getName() const override { return name; }
 
+    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    /// A persisted definition would also resolve the source table under the global context or the engine credentials.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
@@ -38,6 +46,10 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
+
+    /// Resolves the index of the source table and checks that the user may read it.
+    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(ContextPtr context) const;
+    static ColumnsDescription getColumns();
 
     const char * getStorageEngineName() const override
     {
@@ -78,7 +90,7 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
-ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns()
 {
     return ColumnsDescription{{
         {"part_name", std::make_shared<DataTypeString>()},
@@ -92,13 +104,19 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(Cont
     }};
 }
 
-StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
-    const ASTPtr & /*ast_function*/,
-    ContextPtr context,
-    const std::string & table_name,
-    ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
 {
+    /// A table persisted before that was forbidden resolves the function under the load context, which has no user.
+    if (!context->getUserID())
+    {
+        context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Table function 'mergeTreeTextIndex' cannot check the access of the user outside of a query");
+    }
+
+    /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
+    context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
+
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
@@ -114,14 +132,32 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    auto columns = getActualTableStructure(context, is_insert_query);
+    StorageMergeTreeTextIndex::checkAccess(context, source_table_ptr->getStorageID(), *text_index);
+    return {std::move(source_table_ptr), std::move(text_index)};
+}
+
+ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    /// The structure is static, but this is where e.g. `remote` over a local shard checks the access of the user.
+    resolveIndex(context);
+    return getColumns();
+}
+
+StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/,
+    bool /*is_insert_query*/) const
+{
+    auto [source_table_ptr, text_index] = resolveIndex(context);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
         std::move(storage_id),
         std::move(source_table_ptr),
         std::move(text_index),
-        std::move(columns));
+        getColumns());
 
     res->startup();
     return res;
@@ -131,56 +167,11 @@ void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeTextIndex>(
-        {.description = R"DOCS_MD(
-Represents the dictionary of a text index in MergeTree tables.
-Returns tokens with their posting list metadata.
-It can be used for introspection.
-
-## Syntax {#syntax}
-
-```sql
-mergeTreeTextIndex(database, table, index_name)
-```
-
-## Arguments {#arguments}
-
-| Argument     | Description                                |
-|--------------|--------------------------------------------|
-| `database`   | The database name to read text index from. |
-| `table`      | The table name to read text index from.    |
-| `index_name` | The text index to read from.               |
-
-## Returned value {#returned-value}
-
-A table object with tokens and their posting list metadata.
-
-## Usage Example {#usage-example}
-
-```sql title="Query"
-CREATE TABLE tab
-(
-    id UInt64,
-    s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO tab SELECT number, concatWithSeparator(' ', 'apple', 'banana') FROM numbers(500);
-INSERT INTO tab SELECT 500 + number, concatWithSeparator(' ', 'cherry', 'date') FROM numbers(500);
-
-SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
-```
-
-```text title="Response"
-   ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
-1. │ all_1_1_0 │ apple  │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-2. │ all_1_1_0 │ banana │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-3. │ all_2_2_0 │ cherry │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-   └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
-```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        {
+            .description = "Reads the dictionary of a text index from a MergeTree table. Returns tokens with their posting list metadata.",
+            .examples = {{"mergeTreeTextIndex", "SELECT * FROM mergeTreeTextIndex(currentDatabase(), my_table, my_text_index)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
         {.allow_readonly = true}
     );
 }

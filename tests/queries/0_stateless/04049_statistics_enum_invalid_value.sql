@@ -7,7 +7,7 @@ CREATE TABLE t_enum_stats
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic';
+SETTINGS auto_statistics_types = 'minmax';
 
 INSERT INTO t_enum_stats VALUES (1, 'hello');
 
