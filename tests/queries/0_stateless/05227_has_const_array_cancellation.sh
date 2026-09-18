@@ -76,50 +76,64 @@ deadline 1 "read-time route" ", secondary_indices_enable_bulk_filtering = 1"
 deadline 0 "planning route" ""
 
 # The reported symptom: KILL QUERY does not stop it. No deadline here, so only the kill can end the query.
-KILL_QID="${CLICKHOUSE_DATABASE}_kill"
-KILL_OUT="${CLICKHOUSE_TMP}/killed_query.out"
+#
+# $1 = seconds the query must already have been running before the kill is sent, and also the attempt's id, so
+# that the probe below cannot read an earlier attempt's row. Reports through $kill_outcome and $reached_scan.
+kill_attempt() {
+    local qid="${CLICKHOUSE_DATABASE}_kill_$1"
+    local out="${CLICKHOUSE_TMP}/killed_query_$1.out"
 
-$CLICKHOUSE_CLIENT --query_id "$KILL_QID" --query "
-    SELECT count() FROM t_set_idx WHERE has($NEEDLES, uid)
-    -- Unlike the deadline scenarios above, this one's oracle is a bound, so its cost must not depend on
-    -- settings randomization: without bulk filtering the same scan takes 14.5s instead of 70s unfixed,
-    -- and the query condition cache would serve it the verdict the two queries above already computed.
-    SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
-             secondary_indices_enable_bulk_filtering = 1, use_query_condition_cache = 0,
-             optimize_rewrite_has_to_in = 0" > "$KILL_OUT" 2>&1 &
-query_pid=$!
+    $CLICKHOUSE_CLIENT --query_id "$qid" --query "
+        SELECT count() FROM t_set_idx WHERE has($NEEDLES, uid)
+        -- Unlike the deadline scenarios above, this one's oracle is a bound, so its cost must not depend on
+        -- settings randomization: without bulk filtering the same scan takes 14.5s instead of 70s unfixed,
+        -- and the query condition cache would serve it the verdict the two queries above already computed.
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
+                 secondary_indices_enable_bulk_filtering = 1, use_query_condition_cache = 0,
+                 optimize_rewrite_has_to_in = 0" > "$out" 2>&1 &
+    local query_pid=$!
 
-# Waiting for the query to be merely visible is not enough: the process list entry is inserted before planning
-# starts, and a kill that lands in that window ends the query with the same QUERY_WAS_CANCELLED the oracle
-# below greps for, without any of the work having run. One second of a scan that takes a minute is far past
-# planning, so require elapsed time rather than existence.
-for _ in {1..100}; do
-    [ "$($CLICKHOUSE_CLIENT -q "
-        SELECT count() FROM system.processes WHERE query_id = '$KILL_QID' AND elapsed > 1")" = "1" ] \
-        && break
-    sleep 0.2
+    for _ in {1..150}; do
+        [ "$($CLICKHOUSE_CLIENT -q "
+            SELECT count() FROM system.processes WHERE query_id = '$qid' AND elapsed > $1")" = "1" ] \
+            && break
+        sleep 0.2
+    done
+
+    if timeout 15 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$qid' SYNC" > /dev/null 2>&1; then
+        wait "$query_pid"
+        if grep -q "QUERY_WAS_CANCELLED" "$out"; then
+            kill_outcome="cancelled"
+        else
+            kill_outcome="finished without being cancelled"
+        fi
+    else
+        wait "$query_pid"
+        kill_outcome="still waiting after 15s"
+    fi
+    rm -f "$out"
+
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    # A liveness guard, not an oracle: it reads 1 whether or not the fix is present, and its job is to reject
+    # an attempt in which the kill ended the query before it entered index filtering, where the line below
+    # would still say "cancelled". The pre-existing per-index cancellation check returns before the timer
+    # starts, so zero here means the scan was never entered.
+    reached_scan=$($CLICKHOUSE_CLIENT -q "
+        SELECT max(ProfileEvents['FilteringMarksWithSecondaryKeysMicroseconds']) > 100000
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$qid' AND type != 'QueryStart'")
+}
+
+# The process list entry is inserted before planning starts, so elapsed time only approximates "the scan is
+# running": on a loaded runner the phases ahead of the scan can outlast a one-second wait, and the kill then
+# ends the query in a window where none of the work has run. So an attempt that the guard rejects is discarded
+# and retried with a longer wait rather than asserted on, each retry allowing four times as long. Only the
+# landing window is retried, never the oracle: a kill that does not stop the query reports "still waiting"
+# from any attempt, and the guard holds there because the whole scan then runs.
+for wait_before_kill in 1 4 16; do
+    kill_attempt "$wait_before_kill"
+    [ "$reached_scan" = "1" ] && break
 done
 
-if timeout 15 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$KILL_QID' SYNC" > /dev/null 2>&1; then
-    wait "$query_pid"
-    if grep -q "QUERY_WAS_CANCELLED" "$KILL_OUT"; then
-        echo "KILL QUERY: cancelled"
-    else
-        echo "KILL QUERY: finished without being cancelled"
-    fi
-else
-    wait "$query_pid"
-    echo "KILL QUERY: still waiting after 15s"
-fi
-
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-# A liveness guard, not an oracle: it reads 1 whether or not the fix is present, and its job is to reject a run
-# in which the kill ended the query before it entered index filtering, where the line above would still say
-# "cancelled". The pre-existing per-index cancellation check returns before the timer starts, so zero here
-# means the scan was never entered.
-echo "KILL QUERY reached the index scan: $($CLICKHOUSE_CLIENT -q "
-    SELECT max(ProfileEvents['FilteringMarksWithSecondaryKeysMicroseconds']) > 100000
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND query_id = '$KILL_QID' AND type != 'QueryStart'")"
-
-rm -f "$KILL_OUT"
+echo "KILL QUERY: $kill_outcome"
+echo "KILL QUERY reached the index scan: $reached_scan"
