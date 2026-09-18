@@ -356,13 +356,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
 
-    # The stress test profile constrains enable_analyzer to >= 1 (stress_tests.lib) so neither the
-    # AST fuzzer nor a test spends the run on the old interpreter. Send the setting explicitly so the
-    # randomized compatibility below cannot revert it: compatibility only rewrites settings that are
-    # not `changed`, and a constraint cannot catch that revert because there is no explicit change to
-    # check. The profile pins the same value server-side for the queries this does not cover.
-    client_options.append("enable_analyzer=1")
-
     if i > 0:
         options.append("--order=random")
 
@@ -482,7 +475,13 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     # https://github.com/ClickHouse/ClickHouse/issues/112032 needs to be fixed to enable transform_null_in
     #if random.random() < 1 / 3:
     #    client_options.append("transform_null_in=1")
-    if random.random() < 1 / 3:
+    # The upgrade check runs this load against the previous release's server. Before #119385
+    # (26.9) a sorting key such as `CAST(json.b, 'String')` is matched to the same expression
+    # in `ORDER BY` by name and arity only, although under `cast_keep_nullable = 1` the query
+    # types it `Nullable(String)` while the key is `String`; read-in-order with
+    # `read_in_order_use_virtual_row = 1` then aborts the shipped server with
+    # `Logical error: Virtual row has different type` (`03277_json_subcolumns_in_primary_key`).
+    if random.random() < 1 / 3 and not upgrade_check:
         client_options.append("cast_keep_nullable=1")
     if random.random() < 1 / 3:
         client_options.append("aggregate_functions_null_for_empty=1")

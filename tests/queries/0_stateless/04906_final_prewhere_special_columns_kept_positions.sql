@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 --
 -- Regression test for a LOGICAL_ERROR in `ReadFromMergeTree::removeUnusedColumns`:
 -- "Unexpected number of kept output positions after removing unused columns from ReadFromMergeTree".

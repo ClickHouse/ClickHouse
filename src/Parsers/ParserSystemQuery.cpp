@@ -56,10 +56,10 @@ namespace ErrorCodes
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
             String name = ast->as<ASTLiteral &>().value.safeGet<String>();
-            /// The string literal may contain 'database.table', split it
-            /// to match what parseDatabaseAndTableAsAST would produce.
+            /// A single dot preserves the established string-literal form for a
+            /// qualified dictionary name. Multiple dots are part of a bare dictionary name.
             auto dot_pos = name.find('.');
-            if (dot_pos != String::npos)
+            if (dot_pos != String::npos && name.find('.', dot_pos + 1) == String::npos)
             {
                 res->setDatabase(name.substr(0, dot_pos));
                 res->setTable(name.substr(dot_pos + 1));
