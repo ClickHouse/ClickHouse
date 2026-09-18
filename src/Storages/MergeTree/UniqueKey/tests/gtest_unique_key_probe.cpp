@@ -265,6 +265,26 @@ TEST_F(UniqueKeyProbeTest, ProbeBatchMixedOutcomes)
     EXPECT_EQ(batch[2].outcome, ProbeOutcome::NOT_FOUND);
 }
 
+/// The driver sorts the encoded batch once for all targets; results must
+/// map back to the input row order.
+TEST_F(UniqueKeyProbeTest, ProbeBatchMapsUnsortedRowsBack)
+{
+    auto t = makeTarget({{1, 10}, {2, 20}, {50, 30}});
+    ASSERT_NE(t, nullptr);
+    auto probe = probeOver({t});
+
+    std::vector<UInt64> keys{99, 1, 50, 2}; /// not in key order
+    auto batch = probe.probeBatch(makeKeyBlock(keys), "p0");
+    ASSERT_EQ(batch.size(), keys.size());
+    EXPECT_EQ(batch[0].outcome, ProbeOutcome::NOT_FOUND);
+    EXPECT_EQ(batch[1].outcome, ProbeOutcome::FOUND_LIVE);
+    EXPECT_EQ(batch[1].row_number, 10u);
+    EXPECT_EQ(batch[2].outcome, ProbeOutcome::FOUND_LIVE);
+    EXPECT_EQ(batch[2].row_number, 30u);
+    EXPECT_EQ(batch[3].outcome, ProbeOutcome::FOUND_LIVE);
+    EXPECT_EQ(batch[3].row_number, 20u);
+}
+
 /// ---------- SST backend specifics ----------
 
 TEST_F(UniqueKeyProbeTest, OpenMissingFileThrows)
@@ -290,6 +310,74 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
     ASSERT_EQ(out.size(), 2u);
     EXPECT_FALSE(out[0].has_value());
     EXPECT_EQ(out[1], std::optional<UInt64>(2));
+}
+
+/// Out-of-range keys miss without a lookup; min/max boundaries are inclusive.
+TEST_F(UniqueKeyProbeTest, FindRowIndexBatchPrunesOutOfRangeKeys)
+{
+    auto t = makeTarget({{10, 0}, {20, 1}, {30, 2}});
+    ASSERT_NE(t, nullptr);
+
+    const String e5 = encodeKey(5);
+    const String e10 = encodeKey(10);
+    const String e30 = encodeKey(30);
+    const String e99 = encodeKey(99);
+    std::vector<std::string_view> views{
+        {e5.data(), e5.size()}, {e10.data(), e10.size()},
+        {e30.data(), e30.size()}, {e99.data(), e99.size()}};
+
+    std::vector<std::optional<UInt64>> out;
+    t->findRowIndexBatch(views, out);
+
+    ASSERT_EQ(out.size(), 4u);
+    EXPECT_FALSE(out[0].has_value()) << "below-min key must miss";
+    EXPECT_EQ(out[1], std::optional<UInt64>(0)) << "min boundary is inclusive";
+    EXPECT_EQ(out[2], std::optional<UInt64>(2)) << "max boundary is inclusive";
+    EXPECT_FALSE(out[3].has_value()) << "above-max key must miss";
+}
+
+/// A batch past the 32-key `MultiGet` cap is chunked; every key still maps to
+/// its own row, with misses and pruned keys interleaved (input is sorted by
+/// encoded key, per the `findRowIndexBatch` contract).
+TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
+{
+    constexpr UInt64 N = 100; /// past the 32-key limit
+    std::vector<std::pair<UInt64, UInt32>> kv;
+    kv.reserve(N);
+    for (UInt64 i = 0; i < N; ++i)
+        kv.emplace_back(100 + i * 10, static_cast<UInt32>(i));
+    auto t = makeTarget(std::move(kv));
+    ASSERT_NE(t, nullptr);
+
+    /// Sorted: pruned-below-min first, hits and in-range misses ascending,
+    /// pruned-above-max last.
+    std::vector<String> storage;
+    std::vector<std::optional<UInt64>> expected;
+    storage.reserve(2 * N + 2);
+    expected.reserve(2 * N + 2);
+    storage.push_back(encodeKey(50));   /// below min, pruned
+    expected.push_back(std::nullopt);
+    for (UInt64 i = 0; i < N; ++i)
+    {
+        storage.push_back(encodeKey(100 + i * 10));
+        expected.emplace_back(i);
+        storage.push_back(encodeKey(100 + i * 10 + 5));
+        expected.push_back(std::nullopt);
+    }
+    storage.push_back(encodeKey(2000)); /// above max, pruned
+    expected.push_back(std::nullopt);
+
+    std::vector<std::string_view> views;
+    views.reserve(storage.size());
+    for (const auto & e : storage)
+        views.emplace_back(e.data(), e.size());
+
+    std::vector<std::optional<UInt64>> out;
+    t->findRowIndexBatch(views, out);
+
+    ASSERT_EQ(out.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i)
+        EXPECT_EQ(out[i], expected[i]) << "mismatch at batch row " << i;
 }
 
 TEST_F(UniqueKeyProbeTest, InvalidReaderHandleFailsClosed)

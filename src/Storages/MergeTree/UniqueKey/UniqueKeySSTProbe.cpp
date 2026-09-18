@@ -60,6 +60,10 @@ namespace
         return unalignedLoadBigEndian<UInt32>(data);
     }
 
+    /// RocksDB's `MultiGetContext` caps a call at 32 keys (debug assert /
+    /// release OOB read). `SstFileReader::MultiGet` does not chunk.
+    constexpr size_t MULTI_GET_BATCH_SIZE = 32;
+
     /// `FSRandomAccessFile` backed by a `ReadBuffer`. `readBigAt` is positional
     /// and lock-free, so concurrent RocksDB reads need no serialization. The
     /// buffer must support positional reads; that is enforced at open time by
@@ -254,11 +258,66 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
         throw Exception(status.IsCorruption() ? ErrorCodes::CORRUPTED_DATA : ErrorCodes::CANNOT_OPEN_FILE,
             "Failed to open UNIQUE KEY SST `{}`: {}", sst_file_name, status.ToString());
     index_reader = std::move(reader);
+
+    /// Capture the min/max key once at open, so probes can skip out-of-range keys.
+    /// A read error leaves an endpoint empty, disabling that side only.
+    rocksdb::ReadOptions read_opts;
+    std::unique_ptr<rocksdb::Iterator> it(index_reader->NewIterator(read_opts));
+    it->SeekToFirst();
+    if (it->Valid())
+        key_range.first = it->key().ToString();
+    it->SeekToLast();
+    if (it->Valid())
+        key_range.second = it->key().ToString();
 }
 
 std::unique_ptr<rocksdb::Iterator> SSTFileReader::newIterator(const rocksdb::ReadOptions & options) const
 {
     return std::unique_ptr<rocksdb::Iterator>(index_reader->NewIterator(options));
+}
+
+std::vector<rocksdb::Status> SSTFileReader::multiGet(
+    const std::vector<rocksdb::Slice> & keys, std::vector<std::string> * values_out) const
+{
+    if (keys.empty())
+        return {};
+
+    std::vector<rocksdb::Status> statuses;
+    statuses.reserve(keys.size());
+    std::vector<std::string> values(keys.size());
+
+    /// Reused across chunks; `MultiGet` resizes `chunk_values` itself.
+    std::vector<rocksdb::Slice> chunk_keys;
+    chunk_keys.reserve(MULTI_GET_BATCH_SIZE);
+    std::vector<std::string> chunk_values;
+
+    for (size_t begin = 0; begin < keys.size(); begin += MULTI_GET_BATCH_SIZE)
+    {
+        const size_t end = std::min(begin + MULTI_GET_BATCH_SIZE, keys.size());
+        chunk_keys.assign(keys.begin() + begin, keys.begin() + end);
+        chunk_values.clear();
+        auto chunk_statuses = index_reader->MultiGet(rocksdb::ReadOptions(), chunk_keys, &chunk_values);
+
+        if (chunk_statuses.size() != chunk_keys.size() || chunk_values.size() != chunk_keys.size())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR,
+                "UNIQUE KEY SST MultiGet returned {} statuses / {} values for {} keys",
+                chunk_statuses.size(), chunk_values.size(), chunk_keys.size());
+
+        /// A miss is `NotFound`; any other error is a read error - fail closed.
+        for (size_t c = 0; c < chunk_keys.size(); ++c)
+        {
+            if (!chunk_statuses[c].ok() && !chunk_statuses[c].IsNotFound())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR,
+                    "Failed to MultiGet from UNIQUE KEY SST: {}", chunk_statuses[c].ToString());
+            statuses.push_back(std::move(chunk_statuses[c]));
+            values[begin + c] = std::move(chunk_values[c]);
+        }
+    }
+
+    if (values_out)
+        *values_out = std::move(values);
+
+    return statuses;
 }
 
 std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() const
@@ -269,6 +328,20 @@ std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() c
 rocksdb::Status SSTFileReader::verifyChecksum() const
 {
     return index_reader->VerifyChecksum();
+}
+
+bool SSTFileReader::keyRangeIntersects(const MinMax & other) const
+{
+    if (key_range.first.empty() || key_range.second.empty())
+        return true;
+
+    /// No intersection: this.max < other.min OR this.min > other.max.
+    if (key_range.second < other.first)
+        return false;
+    if (!other.second.empty() && key_range.first > other.second)
+        return false;
+
+    return true;
 }
 
 SSTFileReaderPtr openSSTReaderFromStorage(
@@ -301,34 +374,52 @@ void SSTProbeTargetPart::findRowIndexBatch(
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "UNIQUE KEY SST probe target has no readable index (invalid reader)");
 
-    /// Fresh iterator per call: the target is `shared_ptr<const>`, so a cached
-    /// iterator would race across concurrent probes.
-    rocksdb::ReadOptions read_opts;
-    std::unique_ptr<rocksdb::Iterator> it = reader->newIterator(read_opts);
+    /// Keys outside the SST's [min, max] range cannot be present (bytewise
+    /// comparator == lexicographic string order) - skip the bloom probe.
+    const auto & key_range = reader->getKeyRange();
 
+    std::vector<size_t> candidate_indices;
+    candidate_indices.reserve(encoded_keys.size());
     for (size_t i = 0; i < encoded_keys.size(); ++i)
     {
-        rocksdb::Slice key_slice(encoded_keys[i].data(), encoded_keys[i].size());
-        it->Seek(key_slice);
-        if (it->Valid() && it->key().compare(key_slice) == 0)
-        {
-            auto value_slice = it->value();
-            const UInt64 row_number = decodeRowNumberBE(value_slice.data(), value_slice.size());
-            /// Out-of-range row means a corrupt SST - fail closed.
-            /// TODO(unique-key): enforce this once the probe factory passes a non-null part.
-            if (part && row_number >= part->rows_count)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "UNIQUE KEY SST points at row {} but part '{}' has only {} rows",
-                    row_number, part->name, part->rows_count);
-            out[i] = row_number;
-        }
-        else if (!it->status().ok())
-        {
-            /// A genuine miss leaves the iterator OK; a non-OK status is an SST read
-            /// error and must not be reported as "not found".
-            throw Exception(ErrorCodes::ROCKSDB_ERROR,
-                "SSTProbeTargetPart: error seeking UNIQUE KEY SST: {}", it->status().ToString());
-        }
+        const std::string_view key = encoded_keys[i];
+        if (!key_range.first.empty() && key < key_range.first)
+            continue;
+        if (!key_range.second.empty() && key > key_range.second)
+            continue;
+        candidate_indices.push_back(i);
+    }
+
+    if (candidate_indices.empty())
+        return;
+
+    /// Input is sorted by encoded key (interface contract), so each `MultiGet`
+    /// chunk covers a contiguous key range.
+    chassert(std::is_sorted(encoded_keys.begin(), encoded_keys.end()));
+
+    std::vector<rocksdb::Slice> candidate_keys;
+    candidate_keys.reserve(candidate_indices.size());
+    for (size_t i : candidate_indices)
+        candidate_keys.emplace_back(encoded_keys[i].data(), encoded_keys[i].size());
+
+    /// `MultiGet` state is call-local, so concurrent probes need no iterator.
+    std::vector<std::string> values;
+    const auto statuses = reader->multiGet(candidate_keys, &values);
+
+    for (size_t c = 0; c < candidate_keys.size(); ++c)
+    {
+        /// `multiGet` throws on read errors; a miss is `NotFound`.
+        if (!statuses[c].ok())
+            continue;
+
+        const UInt64 row_number = decodeRowNumberBE(values[c].data(), values[c].size());
+        /// Out-of-range row means a corrupt SST - fail closed.
+        /// TODO(unique-key): enforce this once the probe factory passes a non-null part.
+        if (part && row_number >= part->rows_count)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "UNIQUE KEY SST points at row {} but part '{}' has only {} rows",
+                row_number, part->name, part->rows_count);
+        out[candidate_indices[c]] = row_number;
     }
 }
 
