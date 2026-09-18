@@ -33,6 +33,12 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    /// The table the spans are read from: the local span log, or the span log of every replica of `cluster`.
+    String spanLogSource() const;
+
+    /// The trace to render: `trace_id`, or the most recent trace of `query_id` looked up in `source`.
+    UUID resolveTraceId(const String & source, ContextPtr context) const;
+
     /// Exactly one of trace_id and query_id is set; a query_id is resolved to the
     /// most recent trace of that query when the function executes.
     UUID trace_id{};
