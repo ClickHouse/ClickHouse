@@ -7,5 +7,6 @@ lc_nullable_datetime_equals	1
 nullable_time_equals	1
 nullable_string_range	1
 nullable_string_prunes	1
+nullable_string_cast_prunes_without_null	1
 nullable_uint_prunes	1
 plain_enum_reads_all	1

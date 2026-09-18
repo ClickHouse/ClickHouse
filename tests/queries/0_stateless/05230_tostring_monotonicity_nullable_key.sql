@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS tab_time;
 DROP TABLE IF EXISTS tab_time_ref;
 DROP TABLE IF EXISTS tab_str;
 DROP TABLE IF EXISTS tab_str_ref;
+DROP TABLE IF EXISTS tab_str_no_null;
 DROP TABLE IF EXISTS tab_uint;
 DROP TABLE IF EXISTS tab_enum;
 
@@ -74,8 +75,9 @@ CREATE TABLE tab_time_ref ENGINE = Log AS SELECT * FROM tab_time;
 SELECT 'nullable_time_equals', (SELECT count() FROM tab_time WHERE toString(t) = '100:00:00')
     = (SELECT count() FROM tab_time_ref WHERE toString(t) = '100:00:00');
 
--- Where `toString` is monotonic on the wrapped type, a `Nullable` key is now pruned like a plain one; `CAST`
--- to `String` throws on a `NULL`, so it keeps the granule that may hold one.
+-- Where `toString` is monotonic on the wrapped type, a `Nullable` key is now pruned like a plain one. `CAST`
+-- to `String` shares the verdict; it throws on the `NULL` mark while the index is analysed, as `CAST` to `Date`
+-- does on a `Nullable(DateTime)` key today, so the error is raised, not hidden.
 CREATE TABLE tab_str (s Nullable(String)) ENGINE = MergeTree ORDER BY s
     SETTINGS allow_nullable_key = 1, index_granularity = 2;
 INSERT INTO tab_str VALUES ('aa'), ('bb'), ('cc'), ('dd'), ('ee'), (NULL);
@@ -90,6 +92,16 @@ SELECT 'nullable_string_prunes', (SELECT sum(granules_read) = 1 AND sum(granules
           FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str WHERE toString(s) = 'dd'
                 SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)));
 SELECT count() FROM tab_str WHERE CAST(s AS String) = 'cc'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+-- Without a `NULL` in the part, `CAST` prunes as `toString` does.
+CREATE TABLE tab_str_no_null (s Nullable(String)) ENGINE = MergeTree ORDER BY s
+    SETTINGS allow_nullable_key = 1, index_granularity = 2;
+INSERT INTO tab_str_no_null VALUES ('aa'), ('bb'), ('cc'), ('dd'), ('ee'), ('ff');
+
+SELECT 'nullable_string_cast_prunes_without_null', (SELECT sum(granules_read) = 1 AND sum(granules_total) = 3
+    FROM (SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) AS granules_read,
+                 toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')) AS granules_total
+          FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str_no_null WHERE CAST(s AS String) = 'aa'
+                SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)));
 
 -- Controls: a monotonic `toString` still prunes a `Nullable` key, and a bare `Enum` still does not.
 CREATE TABLE tab_uint (n Nullable(UInt64)) ENGINE = MergeTree ORDER BY n
@@ -123,5 +135,6 @@ DROP TABLE tab_time;
 DROP TABLE tab_time_ref;
 DROP TABLE tab_str;
 DROP TABLE tab_str_ref;
+DROP TABLE tab_str_no_null;
 DROP TABLE tab_uint;
 DROP TABLE tab_enum;

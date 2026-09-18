@@ -4545,7 +4545,7 @@ struct ToStringMonotonicity
         IFunction::Monotonicity positive{ .is_monotonic = true };
         IFunction::Monotonicity not_monotonic;
 
-        /// The guards below need the value type, so `Nullable` comes off like `LowCardinality`.
+        /// The type guards below need the value type, so `Nullable` comes off like `LowCardinality`.
         const auto * type_ptr = &type;
         if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
             type_ptr = low_cardinality_type->getDictionaryType().get();
