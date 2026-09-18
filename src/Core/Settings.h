@@ -50,6 +50,7 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
@@ -178,7 +179,7 @@ struct Settings
     void markSettingsChangedByCompatibilityAsUnchanged();
 
     VectorWithMemoryTracking<String> getHints(const String & name) const;
-    String toString() const;
+    String toString(bool show_secrets) const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
@@ -193,9 +194,9 @@ struct Settings
     VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
     VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
-    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
-    FlatStringMap changedToFlatMap() const;
+    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
+    FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
