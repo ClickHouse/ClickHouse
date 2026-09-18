@@ -18,10 +18,8 @@ score 42	0
 -- AND of two Exact predicates
 0
 -- the index prunes granules
-Condition: true
 Granules: 5/5
 Name: idx
-Condition: (mode: All; tokens: ["error"])
 Granules: 2/5
 -- Exact direct read replaces the predicate
 1

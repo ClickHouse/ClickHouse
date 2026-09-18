@@ -55,7 +55,7 @@ SELECT id FROM tab WHERE hasToken(json.status, 'error') AND hasToken(json.msg.:`
 SELECT '-- the index prunes granules';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE hasToken(json.status, 'error'))
-WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Condition:%';
+WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 SELECT '-- Exact direct read replaces the predicate';
 SELECT count() > 0

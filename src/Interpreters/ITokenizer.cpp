@@ -560,44 +560,6 @@ String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_vie
     return out;
 }
 
-bool KeyValuePairsTokenizer::tryDecodeToken(std::string_view encoded, std::string_view & key, std::string_view & value, bool & is_rest)
-{
-    if (encoded.empty())
-        return false;
-
-    size_t i = encoded.size() - 1;
-    if (static_cast<UInt8>(encoded[i]) >= 0x80)
-    {
-        while (i > 0 && static_cast<UInt8>(encoded[i]) >= 0x80)
-            --i;
-        if (static_cast<UInt8>(encoded[i]) >= 0x80)
-            return false;
-    }
-
-    const size_t trailer_begin = i;
-    const size_t trailer_size = encoded.size() - trailer_begin;
-    if (trailer_size == 0 || trailer_size > 10)
-        return false;
-
-    char varint_buf[10];
-    for (size_t j = 0; j < trailer_size; ++j)
-        varint_buf[j] = encoded[encoded.size() - 1 - j];
-
-    UInt64 packed = 0;
-    const char * const varint_end = readVarUInt(packed, varint_buf, trailer_size);
-    if (varint_end != varint_buf + trailer_size || getLengthOfVarUInt(packed) != trailer_size)
-        return false;
-
-    const size_t key_size = static_cast<size_t>(packed >> 1);
-    if (key_size > trailer_begin)
-        return false;
-
-    key = encoded.substr(0, key_size);
-    value = encoded.substr(key_size, trailer_begin - key_size);
-    is_rest = (packed & 1ULL) != 0;
-    return true;
-}
-
 bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

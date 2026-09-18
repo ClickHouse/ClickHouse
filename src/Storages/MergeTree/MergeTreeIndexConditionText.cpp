@@ -8,7 +8,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -637,30 +636,6 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
 std::string MergeTreeIndexConditionText::getDescription() const
 {
-    const auto format_token = [this](std::string_view token) -> String
-    {
-        const bool encoded = tokenizer
-            && (tokenizer->getType() == ITokenizer::Type::JSONStringValues
-                || tokenizer->getType() == ITokenizer::Type::KeyValuePairs);
-        if (encoded)
-        {
-            std::string_view key;
-            std::string_view value;
-            bool is_rest = false;
-            if (KeyValuePairsTokenizer::tryDecodeToken(token, key, value, is_rest))
-            {
-                if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
-                    return doubleQuoteString(value);
-
-                auto formatted = fmt::format("{}:{}", doubleQuoteString(key), doubleQuoteString(value));
-                if (is_rest)
-                    formatted += "+rest";
-                return formatted;
-            }
-        }
-        return doubleQuoteString(token);
-    };
-
     std::string description = fmt::format("(mode: {}; tokens: [", global_search_mode);
 
     if (all_search_tokens.size() > 50)
@@ -674,7 +649,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
             if (i > 0)
                 description += ", ";
 
-            description += format_token(all_search_tokens[i]);
+            description += fmt::format("\"{}\"", all_search_tokens[i]);
         }
     }
 
