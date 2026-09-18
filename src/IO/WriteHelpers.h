@@ -680,6 +680,21 @@ inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+/// PostgreSQL quoted identifiers: a `"` is escaped by doubling it, and every other byte, backslash
+/// included, is literal. `writeDoubleQuotedString` instead emits an embedded `"` as `\"`, which
+/// PostgreSQL reads as the end of the identifier followed by SQL, and doubles a real backslash.
+inline void writeDoubleQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    for (char c : ref)
+    {
+        if (c == '"')
+            writeChar('"', buf);
+        writeChar(c, buf);
+    }
+    writeChar('"', buf);
+}
+
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
@@ -708,6 +723,7 @@ inline void writeBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
 
 

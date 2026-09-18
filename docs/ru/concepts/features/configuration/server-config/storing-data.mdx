@@ -640,7 +640,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...
+                <endpoint>...</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -690,8 +690,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 Пример конфигурации для версий до 22.8:
@@ -716,8 +717,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 Настройки **дисковой конфигурации** File Cache:

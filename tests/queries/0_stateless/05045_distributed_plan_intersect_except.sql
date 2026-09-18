@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- INTERSECT/EXCEPT under `make_distributed_plan`: `IntersectOrExceptStep` is serializable,
 -- so it runs in worker tasks instead of being rejected at the remotability gate.
