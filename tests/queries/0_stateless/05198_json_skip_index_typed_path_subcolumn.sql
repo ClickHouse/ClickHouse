@@ -54,6 +54,19 @@ SELECT 'the dynamic granule paths', arraySort(groupUniqArrayArray(JSONAllPaths(j
 SELECT 'a nested dynamic path', count() FROM t_05198_dynamic WHERE json.a.b = 42 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'an absent path is still pruned', count() FROM t_05198_dynamic WHERE json.absent = 42 SETTINGS force_data_skipping_indices = 'idx';
 
+-- Typed paths may overlap: `a.b` is a declared typed path in its own right, reported by the index
+-- verbatim, so it keeps using the index although the shorter typed path `a` is its prefix.
+DROP TABLE IF EXISTS t_05198_overlap;
+CREATE TABLE t_05198_overlap (json JSON(a Array(JSON), a.b Int64), INDEX idx JSONAllPaths(json) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_05198_overlap SELECT '{"a":[{"x":1}], "a.b":42}' FROM numbers(4);
+
+SELECT 'the overlapping granule paths', arraySort(groupUniqArrayArray(JSONAllPaths(json))) FROM t_05198_overlap;
+SELECT 'an exact typed path with a typed prefix', count() FROM t_05198_overlap WHERE json.a.b = 42 SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'the same without the index', count() FROM t_05198_overlap WHERE json.a.b = 42 SETTINGS use_skip_indexes = 0;
+SELECT 'an absent exact typed path is still pruned', count() FROM t_05198_overlap WHERE json.a.b = 43 SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE t_05198_overlap;
 DROP TABLE t_05198_dynamic;
 DROP TABLE t_05198_scalar;
 DROP TABLE t_05198_tokenbf;

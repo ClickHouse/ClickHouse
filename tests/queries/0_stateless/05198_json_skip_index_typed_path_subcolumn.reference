@@ -12,3 +12,7 @@ a scalar typed path	4
 the dynamic granule paths	['a.b']
 a nested dynamic path	4
 an absent path is still pruned	0
+the overlapping granule paths	['a','a.b']
+an exact typed path with a typed prefix	4
+the same without the index	4
+an absent exact typed path is still pruned	0

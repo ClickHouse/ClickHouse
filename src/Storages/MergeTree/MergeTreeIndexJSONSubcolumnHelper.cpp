@@ -37,13 +37,22 @@ JSONIndexArgumentTypes collectJSONIndexArgumentTypes(const ExpressionActions & i
 /// that reaches inside a typed path (`json.a.b`, whose path is `a.b`) is therefore absent from every
 /// granule, while reading it returns the value that lives inside the typed path's own column - so
 /// matching such a subcolumn to the index would prune every granule and silently lose rows.
+///
+/// Typed paths may overlap: `JSON(a Array(JSON), a.b Int64)` declares both `a` and `a.b`, and the
+/// subcolumn `json.a.b` reads the typed path `a.b` itself, not something inside `a`. A path that is
+/// a declared typed path is reported by the index verbatim, so it keeps using it regardless of any
+/// shorter typed path it extends.
 static bool pathIsInsideTypedPath(const DataTypePtr & json_type, const String & path)
 {
     const auto * object_type = typeid_cast<const DataTypeObject *>(json_type.get());
     if (!object_type)
         return false;
 
-    for (const auto & [typed_path, _] : object_type->getTypedPaths())
+    const auto & typed_paths = object_type->getTypedPaths();
+    if (typed_paths.contains(path))
+        return false;
+
+    for (const auto & [typed_path, _] : typed_paths)
     {
         if (path.size() > typed_path.size() && path.starts_with(typed_path) && path[typed_path.size()] == '.')
             return true;
