@@ -154,7 +154,8 @@ class _FakeInfo:
     job_name = "Some job"
     instance_type = "c5.large"
     instance_id = "i-01234567"
-    workflow_start_time = "2026-01-01T00:00:00Z"
+    # A Unix timestamp, like the one the config job resolves
+    workflow_start_time = 1767225600
 
 
 SETUP_LOG_CLUSTER = (
@@ -282,6 +283,7 @@ def test_a_successful_probe_wins_over_a_later_failure(tmp_path):
     assert HELPER._disabled_reason(tmp_path) is None
     (tmp_path / "disabled").write_text("cannot connect")
     assert HELPER._disabled_reason(tmp_path) == "cannot connect"
+    tmp_path.mkdir(exist_ok=True)
     (tmp_path / "connected").touch()
     assert HELPER._disabled_reason(tmp_path) is None
 
@@ -337,3 +339,89 @@ def test_flush_before_shutdown_runs_the_statements_in_order():
             raise AssertionError("no export tables, nothing to flush")
 
     HELPER.flush_before_shutdown(Idle())
+
+
+def _remote_tables_harness(monkeypatch, tmp_path, answers):
+    """Run `_ensure_remote_tables` for one table against a fake CI Logs cluster
+    whose answers to the successive remote queries are `answers`: a string is
+    returned as the query output, an exception is raised."""
+    monkeypatch.setattr(HELPER, "_cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(HELPER.time, "sleep", lambda seconds: None)
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "connected").touch()
+    queries = []
+    answers = list(answers)
+
+    def run(client_bin_path, sql, timeout=90, extra_args=()):
+        queries.append(sql)
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(HELPER, "_run_remote_query", run)
+    tables = [
+        (
+            "query_log",
+            "abcd",
+            "CREATE TABLE IF NOT EXISTS query_log_abcd (x UInt8) ORDER BY x",
+        )
+    ]
+    created = HELPER._ensure_remote_tables("clickhouse", tables)
+    markers = sorted(p.name for p in tmp_path.iterdir() if p.name != "connected")
+    return created, markers, queries
+
+
+def test_a_transient_failure_of_the_destination_ddl_is_retried(monkeypatch, tmp_path):
+    """A connection reset while creating a destination table is retried on the
+    schedule of the probe, and a success makes the table exportable; the
+    transient failure must not be remembered as a failure of the table."""
+    reset = RuntimeError("Code: 210. DB::NetException: Connection reset by peer")
+    created, markers, queries = _remote_tables_harness(
+        monkeypatch, tmp_path, [reset, reset, ""]
+    )
+    assert created == {"query_log"}
+    assert markers == ["ok_query_log_abcd"]
+    assert len(queries) == 3
+
+
+def test_a_destination_table_is_only_blacklisted_once_confirmed_absent(
+    monkeypatch, tmp_path
+):
+    """After the DDL failed, the table is checked on the cluster: it may well
+    have been created while the client saw the error. Only a confirmed absence
+    is remembered as `failed_...`, and if the check itself fails nothing is
+    remembered, so the next server retries."""
+    failure = RuntimeError("Code: 159. DB::Exception: Timeout exceeded")
+    # The DDL did apply, the client only lost the answer
+    created, markers, queries = _remote_tables_harness(
+        monkeypatch, tmp_path, [failure, "1\n"]
+    )
+    assert created == {"query_log"}
+    assert markers == ["ok_query_log_abcd"]
+    assert queries[-1].startswith("EXISTS TABLE default.query_log_abcd")
+    # The table really is absent
+    created, markers, _ = _remote_tables_harness(
+        monkeypatch, tmp_path / "absent", [failure, "0\n"]
+    )
+    assert created == set()
+    assert markers == ["failed_query_log_abcd"]
+    # The existence check fails too: nothing is remembered
+    created, markers, _ = _remote_tables_harness(
+        monkeypatch, tmp_path / "unknown", [failure, failure]
+    )
+    assert created == set()
+    assert markers == []
+
+
+def test_a_graceful_stop_flushes_the_export_first():
+    """`stop_clickhouse` (and `restart_clickhouse`, which delegates to it) is
+    how most suites restart a server: without a flush, the rows still in the
+    log buffers, the asynchronous insert queue and the `_sender` queues are lost
+    with the process. A hard kill is a crash simulation and must stay one."""
+    source = CLUSTER_HELPER.read_text()
+    start = source.index("    def stop_clickhouse(")
+    body = source[start : source.index("\n    def ", start + 1)]
+    flush = body.index("ci_logs_export.flush_before_shutdown(self)")
+    assert body[:flush].rstrip().endswith("if not kill:")
+    assert flush < body.index('"pkill {} clickhouse"')
