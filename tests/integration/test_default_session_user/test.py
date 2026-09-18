@@ -96,11 +96,16 @@ def write_string(text):
     return write_varuint(len(data)) + data
 
 
+# On slow lanes an instrumented server can need more than the default 10s handshake timeout to
+# answer a rejected Hello.
+NATIVE_RESPONSE_TIMEOUT = 60
+
+
 def native_hello(port, user, password=""):
     """Send a native protocol Hello packet and return the type of the first
     packet of the response: 0 is ServerHello (authentication succeeded),
     2 is an Exception."""
-    with socket.create_connection((node1.ip_address, port), timeout=10) as sock:
+    with socket.create_connection((node1.ip_address, port), timeout=NATIVE_RESPONSE_TIMEOUT) as sock:
         packet = write_varuint(0)  # Hello
         packet += write_string("test-client")
         packet += write_varuint(26)  # version major
