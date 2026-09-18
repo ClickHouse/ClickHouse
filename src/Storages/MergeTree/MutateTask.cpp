@@ -1250,6 +1250,15 @@ static std::unordered_map<String, size_t> getStreamCounts(
             continue;
         }
 
+        /// Only a column the part physically holds has streams to count. The name of an absent
+        /// column must not be looked up in the part's serializations: a column named like a
+        /// subcolumn of another column (`a.size0` next to an `Array` column `a`) resolves to that
+        /// subcolumn's serialization, and the streams enumerated from it are the other column's.
+        /// Counting them here would mark the array's offsets as rewritten by the mutation and
+        /// skip hardlinking them, leaving the new part without them.
+        if (!data_part->getColumns().contains(column_name))
+            continue;
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
