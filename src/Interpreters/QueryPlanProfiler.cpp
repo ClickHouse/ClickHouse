@@ -38,18 +38,12 @@ extern const SettingsBool make_distributed_plan;
 namespace
 {
 
-/// The statements whose plan can be captured: those InterpreterFactory routes to
-/// InterpreterSelectQueryAnalyzer, currently the only interpreter that supports plan profiling.
-/// Widen this as other interpreters gain support -- it is the single place that decides which
-/// queries pay for the capture.
+/// Checks if the query is supported by the profiler
 bool isSupportedQuery(const ASTPtr & ast)
 {
     return ast && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
 }
 
-/// The same for the main plan and for every sub-plan: `compact` and `pretty` are not preferences
-/// but the only settings under which the describe methods do not read an ActionsDAG that
-/// buildQueryPipeline has already moved out. See addStepDetails in QueryPlanToJSON.cpp.
 ExplainPlanOptions planExplainOptions()
 {
     return ExplainPlanOptions
@@ -63,12 +57,7 @@ ExplainPlanOptions planExplainOptions()
 
 /// Records, on every step that reads a set built by a subquery, the id of that subquery.
 ///
-/// This is the half of the link the document cannot work out for itself: a captured sub-plan knows
-/// which subquery it is, but only the consuming step knows that it uses the result. Both ends carry
-/// the same assigned id, so rendering is a join rather than a search through printed text.
-///
-/// Must run while the `ActionsDAG`s are still in the plan -- `buildQueryPipeline` moves them into
-/// the `ExpressionActions` -- which is the same window in which the pretty names are captured.
+/// Must run while the `ActionsDAG`s are still in the plan.
 void recordConsumedSubqueries(QueryPlan & plan)
 {
     const auto collect_from_dag = [](const ActionsDAG & dag, IQueryPlanStep & step)
@@ -92,7 +81,7 @@ void recordConsumedSubqueries(QueryPlan & plan)
                 continue;
 
             const auto future_set = column_set->getData();
-            if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+            if (const auto * from_subquery = dynamic_cast<const FutureSetFromSubquery *>(future_set.get()))
                 step.addConsumedSubqueryId(from_subquery->getSubqueryId());
         }
     };
@@ -101,9 +90,9 @@ void recordConsumedSubqueries(QueryPlan & plan)
     /// the reads generically, which is where a pushed-down `PREWHERE` puts the condition.
     const auto collect_from_step = [&](IQueryPlanStep & step)
     {
-        if (auto * expression = typeid_cast<ExpressionStep *>(&step))
+        if (auto * expression = dynamic_cast<ExpressionStep *>(&step))
             collect_from_dag(expression->getExpression(), step);
-        else if (auto * filter = typeid_cast<FilterStep *>(&step))
+        else if (auto * filter = dynamic_cast<FilterStep *>(&step))
             collect_from_dag(filter->getExpression(), step);
 
         if (auto * source = dynamic_cast<SourceStepWithFilter *>(&step))
@@ -120,7 +109,7 @@ void recordConsumedSubqueries(QueryPlan & plan)
 
         /// Set only when PREWHERE is deferred after FINAL, in which case it is the filter that
         /// actually runs.
-        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(&step))
+        if (auto * read_from_merge_tree = dynamic_cast<ReadFromMergeTree *>(&step))
         {
             if (const auto & prewhere = read_from_merge_tree->getDeferredPrewhereInfo())
                 collect_from_dag(prewhere->prewhere_actions, step);
@@ -184,8 +173,7 @@ QueryPlan & QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
 {
     query_plan.emplace(std::move(plan_));
 
-    /// Both of these read the ActionsDAGs, which building the pipeline moves out of the steps, so
-    /// they happen here and not at render time.
+    /// Both of these read the ActionsDAGs, which building the pipeline moves out of the steps.
     recordConsumedSubqueries(*query_plan);
     pretty_names.emplace(
         QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
@@ -215,10 +203,6 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     if (!settings[Setting::log_query_plans])
         return false;
 
-    /// From here on the query asked for its plan, so every remaining way of saying no leaves the
-    /// `query_plan` column empty with nothing on the surface to explain it. Say why. The reasons
-    /// below are the ones a user can act on; the two above are not, and the secondary-query case is
-    /// by design -- the initial query logs the plan for all of them -- so none of those speak.
     const auto declined = [&](const char * reason)
     {
         declineCapture(context, reason);
@@ -233,16 +217,12 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    /// Asks the statement rather than the interpreter because the join analyze mode has to be
-    /// decided before the interpreter exists: that is the last moment at which it still reaches
-    /// the planner.
     if (!isSupportedQuery(ast))
         return declined("only `SELECT` queries have their plan captured");
 
     if (!settings[Setting::allow_experimental_analyzer])
         return declined("setting `allow_experimental_analyzer` is false and the old analyzer cannot capture plans");
 
-    /// Distributed execution is not supported.
     if (settings[Setting::make_distributed_plan])
         return declined("setting `make_distributed_plan` is true and distributed execution is not supported");
 
