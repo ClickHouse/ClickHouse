@@ -85,7 +85,7 @@ FROM values('region String, quarter String, amount UInt64', ('east', 'Q1', 3)) A
 PIVOT (sum(s.amount) FOR s.quarter IN ('Q1' AS q1)) AS p;
 
 -- Existing implicit table alias + column-alias-list syntax named `pivot` must not be stolen.
-SELECT x FROM numbers(1) pivot(x);
+SELECT number FROM numbers(1) pivot(x);
 
 -- Error surfaces.
 -- A scalar root must not accidentally become a valid PIVOT aggregate.
