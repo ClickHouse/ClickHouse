@@ -24,9 +24,9 @@ PartitionPruner::PartitionPruner(
 {
 }
 
-bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
+bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part, bool can_prune_empty_parts) const
 {
-    if (part.isEmpty())
+    if (can_prune_empty_parts && part.isEmpty())
         return true;
 
     const auto & partition_id = part.info.getPartitionId();
