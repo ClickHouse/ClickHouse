@@ -190,7 +190,6 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
     else
         url = Poco::URI(oauth_server_uri);
 
-    /// Always in the body; `oauth_server_use_request_body = 0` is accepted but ignored (unsafe, kept for other catalogs).
     return requestOAuthToken(getContext(), url, getOAuthRequestParams());
 }
 
