@@ -618,7 +618,8 @@ struct ConverterJSON
     const ColumnObject & column;
     DataTypePtr data_type;
     PODArray<parquet::ByteArray> buf;
-    std::vector<String> stash;
+    PODArray<char> chars;
+    PODArray<size_t> lengths;
     const FormatSettings & format_settings;
 
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
@@ -628,26 +629,46 @@ struct ConverterJSON
     {
     }
 
+    size_t byte_budget = 0;
+    size_t produced = 0;
+
     const parquet::ByteArray * getBatch(size_t offset, size_t count)
     {
-        buf.resize(count);
-        stash.clear();
-        stash.reserve(count);
+        chars.clear();
+        lengths.clear();
 
         auto serialization = data_type->getDefaultSerialization();
 
+        produced = count;
         for (size_t i = 0; i < count; ++i)
         {
             WriteBufferFromOwnString wb;
             serialization->serializeTextJSON(column, offset + i, wb, format_settings);
 
-            stash.emplace_back(std::move(wb.str()));
-            const String & s = stash.back();
+            const String s = wb.str();
+            chars.insert(s.data(), s.data() + s.size());
+            lengths.push_back(s.size());
 
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            if (byte_budget != 0 && chars.size() >= byte_budget)
+            {
+                produced = i + 1;
+                break;
+            }
+        }
+
+        buf.resize(lengths.size());
+        size_t offset_in_chars = 0;
+        for (size_t i = 0; i < lengths.size(); ++i)
+        {
+            buf[i] = parquet::ByteArray(
+                static_cast<UInt32>(lengths[i]), reinterpret_cast<const uint8_t *>(chars.data() + offset_in_chars));
+            offset_in_chars += lengths[i];
         }
         return buf.data();
     }
+
+    size_t producedBatchSize() const { return produced; }
+    void setByteBudget(size_t budget) { byte_budget = budget; }
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
@@ -1124,10 +1145,111 @@ void writeColumnImpl(
         return true;
     };
 
-    auto is_dict_too_big = [&] {
+    static constexpr bool dict_uses_binary_builder
+        = std::is_same_v<ParquetDType, parquet::ByteArrayType> || std::is_same_v<ParquetDType, parquet::FLBAType>;
+    static constexpr size_t arrow_binary_builder_limit = 2147483646;
+
+    auto dict_encoded_size = [&]
+    {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
+        return static_cast<size_t>(dict_encoder->dict_encoded_size());
+    };
+
+    auto is_dict_too_big = [&]
+    {
+        return dict_encoded_size() >= options.max_dictionary_size;
+    };
+
+    auto would_overflow_dict = [&](size_t batch_byte_size)
+    {
+        if constexpr (dict_uses_binary_builder)
+            return dict_encoded_size() + batch_byte_size >= arrow_binary_builder_limit;
+        else
+            return false;
+    };
+
+    /// Fallback to non-dictionary encoding.
+    ///
+    /// Discard encoded data and start over.
+    /// This is different from what arrow does: arrow writes out the dictionary-encoded
+    /// data, then uses non-dictionary encoding for later pages.
+    /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
+    /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
+    /// trade because encoding speed is less important than decoding (as evidenced
+    /// by arrow not supporting parallel encoding, even though it's easy to support).
+    auto restart_without_dictionary = [&]
+    {
+        def_offset = 0;
+        data_offset = 0;
+        row_idx = 0;
+        dict_encoded_pages.clear();
+        use_dictionary = false;
+
+        s.indexes = {};
+
+#ifndef NDEBUG
+        /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
+        /// call it even though we don't need its output.
+        encoder->FlushValues();
+#endif
+
+        encoder = parquet::MakeTypedEncoder<ParquetDType>(
+            static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
+            fixed_string_descr ? &*fixed_string_descr : nullptr);
+    };
+
+    /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
+    /// otherwise carry gigabytes into a single page, which overruns both the page's own 32-bit size
+    /// and the 32-bit offsets of the builder behind the dictionary encoder, and stages the whole
+    /// column chunk in memory on the way.
+    ///
+    /// The budget only has to keep those 32-bit quantities out of reach, so it sits far above any
+    /// page a caller would ask for: a batch of 1024 values stays under it unless the values average
+    /// more than 64 KiB, and pages of ordinary data come out exactly as they did before.
+    ///
+    /// Cuts the batch at the first record boundary at or after the budget. A record is never split,
+    /// and neither is a value, so a batch can still exceed it by one of them. Returns the byte size
+    /// of the batch it kept.
+    static constexpr size_t max_batch_bytes = 64uz << 20;
+
+    static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
+
+    auto limit_batch_by_bytes
+        = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, size_t overhead_per_value, auto && value_size)
+    {
+        size_t bytes = 0;
+        size_t encoded_bytes = 0;
+        size_t data_idx = 0;
+
+        for (size_t i = 0; i < def_count; ++i)
+        {
+            if (s.max_def == 0 || s.def[batch_def_offset + i] == s.max_def)
+            {
+                const size_t value_bytes = value_size(data_idx++);
+                bytes += value_bytes;
+                encoded_bytes += value_bytes + overhead_per_value;
+            }
+
+            bool record_ends = !pages_change_on_record_boundaries
+                || batch_def_offset + i + 1 == num_values
+                || s.rep[batch_def_offset + i + 1] == 0;
+
+            if (!record_ends && encoded_bytes >= max_record_bytes)
+            {
+                s.indexes.column_index_valid = false;
+                s.indexes.offset_index_valid = false;
+                record_ends = true;
+            }
+
+            if (record_ends && encoded_bytes >= max_batch_bytes)
+            {
+                def_count = i + 1;
+                data_count = data_idx;
+                break;
+            }
+        }
+
+        return bytes;
     };
 
     while (def_offset < num_values)
@@ -1156,8 +1278,95 @@ void writeColumnImpl(
                 }
             }
 
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, sizeof(UInt32),
+                    [&](size_t i) { return s.primitive_column->byteSizeAt(next_data_offset + i); });
+            }
+
+            if constexpr (requires { converter.setByteBudget(size_t{}); })
+                converter.setByteBudget(max_batch_bytes);
+
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+
+            if constexpr (requires { converter.producedBatchSize(); })
+            {
+                if (size_t produced = converter.producedBatchSize(); produced < data_count)
+                {
+                    auto levels_holding = [&](size_t values)
+                    {
+                        if (s.max_def == 0)
+                            return values;
+                        size_t levels = 0;
+                        for (size_t seen = 0; seen < values; ++levels)
+                            seen += s.def[next_def_offset + levels] == s.max_def;
+                        return levels;
+                    };
+                    auto values_in = [&](size_t levels)
+                    {
+                        if (s.max_def == 0)
+                            return levels;
+                        size_t values = 0;
+                        for (size_t i = 0; i < levels; ++i)
+                            values += s.def[next_def_offset + i] == s.max_def;
+                        return values;
+                    };
+
+                    size_t def_count_kept = levels_holding(produced);
+
+                    if (pages_change_on_record_boundaries)
+                        while (def_count_kept > 0 && next_def_offset + def_count_kept < num_values
+                               && s.rep[next_def_offset + def_count_kept] != 0)
+                            --def_count_kept;
+
+                    if (def_count_kept == 0)
+                    {
+                        def_count_kept = 1;
+                        while (next_def_offset + def_count_kept < num_values
+                               && s.rep[next_def_offset + def_count_kept] != 0)
+                            ++def_count_kept;
+                        def_count_kept = std::min(def_count_kept, def_count);
+
+                        def_count = def_count_kept;
+                        data_count = values_in(def_count_kept);
+
+                        converter.setByteBudget(max_record_bytes);
+                        converted = converter.getBatch(next_data_offset, data_count);
+
+                        if (const size_t retry_produced = converter.producedBatchSize(); retry_produced < data_count)
+                        {
+                            def_count = levels_holding(retry_produced);
+                            data_count = retry_produced;
+                        }
+                    }
+                    else
+                    {
+                        def_count = def_count_kept;
+                        data_count = values_in(def_count_kept);
+                    }
+                }
+            }
+
+            size_t batch_byte_size = 0;
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, sizeof(UInt32),
+                    [&](size_t i) { return static_cast<size_t>(converted[i].len); });
+            }
+            else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+            {
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
+            }
+            else
+            {
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, 0,
+                    [](size_t) { return sizeof(typename ParquetDType::c_type); });
+            }
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
 /// Workaround for clang bug: https://github.com/llvm/llvm-project/issues/63630
@@ -1191,11 +1400,14 @@ void writeColumnImpl(
 #pragma clang diagnostic pop
             }
 
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            if (use_dictionary && would_overflow_dict(batch_byte_size))
             {
-                for (size_t i = 0; i < data_count; ++i)
-                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
+                restart_without_dictionary();
+                break;
             }
+
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += batch_byte_size;
 
             encoder->Put(converted, static_cast<int>(data_count));
 
@@ -1204,34 +1416,7 @@ void writeColumnImpl(
 
             if (use_dictionary && is_dict_too_big())
             {
-                /// Fallback to non-dictionary encoding.
-                ///
-                /// Discard encoded data and start over.
-                /// This is different from what arrow does: arrow writes out the dictionary-encoded
-                /// data, then uses non-dictionary encoding for later pages.
-                /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
-                /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
-                /// trade because encoding speed is less important than decoding (as evidenced
-                /// by arrow not supporting parallel encoding, even though it's easy to support).
-
-                def_offset = 0;
-                data_offset = 0;
-                row_idx = 0;
-                dict_encoded_pages.clear();
-                use_dictionary = false;
-
-                s.indexes = {};
-                /// (no need to clear hashes_for_bloom_filter)
-
-#ifndef NDEBUG
-                /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
-                /// call it even though we don't need its output.
-                encoder->FlushValues();
-#endif
-
-                encoder = parquet::MakeTypedEncoder<ParquetDType>(
-                    static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
-                    fixed_string_descr ? &*fixed_string_descr : nullptr);
+                restart_without_dictionary();
                 break;
             }
 
@@ -1544,6 +1729,9 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     {
         for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
+            if (!rg.column_indexes.at(j).offset_index_valid)
+                continue;
+
             auto & column = rg.row_group.columns.at(j);
             column.__set_offset_index_offset(file.offset);
             size_t length = serializeThriftStruct(rg.column_indexes.at(j).offset_index, out);
