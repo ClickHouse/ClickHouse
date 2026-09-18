@@ -5,6 +5,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
+#include <Functions/Regexps.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
@@ -157,6 +158,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
+    NameSet columns_shadowing_map_subcolumns_,
     JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
     , json_argument_types(std::move(json_argument_types_))
@@ -164,6 +166,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
     if (!predicate)
     {
@@ -537,7 +540,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths", json_argument_types))
         {
             auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field))
+            if (!isJSONPathFilterSafe(key_type, value_field, value_type))
                 return false;
 
             out.key_column = json_info->header_position;
@@ -631,7 +634,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name))
+        if (auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
@@ -849,6 +852,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
+        /// Validate the regexp before using its required substring to build
+        /// the skip-index condition.
+        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())
@@ -976,7 +982,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
