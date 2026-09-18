@@ -561,6 +561,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
             {
                 table_metadata.adjustFromKeeper(metadata_from_zk.value());
                 table_metadata.checkEquals(metadata_from_zk.value());
+                table_metadata.applyParallelInsertsKeeperPresence(metadata_from_zk.value());
                 return;
             }
 
