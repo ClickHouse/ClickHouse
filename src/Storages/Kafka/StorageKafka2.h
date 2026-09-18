@@ -64,7 +64,6 @@ SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr qu
 ///
 /// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
-
 class StorageKafka2 final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;

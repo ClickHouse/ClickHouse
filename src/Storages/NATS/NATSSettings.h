@@ -60,7 +60,7 @@ struct NATSSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    /// Unlike an assignment through `operator[]`, this forgets which source supplied the setting.
+    /// Assigns as the `SETTINGS` clause does: the setting no longer counts as supplied by a named collection.
     void set(std::string_view name, const Field & value);
 
     SettingsChanges getFormatSettings() const;

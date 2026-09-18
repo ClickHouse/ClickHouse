@@ -1,0 +1,3 @@
+disk	default	1	definition
+parts_to_throw_insert	1234	1	config
+storage_policy	default	0	default

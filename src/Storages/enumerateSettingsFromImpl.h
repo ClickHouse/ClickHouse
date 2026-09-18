@@ -37,9 +37,13 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
         if (described.value != described.default_value)
             described.masked_value = maskEngineSettingValue(described.name, setting.getValue(), described.value);
         described.origin = setting.isValueChanged() ? SettingOrigin::Other : SettingOrigin::Default;
+
+        /// Only for a changed setting: a reset to the default bypasses `set` and so keeps the mark, and a
+        /// setting back at its default is the default's, whoever assigned it before.
         if constexpr (requires { impl.recordedOrigin(described.name); })
-            if (const auto recorded = impl.recordedOrigin(described.name))
-                described.origin = *recorded;
+            if (described.origin == SettingOrigin::Other)
+                if (const auto recorded = impl.recordedOrigin(described.name))
+                    described.origin = *recorded;
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));

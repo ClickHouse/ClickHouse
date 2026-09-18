@@ -13,14 +13,16 @@ namespace DB
 /// A settings `Impl` that remembers which source assigned each setting, for the sources a reader cannot
 /// recover afterwards: a server config section and `compatibility`, which assign every key they name and so
 /// set the changed bit even where the value equals the default, and a named collection, whose values look
-/// like any other. Enumeration reports the recorded source instead of `Other`.
+/// like any other. Enumeration reports the recorded source for a setting that is still changed.
 ///
 /// The marks live in the settings object, so they travel with every copy of it - from the server's baseline
 /// into each table, from a database into each table it makes. A later `set` clears them, so a setting
 /// belongs to whoever assigned it last: the table's own `SETTINGS` clause included. An assignment through
-/// `operator[]` bypasses `set` and keeps the mark; engines use that only to adjust a value in place.
+/// `operator[]` and `resetToDefault` bypass `set` and keep the mark: engines use the first only to adjust a
+/// value in place, and a reset leaves the setting unchanged, which enumeration reports as the default.
 ///
-/// One bit per setting and source; the number of settings is known at compile time, so this allocates nothing.
+/// One bit per setting and source, as `SettingsImpl` in `Core/Settings.cpp` records its own `compatibility`
+/// marks: the number of settings is known at compile time, so this allocates nothing.
 template <typename TTraits>
 struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
 {

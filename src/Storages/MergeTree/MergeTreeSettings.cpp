@@ -3223,7 +3223,6 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
     return MergeTreeSettingsImpl::stringToValueUtil(name, str);
 }
 
-
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);

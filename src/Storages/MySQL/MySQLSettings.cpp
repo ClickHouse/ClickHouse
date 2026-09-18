@@ -1,4 +1,5 @@
 #include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -129,19 +130,7 @@ VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames(
 
 void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (!named_collection.has(setting_name))
-            continue;
-
-        /// A key the engine arguments overrode holds their value, not the collection's.
-        const auto value = named_collection.get<String>(setting_name);
-        if (named_collection.isQueryOverridden(setting_name))
-            impl->set(setting_name, value);
-        else
-            impl->setWithOrigin<SettingOrigin::NamedCollection>(setting_name, value);
-    }
+    loadSettingsFromNamedCollection(*impl, named_collection);
 }
 
 bool MySQLSettings::hasBuiltin(std::string_view name)

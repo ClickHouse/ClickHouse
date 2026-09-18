@@ -3,11 +3,12 @@
 #include <Core/FormatFactorySettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/SettingsWithRecordedOrigin.h>
-#include <Storages/enumerateSettingsFromImpl.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -118,19 +119,7 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 
 void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (!named_collection->has(setting_name))
-            continue;
-
-        /// A key the engine arguments overrode holds their value, not the collection's.
-        const auto value = named_collection->get<String>(setting_name);
-        if (named_collection->isQueryOverridden(setting_name))
-            impl->set(setting_name, value);
-        else
-            impl->setWithOrigin<SettingOrigin::NamedCollection>(setting_name, value);
-    }
+    loadSettingsFromNamedCollection(*impl, *named_collection);
 }
 
 void KafkaSettings::set(std::string_view name, const Field & value)
