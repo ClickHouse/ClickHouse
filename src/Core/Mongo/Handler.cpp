@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <base/defines.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Mongo/Document.h>
@@ -12,6 +13,7 @@
 #include <Core/Mongo/MongoProtocol.h>
 #include <Core/Mongo/Wire/OpMessage.h>
 #include <Core/Mongo/Wire/OpQuery.h>
+#include <Parsers/Mongo/MongoConstants.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -30,11 +32,13 @@
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+#include <Common/re2.h>
 
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
@@ -830,6 +834,108 @@ bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object
     /// `EXISTS TABLE` also answers `0` when the database itself is absent.
     auto output = executor->execute(fmt::format("EXISTS {} {}", object_kind, name));
     return !output.empty() && output[0] == '1';
+}
+
+std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * name, const char * command)
+{
+    auto it = json.FindMember(name);
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return std::nullopt;
+    if (!it->value.IsBool())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a '{}' command must be a boolean", name, command);
+    return it->value.GetBool();
+}
+
+std::function<bool(const String &)> getNameFilter(const rapidjson::Value & command, const char * command_name)
+{
+    auto filter_it = command.FindMember("filter");
+    if (filter_it == command.MemberEnd() || filter_it->value.IsNull())
+        return [](const String &) { return true; };
+
+    const auto & filter = filter_it->value;
+    if (!filter.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'filter' of a '{}' command must be a document", command_name);
+    if (filter.ObjectEmpty())
+        return [](const String &) { return true; };
+
+    /// The names are the only thing this server knows about the objects it lists, so `name` is
+    /// the one field a filter can ask about; a filter on any other field would have to be
+    /// answered with the full listing, i.e. wrongly.
+    if (filter.MemberCount() != 1 || std::string_view(filter.MemberBegin()->name.GetString()) != "name")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The 'filter' of a '{}' command supports only the 'name' field, got '{}'",
+            command_name,
+            filter.MemberBegin()->name.GetString());
+
+    const auto & condition = filter.MemberBegin()->value;
+    if (condition.IsString())
+    {
+        String expected = condition.GetString();
+        return [expected](const String & name) { return name == expected; };
+    }
+    if (!condition.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'name' of the 'filter' of a '{}' command must be a string or a document", command_name);
+
+    if (auto regex = Mongo::tryParseMongoRegularExpression(condition))
+    {
+        /// The regular expression comes with its `$options` at most; another operator next to it
+        /// would be silently ignored otherwise.
+        for (auto it = condition.MemberBegin(); it != condition.MemberEnd(); ++it)
+        {
+            std::string_view key = it->name.GetString();
+            if (key != "$regex" && key != "$options" && key != "$regularExpression")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "The 'name' of the 'filter' of a '{}' command cannot combine a regular expression with '{}'",
+                    command_name,
+                    key);
+        }
+        auto pattern = std::make_shared<re2::RE2>(*regex, re2::RE2::Quiet);
+        if (!pattern->ok())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The regular expression of the 'filter' of a '{}' command is invalid: {}",
+                command_name,
+                pattern->error());
+        return [pattern](const String & name) { return re2::RE2::PartialMatch(name, *pattern); };
+    }
+
+    if (condition.MemberCount() != 1)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The 'name' of the 'filter' of a '{}' command supports one of '$eq', '$in' or a regular expression",
+            command_name);
+
+    const auto & member = *condition.MemberBegin();
+    std::string_view op = member.name.GetString();
+    if (op == "$eq")
+    {
+        if (!member.value.IsString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '$eq' of the 'name' filter of a '{}' command must be a string", command_name);
+        String expected = member.value.GetString();
+        return [expected](const String & name) { return name == expected; };
+    }
+    if (op == "$in")
+    {
+        if (!member.value.IsArray())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '$in' of the 'name' filter of a '{}' command must be an array", command_name);
+        std::set<String> expected;
+        for (const auto & element : member.value.GetArray())
+        {
+            if (!element.IsString())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "The '$in' of the 'name' filter of a '{}' command must hold strings", command_name);
+            expected.insert(element.GetString());
+        }
+        return [expected](const String & name) { return expected.contains(name); };
+    }
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "The 'name' of the 'filter' of a '{}' command supports one of '$eq', '$in' or a regular expression, got '{}'",
+        command_name,
+        op);
 }
 
 Int64 countMatchedRows(const String & select_query, std::shared_ptr<QueryExecutor> executor)

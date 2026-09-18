@@ -3,6 +3,8 @@
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/ListCollections.h>
 
+#include <functional>
+
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -24,12 +26,16 @@ std::vector<Document> ListCollectionsHandler::handle(
 {
     /// `listCollections` names no collection, only the database it applies to.
     String database;
+    std::function<bool(const String &)> name_filter;
+    bool name_only = false;
     {
         auto json = documents[0].documents[0].getRapidJSONRepresentation();
         auto database_it = json.FindMember("$db");
         if (database_it == json.MemberEnd() || !database_it->value.IsString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'listCollections' command does not contain the '$db' database name");
         database = database_it->value.GetString();
+        name_filter = getNameFilter(json, "listCollections");
+        name_only = getBoolOption(json, "nameOnly", "listCollections").value_or(false);
     }
 
     /// A database that does not exist has no collections, as in Mongo, where listing them
@@ -50,29 +56,34 @@ std::vector<Document> ListCollectionsHandler::handle(
         size_t index = 0;
         for (const auto & name : names)
         {
-            if (name.empty())
+            if (name.empty() || !name_filter(name))
                 continue;
 
             bson_t collection_doc;
             bson_init(&collection_doc);
 
-            bson_t options_doc;
-            bson_init(&options_doc);
-            bson_t id_index_doc;
-            bson_init(&id_index_doc);
-            bson_t info;
-            bson_init(&info);
-            BSON_APPEND_BOOL(&info, "readOnly", false);
-
             BSON_APPEND_UTF8(&collection_doc, "name", name.c_str());
             BSON_APPEND_UTF8(&collection_doc, "type", "collection");
-            BSON_APPEND_DOCUMENT(&collection_doc, "options", &options_doc);
-            BSON_APPEND_DOCUMENT(&collection_doc, "idIndex", &id_index_doc);
-            BSON_APPEND_DOCUMENT(&collection_doc, "info", &info);
 
-            bson_destroy(&options_doc);
-            bson_destroy(&id_index_doc);
-            bson_destroy(&info);
+            /// With `nameOnly` a Mongo server answers with the name and the type alone.
+            if (!name_only)
+            {
+                bson_t options_doc;
+                bson_init(&options_doc);
+                bson_t id_index_doc;
+                bson_init(&id_index_doc);
+                bson_t info;
+                bson_init(&info);
+                BSON_APPEND_BOOL(&info, "readOnly", false);
+
+                BSON_APPEND_DOCUMENT(&collection_doc, "options", &options_doc);
+                BSON_APPEND_DOCUMENT(&collection_doc, "idIndex", &id_index_doc);
+                BSON_APPEND_DOCUMENT(&collection_doc, "info", &info);
+
+                bson_destroy(&options_doc);
+                bson_destroy(&id_index_doc);
+                bson_destroy(&info);
+            }
 
             auto key_str = std::to_string(index);
             ++index;

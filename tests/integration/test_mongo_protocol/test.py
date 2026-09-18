@@ -1965,3 +1965,66 @@ def test_a_dotted_collection_name_is_a_namespace(started_cluster):
 
     collection.drop()
 
+
+def test_list_collections_and_databases_honor_filter_and_name_only(started_cluster):
+    """A `listCollections` and a `listDatabases` carry a `filter` on the `name` and a `nameOnly`
+    flag. The filter narrows the listing; one that is not understood is an error rather than an
+    unfiltered listing that reports names the client did not ask for."""
+    client = make_client()
+    database = client["db_listing"]
+    for name in ["users", "orders", "user_events"]:
+        database[name].drop()
+        database[name].insert_one({"id": 1})
+
+    def collections(**options):
+        reply = database.command({"listCollections": 1, **options})
+        return sorted(reply["cursor"]["firstBatch"], key=lambda entry: entry["name"])
+
+    assert [entry["name"] for entry in collections()] == ["orders", "user_events", "users"]
+    assert [entry["name"] for entry in collections(filter={"name": "users"})] == ["users"]
+    assert [entry["name"] for entry in collections(filter={"name": {"$eq": "orders"}})] == ["orders"]
+    assert [entry["name"] for entry in collections(filter={"name": {"$in": ["orders", "users", "absent"]}})] == ["orders", "users"]
+    assert [entry["name"] for entry in collections(filter={"name": {"$regex": "^user"}})] == ["user_events", "users"]
+    assert [entry["name"] for entry in collections(filter={"name": {"$regex": "^USER", "$options": "i"}})] == ["user_events", "users"]
+    assert [entry["name"] for entry in collections(filter={"name": {"$regularExpression": {"pattern": "^ord", "options": ""}}})] == ["orders"]
+    assert collections(filter={"name": "absent"}) == []
+    assert collections(filter={}) == collections()
+
+    # `nameOnly` answers with the name and the type alone, like a Mongo server does.
+    full = collections(filter={"name": "users"})
+    assert set(full[0].keys()) == {"name", "type", "options", "idIndex", "info"}
+    assert collections(filter={"name": "users"}, nameOnly=True) == [{"name": "users", "type": "collection"}]
+
+    # A filter on another field, or one with an operator that is not understood, must not widen
+    # into the full listing.
+    for bad_filter in [
+        {"type": "view"},
+        {"name": "users", "type": "collection"},
+        {"name": {"$ne": "users"}},
+        {"name": {"$regex": "^user", "$ne": "users"}},
+        {"name": 1},
+        "users",
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            database.command({"listCollections": 1, "filter": bad_filter})
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command({"listCollections": 1, "nameOnly": "yes"})
+
+    def databases(**options):
+        reply = client.admin.command({"listDatabases": 1, **options})
+        return sorted(reply["databases"], key=lambda entry: entry["name"])
+
+    assert "db_listing" in [entry["name"] for entry in databases()]
+    assert [entry["name"] for entry in databases(filter={"name": "db_listing"})] == ["db_listing"]
+    assert [entry["name"] for entry in databases(filter={"name": {"$in": ["db_listing", "absent"]}})] == ["db_listing"]
+    assert [entry["name"] for entry in databases(filter={"name": {"$regex": "^db_list"}})] == ["db_listing"]
+    assert databases(filter={"name": "absent"}) == []
+    assert set(databases(filter={"name": "db_listing"})[0].keys()) == {"name", "empty"}
+    assert databases(filter={"name": "db_listing"}, nameOnly=True) == [{"name": "db_listing"}]
+    assert "db_listing" in client.list_database_names()
+
+    for bad_filter in [{"sizeOnDisk": 0}, {"name": {"$ne": "db_listing"}}, {"name": {"$in": [1]}}]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            client.admin.command({"listDatabases": 1, "filter": bad_filter})
+
+    database.command("dropDatabase")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 #include <optional>
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/MongoProtocol.h>
@@ -93,6 +94,19 @@ std::vector<Document> makeEmptyCursorReply(const CollectionRef & collection);
   * so the handlers have to be able to tell it apart.
   */
 bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object_kind, const String & name);
+
+/** The `filter` of a `listCollections` / `listDatabases` command as a predicate over the names it
+  * lists. The one field a filter can name here is `name`, matched by equality, `$eq`, `$in` or a
+  * regular expression (`$regex` with `$options`, or `$regularExpression`). Any other shape is
+  * rejected: a filter that is not understood must not widen into an unfiltered listing, which
+  * would report names the client did not ask for. Without a `filter` every name passes.
+  */
+std::function<bool(const String &)> getNameFilter(const rapidjson::Value & command, const char * command_name);
+
+/** A boolean option of a wire command, such as `nameOnly`. Returns nothing when the member is
+  * absent or null; a value of another type is an error.
+  */
+std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * name, const char * command);
 
 /** The number of rows a translated `find` returns, i.e. the number of documents a filter matches.
   * A mutation of ClickHouse is asynchronous and reports nothing about the rows it will rewrite,

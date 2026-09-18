@@ -1,6 +1,9 @@
+#include <Core/Mongo/Document.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/ListDatabases.h>
+
+#include <functional>
 
 #include <Common/Exception.h>
 
@@ -14,8 +17,17 @@ extern const int LIMIT_EXCEEDED;
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> ListDatabasesHandler::handle(
+    const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
+    std::function<bool(const String &)> name_filter;
+    bool name_only = false;
+    {
+        auto json = documents[0].documents[0].getRapidJSONRepresentation();
+        name_filter = getNameFilter(json, "listDatabases");
+        name_only = getBoolOption(json, "nameOnly", "listDatabases").value_or(false);
+    }
+
     auto out = executor->execute("SHOW DATABASES");
     auto names = splitByNewline(out);
 
@@ -29,13 +41,15 @@ std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSe
         size_t index = 0;
         for (const auto & name : names)
         {
-            if (name.empty())
+            if (name.empty() || !name_filter(name))
                 continue;
 
             bson_t database_doc;
             bson_init(&database_doc);
             BSON_APPEND_UTF8(&database_doc, "name", name.c_str());
-            BSON_APPEND_BOOL(&database_doc, "empty", false);
+            /// With `nameOnly` a Mongo server answers with the names alone.
+            if (!name_only)
+                BSON_APPEND_BOOL(&database_doc, "empty", false);
 
             auto key_str = std::to_string(index);
             ++index;
