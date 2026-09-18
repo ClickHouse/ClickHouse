@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# `CREATE TABLE x AS y` inherits the engine of `y` with its credentials, which are masked in
-# `SHOW CREATE TABLE`. That needs SELECT on `y`; copying any other definition still needs only SHOW COLUMNS.
+# `CREATE TABLE x AS y` inherits the engine of `y` with its credentials, masked in `SHOW CREATE TABLE`.
+# That needs SELECT on `y`; anything else still needs only SHOW COLUMNS.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,8 +32,7 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT SHOW COLUMNS ON ${db}.function_src_no_password TO ${user};
 "
 
-# Prints either the missing privilege or the engine of the copy that was created. Any further argument
-# is passed to the client.
+# Prints the missing privilege, or the engine of the copy. Further arguments go to the client.
 function try_copy()
 {
     local name=$1 source=$2
@@ -51,8 +50,7 @@ try_copy copy_of_function_src function_src
 # Nothing is masked in these two, so they are copied as before.
 try_copy copy_of_url_src_no_password url_src_no_password
 try_copy copy_of_function_src_no_password function_src_no_password
-# The external engine and the external table function are replaced by `Null` here, so nothing masked is
-# inherited either.
+# Both are replaced by `Null` here, so nothing masked is inherited.
 try_copy null_copy_of_url_src url_src --restore_replace_external_engines_to_null 1
 try_copy null_copy_of_function_src function_src --restore_replace_external_table_functions_to_null 1
 
@@ -64,7 +62,7 @@ ${CLICKHOUSE_CLIENT} -q "
 try_copy copy_of_url_src url_src
 try_copy copy_of_function_src function_src
 
-# A user who may not see the source at all is told so, whether or not the definition holds credentials.
+# A user who cannot see the source is told so, credentials or not.
 echo "without SHOW COLUMNS:"
 for src in local_src url_src
 do

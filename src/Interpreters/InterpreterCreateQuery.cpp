@@ -1470,8 +1470,7 @@ namespace
         {
             *ptr = nullptr;
         });
-        /// Those pointers were the only way this definition is formatted, but `children` still holds the
-        /// nodes and is still walked, by `hasSecretParts` among others. Nothing is left to keep.
+        /// `children` still holds the old nodes, and `hasSecretParts` and friends walk them.
         storage.children.clear();
 
         auto engine_ast = make_intrusive<ASTFunction>();
@@ -1494,8 +1493,8 @@ namespace
         }
     }
 
-    /// The same for a table function the query is backed by, whether it was written in the query or
-    /// inherited from the source table of `CREATE TABLE x AS y`. Returns whether it was replaced.
+    /// The same for a table function, written in the query or inherited from `AS y`. Returns whether
+    /// it was replaced.
     bool replaceExternalTableFunctionWithNullIfNeeded(ASTCreateQuery & create, bool enabled)
     {
         if (!enabled)
@@ -1624,9 +1623,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        /// Reading the definition of the source table is what `SHOW COLUMNS` allows. Check it before
-        /// reading it, so that a user who may not see the table at all cannot tell from the error
-        /// whether its definition holds credentials.
+        /// Reading the definition needs `SHOW COLUMNS`. Check it first, so the error does not tell a
+        /// user who cannot see the table whether it has credentials.
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_name);
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
@@ -1635,10 +1633,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
-        /// Credentials are masked in `SHOW CREATE TABLE`, whether they sit in the engine arguments or in
-        /// the settings, so copying a definition that has them would give away the data of the source
-        /// table to someone who cannot `SELECT` from it. The rest is already visible with `SHOW COLUMNS`
-        /// and can just be typed again.
+        /// Credentials are masked in `SHOW CREATE TABLE`, so copying them hands the source's data to
+        /// someone who cannot `SELECT` it. Everything else is already visible with `SHOW COLUMNS`.
         auto check_access_to_inherited_definition = [&](const IAST & definition)
         {
             if (definition.hasSecretParts())
@@ -1671,8 +1667,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             if (!create.storage)
             {
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
-                /// Replaced by `Null` here just as it would be if it were written in the query, and then
-                /// there is nothing inherited left to authorize.
+                /// Replaced by `Null` just as a written one would be, and then nothing is inherited.
                 if (!replaceExternalTableFunctionWithNullIfNeeded(
                         create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]))
                     check_access_to_inherited_definition(*create.as_table_function);
@@ -1697,9 +1692,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (storage_def)
         {
-            /// Judge the definition this query would store: the settings written in the new query are
-            /// kept and only the missing ones are taken from the source, and an external engine may be
-            /// replaced by `Null`, which inherits nothing at all.
+            /// Judge what would actually be stored: settings written here win over the source's, and
+            /// an external engine may become `Null`.
             auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
             if (inherited->settings && create.storage && create.storage->settings)
                 for (const auto & change : create.storage->settings->changes)
@@ -3741,11 +3735,8 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The definition of `AS src` is materialized on the worker, which resolves an unqualified
-            /// name in its own database, not in the one this query runs in. Pin the initiator's
-            /// resolution, like the UUIDs above, so that the table authorized here is the one every
-            /// host reads; this node does not necessarily have it to tell whether it holds
-            /// credentials, so ask for the strongest grant the local path can ask for.
+            /// The worker materializes `AS src` in its own database, so pin ours like the UUIDs above.
+            /// We may not have the table here to tell whether it holds credentials, so ask for `SELECT`.
             if (!create.as_table.empty())
             {
                 create.as_database = getContext()->resolveDatabase(create.as_database);

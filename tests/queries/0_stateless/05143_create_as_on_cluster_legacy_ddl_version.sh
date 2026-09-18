@@ -2,10 +2,8 @@
 # Tags: no-replicated-database
 # Tag no-replicated-database: `ON CLUSTER` is not allowed for a Replicated database.
 
-# Before `NORMALIZE_CREATE_ON_INITIATOR_VERSION` the entry ships the query text as written and the
-# worker materializes `AS src` with no user, so the initiator, the last leg that runs as the real
-# user, has to authorize the source table itself. Names are qualified because the worker resolves
-# them in its own default database.
+# Before `NORMALIZE_CREATE_ON_INITIATOR_VERSION` the entry ships the query as written and the worker
+# materializes `AS src` with no user, so the initiator has to authorize the source itself.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,8 +27,7 @@ ${CLICKHOUSE_CLIENT} -q "
 legacy=(--user "${user}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2)
 current=(--user "${user}" --distributed_ddl_output_mode throw)
 
-# Prints either the missing privilege or the engine of the copy that was created. The name of the copy
-# is derived from the destination so that the two source spellings do not collide.
+# Prints the missing privilege, or the engine of the copy. Each case uses its own destination name.
 function try_copy()
 {
     local name=$1 source=$2
