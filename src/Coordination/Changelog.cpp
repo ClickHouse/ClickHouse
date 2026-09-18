@@ -613,14 +613,24 @@ private:
                 for (const auto & changelog : to_remove)
                 {
                     LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
-                    try
-                    {
-                        changelog->disk->removeFile(changelog->path);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("Failed to remove merged S3 changelog: {}", changelog->path));
-                    }
+
+                    /// Go through the same fence as `Changelog::backgroundChangelogOperationsThread`: take the
+                    /// descriptor's exclusive lock and publish `removed_from_disk` before the object disappears.
+                    /// `executeReadPlan` / `serveReadAhead` hold shared locks on these descriptors and check the
+                    /// flag, so they return `nullptr` instead of calling `readFile` on an already-removed path.
+                    changelog->withWriteLock(
+                        [&]
+                        {
+                            changelog->removed_from_disk = true; /// set BEFORE removeFile
+                            try
+                            {
+                                changelog->disk->removeFile(changelog->path);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log, fmt::format("Failed to remove merged S3 changelog: {}", changelog->path));
+                            }
+                        });
                 }
 
                 LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
@@ -4097,6 +4107,50 @@ Changelog::Changelog(
                 "supported disk and 'keeper_server.latest_log_storage_disk' to a local disk.\n"
                 "Otherwise, disable force_sync",
                 latest_log_disk->getName());
+        }
+
+        if (keeper_context->isS3ExperimentalChangelog())
+        {
+            /// The S3 writer only knows how to produce uncompressed records, and `flushImpl` always opens the
+            /// next object with the `bin` extension. Accepting `compress_logs` here would silently ignore the
+            /// setting, and a carried-over `bin.zstd` segment reopened by `writeAt` would be filled with raw
+            /// bytes that the next startup cannot decompress. Reject the combination instead.
+            if (log_file_settings.compress_logs)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "compress_logs is not supported together with the experimental S3 changelog "
+                    "(s3_experimental_changelog). Please disable one of them.");
+            }
+
+            /// In this mode startup scans only `old_log_storage_disk*` and `s3_log_disk`; the regular local log
+            /// disks are not read. Leftover changelogs there would be durable history silently dropped from
+            /// recovery, so fail closed instead: the operator has to declare those disks as old log disks (they
+            /// are always scanned) or move the files away. This PR does not implement local-to-S3 migration.
+            const auto reject_local_changelogs = [&](const DiskPtr & local_disk)
+            {
+                if (!local_disk || local_disk == getS3LogDisk() || !local_disk->existsDirectory(""))
+                    return;
+
+                for (auto it = local_disk->iterateDirectory(""); it->isValid(); it->next())
+                {
+                    if (!it->name().starts_with(DEFAULT_PREFIX))
+                        continue;
+
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Disk '{}' still contains changelog file '{}', but s3_experimental_changelog is enabled, so "
+                        "only old log disks and s3_log_disk are read on startup and this file would be ignored. "
+                        "Migration from local changelogs to S3 is not supported: declare '{}' as "
+                        "keeper_server.old_log_storage_disk (it is always scanned) or move the files away.",
+                        local_disk->getName(),
+                        it->name(),
+                        local_disk->getName());
+                }
+            };
+
+            reject_local_changelogs(getDisk());
+            reject_local_changelogs(getLatestLogDisk());
         }
 
         /// Load all files on changelog disks
