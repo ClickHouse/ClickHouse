@@ -1113,7 +1113,11 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
     not the memory-tracker case. Both places where a rejection is the terminal
     outcome -- the startup probe, and the processlist query of the hung check
     itself, which a run that started fine can still be rejected on -- print the
-    same `Server rejects queries.` marker.
+    same `Server rejects queries.` marker, followed by which query was
+    rejected. The row is named after that: only a rejected startup probe says
+    that every query was rejected, because when the processlist query is the
+    one rejected, the version query and the preparation queries before it did
+    go through.
     """
     rejected = ""
     try:
@@ -1135,6 +1139,15 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
     if not rejected:
         return HUNG_CHECK_DEADLOCK
 
+    # What follows the marker says which query was rejected.
+    rejected = rejected.split("Server rejects queries.", 1)[1].strip()
+    if rejected.startswith("Cannot query the server version"):
+        name = "Server rejects all queries"
+    elif rejected.startswith("Cannot get the processlist size"):
+        name = "Server rejects the processlist query"
+    else:
+        name = "Server rejects queries"
+
     # Keep the error name, so that a memory tracker above the real usage and a
     # thread pool that cannot start a thread do not share one row. The last
     # such token is the error the server answered with: a server exception
@@ -1142,8 +1155,8 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
     # it is lower case and does not match.
     errors = re.findall(r"\(([A-Z][A-Z_0-9]+)\)", rejected)
     if errors:
-        return f"Server rejects all queries, {errors[-1]}"
-    return "Server rejects all queries"
+        return f"{name}, {errors[-1]}"
+    return name
 
 
 def collect_stacktrace_dumps(output_folder: Path) -> None:
