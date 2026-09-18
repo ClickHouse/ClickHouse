@@ -1044,10 +1044,10 @@ void KeeperServer::resetLeaderMetrics()
     last_leader_election_time_ms.reset();
 }
 
+/// Waits for the local log replay, one thread at a time and only up to a deadline, because an
+/// unbounded wait on a thread of the Raft event loop would stop the loop.
 void KeeperServer::waitForLocalLogsPreprocessing()
 {
-    /// Runs on a thread of the Raft event loop - the same pool as the listener and the timers -
-    /// so blocking here without a bound stops the loop instead of merely costing throughput.
     if (threads_waiting_for_local_logs_preprocessing.fetch_add(1) != 0)
     {
         threads_waiting_for_local_logs_preprocessing.fetch_sub(1);
@@ -1058,13 +1058,8 @@ void KeeperServer::waitForLocalLogsPreprocessing()
     SCOPE_EXIT(threads_waiting_for_local_logs_preprocessing.fetch_sub(1));
     CurrentMetrics::Increment waiting_metric_increment{CurrentMetrics::KeeperRaftThreadsWaitingForLogsPreprocessing};
 
-    /// Holds this thread here with the slot taken, which is the only way a test can put a second
-    /// one against the admission gate: the deadline below is always shorter than the interval
-    /// after which the leader re-sends, so the two never overlap on timing alone.
     FailPointInjection::pauseFailPoint(FailPoints::keeper_local_logs_preprocessing_wait);
 
-    /// From the values the instance is running with, not the settings they came from: a runtime
-    /// parameter change is reflected and the narrowing to int32 has already happened.
     const auto raft_limits = nuraft::raft_server::get_raft_limits();
     const uint64_t wait_timeout_ms = getLocalLogsPreprocessingWaitMs(
         raft_instance->get_current_params().heart_beat_interval_,
@@ -1234,10 +1229,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
                 {
-                    /// The replay can finish without the leader from here: the commit index it
-                    /// already sent covers the whole on-disk tail, and the commit thread does
-                    /// the rest. Giving up converges on the branch below, where the entries are
-                    /// dropped and the leader sends them again later.
                     waitForLocalLogsPreprocessing();
                 }
                 else
