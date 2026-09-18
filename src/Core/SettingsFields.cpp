@@ -260,7 +260,7 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
     {
         Int64 x = 0;
         readVarInt(x, in);
-        *this = static_cast<T>(value);
+        *this = static_cast<T>(x);
     }
     else
     {
@@ -627,8 +627,12 @@ void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 
-String SettingFieldCustom::toString() const
+String SettingFieldCustom::toString(bool show_secrets) const
 {
+    CustomType custom;
+    if (!show_secrets && value.tryGet<CustomType>(custom) && custom.isSecret())
+        return custom.toString(/* show_secrets */ false);
+
     return value.dump();
 }
 
@@ -676,6 +680,12 @@ SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field
 void SettingFieldNonZeroUInt64::parseFromString(const String & str)
 {
     SettingFieldUInt64::parseFromString(str);
+    checkValueNonZero();
+}
+
+void SettingFieldNonZeroUInt64::readBinary(ReadBuffer & in)
+{
+    SettingFieldUInt64::readBinary(in);
     checkValueNonZero();
 }
 
