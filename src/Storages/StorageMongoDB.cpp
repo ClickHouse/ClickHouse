@@ -389,8 +389,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
     if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
     {
-        /// The constant becomes an exact filter bound; a lossy conversion skips the pushdown instead.
-        auto converted_value = convertFieldToType(const_value, *column_type, const_type.get(), {}, /*strict=*/ true);
+        /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type.get());
 
         if (converted_value.isNull())
         {

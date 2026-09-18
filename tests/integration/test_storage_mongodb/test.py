@@ -768,12 +768,28 @@ def test_dates_casting(started_cluster):
         )
         == "0\n"
     )
-    # A sub-second bound is not pushed down truncated.
+    # A sub-second bound, or a time of day against a `Date` column, is not pushed down truncated: the query
+    # is refused like any other predicate MongoDB cannot take, and evaluated in ClickHouse when allowed to.
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
+    )
     assert (
         node.query(
-            "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3) SETTINGS mongodb_throw_on_unsupported_query = 0"
         )
         == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('1999-02-28 12:00:00')) SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date32 < toDateTime('1999-02-28 12:00:00') SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
     )
 
     node.query("DROP TABLE dates_table")

@@ -14,6 +14,10 @@ SELECT count() FROM t_kv_date_literal WHERE key = toDate('2024-01-02');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-02 00:00:00', 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime64('2024-01-02 00:00:00', 3, 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key IN (toDateTime('2024-01-02 00:00:00', 'UTC'));
+-- A time of day does not round-trip through `Date`, so these are evaluated over a full scan: `=` compares
+-- as `DateTime` and misses, a constant `IN` converts its elements to the key type and matches.
+SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-02 10:00:00', 'UTC');
+SELECT count() FROM t_kv_date_literal WHERE key IN (toDateTime('2024-01-02 10:00:00', 'UTC'));
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-03 00:00:00', 'UTC');
 
 DROP TABLE t_kv_date_literal;

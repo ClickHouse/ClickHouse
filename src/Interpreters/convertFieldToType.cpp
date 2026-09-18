@@ -1055,6 +1055,19 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     }
 }
 
+Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type)
+{
+    Field converted = tryConvertFieldToType(from_value, to_type, from_type, {}, /*strict=*/ true);
+    if (converted.isNull() || !from_type || isStringOrFixedString(*from_type)
+        || (isNativeNumber(*from_type) && isNativeNumber(to_type)))
+        return converted;
+
+    Field round_trip = tryConvertFieldToType(converted, *from_type, &to_type, {}, /*strict=*/ true);
+    if (round_trip.isNull() || !accurateEquals(round_trip, from_value))
+        return {};
+    return converted;
+}
+
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     checkStackSize();

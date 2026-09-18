@@ -92,4 +92,10 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 /// floating-point value like CAST.
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false);
 
+/// For a constant that becomes an exact bound or key: strict, and the result has to convert back to the
+/// original value, because `strict` still truncates a `DateTime` to a `Date` and a `DateTime64` to a lower
+/// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
+/// those skip the round trip. Returns Null when the value is not representable.
+Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
+
 }
