@@ -4794,6 +4794,15 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         else if (node.type == ActionType::FUNCTION)
         {
             writeStringBinary(node.function_base->getName(), out);
+            /// A cache key has to tell apart two functions of one name that captured different settings
+            /// (see `Node::updateHash`), so it also carries the hash of what the function captured. The
+            /// transmission path leaves it out: the receiver rebuilds the function from its own settings.
+            if (registry.for_cache_key)
+            {
+                SipHash function_state;
+                node.function_base->updateHash(function_state);
+                writeBinaryLittleEndian(function_state.get128(), out);
+            }
             if (function_capture)
             {
                 serializeCapture(function_capture->getCapture(), out);
