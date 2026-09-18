@@ -13,12 +13,15 @@
 #include <Common/ErrnoException.h>
 #include <Parsers/TokenIterator.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #if USE_SSL
-#include <Poco/Net/Context.h>
+#include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLManager.h>
-#include <Poco/Net/AcceptCertificateHandler.h>
-#include <Poco/Net/RejectCertificateHandler.h>
+#include <Common/SipHash.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <map>
 #endif
 
 #include <algorithm>
@@ -79,6 +82,130 @@ String unescapePath(const String & s)
     return result;
 }
 
+constexpr std::string_view SECURE_SCHEME = "secure://";
+
+bool isSecureHost(const String & host)
+{
+    return host.starts_with(SECURE_SCHEME);
+}
+
+String stripSecureScheme(const String & host)
+{
+    return isSecureHost(host) ? host.substr(SECURE_SCHEME.size()) : host;
+}
+
+#if USE_SSL
+/// Walk `path` and its descendants in `from`, invoking `callback(full_key, value)` for each leaf.
+template <typename F>
+void forEachConfigLeaf(const Poco::Util::AbstractConfiguration & from, const String & path, F && callback)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    from.keys(path, keys);
+    if (keys.empty())
+    {
+        if (from.has(path))
+            callback(path, from.getString(path));
+        return;
+    }
+    for (const auto & key : keys)
+        forEachConfigLeaf(from, path + "." + key, callback);
+}
+
+/// Copy a subtree of `from` into `to`, preserving full key paths.
+void copyConfigSubtree(
+    const Poco::Util::AbstractConfiguration & from,
+    Poco::Util::AbstractConfiguration & to,
+    const String & path)
+{
+    forEachConfigLeaf(from, path, [&](const String & key, const String & value) { to.setString(key, value); });
+}
+
+/// Fingerprint the TLS material SSLManager will use: every openSSL.client setting plus the
+/// contents of the key, certificate and CA files. Contents rather than timestamps, because
+/// rotation tooling commonly rewrites files atomically and mtime granularity can hide an update.
+UInt128 fingerprintTLSMaterial(const Poco::Util::AbstractConfiguration & config)
+{
+    SipHash hash;
+
+    /// Sorted, so an unchanged configuration always produces the same fingerprint
+    /// regardless of the order keys() returns.
+    std::map<String, String> settings;
+    forEachConfigLeaf(config, "openSSL.client",
+        [&](const String & key, const String & value) { settings.emplace(key, value); });
+
+    for (const auto & [key, value] : settings)
+    {
+        hash.update(key);
+        hash.update('\0');
+        hash.update(value);
+        hash.update('\0');
+    }
+
+    for (const auto * key : {"openSSL.client.privateKeyFile",
+                             "openSSL.client.certificateFile",
+                             "openSSL.client.caConfig"})
+    {
+        String path = config.getString(key, "");
+        if (path.empty())
+            continue;
+
+        std::error_code ec;
+        if (fs::is_directory(path, ec) && !ec)
+        {
+            /// caConfig may point to a directory of hashed CA files (OpenSSL c_rehash layout).
+            /// Hash sorted entries' names + sizes + mtimes so that adding, removing, or
+            /// replacing any CA file inside the directory changes the fingerprint.
+            std::vector<std::pair<String, fs::path>> entries;
+            for (const auto & entry : fs::directory_iterator(path, ec))
+            {
+                if (ec)
+                    break;
+                std::error_code entry_ec;
+                if (fs::is_regular_file(entry.path(), entry_ec) && !entry_ec)
+                    entries.emplace_back(entry.path().filename().string(), entry.path());
+            }
+            std::sort(entries.begin(), entries.end());
+            for (const auto & [name, entry_path] : entries)
+            {
+                hash.update(name);
+                hash.update('\0');
+                std::error_code sz_ec;
+                std::error_code mt_ec;
+                const auto size = fs::file_size(entry_path, sz_ec);
+                const auto mtime = fs::last_write_time(entry_path, mt_ec);
+                if (!sz_ec)
+                    hash.update(size);
+                if (!mt_ec)
+                    hash.update(mtime.time_since_epoch().count());
+                hash.update('\0');
+            }
+            if (ec)
+                hash.update('\x01'); // directory became unreadable
+            hash.update('\0');
+            continue;
+        }
+
+        if (!fs::is_regular_file(path, ec))
+            continue;
+
+        try
+        {
+            DB::ReadBufferFromFile in(path);
+            String contents;
+            DB::readStringUntilEOF(contents, in);
+            hash.update(contents);
+        }
+        catch (...) // Ok: unreadable file is marked with a sentinel byte so that becoming readable later counts as a change
+        {
+            hash.update('\x01');
+        }
+        hash.update('\0');
+    }
+
+    return hash.get128();
+}
+#endif
+
 }
 
 namespace DB
@@ -91,9 +218,41 @@ namespace ErrorCodes
 
 String KeeperClient::executeFourLetterCommand(const String & command)
 {
+    if (zk_args.hosts.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "No keeper hosts are configured - cannot execute four-letter-word command");
+
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
+    const String & raw_host = zk_args.hosts[0];
+    bool host_is_secure = isSecureHost(raw_host);
+    /// Strip the `secure://` scheme before passing to SocketAddress, the same way ZooKeeperImpl does.
+    String host_without_scheme = stripSecureScheme(raw_host);
+
     Poco::Net::StreamSocket socket;
-    socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
+    if (host_is_secure)
+    {
+#if USE_SSL
+        socket = Poco::Net::SecureStreamSocket();
+
+        /// SNI: strip port from "hostname:port" so the TLS server sees the correct host name.
+        {
+            String sni_host = host_without_scheme.substr(0, host_without_scheme.rfind(':'));
+            if (!sni_host.empty() && sni_host.front() == '[' && sni_host.back() == ']')
+                sni_host = sni_host.substr(1, sni_host.size() - 2);
+            static_cast<Poco::Net::SecureStreamSocket *>(&socket)->setPeerHostName(sni_host);
+        }
+
+        static_cast<Poco::Net::SecureStreamSocket *>(&socket)->setLazyHandshake(true);
+#else
+        throw Poco::Exception(
+            "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+
+    const int connect_timeout_ms = host_is_secure && zk_args.secure_connection_timeout_ms > 0
+        ? zk_args.secure_connection_timeout_ms
+        : zk_args.connection_timeout_ms;
+    socket.connect(Poco::Net::SocketAddress{host_without_scheme}, connect_timeout_ms * 1000);
 
     socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
     socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
@@ -330,6 +489,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("connection-timeout", "", "set connection timeout in seconds. default 10s.")
             .argument("<seconds>")
             .binding("connection-timeout"));
+
+    options.addOption(
+        Poco::Util::Option("secure-connection-timeout", "", "set TLS connection timeout in seconds; defaults to connection-timeout.")
+            .argument("<seconds>")
+            .binding("secure-connection-timeout"));
 
     options.addOption(
         Poco::Util::Option("session-timeout", "", "set session timeout in seconds. default 10s.")
@@ -614,42 +778,6 @@ void KeeperClient::runInteractive()
 
 void KeeperClient::connectToKeeper()
 {
-#if USE_SSL
-    /// Configure SSL context if TLS options are provided
-    if (config().has("tls-cert-file") || config().has("tls-key-file") || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
-    {
-        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
-
-        if (config().has("accept-invalid-certificate"))
-        {
-            verification_mode = Poco::Net::Context::VERIFY_NONE;
-        }
-
-        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
-            Poco::Net::Context::TLSV1_2_CLIENT_USE,
-            config().getString("tls-key-file", ""),
-            config().getString("tls-cert-file", ""),
-            config().getString("tls-ca-file", ""),
-            verification_mode,
-            9,
-            true,
-            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
-        ));
-
-        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
-        if (config().has("accept-invalid-certificate"))
-        {
-            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
-        }
-        else
-        {
-            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
-        }
-
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
-    }
-#endif
-
     ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
@@ -660,6 +788,10 @@ void KeeperClient::connectToKeeper()
     clickhouse_config.configuration->keys("zookeeper", keys);
 
     zkutil::ZooKeeperArgs new_zk_args;
+
+    /// Whether any node in the connection uses a secure (TLS) socket. We need to know this
+    /// before creating the socket so that the SSL context can be initialized accordingly.
+    [[maybe_unused]] bool secure = false;
 
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
@@ -675,7 +807,10 @@ void KeeperClient::connectToKeeper()
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
             if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
-                host = "secure://" + host;
+            {
+                host = String(SECURE_SCHEME) + host;
+                secure = true;
+            }
 
             new_zk_args.hosts.push_back(host + ":" + port);
         }
@@ -685,14 +820,123 @@ void KeeperClient::connectToKeeper()
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
 
-        if (config().has("secure"))
-            host = "secure://" + host;
+        bool host_already_secure = isSecureHost(host);
+
+        /// `--secure` and `--host secure://...` are both valid ways to request TLS.
+        /// Guard against double-prefixing when both are provided at the same time.
+        if (config().has("secure") || host_already_secure)
+        {
+            if (!host_already_secure)
+                host = String(SECURE_SCHEME) + host;
+            secure = true;
+        }
 
         new_zk_args.hosts.push_back(host + ":" + port);
     }
 
+#if USE_SSL
+    {
+        /// Also treat hosts that already carry the `secure://` scheme as requesting a secure
+        /// connection, e.g. `--host secure://node1` without a separate `--secure` flag.
+        bool any_host_secure = std::any_of(
+            new_zk_args.hosts.begin(), new_zk_args.hosts.end(),
+            [](const String & h) { return isSecureHost(h); });
+
+        if (secure || any_host_secure || config().has("tls-cert-file") || config().has("tls-key-file")
+            || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
+        {
+            /// Poco's SSLManager reads openSSL.client.* from Poco::Util::Application::instance().config(),
+            /// which for keeper-client holds only command line options. Copy the <openSSL> section of the
+            /// ClickHouse config into it, layer the explicit --tls-* overrides on top, and let SSLManager
+            /// build the context. This gives keeper-client the same openSSL.client contract as
+            /// clickhouse-client and clickhouse-server, including cipherList, disableProtocols,
+            /// extendedVerification, verificationDepth and the handler factories.
+
+            /// config() persists across reconnects, so drop the keys copied last time before
+            /// re-copying. Without this, a setting deleted from config.xml keeps its old value
+            /// for the lifetime of the process - which for invalidCertificateHandler.name would
+            /// mean relaxed certificate handling outliving its removal by the operator.
+            config().remove("openSSL");
+
+            copyConfigSubtree(*clickhouse_config.configuration, config(), "openSSL");
+
+            if (config().has("tls-key-file"))
+                config().setString("openSSL.client.privateKeyFile", config().getString("tls-key-file"));
+            if (config().has("tls-cert-file"))
+                config().setString("openSSL.client.certificateFile", config().getString("tls-cert-file"));
+            if (config().has("tls-ca-file"))
+                config().setString("openSSL.client.caConfig", config().getString("tls-ca-file"));
+
+            if (config().has("accept-invalid-certificate"))
+            {
+                config().setString("openSSL.client.verificationMode", "none");
+                config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
+            }
+            else
+            {
+                /// Mirror clickhouse-client behaviour: always set the handler explicitly so
+                /// certificate rejection does not depend on Poco's built-in default.
+                if (!config().has("openSSL.client.invalidCertificateHandler.name"))
+                    config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
+            }
+
+            /// keeper-client loads the system CA store unless the config says otherwise.
+            /// Seeded explicitly rather than relying on Poco's built-in default for this key,
+            /// so the behaviour does not silently change on a contrib bump.
+            if (!config().has("openSSL.client.loadDefaultCAFile"))
+                config().setString("openSSL.client.loadDefaultCAFile", "true");
+
+            /// Seed the same protocol/session defaults that clickhouse-client ships in
+            /// clickhouse-client.xml, so keeper-client behaves identically when the server
+            /// config.xml does not carry an <openSSL> section.
+            if (!config().has("openSSL.client.disableProtocols"))
+                config().setString("openSSL.client.disableProtocols", "sslv2,sslv3");
+            if (!config().has("openSSL.client.cacheSessions"))
+                config().setString("openSSL.client.cacheSessions", "true");
+            if (!config().has("openSSL.client.preferServerCiphers"))
+                config().setString("openSSL.client.preferServerCiphers", "true");
+
+            /// connectToKeeper() reloads config.xml on every reconnect, so the TLS material may
+            /// have changed since the context was built - renewed certificates, edited settings.
+            /// Rebuild when it has, and only when it has: an unconditional rebuild would re-run
+            /// the passphrase handler on every reconnect, and the default KeyConsoleHandler reads
+            /// from stdin, which in tests-mode is the command stream.
+            UInt128 fingerprint = fingerprintTLSMaterial(config());
+            if (ssl_material_fingerprint != fingerprint)
+            {
+                /// Drop the cached context and the handler subscriptions so the next
+                /// defaultClientContext() re-runs initDefaultContext(false). Sockets that are
+                /// already open keep their own refcounted Context and are unaffected.
+                ///
+                /// shutdown() clears the default context pointer and the events, but it does NOT
+                /// clear _ptrClientPassphraseHandler / _ptrClientCertificateHandler.  On the
+                /// following defaultClientContext() call, initPassphraseHandler(false) and
+                /// initCertificateHandler(false) short-circuit (because those pointers are still
+                /// non-null) and never re-subscribe to the freshly-cleared events.  The rebuilt
+                /// Context would then fire PrivateKeyPassphraseRequired / ClientVerificationError
+                /// with no listeners — encrypted keys fail to load and non-default cert handling
+                /// (e.g. AcceptCertificateHandler) is silently bypassed.
+                ///
+                /// initializeClient(nullptr, nullptr, nullptr) zeroes all three client-side
+                /// pointers, so initDefaultContext(false) re-creates the handlers from the
+                /// current config and re-wires them to the events.
+                if (ssl_material_fingerprint)
+                {
+                    Poco::Net::SSLManager::instance().shutdown();
+                    Poco::Net::SSLManager::instance().initializeClient(nullptr, nullptr, nullptr);
+                }
+
+                Poco::Net::SSLManager::instance().defaultClientContext();
+                ssl_material_fingerprint = fingerprint;
+            }
+        }
+    }
+#endif
+
     new_zk_args.availability_zones.resize(new_zk_args.hosts.size());
     new_zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
+    new_zk_args.secure_connection_timeout_ms = config().getInt("secure-connection-timeout",
+        config().getInt("connection-timeout", 10)) * 1000;
     new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
