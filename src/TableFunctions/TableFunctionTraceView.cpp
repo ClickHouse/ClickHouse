@@ -385,7 +385,7 @@ String renderSpanText(const SpanColumns & spans, size_t row, const String & tree
 
 /// Visits every span of the forest once, depth-first, children in row order. Duplicates are
 /// skipped. The roots go first; whatever is left afterwards is visited as a root too, so that no span of the trace is lost.
-/// `visit(row, prefix, connector)` receives the tree drawing of the row: 
+/// `visit(row, prefix, connector)` receives the tree drawing of the row:
 /// `prefix` is the indentation inherited from the ancestors, `connector` the branch to the row itself.
 template <typename Visit>
 void walkDepthFirst(const SpanForest & forest, Visit && visit)
