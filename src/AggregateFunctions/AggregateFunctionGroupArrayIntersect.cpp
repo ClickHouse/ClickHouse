@@ -151,7 +151,8 @@ public:
         size_t size;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        set.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        set.reserve(std::min(size, buf.available() / sizeof(T)));
         for (size_t i = 0; i < size; ++i)
         {
             T key;
@@ -323,7 +324,9 @@ public:
         size_t size;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        set.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        /// Elements are variable length, so the divisor is the size of a slot, not of an element.
+        set.reserve(std::min(size, buf.available() / sizeof(typename State::Set::cell_type)));
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);

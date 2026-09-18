@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
 struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
@@ -97,9 +96,11 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
     {
         settings.path.push_back(Substream::DynamicData);
         if (is_null_map_subcolumn)
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElementNullMap>(dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElementNullMap>(
+                dynamic_element_name, *global_discr, variant_type.getVariants().size());
         else
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(nested_serialization, dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
+                nested_serialization, dynamic_element_name, *global_discr, variant_type.getVariants().size(), nullable_added_by_extraction);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = false;
         settings.path.pop_back();
@@ -110,10 +111,15 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         auto shared_variant_global_discr = variant_type.tryGetVariantDiscriminator(ColumnDynamic::getSharedVariantTypeName());
         chassert(shared_variant_global_discr.has_value());
         settings.path.push_back(Substream::DynamicData);
+        /// The shared variant is always read into a Nullable column of the shared variant type
+        /// (see below), while shared_variant_serialization is a plain String serialization, so the
+        /// Nullable is always added here and must always be removed - never forward the flag.
         dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
             shared_variant_serialization,
             ColumnDynamic::getSharedVariantTypeName(),
-            *shared_variant_global_discr);
+            *shared_variant_global_discr,
+            variant_type.getVariants().size(),
+            /*nullable_added_by_extraction_=*/true);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = true;
         settings.path.pop_back();

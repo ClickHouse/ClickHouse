@@ -249,7 +249,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else if (query.kind == ASTDropQuery::Kind::Drop)
                 context_->checkAccess(drop_storage, table_id);
 
-            ddl_guard->releaseTableLock();
+            if (ddl_guard)
+                ddl_guard->releaseTableLock();
             table.reset();
 
             query_to_send.if_empty = false;
@@ -315,7 +316,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
-            context_->checkAccess(drop_storage, table_id);
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
 
             if (table->isDictionary())
             {
@@ -776,10 +778,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        /// `DROP`, `DETACH` and `TRUNCATE` of a database are all authorized by `DROP DATABASE`,
+        /// which is the single privilege `executeToDatabaseImpl` requires for each of them.
+        required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)
     {
@@ -815,6 +816,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         drop_query->kind = kind;
         drop_query->sync = sync;
         drop_query->if_exists = true;
+        /// The DDLGuard for this exact name is already held above, and it is not recursive.
+        drop_query->no_ddl_lock = need_ddl_guard;
         ASTPtr ast_drop_query = drop_query;
         /// FIXME We have to use global context to execute DROP query for inner table
         /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege

@@ -57,8 +57,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     for (auto & database_name : databases_to_load)
     {
         databases[database_name]->beforeLoadingMetadata(global_context, strictness_mode);
-        bool is_startup = LoadingStrictnessLevel::FORCE_ATTACH <= strictness_mode;
-        databases[database_name]->loadTablesMetadata(global_context, metadata, is_startup);
+        databases[database_name]->loadTablesMetadata(global_context, metadata, isLoadingFromExistingMetadata(strictness_mode));
     }
 
     LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",

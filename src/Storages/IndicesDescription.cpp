@@ -94,6 +94,11 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
+    /// Without escaping the name becomes a part of the index file name as is, see `getIndexFileName`.
+    if (!escape_filenames && index_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_definition->name);
+
     auto index_type = index_definition->getType();
     if (!index_type)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");

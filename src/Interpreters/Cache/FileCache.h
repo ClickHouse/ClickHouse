@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
@@ -108,6 +109,8 @@ public:
     void throwInitExceptionIfNeeded();
 
     const String & getBasePath() const;
+
+    bool skipCacheOnDiskFailure() const;
 
     static const FileCacheOriginInfo & getCommonOrigin();
 
@@ -256,6 +259,7 @@ private:
     ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
     const bool allow_dynamic_cache_resize;
+    const size_t dynamic_resize_lock_wait_ms;
 
     BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
@@ -266,6 +270,8 @@ private:
     const bool use_split_cache;
     const double split_cache_ratio;
 
+    const bool skip_cache_on_disk_failure;
+
     String name;
     LoggerPtr log;
 
@@ -275,7 +281,7 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
-    std::atomic<bool> cache_is_being_resized = false;
+    std::shared_timed_mutex dynamic_resize_lock;
 
     std::atomic<size_t> cache_reserve_active_threads = 0;
 

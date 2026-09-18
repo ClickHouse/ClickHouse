@@ -26,6 +26,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -172,7 +173,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -337,6 +338,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
             res.pipeline = table->updateLightweight(mutation_commands, getContext());
             res.pipeline.addStorageHolder(table);
+
+            /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+            /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+            QueryPlanResourceHolder update_resources;
+            update_resources.table_locks.emplace_back(std::move(table_lock));
+            res.pipeline.addResources(std::move(update_resources));
+
             return res;
         }
     }

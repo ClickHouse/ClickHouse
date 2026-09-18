@@ -267,11 +267,12 @@ void S3RequestSettings::validateUploadSettings()
                             impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size.value));
     }
 
-    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    std::unordered_set<String> storage_class_names
+        {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "EXPRESS_ONEZONE"};
     if (!impl->storage_class_name.value.empty() && !storage_class_names.contains(impl->storage_class_name))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
             impl->storage_class_name.value);
 
     /// TODO: it's possible to set too small limits.

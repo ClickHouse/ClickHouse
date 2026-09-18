@@ -5,6 +5,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
+#include <Core/SettingsSecrets.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Core/Settings.h>
 
 
@@ -86,6 +88,16 @@ private:
             if (!getContext()->getSettingsRef().tryGet(setting_name, setting_value))
                 setting_value = (*default_value_column)[0];
         }
+
+        /// Hide the credential the value may carry, exactly as `system.settings` does: it is the same
+        /// value read by the same user, so returning it here would be a way around that column.
+        if (!canDisplaySecrets(getContext()))
+        {
+            String rendered;
+            if (setting_value.tryGet<String>(rendered) && CoreSettings::maskSettingValue(String(setting_name), rendered))
+                setting_value = rendered;
+        }
+
         return setting_value;
     }
 

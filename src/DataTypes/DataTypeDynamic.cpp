@@ -244,17 +244,22 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         }
     }
 
+    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
+    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
+    auto subcolumn_type_before_wrap = res->type;
+    if (!is_null_map_subcolumn && make_subcolumn_nullable)
+        res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
+    /// res->serialization serializes the type before the wrap above, so it must know whether the
+    /// nullability it will be handed at read time is that wrapper or the requested type's own.
+    bool nullable_added_by_extraction
+        = !isNullableOrLowCardinalityNullable(subcolumn_type_before_wrap) && isNullableOrLowCardinalityNullable(res->type);
     res->serialization = std::make_shared<SerializationDynamicElement>(
         res->serialization,
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
         String(subcolumn_nested_name),
-        is_null_map_subcolumn);
-
-    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
-    if (!is_null_map_subcolumn && make_subcolumn_nullable)
-        res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
+        is_null_map_subcolumn,
+        nullable_added_by_extraction);
 
     if (data.column)
     {
@@ -269,14 +274,17 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     variant_column.getLocalDiscriminatorsPtr(),
                     "",
                     *discriminator,
-                    variant_column.localDiscriminatorByGlobal(*discriminator));
+                    variant_column.localDiscriminatorByGlobal(*discriminator),
+                    variant_column.getNumVariants());
             else
                 creator = std::make_unique<SerializationVariantElement::VariantSubcolumnCreator>(
                     variant_column.getLocalDiscriminatorsPtr(),
                     "",
                     *discriminator,
                     variant_column.localDiscriminatorByGlobal(*discriminator),
-                    make_subcolumn_nullable);
+                    make_subcolumn_nullable,
+                    nullptr,
+                    variant_column.getNumVariants());
             res->column = creator->create(res->column);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use

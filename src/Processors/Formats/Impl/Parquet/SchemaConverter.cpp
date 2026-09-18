@@ -151,7 +151,21 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     }
     auto it = map.find(element.field_id);
     if (it == map.end())
+    {
+        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
+        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
+        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
+        /// write these into data files, but they are not part of the table schema. Per the Iceberg
+        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
+        /// reserved-range field ids they don't recognize rather than failing. Such a column is
+        /// never requested, so returning its physical name lets the existing "unrequested column"
+        /// path skip it.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
+        if (element.field_id > iceberg_max_user_field_id)
+            return element.name;
+
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
+    }
 
     /// At top level (empty path), return the full mapped name. For nested
     /// elements, strip the parent path prefix to get the child name.
@@ -631,6 +645,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", node.getNameForLogging(), node.element->num_children, tuple_type_hint->getElements().size());
         }
     }
+
+    /// `num_children` comes directly from untrusted input file, need to sanity-check before doing
+    /// `elements.resize(num_children)`.
+    if (node.element->num_children < 0 || size_t(node.element->num_children) > file_metadata.schema.size() - schema_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", node.getNameForLogging(), node.element->num_children, file_metadata.schema.size() - schema_idx);
+
     if (!lookup_by_name && node.requested)
         elements.resize(size_t(node.element->num_children), UINT64_MAX);
 
@@ -1082,6 +1102,9 @@ void SchemaConverter::processPrimitiveColumn(
         UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
         precision = std::max(precision, scale);
 
+        /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
+        /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
+        /// determines the width of the column we decode into.
         UInt32 max_precision = 0;
         if (type == parq::Type::INT32 || type == parq::Type::INT64)
         {
@@ -1150,8 +1173,15 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
         out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
-        size_t output_size = out_inferred_type->getSizeOfValueInMemory();
-        out_decoder.allow_stats = is_output_type_decimal(output_size, scale);
+
+        /// Decode into a column as wide as the converter writes; castColumn then narrows it to the
+        /// declared precision, throwing DECIMAL_OVERFLOW for values that don't fit.
+        auto decoded_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        size_t decoded_size = decoded_type->getSizeOfValueInMemory();
+        if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
+            out_decoded_type = std::move(decoded_type);
+
+        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
 
         return;
     }

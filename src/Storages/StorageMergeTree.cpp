@@ -1663,7 +1663,11 @@ bool StorageMergeTree::merge(
         /// which publishes new metadata and registers the rename mutation atomically under
         /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
         /// metadata without also seeing the pending rename mutation. See #80648.
-        metadata_snapshot = getInMemoryMetadataPtr();
+
+        /// Bypass the per-query metadata cache: this read must pair with the mutations map
+        /// under `currently_processing_in_background_mutex`, and a cached snapshot was taken
+        /// outside it. See #80648.
+        metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/ true);
 
         return selectPartsToMerge(
             metadata_snapshot,
@@ -2846,7 +2850,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
@@ -3005,7 +3009,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params
         {

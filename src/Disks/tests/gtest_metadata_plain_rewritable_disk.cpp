@@ -32,7 +32,7 @@ public:
         if (!initialized)
         {
             ServerUUID::setRandomForUnitTests();
-            getIOThreadPool().initialize(1, 1, 0);
+            getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
             initialized = true;
         }
     }

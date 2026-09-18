@@ -340,7 +340,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
-    if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
+    if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
         return nullptr;
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
@@ -430,6 +430,13 @@ void MergeTreeReaderWide::deserializePrefix(
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name)
                 streams.erase(*stream_name);
+        };
+        deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            return stream_name.has_value();
         };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);

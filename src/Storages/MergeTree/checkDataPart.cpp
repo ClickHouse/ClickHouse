@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
 }
 
 
@@ -110,7 +111,8 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
-            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
+            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     }
     catch (const std::filesystem::filesystem_error & e)
     {
@@ -185,7 +187,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
-        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
+        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
         uncompressed_hashing_buf.ignoreAll();

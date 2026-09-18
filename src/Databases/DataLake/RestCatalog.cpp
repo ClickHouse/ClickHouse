@@ -2,6 +2,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -44,6 +45,7 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB::ErrorCodes
@@ -115,6 +117,22 @@ String encodeNamespaceForURI(const String & namespace_name)
     }
     return encoded;
 }
+
+std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
+    const Poco::Util::AbstractConfiguration & config)
+{
+    static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
+    std::unordered_set<std::string> allowed;
+    if (!config.has(SECTION))
+        return allowed;
+
+    std::vector<std::string> keys;
+    config.keys(SECTION, keys);
+    for (const auto & key : keys)
+        allowed.insert(config.getString(std::string(SECTION) + "." + key));
+    return allowed;
+}
+
 
 }
 
@@ -324,6 +342,7 @@ AccessToken RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -457,6 +476,23 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
 
+    const auto & context = getContext();
+
+    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
+    if (allowed_metadata_hosts.empty())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake metadata service requests are disabled. To enable, configure "
+            "<iceberg_biglake_metadata_service_hosts> in server config with the allowed metadata "
+            "hosts (typically `metadata.google.internal` and `169.254.169.254`).");
+
+    if (!allowed_metadata_hosts.contains(google_metadata_service))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "google_metadata_service host `{}` is not in the server-side allow-list "
+            "<iceberg_biglake_metadata_service_hosts>",
+            google_metadata_service);
+
     Poco::URI url;
     url.setScheme("http");
     url.setHost(google_metadata_service);
@@ -467,7 +503,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Requesting Google Cloud access token from metadata service: {}", url.toString());
 
-    const auto & context = getContext();
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
