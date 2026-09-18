@@ -406,6 +406,9 @@ void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
     /// reads `replacement.children[0]`, so a foreign child type from malformed `clickhouse_json`
     /// must be rejected here instead of reaching that downcast during execution.
     children = r.readChildrenOfType<ASTColumnsReplaceTransformer::Replacement>("ColumnsReplaceTransformer");
+    /// `REPLACE (...)` needs at least one replacement; an empty one formats as `REPLACE ()`.
+    if (children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ColumnsReplaceTransformer` must have at least one replacement during AST JSON deserialization");
 }
 
 }
