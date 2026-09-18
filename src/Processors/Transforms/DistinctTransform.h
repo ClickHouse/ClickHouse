@@ -60,7 +60,7 @@ public:
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
     /// `shared_set_bytes_` accounts for retained set memory across disjoint streams and attaches
-    /// snapshots to output chunks for global limit accounting by `DistinctLimitTransform`.
+    /// snapshots to output chunks for global limit accounting by `DistinctLimitsCheckingTransform`.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,

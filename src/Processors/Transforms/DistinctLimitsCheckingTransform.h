@@ -12,12 +12,12 @@ namespace DB
 /// Each input keeps its corresponding output so downstream steps can reuse the disjoint streams.
 /// A `BREAK` limit emits the chunk that reaches the limit before closing every input, including
 /// partitions that emit no rows and may otherwise keep reading.
-class DistinctLimitTransform final : public IProcessor
+class DistinctLimitsCheckingTransform final : public IProcessor
 {
 public:
-    DistinctLimitTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams);
+    DistinctLimitsCheckingTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams);
 
-    String getName() const override { return "DistinctLimitTransform"; }
+    String getName() const override { return "DistinctLimitsCheckingTransform"; }
 
     Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
     Status prepare() override;

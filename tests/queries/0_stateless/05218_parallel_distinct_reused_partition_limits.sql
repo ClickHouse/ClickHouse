@@ -22,7 +22,7 @@ SELECT countIf(explain LIKE '%Skip stream merging: 1%') = 1,
        countIf(explain LIKE '%Read each partition through separate port%') = 1
 FROM (EXPLAIN actions = 1 SELECT DISTINCT k FROM distinct_reused_limits);
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0,
-       countIf(explain LIKE '%DistinctLimitTransform%') = 1
+       countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 1
 FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM distinct_reused_limits);
 SELECT count(), uniqExact(k), sum(k) FROM (SELECT DISTINCT k FROM distinct_reused_limits);
 SELECT count() FROM (SELECT DISTINCT k FROM distinct_reused_limits) SETTINGS allow_parallel_distinct = 0;
@@ -41,7 +41,7 @@ SETTINGS max_bytes_in_distinct = 6144, distinct_overflow_mode = 'break';
 
 -- Sorted preliminary deduplication still feeds one global limit check after final hash deduplication.
 SELECT countIf(explain LIKE '%DistinctSortedStreamTransform%') > 0,
-       countIf(explain LIKE '%DistinctLimitTransform%') = 1
+       countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 1
 FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM distinct_reused_limits)
 SETTINGS optimize_distinct_in_order = 1;
 SELECT count() FROM (SELECT DISTINCT k FROM distinct_reused_limits) SETTINGS optimize_distinct_in_order = 1;
@@ -58,7 +58,7 @@ FROM (EXPLAIN actions = 1 SELECT DISTINCT k % 2 FROM distinct_reused_limits);
 SELECT count() FROM (SELECT DISTINCT k % 2 FROM distinct_reused_limits);
 
 -- A single surviving partition uses a local final limit check, and an empty read returns no keys.
-SELECT countIf(explain LIKE '%DistinctLimitTransform%') = 0
+SELECT countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM distinct_reused_limits WHERE k % 4 = 0);
 SELECT count() FROM (SELECT DISTINCT k FROM distinct_reused_limits WHERE k % 4 = 0);
 SELECT count() FROM (SELECT DISTINCT k FROM distinct_reused_limits WHERE k > 1000);
@@ -73,7 +73,7 @@ SETTINGS optimize_distinct_in_order = 1;
 
 -- A second `DISTINCT` reuses the first scatter while each step has its own global size limit.
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 1,
-       countIf(explain LIKE '%DistinctLimitTransform%') = 2
+       countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 2
 FROM
 (
     EXPLAIN PIPELINE

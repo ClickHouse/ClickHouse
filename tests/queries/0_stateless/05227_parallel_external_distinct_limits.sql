@@ -9,7 +9,7 @@ SET distinct_overflow_mode = 'throw';
 -- Enabling spilling retains parallel final deduplication and one global check for both size limits.
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0,
        countIf(explain LIKE '%ExternalDistinctTransform × 4%') = 1,
-       countIf(explain LIKE '%DistinctLimitTransform%') = 1
+       countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 1
 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 64 FROM numbers_mt(512));
 SELECT count(), uniqExact(k), sum(k)
 FROM (SELECT DISTINCT number % 64 AS k FROM numbers_mt(512));
@@ -51,7 +51,7 @@ CREATE TABLE parallel_external_limits (k UInt64) ENGINE = MergeTree ORDER BY tup
 INSERT INTO parallel_external_limits SELECT number % 64 FROM numbers(512);
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0,
        countIf(explain LIKE '%ExternalDistinctTransform × 4%') = 1,
-       countIf(explain LIKE '%DistinctLimitTransform%') = 1
+       countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 1
 FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM parallel_external_limits);
 SELECT count(), uniqExact(k), sum(k) FROM (SELECT DISTINCT k FROM parallel_external_limits);
 SELECT DISTINCT k FROM parallel_external_limits
@@ -59,7 +59,7 @@ SETTINGS max_rows_in_distinct = 32 FORMAT Null; -- { serverError SET_SIZE_LIMIT_
 
 -- An order requirement still keeps the final deduplication in one stream.
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') = 0,
-       countIf(explain LIKE '%DistinctLimitTransform%') = 0
+       countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM (SELECT k FROM parallel_external_limits ORDER BY k));
 SELECT groupArray(k) = range(64)
 FROM (SELECT DISTINCT k FROM (SELECT k FROM parallel_external_limits ORDER BY k));

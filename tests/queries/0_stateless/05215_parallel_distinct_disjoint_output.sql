@@ -37,7 +37,7 @@ SELECT count(), sum(c), min(c), max(c) FROM (SELECT k % 10 AS g, count() AS c FR
 
 -- Global `BREAK` limits preserve partition assignments while results are complete.
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM (SELECT DISTINCT number % 1000 AS k FROM numbers_mt(50000)) ARRAY JOIN [0, 1, 2] AS x GROUP BY k) SETTINGS max_rows_in_distinct = 2000, distinct_overflow_mode = 'break';
-SELECT countIf(explain LIKE '%DistinctLimitTransform%') = 1 FROM (EXPLAIN PIPELINE SELECT k, count() AS c FROM (SELECT DISTINCT number % 1000 AS k FROM numbers_mt(50000)) ARRAY JOIN [0, 1, 2] AS x GROUP BY k) SETTINGS max_rows_in_distinct = 2000, distinct_overflow_mode = 'break';
+SELECT countIf(explain LIKE '%DistinctLimitsCheckingTransform%') = 1 FROM (EXPLAIN PIPELINE SELECT k, count() AS c FROM (SELECT DISTINCT number % 1000 AS k FROM numbers_mt(50000)) ARRAY JOIN [0, 1, 2] AS x GROUP BY k) SETTINGS max_rows_in_distinct = 2000, distinct_overflow_mode = 'break';
 
 -- A single input stream satisfies the same key-disjointness guarantee without scattering.
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM (SELECT DISTINCT number % 1000 AS k FROM numbers_mt(50000)) ARRAY JOIN [0, 1, 2] AS x GROUP BY k) SETTINGS max_threads = 1;

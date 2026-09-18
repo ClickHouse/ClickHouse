@@ -21,7 +21,7 @@
 #include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
-#include <Processors/Transforms/DistinctLimitTransform.h>
+#include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -499,7 +499,7 @@ TEST_F(ExternalDistinctTransformTest, GlobalLimitsCombineHashingAndSpilledStream
                     pipes.push_back(std::move(pipe));
                 }
                 auto pipe = Pipe::unitePipes(std::move(pipes));
-                pipe.addTransform(std::make_shared<DistinctLimitTransform>(header, SizeLimits(row_limit, 0, mode), 2));
+                pipe.addTransform(std::make_shared<DistinctLimitsCheckingTransform>(header, SizeLimits(row_limit, 0, mode), 2));
                 pipe.resize(1);
                 QueryPipeline pipeline(std::move(pipe));
                 PullingPipelineExecutor executor(pipeline);

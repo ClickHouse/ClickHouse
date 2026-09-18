@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Transforms/DistinctLimitTransform.h>
+#include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Common/assert_cast.h>
 
@@ -37,7 +37,7 @@ struct ConnectedLimit
 {
     SharedHeader header;
     DistinctSetMemoryTracker::SharedCounter shared_set_bytes = std::make_shared<std::atomic<UInt64>>(0);
-    DistinctLimitTransform transform;
+    DistinctLimitsCheckingTransform transform;
     OutputPorts upstream;
     InputPorts downstream;
     IProcessor::UpdatedInputPorts inputs;
@@ -66,7 +66,7 @@ struct ConnectedLimit
 
 }
 
-TEST(DistinctLimitTransform, KeepsStreamsSeparateAndHonorsDemand)
+TEST(DistinctLimitsCheckingTransform, KeepsStreamsSeparateAndHonorsDemand)
 {
     ConnectedLimit limit(4);
     EXPECT_EQ(limit.prepare(), IProcessor::Status::PortFull);
@@ -112,7 +112,7 @@ TEST(DistinctLimitTransform, KeepsStreamsSeparateAndHonorsDemand)
         EXPECT_TRUE(sink.isFinished());
 }
 
-TEST(DistinctLimitTransform, GlobalBreakStopsIdlePartitionsAfterEmittingTheLastChunk)
+TEST(DistinctLimitsCheckingTransform, GlobalBreakStopsIdlePartitionsAfterEmittingTheLastChunk)
 {
     for (size_t streams : {1, 4})
     {
@@ -142,7 +142,7 @@ TEST(DistinctLimitTransform, GlobalBreakStopsIdlePartitionsAfterEmittingTheLastC
     }
 }
 
-TEST(DistinctLimitTransform, ForwardsExceptionsThroughTheirOriginalStream)
+TEST(DistinctLimitsCheckingTransform, ForwardsExceptionsThroughTheirOriginalStream)
 {
     ConnectedLimit limit(2);
     limit.downstream.back().setNeeded();
@@ -155,7 +155,7 @@ TEST(DistinctLimitTransform, ForwardsExceptionsThroughTheirOriginalStream)
     EXPECT_FALSE(limit.downstream.front().hasData());
 }
 
-TEST(DistinctLimitTransform, ClosedOutputDoesNotPreventGlobalBreakOnOtherStreams)
+TEST(DistinctLimitsCheckingTransform, ClosedOutputDoesNotPreventGlobalBreakOnOtherStreams)
 {
     ConnectedLimit limit(2, SizeLimits(3, 0, OverflowMode::BREAK));
     for (auto & sink : limit.downstream)
@@ -187,7 +187,7 @@ TEST(DistinctLimitTransform, ClosedOutputDoesNotPreventGlobalBreakOnOtherStreams
     EXPECT_TRUE(limit.upstream.back().isFinished());
 }
 
-TEST(DistinctLimitTransform, ThrowLimitCountsKeysAcrossStreams)
+TEST(DistinctLimitsCheckingTransform, ThrowLimitCountsKeysAcrossStreams)
 {
     ConnectedLimit limit(2, SizeLimits(3, 0, OverflowMode::THROW));
     for (auto & sink : limit.downstream)
@@ -209,7 +209,7 @@ TEST(DistinctLimitTransform, ThrowLimitCountsKeysAcrossStreams)
     EXPECT_THROW(limit.transform.prepare({limit.inputs.back()}, {}), Exception);
 }
 
-TEST(DistinctLimitTransform, PreservesEmptyChunkMetadata)
+TEST(DistinctLimitsCheckingTransform, PreservesEmptyChunkMetadata)
 {
     ConnectedLimit limit(1, SizeLimits(1, 0, OverflowMode::BREAK));
     limit.downstream.front().setNeeded();
@@ -224,7 +224,7 @@ TEST(DistinctLimitTransform, PreservesEmptyChunkMetadata)
     EXPECT_NE(result.getChunkInfos().get<TestChunkInfo>(), nullptr);
 }
 
-TEST(DistinctLimitTransform, CountsConstantKeysWithoutSetAllocations)
+TEST(DistinctLimitsCheckingTransform, CountsConstantKeysWithoutSetAllocations)
 {
     ConnectedLimit limit(1, SizeLimits(1, 0, OverflowMode::BREAK));
     const ColumnPtr constant = ColumnConst::create(ColumnUInt64::create(1, UInt64(7)), 4);
@@ -241,7 +241,7 @@ TEST(DistinctLimitTransform, CountsConstantKeysWithoutSetAllocations)
     EXPECT_EQ(limit.downstream.front().pull().getNumRows(), 1);
 }
 
-TEST(DistinctLimitTransform, GlobalBreakStopsWithinUpdatedBatch)
+TEST(DistinctLimitsCheckingTransform, GlobalBreakStopsWithinUpdatedBatch)
 {
     for (bool notify_inputs : {false, true})
     {
@@ -275,7 +275,7 @@ TEST(DistinctLimitTransform, GlobalBreakStopsWithinUpdatedBatch)
     }
 }
 
-TEST(DistinctLimitTransform, FinishedPairIsCountedOnceAcrossRepeatedUpdates)
+TEST(DistinctLimitsCheckingTransform, FinishedPairIsCountedOnceAcrossRepeatedUpdates)
 {
     ConnectedLimit limit(2);
     for (auto & sink : limit.downstream)
@@ -295,7 +295,7 @@ TEST(DistinctLimitTransform, FinishedPairIsCountedOnceAcrossRepeatedUpdates)
     EXPECT_TRUE(limit.downstream.back().isFinished());
 }
 
-TEST(DistinctLimitTransform, ByteLimitUsesRetainedSetAllocations)
+TEST(DistinctLimitsCheckingTransform, ByteLimitUsesRetainedSetAllocations)
 {
     for (OverflowMode mode : {OverflowMode::BREAK, OverflowMode::THROW})
     {
@@ -328,7 +328,7 @@ TEST(DistinctLimitTransform, ByteLimitUsesRetainedSetAllocations)
     }
 }
 
-TEST(DistinctLimitTransform, ByteLimitCountsConcurrentSets)
+TEST(DistinctLimitsCheckingTransform, ByteLimitCountsConcurrentSets)
 {
     ConnectedLimit limit(2, SizeLimits(0, 4095, OverflowMode::THROW));
     for (auto & sink : limit.downstream)
@@ -350,7 +350,7 @@ TEST(DistinctLimitTransform, ByteLimitCountsConcurrentSets)
     EXPECT_THROW(limit.transform.prepare({limit.inputs.back()}, {}), Exception);
 }
 
-TEST(DistinctLimitTransform, ReleasedSetsDoNotCountTowardsLaterAllocations)
+TEST(DistinctLimitsCheckingTransform, ReleasedSetsDoNotCountTowardsLaterAllocations)
 {
     ConnectedLimit limit(2, SizeLimits(0, 4095, OverflowMode::THROW));
     for (auto & sink : limit.downstream)
@@ -378,7 +378,7 @@ TEST(DistinctLimitTransform, ReleasedSetsDoNotCountTowardsLaterAllocations)
     }
 }
 
-TEST(DistinctLimitTransform, PendingChunksRetainMemoryLimitSnapshots)
+TEST(DistinctLimitsCheckingTransform, PendingChunksRetainMemoryLimitSnapshots)
 {
     ConnectedLimit limit(1, SizeLimits(0, 1, OverflowMode::THROW));
     limit.downstream.front().setNeeded();
@@ -393,7 +393,7 @@ TEST(DistinctLimitTransform, PendingChunksRetainMemoryLimitSnapshots)
     EXPECT_THROW(limit.prepare(), Exception);
 }
 
-TEST(DistinctLimitTransform, DuplicateOnlyChunksEnforceByteLimits)
+TEST(DistinctLimitsCheckingTransform, DuplicateOnlyChunksEnforceByteLimits)
 {
     const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type, "k")});
@@ -438,7 +438,7 @@ TEST(DistinctLimitTransform, DuplicateOnlyChunksEnforceByteLimits)
     }
 }
 
-TEST(DistinctLimitTransform, LowCardinalityMemoryCanDecrease)
+TEST(DistinctLimitsCheckingTransform, LowCardinalityMemoryCanDecrease)
 {
     const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type, "k")});
@@ -460,7 +460,7 @@ TEST(DistinctLimitTransform, LowCardinalityMemoryCanDecrease)
     }
 }
 
-TEST(DistinctLimitTransform, EmptyAccountingChunkCompletesItsFinishedInput)
+TEST(DistinctLimitsCheckingTransform, EmptyAccountingChunkCompletesItsFinishedInput)
 {
     for (size_t streams : {1, 4})
     {

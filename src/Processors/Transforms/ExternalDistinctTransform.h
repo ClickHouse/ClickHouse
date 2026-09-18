@@ -39,7 +39,7 @@ class DistinctSortedTransform;
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
-    /// A non-null `shared_set_bytes_` reports memory snapshots to `DistinctLimitTransform`, which
+    /// A non-null `shared_set_bytes_` reports memory snapshots to `DistinctLimitsCheckingTransform`, which
     /// enforces the limits across all streams. In that mode, `set_size_limits_` must be unlimited.
     ExternalDistinctTransform(
         SharedHeader header_,

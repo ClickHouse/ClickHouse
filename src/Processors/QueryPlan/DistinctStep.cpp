@@ -6,7 +6,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/Transforms/DistinctLimitTransform.h>
+#include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
@@ -332,7 +332,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// The parallel final outputs are already disjoint, so a later merge needs no further deduplication.
     /// Global limit accounting keeps their stream assignments intact for downstream steps to reuse.
     if (global_limits)
-        pipeline.addTransform(std::make_shared<DistinctLimitTransform>(pipeline.getSharedHeader(), settings.set_size_limits, pipeline.getNumStreams()));
+        pipeline.addTransform(std::make_shared<DistinctLimitsCheckingTransform>(pipeline.getSharedHeader(), settings.set_size_limits, pipeline.getNumStreams()));
 }
 
 void DistinctStep::describeActions(FormatSettings & format_settings) const

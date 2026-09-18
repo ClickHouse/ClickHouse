@@ -1,4 +1,4 @@
-#include <Processors/Transforms/DistinctLimitTransform.h>
+#include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
 #include <Processors/Transforms/DistinctSetMemoryTracker.h>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctLimitTransform::DistinctLimitTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams)
+DistinctLimitsCheckingTransform::DistinctLimitsCheckingTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header), OutputPorts(num_streams, header))
     , size_limits(size_limits_)
 {
@@ -24,7 +24,7 @@ DistinctLimitTransform::DistinctLimitTransform(const SharedHeader & header, cons
     }
 }
 
-IProcessor::Status DistinctLimitTransform::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+IProcessor::Status DistinctLimitsCheckingTransform::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
     bool has_full_port = false;
     auto prepare_ports = [&](const auto & updated_ports)
@@ -64,13 +64,13 @@ IProcessor::Status DistinctLimitTransform::prepare(const UpdatedInputPorts & upd
     return has_full_port ? Status::PortFull : Status::NeedData;
 }
 
-IProcessor::Status DistinctLimitTransform::prepare()
+IProcessor::Status DistinctLimitsCheckingTransform::prepare()
 {
     chassert(port_pairs.size() == 1);
     return prepare({&port_pairs.front().input}, {&port_pairs.front().output});
 }
 
-IProcessor::Status DistinctLimitTransform::preparePair(PortPair & pair)
+IProcessor::Status DistinctLimitsCheckingTransform::preparePair(PortPair & pair)
 {
     auto & input = pair.input;
     auto & output = pair.output;
