@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-replicated-database, no-shared-merge-tree
 # Tag no-fasttest: relies on a failpoint (libfiu).
-# Tag no-parallel: the test waits on a server-global pauseable failpoint, so a concurrent copy's
-#   sink could satisfy this copy's wait and this copy's resume could release that sink.
-#   FailPointInjection::{enable,disable}FailPoint take only a name, so it cannot be scoped.
+# Tag no-parallel: the test waits on a server-global pauseable failpoint, so a concurrent copy
+#   could disarm this copy's park. FailPointInjection::{enable,disable}FailPoint take only a name.
 # Tag no-replicated-database: the test needs its own Memory database, which a Replicated database
 #   run cannot host, and DROP must reach the synchronous exclusive-lock path.
-# Tag no-shared-merge-tree: the failpoint this test parks on is in the ReplicatedMergeTree sink,
-#   which a SharedMergeTree table does not go through.
+# Tag no-shared-merge-tree: the substitution replaces the engine, and this asserts on the lock a
+#   ReplicatedMergeTree lightweight update holds.
 
 set -e
 
@@ -15,10 +14,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-FP=rmt_pause_before_commit_local_part
+FP=completed_pipeline_pause_before_teardown
+# Only a query whose id starts with this can park at the failpoint, so unrelated pipelines cannot
+# consume the one-shot arm.
+QID_PREFIX=completed_pipeline_pause_failpoint_
 
-# The failpoint is server-global, so leaving it enabled would park the sink of every later test.
-# This has to survive the test failing or being killed part-way through.
+# Disabling is also what releases a parked query, so this has to survive the test failing or being
+# killed part-way through.
 function cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
@@ -49,15 +51,17 @@ function setup_table()
     " < /dev/null
 }
 
-# The DROP has to land between the patch-part rename and the commit. The sink parks there and stays
+# The DROP has to land while the update still holds the table lock it took for its pipeline. The
+# update parks once that pipeline has finished, before the teardown releases the lock, and stays
 # parked until this function resumes it, so the window is held open instead of being a timed one the
 # drop could miss.
 function race_with_drop()
 {
     local arm=$1
     shift
-    local qid="${CLICKHOUSE_DATABASE_1}_${arm}_${RANDOM}${RANDOM}"
-    local drop_qid="${qid}_drop"
+    local qid="${QID_PREFIX}${CLICKHOUSE_DATABASE_1}_${arm}_${RANDOM}${RANDOM}"
+    # Deliberately unprefixed: the drop must reach the table lock rather than park.
+    local drop_qid="${CLICKHOUSE_DATABASE_1}_${arm}_drop_${RANDOM}${RANDOM}"
 
     ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${FP}" < /dev/null
 
@@ -66,32 +70,34 @@ function race_with_drop()
     if [ "$(${CLICKHOUSE_CLIENT} --query "
         SELECT enabled FROM system.fail_points WHERE name = '${FP}'
         SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 1 ]; then
-        echo "$arm: the commit hook was not armed"
+        echo "$arm: the pause was not armed"
         return
     fi
 
     ${CLICKHOUSE_CLIENT} --query_id "$qid" "$@" < /dev/null > /dev/null 2>&1 &
     local updater=$!
 
-    # Returns once the sink has parked, so the update still holds the lock it took for the pipeline.
-    # An update that never reaches the hook would otherwise wait here forever.
+    # Returns once the update has parked with its pipeline finished but not yet torn down, so the
+    # share lock it moved into the pipeline's resources is still held. An update that raised instead
+    # of finishing never parks, because a failed query is torn down without reaching the pause, so a
+    # timeout here is as likely to be a broken update as a broken rendezvous.
     # shellcheck disable=SC2086 # CLICKHOUSE_CLIENT carries arguments and must word-split
     if ! timeout 60 ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" < /dev/null; then
         ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
         wait "$updater" 2>/dev/null || true
-        echo "$arm: the sink never reached the commit hook"
+        echo "$arm: the update never finished its pipeline and parked"
         return
     fi
 
     # The wait above returns at once when nothing is parked, so it does not by itself establish that
-    # the sink reached the hook. The failpoint is one-shot, so it reports itself disabled only after
-    # something fired it.
+    # the update parked. The failpoint is one-shot and only a query carrying the prefix can consume
+    # it, so it reports itself disabled only after this arm's update fired it.
     if [ "$(${CLICKHOUSE_CLIENT} --query "
         SELECT enabled FROM system.fail_points WHERE name = '${FP}'
         SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 0 ]; then
         ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
         wait "$updater" 2>/dev/null || true
-        echo "$arm: the sink never parked at the commit hook"
+        echo "$arm: nothing parked after a pipeline ran"
         return
     fi
 
@@ -99,7 +105,7 @@ function race_with_drop()
         DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC" < /dev/null > /dev/null 2>&1 &
     local dropper=$!
 
-    # The sink is still parked, so the drop reaches the table lock and blocks on it while the
+    # The update is still parked, so the drop reaches the table lock and blocks on it while the
     # window is held open.
     sleep 2
 
@@ -113,7 +119,7 @@ function race_with_drop()
 
     # The lock wait is charged to the statement that blocked, so a non-zero value here is this
     # drop's own wait on this table and no other writer can supply it. A drop that reached the lock
-    # only after the commit released it reports zero and never covered the race.
+    # only after the teardown released it reports zero and never covered the race.
     local waited
     waited=$(${CLICKHOUSE_CLIENT} --query "
         SYSTEM FLUSH LOGS query_log;
