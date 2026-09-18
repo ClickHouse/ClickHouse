@@ -219,7 +219,8 @@ bool keyIsDroppedByAggregation(const QueryTreeNodePtr & left_key, const QueryNod
     if (!query_node.hasGroupBy())
         return !collectAggregateFunctionNodes(query_node.getProjectionNode()).empty();
 
-    QueryTreeNodePtrWithHashSet grouping_keys;
+    /// Ignoring aliases.
+    QueryTreeNodePtrWithHashIgnoreAliasesSet grouping_keys;
     for (const auto & grouping_key : query_node.getGroupBy().getNodes())
     {
         if (const auto * list_node = grouping_key->as<ListNode>())
