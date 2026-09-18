@@ -25,7 +25,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
+/// into blocks for the target tables (Tags, Samples, RecentSamples, Histograms, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -85,6 +85,7 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
+    bool insert_histograms = false;
     bool insert_metric_families = false;
     bool async_insert = false;
 
@@ -104,6 +105,7 @@ private:
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
+    std::unique_ptr<TargetPipeline> histograms_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 };
 

@@ -84,34 +84,75 @@ SQLQueryPiece applyHistogramQuantile(
             "Function 'histogram_quantile' currently requires a constant phi parameter");
     }
 
-    expression = toVectorGrid(std::move(expression), context);
+    Float64 phi = phi_arg.scalar_value;
+
+    ASTPtr native_query;
+
+    if (expression.store_method == StoreMethod::HISTOGRAM_GRID)
+    {
+        /// One grid feeds both branches: the native one reads `histogram_values`/`sample_kinds`, the classic one only the float `values`.
+        /// Both read the same subquery, so it must be materialized (see SQLSubqueryType::MATERIALIZED_TABLE).
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(expression.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
+        const String & grid_name = context.subqueries.back().name;
+
+        /// The native branch: per-step `timeSeriesHistogramQuantile` over the grid's histogram samples. Steps whose newest sample
+        /// is a float stay NULL (Prometheus skips floats), and groups with no histogram sample in range are dropped.
+        {
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+
+            builder.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTLambda({"x", "k"}, makeASTFunction(
+                    "if",
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(UInt64{1})),
+                    makeASTFunction("timeSeriesHistogramQuantile", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(phi)),
+                    make_intrusive<ASTLiteral>(Field{}))),
+                make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues),
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            builder.from_table = grid_name;
+
+            builder.where = makeASTFunction("has",
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds),
+                make_intrusive<ASTLiteral>(UInt64{1}));
+
+            native_query = builder.getSelectQuery();
+        }
+
+        /// The float view of the same grid for the classic branch (same as dropHistogramValues):
+        /// SELECT group, values FROM <histogram_grid>
+        {
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+            builder.from_table = grid_name;
+
+            expression.select_query = builder.getSelectQuery();
+            expression.store_method = StoreMethod::VECTOR_GRID;
+        }
+    }
+    else
+    {
+        expression = toVectorGrid(std::move(expression), context);
+    }
 
     if (expression.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
 
-    Float64 phi = phi_arg.scalar_value;
-
-    /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
-    /// distinct histograms remain separate), and compute quantile.
-    /// SELECT timeSeriesRemoveTag(group, 'le') AS new_group,
-    ///        quantilePrometheusHistogramForEach(phi)(
-    ///            arrayResize(CAST([] AS Array(Float64)), length(values),
-    ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
-    ///            values) AS values
-    /// FROM <subquery>
-    /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')))
-    /// GROUP BY new_group
+    /// Step 1: Extract `le` tags, group by non-`le` labels (keeping `__name__` so distinct histograms stay separate),
+    /// and compute the quantile per group over the grid.
     ASTPtr aggregation_query;
     {
         SelectQueryBuilder builder;
 
-        /// new_group expression: remove only the `le` tag. Keep `__name__` in the
-        /// group key so a query that selects multiple `*_bucket` metrics with the
-        /// same non-name labels (for example `{__name__=~"a_bucket|b_bucket"}` or
-        /// `a_bucket or b_bucket`) keeps each histogram's quantile separate. We
-        /// drop `__name__` afterwards through `dropMetricName`, which preserves
-        /// PromQL's "function output has no metric name" semantics while still
-        /// enforcing the no-duplicate-labelset rule via timeSeriesThrowDuplicateSeriesIf.
+        /// Remove only the `le` tag; `__name__` stays in the group key so multiple `*_bucket` metrics keep separate quantiles.
+        /// `dropMetricName` strips it afterwards, enforcing the no-duplicate-labelset rule via `timeSeriesThrowDuplicateSeriesIf`.
         auto new_group_expr = makeASTFunction(
             "timeSeriesRemoveTag",
             make_intrusive<ASTIdentifier>(ColumnNames::Group),
@@ -119,13 +160,8 @@ SQLQueryPiece applyHistogramQuantile(
         new_group_expr->setAlias(ColumnNames::NewGroup);
         builder.select_list.push_back(std::move(new_group_expr));
 
-        /// PromQL `histogram_quantile` has constant out-of-range semantics:
-        ///   phi < 0  -> -Inf for every time step
-        ///   phi > 1  -> +Inf for every time step
-        ///   phi NaN  -> NaN for every time step
-        /// These short-circuits happen before looking at the histogram, so instead of
-        /// calling quantilePrometheusHistogramForEach we emit a constant-valued array
-        /// aligned to the time grid (preserving NULL at positions where no input existed).
+        /// Out-of-range phi short-circuits before looking at the histogram: phi < 0 -> -Inf, phi > 1 -> +Inf, NaN -> NaN, for every time step.
+        /// Emit a constant-valued array aligned to the time grid (NULL where no input existed) instead of calling `quantilePrometheusHistogramForEach`.
         ASTPtr quantile_expr;
         if (std::isnan(phi) || phi < 0.0 || phi > 1.0)
         {
@@ -137,10 +173,8 @@ SQLQueryPiece applyHistogramQuantile(
             else
                 out_of_range_value = std::numeric_limits<Float64>::infinity();
 
-            /// arrayMap(x -> if(isNotNull(x), <constant>, NULL), anyForEach(values))
-            /// anyForEach produces one array per group aligned to the time grid, with NULL at
-            /// positions where no input series had data. arrayMap then replaces every non-NULL
-            /// position with the constant and keeps NULLs as-is.
+            /// `anyForEach` yields one grid-aligned array per group (NULL where no series had data);
+            /// `arrayMap` replaces every non-NULL position with the constant.
             quantile_expr = makeASTFunction(
                 "arrayMap",
                 makeASTFunction(
@@ -154,13 +188,8 @@ SQLQueryPiece applyHistogramQuantile(
         }
         else
         {
-            /// quantilePrometheusHistogramForEach(phi)(le_array, values)
-            ///
-            /// le_array is constructed for each row as an array of the same length as values,
-            /// filled with the extracted `le` tag value. Series without a parsable `le` are
-            /// excluded by the WHERE clause added below, so the NaN fallback here is just a
-            /// safety net — `quantilePrometheusHistogramForEach` treats NaN `le` as
-            /// "ignore this bucket".
+            /// le_array repeats the extracted `le` tag value for each time step; the WHERE below excludes series with unparsable `le`,
+            /// so the NaN fallback is only a safety net (`quantilePrometheusHistogramForEach` treats NaN `le` as "ignore this bucket").
             auto le_array_expr = makeASTFunction(
                 "arrayResize",
                 makeASTFunction("CAST",
@@ -187,10 +216,8 @@ SQLQueryPiece applyHistogramQuantile(
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        /// Prometheus silently drops input series whose `le` label is missing or cannot be
-        /// parsed as a float, so for example a pure non-histogram input produces an empty
-        /// result. This filter applies before the out-of-range phi short-circuit above:
-        /// even for an out-of-range phi only series with a parsable `le` produce output.
+        /// Prometheus drops series whose `le` is missing or unparsable, so a non-histogram input yields an empty result.
+        /// This filter applies before the out-of-range phi short-circuit above.
         builder.where = makeASTFunction("isNotNull",
             makeASTFunction("toFloat64OrNull",
                 makeASTFunction("timeSeriesExtractTag",
@@ -202,7 +229,8 @@ SQLQueryPiece applyHistogramQuantile(
         aggregation_query = builder.getSelectQuery();
     }
 
-    /// Step 2: Rename new_group -> group.
+    /// Step 2: Rename new_group -> group. With a native branch, UNION ALL its rows with the
+    /// classic branch's rows (both arms select `new_group AS group, values`).
     ASTPtr column_renaming_query;
     {
         SelectQueryBuilder builder;
@@ -215,6 +243,12 @@ SQLQueryPiece applyHistogramQuantile(
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
+        if (native_query)
+        {
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(native_query), SQLSubqueryType::TABLE});
+            builder.union_table = context.subqueries.back().name;
+        }
+
         column_renaming_query = builder.getSelectQuery();
     }
 
@@ -225,10 +259,8 @@ SQLQueryPiece applyHistogramQuantile(
     res.step = expression.step;
     res.metric_name_dropped = false;
 
-    /// Drop `__name__` from the result (matching PromQL: function outputs have no
-    /// metric name). `dropMetricName` also enforces uniqueness via
-    /// `timeSeriesThrowDuplicateSeriesIf`, which is the right behavior if removing
-    /// `__name__` would produce two output series with identical labels.
+    /// Drop `__name__` from the result (PromQL: function outputs have no metric name);
+    /// `dropMetricName` also enforces uniqueness via `timeSeriesThrowDuplicateSeriesIf`.
     return dropMetricName(std::move(res), context);
 }
 

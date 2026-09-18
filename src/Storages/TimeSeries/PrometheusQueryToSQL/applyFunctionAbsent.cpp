@@ -161,8 +161,36 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
                 break;
             }
 
+            case StoreMethod::HISTOGRAM_GRID:
+            {
+                /// A combined grid has a sample at a step exactly where `sample_kinds` is set, whatever arm it came from:
+                /// SELECT group, arrayMap(k -> if(isNull(k), NULL, 1), sample_kinds) AS values FROM <combined_grid>
+                SelectQueryBuilder builder;
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("k")),
+                        makeASTFunction(
+                            "if",
+                            makeASTFunction("isNull", make_intrusive<ASTIdentifier>("k")),
+                            make_intrusive<ASTLiteral>(Field{}),
+                            timeSeriesScalarToAST(1, context.scalar_data_type))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+                builder.select_list.back()->setAlias(ColumnNames::Values);
+
+                presence_grid = std::move(arguments[0]);
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(presence_grid.select_query), SQLSubqueryType::TABLE});
+                builder.from_table = context.subqueries.back().name;
+                presence_grid.select_query = builder.getSelectQuery();
+                presence_grid.store_method = StoreMethod::VECTOR_GRID;
+                break;
+            }
+
             case StoreMethod::CONST_STRING:
             case StoreMethod::RAW_DATA:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
                 /// Can't get in here because these store methods are incompatible with an instant vector.
                 throwUnexpectedStoreMethod(argument, context);

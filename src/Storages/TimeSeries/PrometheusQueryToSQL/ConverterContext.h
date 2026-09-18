@@ -22,6 +22,9 @@ struct ConverterContext
     /// The version of the TimeSeries table.
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
 
+    /// True if the TimeSeries storage has a histograms target (see PrometheusQueryEvaluationSettings::storage_has_native_histograms).
+    const bool storage_has_native_histograms;
+
     const NodeEvaluationRangeGetter node_range_getter;
     const ResultType result_type;
     SQLSubqueries subqueries;
