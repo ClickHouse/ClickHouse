@@ -1838,8 +1838,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
             return false;
 
-        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data)
-                                                                           : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
+        /// min_unreserved_disk_space_for_merge is a selection-time limit, but the executing replica's
+        /// disks can be tighter than the assigning replica's were, so the queue re-derives the limit for
+        /// background merges. Entries ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION were
+        /// selected without the headroom and carry bypass_min_unreserved_space, because honouring it
+        /// here would postpone them forever (see #80006).
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS
+            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(
+                data, /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space)
+            : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
           * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
           * because it may be ordered by OPTIMIZE or early with different settings.
@@ -1850,6 +1857,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (entry.type == LogEntry::MERGE_PARTS)
         {
             ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+
+            /// A TTL drop estimates 0 bytes (all sources expired at entry.create_time) but reserves the clamp floor;
+            /// size it by that floor so the check covers what it really takes.
+            if (entry.merge_type == MergeType::TTLDrop)
+                sum_parts_size_in_bytes = std::min<size_t>(
+                    sum_parts_size_in_bytes, MergeTreeData::RESERVATION_MIN_ESTIMATION_SIZE);
 
             if (isTTLMergeType(entry.merge_type))
             {
