@@ -1067,19 +1067,13 @@ void KeeperServer::waitForLocalLogsPreprocessing()
     /// after which the leader re-sends, so the two never overlap on timing alone.
     FailPointInjection::pauseFailPoint(FailPoints::keeper_local_logs_preprocessing_wait);
 
-    /// Read what the instance is running with rather than the settings it came from: both are
-    /// bounded where they enter NuRaft, so this product cannot overflow.
-    ///
-    /// The smaller limit binds: past `reconnect_limit_` the leader replaces the connection and
-    /// discards the response this hint would ride on, past `response_limit_` the cluster counts
-    /// this node as not responding. One heartbeat less, because the leader's timer started when
-    /// it sent and this one when the request arrived - and nothing at all once the smaller limit
-    /// is one or zero, because then there is no margin left to wait inside and the answer has to
-    /// go out now rather than exactly when the leader stops waiting for it.
+    /// From the values the instance is running with, not the settings they came from: a runtime
+    /// parameter change is reflected and the narrowing to int32 has already happened.
     const auto raft_limits = nuraft::raft_server::get_raft_limits();
-    const uint64_t heartbeats_to_wait = std::min<uint64_t>(raft_limits.response_limit_, raft_limits.reconnect_limit_);
-    const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
-        * (heartbeats_to_wait > 1 ? heartbeats_to_wait - 1 : 0);
+    const uint64_t wait_timeout_ms = getLocalLogsPreprocessingWaitMs(
+        raft_instance->get_current_params().heart_beat_interval_,
+        static_cast<uint64_t>(raft_limits.response_limit_),
+        static_cast<uint64_t>(raft_limits.reconnect_limit_));
 
     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
     bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);

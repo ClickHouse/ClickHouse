@@ -101,6 +101,14 @@ std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
 /// wrapping when it does not fit.
 int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log);
 
+/// How long a `ProcessReq` callback may wait for the local logs to be preprocessed: one heartbeat
+/// less than the smaller of the two Raft limits, and none of it when that leaves nothing. The
+/// smaller binds because both have to hold - past the reconnect limit the leader replaces the
+/// connection and discards the response the answer rides on, past the response limit the cluster
+/// counts the node as not responding - and the heartbeat is margin, because the leader's timer
+/// starts when it sends and the callback's when the request arrives.
+uint64_t getLocalLogsPreprocessingWaitMs(int32_t heart_beat_interval_ms, uint64_t response_limit, uint64_t reconnect_limit);
+
 /// `before_file_remove_op` runs after the copy and before the source removal. Returning
 /// `false` rejects the move: the source is kept, the caller cleans up the copied target.
 void moveFileBetweenDisks(
