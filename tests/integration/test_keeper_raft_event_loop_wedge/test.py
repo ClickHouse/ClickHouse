@@ -472,6 +472,13 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             zk.stop()
             zk.close()
     finally:
+        # A paused failpoint is released only by disabling it - nothing in shutdown does - so a
+        # failure before the release above would leave an asio worker blocked and the Raft
+        # instance unable to join its pool. Disabling one that is not enabled is a no-op.
+        try:
+            node2.query(f"SYSTEM DISABLE FAILPOINT {WAIT_FAILPOINT}")
+        except Exception as e:  # the server may be gone, and this must not mask the real failure
+            logging.info("could not disable %s: %s", WAIT_FAILPOINT, e)
         node2.replace_in_config(
             NODE2_CONFIG, PAUSE_ANCHOR + PAUSE_DISABLED, PAUSE_ANCHOR
         )
