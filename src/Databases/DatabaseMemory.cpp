@@ -39,7 +39,6 @@ void DatabaseMemory::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    ensurePopulated();
     std::lock_guard lock{mutex};
     attachTableUnlocked(table_name, table);
 
@@ -62,7 +61,6 @@ void DatabaseMemory::dropTable(
     const String & table_name,
     bool /*sync*/)
 {
-    ensurePopulated();
     StoragePtr table;
     {
         std::lock_guard lock{mutex};
@@ -114,7 +112,6 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 
 ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
-    ensurePopulated();
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
     if (it == create_queries.end() || !it->second)
@@ -157,7 +154,6 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    ensurePopulated();
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
@@ -251,38 +247,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.context);
     };
     factory.registerDatabase("Memory", create_fn, {}, Documentation{
-        .description = R"DOCS_MD(
-The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE temporary_data
-ENGINE = Memory;
-```
-
-## Usage {#usage}
-
-Create and use tables as in an [`Atomic`](/reference/engines/database-engines/atomic) database:
-
-```sql
-CREATE TABLE temporary_data.events
-(
-    id UInt64,
-    name String
-)
-ENGINE = Memory;
-
-INSERT INTO temporary_data.events VALUES (1, 'started');
-```
-
-Do not use this engine for data or definitions that must survive a restart. Use `Atomic`, the default open-source database engine, for persistent database metadata.
-
-## See also {#see-also}
-
-- [Atomic database engine](/reference/engines/database-engines/atomic)
-- [`Memory` table engine](/reference/engines/table-engines/special/memory)
-)DOCS_MD",
+        .description = "An in-memory database whose metadata is not persisted and is lost on restart; tables and data live only for the duration of the server session.",
         .syntax = "ENGINE = Memory",
         .related = {"Atomic"}});
 }

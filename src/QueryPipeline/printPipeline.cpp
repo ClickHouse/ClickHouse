@@ -15,7 +15,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     struct Key
     {
         size_t group;
-        const IQueryPlanStep * step;
+        IQueryPlanStep * step;
         std::string name;
 
         auto getTuple() const { return std::forward_as_tuple(group, step, name); }
@@ -97,7 +97,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     }
 
     /// Group processors by it's QueryPlanStep.
-    MapWithMemoryTracking<const IQueryPlanStep *, VectorWithMemoryTracking<const Node *>> steps_map;
+    MapWithMemoryTracking<IQueryPlanStep *, VectorWithMemoryTracking<const Node *>> steps_map;
 
     for (const auto & item : graph)
         steps_map[item.first.step].emplace_back(&item.second);

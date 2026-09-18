@@ -29,11 +29,13 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -52,7 +54,7 @@ namespace Setting
 extern const SettingsUInt64 input_format_binary_max_type_complexity;
 }
 
-static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity);
+static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity);
 
 namespace
 {
@@ -60,9 +62,14 @@ namespace
 /// It prevents from allocating too large arrays if the data is corrupted.
 constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
-/// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. The max_complexity
-/// argument threaded into decodeDataTypeImpl prevents large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000)
-/// that does not trigger stack overflow or the MAX_ARRAY_SIZE check. max_complexity == 0 means unlimited.
+/// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. getMaxTypeDecodingComplexity() prevents
+/// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
+inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
+    return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
+}
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
@@ -167,11 +174,7 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UnnamedTuple;
         }
         case TypeIndex::QBit:
-        {
-            /// Keep non-strided QBit on the original index so its encoding stays byte-identical (backward/forward compatible).
-            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            return qbit_type.getStride() == qbit_type.getDimension() ? BinaryTypeIndex::QBit : BinaryTypeIndex::QBitWithStride;
-        }
+            return BinaryTypeIndex::QBit;
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -280,7 +283,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity)
 {
     String function_name;
     readStringBinary(function_name, buf);
@@ -301,7 +304,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
     for (size_t i = 0; i != num_arguments; ++i)
-        arguments_types.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+        arguments_types.push_back(decodeDataType(buf, complexity));
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
     auto function = AggregateFunctionFactory::instance().get(function_name, action, arguments_types, parameters, properties);
@@ -413,14 +416,6 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
             encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
-            break;
-        }
-        case BinaryTypeIndex::QBitWithStride:
-        {
-            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
-            writeVarUInt(qbit_type.getDimension(), buf);
-            writeVarUInt(qbit_type.getStride(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -564,9 +559,10 @@ String encodeDataType(const DataTypePtr & type)
     return buf.str();
 }
 
-static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
+static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
 {
     ++complexity;
+    size_t max_complexity = getMaxTypeDecodingComplexity();
     if (max_complexity > 0 && complexity > max_complexity)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
     if (complexity % 128 == 0)
@@ -651,7 +647,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
         case BinaryTypeIndex::Array:
-            return std::make_shared<DataTypeArray>(decodeDataTypeImpl(buf, complexity, max_complexity));
+            return std::make_shared<DataTypeArray>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size = 0;
@@ -667,7 +663,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                elements.push_back(decodeDataType(buf, complexity));
             }
 
             return std::make_shared<DataTypeTuple>(elements, names);
@@ -682,40 +678,15 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                elements.push_back(decodeDataType(buf, complexity));
             return std::make_shared<DataTypeTuple>(elements);
         }
         case BinaryTypeIndex::QBit:
         {
-            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            auto element_type = decodeDataType(buf, complexity);
             size_t dimension = 0;
             readVarUInt(dimension, buf);
-            /// Non-strided QBit: the stride defaults to the dimension.
-            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
-        }
-        case BinaryTypeIndex::QBitWithStride:
-        {
-            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity);
-            size_t dimension = 0;
-            readVarUInt(dimension, buf);
-            size_t stride = 0;
-            readVarUInt(stride, buf);
-            /// A strided QBit expands a tiny header into `element_size * (dimension / stride)` hidden FixedString
-            /// streams, which the DataTypeQBit constructor materializes eagerly (it builds the nested Tuple via
-            /// getDefaultSerialization). Charge those hidden streams to the complexity budget *before* constructing the
-            /// type, so a small header cannot force the wide nested type to be materialized under the default budget.
-            /// Only a well-formed strided header with a supported element type and at most MAX_STRIDE_GROUPS groups
-            /// reaches that materialization (this also keeps `element_size * num_strides` well within size_t); every
-            /// other header is rejected by the constructor before it allocates the wide type, so fall through to it for
-            /// the precise validation error in those cases.
-            if (DataTypeQBit::isSupportedElementType(element_type) && stride != 0 && dimension % stride == 0
-                && dimension / stride <= DataTypeQBit::MAX_STRIDE_GROUPS)
-            {
-                complexity += 8 * element_type->getSizeOfValueInMemory() * (dimension / stride);
-                if (max_complexity > 0 && complexity > max_complexity)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
-            }
-            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+            return std::make_shared<DataTypeQBit>(element_type, dimension);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();
@@ -728,7 +699,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             return std::make_shared<DataTypeInterval>(IntervalKind(IntervalKind::Kind(kind)));
         }
         case BinaryTypeIndex::Nullable:
-            return std::make_shared<DataTypeNullable>(decodeDataTypeImpl(buf, complexity, max_complexity));
+            return std::make_shared<DataTypeNullable>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::Function:
         {
             size_t arguments_size = 0;
@@ -739,16 +710,16 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
-                arguments.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
-            auto return_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+                arguments.push_back(decodeDataType(buf, complexity));
+            auto return_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeFunction>(arguments, return_type);
         }
         case BinaryTypeIndex::LowCardinality:
-            return std::make_shared<DataTypeLowCardinality>(decodeDataTypeImpl(buf, complexity, max_complexity));
+            return std::make_shared<DataTypeLowCardinality>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::Map:
         {
-            auto key_type = decodeDataTypeImpl(buf, complexity, max_complexity);
-            auto value_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            auto key_type = decodeDataType(buf, complexity);
+            auto value_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case BinaryTypeIndex::Variant:
@@ -761,7 +732,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                variants.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                variants.push_back(decodeDataType(buf, complexity));
             return std::make_shared<DataTypeVariant>(variants);
         }
         case BinaryTypeIndex::Dynamic:
@@ -774,12 +745,12 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         {
             size_t version = 0;
             readVarUInt(version, buf);
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity);
             return createSimpleAggregateFunctionType(function, arguments_types, parameters);
         }
         case BinaryTypeIndex::Nested:
@@ -797,7 +768,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                elements.push_back(decodeDataType(buf, complexity));
             }
 
             return createNested(elements, names);
@@ -834,7 +805,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             {
                 String path;
                 readStringBinary(path, buf);
-                typed_paths[path] = decodeDataTypeImpl(buf, complexity, max_complexity);
+                typed_paths[path] = decodeDataType(buf, complexity);
             }
             size_t paths_to_skip_size = 0;
             readVarUInt(paths_to_skip_size, buf);
@@ -876,15 +847,22 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type code: {0:#04x}", UInt64(type));
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity)
+DataTypePtr decodeDataType(ReadBuffer & buf)
 {
     size_t complexity = 0;
-    return decodeDataTypeImpl(buf, complexity, max_complexity);
+    return decodeDataType(buf, complexity);
 }
 
-size_t getBinaryTypeDecodingComplexityLimit(const ContextPtr & context)
+DataTypePtr decodeDataType(const String & data)
 {
-    return context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
+    ReadBufferFromString buf(data);
+    return decodeDataType(buf);
+}
+
+DataTypePtr decodeDataType(std::string_view data)
+{
+    ReadBufferFromString buf(data);
+    return decodeDataType(buf);
 }
 
 }

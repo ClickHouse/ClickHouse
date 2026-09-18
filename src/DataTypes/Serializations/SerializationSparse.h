@@ -35,7 +35,6 @@ public:
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
     KindStack getKindStack() const override;
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -66,7 +65,8 @@ public:
 
     /// Allows to read only ColumnSparse.
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -179,7 +179,8 @@ public:
         SubstreamsDeserializeStatesCache * cache) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -194,16 +195,19 @@ struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsC
     explicit SubstreamsCacheSparseOffsetsElement(
         ColumnPtr offsets_,
         size_t old_size_,
-        size_t read_rows_)
+        size_t read_rows_,
+        size_t skipped_values_rows_)
         : offsets(std::move(offsets_))
         , old_size(old_size_)
         , read_rows(read_rows_)
+        , skipped_values_rows(skipped_values_rows_)
     {
     }
 
     ColumnPtr offsets;
     size_t old_size = 0;
     size_t read_rows = 0;
+    size_t skipped_values_rows = 0;
 };
 
 }

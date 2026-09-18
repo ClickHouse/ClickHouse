@@ -3,14 +3,11 @@
 
 #if USE_PARQUET
 
-#include <sstream>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/checkStackSize.h>
-#include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
@@ -41,28 +38,6 @@ static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials"
 static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
 static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
-/// A Unity table is readable only if it is a DeltaLake table. `securable_kind`,
-/// `data_source_format` and `storage_location` are in the bulk listing, so this matches `tryGetTableMetadata`.
-static bool isReadableUnityTable(const Poco::JSON::Object::Ptr & table)
-{
-    if (!hasValueAndItsNotNone("storage_location", table))
-        return false;
-
-    const bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table);
-    const bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table);
-
-    if (has_securable_kind && !READABLE_TABLES.contains(table->get("securable_kind").extract<String>()))
-        return false;
-
-    if (has_data_source_format && table->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
-        return false;
-
-    if (!has_securable_kind && !has_data_source_format)
-        return false;
-
-    return true;
-}
-
 struct UnityCatalogFullSchemaName
 {
     std::string catalog_name;
@@ -77,38 +52,16 @@ static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_n
     return UnityCatalogFullSchemaName{.catalog_name = catalog_name, .schema_name = schema};
 }
 
-/// Delta primitive type name (see `DeltaLakeMetadata::getSimpleTypeByName`) -> Unity `ColumnTypeName`.
-static std::string deltaPrimitiveToUnityTypeName(const std::string & delta_type)
-{
-    if (delta_type == "boolean") return "BOOLEAN";
-    if (delta_type == "byte")    return "BYTE";
-    if (delta_type == "short")   return "SHORT";
-    if (delta_type == "integer") return "INT";
-    if (delta_type == "long")    return "LONG";
-    if (delta_type == "float")   return "FLOAT";
-    if (delta_type == "double")  return "DOUBLE";
-    if (delta_type == "date")    return "DATE";
-    if (delta_type == "timestamp")     return "TIMESTAMP";
-    if (delta_type == "timestamp_ntz") return "TIMESTAMP_NTZ";
-    if (delta_type == "string")  return "STRING";
-    if (delta_type == "binary")  return "BINARY";
-    if (delta_type.starts_with("decimal(")) return "DECIMAL";
-    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot map Delta type `{}` to a Unity column type", delta_type);
-}
-
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
-    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
+    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, params, {auth_header});
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
 {
     const auto & context = getContext();
-    /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
-    /// (they respond with HTTP 500), so set it explicitly.
-    DB::HTTPHeaderEntries headers{{"Content-Type", "application/json"}};
-    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, {}, headers, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
+    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, {auth_header}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
 
 bool UnityCatalog::empty() const
@@ -123,9 +76,9 @@ bool UnityCatalog::empty() const
     return true;
 }
 
-CatalogTables UnityCatalog::getTables() const
+DB::Names UnityCatalog::getTables() const
 {
-    CatalogTables result;
+    DB::Names result;
 
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
@@ -143,7 +96,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getNamespaces() const
     return getSchemas("");
 }
 
-CatalogTables UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+DB::Names UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
     return getTablesForSchema(namespace_name);
 }
@@ -340,104 +293,6 @@ bool UnityCatalog::tryGetTableMetadata(
     }
 }
 
-void UnityCatalog::createTable(
-    const String & namespace_name,
-    const String & table_name,
-    const String & table_location,
-    Poco::JSON::Object::Ptr metadata_content) const
-{
-    /// Build the Unity `ColumnInfo` array from the Delta schema fields, with `type_json` matching what the read path (`tryGetTableMetadata`) parses back.
-    auto fields = metadata_content->getArray("fields");
-    if (!fields)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");
-
-    Poco::JSON::Array::Ptr columns = new Poco::JSON::Array;
-    for (size_t i = 0; i < fields->size(); ++i)
-    {
-        auto field = fields->getObject(static_cast<int>(i));
-        const String name = field->getValue<String>("name");
-        const bool nullable = field->getValue<bool>("nullable");
-        auto type_var = field->get("type");
-
-        Poco::JSON::Object::Ptr column = new Poco::JSON::Object;
-        column->set("name", name);
-        column->set("nullable", nullable);
-        column->set("position", static_cast<int>(i));
-
-        int precision = 0;
-        int scale = 0;
-        String type_name;
-        String type_text;
-        String type_json;
-
-        if (type_var.isString())
-        {
-            const String & delta_type = type_var.extract<String>();
-            type_text = delta_type;
-            type_json = '"' + delta_type + '"';
-            type_name = deltaPrimitiveToUnityTypeName(delta_type);
-            if (type_name == "DECIMAL")
-            {
-                const auto decimal_type = DB::DeltaLakeMetadata::getSimpleTypeByName(delta_type);
-                precision = static_cast<int>(DB::getDecimalPrecision(*decimal_type));
-                scale = static_cast<int>(DB::getDecimalScale(*decimal_type));
-            }
-        }
-        else
-        {
-            const auto & descriptor = type_var.extract<Poco::JSON::Object::Ptr>();
-            const String kind = descriptor->getValue<String>("type");
-            if (kind == "array")       type_name = "ARRAY";
-            else if (kind == "map")    type_name = "MAP";
-            else if (kind == "struct") type_name = "STRUCT";
-            else
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected complex Delta type `{}`", kind);
-            type_text = kind;
-
-            /// Wrap so the read path's `getFieldType(parsed, "type")` sees the descriptor under `type`.
-            Poco::JSON::Object::Ptr wrapper = new Poco::JSON::Object;
-            wrapper->set("type", descriptor);
-            std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            wrapper->stringify(oss);
-            type_json = oss.str();
-        }
-
-        column->set("type_name", type_name);
-        column->set("type_text", type_text);
-        column->set("type_json", type_json);
-        column->set("type_precision", precision);
-        column->set("type_scale", scale);
-        columns->add(column);
-    }
-
-    Poco::JSON::Object::Ptr body = new Poco::JSON::Object;
-    body->set("name", table_name);
-    body->set("catalog_name", warehouse);
-    body->set("schema_name", namespace_name);
-    body->set("table_type", "EXTERNAL");
-    body->set("data_source_format", "DELTA");
-    body->set("storage_location", table_location);
-    body->set("columns", columns);
-    body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
-
-    LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
-
-    try
-    {
-        auto response = postJSONRequest(
-            TABLES_ENDPOINT,
-            [&](std::ostream & os) { body->stringify(os); });
-        LOG_TEST(log, "Unity createTable response: {}", response.second);
-    }
-    catch (...)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Failed to create table {}.{} in Unity catalog: {}",
-            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
-    }
-}
-
 bool UnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
     String json_str;
@@ -450,22 +305,6 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
             return true;
         return false;
     }
-    catch (const DB::HTTPException & e)
-    {
-        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            throw;
-
-        /// Unity answers 404 for a missing table, but the OSS server also maps CATALOG_NOT_FOUND and
-        /// SCHEMA_NOT_FOUND to 404 (io.unitycatalog.server.exception.ErrorCode), and the response body's
-        /// `error_code` is not available on HTTPException, so a 404 alone cannot tell an absent table from a
-        /// misconfigured `warehouse`/namespace. Probe the schema to disambiguate: if it exists the table is
-        /// genuinely absent, otherwise the catalog or schema is misconfigured -- which must stay an error
-        /// rather than masquerade as an empty database (it backs `EXISTS TABLE`, `DROP ... IF EXISTS` and the
-        /// pre-CREATE existence check). Every other status (401, 403, expired token, 5xx) keeps propagating.
-        checkNamespaceExists(schema_name);
-        LOG_DEBUG(log, "Unity table {}.{}.{} does not exist", warehouse, schema_name, table_name);
-        return false;
-    }
     catch (DB::Exception & e)
     {
         e.addMessage("while parsing JSON: " + json_str);
@@ -473,31 +312,14 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
 }
 
-void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
-{
-    try
-    {
-        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
-    }
-    catch (const DB::HTTPException & e)
-    {
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "DeltaLake catalog `{}` has no schema `{}` (or the catalog itself does not exist)",
-                warehouse, schema_name);
-        throw;
-    }
-}
-
-CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
+DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
 {
     Poco::URI::QueryParameters params;
     params.push_back({"catalog_name", warehouse});
     params.push_back({"schema_name", schema});
     params.push_back({"max_results", DB::toString(limit)});
 
-    CatalogTables tables;
+    DB::Names tables;
     do
     {
         String json_str;
@@ -520,10 +342,7 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
                 const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 const auto table_name = current_table_json->get("name").extract<String>();
 
-                tables.push_back(CatalogTable{
-                    .name = schema + "." + table_name,
-                    .is_readable = isReadableUnityTable(current_table_json),
-                });
+                tables.push_back(schema + "." + table_name);
                 if (limit && tables.size() >= limit)
                     break;
             }
@@ -632,7 +451,7 @@ UnityCatalog::UnityCatalog(
     , DB::WithContext(context_)
     , base_url(base_url_)
     , log(getLogger("UnityCatalog(" + catalog_ + ")"))
-    , bearer_token(catalog_credential_)
+    , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
 }
 

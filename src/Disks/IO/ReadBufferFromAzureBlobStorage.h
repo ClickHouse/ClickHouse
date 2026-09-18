@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -60,9 +59,6 @@ public:
 
     bool supportsReadAt() override { return true; }
 
-    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
-    bool supportsExternalBufferMode() const override { return use_external_buffer; }
-
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
     ObjectMetadata getObjectMetadataFromTheLastRequest() const;
@@ -71,13 +67,9 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
-    /// Creates the client on first use. Thread-safe.
-    const AzureBlobStorage::BlobClient & getBlobClient() const;
-
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
-    mutable BlobClientPtr blob_client;
-    mutable std::once_flag blob_client_created;
+    BlobClientPtr blob_client;
 
     const String path;
     size_t max_single_read_retries;

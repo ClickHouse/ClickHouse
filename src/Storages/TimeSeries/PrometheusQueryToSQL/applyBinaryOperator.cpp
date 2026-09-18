@@ -18,10 +18,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 SQLQueryPiece applyBinaryOperator(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
-    SQLQueryPiece && left_argument,
-    SQLQueryPiece && right_argument,
-    ConverterContext & context)
+    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
 {
     std::string_view operator_name = operator_node->operator_name;
 

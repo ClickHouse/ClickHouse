@@ -58,6 +58,7 @@ node = cluster.add_instance(
     ],
     user_configs=[
         "configs/users_overrides.xml",
+        "configs/users_overrides_persistent.xml",
     ],
     with_minio=True,
     minio_certs_dir="minio_certs",
