@@ -60,6 +60,11 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
 
 }
 
+bool planHasCorrelatedExpressions(const QueryPlan & plan)
+{
+    return hasCorrelatedExpressions(plan.getRootNode());
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
@@ -417,7 +422,8 @@ bool FutureSetFromSubquery::hasExternalTable() const
 
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
-std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(
+    const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache, bool recoverable_build)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
@@ -438,7 +444,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
         plan->getCurrentHeader(),
         set_and_key,
         network_transfer_limits,
-        prepared_sets_cache);
+        prepared_sets_cache,
+        recoverable_build);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
@@ -480,7 +487,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
         prepared_sets_cache = nullptr;
     }
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
+    auto plan = build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
 
     if (!plan)
         return;
@@ -654,7 +661,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             plan_to_complete.getCurrentHeader(),
             tmp_set_and_key,
             network_transfer_limits,
-            cache);
+            cache,
+            /*recoverable_build_=*/true);
         creating_set->setStepDescription("Create set for subquery");
         plan_to_complete.addStep(std::move(creating_set));
 
@@ -673,7 +681,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
         /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
         /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
-        plan = build(network_transfer_limits, prepared_sets_cache);
+        plan = build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
         if (!plan)
             return nullptr;
 
@@ -749,12 +757,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
-    /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
-    /// so the original `source` plan is no longer needed. On the destructive fallback `source` was already
-    /// consumed by `build`, so `reset` is a no-op there.
+    /// the canonical `set_and_key`; the deferred build is then skipped, because it checks `isCreated()` /
+    /// `get()` before looking at `source`. `source` is kept: it is the subquery plan `serializeSets` writes
+    /// when this set is referenced by a plan fragment shipped to parallel replicas, which re-build the set
+    /// themselves. Discarding it would make that serialization fail with `Cannot serialize
+    /// FutureSetFromSubquery with no query plan`, and keeping it cannot cause a rebuild. On the destructive
+    /// fallback `source` was already consumed by `build` and is gone.
     if (tmp_set_and_key)
         set_and_key->set = tmp_set_and_key->set;
-    source.reset();
 
     return set_and_key->set;
 }
