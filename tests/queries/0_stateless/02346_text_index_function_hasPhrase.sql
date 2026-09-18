@@ -160,6 +160,25 @@ SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick fox');
 
 DROP TABLE tab;
 
+SELECT '-- Array phrase';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx_message(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES (1, 'the quick brown fox'), (2, 'the brown quick fox');
+
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'fox']) ORDER BY id);
+
+DROP TABLE tab;
+
 SELECT '-- asciiCJK tokenizer';
 
 CREATE TABLE tab
