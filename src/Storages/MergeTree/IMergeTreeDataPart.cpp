@@ -2679,7 +2679,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     else
     {
         /// We can get list of columns only from columns.txt in compact parts.
-        if (require || part_type == Type::Compact || info.isPatch())
+        if (part_type == Type::Compact || info.isPatch())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
                 name, path, getDataPartStorage().getDiskName());
 
@@ -2697,6 +2697,19 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                 "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
                 name, COLUMNS_SUBSTREAMS_FILE_NAME);
+
+        /** `require` (`require_part_metadata`, set by `StorageReplicatedMergeTree`) means a part with
+          * missing metadata must not be guessed at: it is detached and re-fetched from a healthy replica.
+          * A rebuilt list is accepted there only when `columns_substreams.txt` recorded the part's own
+          * column list, which verifies the rebuilt list exactly - the check below rejects it unless the
+          * two agree, so nothing is guessed. Without that record there is nothing to verify against -
+          * a column whose files were lost along with `columns.txt` would silently drop out of the list -
+          * so keep failing and let the replica re-fetch the part.
+          */
+        if (require && getColumnsSubstreams().empty())
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                "No columns.txt in part {}, expected path {} on disk {}, and no {} to rebuild it from",
+                name, path, getDataPartStorage().getDiskName(), COLUMNS_SUBSTREAMS_FILE_NAME);
 
         NameSet loaded_column_names;
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
