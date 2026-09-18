@@ -5,7 +5,7 @@ T2 both parts, b	2
 T2 new part, a	1
 T3 min_time/max_time	2020-01-01 00:00:00	2020-01-01 00:00:00
 T3 min_time/max_time	2021-06-06 06:06:06	2021-06-06 06:06:06
-T4 parts readable	1
+T4 min_time/max_time	2024-06-15 12:00:00	2024-06-15 12:00:00
 T5 rows after lightweight DELETE	0
 T5b rows after ALTER DELETE	0
 T6 after merge	1

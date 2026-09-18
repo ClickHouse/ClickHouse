@@ -47,20 +47,22 @@ INSERT INTO t_minmax_order_time (d, x) VALUES ('2021-06-06 06:06:06', 8);
 SELECT 'T3 min_time/max_time', min_time, max_time FROM system.parts
 WHERE database = currentDatabase() AND table = 't_minmax_order_time' AND active ORDER BY min_time;
 
--- T4: reading min_time for a reordered Nullable/DateTime partition key must not throw a LOGICAL_ERROR.
+-- T4: reading min_time for a reordered Nullable/DateTime partition key must not throw a
+-- LOGICAL_ERROR, and must report c2's own range: a non-epoch value is used so the expected output
+-- is not also reachable from the empty-range sentinel.
 CREATE TABLE t_minmax_order_enum (c1 Enum('a' = 1) NULL, c2 DateTime) ENGINE = MergeTree
 PARTITION BY (c1, c2) ORDER BY tuple() SETTINGS allow_nullable_key = 1;
 ALTER TABLE t_minmax_order_enum MODIFY COLUMN c1 Nullable(Int8) AFTER c2;
-INSERT INTO TABLE t_minmax_order_enum (c1) VALUES (1);
+INSERT INTO TABLE t_minmax_order_enum (c1, c2) VALUES (1, '2024-06-15 12:00:00');
 
-SELECT 'T4 parts readable', count() FROM system.parts
+SELECT 'T4 min_time/max_time', min_time, max_time FROM system.parts
 WHERE database = currentDatabase() AND table = 't_minmax_order_enum' AND active;
 
 -- T5: a lightweight DELETE must not silently keep the rows it selected.
 CREATE TABLE t_minmax_order_del_light (a UInt32, b UInt32) ENGINE = MergeTree PARTITION BY (a, b) ORDER BY tuple();
 INSERT INTO t_minmax_order_del_light VALUES (1, 100);
 ALTER TABLE t_minmax_order_del_light MODIFY COLUMN a UInt32 AFTER b;
-DELETE FROM t_minmax_order_del_light WHERE a = 1 SETTINGS mutations_sync = 2;
+DELETE FROM t_minmax_order_del_light WHERE a = 1 SETTINGS lightweight_deletes_sync = 2;
 
 SELECT 'T5 rows after lightweight DELETE', count() FROM t_minmax_order_del_light
 SETTINGS use_partition_pruning = 1, use_skip_indexes = 1, optimize_use_projections = 0, optimize_use_implicit_projections = 0;
