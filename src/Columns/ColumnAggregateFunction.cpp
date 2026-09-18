@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -6,6 +8,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -82,8 +86,9 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 {
 }
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
-    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
+ColumnAggregateFunction::ColumnAggregateFunction(
+    const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_)
+    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 
 }
@@ -511,17 +516,135 @@ size_t ColumnAggregateFunction::serializedSizeEstimate() const
     /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap upper bound, and their
     /// serialized sizes can be arbitrarily skewed: most groups tiny, a few huge. Sampling underestimates
     /// such columns whenever a large state falls outside the sample, which lets oversized granules survive.
-    /// Sum the exact serialized size of every state instead. States are immutable on the write path, so
-    /// serializing them here is safe even if they live in shared arenas.
-    size_t total_serialized = 0;
-    for (size_t i = 0; i < rows; ++i)
+    /// Sum the exact serialized size of every state instead.
+    return ptr_bytes + sampledSerializedStateBytes(rows);
+}
+
+size_t ColumnAggregateFunction::sampledSerializedStateBytes(size_t max_states_to_serialize) const
+{
+    const size_t rows = data.size();
+    if (rows == 0)
+        return 0;
+
+    /// States are immutable once they are in a column, so serializing them here is safe even if they live
+    /// in shared arenas.
+    const size_t limit = std::max<size_t>(max_states_to_serialize, 1);
+    const size_t period = (rows + limit - 1) / limit;
+    size_t serialized_states = 0;
+    size_t serialized_bytes = 0;
+    for (size_t i = 0; i < rows; i += period)
     {
         NullWriteBuffer out;
         func->serialize(data[i], out, version);
-        total_serialized += out.count();
+        serialized_bytes += out.count();
+        ++serialized_states;
     }
 
-    return ptr_bytes + total_serialized;
+    if (serialized_states == rows)
+        return serialized_bytes;
+
+    return static_cast<size_t>(static_cast<double>(serialized_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+}
+
+ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(
+    size_t max_states_to_serialize, size_t repetitions, size_t skip_rows, const CompressionCodecPtr & codec) const
+{
+    SampledStateSizes res;
+    const size_t rows = data.size() - skip_rows;
+    if (rows == 0 || repetitions == 0)
+        return res;
+
+    const CompressionCodecPtr & sample_codec = codec ? codec : CompressionCodecFactory::instance().getDefaultCodec();
+
+    /// The same periodic sample as in sampledSerializedStateBytes, serialized through a compression buffer
+    /// so that the uncompressed figure and the compression ratio are measured on the same states.
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf, sample_codec);
+
+    const size_t limit = std::max<size_t>(max_states_to_serialize, 1);
+    const size_t period = (rows + limit - 1) / limit;
+    size_t serialized_states = 0;
+    for (size_t i = 0; i < rows; i += period)
+    {
+        func->serialize(data[skip_rows + i], compressed_buf, version);
+        ++serialized_states;
+    }
+    compressed_buf.finalize();
+
+    /// `compressed_buf.count()` is the size of the sample before compression, `null_buf.count()` is the
+    /// size of the compressed data that reached the underlying buffer.
+    const size_t one_copy_sample_bytes = compressed_buf.count();
+    const size_t one_copy_compressed_bytes = null_buf.count();
+    const size_t estimated_one_copy_bytes = serialized_states == rows
+        ? one_copy_sample_bytes
+        : static_cast<size_t>(
+              static_cast<double>(one_copy_sample_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+
+    res.sample_bytes = one_copy_sample_bytes * repetitions;
+    res.bytes = serialized_states == rows
+        ? one_copy_sample_bytes
+        : static_cast<size_t>(
+              static_cast<double>(one_copy_sample_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+    res.bytes *= repetitions;
+
+    size_t compressed = one_copy_compressed_bytes;
+    if (repetitions > 1)
+    {
+        /// The wire repeats the same serialized payload, and identical copies compress to almost nothing
+        /// while they fit one compressed block together and are within the codec's match window - and not at
+        /// all when a copy alone outgrows either - so the repetitions have to be measured, not scaled:
+        /// scaling the one-copy figure would pin the repeated payload's compression ratio to one copy's.
+        ///
+        /// How many copies can compress against each other is a property of the codec and of the *full*
+        /// copy, not of the sample: `LZ4` cannot reference data farther than 64 KiB back, `ZSTD` reaches
+        /// the whole compressed block, and a new block - with a new window - starts every
+        /// `DBMS_DEFAULT_BUFFER_SIZE`. So measure exactly as many copies as fit that window at full size
+        /// and scale the measured figure by the ratio of the uncompressed sizes: the wire repeats a block of
+        /// the measured shape. Measuring more copies of a *truncated* sample than the full payload can pack
+        /// into one window would invent cross-copy compression the actual output cannot have, and
+        /// extrapolating the marginal cost of one more copy within a block would assume a window spanning
+        /// the whole output and understate an incompressible payload several-fold.
+        const size_t copies_within_window = compressionMatchWindowSize(*sample_codec) / std::max<size_t>(estimated_one_copy_bytes, 1);
+        /// Serializing states is not free, so the measurement gets a budget of its own on top of that.
+        static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
+        const size_t measured_repetitions = std::min(
+            {repetitions,
+             std::max<size_t>(copies_within_window, 1),
+             std::max<size_t>(max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1), 1)});
+
+        if (measured_repetitions <= 1)
+        {
+            /// A single copy already fills the window (or the measurement budget). Do not serialize another
+            /// giant state merely to estimate its marginal compressed size; the copies do not compress
+            /// against each other.
+            compressed = one_copy_compressed_bytes * repetitions;
+        }
+        else
+        {
+            NullWriteBuffer repeated_null_buf;
+            CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf, sample_codec);
+            for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
+                for (size_t i = 0; i < rows; i += period)
+                    func->serialize(data[skip_rows + i], repeated_compressed_buf, version);
+            repeated_compressed_buf.finalize();
+            const size_t measured_compressed_bytes = repeated_null_buf.count();
+
+            compressed = measured_repetitions == repetitions
+                ? measured_compressed_bytes
+                : static_cast<size_t>(
+                      static_cast<double>(measured_compressed_bytes) * static_cast<double>(repetitions)
+                      / static_cast<double>(measured_repetitions));
+        }
+    }
+
+    /// The compressed format writes a checksum and a block header in front of every compressed block, so a
+    /// sample of a few tiny states comes out of `CompressedWriteBuffer` larger than it went in. When the
+    /// states are actually sent, that framing is amortized over `min_compress_block_size` of data, so such
+    /// a sample says nothing about how well the states compress - report it as incompressible rather than
+    /// as expanding, the same clamp `Aggregator::estimateSizeOfCompressedState` applies via
+    /// `compressedSampleSize`.
+    res.compressed_bytes = std::min(res.sample_bytes, compressed);
+    return res;
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const
@@ -816,7 +939,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*sta
 
 ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
-    auto res = create(func, concatArenas(foreign_arenas, my_arena));
+    auto res = create(func, concatArenas(foreign_arenas, my_arena), version);
     res->src = getPtr();
     return res;
 }
@@ -824,7 +947,8 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
+    type_string(src_.type_string), version(src_.version)
 {
 }
 
