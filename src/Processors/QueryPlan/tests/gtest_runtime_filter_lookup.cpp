@@ -135,9 +135,9 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     EXPECT_FALSE(filter.getRecordedKeyValues());
     auto range = filter.getRecordedKeyRanges();
-    ASSERT_TRUE(range);
-    EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
-    EXPECT_EQ(range->right.safeGet<UInt64>(), 5);
+    ASSERT_FALSE(range.empty());
+    EXPECT_EQ(range.front().left.safeGet<UInt64>(), 1);
+    EXPECT_EQ(range.back().right.safeGet<UInt64>(), 5);
     expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5}, type)), {1, 1, 1});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 3);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 3);
@@ -180,9 +180,9 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
 
     EXPECT_FALSE(destination.getRecordedKeyValues());
     auto range = destination.getRecordedKeyRanges();
-    ASSERT_TRUE(range);
-    EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
-    EXPECT_EQ(range->right.safeGet<UInt64>(), 5);
+    ASSERT_FALSE(range.empty());
+    EXPECT_EQ(range.front().left.safeGet<UInt64>(), 1);
+    EXPECT_EQ(range.back().right.safeGet<UInt64>(), 5);
     expectMask(destination.find(makeUInt64ColumnWithType({2, 4}, type)), {1, 1});
     EXPECT_EQ(destination.getStats().rows_checked.load(), 0);
     EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
@@ -491,9 +491,9 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
     ASSERT_TRUE(values);
     EXPECT_EQ(values->size(), 4);
     auto range = destination.getRecordedKeyRanges();
-    ASSERT_TRUE(range);
-    EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
-    EXPECT_EQ(range->right.safeGet<UInt64>(), 9);
+    ASSERT_FALSE(range.empty());
+    EXPECT_EQ(range.front().left.safeGet<UInt64>(), 1);
+    EXPECT_EQ(range.back().right.safeGet<UInt64>(), 9);
 }
 
 TEST(RuntimeFilterLookup, ExactNotContainsHasNoPositiveIndexMetadata)
@@ -506,7 +506,7 @@ TEST(RuntimeFilterLookup, ExactNotContainsHasNoPositiveIndexMetadata)
     filter.finishInsert();
 
     EXPECT_FALSE(filter.getRecordedKeyValues());
-    EXPECT_FALSE(filter.getRecordedKeyRanges());
+    EXPECT_TRUE(filter.getRecordedKeyRanges().empty());
 }
 
 TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationFailsOpenForIndexMetadata)
@@ -532,7 +532,7 @@ TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationFailsOpenForIndexMe
     EXPECT_FALSE(existing->isReady());
     auto recorded_key_range = existing->getRecordedKeyRanges();
     auto recorded_key_values = existing->getRecordedKeyValues();
-    EXPECT_FALSE(recorded_key_range);
+    EXPECT_TRUE(recorded_key_range.empty());
     EXPECT_FALSE(recorded_key_values);
 
     /// Simulate post-build publication. The probe sees the complete hash table, including key 1
@@ -575,7 +575,7 @@ TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationFailsOpenForIndexMe
     EXPECT_TRUE(filter->isReady());
     expectMask(filter->find(makeUInt64ColumnWithType({1, 3, 7}, type)), {1, 1, 1});
     EXPECT_FALSE(filter->getRecordedKeyValues());
-    EXPECT_FALSE(filter->getRecordedKeyRanges());
+    EXPECT_TRUE(filter->getRecordedKeyRanges().empty());
 }
 
 TEST(RuntimeFilterLookup, SharedFixedHashTableSuppressesUnsupportedRange)
@@ -590,12 +590,12 @@ TEST(RuntimeFilterLookup, SharedFixedHashTableSuppressesUnsupportedRange)
         RuntimeFilter::SharedFixedHashTable(
             type,
             [](const ColumnWithTypeAndName & values) { return DataTypeUInt8().createColumnConst(values.column->size(), true); },
-            Range(Float64{3.0}, true, Float64{3.0}, true),
+            std::vector<Range>{Range(Float64{3.0}, true, Float64{3.0}, true)},
             exact_values));
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     EXPECT_TRUE(filter.isReady());
-    EXPECT_FALSE(filter.getRecordedKeyRanges());
+    EXPECT_TRUE(filter.getRecordedKeyRanges().empty());
     EXPECT_EQ(filter.getRecordedKeyValues(), exact_values);
 }
 
@@ -616,14 +616,14 @@ TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)
                     result_data[row] = values.column->getUInt(row) == 3 || values.column->getUInt(row) == 7;
                 return result;
             },
-            Range(UInt64{3}, true, UInt64{7}, true)));
+            std::vector<Range>{Range(UInt64{3}, true, UInt64{7}, true)}));
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     EXPECT_NO_THROW(filter.insert(makeUInt64Column({42})));
     auto range = filter.getRecordedKeyRanges();
-    ASSERT_TRUE(range);
-    EXPECT_EQ(range->left.safeGet<UInt64>(), 3);
-    EXPECT_EQ(range->right.safeGet<UInt64>(), 7);
+    ASSERT_FALSE(range.empty());
+    EXPECT_EQ(range.front().left.safeGet<UInt64>(), 3);
+    EXPECT_EQ(range.back().right.safeGet<UInt64>(), 7);
     expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5, 7, 42}, type)), {0, 1, 0, 1, 0});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 5);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 2);
