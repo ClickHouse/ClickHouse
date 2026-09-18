@@ -88,10 +88,11 @@ SELECT count() > 0 AS rolled_back, countIf(value = \`default\`) AS same_as_defau
 FROM system.table_settings WHERE table = 'mt' AND source = 'compatibility';"
 
 echo "-- a session's compatibility does not decide what the server's defaults are reported to be"
-# The `MergeTree` baseline is built once and shared by every session and every table created afterwards, so
-# it takes the compatibility of the server, not of whoever asks first. Coverage of that rule rather than a
-# regression guard: on a server whose baseline is already built, a session could not have poisoned it anyway.
-$CLICKHOUSE_CLIENT -q "
+# The `MergeTree` baseline is built once and shared by every session and by every table created afterwards,
+# so it takes the compatibility of the server rather than of whoever asks first. Through `clickhouse-local`,
+# where that distinction is observable: the process is fresh, so this session *is* the first to ask, and
+# before the baseline took the global context's compatibility this printed the rolled-back count instead.
+$CLICKHOUSE_LOCAL -q "
 SET compatibility = '23.3';
 SELECT countIf(value != \`default\`) FROM system.engine_settings WHERE engine_name = 'MergeTree';"
 

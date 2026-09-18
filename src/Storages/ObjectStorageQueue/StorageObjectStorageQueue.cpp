@@ -1920,12 +1920,15 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         shutdown_called);
 }
 
-ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(bool * read_from_shared_metadata) const
 {
     /// We do not store queue settings
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
+    if (read_from_shared_metadata)
+        *read_from_shared_metadata = false;
+
     /// If startup() for a table was not called, just use the default queue settings.
     /// The same holds after shutdown(), which drops the metadata handle while `startup_finished` stays set.
     if (!startup_finished)
@@ -1934,6 +1937,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
         return settings;
+
+    if (read_from_shared_metadata)
+        *read_from_shared_metadata = true;
 
     const auto & table_metadata = metadata->getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
@@ -2214,7 +2220,8 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
 {
     /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper,
     /// the metadata object and plain members of this storage.
-    auto settings = getSettings().enumerateSettings();
+    bool rebuilt_from_shared_metadata = false;
+    auto settings = getSettings(&rebuilt_from_shared_metadata).enumerateSettings();
 
     /// The fields `getSettings` reads from the table metadata serialized to Keeper, and serialization - not
     /// the `isStoredInKeeper` name list - decides what that metadata holds. So not `keeper_path`, which the
@@ -2233,14 +2240,15 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
     /// that distinction is visible, before the loop below overwrites it.
     ///
-    /// `getSettings` returns an untouched object when this table has not finished `startup()` or after
-    /// `shutdown()` dropped the metadata handle, and the same condition holds here: in that state nothing
-    /// below came from Keeper, so neither the values nor the source may say it did.
+    /// `getSettings` reports whether it read the shared metadata: it returns an untouched object when this
+    /// table has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that
+    /// state nothing below came from Keeper, so neither the values nor the source may say it did. Taken from
+    /// the call above rather than sampled again here, which would describe the table a moment later - a
+    /// startup finishing in between would put the stamp back on values that never came from there.
     ///
     /// Defensive rather than reachable from SQL today: reading a table whose startup threw waits on its
     /// startup job and rethrows, so the query fails before it can report anything. The guard is here because
     /// this function must not answer for Keeper on a state `getSettings` itself refuses to answer for.
-    const bool rebuilt_from_shared_metadata = startup_finished && tryGetFilesMetadata() != nullptr;
 
     /// What the rebuild did not assign: the definition is then the only source of the value the table works
     /// with. The shared-metadata settings belong here only when the rebuild did not run - when it did, they

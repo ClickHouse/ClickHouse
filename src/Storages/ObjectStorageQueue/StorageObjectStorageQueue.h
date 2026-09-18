@@ -69,7 +69,11 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
+    /// `read_from_shared_metadata`, when given, says whether the returned settings were rebuilt from the
+    /// shared metadata or are the untouched defaults this returns when the table has not finished `startup()`
+    /// or no longer holds the metadata handle. Reported alongside rather than re-derived by the caller, so
+    /// that the answer describes the settings in hand and not the state a moment later.
+    ObjectStorageQueueSettings getSettings(bool * read_from_shared_metadata = nullptr) const;
 
     SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
