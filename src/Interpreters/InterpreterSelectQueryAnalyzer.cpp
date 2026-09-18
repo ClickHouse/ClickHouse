@@ -242,7 +242,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
         {
-            LOG_DEBUG(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");
+            LOG_TRACE(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");
             return QueryPlanPtr{};
         }
     }
@@ -391,9 +391,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
-           tree = query_tree,
+           single_node_tree = query_tree,
            column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, tree, built_sets, column_names); })
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -415,9 +415,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           tree = query_tree,
+           single_node_tree = query_tree,
            column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, tree, built_sets, storage, column_names); })
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -431,6 +431,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // `tree` is cloned because `toAST` below feeds a separate interpreter, while
+          // `single_node_tree` must stay the very tree the single-node plan was built from: it is the
+          // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,

@@ -243,8 +243,15 @@ bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_nod
     /// The walk returns an empty stack when nothing in the join tree can be read with replicas: a
     /// non-MergeTree storage, a table function, a `FINAL` modifier, a view that does not resolve to a
     /// MergeTree table, a refreshable materialized view, a non-replicated MergeTree without
-    /// `parallel_replicas_for_non_replicated_merge_tree`, or a join kind that cannot be evaluated by
-    /// parallelizing a single side (`CROSS`, `FULL`, `ANY RIGHT`, a non-leftmost `RIGHT`).
+    /// `parallel_replicas_for_non_replicated_merge_tree`, or a join the walk cannot descend one side
+    /// of - `CROSS`, `FULL`, an `INNER` that is not `ALL`, a `RIGHT` with `RightAny` strictness, and a
+    /// `RIGHT` whose left side is not a table, query or union. Note that `RIGHT ANY JOIN` is none of
+    /// those: it carries strictness `Any`, not `RightAny` (the old ANY JOIN, see `JoinStrictness`), so
+    /// it is admitted here and rejected later, if at all.
+    ///
+    /// In practice the storage-shaped cases above rarely reach this function: a plan that reads from
+    /// them fails `plan_is_simple_enough` in `considerEnablingParallelReplicas` first. What this check
+    /// actually saves a candidate plan on is the join-kind and settings cases.
     ///
     /// It is deliberately only the query-tree half of the eligibility rules. The planner disables
     /// parallel replicas for a few more reasons that are not visible here - a correlated subquery
