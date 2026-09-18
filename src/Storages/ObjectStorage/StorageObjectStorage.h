@@ -85,6 +85,8 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    void checkInsertIsAllowed(ContextPtr context) const override;
+
     static SinkToStoragePtr createSink(
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -93,6 +95,10 @@ public:
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context);
+
+    /// The refusals decidable from the configuration and the query context alone.
+    static void checkInsertIsPossible(
+        const StorageObjectStorageConfigurationPtr & configuration, const ContextPtr & context);
 
     void truncate(
         const ASTPtr & query,

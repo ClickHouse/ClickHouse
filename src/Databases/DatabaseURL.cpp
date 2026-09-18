@@ -206,6 +206,7 @@ public:
     void checkInsertIsAllowed(ContextPtr context) const override
     {
         table_function->checkSourceAccess(context, /* is_insert_query */ true);
+        getNestedForWrite(context)->checkInsertIsAllowed(context);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override

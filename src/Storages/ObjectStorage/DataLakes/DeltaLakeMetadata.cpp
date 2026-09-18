@@ -72,6 +72,7 @@ namespace Setting
 {
     extern const SettingsBool allow_delta_kernel_rs;
     extern const SettingsBool allow_delta_lake_create_table;
+    extern const SettingsBool allow_delta_lake_writes;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -713,6 +714,17 @@ bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType 
 bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type)
 {
     return isDeltaKernelEnabled(context, storage_type);
+}
+
+void DeltaLakeMetadata::checkInsertIsPossible(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Delta Lake writes are a Beta feature disabled by default. "
+            "To enable them, set allow_delta_lake_writes = 1");
+    }
 }
 
 void DeltaLakeMetadata::createInitial(

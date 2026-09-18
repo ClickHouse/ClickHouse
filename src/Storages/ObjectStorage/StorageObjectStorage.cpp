@@ -821,18 +821,14 @@ SinkToStoragePtr StorageObjectStorage::write(
     return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
 }
 
-SinkToStoragePtr StorageObjectStorage::createSink(
-    const StorageObjectStorageConfigurationPtr & configuration,
-    const ObjectStoragePtr & object_storage,
-    const StorageID & storage_id,
-    const std::optional<FormatSettings> & format_settings,
-    const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+void StorageObjectStorage::checkInsertIsAllowed(ContextPtr local_context) const
 {
-    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    const auto & settings = configuration->getQuerySettings(local_context);
+    checkInsertIsPossible(configuration, local_context);
+}
 
+void StorageObjectStorage::checkInsertIsPossible(
+    const StorageObjectStorageConfigurationPtr & configuration, const ContextPtr & local_context)
+{
     const auto raw_path = configuration->getRawPath();
 
     if (configuration->isArchive())
@@ -846,8 +842,25 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
-                        configuration->getRawPath().path);
+                        raw_path.path);
     }
+
+    configuration->checkInsertIsPossible(local_context);
+}
+
+SinkToStoragePtr StorageObjectStorage::createSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & local_context)
+{
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    const auto & settings = configuration->getQuerySettings(local_context);
+
+    checkInsertIsPossible(configuration, local_context);
 
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");

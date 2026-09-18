@@ -63,6 +63,9 @@ public:
     /// over-limit inner table that plain `DROP TABLE mv` would refuse.
     void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
+    /// Forward the insert gate onto the target table `write` passes the write to.
+    void checkInsertIsAllowed(ContextPtr context) const override;
+
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool optimize(

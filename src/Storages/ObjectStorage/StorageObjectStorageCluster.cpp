@@ -204,6 +204,11 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
 }
 
+void StorageObjectStorageCluster::checkInsertIsAllowed(ContextPtr local_context) const
+{
+    StorageObjectStorage::checkInsertIsPossible(configuration, local_context);
+}
+
 bool StorageObjectStorageCluster::supportsParallelInsert() const
 {
     if (configuration->isDataLakeConfiguration())
