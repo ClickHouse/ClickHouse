@@ -416,16 +416,17 @@ protected:
 
     /// Checks a `(?t...)` condition between the base event and the current one.
     ///
-    /// The comparison is done on the distance between the two timestamps, widened to `Int128`, rather than on
-    /// `base + duration`: a `DateTime64` timestamp is signed and can be arbitrarily large in either direction, so
-    /// both adding the duration to the base and converting the duration - which is given in seconds - to the ticks
-    /// of the timestamp type can overflow for values the type itself accepts.
+    /// The comparison is done on the distance between the two timestamps rather than on `base + duration`:
+    /// a `DateTime64` timestamp is signed and can be arbitrarily large in either direction, so both adding
+    /// the duration to the base and converting the duration - which is given in seconds - to the ticks of
+    /// the timestamp type can overflow for values the type itself accepts.
+    ///
+    /// The distance is computed in a type that holds every value of the timestamp type: `Int128` for the
+    /// types that fit into 64 bits - which includes the signed ticks of `DateTime64` - and the unsigned
+    /// timestamp type itself for the wider `UInt128` and `UInt256`, which must not be narrowed.
     template <PatternActionType type>
-    bool timeConditionSatisfied(const typename Data::Timestamp base, const typename Data::Timestamp current, const std::uint64_t duration_in_seconds) const
+    static bool compareDistance(const auto delta, const auto bound)
     {
-        const Int128 delta = static_cast<Int128>(current) - static_cast<Int128>(base);
-        const Int128 bound = static_cast<Int128>(duration_in_seconds) * time_scale_multiplier;
-
         if constexpr (type == PatternActionType::TimeLessOrEqual)
             return delta <= bound;
         else if constexpr (type == PatternActionType::TimeLess)
@@ -438,6 +439,35 @@ protected:
         {
             static_assert(type == PatternActionType::TimeEqual);
             return delta == bound;
+        }
+    }
+
+    template <PatternActionType type>
+    bool timeConditionSatisfied(const typename Data::Timestamp base, const typename Data::Timestamp current, const std::uint64_t duration_in_seconds) const
+    {
+        using Timestamp = typename Data::Timestamp;
+
+        if constexpr (sizeof(Timestamp) > sizeof(Int64))
+        {
+            /// `UInt128` and `UInt256` timestamps: the distance is computed in the timestamp type itself, so
+            /// that no value loses its high bits. Only `DateTime64` has a scale, so the multiplier is `1` here.
+            static_assert(is_unsigned_v<Timestamp>);
+
+            const Timestamp bound = static_cast<Timestamp>(duration_in_seconds) * static_cast<Timestamp>(time_scale_multiplier);
+
+            /// The events are ordered by the timestamp and `base` never follows `current`, but a negative
+            /// distance cannot be represented in an unsigned type, so handle it explicitly rather than wrap.
+            if (current < base)
+                return compareDistance<type>(-1, 0);
+
+            return compareDistance<type>(static_cast<Timestamp>(current - base), bound);
+        }
+        else
+        {
+            const Int128 delta = static_cast<Int128>(current) - static_cast<Int128>(base);
+            const Int128 bound = static_cast<Int128>(duration_in_seconds) * time_scale_multiplier;
+
+            return compareDistance<type>(delta, bound);
         }
     }
 

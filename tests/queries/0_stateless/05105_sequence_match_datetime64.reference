@@ -18,4 +18,8 @@ timestamps at the boundary of the type do not overflow
 0	1
 a condition at the upper boundary of DateTime64(9)
 1	0
+wide unsigned timestamps keep their full width
+UInt256	1	0
+UInt256	0	1
+UInt128	0	1
 other types are still rejected

@@ -90,5 +90,28 @@ SELECT
     sequenceMatch('(?1)(?t>1)(?2)')(ts, e = 1, e = 2) AS after_1s
 FROM (SELECT arrayJoin([(toDateTime64('2262-04-11 23:47:16', 9, 'UTC'), 1), (toDateTime64('2262-04-11 23:47:16.5', 9, 'UTC'), 2)]) AS x, x.1 AS ts, x.2 AS e);
 
+SELECT 'wide unsigned timestamps keep their full width';
+-- `UInt128` and `UInt256` timestamps were accepted before this change and must keep their contract: the
+-- distance between two events is not narrowed to a signed 128-bit value. The gap below is `2 ^ 200`, which
+-- loses all of its bits when it is truncated to 128, and the `(?t>1)` condition would be evaluated as if
+-- the two events shared a timestamp.
+SELECT
+    toTypeName(any(ts)) AS type,
+    sequenceMatch('(?1)(?t>1)(?2)')(ts, e = 1, e = 2) AS after_1s,
+    sequenceMatch('(?1)(?t<=1)(?2)')(ts, e = 1, e = 2) AS within_1s
+FROM (SELECT arrayJoin([(toUInt256(0), 1), (bitShiftLeft(toUInt256(1), 200), 2)]) AS x, x.1 AS ts, x.2 AS e);
+-- A gap of `2 ^ 128 + 3` truncates to `3`, so a three-second window would match it.
+SELECT
+    toTypeName(any(ts)) AS type,
+    sequenceMatch('(?1)(?t<=3)(?2)')(ts, e = 1, e = 2) AS within_3s,
+    sequenceMatch('(?1)(?t>3)(?2)')(ts, e = 1, e = 2) AS after_3s
+FROM (SELECT arrayJoin([(toUInt256(0), 1), (bitShiftLeft(toUInt256(1), 128) + 3, 2)]) AS x, x.1 AS ts, x.2 AS e);
+-- `UInt128` timestamps above `Int128::max`.
+SELECT
+    toTypeName(any(ts)) AS type,
+    sequenceMatch('(?1)(?t<=5)(?2)')(ts, e = 1, e = 2) AS within_5s,
+    sequenceMatch('(?1)(?t<=8)(?2)')(ts, e = 1, e = 2) AS within_8s
+FROM (SELECT arrayJoin([(bitShiftLeft(toUInt128(1), 127) + 1, 1), (bitShiftLeft(toUInt128(1), 127) + 8, 2)]) AS x, x.1 AS ts, x.2 AS e);
+
 SELECT 'other types are still rejected';
 SELECT sequenceMatch('(?1)(?2)')('a', 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
