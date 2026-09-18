@@ -15,3 +15,11 @@ $CLICKHOUSE_CLIENT --date_time_overflow_behavior='throw' --param_value='1900-01-
 $CLICKHOUSE_CLIENT --date_time_overflow_behavior='saturate' --param_value='1900-01-01 00:00:00' \
     -q "INSERT INTO dt_overflow VALUES ({value:DateTime64(9)})"
 $CLICKHOUSE_CLIENT -q "SELECT v FROM dt_overflow"
+
+$CLICKHOUSE_CLIENT -q "CREATE TABLE dt64_overflow (v DateTime64(9, 'UTC')) ENGINE = Memory"
+
+# Here the fallback returns Null instead of throwing, and null_as_default must not turn that into a default.
+$CLICKHOUSE_CLIENT --date_time_overflow_behavior='throw' --param_d='0000-01-01' \
+    -q "INSERT INTO dt64_overflow VALUES ({d:Date32})" 2>&1 |
+    grep -c -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM dt64_overflow"

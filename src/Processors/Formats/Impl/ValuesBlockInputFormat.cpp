@@ -687,6 +687,12 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         throw;
     }
 
+    /// A non-null value converted to Null means the conversion failed, not that the user wrote NULL.
+    /// `null_as_default` must not silently turn an overflow the template already diagnosed into a default.
+    if (value.isNull() && !expression_value.isNull() && template_exception
+        && getExceptionErrorCode(template_exception) == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+        std::rethrow_exception(template_exception);
+
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))
     {
