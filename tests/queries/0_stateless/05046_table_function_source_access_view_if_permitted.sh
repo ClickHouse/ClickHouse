@@ -47,7 +47,9 @@ GRANT SHOW COLUMNS ON $CLICKHOUSE_DATABASE.t_alias_src TO $user_name;
 MT_UUID=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_source_access'")
 
 echo "=== static structures stay readable with no grants ==="
-$CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none') FORMAT TSV" | cut -f 1
+# `mergeTreeTextIndex` is no longer one of them: it resolves the source index to answer a `DESCRIBE`,
+# so that one asks for `SHOW TABLES` on the source table like reading it does.
+$CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 $CLICKHOUSE_CLIENT --user "$user_name" -q "DESCRIBE mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access) FORMAT TSV" | cut -f 1
 
 echo "=== the UUID form is unchanged by this fix ==="

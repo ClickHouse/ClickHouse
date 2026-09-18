@@ -1,12 +1,5 @@
 === static structures stay readable with no grants ===
-part_name
-token
-dictionary_compression
-cardinality
-num_posting_blocks
-has_embedded_postings
-has_raw_postings
-has_compressed_postings
+ACCESS_DENIED
 part_name
 ranges
 === the UUID form is unchanged by this fix ===

@@ -14,6 +14,14 @@ as_user()
     $CLICKHOUSE_CLIENT --user "$user_name" -q "$1" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 }
 
+# A table cannot be created as a MergeTree introspection function at all, so the arms that would
+# have persisted a source this user cannot see are refused before their grants are considered.
+as_user_create_as()
+{
+    $CLICKHOUSE_CLIENT --user "$user_name" -q "$1" 2>&1 \
+        | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
+}
+
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_source_access;
 DROP TABLE IF EXISTS t_not_mergetree;
@@ -73,13 +81,11 @@ $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM mergeTreeProjecti
 as_user "DESCRIBE loop(currentDatabase(), t_alias_src)"
 # An index name is metadata too, so the denial must come before the index lookup reports it missing.
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_alias_src, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
-# CREATE TABLE ... AS supplies the columns, so the storage is built lazily under the global full-access
-# context: the denial has to come from the seam, which still runs under this user.
-as_user "CREATE TABLE t_as_tf_p (b UInt64) AS mergeTreeProjection(currentDatabase(), t_alias_src, p_src)"
-as_user "CREATE TABLE t_as_tf_ti AS mergeTreeTextIndex(currentDatabase(), t_alias_src, 'idx_none')"
+as_user_create_as "CREATE TABLE t_as_tf_p (b UInt64) AS mergeTreeProjection(currentDatabase(), t_alias_src, p_src)"
+as_user_create_as "CREATE TABLE t_as_tf_ti AS mergeTreeTextIndex(currentDatabase(), t_alias_src, 'idx_none')"
 
 echo "=== create as table function, no grants on the source ==="
-as_user "CREATE TABLE t_as_tf AS mergeTreeIndex(currentDatabase(), t_source_access)"
+as_user_create_as "CREATE TABLE t_as_tf AS mergeTreeIndex(currentDatabase(), t_source_access)"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_as_tf;

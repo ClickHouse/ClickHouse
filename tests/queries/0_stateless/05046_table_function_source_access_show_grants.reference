@@ -2,7 +2,10 @@
 1
 ACCESS_DENIED
 ACCESS_DENIED
-3
+cannot be used to create a table
+cannot be used to create a table
+cannot be used to create a table
+0
 === SHOW COLUMNS only ===
 a
 b

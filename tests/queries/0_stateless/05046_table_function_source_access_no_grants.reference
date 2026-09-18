@@ -22,7 +22,7 @@ ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
+cannot be used to create a table
+cannot be used to create a table
 === create as table function, no grants on the source ===
-ACCESS_DENIED
+cannot be used to create a table

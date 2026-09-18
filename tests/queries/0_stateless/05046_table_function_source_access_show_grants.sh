@@ -56,12 +56,11 @@ echo "=== SHOW TABLES but not SHOW COLUMNS ==="
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_source_access'"
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "DESCRIBE t_source_access" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "SELECT count() FROM viewIfPermitted(SELECT 1 ELSE mergeTreeIndex(currentDatabase(), t_source_access))" 2>&1 | grep -o "ACCESS_DENIED\|the table function after 'ELSE' gives" | uniq
-# Naming the source is all the execution seam asks of these three, so exactly `SHOW TABLES` must
-# suffice. Explicit columns keep the storage lazy, so the seam is the only thing that runs, and
-# the count is 3 unless the seam demands something stronger.
-$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_p (b UInt64) AS mergeTreeProjection(currentDatabase(), t_source_access, p_src)" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ai (part_name String) AS mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ti (part_name String) AS mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+# A table created as a MergeTree introspection function is refused whatever the grants are, so the
+# source of one cannot be persisted into a table of this user and the count below stays 0.
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_p (b UInt64) AS mergeTreeProjection(currentDatabase(), t_source_access, p_src)" 2>&1 | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ai (part_name String) AS mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)" 2>&1 | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ti (part_name String) AS mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_ok_as_tf_p', 't_ok_as_tf_ai', 't_ok_as_tf_ti')"
 
 # A third user holding exactly what a DESCRIBE of the source table requires and nothing more, so the
