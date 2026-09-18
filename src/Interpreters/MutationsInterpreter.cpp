@@ -1320,24 +1320,34 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
             for (const auto & stat_column_name: command.statistics_columns)
             {
+                const bool has_statistics = columns_desc.has(stat_column_name) && !columns_desc.get(stat_column_name).statistics.empty();
+                const bool is_physical = columns_desc.hasPhysical(stat_column_name);
+
+                /// The command is executed against the metadata of the moment it runs, which may be
+                /// long after it was queued: the column may have been dropped or renamed, lost its
+                /// statistics, or become non-physical since. There is nothing to build then, and the
+                /// mutation has to drain instead of failing and retrying forever, which would also
+                /// block every mutation queued after it. Same as a `MATERIALIZE PROJECTION` of a
+                /// projection that no longer exists.
+                if (!dry_run && (!has_statistics || !is_physical))
+                {
+                    LOG_WARNING(logger, "Column {} {}, skipping statistics materialization",
+                        stat_column_name, has_statistics ? "is not physically stored" : "has no statistics");
+                    continue;
+                }
+
+                if (!has_statistics)
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
+
                 /// A column that is not physically stored has no data in any block, so there is
-                /// nothing to build.
-                /// While executing, always skip it: the column may have become non-physical after
-                /// the mutation was queued, and the mutation has to drain instead of retrying
-                /// forever. While validating a statement the user is issuing right now, only a
-                /// grandfathered definition - one that still carries statistics - is skipped;
-                /// naming a plain `ALIAS` or `EPHEMERAL` column is simply a wrong argument and
-                /// reaches the throw below.
-                if (columns_desc.has(stat_column_name)
-                    && !columns_desc.hasPhysical(stat_column_name)
-                    && (!dry_run || !columns_desc.get(stat_column_name).statistics.empty()))
+                /// nothing to build. Such a definition can only be inherited from a version that
+                /// still accepted it, since `CREATE` and `ALTER` refuse it now; naming it is a no-op
+                /// rather than an error, so the table stays usable as it is.
+                if (!is_physical)
                 {
                     LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
                     continue;
                 }
-
-                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
 
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);

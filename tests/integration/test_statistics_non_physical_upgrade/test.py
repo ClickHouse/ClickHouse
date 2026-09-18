@@ -34,6 +34,7 @@ _ALTER_TABLES = [
     "t_drop_readd",
     "t_drop_then_rename",
     "t_materialize",
+    "t_materialize_drop",
 ]
 
 
@@ -258,6 +259,41 @@ def test_materialize_statistics_leaves_no_unfinished_mutation(upgraded):
         == "1\t2\t100"
     )
     _assert_grandfathered("t_materialize")
+
+
+def test_queued_materialize_statistics_drains_after_column_is_dropped(upgraded):
+    """A queued `MATERIALIZE STATISTICS` runs against the metadata of the moment it executes.
+
+    The command stores the column by name, and `DROP COLUMN` is not a barrier, so the column can
+    be gone by the time the command runs. It has to drain then: a failing mutation retries forever
+    and blocks every mutation queued after it, the `DROP` included. Stopping merges keeps the
+    command queued until the `DROP` is in place. (`RENAME COLUMN` is a barrier that waits for
+    every earlier mutation, so a rename cannot overtake the command.)
+    """
+    node.query("SYSTEM STOP MERGES t_materialize_drop")
+    node.query(
+        "ALTER TABLE t_materialize_drop MATERIALIZE STATISTICS b",
+        settings={"mutations_sync": 0},
+    )
+    node.query(
+        "ALTER TABLE t_materialize_drop DROP COLUMN b",
+        settings={"mutations_sync": 0, "alter_sync": 0},
+    )
+    node.query("SYSTEM START MERGES t_materialize_drop")
+    # This one can only complete once the queued command did.
+    node.query(
+        "ALTER TABLE t_materialize_drop UPDATE a = a + 1 WHERE 1",
+        settings={"mutations_sync": 2},
+    )
+    assert (
+        node.query(
+            "SELECT count() > 0, countIf(NOT is_done) FROM system.mutations "
+            "WHERE database = currentDatabase() AND table = 't_materialize_drop'"
+        ).strip()
+        == "1\t0"
+    )
+    assert node.query("SELECT a, d FROM t_materialize_drop").strip() == "2\t100"
+    assert "STATISTICS" not in node.query("SHOW CREATE TABLE t_materialize_drop")
 
 
 def test_replicated_database_recovery_accepts_stored_definition(upgraded):

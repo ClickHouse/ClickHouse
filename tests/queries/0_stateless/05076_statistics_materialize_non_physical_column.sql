@@ -33,6 +33,20 @@ ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
 DROP TABLE tab;
 
+-- A mutation that named a physical column must also drain when the column is dropped before it
+-- runs. Failing would block every mutation queued after it, including the `DROP` itself.
+CREATE TABLE tab (a UInt64, c UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, auto_statistics_types = '';
+INSERT INTO tab VALUES (1, 1);
+SYSTEM STOP MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS c SETTINGS mutations_sync = 0;
+ALTER TABLE tab DROP COLUMN c SETTINGS mutations_sync = 0, alter_sync = 0;
+SYSTEM START MERGES tab;
+ALTER TABLE tab UPDATE a = a + 1 WHERE 1 SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
+SELECT a FROM tab;
+DROP TABLE tab;
+
 -- A physical column with statistics must keep building them.
 CREATE TABLE tab (a UInt64, b UInt64 MATERIALIZED a * 2 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, auto_statistics_types = '';
