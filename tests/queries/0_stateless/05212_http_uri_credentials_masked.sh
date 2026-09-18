@@ -58,4 +58,32 @@ ${CLICKHOUSE_CLIENT} --query "
       AND current_database = currentDatabase()
       AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')"
 
+# 4. The url() table function feeds its query text into system.query_log through the same sanitizer.
+#    It must mask the shapes the old password-only masker missed: a userinfo password that itself
+#    contains '@' (masked whole, not just up to the first '@'), a bare userinfo token with no password,
+#    and presigned-URL signature parameters. Run one query of each shape at a distinctive path, then
+#    check that query_log logged them all masked and stored none of the cleartext secrets. The probes
+#    are split in the checking queries so those queries do not themselves carry the contiguous secret.
+PP="urlprobe_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://leakuser:first@atprobe7k3@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/${PP}', 'CSV', 'id UInt64')" >/dev/null 2>&1
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://tokprobe5x9@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/${PP}', 'CSV', 'id UInt64')" >/dev/null 2>&1
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/${PP}?X-Amz-Signature=sigprobe3q8', 'CSV', 'id UInt64')" >/dev/null 2>&1
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT 'url_query_log_masked', count() >= 3
+    FROM system.query_log
+    WHERE event_date >= yesterday()
+      AND current_database = currentDatabase()
+      AND query LIKE '%' || 'urlprobe_' || '${CLICKHOUSE_TEST_UNIQUE_NAME}%'
+      AND query LIKE '%[HIDDEN]%'"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT 'url_query_log_cleartext', count()
+    FROM system.query_log
+    WHERE event_date >= yesterday()
+      AND current_database = currentDatabase()
+      AND (query LIKE '%' || 'atprobe' || '7k3%' OR exception LIKE '%' || 'atprobe' || '7k3%'
+           OR query LIKE '%' || 'tokprobe' || '5x9%' OR exception LIKE '%' || 'tokprobe' || '5x9%'
+           OR query LIKE '%' || 'sigprobe' || '3q8%' OR exception LIKE '%' || 'sigprobe' || '3q8%')"
+
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS dict_uri_leak"

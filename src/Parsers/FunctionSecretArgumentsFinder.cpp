@@ -15,10 +15,11 @@ namespace DB
 
 namespace
 {
-    /// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
+    /// Masks credential material embedded in a URL itself: the userinfo part and the values of
     /// presigned-URL query parameters. The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL`
     /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
-    bool maskS3URICredentials(String & url)
+    /// Used for every url-bearing function (`s3`, `url`, ...) so that all of them mask the same way.
+    bool maskURICredentials(String & url)
     {
         /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
         /// expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
@@ -85,7 +86,7 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
                         String url;
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
-                            if (maskS3URICredentials(url))
+                            if (maskURICredentials(url))
                                 result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
@@ -205,7 +206,7 @@ void FunctionSecretArgumentsFinder::maskS3UrlArgument(const std::vector<size_t> 
         markSecretArgument(positional[url_slot]);
         return;
     }
-    if (maskS3URICredentials(url))
+    if (maskURICredentials(url))
         result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
@@ -609,11 +610,11 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
     if (isNamedCollectionName(url_offset))
     {
         /// url(named_collection, url = 'https://user:password@host/...', headers(...), ...): mask the
-        /// userinfo password of a `url` override. The parser evaluates constant-expression keys and
-        /// values, so fail closed on anything we cannot read as a plain literal (a nested `headers(...)`
-        /// map or other expression could carry a secret): an unevaluable key can name `url`, and any
-        /// non-literal value of a visible override can hide a nested secret. The headers are handled
-        /// above; a `key = value` override is the only other shape here.
+        /// credentials of a `url` override (userinfo and presigned-URL parameters). The parser evaluates
+        /// constant-expression keys and values, so fail closed on anything we cannot read as a plain
+        /// literal (a nested `headers(...)` map or other expression could carry a secret): an unevaluable
+        /// key can name `url`, and any non-literal value of a visible override can hide a nested secret.
+        /// The headers are handled above; a `key = value` override is the only other shape here.
         for (size_t i = url_offset + 1; i < function->arguments->size(); ++i)
         {
             const auto equals_func = function->arguments->at(i)->getFunction();
@@ -631,7 +632,7 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
                 String url;
                 if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                 {
-                    if (maskURIPassword(&url))
+                    if (maskURICredentials(url))
                         result.replaced_arguments[i] = "url = " + quoteString(url);
                 }
                 else
@@ -649,8 +650,9 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
     String uri;
     if (tryGetStringFromArgument(url_offset, &uri, /* allow_identifier= */ false))
     {
-        /// A readable url literal: mask only its userinfo password, keeping the host and path visible.
-        if (maskURIPassword(&uri))
+        /// A readable url literal: mask its userinfo and any presigned-URL parameters, keeping the host
+        /// and path visible.
+        if (maskURICredentials(uri))
             result.replaced_arguments[url_offset] = quoteString(uri);
     }
     else
@@ -1234,7 +1236,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
                 {
                     /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskS3URICredentials(value);
+                    has_secret |= maskURICredentials(value);
                     replacement += quoteString(value);
                 }
                 else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
@@ -1318,7 +1320,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
         {
             /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskS3URICredentials(arg_value);
+            has_secret |= maskURICredentials(arg_value);
             replacement += quoteString(arg_value);
         }
         else
