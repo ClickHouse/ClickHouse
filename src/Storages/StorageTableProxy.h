@@ -34,6 +34,13 @@ public:
         return "TableProxy";
     }
 
+    /// Whether the table behind the proxy has been created in this process.
+    bool isLoaded() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested != nullptr;
+    }
+
     /// Forward the metadata query to the nested storage once it has been materialized.
     /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
     /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*

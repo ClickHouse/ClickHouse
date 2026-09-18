@@ -43,10 +43,8 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound (x UInt64)
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
--- A proxy nothing has touched is not checked: the rename goes through, and back, before the table is loaded.
-RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
-EXISTS TABLE {CLICKHOUSE_DATABASE_2:Identifier}.lazy_bound;
-RENAME DATABASE {CLICKHOUSE_DATABASE_2:Identifier} TO {CLICKHOUSE_DATABASE_1:Identifier};
+-- A proxy nothing has touched is answered from its stored definition, and again once loaded.
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
