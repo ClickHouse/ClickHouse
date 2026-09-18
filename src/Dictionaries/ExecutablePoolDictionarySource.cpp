@@ -302,10 +302,10 @@ SOURCE(EXECUTABLE_POOL(
 ```xml
 <source>
     <executable_pool>
-        <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+        <command>while read key; do printf "$key\tData for key $key\n"; done</command>
         <format>TabSeparated</format>
         <pool_size>10</pool_size>
-        <max_command_execution_time>10<max_command_execution_time>
+        <max_command_execution_time>10</max_command_execution_time>
         <implicit_key>false</implicit_key>
     </executable_pool>
 </source>
