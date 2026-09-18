@@ -34,3 +34,12 @@ for kind in 'MODIFY LIMIT' 'MODIFY OFFSET' 'PAGE'; do
         echo "JSON $source_name $kind: $result"
     done
 done
+
+# `MODIFY FORMAT` is the one action a set operation supports, and only through the union wrapper
+# that carries the output options; the bare node is refused at deserialization like it is for SQL.
+result=$(${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json&default_format=TabSeparated" \
+    --data-binary '{"type":"ExplainQuery","kind":"EXPLAIN TEXT","query":'"$except_query"',"actions":{"type":"ExpressionList","children":[{"type":"ExplainTextAction","kind":"MODIFY FORMAT","operand":{"type":"Identifier","name":"CSV"}}]}}' 2>&1 | grep -o 'BAD_ARGUMENTS' | head -n1)
+echo "JSON except_query MODIFY FORMAT: $result"
+echo "JSON wrapped_except_query MODIFY FORMAT:"
+${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json&default_format=TabSeparated" \
+    --data-binary '{"type":"ExplainQuery","kind":"EXPLAIN TEXT","query":'"$wrapped_except_query"',"actions":{"type":"ExpressionList","children":[{"type":"ExplainTextAction","kind":"MODIFY FORMAT","operand":{"type":"Identifier","name":"CSV"}},{"type":"ExplainTextAction","kind":"ONELINE"}]}}'

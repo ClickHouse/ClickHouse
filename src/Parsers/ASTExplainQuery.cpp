@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -84,6 +85,12 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
             if (!getExplainedQuery() || getExplainedQuery()->getQueryKind() == QueryKind::None)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "EXPLAIN TEXT requires an explained query during AST JSON deserialization");
+            /// `ParserQuery` never produces a top-level `ASTSelectIntersectExceptQuery` it only exists
+            /// inside an `ASTSelectWithUnionQuery`, which is also what carries the output options that
+            /// `MODIFY FORMAT` sets. A bare `ASTSelectQuery` stays accepted as a convenience for callers
+            /// that build the JSON by hand
+            if (getExplainedQuery()->as<ASTSelectIntersectExceptQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT requires INTERSECT and EXCEPT to be wrapped in 'SelectWithUnionQuery' during AST JSON deserialization");
             /// `ASTSetQuery` also represents embedded settings clauses, which are not source statements.
             if (const auto * set_query = getExplainedQuery()->as<ASTSetQuery>();
                 set_query && (!set_query->is_standalone
