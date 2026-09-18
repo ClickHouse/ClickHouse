@@ -59,3 +59,52 @@ committed partitionValues: "partitionValues":{"p":"1.50"}
 -- what ClickHouse wrote before the write fix: only the decode can get it wrong
 1	5
 committed partitionValues: "partitionValues":{"p":"5"}
+-- the boundary shapes of the Delta decimal range: scale equal to the precision (no integer
+-- digit at all), the maximum precision with no fraction (a magnitude that needs the full
+-- Decimal128 width, so it also pins the decode of both 64-bit halves), and the two
+-- narrowest widths. Each committed value must still carry exactly <scale> fractional digits.
+-- decimal(38,38)
+1	0.5
+2	-0.5
+3	0.12345678901234567890123456789012345678
+committed partitionValues:
+"partitionValues":{"p":"-0.50000000000000000000000000000000000000"}
+"partitionValues":{"p":"0.12345678901234567890123456789012345678"}
+"partitionValues":{"p":"0.50000000000000000000000000000000000000"}
+-- decimal(38,0)
+1	99999999999999999999999999999999999999
+2	-99999999999999999999999999999999999999
+committed partitionValues:
+"partitionValues":{"p":"-99999999999999999999999999999999999999"}
+"partitionValues":{"p":"99999999999999999999999999999999999999"}
+-- decimal(1,0)
+1	9
+2	-9
+committed partitionValues:
+"partitionValues":{"p":"-9"}
+"partitionValues":{"p":"9"}
+-- decimal(1,1)
+1	0.9
+2	-0.9
+3	0
+committed partitionValues:
+"partitionValues":{"p":"-0.9"}
+"partitionValues":{"p":"0.0"}
+"partitionValues":{"p":"0.9"}
+-- a Delta timestamp partition value is a UTC wall clock (the kernel parses the committed
+-- string with Utc.from_utc_datetime), while the write schema type is DateTime64(6) with no
+-- explicit time zone, so a plain toString renders the session zone instead. p (partitioned)
+-- and d (a plain column) are given the same instant under a non-UTC session zone: before the
+-- fix p was committed as the Tokyo wall clock and came back 9 hours off d, with no error.
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
+committed partitionValues: "partitionValues":{"p":"2026-09-18 03:34:56.123456"}
+committed paths: p=2026-09-18%2003%253A34%253A56.123456/<uuid>.parquet
+-- timestamp_ntz behaves the same, and was shifted the same way before the fix
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
+committed partitionValues: "partitionValues":{"p":"2026-09-18 03:34:56.123456"}
+-- the remaining Delta primitive types need no per-type conversion, and this pins that: each
+-- is written both as a partition column and as a plain column, and the two must agree.
+-- boolean is the case that would look wrong but is not: ClickHouse maps it to Bool, whose
+-- toString already yields the true/false the kernel accepts, not 1/0.
+1	1	1	1	1	1
+committed partitionValues: "partitionValues":{"pb":"true","pd":"2026-09-18","pl":"-9223372036854775808","pf":"0.1","ps":"a b","pn":"ab"}

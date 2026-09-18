@@ -10,12 +10,17 @@
 # scale (1.50 as "1.5", 10.00 as "10", with no decimal point at all), because it was rendered
 # with toString, whose Decimal path drops trailing fractional zeros. delta-kernel-rs requires
 # the fractional digit count to equal the declared scale exactly, so SELECT on the table
-# ClickHouse had just written failed with DELTA_KERNEL_ERROR, and delta-rs and Spark could not
-# read it either.
+# ClickHouse had just written failed with DELTA_KERNEL_ERROR, and delta-rs could not read it
+# either. Spark writes the scale-exact form and tolerates both.
 #
 # Read: a decimal partition value with precision 19 or higher (Decimal128) had its two 64-bit
 # halves transposed while being decoded, and came back as a different number with no error.
 # That half is engine-independent: it also affects Spark-written and delta-rs-written tables.
+#
+# The same serializer got a timestamp partition value wrong in the same way: Delta commits it as
+# a UTC wall clock, so rendering it in the session time zone shifted the value by the zone offset
+# with no error. The cases at the end cover that, plus every other Delta primitive type as a
+# partition column, since which types need their own text conversion is what the writer decides.
 #
 # Every case asserts BOTH the exact committed partitionValues JSON (the protocol string under
 # test) and a SELECT returning the value: the JSON alone would not prove readability, and the
@@ -34,14 +39,16 @@ rm -rf "${ROOT}"
 
 # Create an empty partitioned Delta table at $1 with the given JSON schema string ($2) and
 # partitionColumns array ($3), using a minimal v0 transaction log (what delta-rs writes for an
-# empty overwrite).
+# empty overwrite). $4 overrides the protocol action for a table that needs a reader/writer
+# feature.
 bootstrap() {
     local path="$1"
     local schema="$2"
     local partition_cols="$3"
+    local protocol="${4:-{\"minReaderVersion\":1,\"minWriterVersion\":2\}}"
     mkdir -p "${path}/_delta_log"
     cat > "${path}/_delta_log/00000000000000000000.json" <<EOF
-{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"protocol":${protocol}}
 {"metaData":{"id":"${CLICKHOUSE_DATABASE}-$(basename "${path}")","format":{"provider":"parquet","options":{}},"schemaString":"${schema}","partitionColumns":${partition_cols},"configuration":{},"createdTime":1700000000000}}
 EOF
 }
@@ -65,6 +72,11 @@ committed_partition_values() {
     grep -h '"add"' "${path}"/_delta_log/*.json \
         | sed -E 's/.*("partitionValues":\{[^}]*\}).*/\1/' \
         | LC_ALL=C sort
+}
+
+# A (id Int32 NOT NULL, p Nullable(<delta type>)) schema partitioned by p.
+schema_for() {
+    printf '{\\"type\\":\\"struct\\",\\"fields\\":[{\\"name\\":\\"id\\",\\"type\\":\\"integer\\",\\"nullable\\":false,\\"metadata\\":{}},{\\"name\\":\\"p\\",\\"type\\":\\"%s\\",\\"nullable\\":true,\\"metadata\\":{}}]}' "$1"
 }
 
 # (id Int32 NOT NULL, p Nullable(Decimal(10, 2))) partitioned by p
@@ -160,3 +172,90 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     SELECT id, p FROM deltaLakeLocal('${ROOT}/dec19') ORDER BY id;
 "
 echo "committed partitionValues: $(committed_partition_values "${ROOT}/dec19")"
+
+# Write $3 (a VALUES list) into a fresh table partitioned by a decimal($1, $2) column, then show
+# what was committed and what comes back.
+decimal_case() {
+    local precision="$1"
+    local scale="$2"
+    local values="$3"
+    local dir="${ROOT}/dec_${precision}_${scale}"
+    echo "-- decimal(${precision},${scale})"
+    bootstrap "${dir}" "$(schema_for "decimal(${precision},${scale})")" '["p"]'
+    ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
+        INSERT INTO FUNCTION deltaLakeLocal('${dir}') VALUES ${values};
+        SELECT id, p FROM deltaLakeLocal('${dir}') ORDER BY id;
+    "
+    echo "committed partitionValues:"
+    committed_partition_values "${dir}"
+}
+
+echo "-- the boundary shapes of the Delta decimal range: scale equal to the precision (no integer"
+echo "-- digit at all), the maximum precision with no fraction (a magnitude that needs the full"
+echo "-- Decimal128 width, so it also pins the decode of both 64-bit halves), and the two"
+echo "-- narrowest widths. Each committed value must still carry exactly <scale> fractional digits."
+decimal_case 38 38 "(1, toDecimal128('0.5', 38)), (2, toDecimal128('-0.5', 38)), (3, toDecimal128('0.12345678901234567890123456789012345678', 38))"
+decimal_case 38 0 "(1, toDecimal128('99999999999999999999999999999999999999', 0)), (2, toDecimal128('-99999999999999999999999999999999999999', 0))"
+decimal_case 1 0 "(1, toDecimal32('9', 0)), (2, toDecimal32('-9', 0))"
+decimal_case 1 1 "(1, toDecimal32('0.9', 1)), (2, toDecimal32('-0.9', 1)), (3, toDecimal32('0', 1))"
+
+# (id Int32 NOT NULL, p Nullable(DateTime64(6)), d Nullable(DateTime64(6))) partitioned by p
+SCHEMA_TS='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}}]}'
+
+echo "-- a Delta timestamp partition value is a UTC wall clock (the kernel parses the committed"
+echo "-- string with Utc.from_utc_datetime), while the write schema type is DateTime64(6) with no"
+echo "-- explicit time zone, so a plain toString renders the session zone instead. p (partitioned)"
+echo "-- and d (a plain column) are given the same instant under a non-UTC session zone: before the"
+echo "-- fix p was committed as the Tokyo wall clock and came back 9 hours off d, with no error."
+bootstrap "${ROOT}/ts" "${SCHEMA_TS}" '["p"]'
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --session_timezone='Asia/Tokyo' --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/ts')
+        SELECT 1 AS id,
+               toDateTime64('2026-09-18 12:34:56.123456', 6) AS p,
+               toDateTime64('2026-09-18 12:34:56.123456', 6) AS d;
+    SELECT toString(p, 'UTC') AS p_utc, toString(d, 'UTC') AS d_utc, p = d AS partition_matches_data
+    FROM deltaLakeLocal('${ROOT}/ts');
+"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/ts")"
+echo "committed paths: $(committed_paths "${ROOT}/ts")"
+
+# The same schema with timestamp_ntz, which the kernel only accepts when the table declares the
+# feature. Both Delta timestamp types read back through the same parse, so both are written the
+# same way; for this one the form is also byte-identical to the kernel's own writer
+# (format_timestamp_ntz: space separator, no Z, naive_utc).
+SCHEMA_TS_NTZ='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"timestamp_ntz\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"timestamp_ntz\",\"nullable\":true,\"metadata\":{}}]}'
+
+echo "-- timestamp_ntz behaves the same, and was shifted the same way before the fix"
+bootstrap "${ROOT}/ts_ntz" "${SCHEMA_TS_NTZ}" '["p"]' \
+    '{"minReaderVersion":3,"minWriterVersion":7,"readerFeatures":["timestampNtz"],"writerFeatures":["timestampNtz"]}'
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --session_timezone='Asia/Tokyo' --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/ts_ntz')
+        SELECT 1 AS id,
+               toDateTime64('2026-09-18 12:34:56.123456', 6) AS p,
+               toDateTime64('2026-09-18 12:34:56.123456', 6) AS d;
+    SELECT toString(p, 'UTC') AS p_utc, toString(d, 'UTC') AS d_utc, p = d AS partition_matches_data
+    FROM deltaLakeLocal('${ROOT}/ts_ntz');
+"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/ts_ntz")"
+
+# (id Int32 NOT NULL, one partition column per remaining Delta primitive type, each paired with a
+# plain column of the same type holding the same value) partitioned by the six partition columns.
+SCHEMA_TYPES='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"pb\",\"type\":\"boolean\",\"nullable\":true,\"metadata\":{}},{\"name\":\"db\",\"type\":\"boolean\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pd\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dd\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pl\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dl\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pf\",\"type\":\"double\",\"nullable\":true,\"metadata\":{}},{\"name\":\"df\",\"type\":\"double\",\"nullable\":true,\"metadata\":{}},{\"name\":\"ps\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"ds\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pn\",\"type\":\"binary\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dn\",\"type\":\"binary\",\"nullable\":true,\"metadata\":{}}]}'
+
+echo "-- the remaining Delta primitive types need no per-type conversion, and this pins that: each"
+echo "-- is written both as a partition column and as a plain column, and the two must agree."
+echo "-- boolean is the case that would look wrong but is not: ClickHouse maps it to Bool, whose"
+echo "-- toString already yields the true/false the kernel accepts, not 1/0."
+bootstrap "${ROOT}/types" "${SCHEMA_TYPES}" '["pb","pd","pl","pf","ps","pn"]'
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/types')
+        SELECT 1 AS id,
+               true AS pb, true AS db,
+               toDate32('2026-09-18') AS pd, toDate32('2026-09-18') AS dd,
+               -9223372036854775808 AS pl, -9223372036854775808 AS dl,
+               0.1 AS pf, 0.1 AS df,
+               'a b' AS ps, 'a b' AS ds,
+               'ab' AS pn, 'ab' AS dn;
+    SELECT pb = db, pd = dd, pl = dl, pf = df, ps = ds, pn = dn FROM deltaLakeLocal('${ROOT}/types');
+"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/types")"

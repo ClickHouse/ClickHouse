@@ -195,14 +195,19 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
             make_intrusive<ASTIdentifier>(column),
             make_intrusive<ASTLiteral>(schema_column->type->getName()));
 
-        /// A Delta `decimal` partition value carries exactly `scale` fractional digits.
+        /// A Delta `decimal` partition value carries exactly `scale` fractional digits, and a
+        /// `timestamp`/`timestamp_ntz` one is a UTC wall clock, whatever the session time zone.
         const auto & value_type = removeNullable(schema_column->type);
-        ASTPtr text_ast = isDecimal(value_type)
-            ? makeASTFunction(
-                  "toDecimalString",
-                  value_ast,
-                  make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(getDecimalScale(*value_type)))))
-            : makeASTFunction("toString", value_ast);
+        ASTPtr text_ast;
+        if (isDecimal(value_type))
+            text_ast = makeASTFunction(
+                "toDecimalString",
+                value_ast,
+                make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(getDecimalScale(*value_type)))));
+        else if (isDateTime64(value_type))
+            text_ast = makeASTFunction("toString", value_ast, make_intrusive<ASTLiteral>("UTC"));
+        else
+            text_ast = makeASTFunction("toString", value_ast);
         partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(text_ast));
 
         partition_column_nullable.push_back(schema_column->type->isNullable());
