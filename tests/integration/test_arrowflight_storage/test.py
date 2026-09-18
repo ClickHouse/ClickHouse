@@ -384,3 +384,39 @@ def test_remote_host_filter():
         assert "not allowed in configuration file" in error
     finally:
         node.query("DROP NAMED COLLECTION arrowflight_blocked_collection")
+
+
+def test_insert_unsupported_type_follows_setting():
+    # `ArrowFlightSink::consume` builds its own Arrow conversion settings, so it needs its own coverage that
+    # `output_format_arrow_unsupported_types` reaches it: `QBit` has no Arrow mapping, and in `text` mode it
+    # is written as a `utf8` column, which is what the test server's schema accepts.
+    dataset = uuid.uuid4().hex
+
+    node.query(
+        f"""
+        CREATE TABLE arrow_qbit_test (
+            column1 QBit(BFloat16, 3),
+            column2 String
+        ) ENGINE=ArrowFlight('arrowflight1:5005', '{dataset}')
+        """
+    )
+
+    try:
+        assert "UNKNOWN_TYPE" in node.query_and_get_error(
+            "INSERT INTO arrow_qbit_test "
+            "SELECT [1,2,3]::QBit(BFloat16, 3), 'rejected' "
+            "SETTINGS output_format_arrow_unsupported_types = 'throw'"
+        )
+
+        node.query(
+            "INSERT INTO arrow_qbit_test "
+            "SELECT [1,2,3]::QBit(BFloat16, 3), 'accepted' "
+            "SETTINGS output_format_arrow_unsupported_types = 'text'"
+        )
+
+        # Read back through the table function, whose columns come from the remote schema, so the opaque
+        # column arrives as the text the sink sent rather than as `QBit`.
+        result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', '{dataset}')")
+        assert result == TSV([["[1,2,3]", "accepted"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS arrow_qbit_test SYNC")
