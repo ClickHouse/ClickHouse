@@ -121,90 +121,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-L&#39;opérateur contacte chaque pod via le Service headless sous la forme
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ce suffixe est utilisé dans
-deux parties de la configuration générée :
+Pour les répliques ClickHouse, l’opérateur crée un Service headless principal `<cluster-name>-clickhouse-headless` qui gère le trafic client.
+Il crée également des Services par réplique `<cluster-name>-clickhouse-internal-<shard>-<index>` qui exposent les pods non prêts au trafic interne
+et aux requêtes de gestion de l’opérateur. Ils peuvent servir à la récupération d’une réplique si celle-ci ne parvient pas elle-même à devenir prête.
 
-* Dans un `ClickHouseCluster`, sa valeur est utilisée pour les noms d&#39;hôte des répliques dans
-  `remote_servers` (requêtes entre répliques et requêtes `Distributed`).
-* Dans un `KeeperCluster`, sa valeur sert à construire les noms d&#39;hôte des nœuds Keeper que
-  ClickHouse utilise pour la coordination.
-
-<Note>
-  Ne remplacez cette valeur que si le `kubelet` de votre cluster s&#39;exécute avec un `--cluster-domain`
-  différent de `cluster.local`. Si la valeur ne correspond pas au véritable domaine du cluster,
-  ClickHouse ne peut pas résoudre les noms d&#39;hôte de Keeper ni ceux des répliques — la coordination et les
-  requêtes `Distributed` échouent avec des erreurs de résolution DNS. Définissez la **même** valeur sur le
-  `ClickHouseCluster` et le `KeeperCluster` auquel il fait référence.
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### Stockage multi-disques (JBOD)
-</div>
-
-`additionalVolumeClaimTemplates` ajoute des disques supplémentaires à chaque réplique ClickHouse, en plus du `dataVolumeClaimSpec` principal, nécessaire pour pouvoir les utiliser.
-Chaque entrée correspond à un modèle de PVC — un `metadata.name` et une `spec` de PVC.
-Les disques sont réconciliés exactement comme le disque de données principal — sous forme de `volumeClaimTemplates` du StatefulSet —, de sorte que le contrôleur du StatefulSet crée et conserve un PVC par réplique, nommé `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-L’opérateur monte chaque volume supplémentaire dans `/var/lib/clickhouse/disks/<name>` et l’ajoute à une configuration de stockage ClickHouse générée.
-Les tirets d’un nom deviennent des traits de soulignement dans l’identifiant du disque ClickHouse ; le chemin de montage conserve le nom d’origine.
-
-Le disque de données principal et chaque disque supplémentaire sont placés dans un volume unique de la politique de stockage `default`, de sorte que ClickHouse répartit les nouvelles parties de données entre eux selon un mécanisme de round-robin.
-La capacité utilisable correspond à la somme de tous les disques, et chaque table qui ne définit pas sa propre `storage_policy` (y compris les tables `system.*`) utilise cet ensemble combiné.
-
-<Note>
-  Les noms de PVC doivent correspondre à `^[a-z]([-a-z0-9]*[a-z0-9])?$` et ne doivent pas entrer en conflit avec le nom du volume de données principal.
-  Comme pour le disque de données principal, l’ensemble des disques supplémentaires est figé lors de la création : l’ajout, la suppression ou le renommage d’entrées après la création est refusé.
-  Les PVC supplémentaires sont conservés lorsque le cluster est supprimé, comme le disque de données principal.
-  La taille de stockage d’une entrée existante peut être augmentée si la StorageClass prend en charge l’extension.
-</Note>
-
-<div id="cluster-domain">
-  ## Domaine du cluster
-</div>
-
-`spec.clusterDomain` définit le suffixe DNS Kubernetes que l’opérateur utilise lorsqu’il génère
-les noms d’hôte complets des pods qu’il inscrit dans la
-configuration du serveur ClickHouse. La valeur par défaut est `cluster.local`, et ce champ existe à la fois dans
-`ClickHouseCluster` et `KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-L&#39;opérateur contacte chaque pod via le Service headless sous la forme
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ce suffixe est utilisé dans
-deux parties de la configuration générée :
-
-* Dans un `ClickHouseCluster`, sa valeur est utilisée pour les noms d&#39;hôte des répliques dans
-  `remote_servers` (requêtes entre répliques et requêtes `Distributed`).
-* Dans un `KeeperCluster`, sa valeur sert à construire les noms d&#39;hôte des nœuds Keeper que
-  ClickHouse utilise pour la coordination.
+Les nœuds Keeper utilisent les noms de pods via leur Service headless : `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
   Ne remplacez cette valeur que si le `kubelet` de votre cluster s&#39;exécute avec un `--cluster-domain`

@@ -49,8 +49,7 @@ ClickHouse 구성에서 WebAssembly 지원을 사용 설정하세요:
 
 사용 가능한 Engine 구현:
 
-* `wasmtime` (기본값, 권장) — [WasmTime](https://github.com/bytecodealliance/wasmtime)을 사용합니다
-* `wasmedge` — [WasmEdge](https://github.com/WasmEdge/WasmEdge)를 사용합니다
+* `wasmtime` (기본값이며 현재 유일한 구현) — [Wasmtime](https://github.com/bytecodealliance/wasmtime)을 사용합니다
 
 <div id="quick-start">
   ## 빠른 시작
@@ -232,7 +231,7 @@ RETURNS return_type
 
 * `function_name`: ClickHouse에서의 함수 이름입니다. 모듈의 내보낸 함수 이름과 다를 수 있습니다.
 * `FROM 'module_name' :: 'source_function_name'`: 사용할 로드된 WASM 모듈 이름과 WASM 모듈 내 함수 이름입니다(기본값은 function&#95;name).
-* `ARGUMENTS`: 인수 이름과 타입 목록입니다(이름은 선택 사항이며, 이름 있는 필드를 지원하는 직렬화 포맷에서 사용됩니다).
+* `ARGUMENTS`: 인수 이름과 타입 목록입니다(이름은 선택 사항이며, 이름이 지정된 필드를 지원하는 직렬화 포맷에서 사용됩니다).
 * `ABI`: Application Binary Interface 버전입니다.
   * `ROW_DIRECT`: 직접 타입 매핑, 행 단위 처리
   * `BUFFERED_V1`: 직렬화를 사용하는 블록 기반 처리
@@ -241,7 +240,7 @@ RETURNS return_type
 * `SHA256_HASH`: 검증에 사용할 예상 모듈 해시입니다(생략하면 자동으로 채워짐). 서로 다른 레플리카에서 올바른 WASM 모듈이 로드되었는지 확인하는 데 사용할 수 있습니다.
 * `SETTINGS`: 함수별 설정
   * `serialization_format` String — 모듈에 전달되는 인수 블록을 직렬화하고 반환된 결과를 파싱하는 데 사용하는 포맷입니다. `ABI BUFFERED_V1`에서만 사용됩니다. 지원되는 값: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`. 기본값: `MsgPack`. `Buffers`와 같은 블록 기반 포맷은 선언된 함수 시그니처와 타입이 일치하는 단일 컬럼 하나를 반환해야 합니다.
-  * `webassembly_udf_enable_fuel` Bool — 함수에 대한 제한된 연료 예산을 활성화합니다. 기본값: `true`. `false`이면 이 함수에서는 쿼리 수준 설정 `webassembly_udf_max_fuel`이 무시됩니다. `wasmtime` 엔진을 사용할 때 연료 제한을 비활성화하면 성능이 향상될 수 있습니다. 하지만 신뢰할 수 없거나 버그가 있는 게스트 코드의 경우, 제어되지 않는 실행 위험이 커질 수 있습니다.
+  * `webassembly_udf_enable_fuel` Bool — 함수에 대한 제한된 연료 예산을 활성화합니다. 기본값: `true`. `false`이면 이 함수에서는 쿼리 수준 설정 `webassembly_udf_max_fuel`이 무시됩니다. 연료 제한을 비활성화하면 성능이 향상될 수 있습니다. 하지만 신뢰할 수 없거나 버그가 있는 게스트 코드의 경우, 제어되지 않는 실행 위험이 커질 수 있습니다.
 
 <div id="abis-versions">
   ## ABI 버전
