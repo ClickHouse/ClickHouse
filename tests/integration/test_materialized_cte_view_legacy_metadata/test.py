@@ -8,7 +8,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 # `with_remote_database_disk=False`: `test_legacy_metadata_is_expanded_on_load` edits a metadata file on the local disk.
