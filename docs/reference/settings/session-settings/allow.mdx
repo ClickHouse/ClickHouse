@@ -144,6 +144,16 @@ If it is set to true, then a user is allowed to executed DDL queries.
 
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
 
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."}]}]}/>
+
+Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
+
 ## allow_delta_lake_writes {#allow_delta_lake_writes}
 
 <BetaBadge/>
