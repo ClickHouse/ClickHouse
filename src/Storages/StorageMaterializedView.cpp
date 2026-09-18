@@ -1162,6 +1162,11 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// Canonicalized the way `getSQLSecurityOverriddenContext` reads it, so that a security change
         /// with no effect on the read does not look like a data change.
         updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
+        /// `readImpl` reads the target under the effective reader's settings, which can change the rows
+        /// the read returns (for example, a definer's read limits): a settings-profile update of the
+        /// definer must invalidate consistency users the same way it does for `StorageView`. Purely
+        /// operational settings are left out: a definer's profile carries them without changing a row.
+        updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef());
         hash.update(*target_hash);
         return hash.get128();
     }
