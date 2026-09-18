@@ -278,6 +278,8 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
+    void resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+
     NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);

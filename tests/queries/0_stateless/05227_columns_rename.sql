@@ -28,6 +28,7 @@ SET enable_analyzer = 1;
 
 SELECT * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME a AS x FROM t_columns_rename ORDER BY x FORMAT TSVWithNames;
+SELECT * RENAME a AS x, count() FROM t_columns_rename GROUP BY a, b, metric_cpu, metric_mem WITH ROLLUP ORDER BY x LIMIT 1 BY x SETTINGS group_by_use_nulls = 1 FORMAT TSVWithNames;
 SELECT * RENAME (a AS x, b AS y) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT t_columns_rename.* RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT COLUMNS('^metric_') RENAME (metric_cpu AS cpu, metric_mem AS mem) FROM t_columns_rename FORMAT TSVWithNames;

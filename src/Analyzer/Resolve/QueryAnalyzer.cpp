@@ -4322,7 +4322,7 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
     /// RENAME target names behave like regular SELECT aliases. Matchers are expanded while resolving
     /// the projection, so resolve top-level matchers with RENAME first and register their aliases
@@ -4356,7 +4356,10 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 true /*is_top_level_projection*/);
         }
     }
+}
 
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+{
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
@@ -6753,6 +6756,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
+
+    /// RENAME aliases must be visible to clauses resolved before the delayed projection when
+    /// group_by_use_nulls is enabled. Full projection resolution stays in its original place so
+    /// GROUP BY keys can still be converted to Nullable only where required.
+    resolveProjectionRenameAliases(query_node_typed.getProjectionNode(), scope);
 
     if (!scope.group_by_use_nulls)
     {
