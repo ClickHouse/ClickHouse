@@ -2972,6 +2972,16 @@ Coordination::Error preprocess(
     return Coordination::Error::ZOK;
 }
 
+/// Cuts the deltas of the next subrequest, up to its `SubDeltaEnd` marker, off the front of `deltas`
+/// and drops the marker. `preprocess` appends the marker after every subrequest, so a range without
+/// it does not match the request that is being processed: the markers were lost, and stepping past
+/// the end of the range to look for them is undefined behavior. This runs on the raft commit and
+/// replay threads, so treat it like every other mismatch between a request and its deltas.
+///
+/// `FailedMultiDelta` is the other marker `preprocess` emits, and the callers handle it before they
+/// get here: it is the sole delta of a failed multi request. Inside a subrequest slice it is out of
+/// place, and `commit` would ignore it and report the subrequest as successful, so the walk stops on
+/// both markers and rejects the failure marker instead of passing it on as an ordinary delta.
 static KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
 {
     auto it = std::ranges::find_if(
