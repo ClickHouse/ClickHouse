@@ -4682,7 +4682,7 @@ Possible values:
 Allow execute multiIf function columnar
 )", 0) \
     DECLARE(Bool, allow_executable_tables, true, R"(
-Allow the `executable` table function and the `Executable` and `ExecutablePool` table engines.
+Allow the `executable` table function and the `Executable` and `ExecutablePool` table engines. Applies to subsequent queries: an `ExecutablePool` process started earlier is not terminated.
 )", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
