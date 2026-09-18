@@ -29,6 +29,10 @@ transform_null_in 1 plan	1
 validate_enum_literals 1	14
 remote	10
 remote lowcardinality	10
+set key per needle type	0	1
+set key per needle type reversed	1	0
+set key per needle type disjoint	1	1
+set key per needle type disjoint reversed	1	1
 empty scalar array	0
 empty scalar array kept as has	1
 null element scalar array	3
@@ -68,11 +72,28 @@ off float minus zero	1
 off nullable needle	5
 off mismatched types	0
 off nested array scalar	5
+off set key per needle type	0	1
+off set key per needle type reversed	1	0
+off set key per needle type disjoint	1	1
+off set key per needle type disjoint reversed	1	1
 off plan	0
 pk granules literal	Granules: 4/125
 pk granules scalar	Granules: 4/125
 pk result literal	3
 pk result scalar	4
+pk granules literal off	Granules: 4/125
+pk granules scalar off	Granules: 4/125
+pk result literal off	3
+pk result scalar off	4
 skip index plan	1
 skip index result	100
 skip index result off	100
+selective skip index	Granules: 10/10
+selective skip index	Name: idx_uid
+selective skip index	Granules: 2/10
+selective skip index off	Granules: 10/10
+selective skip index off	Name: idx_uid
+selective skip index off	Granules: 2/10
+selective result	128
+selective result off	128
+selective result no skip index	128

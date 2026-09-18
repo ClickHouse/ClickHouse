@@ -87,6 +87,24 @@ SET validate_enum_literals_in_operators = 0;
 SELECT 'remote', count() FROM remote('127.0.0.{1,2}', numbers(20)) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number));
 SELECT 'remote lowcardinality', count() FROM remote('127.0.0.{1,2}', numbers(20)) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)));
 
+-- One scalar array shared by two needle types needs one Set per needle type: the set is built by
+-- converting the array's elements to the needle's type, so each type keeps a different subset of
+-- them. Both `in`s carry the same set source, so a set key that ignores the needle type would give
+-- the second predicate the first one's set. The needles stay non-constant so that the predicates
+-- survive into the actions DAG, and both orders are checked because only the elements the FIRST
+-- key dropped can go missing.
+-- 256 is representable as UInt16 but not as UInt8:
+WITH (SELECT groupUniqArray(toUInt16(256)) FROM numbers(1)) AS a
+SELECT 'set key per needle type', countIf(has(a, toUInt8(number))), countIf(has(a, toUInt16(number + 256))) FROM numbers(1);
+WITH (SELECT groupUniqArray(toUInt16(256)) FROM numbers(1)) AS a
+SELECT 'set key per needle type reversed', countIf(has(a, toUInt16(number + 256))), countIf(has(a, toUInt8(number))) FROM numbers(1);
+-- Neither Int8 nor UInt8 can hold both -1 and 200, so here each type drops the element the other
+-- one keeps and a shared set loses a row in either order.
+WITH (SELECT groupUniqArray(x) FROM (SELECT CAST(arrayJoin([-1, 200]), 'Int16') AS x)) AS a
+SELECT 'set key per needle type disjoint', countIf(has(a, toInt8(number - 1))), countIf(has(a, toUInt8(number + 200))) FROM numbers(1);
+WITH (SELECT groupUniqArray(x) FROM (SELECT CAST(arrayJoin([-1, 200]), 'Int16') AS x)) AS a
+SELECT 'set key per needle type disjoint reversed', countIf(has(a, toUInt8(number + 200))), countIf(has(a, toInt8(number - 1))) FROM numbers(1);
+
 -- Shapes that must NOT be rewritten, with results unchanged.
 
 SELECT 'empty scalar array', count() FROM numbers(20) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(0)), toString(number));
@@ -156,6 +174,14 @@ SELECT 'off float minus zero', has((SELECT groupUniqArray(toFloat64(0.0)) FROM n
 SELECT 'off nullable needle', count() FROM numbers(20) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toNullable(toString(number)));
 SELECT 'off mismatched types', count() FROM numbers(20) WHERE has((SELECT groupUniqArray(toDate('2026-01-01') + number) FROM numbers(5)), materialize(toDateTime('2026-01-01 12:34:56')));
 SELECT 'off nested array scalar', count() FROM numbers(20) WHERE has((SELECT groupUniqArray([toString(number)]) FROM numbers(5)), [toString(number)]);
+WITH (SELECT groupUniqArray(toUInt16(256)) FROM numbers(1)) AS a
+SELECT 'off set key per needle type', countIf(has(a, toUInt8(number))), countIf(has(a, toUInt16(number + 256))) FROM numbers(1);
+WITH (SELECT groupUniqArray(toUInt16(256)) FROM numbers(1)) AS a
+SELECT 'off set key per needle type reversed', countIf(has(a, toUInt16(number + 256))), countIf(has(a, toUInt8(number))) FROM numbers(1);
+WITH (SELECT groupUniqArray(x) FROM (SELECT CAST(arrayJoin([-1, 200]), 'Int16') AS x)) AS a
+SELECT 'off set key per needle type disjoint', countIf(has(a, toInt8(number - 1))), countIf(has(a, toUInt8(number + 200))) FROM numbers(1);
+WITH (SELECT groupUniqArray(x) FROM (SELECT CAST(arrayJoin([-1, 200]), 'Int16') AS x)) AS a
+SELECT 'off set key per needle type disjoint reversed', countIf(has(a, toUInt8(number + 200))), countIf(has(a, toInt8(number - 1))) FROM numbers(1);
 SELECT 'off plan', count() FROM (
     EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number))
     ) WHERE explain LIKE '%FUNCTION in%';
@@ -178,6 +204,18 @@ SELECT 'pk granules scalar', trimLeft(explain) FROM (
 SELECT 'pk result literal', count() FROM tab_pk_lc WHERE has(['1', '2', '3'], k);
 SELECT 'pk result scalar', count() FROM tab_pk_lc WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(4)), k);
 
+-- The same four rows without the rewrite. They must match the rows above, which makes those an
+-- equivalence oracle instead of a snapshot, and they are the only remaining coverage of the has()
+-- atom over a LowCardinality key in KeyCondition (the rewrite makes it unreachable by default).
+SELECT 'pk granules literal off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_pk_lc WHERE has(['1', '2', '3'], k) SETTINGS optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%';
+SELECT 'pk granules scalar off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_pk_lc WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(4)), k) SETTINGS optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%';
+SELECT 'pk result literal off', count() FROM tab_pk_lc WHERE has(['1', '2', '3'], k) SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT 'pk result scalar off', count() FROM tab_pk_lc WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(4)), k) SETTINGS optimize_rewrite_has_to_in = 0;
+
 DROP TABLE tab_pk_lc;
 
 -- A set skip index is what made the reported query slow: with the rewrite it is now analyzed as a
@@ -195,3 +233,38 @@ WITH (SELECT groupUniqArray(uid) FROM tab_set_index) AS uniqs SELECT 'skip index
 WITH (SELECT groupUniqArray(uid) FROM tab_set_index) AS uniqs SELECT 'skip index result off', count(DISTINCT uid) FROM tab_set_index WHERE type = 1 AND uid IN (uniqs) SETTINGS optimize_rewrite_has_to_in = 0;
 
 DROP TABLE tab_set_index;
+
+-- The fixture above is the reported query, whose needle set covers every stored value, so it can
+-- only show the index being cheap and never show it pruning. This one is selective: each granule
+-- holds a single uid and the needle names two of them, so the index has to drop granules, and it
+-- has to drop the same ones with and without the rewrite. `index_granularity_bytes = 0` keeps the
+-- granule size at the row count the assertions below are written for; parts have to be Wide for
+-- that, so the two wide-part thresholds go with it.
+
+DROP TABLE IF EXISTS tab_set_index_selective;
+CREATE TABLE tab_set_index_selective (id UInt32, uid LowCardinality(String), INDEX idx_uid uid TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO tab_set_index_selective SELECT number, toString(intDiv(number, 64)) FROM numbers(640);
+
+-- The primary key is on `id` and every predicate below is on `uid` alone, so the `Granules:` line of
+-- the PrimaryKey block stays at the full count and only the skip index prunes. The rows are
+-- `Granules: <primary key>`, `Name: idx_uid`, `Granules: <skip index>`, in that order.
+SELECT 'selective skip index', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_set_index_selective
+    WHERE uid IN ((SELECT groupUniqArray(uid) FROM tab_set_index_selective WHERE id < 128))
+    SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'selective skip index off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_set_index_selective
+    WHERE uid IN ((SELECT groupUniqArray(uid) FROM tab_set_index_selective WHERE id < 128))
+    SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'selective result', count() FROM tab_set_index_selective
+    WHERE uid IN ((SELECT groupUniqArray(uid) FROM tab_set_index_selective WHERE id < 128)) SETTINGS use_skip_indexes = 1;
+SELECT 'selective result off', count() FROM tab_set_index_selective
+    WHERE uid IN ((SELECT groupUniqArray(uid) FROM tab_set_index_selective WHERE id < 128)) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'selective result no skip index', count() FROM tab_set_index_selective
+    WHERE uid IN ((SELECT groupUniqArray(uid) FROM tab_set_index_selective WHERE id < 128)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_set_index_selective;

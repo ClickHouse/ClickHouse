@@ -1,7 +1,6 @@
 #include <Planner/PlannerContext.h>
 
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
@@ -192,9 +191,16 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
 {
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
     const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
-    if (set_source_node->as<ConstantNode>())
+
+    const auto set_source_node_type = set_source_node->getNodeType();
+    const bool left_operand_is_cast_to_set_source_type = set_source_node_type == QueryTreeNodeType::QUERY
+        || set_source_node_type == QueryTreeNodeType::UNION
+        || set_source_node_type == QueryTreeNodeType::TABLE;
+
+    if (!left_operand_is_cast_to_set_source_type)
     {
-        /* We need to hash the type of the left operand because we can build different sets for different types.
+        /* Every other set source is a constant whose elements are converted TO the type of the left operand, so it
+         * yields a different set per left operand type and that type has to be part of the key.
          * (It's done for performance reasons. It's cheaper to convert a small set of values from literal to the type of the left operand.)
          *
          * For example in expression `(a :: Decimal(9, 1) IN (1.0, 2.5)) AND (b :: Decimal(9, 0) IN (1, 2.5))`
@@ -205,7 +211,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
         return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }
 
-    /// For other cases we will cast left operand to the type of the set source, so no difference in types.
+    /// A subquery, a table or a StorageSet: the left operand is cast to the type of the set source, so no difference in types.
     return "__set_" + toString(set_source_hash);
 }
 

@@ -470,10 +470,14 @@ ColumnPtr tryGetScalarSubqueryColumn(const QueryTreeNodePtr & node, const Contex
         return nullptr;
 
     const auto & scalar_block = query_context->getScalar(scalar_name);
-    if (scalar_block.columns() != 1 || scalar_block.getByPosition(0).column->size() != 1)
+    if (scalar_block.columns() != 1)
         return nullptr;
 
-    return scalar_block.getByPosition(0).column;
+    const auto & scalar_column = scalar_block.getByPosition(0).column;
+    if (!scalar_column || scalar_column->size() != 1)
+        return nullptr;
+
+    return scalar_column;
 }
 
 const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
