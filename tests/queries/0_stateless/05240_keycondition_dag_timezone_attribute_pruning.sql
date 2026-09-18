@@ -506,11 +506,11 @@ INSERT INTO k_hour SELECT toDateTime(1675267200, 'UTC') UNION ALL SELECT toDateT
                 UNION ALL SELECT toDateTime(1675440000, 'UTC') UNION ALL SELECT toDateTime(1675458000, 'UTC');
 OPTIMIZE TABLE k_hour FINAL;
 SELECT 'pruning_active_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 'k_hour' AND active;
-SELECT 'pruning_count', count() FROM (SELECT ts FROM k_hour WHERE ts IN (SELECT toDateTime(1675440000))) SETTINGS log_comment = '04770_pruning_oracle';
+SELECT 'pruning_count', count() FROM (SELECT ts FROM k_hour WHERE ts IN (SELECT toDateTime(1675440000))) SETTINGS log_comment = '05240_pruning_oracle';
 SYSTEM FLUSH LOGS query_log;
 SELECT 'pruning_selected_parts', ProfileEvents['SelectedParts'] FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-  AND current_database = currentDatabase() AND log_comment = '04770_pruning_oracle';
+  AND current_database = currentDatabase() AND log_comment = '05240_pruning_oracle';
 
 -- The same pruning-USE assertion one wrapper down. The block above is a BARE `DateTime` key, so it
 -- pins no recursive branch: every wrapper carrier asserts only `count`, and a declined transform
@@ -523,11 +523,11 @@ INSERT INTO k_hour_arr SELECT [toDateTime(1675267200, 'UTC')] UNION ALL SELECT [
                 UNION ALL SELECT [toDateTime(1675440000, 'UTC')] UNION ALL SELECT [toDateTime(1675458000, 'UTC')];
 OPTIMIZE TABLE k_hour_arr FINAL;
 SELECT 'pruning_arr_active_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 'k_hour_arr' AND active;
-SELECT 'pruning_arr_count', count() FROM (SELECT a FROM k_hour_arr WHERE a IN (SELECT [toDateTime(1675440000)])) SETTINGS log_comment = '04770_pruning_arr';
+SELECT 'pruning_arr_count', count() FROM (SELECT a FROM k_hour_arr WHERE a IN (SELECT [toDateTime(1675440000)])) SETTINGS log_comment = '05240_pruning_arr';
 SYSTEM FLUSH LOGS query_log;
 SELECT 'pruning_arr_selected_parts', ProfileEvents['SelectedParts'] FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-  AND current_database = currentDatabase() AND log_comment = '04770_pruning_arr';
+  AND current_database = currentDatabase() AND log_comment = '05240_pruning_arr';
 
 -- A `Variant` key column. `DataTypeVariant::equals` recurses into the alternatives, so a timezone
 -- declared inside one is as invisible to it as a bare one, and the element comes back unrelabelled.
