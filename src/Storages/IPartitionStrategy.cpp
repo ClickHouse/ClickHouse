@@ -40,7 +40,7 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "The partition by expression has a different number of columns than what is expected by ClickHouse."
+                    "The partition by expression has a different number of columns than what is expected by ClickHouse. "
                     "This is a bug.");
             }
 

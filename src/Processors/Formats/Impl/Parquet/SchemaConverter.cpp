@@ -1489,8 +1489,10 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
         out_inferred_type = std::make_shared<DataTypeUUID>();
-        out_decoder.allow_stats = true; // UUIDs support min/max stats
         out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
+        ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
+        ///  own order. Leaving allow_stats == false.)
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1595,7 +1597,7 @@ void SchemaConverter::processPrimitiveColumn(
                 {
                     out_inferred_type = type_hint;
                     out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    out_decoder.allow_stats = true;
+                    /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
                     return;
                 }
 
@@ -1614,7 +1616,7 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 out_inferred_type = std::make_shared<DataTypeUUID>();
                 out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                out_decoder.allow_stats = true;
+                /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
                 return;
             }
 
