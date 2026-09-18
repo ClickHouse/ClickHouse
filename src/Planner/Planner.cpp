@@ -941,7 +941,7 @@ void applyTopKPushdownToPartialAggregation(
 /// on high-cardinality `String` keys (`GROUP BY URL LIMIT 10`, ClickBench Q17), where the
 /// row-by-row lookup path the aggregation runs on after the cap costs more than the heap.
 /// Returns true when the heap would apply to this query and should be left in charge.
-static bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit, const Names & keys, const Block & header)
+bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit, const Names & keys, const Block & header)
 {
     if (!settings[Setting::enable_group_by_top_k_optimization])
         return false;
