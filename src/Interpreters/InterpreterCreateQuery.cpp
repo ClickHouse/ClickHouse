@@ -1081,6 +1081,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
+        if (isFreshTableDefinition(mode, create.attach_short_syntax))
+            checkNestedFreshDefinitionsAllowed(create.select->ptr(), getContext());
+
         if (create.isParameterizedView())
             return properties;
 

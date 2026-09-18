@@ -14,6 +14,8 @@ CREATE TABLE t_exec_as2 (x UInt32) AS executable('nonexist.sh', 'TSV', 'x UInt32
 CREATE TABLE t_exec_nested (x UInt32) AS loop(executable('nonexist.sh', 'TSV', 'x UInt32')); -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE t_exec_nested (x UInt32) ENGINE = Remote('127.0.0.1', executable('nonexist.sh', 'TSV', 'x UInt32')); -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE t_exec_nested AS remote('127.0.0.1:65535', executable('nonexist.sh', 'TSV', 'x UInt32')); -- { serverError SUPPORT_IS_DISABLED }
+CREATE VIEW v_exec_nested AS SELECT * FROM executable('nonexist.sh', 'TSV', 'x UInt32'); -- { serverError SUPPORT_IS_DISABLED }
+CREATE MATERIALIZED VIEW mv_exec_nested ENGINE = MergeTree ORDER BY x AS SELECT * FROM executable('nonexist.sh', 'TSV', 'x UInt32'); -- { serverError SUPPORT_IS_DISABLED }
 
 -- A full-definition ATTACH is fresh user input, not replay, so the gate applies.
 ATTACH TABLE t_exec_gate UUID '00000000-0000-0000-0000-000000005218' (x UInt32) ENGINE = Executable('nonexist.sh', 'TSV'); -- { serverError SUPPORT_IS_DISABLED }
