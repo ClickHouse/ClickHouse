@@ -62,7 +62,13 @@ for locally in 1 0; do
         FORMAT Null" 2>/dev/null
     CODE=$?
     [ "$CODE" -ne "202" ] && echo "Expected error code: 202 but got: $CODE" && exit 1
-    echo "an independent query is refused while the plan is still reading"
+    # Measured: only the dispatched arm discriminates the release on the last reader, because the
+    # in-process fragments never exit early, they stop together with the statement that owns them.
+    if [[ $locally == 1 ]]; then
+        echo "in-process plan: an unrelated reader is refused while the plan holds the table's only slot"
+    else
+        echo "dispatched plan: the slot outlives the fragment that took it, so an unrelated reader is refused"
+    fi
 
     ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
     wait
@@ -72,26 +78,28 @@ done
 
 # Parallel replicas read the table the same way, on several replicas of this server at once, and they
 # are one query too, so the statement must not reject itself against a limit of one.
-${CLICKHOUSE_CLIENT} --multiline --query "
-DROP TABLE IF EXISTS t_pr_limit;
-
-CREATE TABLE t_pr_limit (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
-
-SYSTEM STOP MERGES t_pr_limit;
-INSERT INTO t_pr_limit SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
-INSERT INTO t_pr_limit SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
-"
-
 echo "parallel replicas"
 # How many replicas answer is not ours to pin (measured: 27 of 30 statements read the table on more
 # than one), and a statement served by a single replica would say nothing about sharing a slot. So
 # every attempt must be served, and the assertion is made on the first one that really did fan out.
+# Each attempt reads its own table, so that no attempt can be refused by its predecessor's slot.
 fanout=0
 for attempt in {1..10}; do
+    table="t_pr_limit_$attempt"
+    ${CLICKHOUSE_CLIENT} --multiline --query "
+    DROP TABLE IF EXISTS $table;
+
+    CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+
+    SYSTEM STOP MERGES $table;
+    INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    "
+
     query_id="05232_pr_${attempt}_$CLICKHOUSE_DATABASE"
     ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
-        SELECT count() FROM t_pr_limit WHERE k < 150000
+        SELECT count() FROM $table WHERE k < 150000
         SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
             cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
             parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
@@ -107,6 +115,7 @@ for attempt in {1..10}; do
         WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
           AND initial_query_id = '$query_id'
         SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
     [ "$fanout" -ge 2 ] && break
 done
 [ "$fanout" -lt 2 ] && echo "no attempt read the table on more than one replica" && exit 1
@@ -121,5 +130,3 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
     FORMAT Null"
 echo "one statement reading the table on several replicas is served"
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_pr_limit"

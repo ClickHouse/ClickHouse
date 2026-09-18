@@ -1,6 +1,6 @@
 distributed_plan_execute_locally = 1
-an independent query is refused while the plan is still reading
+in-process plan: an unrelated reader is refused while the plan holds the table's only slot
 distributed_plan_execute_locally = 0
-an independent query is refused while the plan is still reading
+dispatched plan: the slot outlives the fragment that took it, so an unrelated reader is refused
 parallel replicas
 one statement reading the table on several replicas is served
