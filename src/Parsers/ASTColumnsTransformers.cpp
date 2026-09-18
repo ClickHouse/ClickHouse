@@ -333,6 +333,17 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with parameters requires a function name during AST JSON deserialization");
 
+    /// A child of `parameters` is a function parameter, i.e. an expression, and an expression list is
+    /// not one: `formatImpl` prints such a child's own children inline, so one parameter formats as
+    /// several, or as none when that child is empty.
+    if (parameters)
+    {
+        for (const auto & child : parameters->children)
+            if (child->as<ASTExpressionList>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'parameters' cannot have an expression list child during AST JSON deserialization");
+    }
+
     /// `applyColumnsApplyTransformer` substitutes the current column for `lambda_arg` inside the lambda body,
     /// so a lambda without its argument name would be meaningless, and the argument name
     /// must not appear without a lambda.

@@ -31,6 +31,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT any(x) IGNORE NULLS FROM t')
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT quantile(0.9)(x) FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM view(SELECT 1 SETTINGS max_threads = 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t GROUP BY GROUPING SETS ((a, b), (c))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * APPLY(quantiles(0.5, 0.9))'));
 
 -- ---------------------------------------------------------------------------
 -- ASTAlterCommand: parser-owned children are restored by concrete type. `col_decl` must be an
@@ -151,12 +152,15 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type"
 SELECT formatQueryFromJSON('{"type":"Function","name":"viewIfPermitted","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]},"out_file":{"type":"Literal","value":{"field_type":"String","value":"f"}}},{"type":"Function","name":"null","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"x UInt8"}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- ASTFunction: a child of `arguments` or `parameters` is an expression, and an expression list is
--- not one: no parse nests a list there, `QueryTreeBuilder::buildExpression` rejects such a child,
--- and the formatter prints its own children inline, so one argument formats as several (a single
--- nested list under `plus` formats as `plus(1, 2)`, which parses back as two arguments) or as the
--- unparseable `plus(, 1)` when the nested list is empty. One row per list. A nested list is
--- parser-producible elsewhere, in `GROUP BY GROUPING SETS ((a, b), (c))`, which round-trips above.
+-- A child of a function's `arguments` or `parameters`, and of the `APPLY` transformer's own
+-- `parameters`, is an expression, and an expression list is not one: no parse nests a list there,
+-- `QueryTreeBuilder::buildExpression` rejects such a child, and the formatter prints its own
+-- children inline, so one argument formats as several (a single nested list under `plus` formats as
+-- `plus(1, 2)`, which parses back as two arguments; the `APPLY` row formats exactly like the
+-- two-parameter `APPLY(quantiles(0.5, 0.9))` above) or as the unparseable `plus(, 1)` when the
+-- nested list is empty. One row per list. A nested list is parser-producible elsewhere, in
+-- `GROUP BY GROUPING SETS ((a, b), (c))`, which round-trips above.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"plus","arguments":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"quantile","parameters":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"Float64","value":0.5}}]}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk","transformers":{"type":"ColumnsTransformerList","children":[{"type":"ColumnsApplyTransformer","func_name":"quantiles","parameters":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"Float64","value":0.5}},{"type":"Literal","value":{"field_type":"Float64","value":0.9}}]}]}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
