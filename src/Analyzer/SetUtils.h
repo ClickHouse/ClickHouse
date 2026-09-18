@@ -18,9 +18,9 @@ struct GetSetElementParams
 {
     bool transform_null_in = true;
     bool forbid_unknown_enum_values = false;
-    /// The query's format settings, so that a member rendered to `String` (`'...' IN (toDateTime(...))`)
-    /// holds the same text that `CAST(x AS String)` produces under the same session settings, e.g.
-    /// `date_time_output_format` or `bool_true_representation`.
+    /// The query's format settings, so that a member rendered to `String` (`'yes' IN (true)`) holds
+    /// the same text that `CAST(x AS String)` produces under the same session settings, e.g. with
+    /// `bool_true_representation`. `convertFieldToType` applies them exactly where `CAST` does.
     FormatSettings format_settings = {};
 };
 
