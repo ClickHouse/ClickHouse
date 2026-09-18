@@ -1633,21 +1633,35 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             view->dropTempTable(table_to_drop.value(), refresh_context, discard_error_message);
         }
 
-        if (query_log_elem.has_value())
-        {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_as_internal*/ internal, /*log_error*/ !cancelled);
-        }
-        else
-        {
-            /// Failed when creating new table or when swapping tables.
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal, /*log_as_internal*/ internal);
-        }
-
         if (cancelled)
             out_error_message = "cancelled";
         else
             out_error_message = getCurrentExceptionMessage(true);
+
+        /// Logging the failure needs the refresh context's access rights (`getQuota`), which is exactly
+        /// what may be missing here: under `SQL SECURITY DEFINER` the definer can be dropped after the
+        /// refresh context was created and before the refresh first uses it, and then the read above
+        /// fails with `ACCESS_ENTITY_NOT_FOUND`. The failure itself is reported and retried through
+        /// `out_error_message`; a second exception from the logging must not escape this handler, where
+        /// the caller treats it as a logical error.
+        try
+        {
+            if (query_log_elem.has_value())
+            {
+                logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_as_internal*/ internal, /*log_error*/ !cancelled);
+            }
+            else
+            {
+                /// Failed before the refresh query started (e.g. while creating the new table or checking
+                /// whether the sources changed) or while swapping tables.
+                logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
+                                        /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal, /*log_as_internal*/ internal);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger(), "Failed to log the refresh failure to the query log");
+        }
 
         return std::nullopt;
     }
