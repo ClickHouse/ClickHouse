@@ -190,8 +190,21 @@ void runOracle(const std::string & sql, const std::string & json)
           ", query_plan_filter_push_down = 0, query_plan_optimize_prewhere = 0, query_plan_join_swap_table = 'false'"
           ", enable_optimize_predicate_expression_to_final_subquery = 0, optimize_extract_common_expressions = 0, optimize_and_compare_chain = 0";
 
-    OracleResult baseline;
-    OracleResult flipped;
+    /// Third variant: many threads, tiny blocks, two-level and external (spilling) aggregation and
+    /// sorting, the non-default join algorithms. The row hash is order-independent, floats are
+    /// excluded by the filter, so parallelism must not change the multiset of rows.
+    static const std::string parallel_settings =
+        "max_threads = 8, max_execution_time = 2, max_rows_to_read = 1000000, max_block_size = 7, max_insert_block_size = 7"
+        ", group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, max_bytes_before_external_group_by = 1"
+        ", max_bytes_before_external_sort = 1, prefer_external_sort_block_bytes = 1, aggregation_in_order_max_block_bytes = 1"
+        ", join_algorithm = 'grace_hash,partial_merge,hash', parallel_hash_join_threshold = 0, min_joined_block_size_bytes = 1"
+        ", cross_join_min_rows_to_compress = 1, cross_join_min_bytes_to_compress = 1, max_streams_to_max_threads_ratio = 4"
+        ", optimize_aggregators_of_group_by_keys = 0, optimize_group_by_constant_keys = 0, optimize_rewrite_array_exists_to_has = 0"
+        ", optimize_rewrite_regexp_functions = 0, query_plan_use_new_logical_join_step = 0, optimize_min_equality_disjunction_chain_length = 1";
+
+    OracleResult results[3];
+    static const char * variant_names[3] = {"default", "optimizations off", "parallel/external"};
+    static const std::string * variant_settings[3] = {&baseline_settings, &flipped_settings, &parallel_settings};
     DB::LocalFuzzerRunner::runOnRunnerThread([&](DB::ContextMutablePtr context)
     {
         /// A fresh thread with its own `ThreadStatus`: the runner thread may still be attached to the
@@ -200,33 +213,38 @@ void runOracle(const std::string & sql, const std::string & json)
         std::thread worker([&]
         {
             DB::ThreadStatus thread_status;
-            baseline = runOracleQuery(context, sql, baseline_settings);
-            flipped = runOracleQuery(context, sql, flipped_settings);
+            for (size_t i = 0; i < 3; ++i)
+                results[i] = runOracleQuery(context, sql, *variant_settings[i]);
         });
         worker.join();
     });
     ++oracle_runs;
 
-    if (baseline.ok && flipped.ok)
+    const OracleResult & baseline = results[0];
+    for (size_t i = 1; i < 3; ++i)
     {
-        if (baseline.rows == flipped.rows && baseline.hash == flipped.hash)
-            return;
-        ++oracle_mismatches;
-        std::ofstream out(oracle_log_path, std::ios::app);
-        out << "=== ORACLE MISMATCH (rows " << baseline.rows << " vs " << flipped.rows << ", hash " << baseline.hash << " vs " << flipped.hash << ")\n"
-            << "--- SQL ---\n" << sql << "\n--- JSON AST ---\n" << json << "\n\n";
-        return;
-    }
-    if (baseline.ok != flipped.ok)
-    {
-        /// Resource limits differ legitimately between plans; everything else is worth a look.
-        const OracleResult & failed = baseline.ok ? flipped : baseline;
-        if (failed.error_code == 159 || failed.error_code == 158 || failed.error_code == 241 || failed.error_code == 396)
-            return;
-        ++oracle_error_asymmetries;
-        std::ofstream out(oracle_log_path, std::ios::app);
-        out << "=== ORACLE ERROR ASYMMETRY (" << (baseline.ok ? "optimizations off" : "default") << " failed: Code " << failed.error_code << ": "
-            << failed.error << ")\n--- SQL ---\n" << sql << "\n--- JSON AST ---\n" << json << "\n\n";
+        const OracleResult & other = results[i];
+        if (baseline.ok && other.ok)
+        {
+            if (baseline.rows == other.rows && baseline.hash == other.hash)
+                continue;
+            ++oracle_mismatches;
+            std::ofstream out(oracle_log_path, std::ios::app);
+            out << "=== ORACLE MISMATCH default vs " << variant_names[i] << " (rows " << baseline.rows << " vs " << other.rows
+                << ", hash " << baseline.hash << " vs " << other.hash << ")\n"
+                << "--- SQL ---\n" << sql << "\n--- JSON AST ---\n" << json << "\n\n";
+        }
+        else if (baseline.ok != other.ok)
+        {
+            /// Resource limits differ legitimately between plans; everything else is worth a look.
+            const OracleResult & failed = baseline.ok ? other : baseline;
+            if (failed.error_code == 159 || failed.error_code == 158 || failed.error_code == 241 || failed.error_code == 396)
+                continue;
+            ++oracle_error_asymmetries;
+            std::ofstream out(oracle_log_path, std::ios::app);
+            out << "=== ORACLE ERROR ASYMMETRY (" << (baseline.ok ? variant_names[i] : "default") << " failed: Code " << failed.error_code << ": "
+                << failed.error << ")\n--- SQL ---\n" << sql << "\n--- JSON AST ---\n" << json << "\n\n";
+        }
     }
 }
 
