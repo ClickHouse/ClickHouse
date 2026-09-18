@@ -1,0 +1,9 @@
+one draw per output row
+400	400
+400	400
+the same without the optimization
+400	400
+a filter over the expanded rows
+400
+deterministic in the query: one value for every row
+1	400

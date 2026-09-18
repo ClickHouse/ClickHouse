@@ -1,12 +1,18 @@
 #pragma once
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
-#include <Processors/StepWallClockRegistry.h>
+
+#include <base/types.h>
+
+#include <atomic>
 #include <condition_variable>
+#include <exception>
+#include <utility>
 
 namespace DB
 {
 
+class IProcessor;
 class ReadProgressCallback;
+class StepWallClockRegistry;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
@@ -17,8 +23,8 @@ private:
     std::mutex mutex;
     bool wake_flag = false;
 
-    /// Currently processing node.
-    ExecutingGraph::Node * node = nullptr;
+    /// Currently processing processor.
+    IProcessor * processor = nullptr;
 
     /// Exception from executing thread itself.
     std::exception_ptr exception;
@@ -53,13 +59,14 @@ public:
     void wakeUp();
 
     /// Methods to access/change currently executing task.
-    bool hasTask() const { return node != nullptr; }
-    void setTask(ExecutingGraph::Node * task) { node = task; }
-    ExecutingGraph::Node * getTask() const { return node; }
-    ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
+    bool hasTask() const { return processor != nullptr; }
+    void setTask(IProcessor * task) { processor = task; }
+    IProcessor * getTask() const { return processor; }
+    IProcessor * popTask() { return std::exchange(processor, nullptr); }
     bool executeTask();
 
-    void setException(std::exception_ptr exception_) { exception = exception_; }
+    void setException(std::exception_ptr exception_);
+    std::exception_ptr getException();
     void rethrowExceptionIfHas();
 
     explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
