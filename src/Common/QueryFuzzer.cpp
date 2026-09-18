@@ -6976,6 +6976,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
             select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, makeLimitExpression(val));
         }
+
+        /// Fuzz LIMIT AFTER and LIMIT UNTIL clauses.
+        if (select->limitAfter() && fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
+            select->limit_after_all = false;
+        }
+        else if (fuzz_rand() % 200 == 0)
+        {
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::LIMIT_AFTER);
+        }
+        if (select->limitAfter() && fuzz_rand() % 20 == 0)
+            select->limit_after_all = !select->limit_after_all;
+        if (select->limitUntil() && fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
+        }
+        else if (fuzz_rand() % 200 == 0)
+        {
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::LIMIT_UNTIL);
+        }
+
         /// Fuzz LIMIT BY offset/length
         if (select->limitBy())
         {

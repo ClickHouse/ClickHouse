@@ -1131,8 +1131,11 @@ message LimitByStatement {
 }
 
 message LimitStatement {
-    required Expr limit = 1;
+    optional Expr limit = 1;
     optional bool with_ties = 2;
+    optional Expr limit_after = 3;
+    optional bool after_all = 4;
+    optional Expr limit_until = 5;
 }
 
 message FetchStatement {

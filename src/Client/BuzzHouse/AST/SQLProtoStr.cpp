@@ -2735,11 +2735,29 @@ CONV_FN(FetchStatement, fet)
 
 static void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
 {
-    ret += "LIMIT ";
-    ExprToString(ret, lim.limit());
+    ret += "LIMIT";
+    if (lim.has_limit())
+    {
+        ret += " ";
+        ExprToString(ret, lim.limit());
+    }
     if (!has_offset && lim.with_ties())
     {
         ret += " WITH TIES";
+    }
+    if (lim.has_limit_after())
+    {
+        ret += " AFTER ";
+        ExprToString(ret, lim.limit_after());
+        if (lim.after_all())
+        {
+            ret += " ALL";
+        }
+    }
+    if (lim.has_limit_until())
+    {
+        ret += " UNTIL ";
+        ExprToString(ret, lim.limit_until());
     }
 }
 
