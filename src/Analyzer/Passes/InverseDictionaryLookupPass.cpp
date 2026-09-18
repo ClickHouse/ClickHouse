@@ -150,15 +150,15 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
-/// Comparing the key against the dictionary's keys cannot reproduce `dictGet`'s own key handling for a
-/// key type with a dynamic structure or a nested `Variant`, so the rewrite is not equivalent there.
+/// Comparing against the dictionary's keys is not equivalent to `dictGet` when either the probe
+/// expression's type or the dictionary's declared key type has a dynamic structure or a nested `Variant`.
 /// For `Variant` and `Dynamic` the divergence is the key conversion: `dictGet` casts the key to the
 /// dictionary's key type (`IDictionary::convertKeyColumns`), and such a key carries NULL in a
 /// discriminator instead of a `Nullable` wrapper, so the cast turns a NULL row into that type's default
 /// and looks that key up, while `IN` and `=` treat the row as NULL. A `Nullable` key is unaffected:
-/// there the cast propagates the NULL. A `JSON` key diverges with no conversion at all
-/// (`convertKeyColumns` skips a key whose type already equals the dictionary's key type): the key
-/// constant folded into the rewrite does not compare equal to the same value read from a column.
+/// there the cast propagates the NULL. A `JSON` key diverges either way: `convertKeyColumns` skips an
+/// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
+/// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
 /// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
 bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
 {
@@ -385,6 +385,12 @@ public:
         else
         {
             return;
+        }
+
+        for (const auto & key_col : key_cols)
+        {
+            if (keyTypeBreaksInverseLookupEquivalence(*key_col.type))
+                return;
         }
 
         /// For complex-key dictionaries, `dictGet` and `IN` don't have the same `NULL` key semantics.

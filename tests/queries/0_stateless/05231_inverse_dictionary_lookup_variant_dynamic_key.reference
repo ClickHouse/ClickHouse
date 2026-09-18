@@ -26,6 +26,12 @@ variant key in projection	3	3
 variant key in projection declined	1
 json key	1	1
 json key declined	1
+json declared key, string probe, two keys	2	2
+json declared key, string probe, two keys, declined	1
+json declared key, string probe, one key	1	1
+json declared key, string probe, one key, declined	1
+json declared key, string probe, LIKE	1	1
+json declared key, string probe, LIKE, declined	1
 nullable key, dict has key 0	2	2
 nullable key, dict has key 0, declined	0
 nullable key	3	3

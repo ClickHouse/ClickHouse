@@ -12,16 +12,19 @@ DROP DICTIONARY IF EXISTS dict_keys_012;
 DROP DICTIONARY IF EXISTS dict_key_2;
 DROP DICTIONARY IF EXISTS dict_complex_keys_012;
 DROP DICTIONARY IF EXISTS dict_json_key;
+DROP DICTIONARY IF EXISTS dict_json_keys_2;
 DROP TABLE IF EXISTS src_keys_123;
 DROP TABLE IF EXISTS src_keys_012;
 DROP TABLE IF EXISTS src_key_2;
 DROP TABLE IF EXISTS src_complex_keys_012;
 DROP TABLE IF EXISTS src_json_key;
+DROP TABLE IF EXISTS src_json_keys_2;
 DROP TABLE IF EXISTS data_variant;
 DROP TABLE IF EXISTS data_dynamic;
 DROP TABLE IF EXISTS data_nullable;
 DROP TABLE IF EXISTS data_array_dynamic;
 DROP TABLE IF EXISTS data_json;
+DROP TABLE IF EXISTS data_json_string;
 
 CREATE TABLE src_keys_123 (k UInt64, a String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO src_keys_123 VALUES (1, 'x'), (2, 'x'), (3, 'x');
@@ -39,6 +42,10 @@ INSERT INTO src_complex_keys_012 VALUES (0, 's', 'x'), (1, 's', 'x'), (2, 's', '
 CREATE TABLE src_json_key (jk JSON, a String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO src_json_key SELECT '{"a":1}'::JSON, 'x';
 
+CREATE TABLE src_json_keys_2 (jk JSON, a String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO src_json_keys_2 SELECT '{"a":1}'::JSON, 'x';
+INSERT INTO src_json_keys_2 SELECT '{"a":2}'::JSON, 'x';
+
 CREATE DICTIONARY dict_keys_123 (k UInt64, a String) PRIMARY KEY k
 SOURCE(CLICKHOUSE(TABLE 'src_keys_123')) LAYOUT(FLAT()) LIFETIME(0);
 
@@ -54,6 +61,9 @@ SOURCE(CLICKHOUSE(TABLE 'src_complex_keys_012')) LAYOUT(COMPLEX_KEY_HASHED()) LI
 CREATE DICTIONARY dict_json_key (jk JSON, a String) PRIMARY KEY jk
 SOURCE(CLICKHOUSE(TABLE 'src_json_key')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
 
+CREATE DICTIONARY dict_json_keys_2 (jk JSON, a String) PRIMARY KEY jk
+SOURCE(CLICKHOUSE(TABLE 'src_json_keys_2')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
+
 CREATE TABLE data_variant (vk Variant(UInt64, String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO data_variant SELECT if(number % 10 = 0, NULL, number::Variant(UInt64, String)) FROM numbers(100);
 
@@ -68,6 +78,10 @@ INSERT INTO data_array_dynamic SELECT [if(number % 10 = 0, NULL, number::Dynamic
 
 CREATE TABLE data_json (jk JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO data_json SELECT '{"a":1}'::JSON;
+
+-- The probe is a plain `String`, so only the dictionary's declared key type is dynamic here.
+CREATE TABLE data_json_string (sk String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO data_json_string VALUES ('{"a":1}'), ('{"a":2}');
 
 -- Each case is checked twice: the answer with the rewrite on beside the answer with it off (they must
 -- agree), and whether the pass left the `dictGet` call in place.
@@ -113,6 +127,22 @@ SELECT 'variant key in projection declined', countIf(explain ILIKE '%function_na
 
 SELECT 'json key', (SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
 SELECT 'json key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+
+-- `dictGet` accepts a probe that merely converts to the dictionary's key type, so a plainly-typed probe
+-- reaches a dictionary whose declared key is `JSON`. The rewrite then compares that probe against keys
+-- materialised at the dictionary's key type, which is the same non-equivalence as above.
+
+SELECT 'json declared key, string probe, two keys', (SELECT count() FROM data_json_string WHERE dictGet('dict_json_keys_2', 'a', sk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_json_string WHERE dictGet('dict_json_keys_2', 'a', sk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
+SELECT 'json declared key, string probe, two keys, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_json_string WHERE dictGet('dict_json_keys_2', 'a', sk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+
+SELECT 'json declared key, string probe, one key', (SELECT count() FROM data_json_string WHERE dictGet('dict_json_key', 'a', sk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_json_string WHERE dictGet('dict_json_key', 'a', sk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
+SELECT 'json declared key, string probe, one key, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_json_string WHERE dictGet('dict_json_key', 'a', sk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+
+-- `LIKE` is rewritten through the `IN (SELECT ... FROM dictionary(...))` route, which answers correctly
+-- for this shape both before and after the change, so only the decline row below is an oracle: it pins
+-- the deliberate decision to screen that route on the declared key type as well.
+SELECT 'json declared key, string probe, LIKE', (SELECT count() FROM data_json_string WHERE dictGet('dict_json_key', 'a', sk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0), (SELECT count() FROM data_json_string WHERE dictGet('dict_json_key', 'a', sk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 0, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
+SELECT 'json declared key, string probe, LIKE, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_json_string WHERE dictGet('dict_json_key', 'a', sk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
 
 -- A `Nullable` key propagates its NULL through the `dictGet` key conversion, so the rewrite stays
 -- equivalent and must keep being applied. Same dictionaries and NULL pattern as the cases above.
