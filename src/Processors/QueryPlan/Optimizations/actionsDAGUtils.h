@@ -25,6 +25,8 @@ struct ActionsDAGLineageHop
     UInt64 ndv_delta;
     /// Whether the input column's average value width remains applicable after this hop.
     bool preserves_width;
+    /// Index of the child whose statistics can be propagated to this node.
+    size_t source_child_index;
 };
 
 struct ActionsDAGInputLineage
@@ -43,9 +45,9 @@ struct ActionsDAGOutputLineage
     std::optional<ActionsDAGInputLineage> input;
 };
 
-/// Classify a single node relative to its first child. This does not recursively
-/// establish that the child itself reaches an input. Absence means the hop is unsupported.
-std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node);
+/// Identify the child whose statistics can be propagated to this node and describe how they change.
+/// Returns no value if propagation is unsupported.
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions);
 
 /// Trace every output to at most one input using iterative, memoized traversal.
 /// The returned vector is ordered by output position and remains unambiguous even
