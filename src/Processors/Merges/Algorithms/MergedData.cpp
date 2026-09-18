@@ -55,7 +55,12 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
     for (size_t i = 0; i != columns.size(); ++i)
     {
         /// Sometimes header can contain Sparse columns, we don't support Sparse in merge algorithms.
-        columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
+        /// `recursiveRemoveSparse` may return a column shared with its argument when no sparse
+        /// representation is present. Pass its result as an rvalue straight into `IColumn::mutate`,
+        /// so no named alias outlives this statement: `ColumnReplicated::create` and the
+        /// `chooseDynamicStructureForMerge` / `takeOrCalculateStatisticsFrom` hooks below go through
+        /// the non-const `WrappedPtr` path, which verifies unique ownership.
+        columns[i] = IColumn::mutate(recursiveRemoveSparse(std::move(columns[i])));
         if (is_replicated[i])
             columns[i] = ColumnReplicated::create(std::move(columns[i]));
         /// Columns with dynamic structure (like JSON/Dynamic) need their structure to be
