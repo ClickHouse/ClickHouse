@@ -9,6 +9,7 @@ versions: 3
 -- (the INSERT itself is still acknowledged, https://github.com/ClickHouse/ClickHouse/issues/120717)
 3
 versions: 3
+flush errors with SUPPORT_IS_DISABLED for the no-wait insert:	1
 -- two concurrent async inserts with identical settings both land (one or two flushes)
 5	27
 versions in [4, 5]: 1
