@@ -1,8 +1,9 @@
-#include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
-#include <DataTypes/Serializations/SerializationMap.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsView.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
 #include <Common/SipHash.h>
 
 namespace DB
@@ -200,12 +201,12 @@ void collectMapKeysOrValuesFromBuckets(const VectorWithMemoryTracking<ColumnPtr>
     if (keys_or_values_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
 
-    VectorWithMemoryTracking<ColumnPtr> data_buckets(keys_or_values_buckets.size());
+    ColumnRawPtrs data_buckets(keys_or_values_buckets.size());
     std::vector<const ColumnArray::Offsets *> offsets_buckets(keys_or_values_buckets.size());
     for (size_t bucket = 0; bucket != keys_or_values_buckets.size(); ++bucket)
     {
         const auto & array_column = assert_cast<const ColumnArray &>(*keys_or_values_buckets[bucket]);
-        data_buckets[bucket] = array_column.getDataPtr();
+        data_buckets[bucket] = array_column.getDataPtr().get();
         offsets_buckets[bucket] = &array_column.getOffsets();
     }
 
