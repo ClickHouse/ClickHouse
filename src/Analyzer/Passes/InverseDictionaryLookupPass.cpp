@@ -151,7 +151,7 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 }
 
 /// Comparing against the dictionary's keys is not equivalent to `dictGet` when either the probe
-/// expression's type or the dictionary's declared key type has a dynamic structure or a nested `Variant`.
+/// expression's type or the dictionary's declared key type has a dynamic structure or a `Variant` at any level.
 /// For `Variant` and `Dynamic` the divergence is the key conversion: `dictGet` casts the key to the
 /// dictionary's key type (`IDictionary::convertKeyColumns`), and such a key carries NULL in a
 /// discriminator instead of a `Nullable` wrapper, so the cast turns a NULL row into that type's default
