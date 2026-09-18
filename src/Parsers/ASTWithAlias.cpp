@@ -20,7 +20,7 @@ static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAli
 }
 
 /// An alias given as a query parameter (`AS {name:Identifier}`) is resolved only once the parameter
-/// value are known. Until then it has to be printed as written, or formatting silently drops it.
+/// values are known. Until then it has to be printed as written, or formatting silently drops it.
 static void writeParametrisedAlias(const ASTQueryParameter & parameter, WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame)
 {
     ostr << " AS ";
@@ -52,7 +52,8 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         ostr.write(')');
         if (!alias.empty())
             writeAlias(alias, ostr, settings);
-        
+        else if (parametrised_alias)
+            writeParametrisedAlias(*parametrised_alias, ostr, settings, state, frame);
     }
     else
     {
