@@ -815,8 +815,10 @@ WriterStreamCounts countOutputStreams(
             }
             else
             {
-                for (auto & file_name : collectStaticStreamFileNames({column}, stream_file_name_settings))
-                    if (output_stream_names.insert(std::move(file_name)).second)
+                /// The elements of the returned `std::unordered_set` are const, so there is
+                /// nothing to move out of them.
+                for (const auto & file_name : collectStaticStreamFileNames({column}, stream_file_name_settings))
+                    if (output_stream_names.insert(file_name).second)
                         ++column_streams;
             }
             streams += column_streams;
