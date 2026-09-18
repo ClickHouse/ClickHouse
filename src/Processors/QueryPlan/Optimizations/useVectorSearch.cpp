@@ -246,8 +246,17 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (n == 0)
         return no_layers_updated;
 
-    /// All set for 2nd pass
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
+    /// All set for 2nd pass. Keep the selected filter strategy with the vector-search
+    /// parameters because the decision whether an in-traversal row filter can actually
+    /// be built is part-local and happens later in MergeTree index analysis.
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(
+        search_column,
+        distance_function,
+        n,
+        reference_vector,
+        additional_filters_present,
+        true,
+        settings.vector_search_filter_strategy);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return no_layers_updated;
