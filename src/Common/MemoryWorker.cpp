@@ -540,6 +540,17 @@ MemoryWorker::~MemoryWorker()
 #endif
 }
 
+#if USE_JEMALLOC
+Int64 MemoryWorker::getJemallocAllocated()
+{
+    /// jemalloc statistics are snapshots taken when the epoch is advanced, so refresh it here unconditionally:
+    /// `getMemoryUsage` advances it only when jemalloc is the memory usage source, and with the cgroup-backed source
+    /// (the default on Linux) a stale snapshot could predate the frees that drove the tracker negative.
+    epoch_mib.setValue(0);
+    return static_cast<Int64>(allocated_mib.getValue());
+}
+#endif
+
 uint64_t MemoryWorker::getMemoryUsage(bool log_error)
 {
     switch (source)
@@ -989,12 +1000,7 @@ void MemoryWorker::updateResidentMemoryThread()
             /// until the hard limit rises above it (https://github.com/ClickHouse/ClickHouse/issues/117681).
             /// `correct_tracker` is different: it re-applies `resident` on every tick, so it cannot get stuck.
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
-            {
-                /// `getMemoryUsage` refreshes the jemalloc epoch only when jemalloc is the memory usage source.
-                if (source != MemoryUsageSource::Jemalloc)
-                    epoch_mib.setValue(0);
-                MemoryTracker::updateAllocated(static_cast<Int64>(allocated_mib.getValue()), /*log_change=*/true);
-            }
+                MemoryTracker::updateAllocated(getJemallocAllocated(), /*log_change=*/true);
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #else
