@@ -39,6 +39,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Common/QueryScope.h>
@@ -102,6 +103,8 @@ bool isDeterministicForOracle(const std::string & sql)
         "rand", "generateUUID", "generateRandom", "generateSerialID", "now(", "now64(", "today(", "yesterday(", "currentDatabase(",
         "currentUser(", "hostName(", "uptime(", "version(", "timezone(", "serverTimezone(", "getSetting(", "getMacro", "shardNum", "shardCount",
         "sleep", "randomString", "randomPrintable", "randomFixed", "fuzzBits", "file(", "url(", "s3(", "remote(", "cluster(",
+        "arrayShuffle", "arrayPartialShuffle", /// seeded per block, see report 09
+        "viewExplain", "EXPLAIN", /// the plan text legitimately depends on the settings
         /// ordering-dependent, approximate or plan-dependent functions
         "any(", "anyLast(", "anyHeavy(", "first_value", "last_value", "nth_value", "argMin(", "argMax(", "anyIf(", "singleValueOrNull",
         "groupArray", "groupUniqArray", "groupConcat", "arrayStringConcat", "topK", "uniq", "quantile", "median", "histogram",
@@ -153,6 +156,10 @@ OracleResult runOracleQuery(DB::ContextMutablePtr session_context, const std::st
                 ++result.rows;
             }
         }
+        /// `pull` returns false without throwing when the soft time limit is hit; the caller has to
+        /// turn the partial result into the `TIMEOUT_EXCEEDED` error, like `LocalConnection` does.
+        if (auto process_list_element = context->getProcessListElement())
+            process_list_element->checkTimeLimit();
         io.onFinish();
         result.ok = true;
     }
