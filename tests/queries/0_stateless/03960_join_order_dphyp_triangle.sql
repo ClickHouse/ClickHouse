@@ -25,6 +25,7 @@ SET explain_query_plan_default = 'legacy';
 
 -- The EXPLAIN below pins one of several equal-cost plans, so the choice must not be randomized.
 SET query_plan_optimize_join_order_randomize = 0;
+SET materialize_statistics_on_insert = 1;
 
 SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 CREATE TABLE tri_hub  (id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
