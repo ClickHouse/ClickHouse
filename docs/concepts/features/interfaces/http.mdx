@@ -573,8 +573,18 @@ The possible header fields are:
 | `total_rows_to_read` | Total number of rows to be read.|
 | `written_rows`       | Number of rows written.         |
 | `written_bytes`      | Volume of data written in bytes.|
+| `accepted_rows`      | Number of rows accepted by an [asynchronous insert](/reference/settings/session-settings/async-insert#async_insert). `X-ClickHouse-Summary` only. |
+| `accepted_bytes`     | Volume of data accepted by an [asynchronous insert](/reference/settings/session-settings/async-insert#async_insert) in bytes. `X-ClickHouse-Summary` only. |
 | `elapsed_ns`         | Query runtime in nanoseconds.|
 | `memory_usage`       | Memory in bytes used by the query. (**Available from v25.11**) |
+
+`accepted_bytes` is reported as soon as the asynchronous insert has been buffered, whether or not the
+client waits for the flush. `accepted_rows` is only known once the payload has been parsed while
+flushing the buffer, so it is reported only with `wait_for_async_insert=1`:
+
+```text
+X-ClickHouse-Summary: {"read_rows":"3","read_bytes":"27","written_rows":"3","written_bytes":"27","accepted_rows":"3","accepted_bytes":"48","total_rows_to_read":"0","result_rows":"3","result_bytes":"27","elapsed_ns":"4505959","memory_usage":"1111711"}
+```
 
 Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 
