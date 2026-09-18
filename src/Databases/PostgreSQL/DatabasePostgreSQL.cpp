@@ -131,8 +131,8 @@ String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
 String DatabasePostgreSQL::formatTableName(const String & table_name, bool quoted) const
 {
     if (configuration.schema.empty())
-        return quoted ? doubleQuoteString(table_name) : table_name;
-    return quoted ? fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name))
+        return quoted ? doubleQuoteStringPostgreSQL(table_name) : table_name;
+    return quoted ? fmt::format("{}.{}", doubleQuoteStringPostgreSQL(configuration.schema), doubleQuoteStringPostgreSQL(table_name))
                   : fmt::format("{}.{}", configuration.schema, table_name);
 }
 
@@ -789,9 +789,9 @@ TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named
 | INTEGER          | Nullable([Int32](/reference/data-types/int-uint))|
 | ARRAY            | [Array](/reference/data-types/array)             |
 
-:::note
+<Note>
 PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](/reference/data-types/int-uint) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
-:::
+</Note>
 
 ## Examples of use {#examples-of-use}
 
