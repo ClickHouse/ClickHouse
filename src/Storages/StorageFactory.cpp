@@ -66,13 +66,15 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
         || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
         return;
 
-    /// `InterpreterSetQuery::applySettingsFromQuery` has already moved to the query context every name that
-    /// is a query setting and not a setting of this engine, so a name that is neither is no setting at all.
+    /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
+    /// all: it is the complement of what `InterpreterSetQuery::applySettingsFromQuery` moves to the query
+    /// context, which counts a custom setting the context holds as a query setting.
     const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
     chassert(features.has_builtin_setting_fn != nullptr);
+    const Settings & query_settings = local_context->getSettingsRef();
     auto check = [&](std::string_view name)
     {
-        if (!features.has_builtin_setting_fn(name) && !Settings::hasBuiltin(name))
+        if (!features.has_builtin_setting_fn(name) && !query_settings.has(name))
             throw Exception(
                 ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
     };

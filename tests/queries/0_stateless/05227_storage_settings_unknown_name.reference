@@ -5,5 +5,9 @@ CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog\n
 --- a query setting is still accepted, and is not stored on the table ---
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog
+--- a custom setting the context holds is a query setting too ---
+CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog\nSETTINGS disk = \'default\', custom_x = DEFAULT
+CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = File(\'CSV\')\nSETTINGS format_csv_delimiter = \';\', custom_x = DEFAULT
+CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt8\n)\nENGINE = TinyLog\nSETTINGS disk = \'default\', custom_x = 1
 --- a bad value is still reported as a bad value, not as an unknown name ---
 --- MergeTree is unchanged ---

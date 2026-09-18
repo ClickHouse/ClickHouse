@@ -75,6 +75,29 @@ CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS enable_analy
 SHOW CREATE TABLE t_unknown_setting;
 DROP TABLE t_unknown_setting;
 
+SELECT '--- a custom setting the context holds is a query setting too ---';
+
+SET custom_x = 1;
+
+-- A reset is never moved to the query context, so a held custom name reaches the check in that payload.
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS disk = 'default', custom_x = DEFAULT;
+SHOW CREATE TABLE t_unknown_setting;
+DROP TABLE t_unknown_setting;
+
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV) SETTINGS format_csv_delimiter = ';', custom_x = DEFAULT;
+SHOW CREATE TABLE t_unknown_setting;
+DROP TABLE t_unknown_setting;
+
+-- `CREATE ... AS SELECT` skips the move entirely, so `name = value` reaches the check unsplit as well.
+CREATE TABLE t_unknown_setting ENGINE = TinyLog SETTINGS disk = 'default', custom_x = 1 AS SELECT 1 AS a;
+SHOW CREATE TABLE t_unknown_setting;
+DROP TABLE t_unknown_setting;
+
+-- A custom name the context does not hold is not a query setting: the move leaves it behind and no
+-- engine reads it, which is the case this check is for.
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog
+SETTINGS disk = 'default', custom_not_held_anywhere = 1; -- { serverError UNKNOWN_SETTING }
+
 SELECT '--- a bad value is still reported as a bad value, not as an unknown name ---';
 
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV)
