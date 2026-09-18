@@ -58,30 +58,36 @@ def main():
     written = 0
     with tempfile.TemporaryDirectory() as tmp:
         for index, query in enumerate(read_queries(args.queries), start=1):
+            # Bytes, not text: a string literal in the query may carry arbitrary bytes into the JSON.
             result = subprocess.run(
                 [args.clickhouse, "local", "--param_q", query, "--query", "SELECT parseQueryToJSON({q:String}) FORMAT TSVRaw"],
                 capture_output=True,
-                text=True,
             )
             if result.returncode != 0:
                 failures += 1
-                print(f"parseQueryToJSON failed for: {query}\n  {result.stderr.strip()}", file=sys.stderr)
+                print(f"parseQueryToJSON failed for: {query}\n  {result.stderr.decode(errors='replace').strip()}", file=sys.stderr)
                 continue
             json_text = result.stdout.strip()
+            try:
+                expected = json.loads(json_text)
+            except ValueError:
+                failures += 1
+                print(f"parseQueryToJSON produced invalid JSON (non UTF-8 bytes?) for: {query}", file=sys.stderr)
+                continue
 
             json_path = os.path.join(tmp, "seed.json")
-            with open(json_path, "w", encoding="utf-8") as file:
+            with open(json_path, "wb") as file:
                 file.write(json_text)
             # No extension: libFuzzer corpus files conventionally have none, and `*.bin` is git-ignored.
             seed_path = os.path.join(args.output, slug(query, index))
-            result = subprocess.run([args.converter, "to-proto", json_path, seed_path], capture_output=True, text=True)
+            result = subprocess.run([args.converter, "to-proto", json_path, seed_path], capture_output=True)
             if result.returncode != 0:
                 failures += 1
-                print(f"json_ast_seed_converter failed for: {query}\n  {result.stderr.strip()}", file=sys.stderr)
+                print(f"json_ast_seed_converter failed for: {query}\n  {result.stderr.decode(errors='replace').strip()}", file=sys.stderr)
                 continue
 
-            result = subprocess.run([args.converter, "to-json", seed_path], capture_output=True, text=True)
-            if result.returncode != 0 or json.loads(result.stdout) != json.loads(json_text):
+            result = subprocess.run([args.converter, "to-json", seed_path], capture_output=True)
+            if result.returncode != 0 or json.loads(result.stdout) != expected:
                 failures += 1
                 print(f"the seed does not round-trip through the protobuf schema: {query}", file=sys.stderr)
                 os.remove(seed_path)
