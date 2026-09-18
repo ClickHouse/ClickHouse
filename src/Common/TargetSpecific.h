@@ -15,15 +15,21 @@
  * Thus, it's allowed to call functions inside these namespaces only after
  * checking platform in runtime (see isArchSupported() below).
  *
- * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
- * was set to OFF in cmake, all code inside these macros will be removed and
- * USE_MULTITARGET_CODE will be set to 0. Use #if USE_MULTITARGET_CODE whenever you
- * use anything from this namespaces.
+ * If compiler is not gcc/clang or target isn't x86_64/AArch64 or ENABLE_MULTITARGET_CODE
+ * was set to OFF in cmake, all code inside these macros will be removed and both
+ * USE_MULTITARGET_CODE and USE_ARM_MULTITARGET_CODE will be set to 0.
+ *
+ * There are two independent multitarget guards:
+ *   - USE_MULTITARGET_CODE: set to 1 only on x86_64. Use #if USE_MULTITARGET_CODE
+ *     whenever you use anything from the x86_64-specific namespaces (x86_64_v2, x86_64_v3,
+ *     x86_64_v4, etc.)
+ *   - USE_ARM_MULTITARGET_CODE: set to 1 only on AArch64. Use #if USE_ARM_MULTITARGET_CODE
+ *     whenever you use anything from the ARM-specific namespaces (ARM_SVE).
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but doesn't specify any additional
- * copile options. Functions and classes inside this macros are available regardless
- * of USE_MUTLITARGE_CODE.
+ * compile options. Functions and classes inside this macros are available regardless
+ * of USE_MULTITARGET_CODE or USE_ARM_MULTITARGET_CODE.
  *
  * Example of usage:
  *
@@ -33,16 +39,25 @@
  * }
  * ) // DECLARE_DEFAULT_CODE
  *
- * DECLARE_AVX2_SPECIFIC_CODE (
+ * DECLARE_X86_64_V3_SPECIFIC_CODE (
  * int funcImpl() {
  *     return 2;
  * }
- * ) // DECLARE_AVX2_SPECIFIC_CODE
+ * ) // DECLARE_X86_64_V3_SPECIFIC_CODE
+ *
+ * DECLARE_ARM_SVE_SPECIFIC_CODE (
+ * int funcImpl() {
+ *     return 2;
+ * }
+ * ) // DECLARE_ARM_SVE_SPECIFIC_CODE
  *
  * int func() {
  * #if USE_MULTITARGET_CODE
  *     if (isArchSupported(TargetArch::x86_64_v3))
  *         return TargetSpecific::x86_64_v3::funcImpl();
+ * #elif USE_ARM_MULTITARGET_CODE
+ *     if (isArchSupported(TargetArch::ARM_SVE))
+ *         return TargetSpecific::ARM_SVE::funcImpl();
  * #endif
  *     return TargetSpecific::Default::funcImpl();
  * }
@@ -82,9 +97,12 @@ namespace DB
 /// See https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels for more details on the instruction sets supported by each level.
 /// We use these levels as a convenient way to group related instruction sets and avoid long lists of features and many different instruction
 /// sets with small differences.
+/// See https://en.wikipedia.org/wiki/AArch64#ARMv8.1-A for AArch64 instruction sets.
 enum class TargetArch : UInt32
 {
     Default = 0,
+
+    /// x86-64 instruction set levels
     x86_64_v2 = (1 << 0),
     x86_64_v3 = (1 << 1),
     x86_64_v4 = (1 << 2),
@@ -92,6 +110,9 @@ enum class TargetArch : UInt32
     x86_64_sapphirerapids = (1 << 4),
     GenuineIntel = (1 << 5),          /// Not an instruction set, but a CPU vendor. Used for optimizations that are only applicable for Intel CPUs, like prefetching
     x86_64_vaes = (1 << 6),           /// v3 + VAES. Not a microarchitecture level: VAES appears on Zen 3, which has no AVX-512 at all, and on Intel only from Ice Lake, so neither v4 nor icelake describes the set of CPUs that have it.
+
+    /// ARM instruction set extensions
+    ARM_SVE = (1 << 7),
 };
 
 /// Runtime detection.
@@ -112,6 +133,7 @@ String toString(TargetArch arch);
 
 
 #define USE_MULTITARGET_CODE 1
+#define USE_ARM_MULTITARGET_CODE 0
 
 /// Function-specific attributes using arch= for cleaner specification
 /// This matches -march= compiler flags and avoids long feature lists
@@ -201,9 +223,47 @@ namespace TargetSpecific::x86_64_sapphirerapids { \
 } \
 END_TARGET_SPECIFIC_CODE
 
+/* Delete AArch64-specific code.
+ */
+#define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
+
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
+
+#define USE_MULTITARGET_CODE 0
+#define USE_ARM_MULTITARGET_CODE 1
+
+#define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("+sve")))
+
+#define BEGIN_SVE_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"+sve\"))),apply_to=function)")
+#define END_TARGET_SPECIFIC_CODE \
+    _Pragma("clang attribute pop")
+
+/* Clang shows warning when there aren't any objects to apply pragma.
+ * To prevent this warning we define this function inside every macros with pragmas.
+ */
+#define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
+
+#define DECLARE_ARM_SVE_SPECIFIC_CODE(...) \
+BEGIN_SVE_SPECIFIC_CODE \
+namespace TargetSpecific::ARM_SVE { \
+    DUMMY_FUNCTION_DEFINITION \
+    using namespace DB::TargetSpecific::ARM_SVE; \
+    __VA_ARGS__ \
+} \
+END_TARGET_SPECIFIC_CODE
+
+/* Delete x86_64-specific code.
+ */
+#define DECLARE_X86_64_V3_SPECIFIC_CODE(...)
+#define DECLARE_X86_64_V4_SPECIFIC_CODE(...)
+#define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...)
+#define DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(...)
+
 #else
 
 #define USE_MULTITARGET_CODE 0
+#define USE_ARM_MULTITARGET_CODE 0
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
@@ -211,6 +271,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_X86_64_V4_SPECIFIC_CODE(...)
 #define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...)
 #define DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(...)
+#define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
 
 #endif
 
@@ -225,7 +286,7 @@ namespace TargetSpecific::Default { \
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
 DECLARE_X86_64_V3_SPECIFIC_CODE    (__VA_ARGS__) \
-DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__) \
+DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default;
@@ -247,6 +308,9 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::x86_64_sapphirerapids;
 )
 
+DECLARE_ARM_SVE_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::ARM_SVE;
+)
 
 /** Runtime Dispatch helpers for class members.
   *
@@ -255,19 +319,27 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_X86_V4(
-  *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
+  *     MULTITARGET_FUNCTION_X86_V4_ARM_SVE(
+  *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value) /// NOLINT
   *     {
   *          return value;
   *     })
   *     )
   *
   *     void testFunction(int value) {
+  * #if USE_MULTITARGET_CODE
   *         if (isArchSupported(TargetArch::x86_64_v4))
   *         {
   *             testFunctionImpl_x86_64_v4(value);
   *         }
   *         else
+  * #elif USE_ARM_MULTITARGET_CODE
+  *         if (isArchSupported(TargetArch::ARM_SVE))
+  *         {
+  *             testFunctionImpl_ARM_SVE(value);
+  *         }
+  *         else
+  * #endif
   *         {
   *             testFunctionImpl(value);
   *         }
@@ -320,6 +392,65 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
+#define MULTITARGET_FUNCTION_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_ARM_SVE MULTITARGET_FUNCTION_X86_V4
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE MULTITARGET_FUNCTION_X86_V4_V3
+
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
+
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
+FUNCTION_HEADER \
+\
+name \
+FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_ARM_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_ARM_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_ARM_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
 
 #else
 
@@ -330,6 +461,24 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
     FUNCTION_BODY \
 
 #define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

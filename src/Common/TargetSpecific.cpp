@@ -85,6 +85,10 @@ UInt32 getSupportedArchs()
     if (CPU::CPUFlagsCache::have_GenuineIntel)
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
 
+    // ARM SVE support detection
+    if (CPU::CPUFlagsCache::have_SVE)
+        result |= static_cast<UInt32>(TargetArch::ARM_SVE);
+
     return result;
 }
 
@@ -100,6 +104,7 @@ String toString(TargetArch arch)
         case TargetArch::x86_64_sapphirerapids: return "x86-64-sapphirerapids";
         case TargetArch::GenuineIntel:          return "GenuineIntel";
         case TargetArch::x86_64_vaes:           return "x86-64-vaes";
+        case TargetArch::ARM_SVE:               return "arm-sve";
     }
 
     // This should never be reached. If it is, someone added a new TargetArch
