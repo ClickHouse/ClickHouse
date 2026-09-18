@@ -148,8 +148,8 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
-        total_elements += src_offsets[row] - src_offsets[row - 1];
+        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[static_cast<ssize_t>(row) - 1] == ColumnArray::OffsetAt(row)
+        total_elements += src_offsets[row] - src_offsets[static_cast<ssize_t>(row) - 1];
         res_offsets[i] = total_elements;
     }
     auto res_data = src_data.cloneEmpty();
@@ -157,7 +157,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data,/*start*/src_offsets[row - 1], /*length*/src_offsets[row] - src_offsets[row - 1]);
+        res_data->insertRangeFrom(src_data,/*start*/src_offsets[static_cast<ssize_t>(row) - 1], /*length*/src_offsets[row] - src_offsets[static_cast<ssize_t>(row) - 1]);
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
@@ -753,7 +753,7 @@ ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
+        data.resize_fill(data.size() + offsets[i] - offsets[static_cast<ssize_t>(i) - 1], static_cast<T>(i));
     return result;
 }
 

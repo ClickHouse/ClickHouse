@@ -13,6 +13,7 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -88,6 +89,7 @@ public:
     }
 
     template <typename Source>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeForSource(const ColumnPtr & column_offset, const ColumnPtr & column_length,
                           bool column_offset_const, bool column_length_const,
                           Int64 offset, Int64 length,

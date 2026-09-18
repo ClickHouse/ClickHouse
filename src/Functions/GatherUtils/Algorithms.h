@@ -2,6 +2,7 @@
 
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -274,6 +275,7 @@ void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink,
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
@@ -302,6 +304,7 @@ void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
@@ -319,6 +322,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
@@ -351,6 +355,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 
 
 template <bool inverse, typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -696,6 +701,7 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
 }
 
 template <typename ArraySource, typename ValueSource, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);

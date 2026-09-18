@@ -3104,8 +3104,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 }
                 /// Drop the nodes this fragment removed, preserving the order of the survivors
                 /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
+                for (size_t i = matchable_count; i > 0;)
                 {
+                    --i;
                     if (erased[i])
                         merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }

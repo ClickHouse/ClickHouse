@@ -132,7 +132,7 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// (e.g. non-printable characters, diacritics, combining characters)
             if (format_settings.pretty.max_value_width)
             {
-                size_t max_byte_size = format_settings.pretty.max_value_width * 4;
+                size_t max_byte_size = std::min<UInt64>(format_settings.pretty.max_value_width, std::numeric_limits<size_t>::max() / 4) * 4;
                 if (serialized_value.size() > max_byte_size)
                     serialized_value.resize(max_byte_size);
             }

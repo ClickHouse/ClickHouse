@@ -11,6 +11,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -183,6 +184,7 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
         return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     std::pair<FieldType, bool> getKeyHolderInRange(size_t row, Arena &) const
     {
         FieldType shifted_key = unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
@@ -243,7 +245,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        std::string_view key(reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]);
+        std::string_view key(reinterpret_cast<const char *>(chars) + offsets[static_cast<ssize_t>(row) - 1], offsets[row] - offsets[static_cast<ssize_t>(row) - 1]);
 
         if constexpr (place_string_to_arena)
         {
@@ -330,6 +332,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     /// with at least 15 bytes of right padding, so the load never crosses the allocation end.
     /// Trailing bytes beyond the key length are masked off, so the result depends only on the
     /// key content and is independent of neighbouring data.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
     {
         const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
@@ -352,8 +355,8 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
     {
-        const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
-        const size_t size = offsets[row] - offsets[row - 1];
+        const char * data = reinterpret_cast<const char *>(chars + offsets[static_cast<ssize_t>(row) - 1]);
+        const size_t size = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
         return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
     }
 

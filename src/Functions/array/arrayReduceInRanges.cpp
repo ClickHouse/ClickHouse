@@ -257,8 +257,9 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 }
                 else if (index < 0)
                 {
-                    if (end - begin + index > 0)
-                        local_begin = end - begin + index;
+                    const UInt64 offset_from_end = -static_cast<UInt64>(index);
+                    if (offset_from_end < end - begin)
+                        local_begin = end - begin - offset_from_end;
                     else
                         local_begin = 0;
 
@@ -301,7 +302,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
                         size_t place_offset = 0;
                         if (level)
-                            place_offset = place_offsets[level - 1];
+                            place_offset = place_offsets[static_cast<ssize_t>(level) - 1];
 
                         true_func->merge(place, places[place_offset + (place_curr >> level)], arena.get());
                         place_curr += 1 << level;

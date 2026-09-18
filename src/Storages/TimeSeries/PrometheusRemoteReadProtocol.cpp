@@ -183,7 +183,7 @@ namespace
         {
             auto & new_time_series = *out_time_series.Add();
 
-            size_t tags_start_offset = tags_offsets[i - 1];
+            size_t tags_start_offset = tags_offsets[static_cast<ssize_t>(i) - 1];
             size_t tags_end_offset = tags_offsets[i];
 
             for (size_t j = tags_start_offset; j != tags_end_offset; ++j)
@@ -193,7 +193,7 @@ namespace
                 new_label.set_value(tags_values.getDataAt(j));
             }
 
-            size_t time_series_start_offset = time_series_offsets[i - 1];
+            size_t time_series_start_offset = time_series_offsets[static_cast<ssize_t>(i) - 1];
             size_t time_series_end_offset = time_series_offsets[i];
 
             for (size_t j = time_series_start_offset; j != time_series_end_offset; ++j)

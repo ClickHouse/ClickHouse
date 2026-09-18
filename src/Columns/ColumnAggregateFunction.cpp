@@ -399,8 +399,8 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
     if (mask.size() < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t from = data.size() - 1;
-    ssize_t index = mask.size() - 1;
+    ssize_t from = static_cast<ssize_t>(data.size()) - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
     data.resize(mask.size());
     while (index >= 0)
     {

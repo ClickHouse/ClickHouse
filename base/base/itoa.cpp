@@ -116,6 +116,7 @@ template <bool B, class T, class F>
 using cond = typename _cond<B, T, F>::type;
 
 template <class T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
     constexpr auto q = sizeof(T);
@@ -842,7 +843,7 @@ char * itoa(UInt64 i, char * p)
     return writeUInt64Text(i, p);
 }
 
-char * itoa(Int64 i, char * p)
+char * NO_SANITIZE_UNSIGNED_OVERFLOW itoa(Int64 i, char * p)
 {
     if (i < 0)
         return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));

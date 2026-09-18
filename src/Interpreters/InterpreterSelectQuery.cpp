@@ -119,6 +119,7 @@
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
@@ -1673,6 +1674,7 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
 }
 
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto constant = evaluateConstantExpressionAsColumn(node, context);

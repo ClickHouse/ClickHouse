@@ -40,13 +40,13 @@ private:
     /// Bytes of strings, placed contiguously. Note that strings are not zero-terminated and could contain zero bytes in the middle.
     Chars chars;
 
-    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
+    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[static_cast<ssize_t>(i) - 1]; }
 
     /// Size of i-th element
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const
     {
-        chassert(offsets[i] >= offsets[i - 1]);
-        return offsets[i] - offsets[i - 1];
+        chassert(offsets[i] >= offsets[static_cast<ssize_t>(i) - 1]);
+        return offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
     }
 
     struct ComparatorBase;

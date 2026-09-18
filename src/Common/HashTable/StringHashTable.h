@@ -5,6 +5,7 @@
 
 #include <bit>
 #include <new>
+#include <base/sanitizer_defs.h>
 
 
 using StringKey8 = UInt64;
@@ -48,20 +49,20 @@ struct StringHashTableHash
 #if defined(__SSE4_2__)
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = _mm_crc32_u64(res, key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = _mm_crc32_u64(res, key.items[0]);
         res = _mm_crc32_u64(res, key.items[1]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = _mm_crc32_u64(res, key.a);
         res = _mm_crc32_u64(res, key.b);
         res = _mm_crc32_u64(res, key.c);
@@ -70,20 +71,20 @@ struct StringHashTableHash
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = __crc32cd(static_cast<UInt32>(res), key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = __crc32cd(static_cast<UInt32>(res), key.items[0]);
         res = __crc32cd(static_cast<UInt32>(res), key.items[1]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = __crc32cd(static_cast<UInt32>(res), key.a);
         res = __crc32cd(static_cast<UInt32>(res), key.b);
         res = __crc32cd(static_cast<UInt32>(res), key.c);
@@ -92,20 +93,20 @@ struct StringHashTableHash
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = s390x_crc32c(res, key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = s390x_crc32c(res, key.items[UInt128::_impl::little(0)]);
         res = s390x_crc32c(res, key.items[UInt128::_impl::little(1)]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = s390x_crc32c(res, key.a);
         res = s390x_crc32c(res, key.b);
         res = s390x_crc32c(res, key.c);
@@ -363,7 +364,8 @@ public:
     /// here, while e.g. `ColumnString::getDataAt` can), because the packing copies 8 bytes at a
     /// time.
     template <typename Resolver, typename KeyHolder, typename HashProvider, typename Func>
-    static auto ALWAYS_INLINE dispatchOnKeyClass(Resolver && resolver, KeyHolder && key_holder, HashProvider && hash_of, Func && func)
+    static auto ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW dispatchOnKeyClass(
+        Resolver && resolver, KeyHolder && key_holder, HashProvider && hash_of, Func && func)
     {
         const auto & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size();
@@ -400,9 +402,9 @@ public:
                 {
                     memcpy(&n[0], p, 8);
                     if constexpr (std::endian::native == std::endian::little)
-                        n[0] &= -1ULL >> s;
+                        n[0] &= ~0ULL >> s;
                     else
-                        n[0] &= -1ULL << s;
+                        n[0] &= ~0ULL << s;
                 }
                 else
                 {

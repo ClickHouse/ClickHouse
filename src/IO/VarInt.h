@@ -148,6 +148,7 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
     return istr;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline Int64 decodeZigZag(UInt64 n)
 {
     return static_cast<Int64>((n >> 1) ^ -(n & 1));

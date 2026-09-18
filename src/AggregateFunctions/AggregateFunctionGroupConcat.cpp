@@ -200,8 +200,8 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
             if (cur_data.offsets[i] > cur_data.data_size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", cur_data.offsets[i], cur_data.data_size);
 
-            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[i - 1])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[i - 1]);
+            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[static_cast<ssize_t>(i) - 1])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[static_cast<ssize_t>(i) - 1]);
         }
 
         if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)

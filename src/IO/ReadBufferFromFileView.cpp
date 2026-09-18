@@ -59,12 +59,13 @@ void ReadBufferFromFileView::setReadUntilEnd()
 
 off_t ReadBufferFromFileView::getPosition()
 {
-    return (file_offset_of_buffer_end - left_bound) - (working_buffer.end() - pos);
+    return static_cast<off_t>(file_offset_of_buffer_end - left_bound) - (working_buffer.end() - pos);
 }
 
 bool ReadBufferFromFileView::nextImpl()
 {
-    size_t current_position = file_offset_of_buffer_end - (working_buffer.end() - pos);
+    size_t current_position
+        = static_cast<size_t>(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos));
     if (current_position == getRightBound())
         return false;
 
@@ -83,7 +84,8 @@ bool ReadBufferFromFileView::nextImpl()
 off_t ReadBufferFromFileView::seek(off_t off, int whence)
 {
     size_t new_pos = 0;
-    size_t current_position = file_offset_of_buffer_end - (working_buffer.end() - pos);
+    size_t current_position
+        = static_cast<size_t>(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos));
 
     if (whence == SEEK_CUR)
         new_pos = current_position + off;

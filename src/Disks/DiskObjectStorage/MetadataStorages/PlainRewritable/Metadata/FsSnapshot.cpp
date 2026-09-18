@@ -216,6 +216,7 @@ void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
     root = moveTree(root, normalized_from, normalized_to);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void FsSnapshot::removeDirectory(const std::string & path)
 {
     UniqueLock lock(mutex);

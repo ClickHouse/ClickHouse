@@ -74,7 +74,7 @@ namespace
                 continue;
 
             sorted_tags.clear();
-            size_t tags_start = (i == 0) ? 0 : tags_offsets[i - 1];
+            size_t tags_start = (i == 0) ? 0 : tags_offsets[static_cast<ssize_t>(i) - 1];
             size_t tags_end = tags_offsets[i];
             sorted_tags.reserve(tags_end - tags_start + 1);
             for (size_t j = tags_start; j < tags_end; ++j)
@@ -124,7 +124,7 @@ namespace
             if (!filter[i])
                 continue;
 
-            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[static_cast<ssize_t>(i) - 1];
             size_t ts_end = ts_offsets[i];
 
             if (ts_start == ts_end)
@@ -154,7 +154,7 @@ namespace
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
         {
-            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[static_cast<ssize_t>(i) - 1];
             size_t ts_end = ts_offsets[i];
             size_t num_samples = ts_end - ts_start;
 
@@ -245,7 +245,7 @@ namespace
         {
             for (size_t i = 0; i != num_rows; ++i)
             {
-                size_t start = (i == 0) ? 0 : tags_offsets[i - 1];
+                size_t start = (i == 0) ? 0 : tags_offsets[static_cast<ssize_t>(i) - 1];
                 if (tags_offsets[i] > start)
                     set_filter(i);
             }

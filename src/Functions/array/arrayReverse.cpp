@@ -111,7 +111,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
     ColumnArray::Offset src_prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        ssize_t src_index = src_array_offsets[i] - 1;
+        ssize_t src_index = static_cast<ssize_t>(src_array_offsets[i]) - 1;
 
         while (src_index >= static_cast<ssize_t>(src_prev_offset))
         {
@@ -226,7 +226,7 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
                 {
                     size_t j_reversed = array_size - j - 1;
 
-                    auto src_pos = src_string_offsets[src_array_prev_offset + j_reversed - 1];
+                    auto src_pos = src_string_offsets[static_cast<ssize_t>(src_array_prev_offset + j_reversed) - 1];
                     size_t string_size = src_string_offsets[src_array_prev_offset + j_reversed] - src_pos;
 
                     memcpySmallAllowReadWriteOverflow15(&res_chars[res_string_prev_offset], &src_data_chars[src_pos], string_size);

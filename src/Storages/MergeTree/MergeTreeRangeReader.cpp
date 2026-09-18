@@ -1339,7 +1339,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
                 --last;
 
             chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
+            result.max_part_offset = result.granule_offsets[static_cast<ssize_t>(last) - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
         }
     }
 }

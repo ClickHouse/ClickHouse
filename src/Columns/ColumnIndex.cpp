@@ -458,6 +458,9 @@ void ColumnIndex::getIndexesByMask(IColumn::Offsets & result_indexes, const Padd
 
 void ColumnIndex::insertIndexesRange(size_t start, size_t length)
 {
+    if (length == 0)
+        return;
+
     size_t max_index = start + length - 1;
     while (max_index > getMaxIndexForCurrentType())
         expandType();

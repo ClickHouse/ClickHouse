@@ -11,6 +11,7 @@
 #include <bit>
 #include <concepts>
 #include <cstring>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -166,11 +167,13 @@ public:
     }
 
     [[nodiscard]]
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     TUInt predict() const noexcept
     {
         return table[hash] + prev_value;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void add(TUInt value) noexcept
     {
         table[hash] = value - prev_value;

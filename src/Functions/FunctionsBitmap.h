@@ -637,7 +637,7 @@ private:
             }
             else
             {
-                from_start = i == 0 ? 0 : from_offsets[i - 1];
+                from_start = i == 0 ? 0 : from_offsets[static_cast<ssize_t>(i) - 1];
                 from_end = from_offsets[i];
             }
             if (is_column_const[2])
@@ -647,7 +647,7 @@ private:
             }
             else
             {
-                to_start = i == 0 ? 0 : to_offsets[i - 1];
+                to_start = i == 0 ? 0 : to_offsets[static_cast<ssize_t>(i) - 1];
                 to_end = to_offsets[i];
             }
 

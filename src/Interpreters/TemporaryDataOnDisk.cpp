@@ -41,6 +41,7 @@
 #include <Disks/IO/WriteBufferFromDistributedCache.h>
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Server/DistributedCache/DistributedCacheServerInstance.h>
+#include <base/sanitizer_defs.h>
 #endif
 
 namespace ProfileEvents
@@ -517,6 +518,7 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 }
 
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
@@ -525,6 +527,7 @@ void TemporaryDataBuffer::freeAlloc()
     stat.uncompressed_size = 0;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)

@@ -380,7 +380,7 @@ private:
 
             if constexpr (!IsConst) // workaround because ?: ternary operator is not constexpr
             {
-                value_pos = item_offsets[i - 1];
+                value_pos = item_offsets[static_cast<ssize_t>(i) - 1];
                 value_size = item_offsets[i] - value_pos;
             }
 
@@ -388,7 +388,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
+                const ArrayOffset string_pos = string_offsets[static_cast<ssize_t>(current_offset + j) - 1];
                 const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
 
                 if constexpr (IsConst)

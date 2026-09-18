@@ -17,6 +17,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 #include <Common/Arena.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -569,6 +570,7 @@ void WindowTransform::advancePartitionEnd()
     chassert(!partition_ended && partition_end == blocksEnd());
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
 {
     RowNumber moved_row_number = original_row_number;
@@ -654,6 +656,7 @@ auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64
 }
 
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
@@ -947,6 +950,7 @@ void WindowTransform::advanceFrameEndUnbounded()
     frame_ended = partition_ended;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void WindowTransform::advanceFrameEndRowsOffset()
 {
     // Walk the specified offset from the current row. The "+1" is needed

@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <base/sanitizer_defs.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -82,6 +83,7 @@ void assertNoDefOverflow(ColumnChunkWriteState & s)
             "really need this for some reason).");
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, const NullMap & null_map)
 {
     /// Increment definition levels for non-nulls.
@@ -167,7 +169,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
         size_t i = 0;
         for (ssize_t row = 0; row < static_cast<ssize_t>(offsets.size()); ++row)
         {
-            size_t n = offsets[row] - offsets[row - 1];
+            size_t n = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
             if (n)
             {
                 s.rep[i] = 0;
@@ -201,7 +203,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
     size_t empty_arrays = 0;
     for (ssize_t row = 0; row < static_cast<ssize_t>(offsets.size()); ++row)
     {
-        size_t n = offsets[row] - offsets[row - 1];
+        size_t n = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
         if (n)
         {
             /// Un-increment the first rep of the array.

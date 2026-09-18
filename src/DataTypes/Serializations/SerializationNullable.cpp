@@ -418,10 +418,13 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
                 "containing '\\r' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
-        if constexpr (escaped)
-            nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
-        else
-            nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
+        if (!nested_column.empty())
+        {
+            if constexpr (escaped)
+                nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
+            else
+                nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
+        }
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
@@ -807,7 +810,8 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
-        nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
+        if (!nested_column.empty())
+            nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",

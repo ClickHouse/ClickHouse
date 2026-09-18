@@ -24,6 +24,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
@@ -1540,6 +1541,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / 32;

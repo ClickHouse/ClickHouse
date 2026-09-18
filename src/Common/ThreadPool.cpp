@@ -323,7 +323,8 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
-    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    remaining_pool_capacity.fetch_add(
+        static_cast<Int64>(value) - static_cast<Int64>(max_threads), std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);

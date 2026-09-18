@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromVector.h>
 
 #include <pcg_random.hpp>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -184,6 +185,7 @@ namespace
             writeChar(')', buf);
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void writeEnumValues(const String & column_name, pcg64 & rng, WriteBuffer & buf, ssize_t max_value)
     {
         /// Don't generate big enums, because it will lead to really big result

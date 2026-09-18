@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <numeric>
 #include <vector>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -207,6 +208,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStep(
         const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count) const
     {
@@ -333,6 +335,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeGeneric(
         const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count) const
     {

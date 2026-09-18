@@ -234,7 +234,7 @@ Block ArrayJoinResultIterator::next()
     size_t next_row = current_row;
     for (; next_row < total_rows; ++next_row)
     {
-        if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
+        if (offsets[next_row] - offsets[static_cast<ssize_t>(current_row) - 1] >= max_block_size)
             break;
     }
     if (next_row == current_row)
@@ -325,7 +325,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
     {
         size_t next_row = current_row;
         for (; next_row < total_rows; ++next_row)
-            if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
+            if (offsets[next_row] - offsets[static_cast<ssize_t>(current_row) - 1] >= max_block_size)
                 break;
         if (next_row == current_row)
             ++next_row;
@@ -440,7 +440,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
                 size_t accumulated = 0;
                 for (size_t row = 0; row != window_rows; ++row)
                 {
-                    for (size_t pos = win_offsets[row - 1]; pos != win_offsets[row]; ++pos)
+                    for (size_t pos = win_offsets[static_cast<ssize_t>(row) - 1]; pos != win_offsets[row]; ++pos)
                         accumulated += (mask[pos] != 0);
                     new_offsets[row] = accumulated;
                 }

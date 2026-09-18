@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
+#include <base/sanitizer_defs.h>
 #include <Common/StringUtils.h>
 
 #include <bit>
@@ -109,7 +110,7 @@ inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
 }
 
 /// Convert 8 ASCII decimal digits (read as a little-endian uint64) into their integer value. credit: @aqrit
-inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
+inline uint32_t NO_SANITIZE_UNSIGNED_OVERFLOW parse_eight_digits_unrolled(uint64_t val) noexcept
 {
     const uint64_t mask = 0x000000FF000000FF;
     const uint64_t mul1 = 0x000F424000000064; // 100 + (1000000ULL << 32)
@@ -507,7 +508,7 @@ inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 
 
 template <typename T, typename ReturnType, bool allow_exponent = true>
-ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
+ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");

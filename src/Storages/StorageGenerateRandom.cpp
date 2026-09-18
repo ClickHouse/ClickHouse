@@ -45,6 +45,7 @@
 #include <Functions/FunctionGenerateRandomStructure.h>
 
 #include <pcg_random.hpp>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -456,6 +457,7 @@ size_t estimateValueSize(
 
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr fillColumnWithRandomData(
     DataTypePtr type,
     UInt64 limit,

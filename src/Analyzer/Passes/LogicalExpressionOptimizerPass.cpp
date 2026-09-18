@@ -20,6 +20,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -885,6 +886,7 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
 /// comparison against existing filters for the same expression.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const QueryTreeNodePtr & expression,

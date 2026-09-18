@@ -586,8 +586,8 @@ void writeChunkCopySection(
     SerializationArray::serializeOffsetsBinaryBulk(cols.offsets_column, offset, limit, settings);
     settings.path.pop_back();
 
-    size_t nested_offset = offset ? cols.offsets[offset - 1] : 0;
-    size_t nested_end = cols.offsets[end - 1];
+    size_t nested_offset = offset ? cols.offsets[static_cast<ssize_t>(offset) - 1] : 0;
+    size_t nested_end = cols.offsets[static_cast<ssize_t>(end) - 1];
     size_t nested_limit = nested_end - nested_offset;
 
     auto & copy_indexes_stream = getCopyPathsIndexesStream(settings);
@@ -873,8 +873,8 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx)
             {
                 auto [chunk_start, chunk_end] = get_chunk_range(chunk_idx);
-                size_t nested_offset = chunk_start ? cols.offsets[chunk_start - 1] : 0;
-                size_t nested_end = cols.offsets[chunk_end - 1];
+                size_t nested_offset = chunk_start ? cols.offsets[static_cast<ssize_t>(chunk_start) - 1] : 0;
+                size_t nested_end = cols.offsets[static_cast<ssize_t>(chunk_end) - 1];
                 writeCopyIndexesForChunk(chunk_bucket_path_names[chunk_idx], cols.keys_column, nested_offset, nested_end, copy_indexes_stream);
             }
             settings.path.pop_back();
@@ -884,8 +884,8 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx)
             {
                 auto [chunk_start, chunk_end] = get_chunk_range(chunk_idx);
-                size_t nested_offset = chunk_start ? cols.offsets[chunk_start - 1] : 0;
-                size_t nested_end = cols.offsets[chunk_end - 1];
+                size_t nested_offset = chunk_start ? cols.offsets[static_cast<ssize_t>(chunk_start) - 1] : 0;
+                size_t nested_end = cols.offsets[static_cast<ssize_t>(chunk_end) - 1];
                 size_t nested_limit = nested_end - nested_offset;
                 if (nested_limit)
                     SerializationString::create()->serializeBinaryBulk(cols.values_column, copy_values_stream, nested_offset, nested_limit);
@@ -1704,8 +1704,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             {
                 /// All chunks of a Compact granule are read fully.
                 size_t chunk_nested_limit
-                    = offsets[offsets_current_chunk_start + chunks_num_rows[chunk_idx] - ssize_t(1)]
-                    - offsets[offsets_current_chunk_start - ssize_t(1)];
+                    = offsets[static_cast<ssize_t>(offsets_current_chunk_start + chunks_num_rows[chunk_idx]) - 1]
+                    - offsets[static_cast<ssize_t>(offsets_current_chunk_start) - 1];
                 /// Read indexes and collect paths into paths_column.
                 deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(chunks_paths[chunk_idx]), chunk_nested_limit);
                 offsets_current_chunk_start += chunks_num_rows[chunk_idx];
@@ -1792,8 +1792,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             {
                 /// Calculate how many index entries should be read for this chunk.
                 size_t chunk_nested_limit
-                    = offsets[offsets_current_chunk_start + chunks_limits[chunk_idx] - ssize_t(1)]
-                    - offsets[offsets_current_chunk_start - ssize_t(1)];
+                    = offsets[static_cast<ssize_t>(offsets_current_chunk_start + chunks_limits[chunk_idx]) - 1]
+                    - offsets[static_cast<ssize_t>(offsets_current_chunk_start) - 1];
                 /// Read indexes and collect paths into paths_column.
                 deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(chunks_paths[chunk_idx]), chunk_nested_limit);
                 offsets_current_chunk_start += chunks_limits[chunk_idx];

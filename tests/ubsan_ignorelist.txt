@@ -31,12 +31,10 @@ src:*/contrib/*
 
 # Third-party code vendored under `base/`: Poco (digests, hash functions, number parsing),
 # the PCG pseudo-random number generators, musl-derived string and math functions.
-src:*/base/poco/*
-src:*/base/pcg-random/*
-src:*/base/glibc-compatibility/*
-src:*/base/darwin-compatibility/*
-src:*/base/widechar_width/*
-
-# Third-party 128-bit and 256-bit integer arithmetic. Every operation on `UInt128`/`UInt256`
-# is a chain of wrapping additions and multiplications of 64-bit limbs.
-src:*/base/base/wide_integer_impl.h
+# The patterns do not spell out the `base/` prefix: the compiler matches the file name as it was
+# written on the command line, which for these is not normalized (`base/base/../pcg-random/...`).
+src:*/poco/*
+src:*/pcg-random/*
+src:*/glibc-compatibility/*
+src:*/darwin-compatibility/*
+src:*/widechar_width/*

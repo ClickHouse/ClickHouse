@@ -15,6 +15,7 @@
 
 #include <limits>
 #include <optional>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -148,6 +149,7 @@ public:
         return result;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments[0].column->onlyNull())

@@ -113,34 +113,40 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator+(const LUTIndex & index, const T v)
     {
         return normalizeLUTIndex(index.toUnderType() + UInt32(v));
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator+(const T v, const LUTIndex & index)
     {
         return normalizeLUTIndex(static_cast<Int64>(v + index.toUnderType()));
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
     {
         return normalizeLUTIndex(static_cast<UInt32>(index.toUnderType() + v.toUnderType()));
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator-(const LUTIndex & index, const T v)
     {
         return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - UInt32(v)));
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator-(const T v, const LUTIndex & index)
     {
         return normalizeLUTIndex(static_cast<Int64>(v - index.toUnderType()));
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator-(const LUTIndex & index, const LUTIndex & v)
     {
         return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - v.toUnderType()));
@@ -307,7 +313,7 @@ private:
     template <typename T>
     static constexpr bool may_be_out_of_lut_range = std::is_same_v<T, Time> || std::is_same_v<T, ExtendedDayNum>;
 
-    static bool isOutOfLUTRange(Time t)
+    static bool NO_SANITIZE_UNSIGNED_OVERFLOW isOutOfLUTRange(Time t)
     {
         /// Single unsigned comparison against compile-time constants, equivalent to
         /// (t < lut_in_range_min || t >= lut_in_range_max). Cast before subtracting to avoid signed overflow.
@@ -347,6 +353,7 @@ private:
     /// 400-year cycles, reuse the in-range logic, and adjust the resulting year by 400 * (number of cycles).
     /// Returns the in-range day number; `cycles` receives the number of cycles added (negative if subtracted).
     static constexpr Int64 days_in_400_years = DATE_LUT_SIZE;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ExtendedDayNum shiftIntoLUTRange(ExtendedDayNum d, Int32 & cycles) const
     {
         Int64 index = static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch;
@@ -568,6 +575,7 @@ public:
 
     /// All functions below are thread-safe; arguments are not checked.
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt32 saturateMinus(UInt32 x, UInt32 y)
     {
         UInt32 res = x - y;
@@ -580,6 +588,7 @@ public:
         return d;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static ExtendedDayNum toDayNum(LUTIndex d)
     {
         return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(d.toUnderType() - daynum_offset_epoch)};
@@ -591,6 +600,7 @@ public:
     }
 
     template <typename DateOrTime>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     auto toDayNum(DateOrTime v) const
     {
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
@@ -744,6 +754,7 @@ public:
     }
 
     template <typename DateOrTime>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     LUTIndex toFirstDayOfQuarterIndex(DateOrTime v) const
     {
         LUTIndex index = toLUTIndex(v);
@@ -800,6 +811,7 @@ public:
             return toDayNum(LUTIndex(toFirstDayNumOfYearIndex(v)));
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     Time toFirstDayOfNextMonth(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))
@@ -813,6 +825,7 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     Time toFirstDayOfPrevMonth(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))

@@ -196,7 +196,7 @@ public:
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets0 = array_column0.getOffsets();
         const IColumn & key_column = array_column0.getData();
-        const size_t keys_vec_offset = offsets0[row_num - 1];
+        const size_t keys_vec_offset = offsets0[static_cast<ssize_t>(row_num) - 1];
         const size_t keys_vec_size = (offsets0[row_num] - keys_vec_offset);
 
         // Columns 1..n contain arrays of numeric values to sum
@@ -206,7 +206,7 @@ public:
             const auto & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
             const IColumn & value_column = array_column.getData();
             const IColumn::Offsets & offsets = array_column.getOffsets();
-            const size_t values_vec_offset = offsets[row_num - 1];
+            const size_t values_vec_offset = offsets[static_cast<ssize_t>(row_num) - 1];
             const size_t values_vec_size = (offsets[row_num] - values_vec_offset);
 
             // Expect key and value arrays to be of same length

@@ -98,6 +98,7 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace ProfileEvents
@@ -461,6 +462,7 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
 }
 
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
 {
     const IColumn & value = *node.getColumn();

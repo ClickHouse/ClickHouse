@@ -1310,8 +1310,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 }
                 chassert(i == len);
 
-                ssize_t range_diff = new_ranges.size() - part_with_ranges.ranges.size();
-                inexact_ranges_select_result->selected_ranges += range_diff;
+                inexact_ranges_select_result->selected_ranges += new_ranges.size();
+                inexact_ranges_select_result->selected_ranges -= part_with_ranges.ranges.size();
                 part_with_ranges.ranges = std::move(new_ranges);
             }
 

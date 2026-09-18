@@ -158,7 +158,7 @@ namespace
                 std::string_view str{arguments[0].column->getDataAt(i)};
                 Int64 token_tail = 0;
                 Int64 token_front = 0;
-                Int64 last_pos = str.length() - 1;
+                Int64 last_pos = static_cast<Int64>(str.length()) - 1;
                 Float64 result = 0;
 
                 /// ignore '.' and ' ' at the end of string

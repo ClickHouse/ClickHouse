@@ -8,6 +8,7 @@
 
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -2366,6 +2367,7 @@ void HashJoin::tryRerangeRightTableData()
 }
 
 template <bool is_signed, typename Key, typename MapsTemplate>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
 {
     using SignedKey = std::make_signed_t<Key>;
@@ -2421,7 +2423,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
     size_t range = static_cast<size_t>(max_key - min_key) + 1;
 
     using Mapped = typename MapsTemplate::MappedType;
-    auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type)
+    auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type) NO_SANITIZE_UNSIGNED_OVERFLOW
     {
         using RangeMap = JoinFixedHashMapWithSizeBits<Key, Mapped, size_bits>;
         auto range_map = std::make_shared<RangeMap>();
@@ -2541,6 +2543,7 @@ constexpr bool canLosslesslyHold()
 /// merge is split out of the loop body into two specialized paths so each loop stays branchless
 /// and vectorizable.
 template <typename BuildKey, typename HashMapT, typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void probeFixedHashMapLoop(
     const HashMapT & ht,
     std::make_unsigned_t<BuildKey> min_key,
@@ -2557,7 +2560,7 @@ void probeFixedHashMapLoop(
     constexpr T t_lo = static_cast<T>(std::numeric_limits<BuildKey>::min());
     constexpr T t_hi = static_cast<T>(std::numeric_limits<BuildKey>::max());
 
-    auto probe_one = [&](size_t i) -> UInt8
+    auto probe_one = [&](size_t i) NO_SANITIZE_UNSIGNED_OVERFLOW -> UInt8
     {
         const T v = src[i];
         if (v < t_lo || v > t_hi)

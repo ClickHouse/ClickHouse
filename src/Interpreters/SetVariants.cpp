@@ -49,7 +49,7 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
         if (type == Type::key_string)
         {
             const auto & offsets = assert_cast<const ColumnString &>(*key_columns.front()).getOffsets();
-            key_bytes = num_rows == 0 ? 0 : offsets[num_rows - 1];
+            key_bytes = num_rows == 0 ? 0 : offsets[static_cast<ssize_t>(num_rows) - 1];
         }
         else
             key_bytes = num_rows * assert_cast<const ColumnFixedString &>(*key_columns.front()).getN();

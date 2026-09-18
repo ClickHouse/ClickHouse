@@ -155,7 +155,7 @@ DECLARE_DEFAULT_CODE(
     ALWAYS_INLINE void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
-        ssize_t row_base = stride_len - 1;
+        ssize_t row_base = static_cast<ssize_t>(stride_len) - 1;
 
         for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
         {

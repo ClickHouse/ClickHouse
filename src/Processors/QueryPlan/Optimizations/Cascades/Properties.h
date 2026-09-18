@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Columns/Collator.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <vector>
 #include <functional>
 #include <boost/functional/hash.hpp>
@@ -47,6 +48,7 @@ struct ExpressionProperties
 
 struct ExpressionPropertiesHash
 {
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     size_t operator()(const ExpressionProperties & props) const
     {
         size_t h = std::hash<size_t>()(props.distribution.node_count);
