@@ -170,13 +170,7 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     /// Push if has data.
     if ((state.output_chunk || !state.output_chunk.getChunkInfos().empty()) && !is_port_full)
-    {
-        /// A virtual row lets downstream defer this merge: do not read inputs until it asks.
-        bool is_announcement = !state.output_chunk.hasRows() && isVirtualRow(state.output_chunk);
         output.push(std::move(state.output_chunk));
-        if (is_announcement)
-            return Status::PortFull;
-    }
 
     if (!is_initialized)
         return prepareInitializeInputs();

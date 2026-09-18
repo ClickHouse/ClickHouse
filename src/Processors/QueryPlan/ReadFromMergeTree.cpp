@@ -1973,6 +1973,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
+    /// A preliminary merge consumes the virtual rows of its members, so the per-block
+    /// announcements would never reach the final merge and the sources could not be parked
+    /// behind them. Merge the parts in one level instead.
+    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
+        need_preliminary_merge = false;
+
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
     const size_t total_query_nodes = is_parallel_reading_from_replicas
@@ -2195,10 +2201,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
-        /// Let the final merge defer a group as it defers a part. Pointless for a single group; the
-        /// partition-wise output feeds aggregation, not a merge.
-        bool forward_virtual_rows = virtual_row_conversion && pipes.size() > 1 && !output_each_partition_through_separate_port;
-
         auto merge_streams = [&](Pipe & pipe)
         {
             pipe.addSimpleTransform([sorting_key_expr](const SharedHeader & header)
@@ -2219,8 +2221,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     /*out_row_sources_buf=*/ nullptr,
                     /*filter_column_name=*/ std::nullopt,
                     /*use_average_block_sizes=*/ false,
-                    /*apply_virtual_row_conversions*/ false,
-                    forward_virtual_rows);
+                    /*apply_virtual_row_conversions*/ false);
 
                 pipe.addTransform(std::move(transform));
             }

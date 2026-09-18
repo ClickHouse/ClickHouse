@@ -4496,6 +4496,7 @@ Use virtual row while reading in order of primary key or its monotonic function 
 When enabled together with `read_in_order_use_virtual_row`, a part reports its current position in the primary key to the merge not only at its start but also while it is being read, after every `read_in_order_virtual_row_block_interval` blocks.
 This lets the merge move on from a part whose rows are being discarded by a `WHERE`, `PREWHERE` or `JOIN` filter, which helps `ORDER BY pk LIMIT n` queries with selective filters over data distributed unevenly across parts.
 Between two reports a part is read only when the merge needs it, so queries where most rows survive the filter run slower in this mode.
+The preliminary merge (`read_in_order_two_level_merge_threshold`) is disabled in this mode.
 )", 0) \
     DECLARE(UInt64, read_in_order_virtual_row_block_interval, 8, R"(
 With `read_in_order_use_virtual_row_per_block`, the number of blocks a part reads before it reports its position to the merge again.

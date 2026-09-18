@@ -26,8 +26,7 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
-        bool apply_virtual_row_conversions_ = true,
-        bool forward_virtual_rows_ = false);
+        bool apply_virtual_row_conversions_ = true);
 
     void addInput();
 
@@ -57,12 +56,6 @@ private:
 
     bool apply_virtual_row_conversions;
 
-    /// Re-emit the inputs' virtual rows downstream (a preliminary merge of a two-level in-order
-    /// merge), so the next merge can defer this one as it defers a single part.
-    const bool forward_virtual_rows;
-    /// Per input, its current virtual row until it is re-emitted.
-    std::vector<Chunk::ChunkInfoCollection> pending_virtual_rows;
-
     /// Chunks currently being merged.
     Inputs current_inputs;
 
@@ -77,11 +70,6 @@ private:
 
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
-
-    /// The virtual row of `source_num` is at the top of the queue: re-emits it (once, leaving the
-    /// queue as it is) or asks the source for its next chunk.
-    Status passVirtualRow(size_t source_num);
-    Status requestSource(size_t source_num);
 
     bool hasFilter() const { return filter_column_position != -1; }
     void insertRow(const SortCursorImpl & current);
