@@ -4,8 +4,6 @@
 -- columns with the same name, where one of these columns belongs to the unaliased subquery or table function.
 -- Unambiguous queries are allowed without the alias.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS item;
 DROP TABLE IF EXISTS sales;
 DROP TABLE IF EXISTS with_number;
@@ -37,6 +35,12 @@ SELECT number FROM with_number, numbers(3); -- { serverError ALIAS_REQUIRED }
 SELECT x FROM (SELECT 1 AS x) AS a, (SELECT 2 AS y), (SELECT 3 AS x); -- { serverError ALIAS_REQUIRED }
 SELECT x FROM (SELECT 1 AS x) AS a JOIN (SELECT 2 AS y) ON true JOIN (SELECT 3 AS x) ON true; -- { serverError ALIAS_REQUIRED }
 SELECT x FROM (SELECT 1 AS x) JOIN (SELECT 2 AS x) AS b ON true; -- { serverError ALIAS_REQUIRED }
+
+SELECT '-- With prefer_column_name_to_alias an alias of the same name takes over the ambiguous identifier, so the subquery alias is not needed';
+SELECT item.brand + 1 AS brand, count() FROM item, (SELECT s_brand AS brand FROM sales), with_number GROUP BY brand ORDER BY brand SETTINGS prefer_column_name_to_alias = 1;
+SELECT item.brand + 1 AS brand, count() FROM item, (SELECT s_brand AS brand FROM sales) GROUP BY brand ORDER BY brand SETTINGS prefer_column_name_to_alias = 1;
+SELECT item.brand + 1 AS other, count() FROM item, (SELECT s_brand AS brand FROM sales), with_number GROUP BY brand SETTINGS prefer_column_name_to_alias = 1; -- { serverError ALIAS_REQUIRED }
+SELECT brand AS brand FROM item, (SELECT s_brand AS brand FROM sales), with_number SETTINGS prefer_column_name_to_alias = 1; -- { serverError ALIAS_REQUIRED }
 
 SELECT '-- Two structurally identical table expressions resolve the identifier by the alias, so it is ambiguous as well';
 SELECT number FROM numbers(2) AS x, numbers(2) WHERE x.number = 0; -- { serverError ALIAS_REQUIRED }
@@ -112,9 +116,6 @@ SELECT y FROM (SELECT [1] AS arr, 2 AS y) ARRAY JOIN arr INNER JOIN (SELECT 0 AS
 SELECT '-- The restriction can be disabled entirely';
 SELECT brand FROM item, (SELECT s_brand AS brand FROM sales) ORDER BY brand SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM item, (SELECT toInt32(100) AS brand) ORDER BY item_id SETTINGS joined_subquery_requires_alias = 0 FORMAT TSVWithNames;
-
-SELECT '-- The old analyzer keeps the strict behavior';
-SELECT item_id FROM item, (SELECT s_brand AS xbrand FROM sales) WHERE brand = xbrand SETTINGS enable_analyzer = 0; -- { serverError ALIAS_REQUIRED }
 
 DROP TABLE item;
 DROP TABLE sales;

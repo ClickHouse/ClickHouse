@@ -7,6 +7,11 @@
 6
 1
 -- Ambiguous identifier from an unaliased subquery or table function: the alias is required
+-- With prefer_column_name_to_alias an alias of the same name takes over the ambiguous identifier, so the subquery alias is not needed
+101	4
+201	4
+101	2
+201	2
 -- Two structurally identical table expressions resolve the identifier by the alias, so it is ambiguous as well
 0
 0
@@ -68,4 +73,3 @@ a	b	c
 item_id	brand	brand
 1	100	100
 2	200	100
--- The old analyzer keeps the strict behavior

@@ -3097,9 +3097,7 @@ Additionally, exact equality predicates of the form `nullIf(key, sentinel) = con
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Require an alias for a subquery or table function used in a JOIN when the alias is needed for name qualification.
 
-With the analyzer (`enable_analyzer = 1`, the default) the alias is required only when a name is actually ambiguous: an identifier resolves to different columns of several joined table expressions, or `*` produces several columns with the same name, and one of these columns belongs to a subquery or table function without an alias. Such a column cannot be qualified, so the query fails with `ALIAS_REQUIRED` instead of being resolved silently or failing with `AMBIGUOUS_IDENTIFIER`. Unambiguous queries do not need the alias.
-
-Without the analyzer, every subquery and table function in a multi-table JOIN must have an alias.
+The alias is required only when a name is actually ambiguous: an identifier resolves to different columns of several joined table expressions, or `*` produces several columns with the same name, and one of these columns belongs to a subquery or table function without an alias. Such a column cannot be qualified, so the query fails with `ALIAS_REQUIRED` instead of being resolved silently or failing with `AMBIGUOUS_IDENTIFIER`. Unambiguous queries do not need the alias.
 
 Set to `0` to disable the restriction.
 )", 0) \
