@@ -57,7 +57,7 @@ namespace DB
  *
  *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *            __root__             - implicit anonymous root WorkloadNode (the scheduler's single child)
+ *           (implicit)            - anonymous root WorkloadNode with an empty name (the scheduler's single child)
  *               |
  *              all                - WorkloadNode (has no explicit parent, so a child of the implicit root)
  *               |
@@ -245,7 +245,10 @@ private:
             // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
             // settings mean a single-root hierarchy behaves exactly as before.
             auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
-            implicit->basename = IMPLICIT_ROOT_WORKLOAD_NAME;
+            // Anonymous: an empty basename cannot collide with any user workload (workload names are
+            // never empty), so no name has to be reserved and no legacy reconciliation is needed. It
+            // surfaces in system.scheduler node paths as a leading empty segment (e.g. "//all").
+            implicit->basename = {};
             implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
             auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
             executeInSchedulerThread([&, this]
@@ -267,7 +270,7 @@ private:
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        /// Implicit anonymous root workload (basename `IMPLICIT_ROOT_WORKLOAD_NAME`): the scheduler's single child. Every workload without an
+        /// Implicit anonymous root workload (empty basename): the scheduler's single child. Every workload without an
         /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
         /// workloads form one hierarchy under it — scheduled with fairness/priorities by the normal
         /// policy machinery instead of being multiple scheduler children. Default (unlimited)

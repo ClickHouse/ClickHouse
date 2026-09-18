@@ -21,9 +21,6 @@ create or replace workload 03588_a1 settings weight = 2; -- {serverError BAD_ARG
 -- ... or demoting a root to a child (adding a PARENT).
 create or replace workload 03588_a in 03588_b; -- {serverError BAD_ARGUMENTS}
 
--- The name reserved for the implicit root workload cannot be used for a user workload.
-create workload `__root__`; -- {serverError BAD_ARGUMENTS}
-
 -- A third parentless workload is allowed too.
 create workload 03588_c;
 select count() from system.workloads where startsWith(name, '03588_') and empty(parent);

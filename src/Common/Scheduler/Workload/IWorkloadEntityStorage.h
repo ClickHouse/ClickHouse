@@ -24,11 +24,6 @@ enum class WorkloadEntityType : uint8_t
     MAX
 };
 
-/// Reserved name of the implicit root workload created internally for each resource (the single
-/// child of the resource scheduler, parent of every workload with no explicit PARENT). Users may
-/// not create a workload with this name.
-inline constexpr const char * IMPLICIT_ROOT_WORKLOAD_NAME = "__root__";
-
 /// Interface for a storage of workload entities (WORKLOAD and RESOURCE).
 class IWorkloadEntityStorage
 {
