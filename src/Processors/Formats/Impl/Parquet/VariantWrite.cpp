@@ -1453,6 +1453,27 @@ bool tryReadColumnIntegralValue(const IColumn & column, size_t row, const IDataT
 /// Type-hint stage of the columnar scalar encoder: reads the value from `(column, row)` and, when the
 /// type hint pins a concrete temporal/integral/float `VARIANT` primitive, encodes it directly through
 /// `sink`. Returns false when no hint applies, leaving the fallback dispatch to encode the value.
+/// Writes an integer that does not fit the `INT64` primitive as a `DECIMAL16` with scale 0.
+/// `DECIMAL16` holds a 16-byte two's-complement value with up to 38 decimal digits, so it covers
+/// the whole `UInt64` range and wide integers up to 10^38 - 1 in magnitude.
+template <typename Sink>
+void writeVariantDecimal16Integer(Int128 value, Sink & sink)
+{
+    sink.writePrimitiveHeader(VariantPrimitiveType::Decimal16);
+    sink.writePOD(static_cast<UInt8>(0));
+    sink.writePOD(value);
+}
+
+template <typename T, typename Sink>
+void writeVariantDecimalFromColumn(VariantPrimitiveType type, const IColumn & column, size_t row, UInt32 scale, Sink & sink)
+{
+    /// Writes a decimal primitive header, the scale (taken from the TYPE), then the raw value.
+    const auto & decimal_column = assert_cast<const ColumnDecimal<T> &>(column);
+    sink.writePrimitiveHeader(type);
+    sink.writePOD(static_cast<UInt8>(scale));
+    sink.writePOD(decimal_column.getData()[row]);
+}
+
 template <typename Sink>
 bool tryEncodeVariantScalarFromColumnUsingTypeHint(
     const IColumn & column, size_t row, const IDataType & value_type, const DataTypePtr & type_hint, Sink & sink)
@@ -1539,11 +1560,21 @@ bool tryEncodeVariantScalarFromColumnUsingTypeHint(
             if (value_type.getTypeId() != TypeIndex::Time64)
                 return false;
 
-            const auto & time_type = assert_cast<const DataTypeTime64 &>(*normalized_type);
+            /// `VARIANT` has a single time-of-day primitive, `TIME(MICROS)`, so a value with more than six
+            /// fractional digits cannot be expressed by it without truncation. Such values are written as a
+            /// `DECIMAL8` with the value's own scale (seconds with a fractional part), which is lossless: it
+            /// reads back as `Decimal(18, scale)`, and converts to `Time64(scale)` when a type hint asks for it.
+            const UInt32 scale = getDecimalScale(value_type);
+            if (scale > 6)
+            {
+                writeVariantDecimalFromColumn<Time64>(VariantPrimitiveType::Decimal8, column, row, scale, sink);
+                return true;
+            }
+
             Time64 raw = assert_cast<const ColumnDecimal<Time64> &>(column).getData()[row];
 
             Int64 micros = 0;
-            if (!tryRescaleVariantTemporalValue(raw.value, time_type.getScale(), 6, micros))
+            if (!tryRescaleVariantTemporalValue(raw.value, scale, 6, micros))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode `Time64` value as `Parquet` `VARIANT` time");
 
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::TimeNtzMicros, micros, sink);
@@ -1619,27 +1650,6 @@ bool tryEncodeVariantScalarFromColumnUsingTypeHint(
         default:
             return false;
     }
-}
-
-/// Writes an integer that does not fit the `INT64` primitive as a `DECIMAL16` with scale 0.
-/// `DECIMAL16` holds a 16-byte two's-complement value with up to 38 decimal digits, so it covers
-/// the whole `UInt64` range and wide integers up to 10^38 - 1 in magnitude.
-template <typename Sink>
-void writeVariantDecimal16Integer(Int128 value, Sink & sink)
-{
-    sink.writePrimitiveHeader(VariantPrimitiveType::Decimal16);
-    sink.writePOD(static_cast<UInt8>(0));
-    sink.writePOD(value);
-}
-
-template <typename T, typename Sink>
-void writeVariantDecimalFromColumn(VariantPrimitiveType type, const IColumn & column, size_t row, UInt32 scale, Sink & sink)
-{
-    /// Writes a decimal primitive header, the scale (taken from the TYPE), then the raw value.
-    const auto & decimal_column = assert_cast<const ColumnDecimal<T> &>(column);
-    sink.writePrimitiveHeader(type);
-    sink.writePOD(static_cast<UInt8>(scale));
-    sink.writePOD(decimal_column.getData()[row]);
 }
 
 /// Encodes one residual scalar value read directly from `(column, row)`: first the type-hint stage

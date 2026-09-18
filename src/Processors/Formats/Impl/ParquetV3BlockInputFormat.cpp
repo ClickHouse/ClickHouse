@@ -708,6 +708,8 @@ ClickHouse writes:
 
 When writing Parquet `VARIANT`, ClickHouse uses the Parquet `VARIANT` wrapper with `metadata` and `value` fields, and adds a `typed_value` field when it can shred stable structure out of the payload. This keeps the file compatible with readers that understand Parquet `VARIANT` while still preserving mixed or ambiguous values in the residual `value` field.
 
+Values kept in the residual `value` field use the closest Parquet `VARIANT` primitive. `VARIANT` has a single time-of-day primitive with microsecond precision, so a `Time64` value with a scale above 6 is stored as a `DECIMAL` (seconds with the value's own scale) instead of being truncated; it reads back as `Decimal(18, scale)`, or as `Time64` when the requested type declares it.
+
 ### `max_dynamic_paths` interaction {#parquet-variant-max-dynamic-paths}
 
 If `output_format_parquet_json_as_variant = 1`, the `JSON(max_dynamic_paths=N, ...)` type parameter affects how much of the `JSON` structure is shredded into `typed_value`:
