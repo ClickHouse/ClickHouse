@@ -13,6 +13,9 @@ void registerAggregateFunctionTimeseriesCompensatedSum(AggregateFunctionFactory 
 void registerAggregateFunctionTimeseriesCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesMin(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesFirstToGrid(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesMadToGrid(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesTsOfToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesPresentToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesQuantileToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
@@ -31,6 +34,9 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     registerAggregateFunctionTimeseriesCount(factory);
     registerAggregateFunctionTimeseriesMax(factory);
     registerAggregateFunctionTimeseriesMin(factory);
+    registerAggregateFunctionTimeseriesFirstToGrid(factory);
+    registerAggregateFunctionTimeseriesMadToGrid(factory);
+    registerAggregateFunctionTimeseriesTsOfToGrid(factory);
     registerAggregateFunctionTimeseriesPresentToGrid(factory);
     registerAggregateFunctionTimeseriesQuantileToGrid(factory);
     registerAggregateFunctionLast2Samples(factory);

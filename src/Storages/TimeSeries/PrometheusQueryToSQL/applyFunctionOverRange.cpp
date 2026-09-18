@@ -119,6 +119,30 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"first_over_time",
+             {
+                 "timeSeriesFirstToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"mad_over_time",
+             {
+                 "timeSeriesMadToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTsOfFirstToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTsOfLastToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
             {"present_over_time",
              {
                  "timeSeriesPresentToGrid",
@@ -164,10 +188,6 @@ namespace
             /// TODO:
             /// stddev_over_time"
             /// stdvar_over_time
-            /// mad_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
         };
 
         auto it = impl_map.find(function_name);
