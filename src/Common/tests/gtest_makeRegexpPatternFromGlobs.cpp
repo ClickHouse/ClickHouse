@@ -194,4 +194,21 @@ TEST(Common, rangeGlobIsBounded)
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{1..3}"), "f(1|2|3)");
     EXPECT_THROW(makeRegexpPatternFromGlobs("f{1..1000000}"), DB::Exception);
     EXPECT_THROW(makeRegexpPatternFromGlobs("f{1000000..1}"), DB::Exception);
+
+    /// Bounding one range does not bound their sum: each of these is within the per-range limit,
+    /// so a short pattern can still ask for a huge regexp.
+    auto repeat = [](const std::string & what, size_t times)
+    {
+        std::string result;
+        for (size_t i = 0; i < times; ++i)
+            result += what;
+        return result;
+    };
+
+    EXPECT_GT(makeRegexpPatternFromGlobs("{1..100000}").size(), 500000u);
+    EXPECT_THROW(makeRegexpPatternFromGlobs(repeat("{1..100000}", 128)), DB::Exception);
+
+    /// A single-value range at the top of `size_t`: the increment must not wrap.
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{18446744073709551615..18446744073709551615}"),
+              "(18446744073709551615)");
 }

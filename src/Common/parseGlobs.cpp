@@ -42,6 +42,12 @@ constexpr size_t MAX_SELECTOR_GLOBS = 1000;
 constexpr size_t MAX_EXPANDED_PATHS = 100000;
 constexpr size_t MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
 constexpr size_t MAX_RANGE_GLOB_VALUES = 100000;
+
+/// A range alternation is the only part of the regexp larger than the pattern it came from, and a
+/// pattern may hold any number of ranges, so the total is bounded too: `MAX_RANGE_GLOB_VALUES`
+/// bounds one range, not how many there are. RE2's own default memory budget is 8 MiB, so a larger
+/// regexp is not one it could compile.
+constexpr size_t MAX_REGEXP_BYTES = 8 * 1024 * 1024;
 }
 
 bool containsRangeGlob(const std::string & input)
@@ -140,15 +146,22 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                 oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
             oss_for_replacing << range_begin;
 
-            for (size_t i = range_begin + 1; i <= range_end; ++i)
+            /// Counted rather than compared against `range_end`, so that the increment cannot wrap
+            /// when `range_begin` is the largest representable value.
+            for (size_t n = 1; n <= range_end - range_begin; ++n)
             {
                 oss_for_replacing << '|';
                 if (leading_zeros)
                     oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
-                oss_for_replacing << i;
+                oss_for_replacing << range_begin + n;
             }
 
             oss_for_replacing << ")";
+
+            if (static_cast<size_t>(oss_for_replacing.tellp()) > MAX_REGEXP_BYTES)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The '{{}}' globs in the path expand to more than {} bytes of regexp.",
+                                MAX_REGEXP_BYTES);
             current_index = input.data() - escaped_with_globs.data();
         }
         /// We matched enum, and it comes earlier than range.
