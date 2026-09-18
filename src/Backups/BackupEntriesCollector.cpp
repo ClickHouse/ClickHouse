@@ -1040,22 +1040,6 @@ bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const Str
     return false;
 }
 
-bool BackupEntriesCollector::DatabaseInfo::isTableNamedByExceptDataClause(const String & table_name) const
-{
-    /// A single-table element which named this table and excluded its data.
-    auto it = tables.find(table_name);
-    if (it != tables.end())
-    {
-        if (std::ranges::any_of(it->second.elements, [](const auto & element) { return element.except_data; }))
-            return true;
-    }
-
-    /// A DATABASE or ALL element which named this table in its own EXCEPT DATA FROM TABLE/TABLES clause.
-    return std::ranges::any_of(
-        all_tables_elements,
-        [&](const AllTablesElement & element) { return element.except_data_table_names.contains(table_name); });
-}
-
 bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const
 {
     auto it = database_infos.find(table_name.database);

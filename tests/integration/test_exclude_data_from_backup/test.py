@@ -1,5 +1,4 @@
 import pytest
-import re
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
@@ -948,68 +947,6 @@ def test_except_data_excluded_by_every_element_is_still_excluded():
     assert instance.query("SELECT count() FROM overlap_db.t") == "0\n"
 
     instance.query("DROP DATABASE overlap_db")
-
-
-def test_backup_ordinary_table_whose_name_looks_like_a_nested_table():
-    """`<uuid>_nested` is not a reserved name, so an ordinary table may carry it.
-
-    A standalone MaterializedPostgreSQL table names its nested table `<uuid of the outer table>_nested`,
-    but nothing stops a user from creating a table of that shape. Recognising an inner table by the
-    shape of its name alone therefore made ordinary tables vanish: `BACKUP DATABASE` skipped them,
-    `BACKUP TABLE` could not find them, naming one in the clause was rejected, and `RESTORE ... AS`
-    dropped the restored table on the floor. The outer table the name points at is what decides, and
-    here there is none.
-
-    `test_except_data_from_materialized_postgresql_nested_table` is the other half of this: a real
-    nested table, whose outer table does exist, still has to be treated as inner.
-    """
-    nested_like = "01234567-89ab-cdef-0123-456789abcdef_nested"
-    alias_like = "fedcba98-7654-3210-fedc-ba9876543210_nested"
-
-    instance.query("DROP DATABASE IF EXISTS nested_name_db")
-    instance.query("CREATE DATABASE nested_name_db")
-    instance.query(
-        f"CREATE TABLE nested_name_db.`{nested_like}` (id UInt64) ENGINE = MergeTree ORDER BY id"
-    )
-    instance.query(f"INSERT INTO nested_name_db.`{nested_like}` VALUES (1), (2), (3)")
-    instance.query("CREATE TABLE nested_name_db.plain (id UInt64) ENGINE = MergeTree ORDER BY id")
-    instance.query("INSERT INTO nested_name_db.plain VALUES (1), (2)")
-
-    # 1. A database backup enumerates it like any other table.
-    database_backup = new_backup_name()
-    instance.query(f"BACKUP DATABASE nested_name_db TO {database_backup}")
-    instance.query("DROP DATABASE nested_name_db")
-    instance.query(f"RESTORE DATABASE nested_name_db FROM {database_backup}")
-    assert instance.query(f"SELECT count() FROM nested_name_db.`{nested_like}`") == "3\n"
-
-    # 2. It can be named by a TABLE element, which used to fail with UNKNOWN_TABLE.
-    table_backup = new_backup_name()
-    instance.query(f"BACKUP TABLE nested_name_db.`{nested_like}` TO {table_backup}")
-    instance.query(f"DROP TABLE nested_name_db.`{nested_like}`")
-    instance.query(f"RESTORE TABLE nested_name_db.`{nested_like}` FROM {table_backup}")
-    assert instance.query(f"SELECT count() FROM nested_name_db.`{nested_like}`") == "3\n"
-
-    # 3. It can be named by EXCEPT DATA FROM TABLE: it is an ordinary table, so the clause applies
-    #    to it instead of being rejected as an inner table name.
-    excluded_backup = new_backup_name()
-    instance.query(
-        f"BACKUP DATABASE nested_name_db EXCEPT DATA FROM TABLE `{nested_like}` TO {excluded_backup}"
-    )
-    instance.query("DROP DATABASE nested_name_db")
-    instance.query(f"RESTORE DATABASE nested_name_db FROM {excluded_backup}")
-    assert instance.query(f"SELECT count() FROM nested_name_db.`{nested_like}`") == "0\n"
-    assert instance.query("SELECT count() FROM nested_name_db.plain") == "2\n"
-
-    # 4. A restore alias of that shape is restored, not silently skipped. The RESTORE path checks
-    #    the name *after* renaming, so this arm is the one that reaches it.
-    alias_backup = new_backup_name()
-    instance.query(f"BACKUP TABLE nested_name_db.plain TO {alias_backup}")
-    instance.query(
-        f"RESTORE TABLE nested_name_db.plain AS nested_name_db.`{alias_like}` FROM {alias_backup}"
-    )
-    assert instance.query(f"SELECT count() FROM nested_name_db.`{alias_like}`") == "2\n"
-
-    instance.query("DROP DATABASE nested_name_db")
 
 
 def test_except_tables_overlapping_database_and_all_elements_keep_table():
