@@ -20,7 +20,7 @@ UInt64 DistinctSetMemoryTracker::update(UInt64 bytes)
     if (!total_bytes)
         return 0;
 
-    UInt64 total;
+    UInt64 total = 0;
     if (bytes >= accounted_bytes)
     {
         const UInt64 delta = bytes - accounted_bytes;
