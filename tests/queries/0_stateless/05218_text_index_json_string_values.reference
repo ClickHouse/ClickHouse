@@ -1,0 +1,37 @@
+-- typed String: Exact
+idx	0
+idx	2
+scan	0
+scan	2
+-- typed Nullable(String): Exact on a positive filter
+hello	0
+all	4
+any	0
+any	2
+-- explicit .:String is path-scoped: error on msg, not on status or Array
+1
+-- numbers are not indexed; only a String leaf matches
+score 12	4
+score 42	0
+-- Array(String) is not recursed into
+0
+-- AND of two Exact predicates
+0
+-- the index prunes granules
+Condition: true
+Granules: 5/5
+Name: idx
+Condition: (mode: All; tokens: ["error"])
+Granules: 2/5
+-- Exact direct read replaces the predicate
+1
+-- bare Dynamic is Unknown: correct rows, but the index is not used
+idx	1
+scan	1
+0
+-- NOT over Nullable Exact is Unknown
+idx	4
+scan	4
+0
+-- rejected index definitions
+-- the tokenizer does not tokenize strings

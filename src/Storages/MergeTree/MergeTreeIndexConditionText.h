@@ -158,6 +158,9 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+        /// When true, a surrounding NOT (or other negative polarity) must drop this atom:
+        /// Nullable / `.:String` Exact is only valid in a positive filter.
+        bool requires_positive_filter = false;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -197,6 +200,18 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out) const;
+
+    /// Everything a `jsonStringValues` index supports: hasToken / hasAnyTokens / hasAllTokens
+    /// on typed String, typed Nullable(String), or explicit `.:String`.
+    bool traverseJSONStringValuesNode(
+        const String & function_name,
+        const RPNBuilderTreeNode & index_column_node,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out) const;
+
+    /// Drop Exact queries that `requires_positive_filter` when they sit under NOT.
+    void dropPositiveFilterQueriesUnderNot();
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
