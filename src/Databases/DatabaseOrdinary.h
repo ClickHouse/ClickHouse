@@ -117,7 +117,6 @@ protected:
     DiskPtr metadata_disk_ptr;
 
 private:
-    /// Whether a `StorageTableProxy` may stand in for this table until it is first accessed.
     bool canUseLazyStandIn(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     void loadTableLazy(

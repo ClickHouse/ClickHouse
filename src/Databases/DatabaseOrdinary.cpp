@@ -443,10 +443,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
                 "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
                 + " from query " + query.formatForErrorMessage());
 
-            /// A named collection is a server-level object of its own that a user may drop and an admin may
-            /// remove from the configuration, so a stored definition naming a missing one is a dangling
-            /// reference rather than corrupt metadata: it must fail that one table, not the whole load.
-            /// A push source is excluded: a stand-in answers neither its rename veto nor its streaming classification.
+            /// A user may drop a named collection, so a definition naming a missing one is a dangling reference, not corrupt metadata.
             if (e.code() == ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST
                 && mode == LoadingStrictnessLevel::FORCE_ATTACH
                 && !(query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name))
