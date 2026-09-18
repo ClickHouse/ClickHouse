@@ -377,8 +377,8 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-    /// Simulates a worker whose local parts snapshot became empty (parts merged away or dropped)
-    /// between the coordinator planning a bucketed distributed read and this worker deserializing it.
+    /// Simulates a replica whose local parts snapshot became empty (parts merged away or dropped)
+    /// between the coordinator planning a distributed read and this replica deserializing it.
     extern const char distributed_plan_read_empty_snapshot_on_deserialize[];
 }
 
@@ -4971,12 +4971,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
         else
         {
-            /// FINAL resolves each lane's marks to local parts lazily in `spreadMarkRangesAmongStreamsFinal`,
-            /// but the empty-`parts_with_ranges` short-circuits (NullSource below, and the `total_marks == 0`
-            /// early return inside that function) run first. So validate divergence eagerly here, mirroring
-            /// the non-FINAL branch: a coordinator-selected part that is missing locally is a retryable error,
-            /// not a silent zero-row read. A genuinely empty bucket (no lane marks) still falls through to the
-            /// NullSource path.
+            /// FINAL resolves each lane's marks lazily in `spreadMarkRangesAmongStreamsFinal`, which runs
+            /// after the empty-`parts_with_ranges` short-circuits, so validate divergence eagerly here.
             std::unordered_set<String> local_part_names;
             local_part_names.reserve(result.parts_with_ranges.size());
             for (const auto & part : result.parts_with_ranges)
@@ -6882,8 +6878,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     RangesInDataPartsPtr parts_for_read = snapshot_data.parts;
-    /// Test hook: pretend this replica's snapshot is empty (parts merged away or dropped since the
-    /// coordinator planned the bucketed read) to exercise the empty-distributed-read path deterministically.
+    /// Test hook: pretend this replica's snapshot lost its parts after the coordinator planned the read.
     fiu_do_on(FailPoints::distributed_plan_read_empty_snapshot_on_deserialize,
     {
         parts_for_read = std::make_shared<const RangesInDataParts>();
@@ -6906,12 +6901,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
         /*extension*/ nullptr,
-        /// Any executed distributed-read fragment must get a step even if this replica's snapshot is empty
-        /// (parts merged away or dropped since the coordinator planned the read); a null step returned here
-        /// crashes the generic plan deserializer. Not gated on the bucket count: a plain (non-bucketed) read
-        /// still ships in a fragment when the distributed axis is an exchange above it (e.g. FINAL under a
-        /// distributed aggregation). The drain path never reaches here (see the ctx.skipping short-circuit
-        /// above). The empty read is resolved in initializePipeline.
+        /// Unconditional: a read shipped in a distributed fragment always needs a step even on an empty
+        /// snapshot, and it is not always bucketed (the distributed axis can be an exchange above it).
         /*build_empty_step_for_distributed_read*/ true);
 
     if (distributed_read_bucket_count)

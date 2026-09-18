@@ -61,8 +61,8 @@ public:
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false,
         std::shared_ptr<ParallelReadingExtension> extension_ = nullptr,
-        /// A bucketed distributed read must always get a step to attach the bucket count to, even when
-        /// this replica's local snapshot is empty; the empty read is resolved in initializePipeline.
+        /// A deserialized distributed read must always get a step, bucketed or not, even when this
+        /// replica's local snapshot is empty; the empty read is resolved in initializePipeline.
         bool build_empty_step_for_distributed_read = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
