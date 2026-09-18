@@ -147,7 +147,7 @@ public:
     /// there is no protocol to broadcast a new path to followers.
     void checkTableCanBeRenamedByDatabaseRename() const override;
 
-    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     /// Reject metadata-mutating ALTERs under `leader_election` before the generic
     /// `MergeTreeData` checks (which can fail with confusing errors like
