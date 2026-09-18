@@ -844,9 +844,8 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
 
 
 def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):
-    # `SYSTEM WAIT VIEW` must account for a `SYSTEM REFRESH VIEW` that another replica has accepted
-    # but not started yet. The request is queued behind a refresh that is already running, so the
-    # window in which it exists without a running attempt is as long as that refresh.
+    # `SYSTEM WAIT VIEW` must cover a `SYSTEM REFRESH VIEW` another replica accepted but hasn't started.
+    # The request is queued behind a running refresh, so it exists without an attempt for that long.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
@@ -879,9 +878,8 @@ def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables)
 
 
 def test_wait_view_covers_request_before_any_attempt_starts(fn3_setup_tables):
-    # The same, in the window before any attempt exists at all: the refresh is requested on `node`
-    # and `node`'s coordination write is parked, so there is no running attempt anywhere. A wait on
-    # node2 must still cover the requested refresh.
+    # The same before any attempt exists: the refresh is requested on `node` and its coordination
+    # write is parked, so nothing is running anywhere. A wait on node2 must still cover the request.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
@@ -932,10 +930,8 @@ def test_wait_view_covers_request_before_any_attempt_starts(fn3_setup_tables):
 
 
 def test_drop_view_with_unconsumed_refresh_request(fn3_setup_tables):
-    # A refresh requested while the view is stopped cluster-wide is never consumed, so the request
-    # this replica published outlives every refresh. Dropping the view must still clean Keeper up:
-    # the coordination znode is removed child by child, so a request znode left under it would make
-    # that removal fail, and the view's whole coordination state would leak.
+    # A request made while the view is stopped cluster-wide is never consumed. Dropping the view must
+    # still remove the coordination znode, which would fail with a request znode left under it.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
@@ -993,9 +989,8 @@ def test_drop_view_with_unconsumed_refresh_request(fn3_setup_tables):
 def test_wait_view_covers_request_on_another_replica_while_stopped_locally(
     fn3_setup_tables,
 ):
-    # A replica stopped with `SYSTEM STOP VIEW` or `SYSTEM PAUSE VIEW` is Disabled, which means that
-    # no refresh will start *there*. A refresh another replica has been asked to do is run by that
-    # replica, so `SYSTEM WAIT VIEW` on the stopped one must still wait for it.
+    # A replica stopped with `SYSTEM STOP VIEW` or `SYSTEM PAUSE VIEW` is Disabled: no refresh starts
+    # *there*. Another replica's request is run by that replica, so `SYSTEM WAIT VIEW` here must wait.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
@@ -1056,9 +1051,8 @@ def test_wait_view_covers_request_on_another_replica_while_stopped_locally(
 
 
 def test_wait_view_returns_while_view_stopped_cluster_wide(fn3_setup_tables):
-    # The other side of the test above: when the view is stopped cluster-wide, the request is
-    # deferred on every replica, so there is nothing to wait for until `SYSTEM START REPLICATED
-    # VIEW`. `SYSTEM WAIT VIEW` must return instead of blocking for as long as the view is stopped.
+    # The other side: stopped cluster-wide, the request is deferred on every replica, so there is
+    # nothing to wait for until `SYSTEM START REPLICATED VIEW`. `SYSTEM WAIT VIEW` must return.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
@@ -1101,19 +1095,14 @@ def test_wait_view_returns_while_view_stopped_cluster_wide(fn3_setup_tables):
 
 
 def test_detach_view_retracts_unconsumed_refresh_request(started_cluster):
-    # A request znode must not outlive the table on the replica that published it: nothing would run
-    # that refresh anymore, and DETACH keeps the Keeper session alive, so the ephemeral znode would
-    # stay until the server goes away - blocking `SYSTEM WAIT VIEW` on the other replicas. The
-    # publishing is parked so that the shutdown overtakes it, which is the window in which the
-    # shutting-down replica's last scheduling pass cannot do the retracting.
-    #
-    # A Replicated database refuses `DETACH TABLE` and replicates `DETACH TABLE PERMANENTLY` to
-    # every replica, so `DETACH DATABASE` - which is not replicated - is what detaches on one
-    # replica only. Hence a database of its own.
+    # DETACH keeps the Keeper session alive, so a request znode would outlive the table and block other
+    # replicas' `SYSTEM WAIT VIEW`. Publishing is parked so that the shutdown's last pass can't retract it.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
     try:
+        # A Replicated database refuses `DETACH TABLE` and replicates `DETACH TABLE PERMANENTLY`, so
+        # `DETACH DATABASE`, which is not replicated, is what detaches on one replica only.
         node.query(
             "CREATE DATABASE detach_db ON CLUSTER default"
             " ENGINE = Replicated('/clickhouse/detach_db/', '{shard}', '{replica}')"

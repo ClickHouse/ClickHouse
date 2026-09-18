@@ -873,10 +873,8 @@ def test_refreshable_mv_unavailable_view_refuses_replicated_start(started_cluste
 
 
 def test_giving_up_coordination_retracts_refresh_request(started_cluster):
-    # A request znode published by `SYSTEM REFRESH VIEW` must not outlive the moment this replica
-    # gives up coordination: no scheduling pass reads or writes Keeper afterwards, so the ephemeral
-    # znode would stay for as long as the Keeper session lives, and `SYSTEM WAIT VIEW` on the other
-    # replicas would keep waiting for a refresh that can never run here.
+    # A request znode must not outlive giving up coordination: no pass touches Keeper afterwards, so
+    # it would live as long as the session and other replicas' `SYSTEM WAIT VIEW` would wait forever.
     use_keeper_config("enable_keeper_multi_read.xml")
     node.restart_clickhouse()
 

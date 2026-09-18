@@ -253,9 +253,8 @@ private:
         /// Whether another replica published a "request-<replica>" znode for a SYSTEM REFRESH VIEW
         /// it accepted but hasn't started. Ours is `out_of_schedule_refresh_requested` instead.
         bool other_replica_request_znode_exists = false;
-        /// Number of `run` calls that have published a request znode but not yet counted it in
-        /// `out_of_schedule_refresh_requested`. A refresh is owed during that window too, so the
-        /// scheduling pass must not mistake the new znode for a leftover and retract it.
+        /// Number of `run` calls that published a request znode but haven't yet set
+        /// `out_of_schedule_refresh_requested`; the scheduling pass must not retract the znode meanwhile.
         UInt64 publishing_requests = 0;
         /// Bumped on every read of the znodes above. `wait` uses it to tell that what it looks at
         /// was read after the wait started, instead of trusting a possibly stale copy.

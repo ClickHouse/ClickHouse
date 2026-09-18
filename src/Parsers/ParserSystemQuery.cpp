@@ -1970,7 +1970,7 @@ Waits for the running refresh to complete. If no refresh is running, returns imm
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 
-If the view is in a `Replicated` or `Shared` database, also waits for a refresh running on another replica, or requested there with `SYSTEM REFRESH VIEW` but not started yet (unless the view is stopped with `SYSTEM STOP REPLICATED VIEW`).
+If the view is in a Replicated or Shared database, also waits for a refresh running, or requested but not yet started, on another replica.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name
