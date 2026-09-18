@@ -320,8 +320,8 @@ void recompressColumnStreams(
     MergeTreeDataPartChecksums & checksums)
 {
     /// Resolve the column's effective codec exactly as the wide-part writer does
-    /// (`IMergeTreeDataPartWriter::getCodecDescOrDefault`).
-    ASTPtr effective_codec_desc = default_codec->getFullCodecDesc();
+    /// (`IMergeTreeDataPartWriter::getCodecDescriptionOrDefault`).
+    ASTPtr effective_codec_desc = default_codec->getFullCodecDescription();
     if (const auto * column_desc = metadata_snapshot->getColumns().tryGet(column.name))
         if (column_desc->codec)
             effective_codec_desc = column_desc->codec;
