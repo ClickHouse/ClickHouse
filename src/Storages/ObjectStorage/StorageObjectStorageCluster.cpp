@@ -424,7 +424,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Reading a Delta Lake change data feed is not supported with distributed processing. "
-            "Use the non-cluster deltaLake table function, or disable parallel replicas for this query");
+            "Read it without a cluster table function and with parallel replicas disabled");
 
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,

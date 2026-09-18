@@ -6463,9 +6463,9 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='1', 'delta.minWriterVersion'='2', d
     )
     assert "NOT_IMPLEMENTED" in error, error
     assert "change data feed is not supported with distributed processing" in error, error
-    # The remedy, and not merely the word `deltaLake`: the error quotes the failing query back, so
-    # a substring the query itself contains would prove nothing about the message.
-    assert "Use the non-cluster deltaLake table function" in error, error
+    # The remedy sentence too: the error quotes the failing query back, so asserting a word the
+    # query itself contains (`deltaLake`) would prove nothing about the message.
+    assert "Read it without a cluster table function and with parallel replicas disabled" in error, error
 
     # Arm 2b: time travel is not a change feed. It is pinned into the metadata snapshot and
     # consumed by the initiator's file iterator, so it distributes correctly and must keep
