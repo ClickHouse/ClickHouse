@@ -598,6 +598,44 @@ SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
 └─────────────────────────────┘
 ```
 
+## timeSeriesPrometheusValueToString {#timeSeriesPrometheusValueToString}
+
+Introduced in: v26.8.0
+
+Formats a floating-point sample value using Prometheus label-value semantics.
+
+Finite values use fixed notation with the shortest decimal representation that round-trips to the same `Float64`.
+Negative zero is preserved. Special values are returned as `NaN`, `+Inf`, and `-Inf`.
+    
+
+**Syntax**
+
+```sql
+timeSeriesPrometheusValueToString(value)
+```
+
+**Arguments**
+
+- `value` — A floating-point sample value. [`Float32`](/reference/data-types/float) or [`Float64`](/reference/data-types/float)
+
+**Returned value**
+
+The Prometheus-compatible string representation of `value`. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Fixed notation**
+
+```sql title=Query
+SELECT timeSeriesPrometheusValueToString(toFloat64(1e-7))
+```
+
+```response title=Response
+┌─timeSeriesPrometheusValueToString(toFloat64(1e-7))─┐
+│ 0.0000001                                          │
+└────────────────────────────────────────────────────┘
+```
+
 ## timeSeriesRange {#timeSeriesRange}
 
 Introduced in: v25.8.0

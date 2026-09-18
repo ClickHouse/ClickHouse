@@ -318,6 +318,7 @@ void TextIndexAnalyzer::bypassPatternQueries()
     {
         auto & query_builder = query_builders.at(query_hash);
         query_builder.markBypassed();
+        query_builder.is_analysis_incomplete = true;
 
         for (const auto & [query_token, _] : query_builder.tokens)
             queries_by_token[query_token].erase(query_hash);
@@ -327,7 +328,7 @@ void TextIndexAnalyzer::bypassPatternQueries()
 double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const
 {
     const auto & query = *query_builder.query;
-    chassert(!query.getTokens().empty());
+    chassert(!query.getTokens().empty() || !query.getPatterns().empty());
     const double n = static_cast<double>(total_rows);
 
     switch (query.getSearchMode())
@@ -367,6 +368,20 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 ? 1.0 - static_cast<double>(query_builder.postings->cardinality()) / n
                 : 1.0;
 
+            /// A pattern query declares no tokens, it owns the ones the dictionary scan matched.
+            if (query.getTokens().empty())
+            {
+                for (const auto & [token, token_info] : query_builder.tokens)
+                {
+                    if (hasReadPostings(token))
+                        continue;
+
+                    not_in_any *= (1.0 - static_cast<double>(token_info->cardinality) / n);
+                }
+
+                return n * (1.0 - not_in_any);
+            }
+
             for (const auto & token : query.getTokens())
             {
                 auto it = query_builder.tokens.find(token);
@@ -404,10 +419,8 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
         if (query.getDirectReadMode() != TextIndexDirectReadMode::Hint)
             continue;
 
-        /// Pure-pattern queries have no declared tokens at parse time; their tokens are
-        /// discovered dynamically during dictionary scan. Skip the cardinality check in
-        /// that case — it would have no inputs to work with.
-        if (query.getTokens().empty())
+        /// A pure-pattern query is estimated from the tokens the dictionary scan discovered.
+        if (query.getTokens().empty() && query_builder.tokens.empty())
             continue;
 
         double estimated_cardinality = estimateQueryCardinality(query_builder, total_rows);
@@ -484,59 +497,6 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
                 markAllQueriesFailed();
         }
     }
-}
-
-/// Estimate memory footprint of an absl::flat_hash_map/set.
-/// absl flat containers use open addressing with one control byte per slot.
-template <typename Container>
-static size_t estimateAbslFlatContainerBytes(const Container & c)
-{
-    return c.empty() ? 0 : c.capacity() * (sizeof(typename Container::value_type) + 1);
-}
-
-size_t TextIndexAnalyzer::memoryUsageBytes() const
-{
-    size_t result = sizeof(*this);
-
-    /// query_builders: map<UInt128, QueryBuilder>, each QueryBuilder has tokens map and optional postings.
-    result += estimateAbslFlatContainerBytes(query_builders);
-    for (const auto & [_, query_builder] : query_builders)
-    {
-        result += estimateAbslFlatContainerBytes(query_builder.tokens);
-        if (query_builder.postings)
-            result += query_builder.postings->getSizeInBytes();
-    }
-
-    /// queries_by_token: map<String, QueryHashes>.
-    result += estimateAbslFlatContainerBytes(queries_by_token);
-    for (const auto & [key, hashes] : queries_by_token)
-    {
-        result += key.capacity();
-        result += estimateAbslFlatContainerBytes(hashes);
-    }
-
-    /// queries_by_pattern: map<ptr, QueryHashes>.
-    result += estimateAbslFlatContainerBytes(queries_by_pattern);
-    for (const auto & [_, hashes] : queries_by_pattern)
-        result += estimateAbslFlatContainerBytes(hashes);
-
-    /// all_token_infos: map<String, TokenPostingsInfoPtr>.
-    result += estimateAbslFlatContainerBytes(all_token_infos);
-    for (const auto & [key, _] : all_token_infos)
-        result += key.capacity();
-
-    /// missing_tokens: set<String>.
-    result += estimateAbslFlatContainerBytes(missing_tokens);
-    for (const auto & token : missing_tokens)
-        result += token.capacity();
-
-    /// tokens_with_postings: set<String>.
-    result += estimateAbslFlatContainerBytes(tokens_with_postings);
-    for (const auto & token : tokens_with_postings)
-        result += token.capacity();
-
-    result += readable_rows.has_value() ? readable_rows->getSizeInBytes() : 0;
-    return result;
 }
 
 }

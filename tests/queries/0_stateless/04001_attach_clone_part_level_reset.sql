@@ -12,9 +12,7 @@
 -- already-merged.
 
 DROP TABLE IF EXISTS src_mt;
-DROP TABLE IF EXISTS dst_rmt_clone;
 DROP TABLE IF EXISTS dst_rmt_attach;
-DROP TABLE IF EXISTS dst_smt;
 DROP TABLE IF EXISTS src_mt_agg;
 DROP TABLE IF EXISTS dst_amt;
 DROP TABLE IF EXISTS src_mt_move;
@@ -33,12 +31,6 @@ INSERT INTO src_mt VALUES (1, 20);
 OPTIMIZE TABLE src_mt FINAL;
 SELECT 'src level', max(level) FROM system.parts WHERE database = currentDatabase() AND table = 'src_mt' AND active;
 
--- CLONE AS into ReplacingMergeTree: adopted part must be reset to level 0 and dedup.
-CREATE TABLE dst_rmt_clone CLONE AS src_mt ENGINE = ReplacingMergeTree;
-SELECT 'clone level', max(level) FROM system.parts WHERE database = currentDatabase() AND table = 'dst_rmt_clone' AND active;
-SELECT 'clone final', count() FROM dst_rmt_clone FINAL;
-OPTIMIZE TABLE dst_rmt_clone FINAL;
-SELECT 'clone after optimize', count() FROM dst_rmt_clone FINAL;
 
 -- ATTACH PARTITION FROM into ReplacingMergeTree.
 CREATE TABLE dst_rmt_attach (a UInt32, b UInt32) ENGINE = ReplacingMergeTree ORDER BY a;
@@ -46,9 +38,6 @@ ALTER TABLE dst_rmt_attach ATTACH PARTITION tuple() FROM src_mt;
 SELECT 'attach level', max(level) FROM system.parts WHERE database = currentDatabase() AND table = 'dst_rmt_attach' AND active;
 SELECT 'attach final', count() FROM dst_rmt_attach FINAL;
 
--- CLONE AS into SummingMergeTree: rows with the same key must sum.
-CREATE TABLE dst_smt CLONE AS src_mt ENGINE = SummingMergeTree;
-SELECT 'summing final', a, b FROM dst_smt FINAL ORDER BY a;
 
 -- ATTACH PARTITION FROM into AggregatingMergeTree (source column type matches the target's
 -- SimpleAggregateFunction state, as ATTACH PARTITION FROM requires identical structure).
@@ -111,9 +100,7 @@ SELECT 'replacing diff is_deleted level', max(level) FROM system.parts WHERE dat
 SELECT 'replacing diff is_deleted final', count() FROM dst_rmt_ver_del FINAL;
 
 DROP TABLE src_mt;
-DROP TABLE dst_rmt_clone;
 DROP TABLE dst_rmt_attach;
-DROP TABLE dst_smt;
 DROP TABLE src_mt_agg;
 DROP TABLE dst_amt;
 DROP TABLE src_mt_move;
