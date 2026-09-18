@@ -1,0 +1,10 @@
+1
+processes	http_method	Enum8(\'UNKNOWN\' = 0, \'GET\' = 1, \'POST\' = 2, \'OPTIONS\' = 3, \'PUT\' = 4, \'DELETE\' = 5, \'HEAD\' = 6)
+processes	interface	Enum8(\'Unknown\' = 0, \'TCP\' = 1, \'HTTP\' = 2, \'gRPC\' = 3, \'MySQL\' = 4, \'PostgreSQL\' = 5, \'Local\' = 6, \'TCP_Interserver\' = 7, \'Prometheus\' = 8, \'Background\' = 9, \'ArrowFlight\' = 10)
+query_log	http_method	Enum8(\'UNKNOWN\' = 0, \'GET\' = 1, \'POST\' = 2, \'OPTIONS\' = 3, \'PUT\' = 4, \'DELETE\' = 5, \'HEAD\' = 6)
+query_log	interface	Enum8(\'Unknown\' = 0, \'TCP\' = 1, \'HTTP\' = 2, \'gRPC\' = 3, \'MySQL\' = 4, \'PostgreSQL\' = 5, \'Local\' = 6, \'TCP_Interserver\' = 7, \'Prometheus\' = 8, \'Background\' = 9, \'ArrowFlight\' = 10)
+query_thread_log	http_method	Enum8(\'UNKNOWN\' = 0, \'GET\' = 1, \'POST\' = 2, \'OPTIONS\' = 3, \'PUT\' = 4, \'DELETE\' = 5, \'HEAD\' = 6)
+query_thread_log	interface	Enum8(\'Unknown\' = 0, \'TCP\' = 1, \'HTTP\' = 2, \'gRPC\' = 3, \'MySQL\' = 4, \'PostgreSQL\' = 5, \'Local\' = 6, \'TCP_Interserver\' = 7, \'Prometheus\' = 8, \'Background\' = 9, \'ArrowFlight\' = 10)
+user_query_log	http_method	Enum8(\'UNKNOWN\' = 0, \'GET\' = 1, \'POST\' = 2, \'OPTIONS\' = 3, \'PUT\' = 4, \'DELETE\' = 5, \'HEAD\' = 6)
+user_query_log	interface	Enum8(\'Unknown\' = 0, \'TCP\' = 1, \'HTTP\' = 2, \'gRPC\' = 3, \'MySQL\' = 4, \'PostgreSQL\' = 5, \'Local\' = 6, \'TCP_Interserver\' = 7, \'Prometheus\' = 8, \'Background\' = 9, \'ArrowFlight\' = 10)
+1	1	1

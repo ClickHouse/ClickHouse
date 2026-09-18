@@ -9,7 +9,6 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
-from ci.praktika.workflow import Workflow
 
 
 def only_docs(changed_files):
@@ -61,11 +60,6 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
-
-# The Darwin (macOS) "Fast test" jobs, resolved to their parametrized names
-# (e.g. "Fast test (arm_darwin)"). They run on scarce self-hosted macOS runners,
-# so in PRs they are skipped unless the PR carries the `ci-macos` label.
-DARWIN_FAST_TEST_JOBS = [j.name for j in JobConfigs.darwin_fast_test_jobs]
 
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
 KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
@@ -149,6 +143,50 @@ def _has_coverage_pipeline_changes(changed_files):
 _info_cache = None
 _pipeline_note_labels = set()
 
+# A revert pull request is recognized by the canonical shapes only - the ones
+# `git revert`, the GitHub "Revert" button and the `Revert CI regressions` job
+# produce - not by a prose mention of a revert:
+#   - the title `Revert "<title of the reverted change>"`;
+#   - the anchored `Reverts <owner>/<repo>#<n>` marker line in the body.
+# The same shapes are what `ci/jobs/revert_ci_regressions.py` refuses to revert
+# again, so the two automations agree on what a revert is.
+_REVERT_TITLE_RE = re.compile(r'^Revert\s+".*"$')
+
+# The per-job reason shown on the report page and, when every job is skipped,
+# the description of the `Ready For Merge` commit status (80 characters max).
+REVERT_PR_SKIP_REASON = (
+    f"Skipped: revert PR, CI is bypassed unless labeled '{Labels.CI_FORCE_ALL}'"
+)
+REVERT_PR_NOTE = (
+    "Revert PR: all CI jobs are skipped so that the revert can be merged as quickly "
+    f"as possible. Add the `{Labels.CI_FORCE_ALL}` label to run the full CI."
+)
+
+
+def is_revert_pr(title, body, repo):
+    """True if the pull request has the canonical shape of a revert: the
+    `Revert "..."` title, or the anchored `Reverts <repo>#<n>` marker line in
+    the body. See `_REVERT_TITLE_RE` for why only the canonical shapes count.
+    """
+    if _REVERT_TITLE_RE.fullmatch((title or "").strip()):
+        return True
+    marker = rf"^Reverts {re.escape(repo)}#\d+\s*$"
+    return re.search(marker, body or "", re.MULTILINE) is not None
+
+
+_revert_note_added = False
+
+
+def _add_revert_note():
+    """Explain the green light once: on the workflow report page and in the
+    description of the `Ready For Merge` commit status."""
+    global _revert_note_added
+    if _revert_note_added or _info_cache is None:
+        return
+    _revert_note_added = True
+    _info_cache.add_workflow_note(REVERT_PR_NOTE)
+    _info_cache.set_ready_for_merge_description(REVERT_PR_SKIP_REASON)
+
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
     Labels.DO_NOT_TEST: (
@@ -176,15 +214,6 @@ _PIPELINE_NOTES = {
     ),
     Labels.CI_NO_COVERAGE: (
         "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
-    ),
-    Labels.CI_MACOS: (
-        "Label `ci-macos` runs the Darwin (macOS) `Fast test` job, which is "
-        "skipped by default in PRs."
-    ),
-    Labels.CI_COVERAGE: (
-        "Label `ci-coverage` forces coverage jobs and the `LLVM Coverage` merge job "
-        "to run even though the change does not affect the build. The "
-        "`excluded_from_llvm` jobs stay skipped: they produce no coverage data."
     ),
 }
 
@@ -253,6 +282,25 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
+    # A revert pull request gets a green light at once: `master` is broken by the
+    # change it reverts, and the state it restores is one that CI has already
+    # validated, so every job is skipped and the pull request is mergeable
+    # immediately. Two things still guard the merge: the merge queue runs its own
+    # (small) set of checks, and the full CI runs on `master` after the merge.
+    # The `ci-force-all` label opts out and runs the whole workflow - it also
+    # bypasses this hook entirely in `native_jobs.py`, the check here is only
+    # for clarity. Applies to pull requests only (`pr_number > 0`): a revert
+    # commit pushed to `master` or a release branch is tested as usual.
+    if (
+        _info_cache.pr_number > 0
+        and Labels.CI_FORCE_ALL not in _info_cache.pr_labels
+        and is_revert_pr(
+            _info_cache.pr_title, _info_cache.pr_body, _info_cache.repo_name
+        )
+    ):
+        _add_revert_note()
+        return True, REVERT_PR_SKIP_REASON
+
     # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
     # an empty merge commit (base branch merged in with no net change - e.g. the
     # GitHub "Update branch" button), the code is identical to the previous head and
@@ -281,16 +329,6 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
-
-    # The Darwin (macOS) fast test runs on scarce self-hosted macOS runners, so
-    # in PRs it runs only when explicitly requested via the `ci-macos` label.
-    # Master has no such job, so this gate is a no-op there.
-    if (
-        job_name in DARWIN_FAST_TEST_JOBS
-        and _info_cache.pr_number
-        and Labels.CI_MACOS not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
 
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
@@ -402,36 +440,18 @@ def should_skip_job(job_name):
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
         or job_name == JobNames.LLVM_COVERAGE
-    ):
-        # The explicit `ci-no-coverage` label wins over everything, including the
-        # `ci-coverage` force label below - an explicit "skip" should never lose
-        # to a leftover force label.
-        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
-            _add_pipeline_note(Labels.CI_NO_COVERAGE)
-            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
-        if (
+    ) and (
+        Labels.CI_NO_COVERAGE in _info_cache.pr_labels
+        or (
             _info_cache.pr_number > 0
             and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
             and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
-        ):
-            # The `ci-coverage` label overrides only this automatic skip: it lets
-            # a tests-only PR still measure the coverage of the tests it adds.
-            # The `excluded_from_llvm` jobs stay skipped even then - they run on a
-            # plain build and produce no coverage data, and the tests they hold
-            # are covered by the regular (non-coverage) test jobs of the PR.
-            # FILTER_HOOK_FORCE_JOB (rather than a plain neutral answer) also
-            # exempts the job from the later "filter not affected jobs" pass,
-            # which would otherwise drop it again when no changed file matches
-            # its digest_config (e.g. a docs-only PR).
-            if Labels.CI_COVERAGE in _info_cache.pr_labels:
-                if "excluded_from_llvm" in job_name:
-                    return (
-                        True,
-                        f"Skipped: '{Labels.CI_COVERAGE}' forces only the coverage jobs; this job produces no coverage data",
-                    )
-                _add_pipeline_note(Labels.CI_COVERAGE)
-                return False, Workflow.FILTER_HOOK_FORCE_JOB
-            return True, "Skipped: no build-affecting changes; coverage would be identical to master"
+        )
+    ):
+        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
+            _add_pipeline_note(Labels.CI_NO_COVERAGE)
+            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
+        return True, "Skipped: no build-affecting changes; coverage would be identical to master"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
@@ -491,6 +511,19 @@ def should_skip_job(job_name):
         and not has_new_integration_tests(_info_cache.get_changed_files())
     ):
         return True, "Skipped, no integration tests updates"
+
+    # When the PR carries a functional or integration test, `new_tests_check.check`
+    # decides the bug fix on the per-arch validators for those and returns before it
+    # reads the unit validator, so a merge-base unit build has no verdict to contribute.
+    if (
+        _is_bugfix_pr()
+        and job_name == JobNames.BUGFIX_VALIDATE_UT
+        and (
+            has_new_functional_tests(_info_cache.get_changed_files())
+            or has_new_integration_tests(_info_cache.get_changed_files())
+        )
+    ):
+        return True, "Skipped, the functional/integration bugfix validation owns the verdict"
 
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (

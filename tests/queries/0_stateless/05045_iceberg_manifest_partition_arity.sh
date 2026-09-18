@@ -111,6 +111,10 @@ patch_spec() { # patch_spec <table> <spec json>
 # Runs each probe query under its own log_comment and flushes the log, in one client call.
 # Reading a counter back through log_comment keeps a probe from counting itself, and the
 # boolean verdict below keeps a repeated query_log row from changing it.
+# Manifest-list pruning is off for every probe: it skips a manifest by the partition summaries the
+# manifest list carries, which this test never patches, and it reports the files it skips through
+# the same counters. Left on, it would answer the probes below before the patched manifest is ever
+# read, so they would no longer say anything about the pruner that reads it.
 probes() { # probes <tag> <query> [<tag> <query>]...
     local sql=""
     while [ "$#" -gt 0 ]; do
@@ -118,7 +122,8 @@ probes() { # probes <tag> <query> [<tag> <query>]...
 "
         shift 2
     done
-    ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "${sql}SYSTEM FLUSH LOGS query_log;"
+    ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_manifest_list_partition_pruning=0 \
+        --query "${sql}SYSTEM FLUSH LOGS query_log;"
 }
 
 # One line per tag, in the order given: whether <counter> saw any file pruned by that probe.
@@ -201,11 +206,22 @@ probes partition_control "SELECT sum(v) FROM t_ok WHERE p = 1" \
 report IcebergPartitionPrunedFiles partition_control partition_narrow
 
 echo '--- A8 a leading unmodellable field is not realigned onto the wrong value ---'
-# The one query serves as both the value check and the pruning probe.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+# The one query serves as both the value check and the pruning probe, so manifest-list pruning is
+# off here for the same reason as in `probes`.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_manifest_list_partition_pruning=0 --query "
     SELECT sum(v) FROM t_narrow_lead WHERE p = 1 SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_partition_narrow_lead';
     SYSTEM FLUSH LOGS query_log;"
 report IcebergPartitionPrunedFiles partition_narrow_lead
+
+echo '--- A9 the manifest list prunes both tables before their patched manifests are read ---'
+# The manifest list is written from the partition spec in the table metadata, which this test never
+# patches, so its summaries prune these manifests whatever the patched manifest header claims - and
+# the rows that survive are still the right ones.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+    SELECT sum(v) FROM t_narrow WHERE p = 1 SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_list_narrow';
+    SELECT sum(v) FROM t_narrow_lead WHERE p = 1 SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_list_narrow_lead';
+    SYSTEM FLUSH LOGS query_log;"
+report IcebergPartitionPrunedFiles list_narrow list_narrow_lead
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_ok SYNC;
