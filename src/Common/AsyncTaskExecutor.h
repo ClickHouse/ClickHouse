@@ -2,7 +2,7 @@
 
 #include <atomic>
 #include <mutex>
-#include <vector>
+#include <optional>
 #include <base/types.h>
 #include <Common/Epoll.h>
 #include <Common/StackfulCoroutine.h>
@@ -52,18 +52,12 @@ class AsyncTaskExecutor
 {
 public:
     /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task.
-    /// initial_span_attributes_ are added to that span.
-    /// A non-zero initial_span_start_time_us_ makes the span of the first task execution continue
-    /// a span the caller opened before the executor existed: the span gets this start time.
+    /// With external_trace_context_ the task runs inside a span owned and finished by the caller instead:
+    /// that context is installed for the duration of every execution and no span is opened here.
     AsyncTaskExecutor(
         std::unique_ptr<AsyncTask> task_,
         String operation_name_,
-        OpenTelemetry::SpanAttributes initial_span_attributes_ = {},
-        UInt64 initial_span_start_time_us_ = 0);
-
-    /// Add an attribute to the span covering the current (and any future) execution of the task.
-    /// Thread-safe: can be called both from inside the fiber and from other threads.
-    void addSpanAttribute(OpenTelemetry::SpanAttribute attribute);
+        std::optional<OpenTelemetry::TracingContextOnThread> external_trace_context_ = std::nullopt);
 
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
@@ -131,7 +125,6 @@ private:
 
     void createCoroutine();
     void destroyCoroutine();
-    void flushSpanAttributes(OpenTelemetry::Span & span) noexcept;
 
     CoroutineStack coroutine_stack;
     StackfulCoroutine coroutine;
@@ -148,15 +141,8 @@ private:
     /// Spans created inside the task belong to the query trace.
     const OpenTelemetry::TracingContextOnThread parent_trace_context;
 
-    /// Guards span_attributes. A dedicated mutex, making sure addSpanAttribute can be called from inside the fiber
-    std::mutex span_attributes_mutex;
-    /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits
-    /// restart() runs the task again under a new span that must get them too
-    OpenTelemetry::SpanAttributes span_attributes;
-    /// Start time of a span handed over by the caller, adopted by the span of the first task
-    /// execution and consumed: a task rerun after restart() gets a fresh span. Only accessed
-    /// from inside the fiber routine after construction, so it needs no synchronization.
-    UInt64 initial_span_start_time_us = 0;
+    /// The context of the caller-owned span the task runs in, if any (see the constructor).
+    const std::optional<OpenTelemetry::TracingContextOnThread> external_trace_context;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);

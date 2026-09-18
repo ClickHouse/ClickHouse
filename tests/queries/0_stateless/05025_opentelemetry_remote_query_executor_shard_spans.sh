@@ -57,6 +57,29 @@ function fragment_counts_query
     "
 }
 
+function assert_fragment_spans
+{
+    local _trace_id="$1"
+    local _query_id="$2"
+    ${CLICKHOUSE_CLIENT} -q "
+        with UUIDNumToString(toFixedString(unhex('$_trace_id'), 16)) as t
+        select
+            if(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards') = 2
+                   and uniqExactIf(attribute['clickhouse.shard_num'], attribute['clickhouse.shard_num'] in ('1', '2')) = 2,
+               'exactly one fragment span per shard: OK',
+               'exactly one fragment span per shard: FAIL, ' || toString(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards')) || ' spans'),
+            if(countIf(attribute['clickhouse.initial_query_id'] = '$_query_id'
+                   and attribute['clickhouse.query_id'] != ''
+                   and attribute['clickhouse.processed_stage'] != '') = 2
+                   and countIf(attribute['clickhouse.target_host'] != '') = 2,
+               'fragment span attributes: OK', 'fragment span attributes: FAIL')
+        from system.opentelemetry_span_log
+        where finish_date >= yesterday() and trace_id = t
+          and operation_name = 'RemoteQueryExecutor::execute'
+        format TSV
+    "
+}
+
 ${CLICKHOUSE_CLIENT} -q "drop table if exists dist_over_two_shards"
 ${CLICKHOUSE_CLIENT} -q "
     create table dist_over_two_shards (dummy UInt8)
@@ -85,24 +108,29 @@ for async_settings in "1 1" "1 0" "0 0"; do
 
     poll_spans "$(fragment_counts_query "$trace_id" "$query_id")" "2 2 2 2 2" || exit 1
 
-    ${CLICKHOUSE_CLIENT} -q "
-        with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-        select
-            if(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards') = 2
-                   and uniqExactIf(attribute['clickhouse.shard_num'], attribute['clickhouse.shard_num'] in ('1', '2')) = 2,
-               'exactly one fragment span per shard: OK',
-               'exactly one fragment span per shard: FAIL, ' || toString(countIf(attribute['clickhouse.cluster'] = 'test_cluster_two_shards')) || ' spans'),
-            if(countIf(attribute['clickhouse.initial_query_id'] = '$query_id'
-                   and attribute['clickhouse.query_id'] != ''
-                   and attribute['clickhouse.processed_stage'] != '') = 2
-                   and countIf(attribute['clickhouse.target_host'] != '') = 2,
-               'fragment span attributes: OK', 'fragment span attributes: FAIL')
-        from system.opentelemetry_span_log
-        where finish_date >= yesterday() and trace_id = t
-          and operation_name = 'RemoteQueryExecutor::execute'
-        format TSV
-    "
+    assert_fragment_spans "$trace_id" "$query_id"
 done
+
+# The *Cluster table functions (urlCluster, s3Cluster, ...) do not go through
+# ReadFromRemote: their RemoteQueryExecutors are wired in IStorageCluster::readFromCluster,
+# so the fragment attributes must be asserted on that path separately. (The cluster()
+# function is a remote() variant over StorageDistributed and would not cover it.)
+# urlCluster over test_cluster_two_shards loops back to this server over HTTP; the cluster
+# of a *Cluster function uses every replica as a shard, and with two single-replica shards
+# the spans carry the same shard_num values 1 and 2.
+echo "=== urlCluster (IStorageCluster path) ==="
+
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+url_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-url"
+
+${CLICKHOUSE_CLIENT} \
+    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
+    --query_id "$url_query_id" \
+    --query "select * from urlCluster('test_cluster_two_shards', 'http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8') format Null"
+
+poll_spans "$(fragment_counts_query "$trace_id" "$url_query_id")" "2 2 2 2 2" || exit 1
+
+assert_fragment_spans "$trace_id" "$url_query_id"
 
 # The synchronous path has no fiber: the span is kept alive by the executor itself and
 # finished on EndOfStream. It must cover the whole remote read, not only connection
@@ -183,3 +211,76 @@ poll_spans "
     where finish_date >= yesterday() and trace_id = t" "1" \
 || exit 1
 echo "buffered attributes flushed on cancellation: OK"
+
+# A fragment cancelled by the initiator is neither a success nor a failure: its status stays
+# UNSET (so it does not skew success-latency statistics) and it is tagged
+# `clickhouse.cancelled` with the reason `initiator`. The query also produces a short OK span
+# for the auxiliary structure inference query of remote() over a view, hence the counts.
+${CLICKHOUSE_CLIENT} -q "
+    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+    select if(countIf(status_code = 'UNSET'
+                      and attribute['clickhouse.cancelled'] = '1'
+                      and attribute['clickhouse.cancel_reason'] = 'initiator') = 1
+                  and countIf(status_code = 'ERROR') = 0
+                  and countIf(attribute['clickhouse.cancelled'] != '' and status_code != 'UNSET') = 0,
+              'killed fragment is UNSET and tagged cancelled by initiator: OK',
+              'killed fragment is UNSET and tagged cancelled by initiator: FAIL, ' || arrayStringConcat(groupArray(status_code || '/' || attribute['clickhouse.cancelled'] || '/' || attribute['clickhouse.cancel_reason']), ' '))
+    from system.opentelemetry_span_log
+    where finish_date >= yesterday() and trace_id = t
+      and operation_name = 'RemoteQueryExecutor::execute'
+      and attribute['clickhouse.initial_query_id'] = '$kill_query_id'
+    format TSV
+"
+
+# LIMIT: the initiator stops reading once it has enough rows and cancels the shards through
+# finish(), which sends the cancel and drains the connections. That drain ends with the
+# server's EndOfStream, but the fragment did not deliver its full result, so the span must not
+# be OK: it stays UNSET, tagged `clickhouse.cancelled` with the reason `limit`. Checked on the
+# asynchronous path (fiber span) and on the synchronous path (span closed by finish() itself).
+# The LIMIT is also pushed down to the shards, so each shard streams 20 one-row blocks, one
+# every 0.2 s, and finishes on its own after 4 s. The initiator has its 20 rows from the two
+# shards together after ~2 s, and cancels both while they are still streaming. (A shard that
+# has not sent anything yet cannot be cancelled this way: its source waits on the socket and
+# is not re-scheduled until data arrives, hence the row-by-row streaming instead of one slow
+# block.)
+${CLICKHOUSE_CLIENT} -q "drop table if exists limit_src"
+${CLICKHOUSE_CLIENT} -q "drop table if exists dist_limit_src"
+${CLICKHOUSE_CLIENT} -q "create view limit_src as select number from numbers(20)"
+${CLICKHOUSE_CLIENT} -q "create table dist_limit_src (number UInt64) engine = Distributed(test_cluster_two_shards, currentDatabase(), limit_src)"
+
+for async_socket in 1 0; do
+    echo "=== LIMIT cancels the shards, async_socket_for_remote=$async_socket ==="
+
+    trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+    limit_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-limit-$async_socket"
+
+    ${CLICKHOUSE_CLIENT} \
+        --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
+        --async_socket_for_remote="$async_socket" \
+        --prefer_localhost_replica=0 \
+        --max_block_size=1 \
+        --max_threads=1 \
+        --query_id "$limit_query_id" \
+        --query "select * from dist_limit_src where sleepEachRow(0.2) = 0 limit 20 format Null"
+
+    poll_spans "$(fragment_counts_query "$trace_id" "$limit_query_id")" "2 2 2 2 2" || exit 1
+
+    ${CLICKHOUSE_CLIENT} -q "
+        with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+        select if(countIf(status_code = 'UNSET'
+                          and attribute['clickhouse.cancelled'] = '1'
+                          and attribute['clickhouse.cancel_reason'] = 'limit') = 2
+                      and count() = 2,
+                  'both fragments are UNSET and tagged cancelled by limit: OK',
+                  'both fragments are UNSET and tagged cancelled by limit: FAIL, ' || arrayStringConcat(groupArray(status_code || '/' || attribute['clickhouse.cancelled'] || '/' || attribute['clickhouse.cancel_reason']), ' '))
+        from system.opentelemetry_span_log
+        where finish_date >= yesterday() and trace_id = t
+          and operation_name = 'RemoteQueryExecutor::execute'
+          and attribute['clickhouse.initial_query_id'] = '$limit_query_id'
+        format TSV
+    "
+done
+
+${CLICKHOUSE_CLIENT} -q "drop table dist_limit_src"
+${CLICKHOUSE_CLIENT} -q "drop table limit_src"
+${CLICKHOUSE_CLIENT} -q "drop table dist_over_two_shards"

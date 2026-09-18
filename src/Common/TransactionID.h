@@ -29,6 +29,17 @@ using CSN = UInt64;
 using LocalTID = UInt64;
 /// Hash of TransactionID that fits into 64-bit atomic
 using TIDHash = UInt64;
+/// Identifies a background operation (merge/mutation) of a transaction over its own uncommitted
+/// parts, distinguishing that operation's part-locks and marker from the transaction's foreground
+/// work and from its sibling operations. It is carried alongside the `TransactionID` (in lock
+/// content and the marker), NOT encoded into it; the operation's part version metadata still uses
+/// the plain transaction TID. `0` is the transaction itself (`Tx::MainJobId`).
+using JobId = UInt32;
+
+namespace Tx
+{
+    const JobId MainJobId = 0;
+}
 
 namespace Tx
 {
@@ -50,16 +61,31 @@ namespace Tx
     const LocalTID NonTransactionalLocalTID = 1;
     const LocalTID DummyLocalTID = 2;
     const LocalTID MaxReservedLocalTID = 32;
+
+    /// True for a CSN of a committed transaction: past the reserved range and not the rolled-back marker.
+    inline bool isCommittedCSN(CSN csn)
+    {
+        return csn > MaxReservedCSN && csn != RolledBackCSN;
+    }
 }
 
 struct TransactionID
 {
-    /// Global sequential number, the newest commit timestamp the we saw when this transaction began
+    /// Global sequential number, the newest commit timestamp we had seen when this transaction began
     CSN start_csn = 0;
     /// Local sequential that is unique for each transaction started by this host within specific start_csn
     LocalTID local_tid = 0;
     /// UUID of host that has started this transaction
     UUID host_id = UUIDHelpers::Nil;
+    /// Version of the host's `_session` Keeper node when the transaction started.
+    /// Detects ghost commits from a session that peers declared dead. Zero means absent
+    /// (a bare TID without a session stamp, or a freshly-created `_session`, which also starts at 0).
+    ///
+    /// `TransactionManager::isTIDInvalid` compares with strict `<`: since both a bare
+    /// TID and a fresh session are 0, `0 < 0` is false, so they read as "alive" until the
+    /// session is bumped once — the safe direction. Do NOT use `<=`: it would mark TIDs from a
+    /// brand-new cluster as dead.
+    Int64 session_node_version = 0;
 
     /// NOTE Maybe we could just generate UUIDv4 for each transaction, but it would be harder to debug.
     /// Partial order is defined for this TransactionID structure:
@@ -69,7 +95,8 @@ struct TransactionID
 
     bool operator == (const TransactionID & rhs) const
     {
-        return start_csn == rhs.start_csn && local_tid == rhs.local_tid && host_id == rhs.host_id;
+        return start_csn == rhs.start_csn && local_tid == rhs.local_tid && host_id == rhs.host_id
+            && session_node_version == rhs.session_node_version;
     }
 
     bool operator != (const TransactionID & rhs) const
@@ -87,21 +114,22 @@ struct TransactionID
 
     bool isNonTransactional() const
     {
-        /// `Tx::DummyTID` is exactly `{Tx::NonTransactionalCSN, Tx::DummyLocalTID, UUIDHelpers::Nil}` —
-        /// a special marker used by `VersionMetadataOnDisk::loadMetadata` to represent a
-        /// rolled-back part whose `txn_version.txt.tmp` file was left behind by an incomplete
-        /// write. Exclude only this exact shape from the invariant check so
-        /// `wasInvolvedInTransaction` and `validateInfo` can safely inspect such parts during
-        /// part loading. Any other combination — including a `DummyLocalTID` with a non-`Nil`
-        /// `host_id` — indicates corrupted on-disk metadata and must still trip the assertion.
+        /// Non-transactional changes carry `start_csn == NonTransactionalCSN`. We discriminate on
+        /// `start_csn`, not `local_tid`, so a non-transactional operation can carry a unique
+        /// `local_tid` (a per-operation counter above `MaxReservedLocalTID`) for lock ownership and
+        /// future per-TID invalidation, while still being recognized as non-transactional.
+        ///
+        /// `Tx::DummyTID` (`{NonTransactionalCSN, DummyLocalTID, Nil}`) is excluded: it marks a
+        /// rolled-back interrupted `.tmp` part and must NOT count as non-transactional, matching the
+        /// behavior `wasInvolvedInTransaction` / `validateInfo` rely on during part loading.
+        ///
+        /// Invariant: the reserved non-transactional `local_tid` sentinels only ever pair with
+        /// `NonTransactionalCSN`; a reserved sentinel with any other `start_csn` is corrupted.
         chassert(
-            (local_tid == Tx::NonTransactionalLocalTID) == (start_csn == Tx::NonTransactionalCSN)
-            || (local_tid == Tx::DummyLocalTID
-                && start_csn == Tx::NonTransactionalCSN
-                && host_id == UUIDHelpers::Nil));
-        return local_tid == Tx::NonTransactionalLocalTID;
+            (local_tid != Tx::NonTransactionalLocalTID && local_tid != Tx::DummyLocalTID)
+            || start_csn == Tx::NonTransactionalCSN);
+        return start_csn == Tx::NonTransactionalCSN && local_tid != Tx::DummyLocalTID;
     }
-
 
     static void write(const TransactionID & tid, WriteBuffer & buf);
     static TransactionID read(ReadBuffer & buf);
@@ -109,9 +137,26 @@ struct TransactionID
 
 namespace Tx
 {
-    const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
-    const TransactionID NonTransactionalTID = {NonTransactionalCSN, NonTransactionalLocalTID, UUIDHelpers::Nil};
-    const TransactionID DummyTID = {NonTransactionalCSN, DummyLocalTID, UUIDHelpers::Nil};
+    /// Designated initialisers so a field reorder or insertion in `TransactionID`
+    /// cannot silently shift values across these sentinels.
+    const TransactionID EmptyTID = {
+        .start_csn = 0,
+        .local_tid = 0,
+        .host_id = UUIDHelpers::Nil,
+        .session_node_version = 0,
+    };
+    const TransactionID NonTransactionalTID = {
+        .start_csn = NonTransactionalCSN,
+        .local_tid = NonTransactionalLocalTID,
+        .host_id = UUIDHelpers::Nil,
+        .session_node_version = 0,
+    };
+    const TransactionID DummyTID = {
+        .start_csn = NonTransactionalCSN,
+        .local_tid = DummyLocalTID,
+        .host_id = UUIDHelpers::Nil,
+        .session_node_version = 0,
+    };
 }
 
 }
@@ -128,6 +173,6 @@ struct fmt::formatter<DB::TransactionID>
     template <typename FormatContext>
     auto format(const DB::TransactionID & tid, FormatContext & context) const
     {
-        return fmt::format_to(context.out(), "({}, {}, {})", tid.start_csn, tid.local_tid, tid.host_id);
+        return fmt::format_to(context.out(), "({}, {}, {}, {})", tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version);
     }
 };

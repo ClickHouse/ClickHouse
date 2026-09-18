@@ -1,9 +1,10 @@
--- A `Merge` table builds the plans of its underlying tables lazily, while the outer plan is
--- already being executed. Plan-based parallel replicas must not distribute such a child plan:
--- the shipped fragment used to lose the filters pushed down into it (silently returning wrong
--- results) and, when the filter referenced a subquery set whose plan the outer
--- `addStepsToBuildSets` had already moved out, serializing it threw
--- `Cannot serialize FutureSetFromSubquery with no query plan`.
+-- Reading a `Merge` table on a single replica, which is what happens whenever it is not expanded into
+-- the reads of its underlying tables. Those reads are planned lazily, while the outer plan is already
+-- being executed, and shipping such a plan of its own used to lose the filters pushed down into it
+-- (silently returning wrong results) and, when a filter referenced a subquery set whose plan the outer
+-- `addStepsToBuildSets` had already moved out, to throw `Cannot serialize FutureSetFromSubquery with no
+-- query plan` while serializing it. Distributing a `Merge` by expanding it is a different mechanism,
+-- covered by its own tests.
 
 DROP TABLE IF EXISTS t_merge_pr_local;
 DROP TABLE IF EXISTS t_merge_pr_dist;
@@ -22,6 +23,8 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 0;
+-- Pinned, so that this keeps testing the single-replica path whatever the default becomes.
+SET parallel_replicas_allow_merge_tables = 0;
 
 SELECT 'filters are honored';
 -- Each of these used to return 0.
@@ -40,7 +43,7 @@ SELECT 'GLOBAL IN (subquery over Distributed)';
 SELECT count() FROM merge(currentDatabase(), 't_merge_pr_local')
 WHERE name GLOBAL IN (SELECT name FROM t_merge_pr_dist);
 
-SELECT 'the child read of a Merge table is not distributed';
+SELECT 'the plans of the underlying tables are not distributed';
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') AS child_read_distributed
 FROM (EXPLAIN description = 0 SELECT count() FROM merge(currentDatabase(), 't_merge_pr_local') WHERE name = '1');
 
@@ -60,7 +63,7 @@ WHERE name GLOBAL IN (SELECT name FROM t_merge_pr_dist);
 -- With a local plan the distributed read is wrapped in `ReadFromLocalReplica` /
 -- `ReadFromRemoteParallelReplicas` instead of `ReadFromParallelReplicas`, so the check above
 -- would not notice a regression in this mode.
-SELECT 'the child read of a Merge table is not distributed with a local plan';
+SELECT 'the plans of the underlying tables are not distributed with a local plan';
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%'
             OR explain LIKE '%ReadFromLocalReplica%'
             OR explain LIKE '%ReadFromRemoteParallelReplicas%') AS child_read_distributed

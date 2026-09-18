@@ -265,6 +265,36 @@ struct SpanHolder : public Span
     UInt8 old_trace_flags;
 };
 
+/// Makes an existing detached span the parent of spans created on this thread while in scope.
+/// No-op when span_id_ is 0 or tracing is not enabled on this thread.
+struct ParentSpanGuard
+{
+    explicit ParentSpanGuard(UInt64 span_id_);
+    ~ParentSpanGuard();
+
+    ParentSpanGuard(const ParentSpanGuard &) = delete;
+    ParentSpanGuard & operator=(const ParentSpanGuard &) = delete;
+
+private:
+    UInt64 old_span_id = 0;
+    bool active = false;
+};
+
+/// Runs the enclosed scope inside a tracing context owned elsewhere, e.g. inside a span that the
+/// caller opened and will finish itself: installs `context` as the current context for the scope
+/// and restores the previous one on exit. Unlike `TracingContextHolder`, opens and logs no span.
+struct TracingContextGuard
+{
+    explicit TracingContextGuard(const TracingContextOnThread & context);
+    ~TracingContextGuard();
+
+    TracingContextGuard(const TracingContextGuard &) = delete;
+    TracingContextGuard & operator=(const TracingContextGuard &) = delete;
+
+private:
+    TracingContextOnThread previous;
+};
+
 }
 
 inline WriteBuffer & operator<<(WriteBuffer & buf, const OpenTelemetry::TracingContext & context)

@@ -1,5 +1,3 @@
-#include <utility>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <base/scope_guard.h>
 #include <fmt/format.h>
@@ -11,31 +9,12 @@ namespace DB
 AsyncTaskExecutor::AsyncTaskExecutor(
     std::unique_ptr<AsyncTask> task_,
     String operation_name_,
-    OpenTelemetry::SpanAttributes initial_span_attributes_,
-    UInt64 initial_span_start_time_us_)
+    std::optional<OpenTelemetry::TracingContextOnThread> external_trace_context_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())
-    , span_attributes(std::move(initial_span_attributes_))
-    , initial_span_start_time_us(initial_span_start_time_us_)
+    , external_trace_context(std::move(external_trace_context_))
 {
-}
-
-void AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
-{
-    std::lock_guard guard(span_attributes_mutex);
-    span_attributes.push_back(std::move(attribute));
-}
-
-void AsyncTaskExecutor::flushSpanAttributes(OpenTelemetry::Span & span) noexcept
-{
-    /// noexcept: called from a scope guard that can run during the forced unwind of a cancelled fiber.
-    if (!span.isTraceEnabled())
-        return;
-    /// Span::addAttribute never throws, attributes are best-effort.
-    std::lock_guard guard(span_attributes_mutex);
-    for (const auto & attribute : span_attributes)
-        span.addAttribute(attribute);
 }
 
 void AsyncTaskExecutor::resume()
@@ -111,18 +90,14 @@ struct AsyncTaskExecutor::Routine
 
     void operator()(SuspendCallback suspend_callback)
     {
-        /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
-        OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
-
-        /// Continue a span handed over by the caller adopting the current start_time or restart it(0)
-        if (UInt64 handed_over_start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL))
-        {
-            if (trace_context_holder.root_span.isTraceEnabled())
-                trace_context_holder.root_span.start_time_us = handed_over_start_time_us;
-        }
-
-        /// Copy the buffered attributes onto the span right before it is finished
-        SCOPE_EXIT({ executor.flushSpanAttributes(trace_context_holder.root_span); });
+        /// Either run inside the caller-owned span, or seed the fiber-local tracing context from the
+        /// thread that created the executor and open one span per task execution.
+        std::optional<OpenTelemetry::TracingContextGuard> trace_context_guard;
+        std::optional<OpenTelemetry::TracingContextHolder> trace_context_holder;
+        if (executor.external_trace_context)
+            trace_context_guard.emplace(*executor.external_trace_context);
+        else
+            trace_context_holder.emplace(executor.operation_name, executor.parent_trace_context);
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try

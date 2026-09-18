@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Overview'
+sidebarTitle: 'C#'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
 slug: /integrations/csharp
 description: 'The official C# client for connecting to ClickHouse.'
@@ -98,16 +98,19 @@ Below is a full list of all the settings, their default values, and their effect
 
 | Property | Type | Default | Connection String Key | Description |
 |----------|------|---------|----------------------|-------------|
-| UseCompression | `bool` | `true` | `Compression` | Enable gzip compression for data transfer |
+| UseCompression | `bool` | `true` | `Compression` | Governs transport compression in both directions for an ordinary query: it asks the server to compress the response (`enable_http_compression`; see `AcceptEncoding` for the codec, which an explicit value can request even with this off) **and** gzip-compresses the request body — except with `UseFormDataParameters`, whose multipart body is always sent uncompressed. Binary inserts never consult it; they use `InsertOptions.Compressor` — see [Insert compression](#insert-compression) |
+| AcceptEncoding | `string` | `null` | `AcceptEncoding` | `Accept-Encoding` sent with every request, replacing the codecs the driver advertises by default (`zstd, lz4, gzip, deflate`). Whatever the server answers with is decoded transparently. See [Response decompression](#response-decompression) |
 | UseCustomDecimals | `bool` | `true` | `UseCustomDecimals` | Use `ClickHouseDecimal` for arbitrary precision; if false, uses .NET `decimal` (128-bit limit) |
 | ReadStringsAsByteArrays | `bool` | `false` | `ReadStringsAsByteArrays` | Read `String` and `FixedString` columns as `byte[]` instead of `string`; useful for binary data |
 | UseFormDataParameters | `bool` | `false` | `UseFormDataParameters` | Send parameters as form data instead of URL query string |
-| ReadBufferSize | `int` | `8192` (8 KiB) | `ReadBufferSize` | Size in bytes of the buffer used to read HTTP query responses. Increase to reduce buffer refills for large result sets. Values at or above 85,000 bytes are allocated on the Large Object Heap, which can cause LOH fragmentation and longer GC pauses. |
+| ReadBufferSize | `int` | `65536` (64 KiB) | `ReadBufferSize` | Size in bytes of the buffer that reads HTTP query responses. The driver rents the buffer from a shared pool and returns it when it disposes the reader, so it is not an allocation for each query. Increase it to reduce buffer refills on large result sets. The driver holds one buffer for each concurrent reader, so memory use increases with the buffer size and the number of concurrent readers. See [Buffers](#perf-buffers). |
 | ParameterTypeResolver | `IParameterTypeResolver` | `null` | — | Custom resolver for `@`-style parameter type mapping; see [Custom parameter type mapping](#parameter-type-mapping) |
 | ParameterFormatter | `IParameterFormatter` | `null` | — | Custom formatter for parameter value serialization; see [Custom parameter value formatting](#parameter-value-formatting) |
 | ReadValueConverter | `IReadValueConverter` | `null` | — | Custom transform applied to values returned by the data reader; see [Custom read value conversion](#read-value-conversion) |
 | JsonReadMode | `JsonReadMode` | `Binary` | `JsonReadMode` | How JSON data is returned: `Binary` (returns `JsonObject`) or `String` (returns raw JSON string) |
 | JsonWriteMode | `JsonWriteMode` | `String` | `JsonWriteMode` | How JSON data is sent: `String` (serializes via `JsonSerializer`, accepts all inputs) or `Binary` (registered POCOs only with type hints) |
+| MapReadMode | `MapReadMode` | `Dictionary` | `MapReadMode` | How `Map(K, V)` data is returned: `Dictionary` (returns `Dictionary<K, V>`; a repeated key keeps only its last value) or `KeyValuePairs` (returns `List<KeyValuePair<K, V>>`, keeping every pair). See [Map type](#type-map-reading-map) |
+| AllowDuplicateJsonKeys | `bool` | `false` | `AllowDuplicateJsonKeys` | How to read a `JSON` row whose overlapping paths both hold a value. `false` throws, because keeping either value means dropping the other; `true` keeps whichever the row carries last. See [Overlapping paths](#type-map-reading-json) |
 
 ### Session management {#session-management}
 
@@ -193,7 +196,7 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 | ParameterFormatter | `IParameterFormatter` | Override client-level formatter for `@`-style parameter value serialization; see [Custom parameter value formatting](#parameter-value-formatting) |
 | ReadValueConverter | `IReadValueConverter` | Override client-level transform applied to values returned by the data reader; see [Custom read value conversion](#read-value-conversion) |
 | MaxExecutionTime | `TimeSpan?` | Server-side query timeout (passed as `max_execution_time` setting); server cancels query if exceeded |
-| AcceptEncoding | `string` | Per-query `Accept-Encoding` header override (e.g., `"zstd"`, `"zstd, gzip;q=0.5"`); also forces `enable_http_compression=1` on the URL. See [Per-query transport compression](#per-query-accept-encoding). |
+| AcceptEncoding | `string` | Per-query `Accept-Encoding` override (e.g. `"br"`, `"identity"`), taking precedence over `ClickHouseClientSettings.AcceptEncoding`; also forces `enable_http_compression=1` on the URL. See [Per-query transport compression](#per-query-accept-encoding). |
 
 **Example:**
 
@@ -228,6 +231,8 @@ var reader = await client.ExecuteReaderAsync(
 | BatchSize | `int` | 100,000 | Number of rows per batch |
 | MaxDegreeOfParallelism | `int` | 1 | Number of parallel batch uploads |
 | Format | `RowBinaryFormat` | `RowBinary` | Binary format: `RowBinary` or `RowBinaryWithDefaults` |
+| Compressor | `IClickHouseCompressor` | `ZstdCompressor.Default` | Codec applied to the insert body (`Content-Encoding`). `null` sends it uncompressed. See [Insert compression](#insert-compression) |
+| QueryPlacement | `InsertQueryPlacement` | `Body` | Where the `INSERT INTO ... FORMAT ...` statement is sent: `Body` (ahead of the rows) or `Url` (as the `query` URL parameter). See [Insert query placement](#insert-query-placement) |
 | ColumnTypes | `IReadOnlyDictionary<string, string>` | `null` | Column name → ClickHouse type string. Skips the schema probe query when set. |
 | UseSchemaCache | `bool` | `false` | Cache full table schema per (database, table) for the client's lifetime. |
 
@@ -338,13 +343,11 @@ using var client = new ClickHouseClient(settings);
 For dependency injection scenarios, use `IHttpClientFactory`:
 
 ```csharp
-// In your DI configuration
+// In your DI configuration. No AutomaticDecompression needed — the driver decodes
+// compressed responses itself, and a mask here would widen its Accept-Encoding.
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
 // Create client with factory
@@ -506,6 +509,19 @@ If `ColumnTypes` is set in `InsertOptions`, they will override the POCO attribut
 
 POCO inserts work seamlessly when columns are added to the target table after the type is registered. Because the driver only inserts the columns mapped by the POCO, any new columns with `DEFAULT` (or other default expressions) are filled in by the server automatically. No code changes or re-registration are needed.
 
+#### Insert query placement {#insert-query-placement}
+
+A binary insert writes its `INSERT INTO ... FORMAT ...` statement as the first line of the request body, ahead of the rows. The body is compressed by default, so routing and logging that inspect only the URL do not see the statement. Set `InsertOptions.QueryPlacement` to `InsertQueryPlacement.Url` to send the statement as the `query` URL parameter instead, leaving the body to the rows alone:
+
+```csharp
+var options = new InsertOptions { QueryPlacement = InsertQueryPlacement.Url };
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+Use it when a proxy, load balancer or gateway routes or inspects on the `query` parameter, or when you want the statement in access logs and observability tooling. It is opt-in because the statement then counts towards the URL length. The effective limit is the lowest imposed by the .NET runtime, an intermediary and the server. On .NET 6 through .NET 9, `System.Uri` limits the complete encoded request URI to 65,519 characters; the driver throws an `InvalidOperationException` that directs you back to `InsertQueryPlacement.Body` when this limit is exceeded. ClickHouse's `http_max_uri_size` is 1 MiB by default, while an intermediary may impose a lower limit. In body mode, the statement and rows have no such URL-length limit; other request options can still appear in the URL.
+
+The setting is independent of `Compressor`: the body is encoded the same way in both modes.
+
 ---
 
 ### Reading data {#reading-data}
@@ -572,7 +588,50 @@ A registered type must have:
 
 Column matching is case-sensitive. Missing result columns leave properties at their default value; extra result columns are ignored.
 
-There are no automatic conversions and a type mismatch throws `InvalidOperationException`.
+The driver does not widen or narrow values. Apart from the alternate representations listed below,
+the column's framework type must be assignable to the property type, and a mismatch throws
+`InvalidOperationException`. An `object` property therefore accepts any column.
+
+##### Supported property types {#poco-read-types}
+
+`QueryAsync<T>` reads each of these columns straight into a matching property:
+
+| ClickHouse column | Property type(s) |
+|---|---|
+| `Int8`/`Int16`/`Int32`/`Int64` | `sbyte`/`short`/`int`/`long` |
+| `UInt8`/`UInt16`/`UInt32`/`UInt64` | `byte`/`ushort`/`uint`/`ulong` |
+| `Int128`/`UInt128` | `BigInteger`, or native `System.Int128`/`System.UInt128` on .NET 8 and later |
+| `Int256`/`UInt256` | `BigInteger` |
+| `Float32`/`Float64`/`BFloat16` | `float`/`double`/`float` |
+| `Bool` | `bool` |
+| `Decimal` | `decimal` or `ClickHouseDecimal` |
+| `Date`/`Date32`/`DateTime`/`DateTime64` | `DateTime`, `DateTimeOffset` or `DateOnly` |
+| `Time`/`Time64` | `TimeSpan` |
+| `UUID` | `Guid` |
+| `IPv4`/`IPv6` | `IPAddress` |
+| `Enum8`/`Enum16` | `string` (the label) or `int` (the wire ordinal) |
+| `String`/`FixedString` | `string` or `byte[]` |
+
+Every row also accepts the nullable form of its property type (`long?`, `DateOnly?`, and so on),
+whether or not the column is `Nullable(...)`. A non-nullable value-type property on a `Nullable(T)`
+column is accepted at registration, but throws when a NULL arrives.
+
+Wrappers like `LowCardinality(T)`, `SimpleAggregateFunction(f, T)` and `Object(T)` map exactly as `T`.
+
+Composite columns are supported too, and take the framework type given in the
+[reading type reference](#clickhouse-native-type-map-reading): `Array(T)` into `T[]`, `Tuple(...)`
+into `System.Tuple<...>`, `Nested(...)` into `Tuple<...>[]`, `JSON` into `JsonObject` (or `string`
+under [`JsonReadMode=String`](#type-map-reading-json)), and `Variant`/`Dynamic` into `object`.
+
+A `Map(K, V)` column is a special case: a `List<KeyValuePair<K, V>>` or `KeyValuePair<K, V>[]`
+property reads on the box-free path and keeps the on-wire order and any repeated keys, in either
+[`MapReadMode`](#type-map-reading-map). A `Dictionary<K, V>` property works in the default mode
+only. The key and value types must match exactly, so
+`Map(String, Nullable(Int32))` needs `KeyValuePair<string, int?>`.
+
+Where a column offers more than one property type (a `DateTime` column as `DateTime`,
+`DateTimeOffset` or `DateOnly`, a `String` column as `string` or `byte[]`) the declared property type selects the representation. These alternate representations
+belong to the POCO path, so `QueryAsync<T>` has them and `MapTo<T>` does not.
 
 ##### Materializing a single row {#poco-read-mapto}
 
@@ -587,6 +646,20 @@ while (reader.Read())
     Console.WriteLine($"{reading.SensorName}: {reading.Value}");
 }
 ```
+
+Use `MapTo<T>` when you must drive the reader loop yourself — for example to mix raw column access
+with POCO materialization. It reads the row through the reader's boxed values, so it does not offer
+the alternate property types above, and it allocates more than `QueryAsync<T>` does. Prefer
+`QueryAsync<T>` when you only need the rows; see
+[choose the materialization path](#perf-read-path) for the numbers.
+
+##### Read value converters {#poco-read-converters}
+
+A client-level or per-query [read value converter](#read-value-conversion) applies to both paths and
+does not disable the box-free read. The driver converts each column on the overload that matches how
+it read the column: the typed `ConvertValue<T>` for a box-free
+column, and the boxed `ConvertValue` for a composite column. Implement the two overloads
+consistently, or the same column gives different results on different paths.
 
 ##### Registration diagnostics {#poco-read-diagnostics}
 
@@ -614,6 +687,23 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
 
 <Note>
 SQL 'bind' parameters are passed as HTTP URI query parameters, so using too many of them may result in a "URL too long" exception. Use `InsertBinaryAsync` for bulk data insertion to avoid this limitation.
+</Note>
+
+#### ADO-style `@name` placeholders {#at-style-placeholders}
+
+The driver also accepts `@name` placeholders, which ORMs such as Dapper emit. These are a
+client-side convenience: before the request is sent, each one is rewritten to
+`{name:ResolvedType}`, so the server never sees an `@`. See
+[type resolution](#parameter-type-mapping) for how the type is chosen. Use the explicit
+`{name:Type}` form where you can.
+
+A `@name` with no matching parameter is left untouched for the server to reject. Matching is
+case-sensitive, so `@ID` does not bind a parameter named `id`.
+
+<Note>
+To turn the rewrite off, set the `ClickHouse.Driver.DisableReplacingParameters` AppContext switch
+before the first use of the driver. Only the text rewrite stops; parameters are still sent, so
+queries written with native `{name:Type}` syntax keep working.
 </Note>
 
 #### Identifier parameters {#identifier-parameters}
@@ -820,16 +910,16 @@ If you need to dispatch on the ClickHouse-side type string (for example, to dist
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickhouseType)
+    public object ConvertValue(object value, string columnName, string clickHouseType)
     {
-        if (value is DateTime dt && clickhouseType == "DateTime")
+        if (value is DateTime dt && clickHouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
@@ -843,6 +933,22 @@ You can also set a converter per-query via `QueryOptions.ReadValueConverter`; wh
 **Dispatch boundary:**
 
 The converter is invoked once per column with the entire deserialized cell value, it does **not** recurse into composite containers. For an `Array(Int32)` column the value passed in is an `int[]`; for `Tuple(Int32, String)` it is an `ITuple`.
+
+**Which overload runs:**
+
+Both overloads must agree, because the one the driver calls depends on how the caller read the
+column:
+
+- `ConvertValue<T>` — the typed accessors `GetByte`, `GetSByte`, `GetInt16`/`32`/`64`,
+  `GetUInt16`/`32`/`64`, `GetFloat`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetIPAddress`,
+  `GetBigInteger` and `GetFieldValue<T>`, plus every box-free column on the
+  [POCO read path](#poco-read-converters).
+- `ConvertValue` (boxed) — `GetValue`, `GetValues`, the indexers, `GetChar`, `GetTuple`, and the
+  coercing paths in `GetBoolean`, `GetDecimal` and `GetString`.
+
+`IsDBNull` runs no converter at all: it reads the null flag directly, so a converter can never
+change whether a value counts as null. `TryGetEnumOrdinal` likewise bypasses it — see
+[reading an enum's ordinal](#ado-net-reader-enum-ordinal).
 
 The converter works with the ADO.NET `ClickHouseConnection` path — the settings are inherited by connections created from the client.
 
@@ -868,7 +974,7 @@ Common formats: `JSONEachRow`, `CSV`, `TSV`, `Parquet`, `Native`. See the [forma
 
 ### Per-query transport compression {#per-query-accept-encoding}
 
-By default, the client negotiates `gzip, deflate` when `Compression=true` (the connection-string default) and the HTTP client decompresses the stream transparently.
+By default, the client negotiates `zstd, lz4, gzip, deflate` when `Compression=true` (the connection-string default) and decodes the stream itself, transparently.
 
 For raw exports (e.g. Parquet, Arrow, Native) you may want to negotiate a different codec (e.g. `zstd` or `lz4`) to trade CPU for bandwidth without changing the connection-wide setting. `QueryOptions.AcceptEncoding` and `ClickHouseCommand.AcceptEncoding` set the HTTP `Accept-Encoding` header for a single request, replacing whatever default was attached, and force `enable_http_compression=1` on the URL (which ClickHouse requires before it will honor `Accept-Encoding`).
 
@@ -883,17 +989,253 @@ await using var body = await result.ReadAsStreamAsync();
 
 #### HttpClient configuration {#per-query-accept-encoding-httpclient}
 
-The default `HttpClient` the driver builds has `AutomaticDecompression = GZip | Deflate`, which transparently decompresses those algorithms and strips `Content-Encoding` from the response. This is what you want for normal queries, but not if you want to handle the raw, compressed data yourself.
-
-In that case, pass an `HttpClient` or `HttpClientFactory` to the ClickHouseClient with `AutomaticDecompression = DecompressionMethods.None`
+Nothing to configure: the `HttpClient` the driver builds leaves `AutomaticDecompression` at `DecompressionMethods.None` and the driver decodes responses itself, so `Content-Encoding` is never stripped behind your back and a raw body reaches you exactly as the server sent it.
 
 <Warning>
-If `AcceptEncoding` requests a codec the configured `HttpClient` cannot auto-decompress, only `ExecuteRawResultAsync` is safe. Calling `ExecuteReaderAsync`, `ExecuteScalarAsync`, or `ExecuteNonQueryAsync` on that same query path will try to parse the compressed bytes as the regular result format and produce garbage.
+If you supply your own `HttpClient`, leave `AutomaticDecompression` off too. It is not only a response-side setting: at send time the handler **adds every algorithm in its mask that is missing from the outgoing `Accept-Encoding`**. A handler with `GZip | Deflate` therefore turns an explicit `AcceptEncoding = "lz4"` into `lz4, gzip, deflate` and an explicit `"identity"` into `identity, gzip, deflate` on the wire — and since ClickHouse resolves the header by its own fixed codec preference (ignoring order and q-values), it can answer with a codec you never asked for, which the handler then decodes and strips so you cannot even see it happened. Leaving the mask off keeps the offer exactly what you chose.
+</Warning>
+
+<Warning>
+If `AcceptEncoding` requests a codec the driver cannot decode (`snappy`), only `ExecuteRawResultAsync` is safe. `ExecuteReaderAsync`, `ExecuteScalarAsync` and `ExecuteNonQueryAsync` fail with a `NotSupportedException` naming the codec (previously they parsed the compressed bytes as the result format and produced garbage).
 </Warning>
 
 #### Error bodies {#per-query-accept-encoding-errors}
 
-When the server responds with a 4xx/5xx and `enable_http_compression=1` was set, it compresses the error body with the same codec it would have used for a successful response. The driver decompresses these for codecs the BCL ships with (`gzip`, `deflate`, `br`/`brotli`) so the message surfaced on `ClickHouseServerException` is readable. For codecs it cannot decode (`zstd`, `lz4`, …), the driver returns a placeholder message that names the codec and points at `system.query_log` for the original error text.
+When the server responds with a 4xx/5xx and `enable_http_compression=1` was set, it compresses the error body with the same codec it would have used for a successful response. The driver decodes those for every codec it supports (`lz4`, `zstd`, `gzip`, `deflate`, `br`/`brotli`) so the message on `ClickHouseServerException` is readable. For anything else (`snappy`, …) it returns a placeholder naming the codec and pointing at `system.query_log` for the original error text.
+
+---
+
+### Response decompression {#response-decompression}
+
+`Accept-Encoding` only asks the server to compress the response — something still has to decode it. The driver does that itself, from the response's `Content-Encoding`, so all the normal read APIs (`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, Dapper, EF Core, linq2db) work over a compressed response with nothing to configure. It decodes `lz4`, `zstd`, `gzip`, `deflate` and `br`; `snappy` is not supported.
+
+By default the driver advertises **`zstd, lz4, gzip, deflate`**, and ClickHouse answers with `zstd`. To choose differently, set `Accept-Encoding` yourself — client-wide:
+
+```csharp
+using var client = new ClickHouseClient(new ClickHouseClientSettings("Host=localhost")
+{
+    AcceptEncoding = "br",      // decodable, but not advertised by default
+});
+```
+
+per query, which takes precedence:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "identity" });   // opt this query out
+```
+
+or in the connection string, for ORM users who never touch `ClickHouseClientSettings`:
+
+```text
+Host=localhost;AcceptEncoding=br, gzip
+```
+
+Setting it also forces `enable_http_compression=1` on the URL, which ClickHouse requires before it honors the header at all — including when `UseCompression` is `false`, since naming a codec explicitly is taken as asking for one. With no value set, `UseCompression=false` sends no `Accept-Encoding` at all.
+
+`Accept-Encoding` can be set in four places. The first of these that names a codec wins:
+
+1. `QueryOptions.AcceptEncoding` (or `ClickHouseCommand.AcceptEncoding`)
+2. `CustomHeaders["Accept-Encoding"]` on the query
+3. `CustomHeaders["Accept-Encoding"]` on the client
+4. `ClickHouseClientSettings.AcceptEncoding`, or the `AcceptEncoding` connection-string keyword
+
+If none of them does, the driver sends its default list. A value that names no codec (null, empty,
+whitespace, or only commas) counts as unset and falls through to the next place. To turn off compression, use `identity`.
+
+**The server, not the client, picks the codec.** ClickHouse scans `Accept-Encoding` for tokens in its own fixed preference order — `zstd` > `br` > `lz4` > `snappy` > `gzip` > `deflate` — and ignores both the order you list them in and any q-values. So the header is a capability announcement rather than a demand, and the only way to steer the choice is which tokens you leave out. The default includes `zstd`, so a default query is answered with zstd; the remaining tokens act as a fallback. `br` is decodable but not advertised by default.
+
+How the codecs compare on payload size, server CPU and client CPU depends on your data, your link and the server's `http_zlib_compression_level` (shipped default: 3) — see [Tuning compression](#tuning-compression).
+
+- **`http_zlib_compression_level`.** That setting applies to every HTTP codec, and the default value is 3. This value should be tuned based on your data, link speed, and CPU use.
+- **A CPU-bound client on a fast link.** The driver decodes the response body on the calling thread, so when the network is not the bottleneck, client-side decode speed could act as the limiting factor.
+
+Ask for a different codec per query, or client-wide, whenever either applies:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "lz4" });   // decode this one with lz4 instead
+```
+
+Because the decision is made from the response, a body is decoded whenever its `Content-Encoding` says so, whatever was requested: absent or `identity` passes through untouched, a supported codec is decoded, and anything else raises an error naming it. There is no risk of double-decoding — if a caller-supplied handler's `AutomaticDecompression` has already decoded a body it also strips `Content-Encoding`, so the driver sees plaintext and leaves it alone.
+
+**Raw results advertise no codec.** `ExecuteRawResultAsync` (and the public `PostStreamAsync` / `InsertRawStreamAsync`) hand their body to you verbatim, so unless you name a codec yourself they ask for none at all — nothing in the driver decodes such a body, so offering a codec there would silently turn an export into a compressed file. The rule is therefore simple and independent of how any `HttpClient` is configured: **a verbatim body arrives exactly as the server sent it, and the server sends plaintext unless you asked for a codec.** Asking for one (client-wide or per query) is how you export compressed bytes on purpose.
+
+An explicit `AcceptEncoding` (at either level) still applies to raw requests, and `ClickHouseRawResult.ReadDecompressedStreamAsync()` decodes the result when you want that; `ReadAsStreamAsync`, `ReadAsByteArrayAsync`, `ReadAsStringAsync` and `CopyToAsync` always return the bytes exactly as they arrived.
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT JSONEachRow",
+    options: new QueryOptions { AcceptEncoding = "lz4" });
+
+Console.WriteLine(result.ContentEncoding); // "lz4"
+
+await using var body = await result.ReadDecompressedStreamAsync();
+using var bodyReader = new StreamReader(body);
+var json = await bodyReader.ReadToEndAsync();
+```
+
+Read the returned stream to completion before it goes out of scope, as above. When the response *is* compressed you get a decoder created with `leaveOpen`, so disposing it leaves the response intact; when it is **not** compressed you get the HTTP content stream itself, so disposing it ends the body. Either way the `ClickHouseRawResult` owns the response — don't call its other read members after the stream has been disposed. Disposing the `ClickHouseRawResult` is always required and on its own sufficient: it releases both the response and any decoder inserted here (decoders hold pooled buffers). The `await using` above is therefore optional, and safe to keep. Repeated sequential calls hand back the same stream; the type is not safe to use concurrently.
+
+See [Select_007_ResponseCompression.cs](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/Select/Select_007_ResponseCompression.cs) for a runnable example.
+
+#### Insert (request) compression {#insert-compression}
+
+Zstd is the default codec for inserts: `InsertOptions.Compressor` starts as `ZstdCompressor.Default`,
+which is zstd at level 3. Set it to another compressor to change the codec, or to `null` to send the
+body uncompressed.
+
+```csharp
+var options = new InsertOptions { Compressor = GZipCompressor.Default };  // Content-Encoding: gzip
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+Four codecs ship with the driver. Each has a `Default` instance, and a constructor that takes a level
+and the size of the write buffer:
+
+| Compressor | `Content-Encoding` | Constructor | `Default` |
+|---|---|---|---|
+| `ZstdCompressor` | `zstd` | `(int level = 3, int bufferSize = 262144)` | level 3 |
+| `Lz4Compressor` | `lz4` | `(Lz4Level level = Lz4Level.Fast, int bufferSize = 262144)` | `Lz4Level.Fast` |
+| `GZipCompressor` | `gzip` | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest` |
+| `BrotliCompressor` | `br` | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest` |
+
+```csharp
+var options = new InsertOptions { Compressor = new ZstdCompressor(level: 1) };
+```
+
+<Note>
+*Share compressor instances.* Every `Default` is one shared instance, and all four compressors are
+safe to use from several threads at the same time — which is what happens when
+`InsertOptions.MaxDegreeOfParallelism` is above 1, since one insert uses one compressor for every
+batch. None of them implements `IDisposable`. Construct your own instance once and reuse it, the
+same way `Default` is used.
+</Note>
+
+##### A custom codec {#custom-compressor}
+
+`IClickHouseCompressor` is public, and an implementation must provide only two members:
+
+```csharp
+public sealed class MyCompressor : IClickHouseCompressor
+{
+    public string ContentEncoding => "my-codec";
+
+    public Stream Compress(Stream destination, bool leaveOpen) => /* a compressing write stream */;
+}
+```
+
+The server must accept the `Content-Encoding` you name. The remaining members —
+`Decompress`, `MethodByte`, `MaxEncodedLength`, `Encode` and `Decode` — have default
+implementations that throw `NotSupportedException`, so override only the ones your codec needs.
+Implement `Decompress` to decode response bodies as well as compress requests, and raise
+`InvalidDataException` from the stream it returns when a body is corrupt or in the wrong format.
+
+`InsertOptions.Compressor` governs a binary insert only. The driver's other request bodies are compressed by different rules, and none of them goes through it:
+
+- **Every SQL-text request** (`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, `ExecuteRawResultAsync`, the ADO.NET layer) sends its statement with `Content-Encoding: gzip` whenever `UseCompression` is `true` — i.e. by default. The codec is not configurable: `AcceptEncoding` steers the response only, so gzip or nothing is the choice. `Compression=false` sends the statement in the clear. Statements are small, so this is rarely worth thinking about — but it is worth knowing when you are watching requests in a proxy or a packet capture.
+- **A multipart body** — a query whose parameters are sent as form data (`UseFormDataParameters=true`) — is always sent uncompressed, whatever `UseCompression` says.
+- **A raw upload** (`InsertRawStreamAsync`, `PostStreamAsync`) takes its own per-call flag and consults neither `UseCompression` nor `InsertOptions.Compressor`: gzip when the flag is set, uncompressed otherwise. Note that `InsertRawStreamAsync`'s `useCompression` parameter defaults to `true`, so a raw upload is gzipped unless you pass `false` — even with `Compression=false` on the client.
+
+---
+
+### Tuning compression {#tuning-compression}
+
+Compression trades CPU for bytes. Whether that is a win depends almost entirely on how fast your
+link is relative to how fast the codec runs. There is no setting that is right for
+everyone.
+
+#### The one number that decides it
+
+Compressing is worth it as long as the codec is faster than the network.
+
+That threshold is lower than most people expect on the read path, because ClickHouse compresses
+HTTP responses single-threaded in the output buffer. Measured on a 16-vCPU ClickHouse Cloud
+service (`hits`, RowBinary, level 3), the server produces compressed output at roughly 100-200MB/s.
+
+So for a large result, and assuming a single query being processed at a time, compression stops paying somewhere around 100 MB/s. A single HTTPS stream
+inside one cloud region commonly exceeds that, while anything crossing the public internet, a VPN or a region boundary is usually below it.
+
+The insert path tolerates compression to higher link speeds, because your client compresses on a core of its own and is typically faster than the server's response compression.
+
+#### Rough guide by deployment
+
+| Where your client runs | Typical bandwidth | Reads | Inserts |
+|---|---|---|---|
+| Same host / loopback | > 500 MB/s | `identity` | `lz4` fastest, or none |
+| Same region, same cloud | ~100–500 MB/s | `identity` or `lz4` | `zstd:1` |
+| Cross-region, same cloud | ~10–100 MB/s | `zstd` | `zstd:3` |
+| Internet / VPN / different cloud | < 25 MB/s | `zstd` | `zstd:3` |
+| Metered or very constrained | < 5 MB/s | `zstd` | `zstd:5`+ or `br` |
+
+Three things this table does not capture:
+
+- **Egress cost:** if you are billed for data transfer, bytes have a price beyond latency, and that
+pushes toward higher compression regardless of link speed.
+- **Small results:** all of the above concerns large payloads. For small responses the codec barely
+matters and per-request overhead dominates.
+- **Parallel inserts move the insert thresholds up.** Every throughput figure above is for a *single* thread. `InsertOptions.MaxDegreeOfParallelism` defaults to `1`, but raising it compresses batches concurrently, so the client's aggregate encode rate scales roughly with the cores you give it. So on a fast link a parallel insert can stay worth
+compressing well past the speed at which a single-threaded one stops being worth it. Treat the insert rows in the table as a *floor*, and if you already batch in parallel, retest before concluding that your link is too fast for compression.
+
+The read path only parallelizes across multiple queries.
+
+#### Choosing a codec
+
+| Codec | Ratio | Use it when | Watch out for |
+|---|---|---|---|
+| `lz4` | lowest | Fast links; CPU is scarcer than bandwidth. Cheapest to decode by a wide margin, and the quickest on small results — which makes it the codec to name when you want out of the zstd default. | It has **no entropy coder**, so on data that is skewed but not repetitive (long runs of numeric text, for example) its ratio falls well behind everything else. It is also the codec most punished by raising `http_zlib_compression_level`: level 1 → 3 costs it ~2.7× the CPU for ~29% fewer bytes. |
+| `zstd` | high | The general-purpose choice whenever a real network is involved. Best ratio-per-CPU in the range that matters, and at level 3 it beats `lz4` on bytes *and* server CPU *and* wall clock. | more expensive than `lz4` to **decode** — 1.6× at level 3 in our measurements, though at level 1 the two are comparable — and the driver decodes on your calling thread. At `http_zlib_compression_level=1` specifically it costs slightly *more* server CPU than `lz4`. |
+| `gzip` | medium | Interoperability — universally understood by proxies and gateways. | Dominated on every axis by both `lz4` and `zstd` in our measurements: larger than `zstd` while costing several times more CPU to encode and 5–9× more to decode. Choose it for compatibility, not performance. |
+| `br` | highest at low levels | Bandwidth is genuinely the binding constraint and you can spend CPU for it. | Cliffs badly at higher levels — at `http_zlib_compression_level=6` we measured it at 3–4× `zstd`'s server CPU. Not advertised by default, because it outranks every fallback token in the default list. |
+
+#### Levels
+
+Response compression is governed by a single server setting, `http_zlib_compression_level`, which applies to *every* HTTP codec, not just zlib. It defaults to 3.
+
+Leave it alone unless you have measured a reason. Above the default it buys very little size for a lot of CPU (for `zstd`, 3 → 6 roughly doubles server CPU for ~14% fewer bytes), and `br` becomes pathological. Below it, at level 1, the picture genuinely changes: `lz4` gets much cheaper and `zstd` loses its CPU advantage over it. Set it per query if you need to:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions
+    {
+        AcceptEncoding = "zstd",
+        CustomSettings = new Dictionary<string, object> { ["http_zlib_compression_level"] = 1 },
+    });
+```
+
+#### Measuring your own crossover
+
+The quickest way to optimize your choice of codec and compression level is to time the same query at a few codecs and compare.
+
+```csharp
+foreach (var codec in new[] { "identity", "lz4", "zstd" })
+{
+    var sw = Stopwatch.StartNew();
+    using var reader = await client.ExecuteReaderAsync(
+        "SELECT ... FROM big_table",
+        options: new QueryOptions { AcceptEncoding = codec });
+    while (await reader.ReadAsync()) { }
+    Console.WriteLine($"{codec,-9} {sw.ElapsedMilliseconds} ms");
+}
+```
+
+For the server's side of the same picture, read `ProfileEvents` back out of `system.query_log` — set
+`QueryOptions.QueryId` so you can find the row:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+One trap if you benchmark this yourself: a bare `LIMIT n` without `ORDER BY` returns *different rows
+on every run*, so each repetition compresses different data and the ratios become noise. Compare
+against a fixed result set.
 
 ---
 
@@ -904,15 +1246,27 @@ Use `InsertRawStreamAsync` to insert data directly from file or memory streams i
 **Insert from a CSV file:**
 
 ```csharp
-await using var fileStream = File.OpenRead("data.csv");
-
 using var response = await client.InsertRawStreamAsync(
     table: "my_table",
-    stream: fileStream,
+    stream: File.OpenRead("data.csv"),
     format: "CSV",
     columns: ["id", "product", "price"] // Optional: specify columns
 );
 ```
+
+<Warning>
+*The driver takes ownership of the stream.* `InsertRawStreamAsync` and `PostStreamAsync` dispose the
+stream you give them once the request finishes, whether it succeeded or failed. Do not dispose it
+yourself and do not reuse it afterwards — which is why the example above does not wrap the
+`FileStream` in a `using`.
+
+A `using` of your own runs after the driver has already disposed the stream. For a `FileStream` or
+`MemoryStream` that second call is harmless, but for a stream whose `Dispose` returns a pooled
+buffer or drops a reference count it releases the resource twice.
+
+Ownership passes only once the arguments are accepted: if the call throws `ArgumentException` or
+`ArgumentNullException` for a missing table, stream or format, the stream is still yours.
+</Warning>
 
 <Note>
 See the [format settings documentation](/reference/settings/formats) for options to control data ingestion behavior.
@@ -1040,6 +1394,25 @@ while (reader.Read())
     }
 }
 ```
+
+#### Reading an enum's ordinal {#ado-net-reader-enum-ordinal}
+
+An `Enum8` or `Enum16` column materializes as its label: `GetFieldType` reports `string`, and
+`GetString`, `GetValue` and `GetFieldValue<string>` all give you the label. The numeric accessors
+throw `InvalidCastException` on an enum column, because the value being held is a string.
+
+Use `TryGetEnumOrdinal` to get the number behind the label:
+
+```csharp
+if (reader.TryGetEnumOrdinal(ordinal, out int value))
+    Console.WriteLine(value);   // e.g. 1 for 'Active' in Enum8('Active' = 1)
+```
+
+It returns `true` and sets `value` for an `Enum8`/`Enum16` column, and for a `Nullable(Enum...)`
+column whose cell is not NULL. It returns `false`, with `value` set to `0`, for a NULL cell or for
+any column that is not an enum. The ordinal is the
+signed value from the wire, so it can be negative, and an `Enum16` ordinal can be larger than a
+byte.
 
 ## Best practices {#best-practices}
 
@@ -1176,6 +1549,8 @@ await using var cmd3 = connection.CreateCommand("SELECT * FROM users WHERE id IN
 await using var reader = await cmd3.ExecuteReaderAsync();
 ```
 
+---
+
 ## Supported data types {#supported-data-types}
 
 `ClickHouse.Driver` supports all ClickHouse data types. The tables below show the mappings between ClickHouse types and native .NET types when reading data from the database.
@@ -1244,6 +1619,10 @@ Decimal type conversion is controlled via the UseCustomDecimals setting.
 
 <Note>
 By default, both `String` and `FixedString(N)` columns are returned as `string`. Set `ReadStringsAsByteArrays=true` in your connection string to read them as `byte[]` instead. This is useful when storing binary data that may not be valid UTF-8.
+
+The setting reaches strings nested inside other types too, so `Array(String)` reads as `byte[][]`
+and `Map(String, String)` as `Dictionary<byte[], byte[]>` — keys included. The one exception is a
+`JSON` column, whose string leaves are always text; see [JSON type](#type-map-reading-json).
 </Note>
 
 ---
@@ -1313,6 +1692,120 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 // "Host=localhost;JsonReadMode=String"
 ```
 
+`None` is a third mode. It reads exactly as `Binary` does, but sends no server setting with the
+query — use it on a connection that is not allowed to set one.
+
+##### Typed paths and nulls {#type-map-reading-json-nulls}
+
+A path declared in the column type is a **typed path**; any other path in the document is a
+**dynamic path**. The two differ when a value is null.
+
+A typed path always appears in the `JsonObject`. Declared `Nullable(T)` or `Dynamic`, it comes back
+as a JSON null both when the stored value is null and when the document has no such path — the two
+cases are indistinguishable:
+
+```csharp
+// Column type JSON(x Nullable(Int64))
+// stored '{"x":null}'  ->  {"x":null}
+// stored '{}'          ->  {"x":null}
+```
+
+Declared with a non-nullable type, an absent path takes the type's default instead — `JSON(x String)`
+gives `{"x":""}` and `JSON(x Int64)` gives `{"x":0}`.
+
+A dynamic path whose value is null is dropped from the object entirely, so `ContainsKey` returns
+false for it. Reading `{"x":null}` from a plain `JSON` column gives `{}`.
+
+Nested typed paths build their parents, so `JSON(a.b Nullable(Int64))` yields `{"a":{"b":null}}`
+even for an empty document.
+
+<Note>
+This is what the server itself renders, so `Binary` and `String` modes now agree. Before 1.4.0 a
+typed path holding null was dropped from the `JsonObject`, which made `{"x":null}` read back as
+`{}` — and for a nested path such as `JSON(a.b Nullable(Int64))` the whole `a` subtree disappeared.
+</Note>
+
+##### Strings inside a JSON column {#type-map-reading-json-strings}
+
+String leaves inside a `JSON` column are always returned as text, whatever
+`ReadStringsAsByteArrays` is set to — `JsonValue` has no byte-array form, so a `byte[]` would
+render as base64. This holds for `String`, `FixedString`, and for those wrapped in
+`LowCardinality`, `Nullable` or `SimpleAggregateFunction`, and for strings inside `Array` and `Map`,
+map keys included.
+
+<Note>
+A byte array the JSON reader cannot see the type of does still render as base64: a
+`Variant` or `Dynamic` typed path holds a value whose type is known only for each row, so a string
+under `Variant(Array(UInt8), String)` comes back base64-encoded. That is the same in both settings.
+
+A JSON map key type other than exactly `String` — `Map(LowCardinality(String), String)`, for
+example — throws `NotSupportedException`.
+</Note>
+
+##### Overlapping paths
+
+ClickHouse accepts a column which declares a path both as a value and as the parent of another
+path, for example `JSON(a Int64, a.b Int64)`. Both paths are present in every row, so the server
+renders the row with a duplicate key: `{"a":0,"a":{"b":7}}`. A `JsonObject` cannot hold two values
+for one key, so `JsonReadMode.Binary` throws a `SerializationException` naming the two paths. The
+same holds where the value is a `Map`, as in `JSON(a Map(String, Int64))` read from a row which
+also has a dynamic `a.b`.
+
+This applies only where both sides hold a value in that row. A side which holds nothing — a null,
+an empty object, or a subtree whose values are all null — gives way to the side which has the data,
+whichever of the two paths the server sends first. An overlap declared with `Nullable` types therefore fills in one side per row and reads without
+error: `JSON(a Nullable(Int64), a.b Nullable(Int64))` gives `{"a":5}` and `{"a":{"b":7}}` as
+expected.
+
+Read such a column with `JsonReadMode.String` to get the server's JSON text unchanged, duplicate
+key included.
+
+Set `AllowDuplicateJsonKeys` to keep reading the column as a `JsonObject` instead of throwing. The
+driver then keeps whichever of the two values the row carries last and drops the other, so the
+result is lossy: `JSON(a Int64, a.b Int64)` holding `{"a.b":7}` reads as `{"a":0}`. A path which
+holds a value and whose parent holds a scalar or an array still throws, because a subtree cannot be
+placed under either.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    AllowDuplicateJsonKeys = true
+};
+
+// Or via connection string
+// "Host=localhost;AllowDuplicateJsonKeys=true"
+```
+
+---
+
+#### Map type {#type-map-reading-map}
+
+| ClickHouse Type | .NET Type | Notes |
+|-----------------|-----------|-------|
+| Map(K, V) | `Dictionary<K, V>` | Default (`MapReadMode=Dictionary`) |
+| Map(K, V) | `List<KeyValuePair<K, V>>` | When `MapReadMode=KeyValuePairs` |
+
+A ClickHouse `Map(K, V)` is physically an `Array(Tuple(K, V))` and can hold several entries with the same key. A `Dictionary` cannot, so in the default mode a repeated key keeps only its last value and the earlier pairs are dropped. The `MapReadMode` setting selects the representation:
+
+- **`Dictionary` (default)**: Returns `Dictionary<K, V>`.
+
+- **`KeyValuePairs`**: Returns `List<KeyValuePair<K, V>>` in the order the server sent the pairs, so every pair is preserved, including entries which repeat a key.
+
+```csharp
+// Configure key-value-pair mode via settings
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    MapReadMode = MapReadMode.KeyValuePairs
+};
+
+// Or via connection string
+// "Host=localhost;MapReadMode=KeyValuePairs"
+```
+
+The mode selects the framework type of a `Map` column, so it also applies to `GetFieldValue<T>`, the schema types the driver reports, and POCO property mapping. It applies wherever a map appears in a column's type tree — `Array(Map(...))`, `Map(K, Map(...))`, `Tuple(..., Map(...))` and `Dynamic` included.
+
+Both representations are accepted on the write path in either mode — see [writing maps](#type-map-writing-other).
+
 ---
 
 #### Other types {#type-map-reading-other}
@@ -1326,7 +1819,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 | Dynamic | See note |
 | Array(T) | `T[]` (nested `Array(Array(T))` reads as jagged `T[][]`; use `reader.GetFieldValue<T[,]>(ordinal)` to materialize rectangular data as a multidimensional CLR array) |
 | Tuple(T1, T2, ...) | `Tuple<T1, T2, ...>` / `LargeTuple` |
-| Map(K, V) | `Dictionary<K, V>` |
+| Map(K, V) | `Dictionary<K, V>`, or `List<KeyValuePair<K, V>>` when `MapReadMode=KeyValuePairs` — see [Map type](#type-map-reading-map) |
 | Nullable(T) | `T?` |
 | Enum8 | `string` |
 | Enum16 | `string` |
@@ -1419,8 +1912,8 @@ When inserting data, the driver converts .NET types to their corresponding Click
 | DateTime | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime types | See below for details; supported range `[1970-01-01, 2106-02-07 06:28:15]` UTC |
 | DateTime32 | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime types | Same as DateTime |
 | DateTime64 | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime types | Precision based on Scale parameter |
-| Time | `TimeSpan`, `int` | Clamped to ±999:59:59; int treated as seconds |
-| Time64 | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | String parsed as `[-]HHH:MM:SS[.fraction]`; clamped to ±999:59:59.999999999 |
+| Time | `TimeSpan`, `TimeOnly`, `int` | Clamped to ±999:59:59; int treated as seconds |
+| Time64 | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | String parsed as `[-]HHH:MM:SS[.fraction]`; clamped to ±999:59:59.999999999 |
 
 <Note>
 **Out-of-range values**
@@ -1608,7 +2101,7 @@ Property name matching with column type hints is case-sensitive. A property `Use
 | Dynamic | — | **Not supported** (throws `NotImplementedException`) |
 | Array(T) | `IList`, `null` | Null writes empty array. For nested types (`Array(Array(T))` and deeper) both jagged shapes (`T[][]`, `List<List<T>>`) and rectangular multidimensional CLR arrays (`T[,]`, `T[,,]`, …) are accepted; the CLR rank must match the ClickHouse nesting depth. |
 | Tuple(T1, T2, ...) | `ITuple`, `IList` | Element count must match tuple arity. See [ValueTuple caveat](#valuetuple-caveat) for >7 elements. |
-| Map(K, V) | `IDictionary` | |
+| Map(K, V) | `IDictionary`, `IEnumerable<KeyValuePair<K, V>>` | A pair sequence (for example the `List<KeyValuePair<K, V>>` produced by `MapReadMode=KeyValuePairs`) is accepted in either read mode, and can repeat a key. Applies to binary inserts and to query parameters |
 | Nullable(T) | `null`, `DBNull`, or types accepted by T | Writes null flag byte before value |
 | Enum8 | `string`, `sbyte`, numeric types | String looked up in enum dictionary |
 | Enum16 | `string`, `short`, numeric types | String looked up in enum dictionary |
@@ -1884,9 +2377,7 @@ using ClickHouse.Driver;
 
 var handler = new HttpClientHandler
 {
-    // Required when compression is enabled (default)
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-
+    // No AutomaticDecompression needed: the driver decodes compressed responses itself.
     ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) =>
     {
         // Example: Accept a specific certificate thumbprint
@@ -1916,9 +2407,204 @@ using var client = new ClickHouseClient(settings);
 
 <Note>
 Important considerations when providing a custom HttpClient
-- **Automatic decompression**: You must enable `AutomaticDecompression` if compression isn't disabled (compression is enabled by default).
+- **Automatic decompression**: leave `AutomaticDecompression` off. The driver decodes compressed responses itself, so it is not needed — and enabling it works against you on the request side: at send time the handler *also adds* every algorithm in its mask to the outgoing `Accept-Encoding`, widening whatever the driver advertised, so ClickHouse can answer with a codec you did not ask for. See [Response decompression](#response-decompression).
 - **Idle timeout**: Set `PooledConnectionIdleTimeout` smaller than the server's `keep_alive_timeout` (10 seconds for ClickHouse Cloud) to avoid connection errors from half-open connections.
 </Note>
+
+## Performance tuning {#performance-tuning}
+
+This section describes how to use the client to achieve optimal performance, and the various options you can tune to make the client performant for your particular use case.
+
+### At a glance {#perf-at-a-glance}
+
+| If you | Do this |
+|---|---|---|
+| Read rows into POCOs | Use [`QueryAsync<T>`](#perf-read-path), not `MapTo<T>` |
+| Do large inserts | Increase [`InsertOptions.BatchSize`](#perf-insert-batching) |
+| Run an insert-heavy console or worker app | Turn on [Server GC](#perf-gc) |
+| Read large results across a network | Keep response compression on (the default) |
+| Insert across a fast link | Try [`InsertOptions.Compressor = null`](#perf-compression) |
+| Insert into the same table many times | Use [`UseSchemaCache` or `ColumnTypes`](#skip-schema-query) |
+| Read very large results | Increase [`ReadBufferSize`](#perf-buffers) |
+
+---
+
+### Reading: choose the materialization path {#perf-read-path}
+
+There are three ways to get a row out of a result, and they do not cost the same. Some of the paths box the results, causing increased allocations and decreased performance.
+
+| How you read | Boxes each value | Notes |
+|---|---|---|
+| `QueryAsync<T>` | **No** | Reads from the stream directly into your properties. The fast path. |
+| Typed reader accessors (`GetInt32`, `GetInt64`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetFieldValue<T>`) | **No** | Unboxed read from a typed value store. |
+| `MapTo<T>` | Yes | Materializes the row first, then copies the values out of it. |
+| `GetValue` and `GetValues` | Yes | They return `object`, so the value must be boxed when you ask for it. |
+
+For a 1,000,000-row read of 105 columns of the *hits* dataset:
+
+| API | Allocated |
+|---|---:|
+| `QueryAsync<T>` | **1,372 MB** |
+| `MapTo<T>` | 3,133 MB |
+
+```csharp
+// Fast path: register the type once, then stream rows directly into it.
+client.RegisterPocoType<HitRow>();
+
+await foreach (var row in client.QueryAsync<HitRow>("SELECT * FROM hits"))
+    Process(row);
+```
+
+<Note>
+*ORMs get the fast path when they use typed accessors.* linq2db registers `GetInt64`,
+`GetDouble` and `GetDateTime` for each column, so it reads without boxing. Code that reads through
+`GetValue` (including a `dynamic` result from Dapper) boxes each value. If an ORM query is hot
+and reads through `GetValue`, use `QueryAsync<T>` for that one query.
+</Note>
+
+---
+
+### Inserting: batch size and parallelism {#perf-insert-batching}
+
+Batch size is the largest single control on insert throughput. `InsertOptions.BatchSize` defaults to
+100,000 rows.
+
+**Use large batches.** For a 1,000,000-row insert, an increase from 10,000 to 100,000 rows for each
+batch gave:
+
+| Insert | 10,000 rows/batch | 100,000 rows/batch | |
+|---|---:|---:|---:|
+| POCO | 15,308 ms | 7,853 ms | −49% |
+| `object[]` | 17,027 ms | 10,671 ms | −37% |
+
+If you cannot control the batch size (for example when many small producers send rows independently) use [async inserts](#async-inserts) and let the server do the batching.
+
+**Parallel uploads.** `InsertOptions.MaxDegreeOfParallelism` defaults to `1`. Increase it to send
+batches at the same time. This helps most when compression is on, because each batch then compresses
+on its own thread. Sessions do not work with parallel inserts: either turn sessions off, or keep
+`MaxDegreeOfParallelism = 1`.
+
+**Remove the schema probe.** Each `InsertBinaryAsync` call sends a `SELECT ... WHERE 1=0` query first,
+to find the column types. See [Skipping the schema probe query](#skip-schema-query) to remove that
+round trip with `ColumnTypes` or `UseSchemaCache`.
+
+<Note>
+The box-free insert path applies to the default `RowBinary` format. `RowBinaryWithDefaults` must
+examine each value to find the `DBDefault` marker, so it keeps the slower path.
+</Note>
+
+---
+
+### Compression: the two directions disagree {#perf-compression}
+
+Compression exchanges CPU for bytes. Whether that exchange is good depends on the direction of the
+transfer, the bandwidth of your connection to the ClickHouse server, how your data interacts with your chosen compression algorithm, and whether you have to pay for each byte transferred.
+
+**Reads:** keep compression on, unless your server is running on the same machine. This is the default. Compared with no compression, `zstd` at level 1
+gave:
+
+| Client to server | Effect of compression |
+|---|---|
+| Same host (loopback) | Costs 8% |
+| Same cloud region | **Saves 16%** |
+| One region away | **Saves 33%** |
+
+**Inserts:** measure before you compress. The savings may not be high enough to justify turning it on. Also keep in mind that decompression will put additional load on the server; that load is modest for Zstd and LZ4 but can be high for other algorithms (eg Brotli).
+
+To turn insert compression off:
+
+```csharp
+var options = new InsertOptions { Compressor = null };
+await client.InsertBinaryAsync("my_table", columns, rows, options);
+```
+
+For codec selection, compression levels, and how to find your own crossover point, see
+[Tuning compression](#tuning-compression).
+
+---
+
+### Buffers {#perf-buffers}
+
+`ReadBufferSize` sets the size of the buffer that reads HTTP responses. It defaults to 64 KiB.
+
+The driver rents this buffer from a shared pool and returns it when it disposes the reader, so it is
+not an allocation for each query. Increase it to reduce the number of buffer refills on large
+results. The driver holds one buffer for each reader that is open at the same time, so memory use
+increases with the buffer size and with the number of concurrent readers.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost") { ReadBufferSize = 256 * 1024 };
+```
+
+<Warning>
+*Always dispose readers.* A reader returns its pooled buffer and releases its HTTP connection when
+you dispose it. Abandoning a reader does not return the buffer to the pool and may leave the HTTP
+connection unavailable; ordinary garbage collection is not a substitute for disposal.
+</Warning>
+
+---
+
+### Runtime and GC {#perf-gc}
+
+**Turn on Server GC for insert-heavy applications.** With the same code, and with the same number of
+allocated bytes, Workstation GC was up to 97% slower on inserts than Server GC.
+
+```xml
+<PropertyGroup>
+  <ServerGarbageCollection>true</ServerGarbageCollection>
+</PropertyGroup>
+```
+
+ASP.NET Core projects set this already. Console applications, worker services, and most container
+images do not.
+
+The cause is the size of the generation 0 budget. Workstation GC uses a small budget, so the
+short-lived buffers that an insert creates do not die in generation 0. They move into generation 1
+instead, which increases promotion and causes much more generation 2 work. On one insert case,
+generation 2 collections for each 1,000 operations were 4,000 with Server GC and 73,000 with
+Workstation GC.
+
+<Note>
+Server GC is a throughput setting, not a latency setting. In the same measurements, Server GC spent
+less than half as much total time paused, but its individual pauses were longer
+(95th percentile 114.6 ms against 61.9 ms). If your service is sensitive to tail latency, measure
+both modes before you choose.
+</Note>
+
+---
+
+### Latency: reuse connections {#perf-latency}
+
+Establishing a new TCP connection and performing the TLS handshake takes a significant amount of time. 
+Reusing connections will significantly cut down the latency of your queries. 
+
+- Do not create a client for each request. Each new client with its own `HttpClient` creates a new
+  connection pool, and pays for the handshake again. Use one `ClickHouseClient` for the life of the application. It is thread-safe and is made for
+  singleton use.
+- For ADO.NET and ORMs, use `ClickHouseDataSource`, so that all connections share one pool.
+
+For the full set of patterns, see
+[Connection lifetime and pooling](#best-practices-connection-lifetime).
+
+---
+
+### Measure it yourself {#perf-measuring}
+
+In many cases, performance will depend on the shape of your data, the speed of your link to the server,
+whether you want to trade off client CPU for server CPU (or the other way around), your hardware limitations, etc.
+It is therefore recommended that you measure performance yourself based on your data and environment.
+
+To see the server's part of the work, set `QueryOptions.QueryId` and read the counters back:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+---
 
 ## ORM support {#orm-support}
 
@@ -2254,7 +2940,7 @@ With the opt-out enabled, LEFT JOIN returns ClickHouse column defaults and EF's 
 
 #### Inserting data {#ef-core-insert}
 
-`SaveChanges` uses the driver's native `InsertBinaryAsync` API — RowBinary encoding with GZip compression, far more efficient than parameterized SQL:
+`SaveChanges` uses the driver's native `InsertBinaryAsync` API — RowBinary encoding with a compressed request body, far more efficient than parameterized SQL:
 
 ```csharp
 await using var ctx = new AnalyticsContext();
@@ -2280,7 +2966,7 @@ optionsBuilder.UseClickHouse("Host=localhost", o => o.MaxBatchSize(5000));
 
 #### Bulk insert {#ef-core-bulk-insert}
 
-For high-throughput loads, use `BulkInsertAsync` instead of `SaveChanges`. This is an extension method on `DbContext` that bypasses EF Core's change tracker, identity resolution, and state management entirely — it calls the driver's `InsertBinaryAsync` directly with RowBinary encoding and GZip compression.
+For high-throughput loads, use `BulkInsertAsync` instead of `SaveChanges`. This is an extension method on `DbContext` that bypasses EF Core's change tracker, identity resolution, and state management entirely — it calls the driver's `InsertBinaryAsync` directly with RowBinary encoding and a compressed request body.
 
 This makes it suitable for loading large datasets where you don't need entity tracking after insert:
 

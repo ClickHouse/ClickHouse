@@ -1,3 +1,5 @@
+-- Tags: need-query-parameters
+
 DROP TABLE IF EXISTS merge_over_alias_with_missing_target;
 CREATE TABLE IF NOT EXISTS target_for_alias_with_missing_target (`key` UInt32) ENGINE = MergeTree ORDER BY key;
 DROP TABLE IF EXISTS alias_with_missing_target;
@@ -21,9 +23,6 @@ DROP TABLE target_for_alias_with_missing_target;
 
 DROP TABLE IF EXISTS merge_over_healthy_alias;
 DROP TABLE IF EXISTS healthy_alias;
-DROP TABLE IF EXISTS merge_over_alias_chain;
-DROP TABLE IF EXISTS outer_alias_to_inner_alias;
-DROP TABLE IF EXISTS inner_alias_to_param_view;
 DROP TABLE IF EXISTS merge_over_alias_to_param_view;
 DROP TABLE IF EXISTS merge_over_param_view;
 DROP TABLE IF EXISTS alias_to_param_view;
@@ -49,10 +48,16 @@ CREATE TABLE merge_over_param_view (`a` Int32) ENGINE = Merge(currentDatabase(),
 SELECT * FROM merge_over_param_view; -- { serverError STORAGE_REQUIRES_PARAMETER }
 
 SELECT '-- a longer Alias chain to the parameterized view reports an unsupported read';
-CREATE TABLE outer_alias_to_inner_alias ENGINE = Alias(currentDatabase(), inner_alias_to_param_view);
-CREATE TABLE inner_alias_to_param_view ENGINE = Alias(currentDatabase(), param_view_for_alias);
-CREATE TABLE merge_over_alias_chain (`a` Int32) ENGINE = Merge(currentDatabase(), '^outer_alias_to_inner_alias$');
-SELECT * FROM merge_over_alias_chain; -- { serverError UNSUPPORTED_METHOD }
+-- The chain exists only for the read below, and the outer alias is dropped immediately after it, so
+-- no point in between is reachable by a restart. A Memory database additionally keeps the pair out
+-- of stored metadata.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.outer_alias_to_inner_alias ENGINE = Alias({CLICKHOUSE_DATABASE_1:Identifier}, inner_alias_to_param_view);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.inner_alias_to_param_view ENGINE = Alias(currentDatabase(), param_view_for_alias);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.merge_over_alias_chain (`a` Int32) ENGINE = Merge({CLICKHOUSE_DATABASE_1:Identifier}, '^outer_alias_to_inner_alias$');
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.merge_over_alias_chain; -- { serverError UNSUPPORTED_METHOD }
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.outer_alias_to_inner_alias;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT '-- an Alias to an ordinary table is still readable through a Merge table';
 CREATE TABLE healthy_alias ENGINE = Alias(currentDatabase(), param_view_base);
@@ -62,9 +67,6 @@ SELECT * FROM merge(currentDatabase(), '^healthy_alias$') ORDER BY a;
 
 DROP TABLE merge_over_healthy_alias;
 DROP TABLE healthy_alias;
-DROP TABLE merge_over_alias_chain;
-DROP TABLE outer_alias_to_inner_alias;
-DROP TABLE inner_alias_to_param_view;
 DROP TABLE merge_over_param_view;
 DROP TABLE merge_over_alias_to_param_view;
 DROP TABLE alias_to_param_view;

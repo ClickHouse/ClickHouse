@@ -14,7 +14,7 @@
         <allow_experimental_text_index_phrase_search>1</allow_experimental_text_index_phrase_search>
         <!-- `is_deleted` column of ReplacingMergeTree and `OPTIMIZE ... CLEANUP` -->
         <allow_experimental_replacing_merge_with_cleanup>1</allow_experimental_replacing_merge_with_cleanup>
-        <allow_experimental_adaptive_codec_selection>1</allow_experimental_adaptive_codec_selection>
+        <enable_adaptive_codec_selection>1</enable_adaptive_codec_selection>
     </merge_tree>
     <!-- Definitions to be used by BuzzHouse -->
     <!-- TODO: Enable back after the issue with `assertHasValidVersionMetadata` will be fixed:

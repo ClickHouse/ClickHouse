@@ -248,6 +248,33 @@ SpanHolder::~SpanHolder()
     finish(std::chrono::system_clock::now());
 }
 
+ParentSpanGuard::ParentSpanGuard(UInt64 span_id_)
+{
+    TracingContextOnThread & trace_context = *current_trace_context;
+    if (!span_id_ || !trace_context.isTraceEnabled())
+        return;
+    old_span_id = trace_context.span_id;
+    trace_context.span_id = span_id_;
+    active = true;
+}
+
+ParentSpanGuard::~ParentSpanGuard()
+{
+    if (active)
+        current_trace_context->span_id = old_span_id;
+}
+
+TracingContextGuard::TracingContextGuard(const TracingContextOnThread & context)
+    : previous(*current_trace_context)
+{
+    *current_trace_context = context;
+}
+
+TracingContextGuard::~TracingContextGuard()
+{
+    *current_trace_context = previous;
+}
+
 bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)
 {
     trace_id = 0;
