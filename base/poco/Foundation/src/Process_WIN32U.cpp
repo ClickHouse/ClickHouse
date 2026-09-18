@@ -256,16 +256,29 @@ ProcessHandleImpl* ProcessImpl::launchImpl(const std::string& command, const Arg
 	UnicodeConverter::toUTF16(initialDirectory, uinitialDirectory);
 	const wchar_t* workingDirectory = uinitialDirectory.empty() ? 0 : uinitialDirectory.c_str();
 
-	const char* pEnv = 0;
-	std::vector<char> envChars;
+	/// `POCO_WIN32_UTF8` makes `Process::Env` UTF-8, so the environment block has to be handed to
+	/// `CreateProcessW` as UTF-16 together with `CREATE_UNICODE_ENVIRONMENT`. A narrow block would
+	/// be decoded in the active ANSI code page and mangle every non-ASCII name or value.
+	std::wstring uenv;
 	if (!env.empty())
 	{
-		envChars = getEnvironmentVariablesBuffer(env);
-		pEnv = &envChars[0];
+		for (Poco::Process::Env::const_iterator it = env.begin(); it != env.end(); ++it)
+		{
+			std::wstring uname;
+			std::wstring uvalue;
+			UnicodeConverter::toUTF16(it->first, uname);
+			UnicodeConverter::toUTF16(it->second, uvalue);
+			uenv.append(uname);
+			uenv.append(1, L'=');
+			uenv.append(uvalue);
+			uenv.append(1, L'\0');
+		}
+		uenv.append(1, L'\0');
 	}
 
 	PROCESS_INFORMATION processInfo;
 	DWORD creationFlags = GetConsoleWindow() ? 0 : CREATE_NO_WINDOW;
+	if (!uenv.empty()) creationFlags |= CREATE_UNICODE_ENVIRONMENT;
 	BOOL rc = CreateProcessW(
 		applicationName,
 		const_cast<wchar_t*>(ucommandLine.c_str()),
@@ -273,7 +286,7 @@ ProcessHandleImpl* ProcessImpl::launchImpl(const std::string& command, const Arg
 		NULL, // threadAttributes
 		mustInheritHandles,
 		creationFlags,
-		(LPVOID)pEnv,
+		uenv.empty() ? NULL : (LPVOID)uenv.data(),
 		workingDirectory,
 		&startupInfo,
 		&processInfo
