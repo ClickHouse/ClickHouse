@@ -114,8 +114,7 @@ public:
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
-    /// Create a text search query for a single function node. Direct read has no parent polarity,
-    /// so `requires_positive_filter` atoms are returned with `DirectReadMode::None`.
+    /// Create a text search query for a single function node.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
@@ -211,7 +210,7 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
-    /// Drop Exact queries that `requires_positive_filter` when they sit under NOT.
+    /// Drop `requires_positive_filter` queries that sit under NOT.
     void dropPositiveFilterQueriesUnderNot();
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;

@@ -307,13 +307,6 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
         return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
 
-    if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
-    {
-        if (function_name == "hasToken" || function_name == "hasAnyTokens" || function_name == "hasAllTokens")
-            return TextIndexDirectReadMode::Exact;
-        return TextIndexDirectReadMode::None;
-    }
-
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
@@ -370,20 +363,7 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
     if (rpn_element.text_search_queries.size() != 1)
         return nullptr;
 
-    auto query = rpn_element.text_search_queries.front();
-    /// Exact on Nullable / `.:String` is only valid in a positive filter: WHERE treats NULL like 0,
-    /// but `NOT NULL` is not `NOT 0`. Skip-index still uses Exact via the RPN; this path must not
-    /// replace the atom with a non-nullable `UInt8` virtual column.
-    if (rpn_element.requires_positive_filter)
-    {
-        return std::make_shared<TextSearchQuery>(
-            query->getFunctionName(),
-            query->getSearchMode(),
-            TextIndexDirectReadMode::None,
-            query->getTokens());
-    }
-
-    return query;
+    return rpn_element.text_search_queries.front();
 }
 
 bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
@@ -1116,15 +1096,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
-    auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-        return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
+        return traverseMapElementKeyValueNode(
+            function_name,
+            index_column_node,
+            getDirectReadMode(function_name),
+            value_type,
+            value_field,
+            out);
 
     if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
         return traverseJSONStringValuesNode(function_name, index_column_node, value_type, value_field, out);
+
+    auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
@@ -1968,100 +1955,69 @@ bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
         encoded_tokens.push_back(KeyValuePairsTokenizer::encodeToken(haystack->path, token, /*is_rest=*/ false));
     }
 
+    const bool positive_filter_only = haystack->kind != JSONStringValuesHaystackKind::TypedString;
+    out.requires_positive_filter = positive_filter_only;
+    const auto direct_read_mode = positive_filter_only
+        ? TextIndexDirectReadMode::None
+        : TextIndexDirectReadMode::Exact;
+
     const auto search_mode = function_name == "hasAnyTokens" ? TextSearchMode::Any : TextSearchMode::All;
     out.function = function_name == "hasAnyTokens" ? RPNElement::FUNCTION_HAS_ANY_TOKENS
         : (function_name == "hasAllTokens" ? RPNElement::FUNCTION_HAS_ALL_TOKENS : RPNElement::FUNCTION_EQUALS);
-    out.requires_positive_filter = haystack->kind != JSONStringValuesHaystackKind::TypedString;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-        function_name, search_mode, TextIndexDirectReadMode::Exact, std::move(encoded_tokens)));
+        function_name, search_mode, direct_read_mode, std::move(encoded_tokens)));
     return true;
 }
 
 void MergeTreeIndexConditionText::dropPositiveFilterQueriesUnderNot()
 {
-    const auto drop_positive_filter_queries = [&]()
+    const auto make_unknown = [](RPNElement & element)
+    {
+        element.function = RPNElement::FUNCTION_UNKNOWN;
+        element.text_search_queries.clear();
+        element.requires_positive_filter = false;
+    };
+
+    const auto drop_all = [&]
     {
         for (auto & element : rpn)
         {
-            if (!element.requires_positive_filter)
-                continue;
-
-            element.function = RPNElement::FUNCTION_UNKNOWN;
-            element.text_search_queries.clear();
-            element.requires_positive_filter = false;
+            if (element.requires_positive_filter)
+                make_unknown(element);
         }
     };
 
-    std::vector<size_t> stack;
-    std::vector<std::vector<size_t>> children(rpn.size());
+    /// RPN subtrees are contiguous. Walk from the root (the last element) and push child polarity.
+    std::vector<UInt8> pending{false};
 
-    for (size_t i = 0; i < rpn.size(); ++i)
+    for (auto it = rpn.rbegin(); it != rpn.rend(); ++it)
     {
-        switch (rpn[i].function)
+        if (pending.empty())
         {
-            case RPNElement::FUNCTION_NOT:
-            {
-                if (stack.empty())
-                {
-                    drop_positive_filter_queries();
-                    return;
-                }
-                children[i].push_back(stack.back());
-                stack.pop_back();
-                stack.push_back(i);
-                break;
-            }
-            case RPNElement::FUNCTION_AND:
-            case RPNElement::FUNCTION_OR:
-            {
-                if (stack.size() < 2)
-                {
-                    drop_positive_filter_queries();
-                    return;
-                }
-                const size_t rhs = stack.back();
-                stack.pop_back();
-                const size_t lhs = stack.back();
-                stack.pop_back();
-                children[i].push_back(lhs);
-                children[i].push_back(rhs);
-                stack.push_back(i);
-                break;
-            }
-            default:
-                stack.push_back(i);
-                break;
+            drop_all();
+            return;
+        }
+
+        const bool negated = pending.back();
+        pending.pop_back();
+
+        if (it->function == RPNElement::FUNCTION_NOT)
+        {
+            pending.push_back(!negated);
+        }
+        else if (it->function == RPNElement::FUNCTION_AND || it->function == RPNElement::FUNCTION_OR)
+        {
+            pending.push_back(negated);
+            pending.push_back(negated);
+        }
+        else if (negated && it->requires_positive_filter)
+        {
+            make_unknown(*it);
         }
     }
 
-    if (stack.size() != 1)
-    {
-        drop_positive_filter_queries();
-        return;
-    }
-
-    const auto visit = [&](auto && self, size_t i, bool negated) -> void
-    {
-        const auto fn = rpn[i].function;
-        if (fn == RPNElement::FUNCTION_NOT)
-        {
-            self(self, children[i][0], !negated);
-            return;
-        }
-        if (fn == RPNElement::FUNCTION_AND || fn == RPNElement::FUNCTION_OR)
-        {
-            for (size_t child : children[i])
-                self(self, child, negated);
-            return;
-        }
-        if (negated && rpn[i].requires_positive_filter)
-        {
-            rpn[i].function = RPNElement::FUNCTION_UNKNOWN;
-            rpn[i].text_search_queries.clear();
-            rpn[i].requires_positive_filter = false;
-        }
-    };
-    visit(visit, stack.back(), false);
+    if (!pending.empty())
+        drop_all();
 }
 
 std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
