@@ -25,6 +25,7 @@ struct IntervalKind
 
     IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
+    Kind getKind() const { return kind; }
 
     /// Decodes the interval kind byte of the binary type encoding.
     static IntervalKind fromBinary(UInt8 value);
