@@ -263,9 +263,17 @@ void runOracle(const std::string & sql, const std::string & json)
         ", optimize_aggregators_of_group_by_keys = 0, optimize_group_by_constant_keys = 0, optimize_rewrite_array_exists_to_has = 0"
         ", optimize_rewrite_regexp_functions = 0, query_plan_use_new_logical_join_step = 0, optimize_min_equality_disjunction_chain_length = 1";
 
-    OracleResult results[3];
-    static const char * variant_names[3] = {"default", "optimizations off", "parallel/external"};
-    static const std::string * variant_settings[3] = {&baseline_settings, &flipped_settings, &parallel_settings};
+    /// Fourth variant: force the JIT compilation of expressions, aggregates and sort descriptions
+    /// (the default only compiles after a few repetitions, so a single fuzzed query never does), with
+    /// short-circuit evaluation forced and lazy materialization disabled.
+    static const std::string jit_settings = baseline_settings
+        + ", min_count_to_compile_expression = 0, min_count_to_compile_aggregate_expression = 0, min_count_to_compile_sort_description = 0"
+          ", compile_expressions = 1, compile_aggregate_expressions = 1, compile_sort_description = 1"
+          ", short_circuit_function_evaluation = 'force_enable', query_plan_optimize_lazy_materialization = 0, max_block_size = 3";
+
+    OracleResult results[4];
+    static const char * variant_names[4] = {"default", "optimizations off", "parallel/external", "jit"};
+    static const std::string * variant_settings[4] = {&baseline_settings, &flipped_settings, &parallel_settings, &jit_settings};
     DB::LocalFuzzerRunner::runOnRunnerThread([&](DB::ContextMutablePtr context)
     {
         /// A fresh thread with its own `ThreadStatus`: the runner thread may still be attached to the
@@ -274,7 +282,7 @@ void runOracle(const std::string & sql, const std::string & json)
         std::thread worker([&]
         {
             DB::ThreadStatus thread_status;
-            for (size_t i = 0; i < 3; ++i)
+            for (size_t i = 0; i < 4; ++i)
                 results[i] = runOracleQuery(context, sql, *variant_settings[i]);
         });
         worker.join();
@@ -282,7 +290,7 @@ void runOracle(const std::string & sql, const std::string & json)
     ++oracle_runs;
 
     const OracleResult & baseline = results[0];
-    for (size_t i = 1; i < 3; ++i)
+    for (size_t i = 1; i < 4; ++i)
     {
         const OracleResult & other = results[i];
         if (baseline.ok && other.ok)
