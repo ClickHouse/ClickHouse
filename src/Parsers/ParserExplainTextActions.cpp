@@ -112,7 +112,7 @@ bool tokenEqualsKeyword(const Token & token, Keyword keyword)
                                     std::string_view(token.begin, token.size()),
                                     toStringView(keyword));
 }
-
+}
 bool canFollowExplainTextActions(const Token & token)
 {
     if (token.type == TokenType::EndOfStream
@@ -130,7 +130,6 @@ bool canFollowExplainTextActions(const Token & token)
     return equalsCaseInsensitive(text, toStringView(Keyword::FORMAT))
         || equalsCaseInsensitive(text, toStringView(Keyword::SETTINGS))
         || equalsCaseInsensitive(text, "INTO");
-}
 }
 
 bool isExplainTextActionLeadingToken(const Token & token)
@@ -264,10 +263,10 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         return false;
 
     /// `ParserQueryWithOutput` is disabled above so that a trailing `FORMAT` or `INTO OUTFILE` stays
-    /// with `EXPLAIN TEXT`. A `SETTINGS` clause directly after the statement belongs to the statement
+    /// with `EXPLAIN TEXT`. A `SETTINGS` clause directly after the statement belongs to the statement,
     /// as it does for a `SELECT` (whose own parser takes it) and whenever actions follow, so attach it
     /// to the source the way `ParserQueryWithOutput` would have.
-    if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
+    if (auto * query_with_output = trailingQueryWithOutput(query.get());
         query_with_output && !query_with_output->settings_ast)
     {
         auto saved = pos;

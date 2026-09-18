@@ -1913,13 +1913,6 @@ static void applyQueryConstructionSettings(
         /// construction settings must not rewrite the source of `EXPLAIN TEXT`
         if (explain_query->getKind() == ASTExplainQuery::FormattedQuery)
         {
-            /// `EXPLAIN TEXT` formats its source without executing it
-            /// the construction settings have nothing to shape. so we refuse them on the outer clause
-            /// instead of accepting them as a silent no-op; the `MODIFY LIMIT`/`MODIFY OFFSET`/`PAGE`
-            /// actions are the way to rewrite the source.
-            if (explain_query->settings_ast && hasConstructionSettings(*explain_query->settings_ast))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `select`, `filter`, `order`, `sort`, `limit`, `offset` and `page` have no effect on EXPLAIN TEXT, "
-                                                           "which formats its source without executing it. Use the MODIFY LIMIT, MODIFY OFFSET or PAGE actions instead");
             return;
         }
         if (const ASTPtr & explained = explain_query->getExplainedQuery())

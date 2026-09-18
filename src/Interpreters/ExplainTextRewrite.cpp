@@ -28,8 +28,9 @@ ASTSelectQuery & getSingleSelectQuery(const ASTPtr & query, ASTExplainTextAction
 {
     /// parsed SELECT sources normally use an ASTSelectWithUnionQuery wrapper
     /// programmatically deserialized ASTs may contain ASTSelectQuery directly.
-    /// as<> us ab exact-type cast. `ASTSelectIntersectExceptQuery`, whose children are set-operation operands rather than clauses, is refused here and in
-    /// the single-branch below.
+    /// as<> uses an exact-type cast. `ASTSelectIntersectExceptQuery`, whose children 
+    // are set-operation operands rather than clauses, is refused here and in the 
+    // single-branch below.
     if (auto * select_query = query->as<ASTSelectQuery>())
         return *select_query;
 
@@ -116,7 +117,10 @@ void applyModifyFormat(ASTPtr & query, const ASTExplainTextAction & action)
         query = std::move(select_with_union);
     }
 
-    auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
+    /// The parser gives a trailing `FORMAT` to the statement inside `EXECUTE AS` or at the end of
+    /// `PARALLEL WITH`, so the rewrite must target the same node; a wrapper around a statement that
+    /// cannot carry output options would otherwise format into SQL that does not parse back.
+    auto * query_with_output = trailingQueryWithOutput(query.get());
     if (!query_with_output)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MODIFY FORMAT requires a query that supports output options");
 

@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -125,8 +126,12 @@ namespace
             explicit Data(ContextPtr context_) : WithContext(context_) {}
         };
 
-        static bool needChildVisit(ASTPtr &, ASTPtr &)
+        static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
+            /// the source of `EXPLAIN TEXT` is preserved text: never analyzed, never rewritten
+            if (const auto * explain = node->as<ASTExplainQuery>();
+                explain && explain->getKind() == ASTExplainQuery::FormattedQuery)
+                return false;
             return true;
         }
 
@@ -245,6 +250,10 @@ namespace
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
+            /// the source of `EXPLAIN TEXT` is preserved text: never analyzed, never rewritten
+            if (const auto * explain = node->as<ASTExplainQuery>();
+                explain && explain->getKind() == ASTExplainQuery::FormattedQuery)
+                return false;
             return !node->as<ASTSelectQuery>();
         }
 
@@ -985,10 +994,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
     auto explain_query_context = Context::createCopy(query_context);
 
-    if (ast.getKind() != ASTExplainQuery::Analyze)
+    /// Apply only the outer settings: the source is text to rewrite, not a query to run. The
+    /// construction settings have nothing to shape here, so refuse then instead of accepting a
+    /// silent no-op; this is the single funnel for SQL, `EXECUTE AS` and the JSON dialect.
+    if (ast.settings_ast)
     {
-        explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
-        explain_query_context->setSetting("use_query_condition_cache", false);
+        if (hasConstructionSettings(*ast.settings_ast))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `select`, `filter`, `order`, `sort`, `limit`, `offset` and `page` have no effect on EXPLAIN TEXT, "
+                                                                 "which formats its source without executing it. Use the MODIFY LIMIT, MODIFY OFFSET or PAGE actions instead");
+        InterpreterSetQuery(ast.settings_ast, explain_query_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
     }
 
     if (ast.getKind() == ASTExplainQuery::FormattedQuery)

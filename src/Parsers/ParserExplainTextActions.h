@@ -15,6 +15,7 @@ protected:
 
 /// `MODIFY`, `PAGE`, `ONELINE` or `MULTILINE` - a bare word that can begin an `EXPLAIN TEXT` action
 bool isExplainTextActionLeadingToken(const Token & token);
+bool canFollowExplainTextActions(const Token & token);
 
 bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, ASTPtr & actions, Expected & expected, const char * end, bool allow_settings_after_format_in_insert);
 }

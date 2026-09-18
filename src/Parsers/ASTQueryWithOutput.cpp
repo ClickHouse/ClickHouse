@@ -1,3 +1,4 @@
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 
 #include <Common/SipHash.h>
@@ -7,6 +8,10 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+#include <Parsers/Access/ASTExecuteAsQuery.h>
+#endif
 
 #include <algorithm>
 #include <string_view>
@@ -50,7 +55,7 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     auto reject_alias = [](const ASTPtr & node, std::string_view field)
     {
         if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(node.get());
-            with_alias && !with_alias->tryGetAlias().empty())
+            with_alias && (!with_alias->tryGetAlias().empty() || with_alias->parametrised_alias))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Output '{}' cannot carry an alias during AST JSON deserialization", field);
     };
 
@@ -251,6 +256,29 @@ void ASTQueryWithOutput::normalizeOutputOptions()
         if (this->*member)
             children.push_back(this->*member);
     }
+}
+
+ASTQueryWithOutput * trailingQueryWithOutput(IAST * node)
+{
+    while (node)
+    {
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+        if (auto * execute_as = node->as<ASTExecuteAsQuery>())
+        {
+            node = execute_as->subquery.get();
+            continue;
+        }
+#endif
+        if (auto * parallel = node->as<ASTParallelWithQuery>())
+        {
+            if (parallel->children.empty())
+                return nullptr;
+            node = parallel->children.back().get();
+            continue;
+        }
+        return dynamic_cast<ASTQueryWithOutput *>(node);
+    }
+    return nullptr;
 }
 
 }

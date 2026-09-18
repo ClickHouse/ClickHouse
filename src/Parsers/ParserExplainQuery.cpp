@@ -49,13 +49,13 @@ IAST * findTrailingQuery(const ASTPtr & query)
             output && output->format_ast)
             return node;
 
-        #if !defined (CLICKHOUSE_PARSER_NO_DCL)
-          if (auto * execute_as = node->as<ASTExecuteAsQuery>())
-          {
-              node = execute_as->subquery.get();
-              continue;
-          }
-        #endif
+#if !defined (CLICKHOUSE_PARSER_NO_DCL)
+        if (auto * execute_as = node->as<ASTExecuteAsQuery>())
+        {
+            node = execute_as->subquery.get();
+            continue;
+        }
+#endif
 
         if (auto * parallel = node->as<ASTParallelWithQuery>())
         {
@@ -201,7 +201,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
     {
         ASTPtr actions;
-        const bool parenthesized_source = pos->type == TokenType::OpeningRoundBracket;
+        bool parenthesized_source = pos->type == TokenType::OpeningRoundBracket;
+        auto bare_begin = pos;
         if (parenthesized_source)
         {
             ++pos;
@@ -241,16 +242,28 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             pos = source_end;
             ++pos;
 
-            /// actions are optional. upon failing the parser restores `pos` while keeping
-            /// diagnostics for improper action leading input in `expected`.
-            ParserExplainTextActions actions_parser;
-            if (actions_parser.parse(pos, actions, expected) && isExplainTextActionLeadingToken(*pos))
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(pos->begin, pos->size()));
-        }
-        else if (!parseExplainTextBareSourceAndActions(pos, query, actions, expected, end, allow_settings_after_format_in_insert))
-        {
+            /// a leading parenthesis may also open the first branch of a set operation, as in
+            /// `(SELECT 1) UNION ALL (SELECT 2)`. It delimits the source only when what follows
+            /// the closing parenthesis can follow a source; otherwise the statement is read in
+            /// bare form.
+            if (isExplainTextActionLeadingToken(*pos) || canFollowExplainTextActions(*pos))
+            {
+                /// actions are optional. upon failing the parser restores `pos` while keeping
+                /// diagnostics for improper action leading input in `expected`.
+                ParserExplainTextActions actions_parser;
+                if (actions_parser.parse(pos, actions, expected) && isExplainTextActionLeadingToken(*pos))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(pos->begin, pos->size()));
+            }
+            else
+            {
+                bare_begin.backtracks = pos.backtracks;
+                pos = bare_begin;
+                query = nullptr;
+                parenthesized_source = false;
+            }
+          }
+        if (!parenthesized_source && !parseExplainTextBareSourceAndActions(pos, query, actions, expected, end, allow_settings_after_format_in_insert))
             return false;
-        }
         if (actions)
         {
             for (const auto & action : actions->children)
