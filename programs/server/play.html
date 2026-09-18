@@ -93,6 +93,8 @@
                as rgba rather than derived from --table-header-color, which is a plain hex. */
             --icon-backdrop: rgba(238, 238, 238, 0.9);
             --table-hover-filter: brightness(0.9);
+            --table-hover-background: color-mix(in srgb, var(--element-background-color) 90%, black);
+            --table-row-number-hover-background: color-mix(in srgb, var(--table-header-color) 90%, black);
             --link-color: #06D;
             --logo-color: #FFF;
             --border-color-selected: #F80;
@@ -174,6 +176,8 @@
             --active-control-color: #FF0;
             --icon-backdrop: rgba(16, 32, 32, 0.9);
             --table-hover-filter: contrast(0.9) brightness(2);
+            --table-hover-background: color-mix(in srgb, var(--element-background-color) 80%, white);
+            --table-row-number-hover-background: color-mix(in srgb, var(--table-header-color) 80%, white);
             --link-color: #4BDAF7;
             --logo-color: #444;
             --border-color-selected: #FF0;
@@ -228,8 +232,9 @@
         {
             height: 100%;
             margin: 0;
-            /* This enables position: sticky on controls */
-            overflow: auto;
+            /* The main area owns scrolling: the query header stays fixed and only
+               #result-panels scrolls vertically when results are shown. */
+            overflow: hidden;
             scrollbar-color: var(--border-color) var(--element-background-color);
         }
 
@@ -295,17 +300,54 @@
 
         #main
         {
-            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
             grid-area: main;
-            padding: 0.5rem;
+            /* No bottom padding: the result pane may sit flush with the viewport bottom. */
+            padding: 0.5rem 0.5rem 0 0.5rem;
+
             position: relative;
             z-index: 0; /* stacking context so children don't overlap #menu */
+            height: calc(100vh - var(--terminal-height, 0px));
+            min-height: 0;
         }
 
-        /* Tab bar: the first child of #main, scrolling vertically together with the page
-           content. Sticky on the horizontal axis only (left: 0, no top) like #controls and
-           #logo-container, so it stays at the left edge while a wide result is scrolled
-           horizontally but still scrolls away vertically.
+
+        /* Fixed header: tab bar, connection/query controls, and the run/progress bar stay
+           visible while long results scroll inside #result-panels below. */
+        #play-header
+        {
+            flex-shrink: 0;
+        }
+
+        #result-section
+
+        {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 0;
+            min-height: 0;
+            position: relative;
+            margin-top: 0.5rem;
+        }
+
+
+        /* The only vertical scroll container for query results (and wide-table horizontal
+           scroll). `min-height: 0` lets the flex child shrink below its content height. */
+        #result-panels
+        {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            position: relative;
+        }
+
+
+        /* Tab bar: first row of the fixed header. Sticky on the horizontal axis only
+
+           (left: 0, no top) so it stays at the left edge while a wide result table is scrolled
+           horizontally inside #result-panels.
            The full-width gray/black strip and the top-of-main border are painted by
            ::before, which extends 0.5rem into #main's side padding. A negative left/right
            margin is NOT used for that bleed: it is clamped away under position: sticky in
@@ -1464,13 +1506,102 @@
         {
             margin-top: 0.25rem;
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            gap: 1rem;
+            gap: 0.5rem 0.75rem;
         }
 
         query-progress
         {
-            flex: 1;
+            flex: 1 1 12rem;
+            min-width: 0;
+        }
+
+        #run_div > :not(query-progress):not(#run-pagination)
+        {
+            flex-shrink: 0;
+        }
+
+        /* Shared run-bar pager (active tab only). */
+        #run-pagination
+        {
+            display: none;
+            align-items: baseline;
+            flex-wrap: nowrap;
+            gap: 0.3rem;
+            color: var(--misc-text-color);
+            flex-shrink: 0;
+        }
+
+        #run-pagination .page-list
+        {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+        }
+
+        #run-pagination .page-nav
+        {
+            flex-shrink: 0;
+            display: flex;
+            align-items: baseline;
+            gap: 0.3rem;
+            min-width: 7rem;
+        }
+
+        #run-pagination .page-gap
+        {
+            padding: 0.1rem 0.2rem;
+            color: var(--misc-text-color);
+        }
+
+        #run-pagination .page-btn
+        {
+            cursor: pointer;
+            padding: 0.1rem 0.35rem;
+            margin: 0;
+            border: 1px solid var(--border-color);
+            font: inherit;
+            color: var(--link-color);
+            background: var(--element-background-color);
+        }
+
+        #run-pagination .page-btn:hover:not(:disabled)
+        {
+            background: var(--table-header-color);
+        }
+
+        #run-pagination .page-btn.current
+        {
+            cursor: default;
+            font-weight: bold;
+            color: var(--text-color);
+            background: var(--table-header-color);
+        }
+
+        #run-pagination .page-btn:disabled
+        {
+            cursor: default;
+            opacity: 0.45;
+            color: var(--misc-text-color);
+        }
+
+        #run-pagination .page-size-label
+        {
+            margin-left: 0.6rem;
+        }
+
+        #run-pagination .page-input
+        {
+            width: 5rem;
+            padding: 0.1rem 0.3rem;
+            font: inherit;
+            color: var(--text-color);
+            background: var(--element-background-color);
+            border: 1px solid var(--border-color-selected);
         }
 
         #run, #run-all
@@ -1743,15 +1874,32 @@
             display: block;
         }
 
+        /* Decorative watermark — out of the flex column so #result-section can use the full
+           height below #play-header. Clickable in the idle empty state; hidden when results
+           are shown or the split is dragged to maximum expansion. */
         #logo-container
         {
-            text-align: center;
-            margin-top: 5em;
-            line-height: 0.75;
-            position: sticky;
+            position: absolute;
             left: 0;
-            z-index: -1; /* Below the expanded selected cell */
+            right: 0;
+            bottom: 12%;
+            margin: 0;
+            text-align: center;
+            line-height: 0.75;
+            z-index: -1;
         }
+
+        #logo-container.logo-interactive
+        {
+            z-index: 1;
+        }
+
+        #result-panels:empty
+        {
+            pointer-events: none;
+        }
+
+
 
         #url_status
         {
@@ -1833,6 +1981,7 @@
         <div id="terminal-resizer"></div>
     </div>
     <div id="main">
+        <div id="play-header">
         <div id="tab-bar" hidden>
             <div id="tabs"></div>
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
@@ -1848,28 +1997,36 @@
             </div>
             <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
             <div id="query-params"></div>
-            <div id="run_div">
-                <button type="submit" class="shadow" id="run">Run</button>
-                <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
-                <query-progress id="query-progress"></query-progress>
-                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
-                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                    </svg>
-                </div>
-                <div id="download-div" class="shadow">
-                    <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                </div>
-                <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
-            </div>
         </form>
-        <div id="result-panels"></div>
+        <div id="run_div">
+            <button type="submit" form="controls" class="shadow" id="run">Run</button>
+            <button type="button" class="shadow" id="run-all">Run all</button>
+            <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
+            <query-progress id="query-progress"></query-progress>
+            <div id="run-pagination" class="monospace" hidden></div>
+            <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+
+                <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+            </div>
+            <div id="download-div" class="shadow">
+                <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </div>
+            <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
+        </div>
+        </div>
+        <div id="result-section">
+            <div id="result-panels"></div>
+        </div>
+
+
+
         <p id="logo-container">
             <a href="https://clickhouse.com/">
             <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg"><title>Powered by ClickHouse</title><g transform="translate(21, 0)"><path d="M9.76,20.95 C8.43,20.97 7.11,20.73 5.87,20.26 C4.72,19.80 3.67,19.11 2.81,18.22 C1.90,17.32 1.20,16.25 0.74,15.07 C-0.24,12.29 -0.24,9.27 0.74,6.49 C1.67,4.07 3.61,2.16 6.08,1.26 C7.35,0.79 8.71,0.55 10.07,0.57 C11.16,0.54 12.24,0.67 13.30,0.93 C14.15,1.16 14.98,1.47 15.78,1.87 L15.03,4.17 C14.33,3.70 13.57,3.32 12.78,3.03 C11.83,2.71 10.83,2.56 9.82,2.58 C7.96,2.56 6.18,3.35 4.96,4.74 C4.30,5.50 3.79,6.38 3.47,7.33 C3.08,8.46 2.89,9.65 2.91,10.85 C2.90,12.02 3.07,13.18 3.43,14.29 C3.73,15.23 4.21,16.09 4.86,16.84 C5.46,17.52 6.21,18.06 7.05,18.41 C7.95,18.78 8.92,18.96 9.90,18.96 C10.80,18.96 11.68,18.82 12.53,18.55 C13.34,18.27 14.12,17.91 14.85,17.47 L15.57,19.20 C14.87,19.72 14.09,20.13 13.25,20.40 C12.13,20.78 10.95,20.97 9.76,20.95 L9.76,20.95 Z"></path><polygon points="21.20 0 21.20 20.67 18.73 20.67 18.73 0 21.20 0"></polygon><path d="M26.51,4.15 C26.09,4.18 25.68,4.03 25.38,3.74 C25.08,3.46 24.92,3.05 24.94,2.64 C24.92,2.23 25.07,1.83 25.35,1.52 C25.99,0.92 26.99,0.92 27.63,1.52 C27.92,1.82 28.07,2.23 28.06,2.64 C28.07,3.05 27.92,3.44 27.63,3.72 C27.33,4.01 26.93,4.16 26.51,4.15 L26.51,4.15 Z M27.75,6.31 L27.75,20.56 L25.31,20.56 L25.31,6.31 L27.77,6.31 L27.75,6.31 Z"></path><path d="M38.20,20.95 C37.23,20.96 36.27,20.78 35.36,20.44 C34.50,20.12 33.72,19.62 33.07,18.98 C32.40,18.30 31.88,17.51 31.54,16.63 C30.78,14.61 30.78,12.39 31.54,10.36 C31.89,9.48 32.43,8.68 33.11,8.02 C33.80,7.36 34.62,6.85 35.53,6.53 C36.46,6.19 37.45,6.02 38.44,6.02 C39.23,6.02 40.02,6.11 40.78,6.29 C41.40,6.43 41.99,6.67 42.52,7.00 L41.73,9.14 C41.23,8.76 40.68,8.44 40.10,8.18 C39.49,7.95 38.85,7.84 38.20,7.86 C37.57,7.85 36.95,7.97 36.38,8.20 C35.80,8.44 35.28,8.80 34.87,9.26 C34.42,9.77 34.07,10.36 33.85,10.99 C33.58,11.78 33.45,12.61 33.46,13.44 C33.36,14.92 33.85,16.38 34.83,17.51 C35.81,18.45 37.15,18.94 38.53,18.87 C39.72,18.85 40.89,18.48 41.88,17.81 L42.44,19.61 C41.88,20.02 41.26,20.33 40.60,20.52 C39.82,20.79 39.01,20.93 38.20,20.95 L38.20,20.95 Z"></path><path d="M47.94,0 L47.94,20.67 L45.44,20.67 L45.44,0 L47.94,0 Z M54.35,20.67 L48.27,13.01 L54.27,6.33 L56.83,6.33 L50.90,12.72 L57.24,20.67 L54.35,20.67 L54.35,20.67 Z"></path><polygon points="73.11 11.87 62.77 11.87 62.77 20.65 60.10 20.65 60.10 0.85 62.77 0.85 62.77 9.89 73.11 9.89 73.11 0.85 75.78 0.85 75.78 20.67 73.11 20.67"></polygon><path d="M86.30,20.95 C85.38,20.95 84.47,20.78 83.61,20.44 C82.78,20.12 82.01,19.63 81.38,19.00 C80.72,18.32 80.21,17.53 79.87,16.65 C79.12,14.60 79.12,12.35 79.87,10.30 C80.21,9.43 80.72,8.64 81.38,7.98 C82.02,7.35 82.78,6.86 83.61,6.53 C84.47,6.20 85.38,6.02 86.30,6.02 C87.23,6.02 88.15,6.20 89.01,6.53 C89.86,6.86 90.62,7.35 91.27,7.98 C91.94,8.64 92.47,9.43 92.82,10.30 C93.59,12.35 93.59,14.60 92.82,16.65 C92.50,17.52 92.00,18.32 91.37,19.00 C90.73,19.63 89.96,20.12 89.12,20.44 C88.22,20.79 87.27,20.96 86.30,20.95 Z M86.30,19.10 C86.88,19.10 87.46,18.99 88.00,18.79 C88.56,18.59 89.07,18.25 89.47,17.81 C89.93,17.31 90.28,16.71 90.50,16.06 C90.78,15.23 90.91,14.35 90.89,13.48 C90.92,12.60 90.78,11.72 90.50,10.89 C90.28,10.25 89.93,9.66 89.47,9.16 C89.07,8.72 88.56,8.39 88.00,8.18 C87.46,7.98 86.88,7.88 86.30,7.88 C85.74,7.88 85.18,7.98 84.65,8.18 C84.10,8.39 83.61,8.73 83.22,9.16 C82.77,9.66 82.42,10.25 82.21,10.89 C81.94,11.73 81.81,12.60 81.84,13.48 C81.81,14.35 81.94,15.23 82.21,16.06 C82.42,16.71 82.76,17.31 83.22,17.81 C83.61,18.25 84.10,18.58 84.65,18.79 C85.18,18.99 85.74,19.10 86.30,19.10 L86.30,19.10 Z"></path><path d="M104.21,20.12 C103.26,20.71 102.14,21.00 101.01,20.95 C99.79,21.00 98.61,20.56 97.74,19.73 C96.83,18.70 96.38,17.34 96.50,15.98 L96.50,6.31 L98.98,6.31 L98.98,15.98 C98.97,16.47 99.04,16.95 99.19,17.41 C99.30,17.76 99.50,18.07 99.77,18.32 C100.01,18.55 100.31,18.72 100.64,18.81 C100.99,18.91 101.35,18.96 101.71,18.96 C102.65,19.00 103.58,18.73 104.34,18.18 C105.05,17.63 105.63,16.94 106.03,16.14 L106.03,6.31 L108.49,6.31 L108.49,20.56 L106.32,20.56 L106.10,18.00 L106.10,18.00 C105.68,18.86 105.03,19.60 104.21,20.12 L104.21,20.12 Z"></path><path d="M116.42,20.95 C115.80,20.99 115.17,20.99 114.55,20.95 C114.09,20.89 113.62,20.80 113.17,20.69 C112.81,20.60 112.46,20.48 112.11,20.34 C111.83,20.22 111.55,20.07 111.29,19.91 L112.09,17.88 C112.27,18.02 112.47,18.15 112.67,18.26 C112.97,18.43 113.28,18.57 113.60,18.69 C114.01,18.85 114.43,18.97 114.86,19.06 C115.38,19.16 115.90,19.20 116.42,19.20 C117.26,19.26 118.09,19.04 118.79,18.59 C119.33,18.19 119.63,17.56 119.60,16.90 C119.62,16.34 119.38,15.80 118.94,15.45 C118.24,14.98 117.47,14.63 116.64,14.43 L114.86,13.84 C114.33,13.66 113.82,13.39 113.36,13.07 C112.91,12.76 112.55,12.35 112.28,11.89 C111.99,11.34 111.84,10.72 111.87,10.10 C111.79,8.92 112.33,7.79 113.29,7.10 C114.46,6.39 115.83,6.05 117.20,6.13 C118.07,6.11 118.94,6.19 119.79,6.37 C120.38,6.49 120.97,6.68 121.52,6.92 L120.95,8.96 C120.47,8.73 119.99,8.52 119.50,8.34 C118.79,8.11 118.05,8.00 117.31,8.02 C116.53,7.98 115.76,8.13 115.05,8.45 C114.47,8.75 114.14,9.37 114.20,10.01 C114.20,10.33 114.29,10.63 114.47,10.89 C114.66,11.15 114.90,11.36 115.18,11.52 C115.50,11.72 115.85,11.87 116.21,11.99 L117.45,12.36 L119.13,12.91 C119.66,13.10 120.16,13.36 120.61,13.70 C121.60,14.41 122.15,15.56 122.08,16.76 C122.12,17.46 121.95,18.17 121.61,18.79 C121.30,19.33 120.86,19.79 120.35,20.14 C119.80,20.50 119.19,20.76 118.55,20.91 C117.84,21.01 117.13,21.02 116.42,20.95 Z"></path><path d="M136.37,19.42 C135.76,19.91 135.06,20.28 134.31,20.50 C133.39,20.80 132.43,20.95 131.47,20.93 C129.48,21.04 127.53,20.30 126.14,18.89 C124.81,17.36 124.15,15.38 124.28,13.38 C124.26,12.31 124.43,11.26 124.79,10.26 C125.11,9.39 125.59,8.60 126.22,7.92 C126.79,7.29 127.50,6.79 128.29,6.45 C129.13,6.11 130.03,5.94 130.93,5.94 C131.84,5.93 132.74,6.10 133.58,6.45 C134.35,6.77 135.02,7.28 135.53,7.94 C136.06,8.66 136.42,9.50 136.56,10.38 C136.75,11.50 136.75,12.64 136.56,13.76 L126.72,13.76 C126.83,17.17 128.46,18.87 131.62,18.87 C132.38,18.89 133.13,18.77 133.85,18.53 C134.49,18.30 135.10,18.00 135.67,17.63 L136.37,19.42 Z M131.02,7.73 C130.01,7.72 129.05,8.12 128.35,8.83 C127.52,9.75 127.03,10.91 126.94,12.13 L134.33,12.13 C134.53,10.97 134.25,9.78 133.56,8.81 C132.93,8.09 131.99,7.69 131.02,7.73 Z"></path></g></svg>
@@ -2782,10 +2939,11 @@ class QueryResultElement extends HTMLElement
     /// on screen (see `_positionCellFilterMenu`).
     static _MENU_VIEWPORT_MARGIN = 4;
 
-    /// How many pages before the current one the pager lists. The number of pages is unknown (counting
-    /// the rows would mean a second query), so the pager shows a window ending one page after the
-    /// current one, plus an ellipsis for everything beyond it.
-    static _PAGER_PREVIOUS_PAGES = 10;
+    /// How many page numbers to show on either side of the current one in the run-bar pager. The total
+    /// number of pages is unknown, so the list is a short sliding window, page one when the window does
+    /// not start there, and a trailing ellipsis to jump to any page.
+    static _PAGER_WINDOW_RADIUS = 2;
+
 
     constructor()
     {
@@ -2836,7 +2994,7 @@ class QueryResultElement extends HTMLElement
 
                 #data_div
                 {
-                    margin-top: 1rem;
+                    margin-top: 0;
                     background-color: var(--element-background-color);
                 }
 
@@ -2929,7 +3087,10 @@ class QueryResultElement extends HTMLElement
                 th
                 {
                     position: sticky;
-                    top: -0.5rem;
+                    top: 0;
+                    isolation: isolate;
+                    /* Opaque lid above the sticky band: body rows must not show through on scroll. */
+                    box-shadow: 0 -8px 0 0 var(--table-header-color);
                     padding: 0.25rem 0.5rem;
                     text-align: center;
                     /* Top, not the middle a table cell aligns to by default: one column carrying a
@@ -2949,6 +3110,18 @@ class QueryResultElement extends HTMLElement
                        No backticks in this comment: this style block lives inside a JS template literal. */
                     --header-first-line: 1.75rem;
                     --header-icon-top: calc(var(--header-first-line) / 2);
+                }
+
+                th::before
+                {
+                    content: "";
+                    position: absolute;
+                    left: -1px;
+                    right: -1px;
+                    top: -8px;
+                    height: 8px;
+                    background: var(--table-header-color);
+                    pointer-events: none;
                 }
 
                 th .name
@@ -3549,62 +3722,6 @@ class QueryResultElement extends HTMLElement
                     background: var(--table-header-color);
                 }
 
-                /* The pager under the table. Hidden (and empty) unless the result is paginated or was
-                   cut off at the display limit - see renderPagination, which is what makes it
-                   visible; there is nothing to page through otherwise. */
-                #pagination
-                {
-                    display: none;
-                    align-items: baseline;
-                    flex-wrap: wrap;
-                    gap: 0.3rem;
-                    /* The same padding all round, so the row of pages is inset from the table edge by
-                       as much as it is from the table above it. */
-                    padding: 0.35rem;
-                    color: var(--misc-text-color);
-                }
-
-                .page-btn
-                {
-                    cursor: pointer;
-                    padding: 0.1rem 0.35rem;
-                    margin: 0;
-                    border: 1px solid var(--border-color);
-                    font: inherit;
-                    color: var(--link-color);
-                    background: var(--element-background-color);
-                }
-
-                .page-btn:hover
-                {
-                    background: var(--table-header-color);
-                }
-
-                /* The page being shown is not a link to anywhere: it reads as the current position. */
-                .page-btn.current
-                {
-                    cursor: default;
-                    font-weight: bold;
-                    color: var(--text-color);
-                    background: var(--table-header-color);
-                }
-
-                /* Set off from the page numbers, so the two controls of the pager read as two. */
-                .page-size-label
-                {
-                    margin-left: 0.6rem;
-                }
-
-                .page-input
-                {
-                    width: 5rem;
-                    padding: 0.1rem 0.3rem;
-                    font: inherit;
-                    color: var(--text-color);
-                    background: var(--element-background-color);
-                    border: 1px solid var(--border-color-selected);
-                }
-
                 /* Per-column color coding compares values across rows; with no more than a single
                    row there is nothing to compare, so hide the toggles. A column already colorized
                    with a non-default mode is exempted (its header carries the keep-colorize-toggle
@@ -3617,22 +3734,24 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
-                /* Apply hover/selection filter per-cell, excluding the active cell,
-                   because filter on tr would create a stacking context trapping it. */
-                tr:hover td:not(.td-selected)
+                /* Hover/selection tint per-cell with an opaque background, not filter:
+                   CSS filter on body cells bleeds through the sub-pixel seam under sticky headers. */
+                tr:hover td:not(.td-selected):not(.row-number),
+                .tr-selected td:not(.td-selected):not(.row-number)
                 {
-                    filter: var(--table-hover-filter);
+                    background-color: var(--table-hover-background);
+                }
+
+                tr:hover td.row-number:not(.td-selected),
+                .tr-selected td.row-number:not(.td-selected)
+                {
+                    background-color: var(--table-row-number-hover-background);
                 }
 
                 .tr-selected
                 {
                     position: relative;
                     z-index: 1; /* Above hovered rows */
-                }
-
-                .tr-selected td:not(.td-selected)
-                {
-                    filter: var(--table-hover-filter);
                 }
 
                 #error
@@ -3686,7 +3805,7 @@ class QueryResultElement extends HTMLElement
 
                 /* Both chips are flush with the cell's right edge, the filter chip giving way to the
                    copy chip when there is one. A cell has no copy chip when there is nothing worth
-                   copying (an empty value, a zero, a NULL - see _appendCopyButton), and then the filter
+                   copying (an empty value or NULL - see _appendCopyButton), and then the filter
                    chip takes the edge itself rather than leaving a chip-sized hole beside it. The copy
                    chip is rendered with the cell and the filter chip is added when the cell is selected,
                    so the latter always follows the former and a sibling selector can tell them apart.
@@ -3747,9 +3866,16 @@ class QueryResultElement extends HTMLElement
                    table level, which a stuck (sticky) cell does not carry along, so the edges are
                    drawn with an inset box-shadow that paints on the cell itself and stays visible
                    while the column is stuck. */
-                td.pinned-column, th.pinned-column
+                td.pinned-column
                 {
                     box-shadow: inset 1px 0 0 0 var(--border-color),
+                                inset -1px 0 0 0 var(--border-color);
+                }
+
+                th.pinned-column
+                {
+                    box-shadow: 0 -8px 0 0 var(--table-header-color),
+                                inset 1px 0 0 0 var(--border-color),
                                 inset -1px 0 0 0 var(--border-color);
                 }
 
@@ -4020,7 +4146,6 @@ class QueryResultElement extends HTMLElement
                 <div id="data_div">
                     <table class="monospace shadow" id="data-table"></table>
                     <pre class="monospace shadow" id="data-unparsed"></pre>
-                    <div class="monospace" id="pagination"></div>
                 </div>
                 <img id="image" class="shadow" alt="Query result image">
                 <div id="chart"></div>
@@ -4115,7 +4240,6 @@ class QueryResultElement extends HTMLElement
 
         this._dataDiv = this.shadowRoot.getElementById('data_div');
         this._dataTable = this.shadowRoot.getElementById('data-table');
-        this._pager = this.shadowRoot.getElementById('pagination');
         this._dataUnparsed = this.shadowRoot.getElementById('data-unparsed');
         this._image = this.shadowRoot.getElementById('image');
         this._chart = this.shadowRoot.getElementById('chart');
@@ -4299,7 +4423,7 @@ class QueryResultElement extends HTMLElement
         this._dataTable.classList.remove('hide-shape-controls');
         /// The pager describes the result that is going away; `renderPagination` puts back the one the
         /// new result needs. The open filter input goes with the header it lived in.
-        this._clearElement(this._pager);
+        this._hideRunPagination();
         this._open_filter_column = null;
 
         this._extremes = {};
@@ -4507,7 +4631,7 @@ class QueryResultElement extends HTMLElement
 
     _appendCopyButton(td, text, value)
     {
-        if (value === null || value === '' || value === 0 || value === '0') return;
+        if (value === null || value === '') return;
 
         let btn = document.createElement('span');
         btn.className = 'cell-copy';
@@ -5517,59 +5641,146 @@ class QueryResultElement extends HTMLElement
     /// It appears when there is something to page through: the result was cut off at the display limit
     /// (so there are more rows than are shown), or the result is already paginated (in which case each
     /// page is exactly full, so nothing is "cut off" any more and only this keeps the pager). The total
-    /// number of pages is unknown - the server is not asked to count the rows - so the pager offers the
-    /// ten previous pages, the current one, the next one, and an ellipsis that takes a page number.
+    /// number of pages is unknown - the server is not asked to count the rows - so the pager offers a
+    /// short sliding window around the current page, page one when needed, and an ellipsis to jump.
     ///
     /// The next page is offered only while the current one is FULL. A page that came back short is the
     /// end of the result: there is nothing on the page after it, so offering it would only lead to an
     /// empty one. (A page that is exactly the last full one still offers a next page - telling those
     /// apart would mean counting the rows of the whole result.)
+
+    _runPaginationEl()
+    {
+        return this === resultEl ? runPaginationEl : null;
+    }
+
+    _hideRunPagination()
+    {
+        const pager = this._runPaginationEl();
+        if (!pager) { return; }
+        this._clearElement(pager);
+        pager.hidden = true;
+        pager.style.display = 'none';
+    }
+
     renderPagination()
     {
         /// The header controls rest on the same facts as the pager - `_shapeable`, the row count, the
         /// shape - and so are (re)evaluated in the same pass (see `_updateShapeControlsVisibility`),
         /// before the early returns below: each of those is a case where they are not on offer either.
         this._updateShapeControlsVisibility();
-        this._clearElement(this._pager);
+        const pager = this._runPaginationEl();
+        if (pager)
+        {
+            this._clearElement(pager);
+            pager.hidden = true;
+            pager.style.display = 'none';
+        }
         if (!this._shapeable) { return; }
         /// Only a normal tabular result pages: no header (raw text, a chart, an image, an error) or no
         /// header row (the vertical single-row layout) means there is nothing to page through.
         if (!Array.isArray(this._header) || this._header.length === 0 || !this._dataTable.tHead) { return; }
         const active = this._pagination.page >= 1;
         if (!active && !this._incomplete_result) { return; }
+        if (!pager) { return; }
 
         const current = active ? this._pagination.page : 1;
         const size = active ? this._pagination.size : this._pageSize();
         const last = this.rowCount >= size ? current + 1 : current;
-        const first = Math.max(1, current - QueryResultElement._PAGER_PREVIOUS_PAGES);
-        this._pager.style.display = 'flex';
-        this._pager.appendChild(document.createTextNode('Page:'));
-        for (let page = first; page <= last; ++page)
+        pager.hidden = false;
+        pager.style.display = 'flex';
+
+        const pageList = document.createElement('div');
+        pageList.className = 'page-list';
+        const pageNav = document.createElement('div');
+        pageNav.className = 'page-nav';
+
+        this._appendPageList(pageList, current, last);
+        this._appendPageJump(pageList);
+        this._appendPageSize(pageList, size);
+        this._appendPageNav(pageNav, current, size);
+
+        pager.appendChild(pageList);
+        pager.appendChild(pageNav);
+    }
+
+    _appendPageList(list, current, last)
+    {
+        list.appendChild(document.createTextNode('Page:'));
+        const radius = QueryResultElement._PAGER_WINDOW_RADIUS;
+        const winFirst = Math.max(1, current - radius);
+        const winLast = Math.max(winFirst, last);
+
+        if (winFirst > 1)
         {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = page === current ? 'page-btn current' : 'page-btn';
-            button.textContent = String(page);
-            if (page === current)
+            this._appendPageButton(list, 1, current);
+            if (winFirst > 2)
             {
-                button.setAttribute('aria-current', 'page');
-                button.disabled = true;
+                const gap = document.createElement('span');
+                gap.className = 'page-gap';
+                gap.setAttribute('aria-hidden', 'true');
+                gap.textContent = '…';
+                list.appendChild(gap);
             }
-            else
-            {
-                button.title = 'Show page ' + page + ' (re-runs the query)';
-                button.addEventListener('click', (e) => { e.stopPropagation(); this._goToPage(page); });
-            }
-            this._pager.appendChild(button);
         }
-        this._appendPageJump();
-        this._appendPageSize(size);
+        for (let page = winFirst; page <= winLast; ++page)
+        {
+            this._appendPageButton(list, page, current);
+        }
+    }
+
+    _appendPageButton(container, page, current)
+    {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = page === current ? 'page-btn current' : 'page-btn';
+        button.textContent = String(page);
+        if (page === current)
+        {
+            button.setAttribute('aria-current', 'page');
+            button.disabled = true;
+        }
+        else
+        {
+            button.title = 'Show page ' + page + ' (re-runs the query)';
+            button.addEventListener('click', (e) => { e.stopPropagation(); this._goToPage(page); });
+        }
+        container.appendChild(button);
     }
 
     /// The trailing ellipsis of the pager: the number of pages is unknown, so instead of listing them
+
     /// it turns into an input for any page number. The number is taken when the input loses focus (as
     /// Enter does, by blurring it), so it is committed once however the user leaves the field.
-    _appendPageJump()
+    _appendPageNav(pager, current, size)
+    {
+        const prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'page-btn';
+        prev.textContent = 'Previous';
+        prev.disabled = current <= 1;
+        if (current > 1)
+        {
+            prev.title = 'Previous page (re-runs the query)';
+            prev.addEventListener('click', (e) => { e.stopPropagation(); this._goToPage(current - 1); });
+        }
+        pager.appendChild(prev);
+
+        const next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'page-btn';
+        next.textContent = 'Next';
+        const has_next = this.rowCount >= size;
+        next.disabled = !has_next;
+        if (has_next)
+        {
+            next.title = 'Next page (re-runs the query)';
+            next.addEventListener('click', (e) => { e.stopPropagation(); this._goToPage(current + 1); });
+        }
+        pager.appendChild(next);
+    }
+
+    _appendPageJump(pager)
     {
         const jump = document.createElement('button');
         jump.type = 'button';
@@ -5603,17 +5814,17 @@ class QueryResultElement extends HTMLElement
             jump.replaceWith(input);
             input.focus();
         });
-        this._pager.appendChild(jump);
+        pager.appendChild(jump);
     }
 
     /// How many rows a page holds, shown after the page numbers and edited the same way as the page
     /// jump: click the value, type another, and it is taken when the field loses focus.
-    _appendPageSize(size)
+    _appendPageSize(pager, size)
     {
         const label = document.createElement('span');
         label.className = 'page-size-label';
         label.appendChild(document.createTextNode('Per page:'));
-        this._pager.appendChild(label);
+        pager.appendChild(label);
 
         const button = document.createElement('button');
         button.type = 'button';
@@ -5646,7 +5857,7 @@ class QueryResultElement extends HTMLElement
             input.focus();
             input.select();
         });
-        this._pager.appendChild(button);
+        pager.appendChild(button);
     }
 
     /// Re-cut the result into pages of a different size and show the first of them. The page number is
@@ -6334,7 +6545,27 @@ class QueryResultElement extends HTMLElement
         if (this._pendingChangeLayout) { this._pendingChangeLayout = false; this._changeTableLayout(); }
     }
 
+    /// Re-measure column widths after the available width changes (DevTools docked, window
+    /// resize). A table frozen by `_changeTableLayout` keeps stale explicit widths until it is
+    /// unfixed and measured again.
+    reflowTableLayout()
+    {
+        const table = this._dataTable;
+        if (table.offsetParent === null || this.rowCount === 0) { return; }
+        if (table.classList.contains('fixed'))
+        {
+            table.classList.remove('fixed');
+            this._dataDiv.classList.remove('fixed');
+            table.style.removeProperty('--table-width');
+            for (const th of table.querySelectorAll('th')) th.style.width = '';
+            for (const row of table.rows) row.style.height = '';
+        }
+        this.transposeIfNeeded();
+        this._changeTableLayout();
+    }
+
     /// Finish a table whose query failed mid-stream, the same way on every failure path (the live
+
     /// mid-stream failure branches in `postImpl` and the snapshot-restore paths): keep any partial
     /// rows that arrived and finish their totals/coloring/transpose/layout so they look consistent
     /// under the error; when nothing but a header (or nothing at all) arrived, hide the empty table
@@ -6352,7 +6583,7 @@ class QueryResultElement extends HTMLElement
             this.applyColumnColors();
             /// No pager under a failed run: there are no further pages of a query that did not finish,
             /// and its shape is dropped by the caller anyway (see `postSingle`).
-            this._clearElement(this._pager);
+            this._hideRunPagination();
             if (measureNow) { this.transposeIfNeeded(); this._changeTableLayout(); }
             else { this._pendingTranspose = true; this._pendingChangeLayout = true; }
         }
@@ -7810,7 +8041,10 @@ let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
 let progressEl = document.getElementById('query-progress');
+let runPaginationEl = document.getElementById('run-pagination');
 let logoEl = document.getElementById('logo-container');
+let syncLogoForSplit = null;
+
 /// Container for the per-tab result panels. Each tab owns one `.tab-panel` here (created
 /// lazily); only the active tab's panel is shown. `resultEl`/`multiQueryContainer` are dynamic
 /// aliases that always point at the ACTIVE tab's elements, repointed by `activateTab`, so the
@@ -8015,8 +8249,9 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     }
     if (!quiet && belongs_to_active_connection()) {
         resultEl.clearError();
-        logoEl.style.display = 'block';
+        if (syncLogoForSplit) syncLogoForSplit(); else logoEl.style.display = 'block';
     }
+
     return await response.json();
 }
 
@@ -8527,8 +8762,8 @@ function setQueryOrRun(e, value) {
         query_area.value = value;
         query_area.dispatchEvent(new Event('input'));
     }
-    /// #main is the scroll container (overflow: auto), so scroll it to bring the query area into view.
-    document.getElementById('main').scrollTo(0, 0);
+    /// The query editor lives in the fixed header; reset the result pane scroll position.
+    resultPanelsEl.scrollTo(0, 0);
     e.stopPropagation();
 }
 
@@ -9185,7 +9420,7 @@ function positionTableBalloon(table) {
     visible_balloon = table_addendum;
 }
 
-document.addEventListener('scroll', () => {
+function handlePlayScroll() {
     /// The image preview follows the cursor and has no keyboard-focus counterpart, so
     /// hide it on any scroll: the link may have moved out from under a stationary
     /// cursor, which delivers no mouse event, so `mouseleave` does not fire.
@@ -9207,7 +9442,9 @@ document.addEventListener('scroll', () => {
     } else {
         hideTableBalloons();
     }
-}, { capture: true, passive: true });
+}
+document.addEventListener('scroll', handlePlayScroll, { capture: true, passive: true });
+resultPanelsEl.addEventListener('scroll', handlePlayScroll, { passive: true });
 document.addEventListener('mousemove', () => {
     /// Guard so the no-op case does not touch classList on every mouse pixel.
     if (document.body.classList.contains('suppress-balloons')) {
@@ -9392,17 +9629,25 @@ function refreshPinnedLayout() {
         el.refreshCellControls();
     }
 }
-window.addEventListener('resize', refreshPinnedLayout);
+
+/// Reflow every visible result table after the viewport or the results pane changes width.
+function refreshResultTableLayout() {
+    for (const el of document.querySelectorAll('query-result'))
+        el.reflowTableLayout();
+    refreshPinnedLayout();
+}
+window.addEventListener('resize', refreshResultTableLayout);
 
 /// A viewport `resize` is not the only thing that changes a result table's available width: opening
+
 /// or closing the database panel widens the `#menu` grid column and so narrows the `#main` results
 /// column WITHOUT any `resize` event. A table can therefore gain horizontal overflow while its pin
 /// controls stay hidden, or keep stale sticky offsets. Observe the results container so both a
 /// viewport resize and such internal layout changes keep the pin availability and offsets correct.
-const main_container = document.getElementById('main');
-if (main_container && typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(refreshPinnedLayout).observe(main_container);
+if (resultPanelsEl && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(refreshResultTableLayout).observe(resultPanelsEl);
 }
+
 
 let check_credentials_request_num = 0;
 /// The connection tuple the credential indication was last checked against, or `null` while nothing
@@ -11700,7 +11945,9 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
 
     tab.progressPhase = 'done';
     tab.failed = false;
+    tab.logoVisible = false;
     tab.downloadVisible = true;
+
     tab.copyVisible = result.is_raw;
     tab.downloadQuery = query;
     tab.downloadParams = paramValuesSnapshot;
@@ -11728,7 +11975,9 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         progressEl.updateText(el.rowCount, el.elapsedNs, el.incompleteResult);
         progressEl.clearBar();
         document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
+        if (syncLogoForSplit) syncLogoForSplit();
     }
+
 
     if (posted_request_num != tab.reqNum) { updateTabIndicator(tab); return; }
 
@@ -11941,7 +12190,8 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         if (el.incompleteResult) any_incomplete = true;
     }
 
-    tab.logoVisible = !had_error;
+    tab.logoVisible = false;
+
     /// A "Run all" where any statement failed marks the tab failed (red cross on its title) and is
     /// encoded with the SAME `'error'` phase as a single-query failure — not `'done'`. Otherwise
     /// `syncActiveTabChrome` (whose `'done'` branch calls `progressEl.finish()`) would replay the
@@ -11960,8 +12210,10 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
             /// showing the success check-mark; each statement's error is rendered in its own panel.
             progressEl.clear();
         } else {
-            logoEl.style.display = 'block';
+            if (syncLogoForSplit) syncLogoForSplit(); else logoEl.style.display = 'none';
+
             progressEl.finish();
+
             elapsed_ns = tab.finalStats.elapsedNs;
             progressEl.updateText(total_rows, tab.finalStats.elapsedNs, any_incomplete);
             progressEl.clearBar();
@@ -12557,7 +12809,14 @@ async function restoreMultiQuery(snapshot, tab, matToken) {
 /// separately by `materializeResult` (once, lazily) so switching keeps it intact. The producing
 /// database/connection and the download-action targets are likewise restored per tab by
 /// `materializeResult`, not here (this only touches the shared editor).
+function effectiveTabQuery(tab) {
+    if ((tab.query || '').trim() !== '') return tab.query;
+    if (tab.result && tab.result.query) return tab.result.query;
+    return tab.query || '';
+}
+
 async function restoreEditor(state, token) {
+
     if (token === undefined) token = activation_num;
     query_area.value = state.query;
     query_area.dispatchEvent(new Event('input'));
@@ -12920,6 +13179,8 @@ query_area.addEventListener('paste', e => {
 });
 
 appendTextareaResizer();
+initPlayLogoVisibility();
+
 
 /// ===== Tabs =====================================================================
 /// A tab bundles a query, its title, query parameters and a result snapshot.
@@ -13253,7 +13514,8 @@ function clearPanel(tab) {
     /// Drop the tab-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     tab.resources = null;
-    if (tab.id === activeTabId) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; paintDownloadCopy(tab); }
+    if (tab.id === activeTabId) { progressEl.clear(); progressEl.resetViewToggles(); if (syncLogoForSplit) syncLogoForSplit(); else logoEl.style.display = 'block'; elapsed_ns = 0; paintDownloadCopy(tab); }
+
 }
 
 /// Point the shared download/copy buttons at a tab's stored state.
@@ -13316,7 +13578,11 @@ function syncActiveTabChrome() {
     if (tab.resources)
         progressEl.adoptResourceState(tab.resources);
 
-    logoEl.style.display = tab.logoVisible ? 'block' : 'none';
+    if (syncLogoForSplit)
+        syncLogoForSplit();
+    else
+        logoEl.style.display = tab.logoVisible ? 'block' : 'none';
+
 
     /// Replay this tab's Logs/Metrics availability and selected view: reveal the shared toggles only
     /// for what this tab produced, and switch its result element(s) to its own view. The view and
@@ -13328,6 +13594,9 @@ function syncActiveTabChrome() {
             el.showView(tab.view || 'result');
 
     paintDownloadCopy(tab);
+
+    if (tab.resultEl) tab.resultEl.renderPagination();
+    else runPaginationEl && runPaginationEl.replaceChildren();
 }
 
 /// Serialize the live editor (query text + parameter values) into the active tab.
@@ -13407,7 +13676,10 @@ async function activateTab(id, guard_paste = false) {
     /// The tab's pair may be incoherent (edited while the lexer was unavailable — possibly in a
     /// previous session, via the persisted record), so pass its provenance along: the restore
     /// must not stamp such a pair as describing `tab.query` (see `restoreEditor`).
-    await restoreEditor({ query: tab.query, params: tab.params, paramsSyncedQuery: tab.paramsSyncedQuery }, token);
+    const editor_query = effectiveTabQuery(tab);
+    if (!(tab.query || '').trim() && editor_query) tab.query = editor_query;
+    await restoreEditor({ query: editor_query, params: tab.params, paramsSyncedQuery: tab.paramsSyncedQuery }, token);
+
     if (token !== activation_num) return; /// a newer activation/run superseded this one
 
     /// Lazily materialize the stored result into this tab's element the first time it is opened,
@@ -13864,10 +14136,13 @@ async function persist() {
         const tabStore = tx.objectStore(TAB_STORE);
         tabStore.clear();
         for (const tab of tabs) {
+            const query = effectiveTabQuery(tab);
+            if (!(tab.query || '').trim() && query) tab.query = query;
             tabStore.put({
                 id: tab.id,
                 title: tab.title,
-                query: tab.query,
+                query: query,
+
                 params: tab.params,
                 /// The provenance of `params` — the query text it was last coherently committed
                 /// for. An edit made while the lexer is unavailable advances `query` but cannot
@@ -14722,10 +14997,15 @@ window.onpopstate = function(event) {
     activateTab(tab.id).then(scheduleSave);
 };
 
-if (window.location.hash) {
-    query_area.value = fromBase64(window.location.hash.substr(1));
-    query_area.dispatchEvent(new Event('input'));
+if (window.location.hash.length > 1) {
+    try {
+        query_area.value = fromBase64(window.location.hash.substr(1));
+        query_area.dispatchEvent(new Event('input'));
+    } catch (e) {
+        /// Malformed `#<base64>` fragments must not abort startup (e.g. a corrupted bookmark).
+    }
 }
+
 
 // Favicon changes to gray while a query is running, to indicate progress on the browser tab.
 const favicon_default = document.querySelector('link[rel="icon"]').href;
@@ -14870,7 +15150,7 @@ async function postOne()
     /// Snapshot the editor-interaction generation at launch: `beginFlight` (deferred until the
     /// preflight below has found something to run) installs it into the tab's `runEditorInteraction`.
     const launch_interaction = editorInteractionGen;
-    document.body.scrollTo(0, 0);
+    resultPanelsEl.scrollTo(0, 0);
 
     /// Snapshot the shared editor before any await (see above). The launch text is also recorded
     /// on the tab so `saveHistory` can tell, at completion, whether the tab's draft has since
@@ -14943,7 +15223,10 @@ async function postOne()
     if (!launched) {
         const under = await getQueryUnderCursor(editor_text, sel_start);
         if (my_run !== tab.reqNum) return;
+        if (!under.query.trim())
+            return;
         beginFlight(tab, launch_interaction);
+
         /// Highlight and focus the chosen query only when this tab is still active: a background
         /// run (the user switched away during the preflight) must not move the foreground editor's
         /// selection or steal focus.
@@ -14982,7 +15265,7 @@ async function postAll()
     ++activation_num;
     const my_run = ++tab.reqNum;
     const launch_interaction = editorInteractionGen;   /// see `postOne`
-    document.body.scrollTo(0, 0);
+    resultPanelsEl.scrollTo(0, 0);
 
     const editor_text = query_area.value;
     tab.launchQuery = editor_text;   /// see `postOne`: lets `saveHistory` detect a newer draft
@@ -15008,12 +15291,15 @@ async function postAll()
     } else {
         const under = await getQueryUnderCursor(editor_text, sel_start);
         if (my_run !== tab.reqNum) return;
+        if (!under.query.trim())
+            return;
         beginFlight(tab, launch_interaction);
         if (tab.id === activeTabId) {
             if (under.selStart !== null) query_area.setSelectionRange(under.selStart, under.selEnd);
             focusEditorForRun();
         }
         await postSingle(tab, my_run, under.query, undefined, paramValuesSnapshot, under.queryStart, connection, query_database);
+
     }
 
     if (my_run === tab.reqNum) endFlight(tab);
@@ -15351,9 +15637,49 @@ function appendTextareaResizer() {
     resizer.className = 'textarea-resizer';
     resizer.addEventListener('pointerdown', start);
     resizer.addEventListener('touchstart', (e) => e.preventDefault());
+    resizer.addEventListener('dblclick', () => {
+        resultSectionEl.style.flex = '1 1 auto';
+        resultSectionEl.style.height = '';
+    });
 
     queryDiv.appendChild(resizer);
 }
+
+function initPlayLogoVisibility() {
+    function activeTabHasRenderedResults() {
+        const tab = getActiveTab();
+        if (!tab) return false;
+        if (tab.resultEl && tab.resultEl.rowCount > 0)
+            return true;
+        if (!tab.panel) return false;
+        for (const el of tab.panel.querySelectorAll('query-result'))
+            if (el.rowCount > 0)
+                return true;
+        return false;
+    }
+
+    function syncLogoForSplitPane() {
+        const tab = getActiveTab();
+        /// Hide the watermark whenever this tab is not an idle empty pane: a run in flight, a
+        /// finished run (even zero rows), an error, or any rendered table rows.
+        const hide = !tab || !tab.logoVisible || tab.progressPhase !== 'idle' || activeTabHasRenderedResults();
+        if (hide)
+        {
+            logoEl.style.display = 'none';
+            logoEl.classList.remove('logo-interactive');
+            return;
+        }
+        logoEl.style.display = 'block';
+        logoEl.classList.add('logo-interactive');
+    }
+
+    syncLogoForSplit = syncLogoForSplitPane;
+    window.addEventListener('resize', syncLogoForSplitPane);
+    syncLogoForSplitPane();
+
+}
+
+
 
 function resizeQueryAreaIfSlightlyOverflowing()
 {
@@ -18368,8 +18694,11 @@ const url_tab_name = current_url.searchParams.get('tab');
 /// Whether the URL actually carries a query fragment (`#<base64>`), as opposed to no
 /// fragment or a bare `#`. `url_query` is '' in all those cases, so we must not treat an
 /// absent query the same as an empty one: a bare `?tab=Name` must not wipe the saved query.
-const has_url_query = window.location.hash.length > 1;
+/// A malformed `#<base64>` fragment that fails to decode also leaves the editor empty and must
+/// not be treated as an authoritative empty query that overwrites a saved tab on reload.
 const url_query = query_area.value;          /// already decoded from the hash; may be ''
+const has_url_query = window.location.hash.length > 1 && (url_query || '').trim() !== '';
+
 /// Defer the startup auto-run (`run=1`) until after IndexedDB reconciliation for EVERY URL, not
 /// only ones carrying a `#<query>` hash. Two reasons: (1) reconciliation may switch the active tab,
 /// and a switch would abort an in-flight run, so the run must happen in the reconciled tab; (2) a
@@ -18938,8 +19267,9 @@ async function reconcileStartup() {
     /// live entry — a database selection, a connection edit, a query/param edit, a tab switch — also
     /// cancels the run (`deferred_run_cancelled`): running anyway would execute the shared query
     /// against a target or edit the live URL no longer requests it for.
-    if (defer_run_for_reconcile && !deferred_run_cancelled && !stale_blank_reload_bare && query_area.value && !preserve_local_query && !bootstrap_dirty) {
+    if (defer_run_for_reconcile && !deferred_run_cancelled && !stale_blank_reload_bare && query_area.value.trim() && !preserve_local_query && !bootstrap_dirty) {
         postAll();   /// saves history itself on completion
+
     } else if (activated) {
         syncHistory();   /// reflect the restored active tab in the URL (replaceState)
     } else if (reown_adopted_entry) {
