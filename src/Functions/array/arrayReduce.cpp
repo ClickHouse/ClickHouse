@@ -51,7 +51,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// With a non-deterministic aggregate this must stay off: the default implementation executes the
+    /// function on a single row and replicates the result to the whole block, which turns per-row draws
+    /// into one draw for the query. `executeImpl` materializes a constant array argument itself.
+    bool useDefaultImplementationForConstants() const override { return aggregate_function->isDeterministic(); }
     /// As we parse the function name and deal with arrays we don't want to default NULL handler, which will hide
     /// nullability from us (which also means hidden from the aggregate functions)
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -63,6 +66,13 @@ public:
     {
         return aggregate_function->getResultType();
     }
+
+    /// The aggregate that the string argument names decides this: a `groupArraySample` without a seed
+    /// makes the expression non-deterministic, and both the filter push-down and constant folding have
+    /// to see that. A deterministic aggregate - the overwhelmingly common case - is unaffected.
+    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
+    bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
