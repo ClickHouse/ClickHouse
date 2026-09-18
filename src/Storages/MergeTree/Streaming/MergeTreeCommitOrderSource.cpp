@@ -93,7 +93,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
         read_state.updateGlobalWatermark(global_watermark->watermark);
 
     if (auto partition_cursor = chunk.getChunkInfos().extract<PartitionCursorInfo>())
-        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->cursor);
+        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->last);
 
     if (auto partition_marker = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
         read_state.updatePartitionWatermark(partition_marker->partition_id, std::move(partition_marker->watermark));

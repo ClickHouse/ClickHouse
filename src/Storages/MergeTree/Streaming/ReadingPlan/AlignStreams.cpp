@@ -1,13 +1,10 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-
-#include <Columns/IColumn.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/ISimpleTransform.h>
 #include <Processors/Port.h>
 #include <Processors/Streaming/Markers.h>
 
@@ -47,65 +44,12 @@ OutputPorts buildOutputPorts(SharedHeader header)
     return ports;
 }
 
-PartitionCursor chunkRowCursor(const Chunk & chunk, size_t row, size_t block_number_pos, size_t block_offset_pos)
-{
-    const auto & columns = chunk.getColumns();
-    return {columns[block_number_pos]->getInt(row), columns[block_offset_pos]->getInt(row)};
-}
-
 bool isWatermarkChunk(const Chunk & chunk)
 {
     return chunk.getChunkInfos().has<WatermarkMarker>()
         || chunk.getChunkInfos().has<PartitionWatermarkInfo>();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-struct ChunkBoundaries : public ChunkInfoCloneable<ChunkBoundaries>
-{
-    PartitionCursor left_cursor;
-    PartitionCursor right_cursor;
-};
-
-class ExtractBoundariesTransform final : public ISimpleTransform
-{
-public:
-    ExtractBoundariesTransform(SharedHeader header, bool drop_data_)
-        : ISimpleTransform(header, header, /*skip_empty_chunks=*/false)
-        , drop_data(drop_data_)
-        , block_number_pos(header->getPositionByName(BlockNumberColumn::name))
-        , block_offset_pos(header->getPositionByName(BlockOffsetColumn::name))
-    {
-    }
-
-    String getName() const override { return "ExtractBoundaries"; }
-
-protected:
-    void transform(Chunk & chunk) override
-    {
-        if (chunk.getNumRows() == 0)
-            return;
-
-        auto boundaries = std::make_shared<ChunkBoundaries>();
-        boundaries->left_cursor = chunkRowCursor(chunk, 0, block_number_pos, block_offset_pos);
-        boundaries->right_cursor = chunkRowCursor(chunk, chunk.getNumRows() - 1, block_number_pos, block_offset_pos);
-
-        if (drop_data)
-        {
-            Chunk boundaries_chunk(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-            boundaries_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
-            chunk = std::move(boundaries_chunk);
-        }
-
-        chunk.getChunkInfos().add(std::move(boundaries));
-    }
-
-private:
-    const bool drop_data;
-    const size_t block_number_pos;
-    const size_t block_offset_pos;
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 class AlignStreamsProcessor final : public IProcessor
 {
     struct HeldWatermark
@@ -117,8 +61,8 @@ class AlignStreamsProcessor final : public IProcessor
     struct HeldData
     {
         Chunk chunk;
-        PartitionCursor left_cursor;
-        PartitionCursor right_cursor;
+        PartitionCursor first;
+        PartitionCursor last;
     };
 
     bool canReleaseWatermark(const HeldWatermark & watermark) const
@@ -127,7 +71,7 @@ class AlignStreamsProcessor final : public IProcessor
             return true;
 
         if (held_data.has_value())
-            return held_data->left_cursor > watermark.boundary;
+            return held_data->first > watermark.boundary;
 
         return data_progress > watermark.boundary;
     }
@@ -137,12 +81,12 @@ class AlignStreamsProcessor final : public IProcessor
         if (metadata_input.isFinished())
             return true;
 
-        return !held_watermarks.empty() && held_watermarks.back().boundary >= data.right_cursor;
+        return !held_watermarks.empty() && held_watermarks.back().boundary >= data.last;
     }
 
     void releaseData()
     {
-        data_progress = held_data->right_cursor;
+        data_progress = held_data->last;
         ready_chunks.push(std::move(held_data->chunk));
         held_data.reset();
     }
@@ -175,8 +119,8 @@ class AlignStreamsProcessor final : public IProcessor
 
     void consumeMetadataChunk(Chunk chunk)
     {
-        if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
-            metadata_progress = boundaries->right_cursor;
+        if (auto info = chunk.getChunkInfos().extract<PartitionCursorInfo>())
+            metadata_progress = info->last;
 
         if (isWatermarkChunk(chunk))
         {
@@ -188,8 +132,8 @@ class AlignStreamsProcessor final : public IProcessor
 
     void consumeDataChunk(Chunk chunk)
     {
-        if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
-            held_data = HeldData{std::move(chunk), boundaries->left_cursor, boundaries->right_cursor};
+        if (auto info = chunk.getChunkInfos().get<PartitionCursorInfo>())
+           held_data = HeldData{std::move(chunk), info->first, info->last};
     }
 
 public:
@@ -283,9 +227,6 @@ QueryPipelineBuilderPtr AlignStreamsStep::updatePipeline(QueryPipelineBuilders p
 
     if (pipelines[0]->getNumStreams() != 1 || pipelines[1]->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
-
-    pipelines[0]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/true); });
-    pipelines[1]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/false); });
 
     auto processor = std::make_shared<AlignStreamsProcessor>(input_headers.front(), input_headers.back());
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), std::move(processor), &processors);
