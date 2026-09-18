@@ -505,7 +505,7 @@ For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. 
 
 Parentheses make the source boundary explicit: options inside them belong to the source query, and options after them or after the action list belong to `EXPLAIN TEXT`.
 
-In the bare form with actions, output options before the first action belong to the source, and options after the action list belong to `EXPLAIN TEXT`. Without actions, trailing `FORMAT` and `INTO OUTFILE` clauses belong to `EXPLAIN TEXT`.
+In the bare form with actions, output options before the first action belong to the source, and options after the action list belong to `EXPLAIN TEXT`. Without actions, a `SETTINGS` clause directly after the source statement stays with the source, while trailing `FORMAT` and `INTO OUTFILE` clauses belongs to `EXPLAIN TEXT`.
 
 `SETTINGS` parsed as part of the source `SELECT` remain source settings. To apply settings to `EXPLAIN TEXT`, put them after the source's closing parenthesis or after the action list.
 

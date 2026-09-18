@@ -1,0 +1,6 @@
+EXPLAIN TEXT (SHOW TABLES SETTINGS use_query_cache = true) FORMAT JSONEachRow
+1
+EXPLAIN TEXT (EXISTS TABLE t SETTINGS max_threads = 1)
+EXPLAIN TEXT (SELECT 1 SETTINGS max_threads = 1 SETTINGS max_block_size = 1)
+EXPLAIN TEXT (SHOW TABLES) FORMAT JSONEachRow SETTINGS max_threads = 1
+{"text":"SHOW TABLES\nSETTINGS explain_text_unknown_setting = 1"}

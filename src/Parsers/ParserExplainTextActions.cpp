@@ -3,9 +3,11 @@
 
 #include <Parsers/ParserExplainTextActions.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/TokenIterator.h>
 
 #include <Parsers/ASTExplainTextAction.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -258,7 +260,25 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     }
 
     ParserQuery source_parser(end, allow_settings_after_format_in_insert, false, false);
+    if (!source_parser.parse(pos, query, expected))
+        return false;
 
-    return source_parser.parse(pos, query, expected);
+    /// `ParserQueryWithOutput` is disabled above so that a trailing `FORMAT` or `INTO OUTFILE` stays
+    /// with `EXPLAIN TEXT`. A `SETTINGS` clause directly after the statement belongs to the statement
+    /// as it does for a `SELECT` (whose own parser takes it) and whenever actions follow, so attach it
+    /// to the source the way `ParserQueryWithOutput` would have.
+    if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
+        query_with_output && !query_with_output->settings_ast)
+    {
+        auto saved = pos;
+        ParserKeyword settings_keyword(Keyword::SETTINGS);
+        ASTPtr settings;
+        if (settings_keyword.ignore(pos, expected) && ParserSetQuery(true).parse(pos, settings, expected))
+            query_with_output->set(query_with_output->settings_ast, std::move(settings));
+        else
+            pos = saved;
+    }
+
+    return true;
 }
 }
