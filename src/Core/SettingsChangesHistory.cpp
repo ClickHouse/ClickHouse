@@ -48,14 +48,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
-        });
-        addSettingsChanges(settings_changes_history, "26.9",
-        {
             {"allow_experimental_logsql_dialect", false, false, "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."},
             {"logsql_database", "", "", "New setting to specify the database with the logs table used by the 'logsql' dialect."},
             {"logsql_table", "", "", "New setting to specify the logs table used by the 'logsql' dialect."},
             {"logsql_time_column", "_time", "_time", "New setting to specify the column referred to by the `_time` field in the 'logsql' dialect."},
             {"logsql_message_column", "_msg", "_msg", "New setting to specify the column referred to by the `_msg` field in the 'logsql' dialect."},
+        });
+        addSettingsChanges(settings_changes_history, "26.9",
+        {
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
