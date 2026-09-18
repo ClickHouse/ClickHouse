@@ -41,7 +41,7 @@ extern const Event AutoParallelReplicasNoStatistics;
 extern const Event AutoParallelReplicasStatisticsDrifted;
 extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
-extern const Event AutoParallelReplicasSkippedByThreshold;
+extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
 }
 
@@ -428,7 +428,7 @@ void considerEnablingParallelReplicas(
 
         if (!found_read_worth_parallelizing)
         {
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedByThreshold);
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedEarly);
             LOG_TRACE(
                 getLogger("optimizeTree"),
                 "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
