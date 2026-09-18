@@ -545,6 +545,12 @@ class FlightSQLClient:
         result.ParseFromString(results[0].body.to_pybytes())
         return result
 
+    def close_session(self) -> bytes:
+        """Close the current session via the CloseSession action."""
+        action = flight.Action("CloseSession", b"")
+        results = list(self.client.do_action(action, self._flight_call_options()))
+        return results[0].body.to_pybytes()
+
     def cancel_flight_info(self, flight_info_bytes: bytes) -> CancelFlightInfoResult:
         """Cancel a query via the CancelFlightInfo action."""
         req = CancelFlightInfoRequest()
