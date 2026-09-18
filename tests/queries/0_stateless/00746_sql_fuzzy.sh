@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-coverage, no-flaky-check
-#  - no-flaky-check: the test makes up to 5 runs of 60 seconds each, exceeding the flaky check time limit under sanitizers
+# Tags: no-fasttest, no-coverage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
