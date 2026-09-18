@@ -62,7 +62,12 @@ public:
 
     static bool isValidKeyType(DataTypePtr key_type);
 
-    DataTypes getChildren() const override { return {key_type, value_type}; }
+    size_t getNumberOfChildren() const override { return 2; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < 2);
+        return index == 0 ? key_type : value_type;
+    }
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return key_type->hasDynamicStructure() || value_type->hasDynamicStructure(); }

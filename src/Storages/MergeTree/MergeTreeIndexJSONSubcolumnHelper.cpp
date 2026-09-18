@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
@@ -160,12 +161,18 @@ bool isJSONPathFilterSafe(
         /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
         /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
         /// hold one, is absent from the converted value.
+        /// The outermost type is not in question here: an `Enum` there is the `enum_source`, and a
+        /// `Variant` or `Dynamic` there was ruled out above. Only what is below it is lost.
         bool nested_source_type_lost = false;
-        unwrapped_value_type->forEachChild([&](const IDataType & nested)
+        const size_t num_children = unwrapped_value_type->getNumberOfChildren();
+        for (size_t i = 0; i < num_children && !nested_source_type_lost; ++i)
         {
-            const WhichDataType which_nested(nested);
-            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
-        });
+            nested_source_type_lost = anyInTypeTree(*unwrapped_value_type->getChild(i), [](const IDataType & nested)
+            {
+                const WhichDataType which_nested(nested);
+                return which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
+            });
+        }
         if (nested_source_type_lost)
             return false;
     }

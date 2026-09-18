@@ -75,7 +75,12 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    DataTypes getChildren() const override { return elems; }
+    size_t getNumberOfChildren() const override { return elems.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < elems.size());
+        return elems[index];
+    }
 
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;

@@ -43,7 +43,12 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    DataTypes getChildren() const override { return {nested}; }
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return nested;
+    }
 
     Field getDefault() const override;
 

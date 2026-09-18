@@ -66,7 +66,12 @@ public:
     /// Check if Variant has provided type in the list of variants and return its discriminator.
     std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const String & type_name) const;
 
-    DataTypes getChildren() const override { return variants; }
+    size_t getNumberOfChildren() const override { return variants.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < variants.size());
+        return variants[index];
+    }
 
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;

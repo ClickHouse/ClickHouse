@@ -65,7 +65,12 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    DataTypes getChildren() const override;
+    size_t getNumberOfChildren() const override { return sorted_typed_paths.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < sorted_typed_paths.size());
+        return sorted_typed_paths[index].second;
+    }
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
@@ -101,10 +106,6 @@ public:
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 
-    /// The typed paths in the canonical order `getChildren` and `doCloneWithChildren` agree on.
-    /// `typed_paths` is a hash map, so an order has to be imposed rather than read off it.
-    std::vector<std::pair<std::string_view, DataTypePtr>> getSortedTypedPaths() const;
-
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
@@ -112,6 +113,10 @@ private:
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
     std::unordered_map<String, DataTypePtr> typed_paths;
+    /// The same typed paths in the canonical order `getChild` and `doCloneWithChildren` agree on.
+    /// `typed_paths` is a hash map, so an order has to be imposed rather than read off it, and it is
+    /// imposed once here so that enumerating the children does not sort or allocate.
+    std::vector<std::pair<String, DataTypePtr>> sorted_typed_paths;
     /// Set of paths that should be skipped during data parsing.
     std::unordered_set<String> paths_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.

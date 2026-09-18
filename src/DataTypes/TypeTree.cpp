@@ -12,8 +12,9 @@ void forEachInTypeTree(const IDataType & type, const std::function<void(const ID
     checkStackSize();
 
     callback(type);
-    for (const auto & child : type.getChildren())
-        forEachInTypeTree(*child, callback);
+    const size_t num_children = type.getNumberOfChildren();
+    for (size_t i = 0; i < num_children; ++i)
+        forEachInTypeTree(*type.getChild(i), callback);
 }
 
 bool anyInTypeTree(const IDataType & type, const std::function<bool(const IDataType &)> & predicate)
@@ -23,8 +24,9 @@ bool anyInTypeTree(const IDataType & type, const std::function<bool(const IDataT
     if (predicate(type))
         return true;
 
-    for (const auto & child : type.getChildren())
-        if (anyInTypeTree(*child, predicate))
+    const size_t num_children = type.getNumberOfChildren();
+    for (size_t i = 0; i < num_children; ++i)
+        if (anyInTypeTree(*type.getChild(i), predicate))
             return true;
 
     return false;
@@ -34,19 +36,30 @@ DataTypePtr rewriteTypeTree(const DataTypePtr & type, const TypeTreeRewriteFn & 
 {
     checkStackSize();
 
-    const DataTypes children = type->getChildren();
+    const size_t num_children = type->getNumberOfChildren();
 
+    /// Most rewrites leave most subtrees alone - `setVersionToAggregateFunctions` runs on every column
+    /// of every block a `NativeWriter` sends, and touches only the aggregate states among them - so the
+    /// replacement list is only materialized once a child has actually moved.
     DataTypes new_children;
-    new_children.reserve(children.size());
     bool any_child_moved = false;
-    for (const auto & child : children)
+    for (size_t i = 0; i < num_children; ++i)
     {
+        const DataTypePtr & child = type->getChild(i);
         auto new_child = rewriteTypeTree(child, callback, policy);
         if (!new_child)
             return nullptr;
 
-        any_child_moved |= new_child.get() != child.get();
-        new_children.push_back(std::move(new_child));
+        if (!any_child_moved && new_child.get() != child.get())
+        {
+            any_child_moved = true;
+            new_children.reserve(num_children);
+            for (size_t j = 0; j < i; ++j)
+                new_children.push_back(type->getChild(j));
+        }
+
+        if (any_child_moved)
+            new_children.push_back(std::move(new_child));
     }
 
     DataTypePtr rebuilt = type;

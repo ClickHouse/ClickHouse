@@ -62,7 +62,12 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
-    DataTypes getChildren() const override { return {dictionary_type}; }
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return dictionary_type;
+    }
 
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;

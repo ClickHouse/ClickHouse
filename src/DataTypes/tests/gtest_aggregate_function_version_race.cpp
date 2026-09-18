@@ -350,7 +350,7 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnEr
 /// A typed `JSON` path is a child like any other, so a versioned state below one is re-versioned
 /// with the rest of the type rather than stopping at the `JSON` boundary. That boundary used to
 /// exist only because the walk was hand-written per caller and this one did not descend into
-/// `DataTypeObject`; every walk now goes through `IDataType::getChildren`.
+/// `DataTypeObject`; every walk now goes through `IDataType::getChild`.
 /// The declaration parses but `JSON` serialization rejects it later, so this pins the traversal and
 /// not a `Native` wire-format shape - binary type encoding carries an explicit aggregate-state
 /// version field of its own.

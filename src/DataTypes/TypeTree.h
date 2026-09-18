@@ -10,9 +10,12 @@ namespace DB
 
 /** Recursive walks over a data type and the types nested in it.
   *
-  * Every walk here is written in terms of `IDataType::getChildren` and `IDataType::cloneWithChildren`,
-  * so a data type becomes visible to all of them at once by implementing those two methods, and the
-  * traversal order is decided in one place instead of once per walk.
+  * Every walk here is written in terms of `IDataType::getNumberOfChildren` / `IDataType::getChild` and
+  * `IDataType::cloneWithChildren`, so a data type becomes visible to all of them at once by implementing
+  * those methods, and the traversal order is decided in one place instead of once per walk.
+  *
+  * The read-only walks allocate nothing: the children are enumerated by index straight from the members
+  * of the type, and `rewriteTypeTree` builds a replacement list only for a node whose child has moved.
   */
 
 /// Applies `callback` to `type` and to every type below it, in pre-order - the root first.
