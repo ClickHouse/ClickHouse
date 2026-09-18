@@ -1,0 +1,75 @@
+---
+import manifest from '@generated/data/manifest.json';
+import versionsManifest from '@generated/data/versions.json';
+
+interface VersionEntry {
+  id: string;
+  label: string;
+  routes: Record<string, string>;
+  fallbackRoute: string;
+}
+
+interface Props {
+  stableId?: string;
+}
+
+const { stableId } = Astro.props;
+const versions = versionsManifest.versions as VersionEntry[];
+const current = versions.find((version) => version.id === manifest.channel);
+if (!current) throw new Error(`Current bundle ${manifest.channel} is missing from versions.json`);
+
+function destination(version: VersionEntry) {
+  return (stableId && version.routes[stableId]) || version.fallbackRoute;
+}
+---
+
+<details class="version-selector">
+  <summary aria-label={`Documentation version: ${current.label}`}>
+    <span class="version-symbol" aria-hidden="true">V</span>
+    <span class="version-trigger-copy">
+      <strong>{current.label}</strong>
+    </span>
+    <span class="version-chevron" aria-hidden="true">⌃</span>
+  </summary>
+
+  <div class="version-menu" role="listbox" aria-label="Documentation versions">
+    <div class="version-options">
+      {versions.map((version) => (
+        <a
+          class:list={['version-option', { selected: version.id === current.id }]}
+          href={destination(version)}
+          role="option"
+          aria-selected={version.id === current.id}
+        >
+          <span><strong>{version.label}</strong></span>
+          {version.id === current.id && <span class="version-check" aria-hidden="true">✓</span>}
+        </a>
+      ))}
+    </div>
+  </div>
+</details>
+
+<script>
+  let versionSelectorController: AbortController | undefined;
+
+  function initializeVersionSelector() {
+    versionSelectorController?.abort();
+    versionSelectorController = new AbortController();
+    const versionSelector = document.querySelector<HTMLDetailsElement>('.version-selector');
+
+    document.addEventListener('click', (event) => {
+      if (versionSelector?.open && !versionSelector.contains(event.target as Node)) {
+        versionSelector.open = false;
+      }
+    }, { signal: versionSelectorController.signal });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && versionSelector?.open) {
+        versionSelector.open = false;
+        versionSelector.querySelector<HTMLElement>('summary')?.focus();
+      }
+    }, { signal: versionSelectorController.signal });
+  }
+
+  document.addEventListener('astro:page-load', initializeVersionSelector);
+</script>

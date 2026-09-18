@@ -1,0 +1,13 @@
+---
+import manifest from '@generated/data/manifest.json';
+
+import ReferenceIndex from '../../../../../components/ReferenceIndex.astro';
+
+export function getStaticPaths() {
+  return manifest.channel === 'latest'
+    ? []
+    : [{ params: { version: manifest.channel } }];
+}
+---
+
+<ReferenceIndex />

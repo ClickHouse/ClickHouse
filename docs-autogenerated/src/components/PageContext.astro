@@ -1,0 +1,97 @@
+---
+import TableOfContents from './TableOfContents.astro';
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+  sourceUrl: string;
+}
+
+const { headings, sourceUrl } = Astro.props;
+const hasTableOfContents = headings.some(({ depth }) => depth >= 2 && depth <= 4);
+---
+
+<aside class="page-context" aria-label="Page tools">
+  <TableOfContents headings={headings} />
+  {hasTableOfContents && <div class="context-divider" aria-hidden="true"></div>}
+  <nav class="context-actions">
+    <button class="copy-page" type="button">
+      <span class="context-icon" aria-hidden="true">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.25 5.25H7.25C6.14543 5.25 5.25 6.14543 5.25 7.25V14.25C5.25 15.3546 6.14543 16.25 7.25 16.25H14.25C15.3546 16.25 16.25 15.3546 16.25 14.25V7.25C16.25 6.14543 15.3546 5.25 14.25 5.25Z" />
+          <path d="M2.80103 11.998L1.77203 5.07397C1.61003 3.98097 2.36403 2.96397 3.45603 2.80197L10.38 1.77297C11.313 1.63397 12.19 2.16297 12.528 3.00097" />
+        </svg>
+      </span>
+      <span class="copy-page-label">Copy page</span>
+    </button>
+    <a href={sourceUrl}>
+      <span class="context-icon" aria-hidden="true">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15.25 3.75H2.75C1.64543 3.75.75 4.64543.75 5.75V12.25C.75 13.3546 1.64543 14.25 2.75 14.25H15.25C16.3546 14.25 17.25 13.3546 17.25 12.25V5.75C17.25 4.64543 16.3546 3.75 15.25 3.75Z" />
+          <path d="M8.75 11.25V6.75H8.356L6.25 9.5 4.144 6.75H3.75V11.25" />
+          <path d="M11.5 9.5 13.25 11.25 15 9.5M13.25 11.25V6.75" />
+        </svg>
+      </span>
+      <span class="context-action-label">
+        View source
+        <svg class="context-external-icon" aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.25 3.75 3.755 14.245M4.713 3.75h9.537v9.537" />
+        </svg>
+      </span>
+    </a>
+    <a href={`${sourceUrl}?plain=1`}>
+      <span class="context-icon" aria-hidden="true">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11.75 6.25H12.335C13.3 6.25 14.127 6.939 14.302 7.888L15.315 13.388C15.541 14.617 14.598 15.75 13.348 15.75H4.652C3.402 15.75 2.459 14.617 2.685 13.388L3.698 7.888C3.873 6.939 4.7 6.25 5.665 6.25H6.25" />
+          <path d="M12 9.5 9 12.5 6 9.5M9 12.5V1.25" />
+        </svg>
+      </span>
+      <span class="context-action-label">
+        View raw source
+        <svg class="context-external-icon" aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.25 3.75 3.755 14.245M4.713 3.75h9.537v9.537" />
+        </svg>
+      </span>
+    </a>
+    <a href="https://clickhouse.com/docs#claude-code">
+      <span class="context-icon context-icon-mcp" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path fill-rule="evenodd" d="M15.688 2.343a2.588 2.588 0 0 0-3.61 0l-9.626 9.44a.863.863 0 0 1-1.203 0 .823.823 0 0 1 0-1.18l9.626-9.44a4.313 4.313 0 0 1 6.016 0 4.116 4.116 0 0 1 1.204 3.54 4.3 4.3 0 0 1 3.609 1.18l.05.05a4.115 4.115 0 0 1 0 5.9l-8.706 8.537a.274.274 0 0 0 0 .393l1.788 1.754a.823.823 0 0 1 0 1.18.863.863 0 0 1-1.203 0l-1.788-1.753a1.92 1.92 0 0 1 0-2.754l8.706-8.538a2.47 2.47 0 0 0 0-3.54l-.05-.049a2.588 2.588 0 0 0-3.607-.003l-7.172 7.034-.002.002-.098.097a.863.863 0 0 1-1.204 0 .823.823 0 0 1 0-1.18l7.273-7.133a2.47 2.47 0 0 0-.003-3.537Zm-1.203 2.36a.823.823 0 0 0 0-1.18.863.863 0 0 0-1.204 0l-7.119 6.982a4.115 4.115 0 0 0 0 5.9 4.314 4.314 0 0 0 6.016 0l7.12-6.982a.823.823 0 0 0 0-1.18.863.863 0 0 0-1.204 0l-7.119 6.982a2.588 2.588 0 0 1-3.61 0 2.47 2.47 0 0 1 0-3.54l7.12-6.982Z" />
+        </svg>
+      </span>
+      <span class="context-action-label">
+        Set up docs MCP server
+        <svg class="context-external-icon" aria-hidden="true" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.25 3.75 3.755 14.245M4.713 3.75h9.537v9.537" />
+        </svg>
+      </span>
+    </a>
+  </nav>
+</aside>
+
+<script>
+  let pageContextController: AbortController | undefined;
+
+  function initializePageContext() {
+    pageContextController?.abort();
+    pageContextController = new AbortController();
+    const copyPageButton = document.querySelector<HTMLButtonElement>('.copy-page');
+    const copyPageLabel = document.querySelector<HTMLElement>('.copy-page-label');
+
+    copyPageButton?.addEventListener('click', async () => {
+      const content = document.querySelector<HTMLElement>('.document .prose')?.innerText ?? '';
+      await navigator.clipboard.writeText(content);
+      if (copyPageLabel) copyPageLabel.textContent = 'Copied';
+      window.setTimeout(() => {
+        if (copyPageLabel) copyPageLabel.textContent = 'Copy page';
+      }, 1600);
+    }, { signal: pageContextController.signal });
+  }
+
+  document.addEventListener('astro:page-load', initializePageContext);
+</script>
