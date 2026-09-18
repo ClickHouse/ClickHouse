@@ -28,26 +28,21 @@ Positions: 4 0 1 2
                INPUT :: 1 -> __table1.name String : 1
                INPUT :: 2 -> __table1.age Int16 : 2
       Positions: 0 1 2
-        Expression ((WHERE + Change column names to column identifiers))
-        Actions: INPUT : 1 -> name String : 0
-                 INPUT : 2 -> age Int16 : 1
-                 INPUT : 0 -> uid UInt64 : 2
-                 ALIAS name :: 0 -> __table1.name String : 3
-                 ALIAS age :: 1 -> __table1.age Int16 : 0
-                 ALIAS uid :: 2 -> __table1.uid UInt64 : 1
-        Positions: 1 3 0
+        Filter ((WHERE + Change column names to column identifiers))
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
+        Actions: INPUT : 0 -> uid UInt64 : 0
+                 INPUT : 1 -> name String : 1
+                 INPUT : 2 -> age Int16 : 2
+                 COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 3
+                 ALIAS uid : 0 -> __table1.uid UInt64 : 4
+                 ALIAS name :: 1 -> __table1.name String : 5
+                 ALIAS age :: 2 -> __table1.age Int16 : 1
+                 FUNCTION equals(uid :: 0, 1_UInt8 :: 3) -> equals(__table1.uid, 1_UInt8) UInt8 : 2
+        Positions: 2 4 5 1
           ReadFromMergeTree (default.users)
           ReadType: Default
           Parts: 0
           Granules: 0
-          Prewhere info
-          Need filter: 1
-            Prewhere filter
-            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
-            Actions: INPUT : 0 -> uid UInt64 : 0
-                     COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
-                     FUNCTION equals(uid : 0, 1_UInt8 :: 1) -> equals(__table1.uid, 1_UInt8) UInt8 : 2
-            Positions: 0 2
       Expression (Right Pre Join Actions)
       Actions: INPUT :: 0 -> __table2.number UInt64 : 0
       Positions: 0
@@ -61,24 +56,24 @@ Positions: 4 0 1 2
           ReadFromSystemNumbers
     Type: LEFT
     Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
           ReadType: Default
-            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
         Filter column: equals(__table2.number, 1_UInt8) (removed)
 --
     Type: LEFT
     Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
           ReadType: Default
-            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
         Filter column: equals(__table2.number, 1_UInt8) (removed)
 --
     Type: RIGHT
     Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
           ReadType: Default
-            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
         Filter column: equals(__table2.number, 1_UInt8) (removed)
 --
     Type: RIGHT
     Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
           ReadType: Default
-            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
         Filter column: equals(__table2.number, 1_UInt8) (removed)

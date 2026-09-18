@@ -191,18 +191,19 @@ public:
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
-
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
         if (!temporary_files)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
+        if (output_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Persisted exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
 
         auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
@@ -402,8 +403,11 @@ public:
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
+        if (output_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SourceFromInMemoryExchange>(output_header, exchange);
@@ -559,33 +563,38 @@ public:
 
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto it = exchanges.find(exchange_stream_id.exchange_id);
-        if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
-
-        if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSink(input_header, exchange_stream_id);
-        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSink(input_header, exchange_stream_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
-        auto it = exchanges.find(exchange_stream_id.exchange_id);
-        if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id, output_is_serialized);
+    }
 
-        if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSource(output_header, exchange_stream_id);
-        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSource(output_header, exchange_stream_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
+    {
+        return lookupFor(exchange_id).createSerializer(std::move(input_header), exchange_id);
+    }
+
+    std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
+    {
+        return lookupFor(exchange_id).createDeserializer(std::move(output_header), exchange_id);
     }
 
 private:
+    IExchangeLookup & lookupFor(const String & exchange_id) const
+    {
+        auto it = exchanges.find(exchange_id);
+        if (it == exchanges.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+
+        if (it->second.kind == ExchangeDescription::Kind::Persisted)
+            return *persistent_exchange_lookup;
+        if (it->second.kind == ExchangeDescription::Kind::Streaming)
+            return *streaming_exchange_lookup;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    }
+
     const ExchangeDescriptions exchanges;
     ExchangeLookupPtr persistent_exchange_lookup;
     ExchangeLookupPtr streaming_exchange_lookup;
@@ -741,8 +750,11 @@ ExchangeLookupPtr createExchangeLookup(
         if (address.port == 0)
             address.port = static_cast<UInt16>(streaming_exchange_port);
 
+    /// The auth token this node presents when opening an outbound exchange connection, taken from
+    /// the query context (empty when connection authentication is not configured).
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation));
+        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation), /*auth_token=*/ String{},
+        streamingExchangeCompressionCodec(context->getSettingsRef()));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources, context, cancellation);
@@ -850,7 +862,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     optimization_settings.query_plan_optimize_join_order_randomize = 0;
     optimization_settings.convert_join_to_in = false;
     optimization_settings.convert_outer_join_to_inner_join = false;
-    optimization_settings.derive_not_null_filters_from_joins = false;
     optimization_settings.convert_any_join_to_semi_or_anti_join = false;
     optimization_settings.merge_filter_into_join_condition = false;
     optimization_settings.top_k_through_join = false;
