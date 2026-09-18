@@ -1225,7 +1225,7 @@ def test_password_masking(started_cluster):
         SELECT replaceAll(create_table_query, currentDatabase(), 'default') FROM system.tables
         WHERE table = 'mongodb_dictionary_uri_password_masking' AND database = currentDatabase();"""
         )
-        == "CREATE DICTIONARY default.mongodb_dictionary_uri_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(URI \\'mongodb://testuser:[HIDDEN]@127.0.0.1:27017/example\\' COLLECTION \\'test_clickhouse\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
+        == "CREATE DICTIONARY default.mongodb_dictionary_uri_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(URI \\'mongodb://[HIDDEN]@127.0.0.1:27017/example\\' COLLECTION \\'test_clickhouse\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
     )
     node.query("DROP DICTIONARY IF EXISTS mongodb_dictionary_uri_password_masking;")
 
