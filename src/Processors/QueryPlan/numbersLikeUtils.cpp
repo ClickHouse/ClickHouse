@@ -2,10 +2,12 @@
 
 #include <algorithm>
 
+#include <base/arithmeticOverflow.h>
+
 #include <Core/Settings.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/Pipe.h>
@@ -99,6 +101,9 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// cannot make a bounded query read more rows, while a missed `arrayJoin` would be a
     /// correctness bug - so the asymmetry is resolved in favour of the conservative answer.
     /// `05183_unreferenced_with_array_join_limit_pushdown` pins the user-visible half of this.
+    /// `expressionContainsArrayJoin` resolves the function name to its canonical one, so the
+    /// case-insensitive `unnest` alias is caught even when `normalize_function_names` is disabled,
+    /// and it also descends into the bodies of SQL UDFs.
     if (expressionContainsArrayJoin(query_info.query))
         return false;
     if (query.arrayJoinExpressionList().first)
@@ -130,7 +135,15 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
     if (!shouldPushdownLimit(query_info, lim_info))
         return {};
 
-    return lim_info.limit_length + lim_info.limit_offset;
+    /// The OFFSET is applied on top of the rows this source generates, so it has to generate
+    /// `length + offset` of them. When that sum does not fit into `UInt64` the source is simply
+    /// unbounded: without this check the addition wraps around and, for
+    /// `LIMIT 18446744073709551615 OFFSET 1`, asks the source for zero rows.
+    UInt64 limit_with_offset = 0;
+    if (common::addOverflow(lim_info.limit_length, lim_info.limit_offset, limit_with_offset))
+        return {};
+
+    return limit_with_offset;
 }
 
 void checkLimits(const Settings & settings, size_t rows)

@@ -61,7 +61,17 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         {
             /// A LIMIT above an ARRAY JOIN says nothing about the source row count.
             if (array_join_dags.empty())
-                source_step_with_filter->setLimit(limit_step->getLimitForSorting());
+            {
+                /// `getLimitForSorting` overloads `0` with two meanings: a genuine `LIMIT 0`, and
+                /// "the number of rows to read is unknown" when `limit + offset` overflows `UInt64`.
+                /// A source step, in contrast, treats the value it is given as an exact upper bound on
+                /// the number of rows it may produce, so propagating the overflow sentinel would turn
+                /// `LIMIT 18446744073709551615 OFFSET 1` into "read no rows at all" and the query would
+                /// return an empty result. Push a zero down only when the query really asks for no rows.
+                const size_t limit_for_sorting = limit_step->getLimitForSorting();
+                if (limit_for_sorting != 0 || (limit_step->getLimit() == 0 && limit_step->getOffset() == 0))
+                    source_step_with_filter->setLimit(limit_for_sorting);
+            }
             break;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
