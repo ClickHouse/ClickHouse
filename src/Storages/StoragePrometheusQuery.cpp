@@ -105,15 +105,12 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    /// The column types below are read from the TimeSeries table, so reaching them requires what
-    /// describing that table requires.
-    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
-
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    UInt64 time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -153,6 +150,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
@@ -192,16 +190,7 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    /// Authorized here rather than where this storage is created, so that a persistent table built over this
-    /// table function is authorized on every read, with the reader's own grants. Before the table is
-    /// resolved, so that an unauthorized reader learns nothing about it.
-    checkAccessToTimeSeriesTable(config.evaluation_settings.time_series_storage_id, context, AccessType::SELECT);
-
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
-
-    /// The resolved storage names itself, and that is the table the rows below are read from.
-    checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
-
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);

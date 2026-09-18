@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Repro of issue #109329: the direct-read rewrite replaces text-search functions with the
 -- __text_index_* virtual column; a fragment shipped to a worker rebuilds a storage snapshot
 -- without it and failed with NOT_FOUND_COLUMN_IN_BLOCK. make_distributed_plan now auto-disables

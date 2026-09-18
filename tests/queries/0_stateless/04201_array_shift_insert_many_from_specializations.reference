@@ -16,6 +16,11 @@
 [NULL,1,NULL]
 [NULL,NULL,4]
 [NULL,NULL,NULL]
+== Nullable(Int64) with NULL default ==
+[NULL,NULL,1]
+[3,NULL,NULL]
+[1,2,3]
+[1,2,3]
 == Tuple ==
 [(7,'z'),(1,'a'),(2,'b')]
 [(8,'y'),(8,'y'),(4,'d')]
