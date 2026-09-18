@@ -94,7 +94,8 @@ FROM
     SELECT toLowCardinality(CAST('hello', 'Nullable(String)')) AS x
     UNION ALL BY NAME
     SELECT 1 AS y
-);
+)
+ORDER BY isNull(x), isNull(y);
 
 SELECT 'missing LowCardinality';
 SELECT x, y, toTypeName(x), toTypeName(y)
@@ -103,7 +104,8 @@ FROM
     SELECT toLowCardinality('hello') AS x
     UNION ALL BY NAME
     SELECT 1 AS y
-);
+)
+ORDER BY isNull(x), isNull(y);
 
 SELECT 'missing Variant';
 SELECT x, y, toTypeName(x), toTypeName(y)
@@ -112,7 +114,8 @@ FROM
     SELECT CAST('hello', 'Variant(String, UInt64)') AS x
     UNION ALL BY NAME
     SELECT 1 AS y
-);
+)
+ORDER BY isNull(x), isNull(y);
 
 SELECT 'missing Dynamic';
 SELECT x, y, toTypeName(x), toTypeName(y)
@@ -121,7 +124,8 @@ FROM
     SELECT CAST('hello', 'Dynamic') AS x
     UNION ALL BY NAME
     SELECT 1 AS y
-);
+)
+ORDER BY isNull(x), isNull(y);
 
 SELECT 'AST JSON roundtrip';
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'));
@@ -130,7 +134,10 @@ SELECT 'normalized AST JSON roundtrip';
 SELECT formatQueryFromJSON(
     replace(
         replace(
-            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+            replace(
+                parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+                '"column_match_mode":"POSITION"',
+                '"column_match_mode":"NAME"'),
             '"is_normalized":false',
             '"is_normalized":true'),
         '"list_of_column_match_modes":["NAME"]',
