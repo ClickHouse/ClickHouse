@@ -39,13 +39,10 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         pipeline.resize(max_scatter_streams);
 
     /// Serialize on every stream ahead of the merge into the one sink of a bucket; otherwise that
-    /// sink would serialize its whole bucket alone. The sinks are told whether they get packets.
-    bool input_is_serialized = false;
+    /// sink would serialize its whole bucket alone.
     auto serializer = [&](const SharedHeader & header) -> ProcessorPtr
     {
-        auto transform = settings.exchange_lookup->createSerializer(header, exchange_id);
-        input_is_serialized |= transform != nullptr;
-        return transform;
+        return settings.exchange_lookup->createSerializer(header, exchange_id);
     };
 
     if (key_names.empty())
@@ -72,7 +69,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
         ++bucket;
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id), input_is_serialized);
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
     });
 
     if (bucket != num_buckets)

@@ -3193,7 +3193,10 @@ static BlockIO executeQueryImpl(
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
                         create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                        create_interpreter->setInternal(internal);
+                        /// `InterpreterCreateQuery` uses `internal` to mean "initiated by the server itself, so all
+                        /// the restrictions for user queries (access checks among them) can be skipped". A query
+                        /// written by the user is never that, even when it is executed as a nested `internal` query.
+                        create_interpreter->setInternal(internal && !flags.user_initiated);
                     }
 
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
