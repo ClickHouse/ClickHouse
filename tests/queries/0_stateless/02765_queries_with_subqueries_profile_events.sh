@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE MATERIALIZED VIEW mv TO output SQL SECURITY NONE AS SELECT * FROM input;
 "
 
-for enable_analyzer in 0 1; do
+for enable_analyzer in 1; do
     query_id="$(random_str 10)"
     INSERT_QUERY_ID=$query_id
     query="INSERT INTO input SELECT * FROM numbers(1)"

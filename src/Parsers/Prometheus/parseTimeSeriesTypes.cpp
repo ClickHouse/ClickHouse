@@ -56,7 +56,7 @@ namespace
                             float_value, getTypeName<T>());
         }
         Float64 scaled_value = float_value * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(scale));
-        if ((scaled_value > static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
+        if ((scaled_value >= static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
             (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
         {
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
@@ -165,7 +165,8 @@ namespace
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {
-            if (PrometheusQueryParsingUtil::tryParseTimestamp(str, scale, result, &error_message, &error_pos))
+            if (PrometheusQueryParsingUtil::tryParseTimestamp(
+                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
 
             /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
@@ -177,7 +178,8 @@ namespace
         }
         else
         {
-            if (PrometheusQueryParsingUtil::tryParseDuration(str, scale, result, &error_message, &error_pos))
+            if (PrometheusQueryParsingUtil::tryParseDuration(
+                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
         }
 

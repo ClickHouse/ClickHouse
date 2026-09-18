@@ -60,19 +60,19 @@ doc_type: 'reference'
 * `exception_code` ([Int32](/zh/reference/data-types/int-uint)) — 异常代码。
 * `exception` ([String](/zh/reference/data-types/string)) — 异常消息。
 * `stack_trace` ([String](/zh/reference/data-types/string)) — 堆栈跟踪。查询成功完成时为空字符串。
-* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询类型。可能的值：1 — 由客户端发起的查询；0 — 作为分布式查询执行的一部分，由另一查询发起的查询。
+* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询是否为初始查询。可能的值：1 — 初始 (顶级) 查询；0 — 由另一查询发起的子查询，包括用于分布式执行的查询和内部子查询。
 * `connection_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起连接的客户端 IP 地址。通过代理连接时，该地址为代理地址。
 * `connection_port` ([UInt16](/zh/reference/data-types/int-uint)) — 发起连接的客户端端口。通过代理连接时，该端口为代理端口。
 * `user` ([String](/zh/reference/data-types/string)) — 发起当前查询的用户名。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `address` ([IPv6](/zh/reference/data-types/ipv6)) — 用于发起查询的 IP 地址。通过代理连接且设置了 `auth_use_forwarded_address` 时，该地址为客户端地址而非代理地址。
 * `port` ([UInt16](/zh/reference/data-types/int-uint)) — 用于发起查询的客户端端口。通过代理连接且设置了 `auth_use_forwarded_address` 时，该端口为客户端端口而非代理端口。
-* `initial_user` ([String](/zh/reference/data-types/string)) — 执行初始查询的用户名 (用于分布式查询执行) 。
-* `initial_query_id` ([String](/zh/reference/data-types/string)) — 初始查询的 ID (用于分布式查询执行) 。
-* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起父查询的 IP 地址。
-* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 用于发起父查询的客户端端口。
-* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 初始查询的开始时间 (用于分布式查询执行) 。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 具有微秒精度的初始查询开始时间 (用于分布式查询执行) 。
+* `initial_user` ([String](/zh/reference/data-types/string)) — 同一查询事件链中执行初始查询的用户名。
+* `initial_query_id` ([String](/zh/reference/data-types/string)) — 同一查询事件链中初始查询的 ID。
+* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 同一查询事件链中发起初始查询的 IP 地址。
+* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 同一查询事件链中发起初始查询的客户端端口。
+* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 同一查询事件链中初始查询的开始时间。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 同一查询事件链中初始查询的开始时间，精确到微秒。
 * `authenticated_user` ([String](/zh/reference/data-types/string)) — 会话中通过身份验证的用户名。
 * `interface` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询所使用的接口。可能的值：1 — TCP；2 — HTTP。
 * `is_secure` ([UInt8](/zh/reference/data-types/int-uint)) — 指示查询是否通过安全接口执行的标志

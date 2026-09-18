@@ -74,10 +74,10 @@ def start_cluster():
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         node.query(
             "CREATE TABLE prometheus_seconds "
-            "(time_series Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+            "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
         )
         node.query(
-            "INSERT INTO prometheus_seconds (metric_name, tags, time_series) VALUES"
+            "INSERT INTO prometheus_seconds (metric_name, tags, samples) VALUES"
             " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
             " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
         )
@@ -128,6 +128,34 @@ def test_range_query_post_urlencoded():
     )
     post_data = extract_data_from_http_api_response(post_resp)
     assert get_data == post_data
+
+
+def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
+    for step in (0, -1):
+        error = execute_range_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/api/v1/query_range",
+            "vector(1)",
+            10,
+            10,
+            step,
+            expect_error=True,
+        )
+        assert "step must be positive" in error
+
+
+def test_range_query_accepts_positive_step_for_equal_start_and_end():
+    result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        1000,
+        1000,
+        1,
+    )
+    assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
 def test_query_lookback_delta():
@@ -337,8 +365,8 @@ def test_table_query_param():
 
 def test_generated_sql_always_runs_with_analyzer():
     # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which only the
-    # analyzer honors, so the handler forces the analyzer and enable_materialized_cte
-    # regardless of the caller's enable_analyzer. The materialization itself is covered by
+    # analyzer honors, so the handler runs it with the analyzer and with
+    # enable_materialized_cte. The materialization itself is covered by
     # 04816_promql_shared_subqueries_materialized; here it is enough to check the settings
     # the generated query ran with.
     for path, time_params in (
@@ -348,7 +376,7 @@ def test_generated_sql_always_runs_with_analyzer():
         query_id = f"promql-analyzer-{uuid.uuid4()}"
         url = (
             f"http://{node.ip_address}:9093{path}"
-            f"?query=post_body_metric&{time_params}&enable_analyzer=0"
+            f"?query=post_body_metric&{time_params}"
         )
         response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
         extract_data_from_http_api_response(response)  # raises unless a success envelope

@@ -7,6 +7,7 @@
 #include <base/types.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
+#include <optional>
 #include <variant>
 
 namespace DB
@@ -56,17 +57,22 @@ MetricGroup makeConcurrencyReport(const StepStatsContext & context)
 {
     MetricList metrics;
     const auto * data = context.time_and_conc_stats;
+    /// Work intervals were not collected: the group stays empty and is not printed.
     if (!data)
-    {
-        metrics.emplace_back(MetricKey::Concurrency, std::monostate{});
-        metrics.emplace_back(MetricKey::Concurrency, std::monostate{});
         return {MetricGroupKey::Concurrency, std::move(metrics)};
-    }
 
     const auto max_parallelism = static_cast<double>(context.max_num_threads_per_query);
 
-    metrics.emplace_back(MetricKey::Concurrency, Fraction{data->step_concurrency, max_parallelism});
-    metrics.emplace_back(MetricKey::Concurrency, Fraction{data->branch_concurrency, max_parallelism});
+    /// A step that did no work has no concurrency; the empty value is printed as unknown.
+    const auto to_value = [&](const std::optional<double> & concurrency) -> MetricValue
+    {
+        if (!concurrency)
+            return std::monostate{};
+        return Fraction{*concurrency, max_parallelism};
+    };
+
+    metrics.emplace_back(MetricKey::Concurrency, to_value(data->step_concurrency));
+    metrics.emplace_back(MetricKey::Concurrency, to_value(data->branch_concurrency));
     return {MetricGroupKey::Concurrency, std::move(metrics)};
 }
 

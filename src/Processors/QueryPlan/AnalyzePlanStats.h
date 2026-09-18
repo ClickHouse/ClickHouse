@@ -33,6 +33,7 @@ class AnalyzeStepsStats
     using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
     using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
     AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
@@ -43,6 +44,7 @@ private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
+    void computeJoinBranchCosts(const QueryPlan & plan);
 
     StepStatsContext makeContext(const IQueryPlanStep * step) const;
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
@@ -51,6 +53,8 @@ private:
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
+
+    ReportsByStep join_raw_reports;
 
     std::optional<StepIntervalTimings> interval_timings;
 

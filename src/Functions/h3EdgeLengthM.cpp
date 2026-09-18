@@ -118,7 +118,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "SELECT h3EdgeLengthM(15) AS edgeLengthM",
             R"(
 ┌─edgeLengthM─┐
-│ 0.509713273 │
+│  0.58416863 │
 └─────────────┘
             )"
         }

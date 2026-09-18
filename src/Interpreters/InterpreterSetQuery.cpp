@@ -67,6 +67,7 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
     for (const auto & name : set_query.default_settings)
         reject(name);
 }
+
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -77,10 +78,18 @@ BlockIO InterpreterSetQuery::execute()
     /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    /// A session-wide value would also detach the `SET` that turns it back off,
+    /// which is likely to cause confusion.
+    if (changes.tryGet("run_query_in_background"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "run_query_in_background cannot be changed with SET, because it must be requested per query. "
+            "Pass it as a query setting, or set it at the user or profile level");
     /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+    /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
+    getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -100,6 +109,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);

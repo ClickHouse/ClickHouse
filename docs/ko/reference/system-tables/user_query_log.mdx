@@ -60,19 +60,19 @@ doc_type: 'reference'
 * `exception_code` ([Int32](/ko/reference/data-types/int-uint)) — 예외 코드입니다.
 * `exception` ([String](/ko/reference/data-types/string)) — 예외 메시지입니다.
 * `stack_trace` ([String](/ko/reference/data-types/string)) — 스택 트레이스입니다. 쿼리가 성공적으로 완료된 경우 빈 문자열입니다.
-* `is_initial_query` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리 유형입니다. 가능한 값: 1 — 클라이언트가 시작한 쿼리, 0 — 분산 쿼리 실행의 일부로 다른 쿼리가 시작한 쿼리입니다.
+* `is_initial_query` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 원본 쿼리인지 여부입니다. 가능한 값: 1 — 원본(최상위) 쿼리, 0 — 분산 실행용 쿼리와 내부 서브쿼리를 포함하여 다른 쿼리가 시작한 자식 쿼리입니다.
 * `connection_address` ([IPv6](/ko/reference/data-types/ipv6)) — 연결이 설정된 클라이언트의 IP 주소입니다. 프록시를 통해 연결된 경우 프록시의 주소입니다.
 * `connection_port` ([UInt16](/ko/reference/data-types/int-uint)) — 연결이 설정된 클라이언트의 포트입니다. 프록시를 통해 연결된 경우 프록시의 포트입니다.
 * `user` ([String](/ko/reference/data-types/string)) — 현재 쿼리를 시작한 사용자 이름입니다.
 * `query_id` ([String](/ko/reference/data-types/string)) — 쿼리 ID입니다.
 * `address` ([IPv6](/ko/reference/data-types/ipv6)) — 쿼리 실행에 사용된 IP 주소입니다. 프록시를 통해 연결되고 `auth_use_forwarded_address`가 설정된 경우 프록시 주소가 아닌 클라이언트 주소입니다.
 * `port` ([UInt16](/ko/reference/data-types/int-uint)) — 쿼리 실행에 사용된 클라이언트 포트입니다. 프록시를 통해 연결되고 `auth_use_forwarded_address`가 설정된 경우 프록시 포트가 아닌 클라이언트 포트입니다.
-* `initial_user` ([String](/ko/reference/data-types/string)) — 원본 쿼리를 실행한 사용자 이름입니다(분산 쿼리 실행).
-* `initial_query_id` ([String](/ko/reference/data-types/string)) — 원본 쿼리 ID입니다(분산 쿼리 실행).
-* `initial_address` ([IPv6](/ko/reference/data-types/ipv6)) — 상위 쿼리가 시작된 IP 주소입니다.
-* `initial_port` ([UInt16](/ko/reference/data-types/int-uint)) — 상위 쿼리 실행에 사용된 클라이언트 포트입니다.
-* `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 원본 쿼리 시작 시간입니다(분산 쿼리 실행).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 마이크로초 정밀도의 원본 쿼리 시작 시간입니다(분산 쿼리 실행).
+* `initial_user` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인에서 원본 쿼리를 실행한 사용자 이름입니다.
+* `initial_query_id` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인에 있는 원본 쿼리 ID입니다.
+* `initial_address` ([IPv6](/ko/reference/data-types/ipv6)) — 동일한 쿼리 체인에서 원본 쿼리가 시작된 IP 주소입니다.
+* `initial_port` ([UInt16](/ko/reference/data-types/int-uint)) — 동일한 쿼리 체인에서 원본 쿼리가 시작된 클라이언트 포트입니다.
+* `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 동일한 쿼리 체인에서 원본 쿼리의 시작 시간입니다.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 동일한 쿼리 체인에서 마이크로초 정밀도의 원본 쿼리 시작 시간입니다.
 * `authenticated_user` ([String](/ko/reference/data-types/string)) — 세션에서 인증된 사용자 이름입니다.
 * `interface` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 시작된 인터페이스입니다. 가능한 값: 1 — TCP, 2 — HTTP입니다.
 * `is_secure` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 보안 인터페이스를 통해 실행되었는지를 나타내는 플래그

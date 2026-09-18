@@ -110,6 +110,9 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     if (memory_efficient_merge_threads == 0)
         memory_efficient_merge_threads = max_threads;
 
+    /// Forget about current totals and extremes. They will be calculated again after the merge if needed.
+    pipeline.dropTotalsAndExtremes();
+
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
@@ -299,7 +302,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    serializeSortDescription(group_by_sort_description, ctx.out);
+    serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -355,7 +358,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     SortDescription group_by_sort_description;
-    deserializeSortDescription(group_by_sort_description, ctx.in);
+    deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     UInt64 stats_key = 0;
     if (has_stats_key)

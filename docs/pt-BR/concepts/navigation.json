@@ -149,7 +149,8 @@
                 "pt-BR/concepts/features/configuration/server-config/workload-scheduling",
                 "pt-BR/concepts/features/configuration/server-config/quotas",
                 "pt-BR/concepts/features/configuration/server-config/composable-protocols",
-                "pt-BR/concepts/features/configuration/server-config/startup-scripts"
+                "pt-BR/concepts/features/configuration/server-config/startup-scripts",
+                "pt-BR/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -197,6 +198,7 @@
           "group": "Backup and restore",
           "pages": [
             "pt-BR/concepts/features/backup-restore/overview",
+            "pt-BR/concepts/features/backup-restore/restore-settings",
             "pt-BR/concepts/features/backup-restore/local-disk",
             "pt-BR/concepts/features/backup-restore/s3-endpoint",
             "pt-BR/concepts/features/backup-restore/azure-blob-storage",
@@ -210,15 +212,20 @@
             "pt-BR/concepts/features/interfaces/native-clients-interfaces-index",
             "pt-BR/concepts/features/interfaces/cli",
             "pt-BR/concepts/features/interfaces/client",
+            "pt-BR/concepts/features/interfaces/mcp",
             {
               "group": "Drivers and interfaces",
               "pages": [
                 "pt-BR/concepts/features/interfaces/overview",
                 "pt-BR/concepts/features/interfaces/http",
+                "pt-BR/concepts/features/interfaces/framing-formats",
                 "pt-BR/concepts/features/interfaces/tcp",
+                "pt-BR/concepts/features/interfaces/adbc",
                 "pt-BR/concepts/features/interfaces/jdbc",
                 "pt-BR/concepts/features/interfaces/mysql",
-                "pt-BR/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "pt-BR/concepts/features/interfaces/postgresql",
                 "pt-BR/concepts/features/interfaces/prometheus",
                 "pt-BR/concepts/features/interfaces/ssh",
@@ -232,6 +239,7 @@
             "pt-BR/concepts/features/interfaces/web-sql",
             "pt-BR/concepts/features/interfaces/web-ui-color-coding",
             "pt-BR/concepts/features/interfaces/web-ui-pinned-columns",
+            "pt-BR/concepts/features/interfaces/web-ui-result-shaping",
             "pt-BR/concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",

@@ -200,7 +200,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-`TabSeparated` 以外のデフォルトフォーマットを指定するには、`default_format` URL パラメータまたは `X-ClickHouse-Format` ヘッダーを使用できます。
+`TabSeparated` 以外のデフォルトフォーマットを指定するには、`default_format` URL パラメータを使用できます。`X-ClickHouse-Format` ヘッダーを使用すると、レスポンスのフォーマットを明示的に指定できます。これは `output_format` 設定のエイリアスであるため、クエリ内の `FORMAT` 句もオーバーライドします。`INSERT` のリクエストボディの解析方法が変更されることはありません。その場合は `input_format` または `format` を使用してください。
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -218,6 +218,150 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
+
+<div id="tables-as-files">
+  ## URL パス経由でテーブルにアクセスし、クエリを構築する
+</div>
+
+ClickHouse 26.8 以降で利用できます。
+
+HTTP インターフェイスでは、URL パスをデータベース、テーブル、出力フォーマット、圧縮方式として解釈できます。URL パラメータで結果を指定できるため、単純な読み取りリクエストに SQL は必要ありません。これらの機能はデフォルトで無効になっているため、明示的に有効化する必要があります。
+
+<div id="enabling-path-routing">
+  ### パスルーティングを有効にする
+</div>
+
+パスの解釈は、次の 2 つのレベルで有効化されます。
+
+1. HTTP インターフェイスがパス形式のリクエストをクエリハンドラーにルーティングできるようにする、サーバーレベルの `http_allow_path_requests` 構成設定を有効にします。
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. 必要なユーザーごとの設定を有効にします。
+
+| 設定                                                  | 効果                                                                    |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| `http_allow_table_as_file`                          | 最後のパス要素を`table`、`table.format`、または`table.format.compression`として解釈します。 |
+| `http_allow_database_as_path`                       | 先頭の`/database/`パス要素を現在のデータベースとして解釈します。                                |
+| `http_allow_filters_as_path`                        | Hive形式の`/name=value/`パス要素を`WHERE`フィルターとして解釈します。                       |
+| `http_allow_filters_as_unrecognized_url_parameters` | 認識されないURLパラメータを`WHERE`フィルターとして解釈します。                                  |
+
+<Note>
+  ルーティングは認証前に行われるため、ユーザーごとの設定に依存できません。`http_allow_path_requests`が無効な場合、不明なパスには認証前に`404`が返されます。ルーティングと認証の後は、ユーザーごとの設定によってパスの解釈方法が決まるため、ユーザー、ロール、またはプロファイル単位でこの機能を選択的に有効にできます。
+</Note>
+
+<div id="table-as-file-examples">
+  ### ファイルとしてテーブルにアクセスする
+</div>
+
+`http_allow_table_as_file` を有効にすると、`/table.format.compression` へのリクエストは `SELECT * FROM table` として処理されます。`/database/table.format.compression` を使用するには、`http_allow_database_as_path` を有効にします。
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+フォーマットおよび圧縮の拡張子は大文字と小文字を区別せずに認識されるため、`hits.csv` と `hits.CSV` は同等です。
+
+明示的に指定した `format` または `output_format` URL パラメータは、パス内のフォーマットを上書きします。一方、`default_format` は上書きしません。これは、他の指定でフォーマットが選択されていない場合にのみ使用するフォーマットを指定するものであり、パスの拡張子のほうが優先されるためです。明示的に指定した `compression` パラメータは、パス内の圧縮と一致している必要があります。値が競合する場合は例外が発生します。
+
+<div id="query-construction">
+  ### クエリを構築する
+</div>
+
+以下の設定では、ベースクエリを派生テーブルとしてラップします。これらは互いに、また既存のクエリと組み合わせて使用できます。HTTP URL パラメータ、クエリ内の `SETTINGS` 句、またはユーザープロファイルで指定できます。
+
+| 設定                                                                                                                            | 効果                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select`                                                                                                                      | `SELECT <expression_list> FROM (…)`                                                                                                         |
+| `filter`                                                                                                                      | `WHERE <expression>` を追加します。複数の `filter` URL パラメータは `AND` で結合されます。                                                                          |
+| `order`                                                                                                                       | `ORDER BY <expression_list>` を追加します。                                                                                                        |
+| `sort`                                                                                                                        | 識別子またはカラム位置をカンマ区切りで指定したリストに基づいて `ORDER BY` を追加します。各項目には、`sort=a,-b` のように、任意で `+` (昇順) または `-` (降順) のプレフィックスを付けられます。`order` と組み合わせることはできません。 |
+| [`limit`](/ja/reference/settings/session-settings/other#limit) and [`offset`](/ja/reference/settings/session-settings/other#offset) | `LIMIT <n> OFFSET <m>` を追加します。どちらも、末尾選択用の負の値と、行の割合を表す小数値を受け付けます。                                                                            |
+| `page`                                                                                                                        | `offset = limit * (page - 1)` を設定します。`limit` が必要であり、`offset` と組み合わせることはできません。                                                               |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+<div id="modify-an-existing-query">
+  #### 既存のクエリを変更する
+</div>
+
+構築設定はパスリクエストだけに適用されるものではなく、自分で記述したクエリにも影響します。クエリは派生テーブルになるため、設定はクエリにマージされるのではなく、その結果に適用されます。たとえば、`?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` は次のように実行されます。
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+これは、保存済みダッシュボードのクエリ、`predefined_query_handler`、または URL パラメータのみを追加できるクライアントなど、別の場所で定義されたクエリの結果をページング、ソート、絞り込む場合に便利です。
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+設定はクエリを書き換えるのではなくラップするため、`FORMAT` 句やクエリ内の `ORDER BY` と併用でき、`INSERT` が書き込む行を変更することもありません。`INSERT ... SELECT` ステートメントに指定した構築設定は、ソースの `SELECT` ではなく、そのステートメント自体の (空の) 結果を形成します。ソースを形成するには、設定を `SELECT` 自体の `SETTINGS` 句に指定します。
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+  `filter` はアクセス制御のための仕組みではありません。ラップするサブクエリに `WHERE` 句を追加するため、フィルターが適用される前に基になるデータが読み取られ、処理される可能性があります。ユーザーがアクセスできる行を制限するには、[行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) または [`additional_table_filters`](/ja/reference/settings/session-settings/additional#additional_table_filters) を使用してください。
+</Warning>
+
+<div id="format-and-compression-overrides">
+  ### フォーマットと圧縮のオーバーライド
+</div>
+
+| 設定               | 効果                                                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `output_format`  | 出力フォーマットをオーバーライドします。クエリの `FORMAT` 句、パス拡張子、`format`、`default_format` よりも優先されます。`X-ClickHouse-Format` ヘッダーでも設定できます。      |
+| `input_format`   | `INSERT` の入力フォーマットをオーバーライドします。クエリの `FORMAT` 句および `format` よりも優先されます。                                                   |
+| `format`         | 方向固有の設定が指定されていない場合、入出力両方のフォーマットをオーバーライドします。                                                                            |
+| `default_format` | クエリに `FORMAT` 句やパス拡張子がなく、他のフォーマットのオーバーライドもない場合に、出力フォーマットを設定します。                                                        |
+| `compression`    | たとえば `compression=gz` を指定して、レスポンスボディを圧縮します。これは HTTP `Content-Encoding` および ClickHouse ネイティブの `compress` パラメータとは別のものです。 |
+
+フォーマット設定は、ネイティブクライアントや `clickhouse-local` など、他のプロトコルでも使用できます。`input_format` と `output_format` は、それぞれ `--input-format` および `--output-format` オプションに対応します。`--format` オプションは、`clickhouse-local` では双方向の `format` 設定に対応しますが、`clickhouse-client` では従来どおり出力専用として扱われ、`output_format` に対応します。
+
+`compression` は HTTP レスポンスの整形に固有で、クエリ実行前に処理されます。HTTP URL パラメータ、パス拡張子、またはユーザープロファイルで指定してください。クエリ内の `SETTINGS` 句では使用できません。
+
+バイナリまたは圧縮された HTTP レスポンスには、`Content-Disposition: attachment; filename=…` ヘッダーが含まれます。ファイル名は URL パスから導出され、パスから取得できない場合は `result.<format>.<compression>` が使用されます。
+
+<div id="implicit-table">
+  ### クエリでパステーブルを使用する
+</div>
+
+パスがテーブルを示し、`query` パラメータも指定した場合、パステーブルは [`implicit_table_at_top_level`](/ja/reference/settings/session-settings/implicit#implicit_table_at_top_level) を介して公開されます。`FROM` 句のない `SELECT` はパステーブルから読み取ります。
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+クエリにすでに `FROM` 句が含まれている場合、パス部分ではダウンロードするファイル名のみを指定します。
 
 <div id="insert-queries">
   ## HTTP/HTTPS 経由の INSERT クエリ

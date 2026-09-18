@@ -16,6 +16,7 @@ class IQueryPlanStep;
 /// Attributes the work intervals collected during execution to query plan steps. Per step it gives
 /// the wall-clock time of the step itself and of its whole subtree, and, over the same two sets of
 /// intervals, the average number of threads the query kept busy while they were active.
+/// A step that owns no intervals has a zero time and no concurrency.
 class StepIntervalTimings
 {
 public:

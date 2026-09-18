@@ -30,7 +30,9 @@
 
 #endif
 
+#include <algorithm>
 #include <atomic>
+#include <limits>
 #include <random>
 #include <cstdlib>
 #include <string>
@@ -430,21 +432,39 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 if (level == VariableContext::Global)
                     ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
-                const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
-                throw DB::Exception(
-                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {}){}{}, maximum: {}."
-                    "{} Untracked memory across all threads: {}.",
-                    description ? description : "",
-                    description ? " memory limit" : "Memory limit",
-                    formatReadableSizeWithBinarySuffix(will_be),
-                    formatReadableSizeWithBinarySuffix(size),
-                    (level == VariableContext::Global) ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
-                    (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
-                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
-                    formatReadableSizeWithBinarySuffix(untracked));
+
+                if (level == VariableContext::Global)
+                {
+                    const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
+                    throw DB::Exception(
+                        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                        "{}{} exceeded: "
+                        "would use {} (attempt to allocate chunk of {}), "
+                        "current RSS: {}"
+                        "{}, " /// page cache
+                        "maximum: {}."
+                        "{} Untracked memory across all threads: {}.",
+                        description ? description : "",
+                        description ? " memory limit" : "Memory limit",
+                        formatReadableSizeWithBinarySuffix(will_be),
+                        formatReadableSizeWithBinarySuffix(size),
+                        formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
+                        page_cache_ptr ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
+                        formatReadableSizeWithBinarySuffix(current_hard_limit),
+                        overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
+                        formatReadableSizeWithBinarySuffix(untracked));
+                }
+                else
+                {
+                    throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                        "{}{} exceeded: would use {} (attempt to allocate chunk of {}), maximum: {}.{}",
+                        description ? description : "",
+                        description ? " memory limit" : "Memory limit",
+                        formatReadableSizeWithBinarySuffix(will_be),
+                        formatReadableSizeWithBinarySuffix(size),
+                        formatReadableSizeWithBinarySuffix(current_hard_limit),
+                        overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)));
+                }
             }
 
             // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
@@ -694,7 +714,13 @@ OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 
 void MemoryTracker::setOvercommitWaitingTime(UInt64 wait_time)
 {
-    max_wait_time.store(wait_time * 1us, std::memory_order_relaxed);
+    /// The parameter is unsigned but the stored count is signed, so a value above the signed range would
+    /// arrive negative and read as an already-expired wait. Saturating upwards keeps zero exact, which the
+    /// overcommit tracker reads as "overcommit waiting is off".
+    static constexpr UInt64 max_representable = static_cast<UInt64>(std::chrono::microseconds::max().count());
+    max_wait_time.store(
+        std::chrono::microseconds(static_cast<Int64>(std::min(wait_time, max_representable))),
+        std::memory_order_relaxed);
 }
 
 

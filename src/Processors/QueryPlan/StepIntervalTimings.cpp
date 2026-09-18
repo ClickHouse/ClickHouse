@@ -6,6 +6,7 @@
 
 #include <deque>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -22,9 +23,13 @@ struct Frame
     size_t next_child_plan = 0;
 };
 
-double ratio(UInt64 busy_ns, UInt64 total_ns)
+/// Average number of busy threads over intervals of total length `total_ns`.
+/// Empty when there were no intervals: a step that did no work has no concurrency.
+std::optional<double> ratio(UInt64 busy_ns, UInt64 total_ns)
 {
-    return total_ns != 0 ? static_cast<double>(busy_ns) / static_cast<double>(total_ns) : 0.0;
+    if (total_ns == 0)
+        return std::nullopt;
+    return static_cast<double>(busy_ns) / static_cast<double>(total_ns);
 }
 
 const QueryPlan::Node * nextChildToVisit(Frame & current_frame)

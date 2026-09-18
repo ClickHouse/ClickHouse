@@ -40,7 +40,7 @@
 #include <Common/FloatUtils.h>
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
-#include <Common/quoteString.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <bit>
@@ -756,6 +756,62 @@ static ColumnWithTypeAndName readColumnWithJSONData(
     }
 
     return {std::move(internal_column), internal_type, column_name};
+}
+
+/// Reads a column whose ClickHouse type has no Arrow mapping and that was written with `serializeBinary`
+/// (`output_format_arrow_unsupported_types = 'binary'`), recognized by the `clickhouse.opaque` tag.
+///
+/// The caller's usual route home for such a column - read it as `String`, then `CAST` to the requested type -
+/// goes through the text parser, which cannot read this encoding. `deserializeBinary` is its counterpart.
+template <typename ArrowArray>
+static ColumnWithTypeAndName readOpaqueColumnWithBinaryData(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
+    const String & column_name,
+    const DataTypePtr & type_hint,
+    const FormatSettings & format_settings)
+{
+    const auto serialization = type_hint->getDefaultSerialization();
+    auto internal_column = type_hint->createColumn();
+    internal_column->reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        const ArrowArray & chunk = dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
+
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
+        const bool has_nulls = chunk.null_count() != 0;
+
+        for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
+        {
+            if (has_nulls && chunk.IsNull(row_i))
+            {
+                internal_column->insertDefault();
+                continue;
+            }
+
+            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(row_i));
+            const size_t safe_length = static_cast<size_t>(chunk.value_length(row_i));
+            if (unlikely(safe_offset > data_buf_size || safe_length > data_buf_size - safe_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray offsets exceed data buffer bounds for column '{}': "
+                    "row {} has offset {} and length {} but buffer is {} bytes",
+                    column_name, row_i, chunk.value_offset(row_i), chunk.value_length(row_i), data_buf_size);
+
+            ReadBufferFromMemory rb(chunk.GetView(row_i));
+            serialization->deserializeBinary(*internal_column, rb, format_settings);
+            /// The value occupies its whole slot, so anything left is a payload that does not match the
+            /// type the tag claims - a forged file, or one written by a different encoding.
+            if (!rb.eof())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow column '{}' is tagged as {} but row {} has {} trailing byte(s) after deserialization",
+                    column_name, type_hint->getName(), row_i, rb.available());
+        }
+    }
+
+    return {std::move(internal_column), type_hint, column_name};
 }
 
 static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -1800,6 +1856,38 @@ static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field, DataTypePt
     return logical_type.ok() && *logical_type == "JSON";
 }
 
+/// The `i`-th child of an Arrow field, or null when the field is unknown or has no such child. A container's
+/// child is read with its own field, so metadata belonging to the child - the `clickhouse.opaque` tag, a JSON
+/// logical type - is seen on the child rather than looked for on the parent, where it never is.
+static std::shared_ptr<arrow::Field> arrowChildField(const std::shared_ptr<arrow::Field> & field, int i)
+{
+    if (!field || !field->type() || i >= field->type()->num_fields())
+        return nullptr;
+    return field->type()->field(i);
+}
+
+/// Whether this is a column the Arrow writer could not map to an Arrow type, wrote with `serializeBinary`,
+/// and tagged with the ClickHouse type now being asked for.
+///
+/// The Arrow type states the encoding: `utf8` is the text form, which the caller's `CAST` from `String`
+/// parses, and `binary` is `serializeBinary`. Requiring the tagged type name to match what the caller wants
+/// keeps this to columns this writer produced for exactly this type - reading such a column as `String`, or
+/// as anything else, still takes the route it took before.
+static bool isOpaqueBinaryColumn(
+    const std::shared_ptr<arrow::Field> & field, arrow::Type::type arrow_type_id, const DataTypePtr & type_hint)
+{
+    if (arrow_type_id != arrow::Type::BINARY || !type_hint || !field || !field->HasMetadata())
+        return false;
+
+    const auto & md = field->metadata();
+    const auto extension_name = md->Get("ARROW:extension:name");
+    if (!extension_name.ok() || std::string_view{*extension_name} != FormatSettings::ARROW_OPAQUE_EXTENSION_NAME)
+        return false;
+
+    const auto ch_type_name = md->Get("ARROW:extension:metadata");
+    return ch_type_name.ok() && *ch_type_name == removeNullable(type_hint)->getName();
+}
+
 struct ReadColumnFromArrowColumnSettings
 {
     std::string format_name;
@@ -1847,6 +1935,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
         {
+            if (isOpaqueBinaryColumn(arrow_field, arrow_column->type()->id(), type_hint))
+                return readOpaqueColumnWithBinaryData<arrow::BinaryArray>(
+                    arrow_column, column_name, type_hint, settings.format_settings);
+
             if (type_hint)
             {
                 switch (type_hint->getTypeId())
@@ -2027,6 +2119,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column, column_name);
+            /// A Map's single Arrow child is its `entries` struct, which is what was just unwrapped.
+            const auto entries_field = arrowChildField(arrow_field, 0);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2036,7 +2130,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 true /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field,
+                entries_field,
                 parquet_columns_to_clickhouse,
                 clickhouse_columns_to_parquet);
             if (!nested_column.column)
@@ -2139,6 +2233,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }();
 
+            const auto element_field = arrowChildField(arrow_field, 0);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2148,7 +2243,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 false /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field,
+                element_field,
                 parquet_columns_to_clickhouse,
                 clickhouse_columns_to_parquet);
             if (!nested_column.column)
@@ -2280,7 +2375,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     {
                         field_name = it->second;
                         size_t pos = field_name.rfind('.');
-                        /// Get the Clickhouse field as the last element of the name.
+                        /// Get the ClickHouse field as the last element of the name.
                         /// For example, if we converted parquet "a.b" to clickhouse "c.d", the resulting field name would be "d".
                         if (pos != std::string::npos)
                             field_name = field_name.substr(pos + 1);
@@ -2297,7 +2392,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     false /*is_map_nested_column*/,
                     geo_metadata,
                     settings,
-                    arrow_field,
+                    field,
                     parquet_columns_to_clickhouse,
                     clickhouse_columns_to_parquet);
                 if (!column_with_type_and_name.column)
@@ -2327,6 +2422,48 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                             "Arrow Struct column '{}': field '{}' has {} rows but parent struct declares {}",
                             column_name, tuple_names[i], tuple_elements[i]->size(), expected_rows);
                 }
+            }
+
+            /// If the type hint is a named tuple, match the read fields to the hint elements by name,
+            /// as the requested column type expects: fields that are missing in the hint are dropped,
+            /// and hint elements without a matching field are filled by default values. The generic
+            /// tuple conversion applied afterwards converts tuples with disjoint sets of element
+            /// names positionally, and here the fields must be matched by name regardless of how
+            /// many of them match, consistently with the other format readers.
+            if (tuple_type_hint && tuple_type_hint->hasExplicitNames() && !is_map_nested_column)
+            {
+                std::unordered_map<std::string_view, size_t> read_positions;
+                for (size_t i = 0; i < tuple_names.size(); ++i)
+                    read_positions.emplace(tuple_names[i], i);
+
+                Columns matched_elements;
+                DataTypes matched_types;
+                std::vector<String> matched_names;
+                const auto & hint_names = tuple_type_hint->getElementNames();
+                matched_elements.reserve(hint_names.size());
+                matched_types.reserve(hint_names.size());
+                matched_names.reserve(hint_names.size());
+
+                for (size_t i = 0; i < hint_names.size(); ++i)
+                {
+                    auto it = read_positions.find(hint_names[i]);
+                    if (it != read_positions.end())
+                    {
+                        matched_elements.emplace_back(std::move(tuple_elements[it->second]));
+                        matched_types.emplace_back(std::move(tuple_types[it->second]));
+                    }
+                    else
+                    {
+                        const auto & hint_element_type = tuple_type_hint->getElement(i);
+                        matched_elements.emplace_back(hint_element_type->createColumn()->cloneResized(arrow_column->length()));
+                        matched_types.emplace_back(hint_element_type);
+                    }
+                    matched_names.emplace_back(hint_names[i]);
+                }
+
+                tuple_elements = std::move(matched_elements);
+                tuple_types = std::move(matched_types);
+                tuple_names = std::move(matched_names);
             }
 
             ColumnPtr tuple_column;
@@ -2502,7 +2639,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     /// A struct is wrapped into Nullable only when the Nullable(Tuple) type is allowed by
-    /// allow_experimental_nullable_tuple_type (otherwise schema inference would return a type
+    /// enable_nullable_tuple_type (otherwise schema inference would return a type
     /// that CREATE TABLE rejects) or explicitly requested by the type hint (e.g. an existing
     /// table with such a column). Otherwise the struct is read as a plain Tuple, as it worked
     /// before Nullable(Tuple) was supported.
@@ -2864,7 +3001,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                     nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
                 }
-                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
+                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// case-insensitively itself, and an exact element name outranks a folded match.
+                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;
@@ -2912,20 +3051,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         if (is_stream)
             dictionary_infos.clear();
 
-        try
-        {
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
-            throw;
-        }
-        column.type = header_column.type;
+        castColumnToRequestedType(column, header_column.type);
         columns.push_back(std::move(column.column));
     }
 

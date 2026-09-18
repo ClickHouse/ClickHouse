@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -60,8 +61,9 @@ struct StepTimeAndConcurrency
 {
     UInt64 step_time_ns = 0;
     UInt64 branch_time_ns = 0;
-    double step_concurrency = 0;
-    double branch_concurrency = 0;
+    /// Empty when the corresponding time is zero: a step (or a subtree) that did no work has no concurrency.
+    std::optional<double> step_concurrency;
+    std::optional<double> branch_concurrency;
 };
 
 struct StepStatsContext

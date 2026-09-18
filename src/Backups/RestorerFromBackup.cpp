@@ -27,6 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -60,6 +61,11 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
 }
 
+namespace FailPoints
+{
+    extern const char restore_pause_before_data_restore_tasks[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
@@ -86,6 +92,18 @@ namespace
     bool isSystemFunctionsTableName(const QualifiedTableName & table_name)
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
+    }
+
+    /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
+    bool isSystemWorkloadsTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "workloads");
+    }
+
+    /// Whether a specified name corresponds to the system table backing RESOURCE entities.
+    bool isSystemResourcesTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
  }
 
@@ -325,6 +343,34 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                }
+                else if (isSystemWorkloadsTableName(table_name))
+                {
+                    /// CREATE_WORKLOAD privilege is required to restore WORKLOAD entities from the "system.workloads" table.
+                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateWorkloadQuery's own access check.)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_WORKLOAD);
+                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
+                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_WORKLOAD
+                        /// -- mirroring the access required by CREATE OR REPLACE WORKLOAD.
+                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_WORKLOAD);
+                    }
+                }
+                else if (isSystemResourcesTableName(table_name))
+                {
+                    /// CREATE_RESOURCE privilege is required to restore RESOURCE entities from the "system.resources" table.
+                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateResourceQuery's own access check.)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_RESOURCE);
+                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
+                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_RESOURCE
+                        /// -- mirroring the access required by CREATE OR REPLACE RESOURCE.
+                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_RESOURCE);
+                    }
                 }
                 /// Privileges required to restore ACL system tables are checked separately
                 /// (see access_restore_task->getRequiredAccess() below).
@@ -1038,6 +1084,10 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 
 void RestorerFromBackup::runDataRestoreTasks()
 {
+    /// Every earlier stage has joined its own tasks, so this is the first point where a test can
+    /// arm a fail point and be sure the next task to reach it is one of several concurrent ones.
+    FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_data_restore_tasks);
+
     /// Iterations are required here because data restore tasks are allowed to call addDataRestoreTask() and add other data restore tasks.
     for (;;)
     {

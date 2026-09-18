@@ -103,7 +103,7 @@ Until all data from all files is processed, each insert thread executes a loop:
 Go to ①. 
 ```
 
-The number of such parallel insert threads can be configured with the [`max_insert_threads`](/reference/settings/session-settings/max-insert#max_insert_threads) setting. The default value is `1` for open-source ClickHouse and 4 for [ClickHouse Cloud](https://clickhouse.com/cloud).
+The number of such parallel insert threads can be configured with the [`max_insert_threads`](/reference/settings/session-settings/max-insert#max_insert_threads) setting. For open-source ClickHouse, the default value since 26.8 is `0` (auto: the number of CPU cores, reduced under memory pressure). For [ClickHouse Cloud](https://clickhouse.com/cloud), the default is `1` for nodes with 8 GiB of memory, `2` for nodes with 16 GiB, and `4` for larger nodes.
 
 With a large number of files, the parallel processing by multiple insert threads works well. It can fully saturate both the available CPU cores and the network bandwidth (for parallel file downloads). In scenarios where just a few large files will be loaded into a table, ClickHouse automatically establishes a high level of data processing parallelism and optimizes network bandwidth usage by spawning additional reader threads per insert thread for reading (downloading) more distinct ranges within large files in parallel. 
 
@@ -154,7 +154,7 @@ With no tuning, we demonstrate the performance to insert this dataset into a Mer
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -177,7 +177,7 @@ Peak memory usage: 603.64 MiB.
 ```sql
 -- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -207,7 +207,7 @@ Consider our earlier query, doubling the `max_threads` to `16` (default `max_thr
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -276,7 +276,7 @@ Using this formula with our earlier Stack Overflow example.
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -295,7 +295,7 @@ All previous tuning and queries have only used a single node in our ClickHouse C
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -306,7 +306,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -340,7 +340,7 @@ As noted in [Utilizing Clusters](/integrations/connectors/data-ingestion/AWS/int
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -365,7 +365,7 @@ Likewise, our insert query can be distributed, using the improved settings ident
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -379,7 +379,7 @@ Setting this to `parallel_distributed_insert_select=2`, ensures the `SELECT` and
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -402,7 +402,7 @@ While this behavior, which incurs an insert overhead, makes sense when loading d
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
@@ -419,7 +419,7 @@ Disabling this setting (`optimize_on_insert = 0`) skips merging during inserts, 
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 

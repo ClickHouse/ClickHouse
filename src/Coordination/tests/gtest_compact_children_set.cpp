@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
 #include <Coordination/CompactChildrenSet.h>
@@ -485,3 +489,5 @@ TEST(CompactChildrenSet, ReserveOnSingleThenEraseToZero)
     EXPECT_EQ(cs.size(), 0);
     EXPECT_EQ(cs.heapSizeInBytes(), 0);
 }
+
+#endif
