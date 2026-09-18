@@ -3,44 +3,44 @@
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/BlocksMarshallingStep.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
-#include <Processors/QueryPlan/SortingStep.h>
+#include <algorithm>
+#include <Columns/ColumnConst.h>
+#include <Core/Block.h>
+#include <Core/Settings.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/ScatterExchangeStep.h>
-#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <fmt/ranges.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Block.h>
-#include <Core/Settings.h>
 #include <Common/logger_useful.h>
-#include <algorithm>
 
 
 namespace DB
@@ -133,8 +133,6 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
     validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
         "distributed_plan_default_reader_bucket_count");
 }
-
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -708,6 +706,19 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     if (optimization_settings.distributed_plan_force_shuffle_aggregation && !aggregation_keys.empty())
         strategy = Shuffle;
+
+    /// Shuffle moves the aggregation step unchanged, so each of the `bucket_count` instances keeps the
+    /// promise of bucket order while ordering only its own share, and the gather cannot restore a global
+    /// order: it merges by a sort description, and the bucket number is chunk metadata, not a column.
+    /// Shuffle is therefore impossible here, so `distributed_plan_force_shuffle_aggregation` cannot
+    /// apply either, as with `GROUPING SETS` below.
+    if (aggregating_step->shouldProduceResultsInBucketOrder())
+    {
+        if (!can_use_partial_aggregation)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support aggregation in order which must produce results in bucket order");
+        strategy = PartialAggregation;
+    }
 
     /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
     /// produced in several buckets and duplicated. Partial aggregation has no such problem: every
