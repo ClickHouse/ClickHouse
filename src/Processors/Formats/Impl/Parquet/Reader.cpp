@@ -3354,13 +3354,29 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     }
     else if (kind == TypeIndex::Dynamic)
     {
-        chassert(output_info.nested_columns.size() == 2);
-        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
-        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
+        chassert(output_info.nested_columns.size()
+            == 1 + size_t(output_info.variant_has_value) + size_t(output_info.variant_has_typed_value));
+        size_t nested_idx = 0;
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[nested_idx++], num_rows);
+
+        MutableColumnPtr value;
+        if (output_info.variant_has_value)
+            value = formOutputColumn(row_subgroup, output_info.nested_columns[nested_idx++], num_rows);
+
+        MutableColumnPtr typed_value;
+        DataTypePtr typed_value_type;
+        if (output_info.variant_has_typed_value)
+        {
+            size_t typed_value_idx = output_info.nested_columns[nested_idx++];
+            typed_value = formOutputColumn(row_subgroup, typed_value_idx, num_rows);
+            typed_value_type = output_columns.at(typed_value_idx).output_type;
+        }
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);
-        decodeVariantColumn(*metadata, *value, assert_cast<ColumnDynamic &>(*res), num_rows, options.format.max_parser_depth);
+        decodeVariantColumn(
+            *metadata, value.get(), typed_value.get(), typed_value_type,
+            assert_cast<ColumnDynamic &>(*res), num_rows, options.format.max_parser_depth);
     }
     else
     {
