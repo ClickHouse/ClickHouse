@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
@@ -318,6 +317,18 @@ bool isFillArithmeticValue(const Field & value)
     }
 }
 
+/// `NaN` and `Inf` are not usable as a `WITH FILL` bound, in either role. `NaN` compares greater than
+/// every value in the totalized `Field` order, so a `TO` bound of `NaN`, or of the infinity the fill
+/// runs towards, leaves the loop's termination test in `FillingRow::next` always true: the query
+/// generated fill rows until it hit a time limit, and forever without one. The remaining combinations
+/// do not hang but fill nothing at all, and a non-finite `FROM` is worse than that - it puts the cursor
+/// where the guards inside `FillingRow::next` stop the fill on their own, so the bound itself is emitted
+/// as a row and the rest of the fill, up to a perfectly good `TO`, is silently lost.
+bool isNonFiniteFillBound(const Field & value)
+{
+    return value.isNaN() || value.isInf();
+}
+
 }
 
 String checkFillDescription(const FillColumnDescription & fill, int direction)
@@ -339,20 +350,15 @@ String checkFillDescription(const FillColumnDescription & fill, int direction)
     if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
         return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
 
-    /// A `TO` bound of `NaN` or `Inf` is one the fill loop can never pass: `FillingRow::next` guards the fill
-    /// cursor and the data rows against non-finite values, but compares them against this bound unguarded, so
-    /// `WITH FILL TO nan` generated fill rows until the query hit a time limit (with no time limit set, forever).
-    auto is_non_finite = [](const Field & field)
-    {
-        return field.getType() == Field::Types::Float64 && !isFinite(field.safeGet<Float64>());
-    };
+    if (isNonFiniteFillBound(fill.fill_from))
+        return "WITH FILL FROM value must be finite";
 
-    if (is_non_finite(fill.fill_to))
+    if (isNonFiniteFillBound(fill.fill_to))
         return "WITH FILL TO value must be finite";
 
-    /// `STALENESS` reaches the same fill loop: `updateConstraintsWithStalenessRow` derives the loop constraint
-    /// from it exactly like from `TO`, so a non-finite staleness does not terminate either.
-    if (is_non_finite(fill.fill_staleness))
+    /// `STALENESS` reaches the same fill loop as `TO`: `updateConstraintsWithStalenessRow` derives the
+    /// loop constraint from it exactly like from `TO`, and writes it into the same `constraints` array.
+    if (isNonFiniteFillBound(fill.fill_staleness))
         return "WITH FILL STALENESS value must be finite";
 
     if (direction > 0)
