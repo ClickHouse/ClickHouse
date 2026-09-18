@@ -28,7 +28,7 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."}]}]}/>
 
-When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the old analyzer (`enable_analyzer = 0`). Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
+When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the query analysis that ClickHouse used before v24.3. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
 
 ## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
 
@@ -67,8 +67,6 @@ This makes outer queries that reference such columns by their qualified names wo
 ```sql
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
-
-Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
 
 ## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
 
