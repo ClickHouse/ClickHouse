@@ -272,12 +272,12 @@ public:
 };
 
 /// Bit-packed at a size-minimising base width; outliers become patched exceptions, all-equal deltas a constant.
-class PostingListCodecPForDelta : public SegmentedPostingListCodecBase
+class PostingListCodecPFor : public SegmentedPostingListCodecBase
 {
 public:
     static const char * getName() { return "pfor"; }
 
-    PostingListCodecPForDelta() : SegmentedPostingListCodecBase(Type::PForDelta) {}
+    PostingListCodecPFor() : SegmentedPostingListCodecBase(Type::PFor) {}
 };
 
 /// A codec that applies no compression: a posting list block is stored as

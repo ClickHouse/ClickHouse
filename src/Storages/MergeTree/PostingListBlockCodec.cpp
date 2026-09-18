@@ -94,9 +94,9 @@ namespace
         IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
     };
 
-    /// One PForDelta block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
+    /// One PFor block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
     /// TODO(ahmadov): move delta into PFor once `deltaApply` stops spilling, today `d0` is slower on exception blocks.
-    class PForDeltaPostingListBlockCodec : public IPostingListBlockCodec
+    class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
         size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) override
@@ -104,7 +104,7 @@ namespace
             /// `scratch` holds one block, so an oversized input would overrun it.
             if (deltas.empty() || deltas.size() > BLOCK_SIZE)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "PForDelta block must hold 1 to {} values, got {}", BLOCK_SIZE, deltas.size());
+                    "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, deltas.size());
 
             /// Encode into scratch: resizing `out` to the worst case would zero-fill it on every block.
             const size_t written = PFor::encodeBlocks<uint32_t>(deltas, PFor::Delta::none, scratch.data());
@@ -122,7 +122,7 @@ namespace
             const size_t consumed = PFor::decodeBlocks<uint32_t>(data, count, PFor::Delta::none, out.data(), data + in.size());
             if (consumed == 0)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted data: malformed PForDelta block of {} values in {} available bytes", count, in.size());
+                    "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
 
             in = in.subspan(consumed);
             return consumed;
@@ -130,7 +130,7 @@ namespace
 
         size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
 
-        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PForDelta; }
+        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);
@@ -148,8 +148,8 @@ std::unique_ptr<IPostingListBlockCodec> createPostingListBlockCodec(IPostingList
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting list codec 'None' has no per-block codec");
         case IPostingListCodec::Type::Bitpacking:
             return std::make_unique<BitpackingPostingListBlockCodec>();
-        case IPostingListCodec::Type::PForDelta:
-            return std::make_unique<PForDeltaPostingListBlockCodec>();
+        case IPostingListCodec::Type::PFor:
+            return std::make_unique<PForPostingListBlockCodec>();
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown posting list codec type: {}", static_cast<int>(type));

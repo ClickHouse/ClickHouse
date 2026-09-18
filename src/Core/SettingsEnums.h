@@ -541,7 +541,7 @@ enum class TextIndexPostingListCodec : uint8_t
 {
     None,
     Bitpacking,
-    PForDelta
+    PFor
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

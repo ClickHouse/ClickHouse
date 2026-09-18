@@ -24,7 +24,7 @@ public:
     {
         None,
         Bitpacking,
-        PForDelta,
+        PFor,
     };
 
     IPostingListCodec() = default;
@@ -55,14 +55,14 @@ private:
 
 inline constexpr bool isValidPostingListCodecType(UInt64 value)
 {
-    return value <= static_cast<UInt64>(IPostingListCodec::Type::PForDelta);
+    return value <= static_cast<UInt64>(IPostingListCodec::Type::PFor);
 }
 
 /// `None` is excluded: an uncompressed posting list has no segments.
 inline constexpr bool isValidPostingListBlockCodecType(UInt64 value)
 {
     return value == static_cast<UInt64>(IPostingListCodec::Type::Bitpacking)
-        || value == static_cast<UInt64>(IPostingListCodec::Type::PForDelta);
+        || value == static_cast<UInt64>(IPostingListCodec::Type::PFor);
 }
 
 class PostingListCodecFactory : public boost::noncopyable
