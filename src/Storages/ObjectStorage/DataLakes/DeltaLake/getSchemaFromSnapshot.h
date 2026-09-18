@@ -42,7 +42,14 @@ TableSchemaResult getTableSchemaFromSnapshot(
 /// Represents read schema based on data files.
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine);
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine);
+struct WriteSchemaResult
+{
+    DB::NamesAndTypesList schema;
+    /// Spelled as in `TableSchemaResult`, but for the schema the data files are written against.
+    std::unordered_set<String> timestamp_ntz_paths;
+};
+
+WriteSchemaResult getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine);
 
 /// Get list of partition columns.
 /// Read schema does not contain partition columns,

@@ -656,19 +656,20 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(
+        kernel_helper, snapshot->getTableSchema(), snapshot->getTimestampNtzPaths());
     delta_transaction->create(partition_columns);
 
     /// Only Parquet reads these paths; ORC and Avro read any mapper as Iceberg metadata, so do not hand
     /// them one. The column-mapping rejection above makes logical names equal written names here, so the
     /// paths need no physical-name translation; a columnMapping write path would have to translate them.
-    const auto & timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+    const auto & timestamp_ntz_paths = delta_transaction->getTimestampNtzPaths();
     FormatFilterInfoPtr format_filter_info;
     if (!timestamp_ntz_paths.empty() && boost::iequals(configuration->format, "Parquet"))
     {
         auto column_mapper = std::make_shared<ColumnMapper>();
-        /// The table schema is a superset of the write schema (partition columns); harmless, because the
-        /// writer only looks up paths of columns present in the block.
+        /// For a partitioned table this is the table schema's set, a superset of the write schema's
+        /// (partition columns); harmless, because the writer only looks up paths of columns in the block.
         column_mapper->setLocalTimestampPaths(std::unordered_set<String>(timestamp_ntz_paths));
         format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     }
@@ -759,7 +760,8 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
     auto schema_list = columns.getAllPhysical();
 
-    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list);
+    /// No `timestamp_ntz` paths: this transaction only writes the initial commit, never a data file.
+    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list, std::unordered_set<String>{});
 
     /// Test hook: pause after the existence check so a concurrent CREATE can write the `_delta_log`
     /// first, exercising the lost-race attach path in the catch below.

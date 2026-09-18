@@ -6410,6 +6410,8 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
     # one without listing the `invariants` writer feature its NOT NULL constraint needs, which makes
     # Spark reject the table for that unrelated reason; the Nullable/non-Nullable pair comes from the
     # ClickHouse column declaration below, which is what picks the writer path.
+    # The table is partitioned on `id` so the INSERT goes through DeltaLakePartitionedSink; the nested
+    # test covers the unpartitioned DeltaLakeSink.
     schema = pa.schema(
         [
             pa.field("id", pa.int32()),
@@ -6428,6 +6430,7 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
         f"file:///{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         mode="overwrite",
+        partition_by=["id"],
     )
 
     # Precondition: a `deltalake` version that mapped a tz-less timestamp to Delta `timestamp` would
@@ -6459,8 +6462,13 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
         settings={"session_timezone": "UTC"},
     )
 
+    # The data file lands under `<table>/id=1/`, so look for it recursively.
     files = (
-        instance.exec_in_container(["bash", "-c", f"ls {result_file}"]).strip().split("\n")
+        instance.exec_in_container(
+            ["bash", "-c", f"find {result_file} -name '*.parquet'"]
+        )
+        .strip()
+        .split("\n")
     )
     parquet_files = [name for name in files if name.endswith(".parquet")]
     assert len(parquet_files) == 1, files
@@ -6468,7 +6476,7 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
     LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
 
     # pyarrow renders isAdjustedToUTC=false as tz None and isAdjustedToUTC=true as tz 'UTC'.
-    written = pq.read_schema(f"{result_file}/{parquet_files[0]}")
+    written = pq.read_schema(parquet_files[0])
     assert written.field("ts_ntz").type == pa.timestamp("us"), written
     assert written.field("ts_ntz_nullable").type == pa.timestamp("us"), written
     assert written.field("ts_tz").type == pa.timestamp("us", tz="UTC"), written
@@ -6501,6 +6509,8 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     # itself (`st.inner_ts`, `arr.element`, `m.value`) rather than reusing the Delta child names.
     # `st.inner_tz` is a Delta `timestamp` sharing a struct with an ntz sibling: selectivity has to hold
     # per leaf, not per top-level column.
+    # A Delta field name may contain a dot, so `sc`'s two leaves both flatten to the path `sc.a.b`; one
+    # is `timestamp_ntz` and the other `timestamp`, so neither may be annotated from that path.
     schema = pa.schema(
         [
             pa.field("id", pa.int32()),
@@ -6515,6 +6525,17 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
             ),
             pa.field("arr", pa.list_(pa.timestamp("us"))),
             pa.field("m", pa.map_(pa.string(), pa.timestamp("us"))),
+            pa.field(
+                "sc",
+                pa.struct(
+                    [
+                        pa.field("a.b", pa.timestamp("us")),
+                        pa.field(
+                            "a", pa.struct([pa.field("b", pa.timestamp("us", tz="UTC"))])
+                        ),
+                    ]
+                ),
+            ),
         ]
     )
     write_deltalake(
@@ -6535,20 +6556,26 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert log_fields["st"]["fields"][1]["type"] == "timestamp", log_fields
     assert log_fields["arr"]["elementType"] == "timestamp_ntz", log_fields
     assert log_fields["m"]["valueType"] == "timestamp_ntz", log_fields
+    assert log_fields["sc"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    assert (
+        log_fields["sc"]["fields"][1]["type"]["fields"][0]["type"] == "timestamp"
+    ), log_fields
 
     LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
 
     instance.query(
         f"CREATE TABLE {table_name} (id Int32, "
         "st Tuple(inner_ts DateTime64(6), inner_tz DateTime64(6)), "
-        "arr Array(DateTime64(6)), m Map(String, DateTime64(6))) "
+        "arr Array(DateTime64(6)), m Map(String, DateTime64(6)), "
+        "sc Tuple(`a.b` DateTime64(6), a Tuple(b DateTime64(6)))) "
         f"ENGINE = DeltaLakeLocal('{result_file}') "
         "SETTINGS output_format_parquet_compression_method = 'none'"
     )
     instance.query(
         f"INSERT INTO {table_name} VALUES "
         "(1, ('2024-06-01 12:00:00', '2024-06-01 12:00:00'), "
-        "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'})",
+        "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'}, "
+        "('2024-06-01 12:00:00', tuple('2024-06-01 12:00:00')))",
         settings={"session_timezone": "UTC"},
     )
 
@@ -6566,12 +6593,25 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert struct_type.field("inner_tz").type == pa.timestamp("us", tz="UTC"), written
     assert written.field("arr").type.value_type == pa.timestamp("us"), written
     assert written.field("m").type.item_type == pa.timestamp("us"), written
+    # Ambiguous path: both leaves keep the default annotation, which is what the table gets on master.
+    collision_type = written.field("sc").type
+    assert collision_type.field("a.b").type == pa.timestamp("us", tz="UTC"), written
+    assert (
+        collision_type.field("a").type.field("b").type == pa.timestamp("us", tz="UTC")
+    ), written
 
     spark = started_cluster.spark_session
-    rows = spark.read.format("delta").load(result_file).collect()
+    rows = (
+        spark.read.format("delta").load(result_file).select("st", "arr", "m").collect()
+    )
     assert len(rows) == 1, rows
     assert str(rows[0]["st"]["inner_ts"]) == "2024-06-01 12:00:00", rows
     assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
     assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
+
+    # `sc` is read separately because it is still annotated as on master, so Spark refuses it with the
+    # reported error. Reading it is also what proves the ambiguous path was not annotated after all.
+    with pytest.raises(Exception, match="Unable to create Parquet converter"):
+        spark.read.format("delta").load(result_file).select("sc").collect()
 
     instance.query(f"DROP TABLE {table_name}")

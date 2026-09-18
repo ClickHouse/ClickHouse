@@ -131,9 +131,13 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 
 static constexpr auto engine_info = "ClickHouse";
 
-WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_)
+WriteTransaction::WriteTransaction(
+    DeltaLake::KernelHelperPtr kernel_helper_,
+    DB::NamesAndTypesList table_schema_,
+    std::unordered_set<String> table_timestamp_ntz_paths_)
     : kernel_helper(kernel_helper_)
     , table_schema(std::move(table_schema_))
+    , table_timestamp_ntz_paths(std::move(table_timestamp_ntz_paths_))
     , log(getLogger("WriteTransaction"))
 {
 }
@@ -154,6 +158,12 @@ const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
 {
     assertTransactionCreated();
     return write_schema;
+}
+
+const std::unordered_set<String> & WriteTransaction::getTimestampNtzPaths() const
+{
+    assertTransactionCreated();
+    return write_timestamp_ntz_paths;
 }
 
 void WriteTransaction::create(const DB::Names & partition_columns)
@@ -179,13 +189,16 @@ void WriteTransaction::create(const DB::Names & partition_columns)
         unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
             ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
-        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
+        auto write_schema_result = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
+        write_schema = std::move(write_schema_result.schema);
+        write_timestamp_ntz_paths = std::move(write_schema_result.timestamp_ntz_paths);
     }
     else
     {
         /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
         /// write schema directly; per-partition values are handled when committing.
         write_schema = table_schema;
+        write_timestamp_ntz_paths = table_timestamp_ntz_paths;
     }
 
     /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
