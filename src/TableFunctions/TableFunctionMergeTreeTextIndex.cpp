@@ -2,6 +2,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -118,7 +119,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
-    auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
+    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context));
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
@@ -128,7 +129,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table_ptr, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 

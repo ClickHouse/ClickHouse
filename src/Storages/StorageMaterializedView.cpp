@@ -33,6 +33,7 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -182,7 +183,7 @@ namespace
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
-        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source.get());
+        const auto * merge_tree = castStorage<MergeTreeData>(source, StorageResolution::Load).get();
         if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)

@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
@@ -970,7 +971,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// A lazily loaded source reports only its columns, so the indices, projections, constraints
+        /// and comment copied below would silently come out empty.
+        StoragePtr as_storage = resolveStorageProxyLoading(
+            DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
         /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
         /// target that describing the target requires.
@@ -1003,7 +1007,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(as_storage, StorageResolution::Load).get())
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -2655,7 +2659,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Peek) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "
@@ -2667,7 +2671,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
-    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    /// `res` is the storage this query just built, and for a table function it is a proxy that
+    /// resolving would run during CREATE.
+    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, StorageResolution::Peek).get();
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -3337,7 +3343,8 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     if (context->hasQueryContext())
         context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
 
-    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+    auto source = resolveStorageProxyLoading(
+        DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context));
 
     /// The view's SELECT was validated against the source before the view was published, so the source
     /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window

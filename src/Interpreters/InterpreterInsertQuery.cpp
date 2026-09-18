@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -204,7 +205,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
+    /// The insert path reads engine facts the proxy of an unloaded table cannot answer.
+    return resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, current_context));
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -1083,7 +1085,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (query.table_id.empty())
         return {};
 
-    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
