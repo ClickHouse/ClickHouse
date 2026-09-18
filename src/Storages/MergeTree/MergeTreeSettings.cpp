@@ -223,9 +223,15 @@ sparse serialization, so a column that qualifies for sparse serialization is sto
 Reading a subcolumn of such a column (for example `s.size`) is not supported, because the subcolumn's
 streams do not exist in a dictionary-encoded part.
 
-The decision is made every time a part is written: on `INSERT`, on merges and on rewrites of the parts by
-mutations. Enabling this setting on a table that already has data upgrades the existing parts on their
-next merge or rewrite.
+The decision is made anew every time a part is written, from the current value of this setting and from
+the statistics available before the first row of the part is written (the serialization of a part cannot
+change once writing has started, which is also how sparse serialization is chosen): on `INSERT` from the
+statistics of the inserted block, on merges from the statistics of the source parts combined, and on
+rewrites of the parts by mutations from the statistics of the source part. A mutation that changes the
+data of a column enough to change the choice therefore writes the part with the encoding chosen for the
+source part, and the next merge of that part re-chooses from the new data. Enabling this setting on a
+table that already has data upgrades the existing parts on their next merge or rewrite, and lowering it
+demotes the columns that no longer qualify on their next merge or rewrite.
 
 A value of `0` disables automatic `LowCardinality` serialization: no new part is encoded, and a merge or a
 rewrite of an already encoded part drops the encoding, so setting it back to `0` and running
