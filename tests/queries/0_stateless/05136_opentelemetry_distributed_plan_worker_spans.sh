@@ -38,6 +38,7 @@ function run_query
         -q "select x, count() from t_dp_otel group by x format Null
             settings make_distributed_plan = 1, enable_parallel_replicas = 0,
                 distributed_plan_execute_locally = $_execute_locally,
+                distributed_plan_fallback_to_local_execution = 0,
                 distributed_plan_default_shuffle_join_bucket_count = 2,
                 distributed_plan_default_reader_bucket_count = 2,
                 distributed_plan_max_rows_to_broadcast = 0"

@@ -93,14 +93,15 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
     /// The dispatch request is the trace hop to the worker: the `traceparent` header sent inside this
     /// scope names this span, so the worker's spans hang under it. The span covers only the start
     /// request; the task itself runs asynchronously on the worker and is polled by the initiator.
-    OpenTelemetry::SpanHolder span("StatelessWorkerClient::sendTask", OpenTelemetry::SpanKind::CLIENT);
-    if (span.isTraceEnabled())
-    {
-        Poco::URI uri(endpoint_uri);
-        span.addAttribute("clickhouse.distributed.task_id", task_description.task.task_id);
-        span.addAttribute("clickhouse.initial_query_id", task_description.initial_query_id);
-        span.addAttribute("clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort()));
-    }
+    const Poco::URI uri(endpoint_uri);
+    OpenTelemetry::SpanHolder span(
+        "StatelessWorkerClient::sendTask",
+        OpenTelemetry::SpanKind::CLIENT,
+        {
+            {"clickhouse.distributed.task_id", task_description.task.task_id},
+            {"clickhouse.initial_query_id", task_description.initial_query_id},
+            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
+        });
 
     auto task_serializer = [task_description] (WriteBuffer & buf)
     {

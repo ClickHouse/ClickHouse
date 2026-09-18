@@ -814,15 +814,18 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     for (const auto & stream_id : task.output_exchange_streams)
         output_exchange_streams.push_back(stream_id.toString());
 
+    /// Identifies the plan fragment in the span and in the query log alike.
+    const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+
     if (query_span->isTraceEnabled())
     {
         query_span->addAttribute("clickhouse.distributed.task_id", task.task_id);
         /// From the task's context rather than the description: a worker copies the description's
         /// initial query id into its `ClientInfo`, while an in-process task inherits the initiator's.
         query_span->addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
-        query_span->addAttribute("clickhouse.distributed.plan_hash", sipHash64(task_description.serialized_query_plan));
+        query_span->addAttribute("clickhouse.distributed.plan_hash", query_plan_hash);
         query_span->addAttribute("clickhouse.distributed.serialization_version", task_description.serialization_version);
-        query_span->addAttribute("clickhouse.distributed.execute_locally", execute_locally ? "1" : "0");
+        query_span->addAttribute("clickhouse.distributed.execute_locally", static_cast<UInt64>(execute_locally));
         query_span->addAttribute("clickhouse.exchange.inputs", fmt::format("[{}]", fmt::join(input_exchange_streams, ", ")));
         query_span->addAttribute("clickhouse.exchange.outputs", fmt::format("[{}]", fmt::join(output_exchange_streams, ", ")));
     }
@@ -890,7 +893,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
     /// helpers below treat a null AST as QueryKind::Select, which is correct here.
     const ASTPtr no_ast;
-    UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
         std::chrono::system_clock::now(),
