@@ -29,8 +29,8 @@ public:
     {}
 
     /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
-    /// exceeded, false otherwise. Should be called before issuing an API call. The API-call limit is
-    /// enforced separately by `recordApiCall`.
+    /// exceeded, false otherwise. Lets a caller skip building and submitting a request that
+    /// `recordApiCall` would refuse anyway. The API-call limit is enforced separately by `recordApiCall`.
     bool checkQuotas();
 
     /// Count one outbound API call against the request quota, only while under the limit. Should be
