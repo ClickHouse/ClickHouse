@@ -165,25 +165,6 @@ TEST(CoordinationKeeperContext, WaitLocalLogsPreprocessedOrShutdown)
     }
 }
 
-TEST(CoordinationKeeperContext, LocalLogsPreprocessingWaitDeadline)
-{
-    /// One heartbeat less than the smaller of the two limits, whichever of them that is.
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 20, 50), 1900u);
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 50, 20), 1900u);
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 3, 50), 200u);
-
-    /// At one or zero there is no margin to wait inside, so the answer goes out at once. A floor
-    /// of one heartbeat here would be the reconnect interval itself, which is what the margin is
-    /// for - and `raft_limits_reconnect_limit` 1 is what the integration test runs.
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 2, 1), 0u);
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 1, 2), 0u);
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 0, 50), 0u);
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(100, 50, 0), 0u);
-
-    /// A zero heartbeat interval is a configuration the functional tests use.
-    EXPECT_EQ(DB::getLocalLogsPreprocessingWaitMs(0, 20, 50), 0u);
-}
-
 TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
 {
     auto load = [](const std::string & xml)

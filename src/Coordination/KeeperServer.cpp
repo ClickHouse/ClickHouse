@@ -1061,11 +1061,14 @@ void KeeperServer::waitForLocalLogsPreprocessing()
 
     FailPointInjection::pauseFailPoint(FailPoints::keeper_local_logs_preprocessing_wait);
 
+    /// The values the instance is running with, already narrowed to int32 on their way into
+    /// NuRaft. The smaller limit binds - the leader discards the response past the reconnect
+    /// limit, the cluster counts the node down past the response limit - and one heartbeat of it
+    /// is margin, of which there is none to spend once that limit is one.
     const auto raft_limits = nuraft::raft_server::get_raft_limits();
-    const uint64_t wait_timeout_ms = getLocalLogsPreprocessingWaitMs(
-        raft_instance->get_current_params().heart_beat_interval_,
-        static_cast<uint64_t>(raft_limits.response_limit_),
-        static_cast<uint64_t>(raft_limits.reconnect_limit_));
+    const uint64_t heartbeats_to_wait = std::min<uint64_t>(raft_limits.response_limit_, raft_limits.reconnect_limit_);
+    const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
+        * (heartbeats_to_wait > 1 ? heartbeats_to_wait - 1 : 0);
 
     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
     bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);

@@ -1,6 +1,5 @@
 #include <Coordination/KeeperCommon.h>
 
-#include <algorithm>
 #include <limits>
 #include <string>
 #include <filesystem>
@@ -340,14 +339,6 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
     }
 
     return false;
-}
-
-
-uint64_t getLocalLogsPreprocessingWaitMs(int32_t heart_beat_interval_ms, uint64_t response_limit, uint64_t reconnect_limit)
-{
-    const uint64_t heartbeats = std::min(response_limit, reconnect_limit);
-    /// Both limits are narrowed to int32 where they enter NuRaft, so this product cannot overflow.
-    return static_cast<uint64_t>(heart_beat_interval_ms) * (heartbeats > 1 ? heartbeats - 1 : 0);
 }
 
 }
