@@ -36,6 +36,8 @@ namespace ProfileEvents
 {
 extern const Event AutoParallelReplicasPlanBuildAttempts;
 extern const Event AutoParallelReplicasMicroseconds;
+extern const Event AutoParallelReplicasSkippedForcedProjection;
+extern const Event AutoParallelReplicasPlanShapeNotSupported;
 extern const Event AutoParallelReplicasPlanNotSuitable;
 extern const Event AutoParallelReplicasNoStatistics;
 extern const Event AutoParallelReplicasStatisticsDrifted;
@@ -329,7 +331,11 @@ void considerEnablingParallelReplicas(
 
     // Cannot guarantee projection usage with parallel replicas
     if (optimization_settings.force_use_projection)
+    {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedForcedProjection);
+        LOG_TRACE(getLogger("optimizeTree"), "force_use_projection is set, cannot guarantee projection usage. Skipping optimization");
         return;
+    }
 
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
@@ -355,6 +361,7 @@ void considerEnablingParallelReplicas(
         });
     if (!plan_is_simple_enough)
     {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanShapeNotSupported);
         LOG_TRACE(
             getLogger("optimizeTree"),
             "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
