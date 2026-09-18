@@ -6,7 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Core/UUID.h>
 
 
@@ -24,9 +24,9 @@ public:
     {
         Tuple res;
         if (txn)
-            res = {txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id};
+            res = {txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id, txn->tid.session_node_version};
         else
-            res = {static_cast<UInt64>(0), static_cast<UInt64>(0), UUIDHelpers::Nil};
+            res = {static_cast<UInt64>(0), static_cast<UInt64>(0), UUIDHelpers::Nil, static_cast<Int64>(0)};
         return res;
     }
 
@@ -43,7 +43,7 @@ public:
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
 };
 
-/// Defers `TransactionLog::instance()` lookup to `executeImpl` so the function
+/// Defers `TransactionManager::instance()` lookup to `executeImpl` so the function
 /// can be instantiated without a configured transaction log (e.g. by
 /// `system.functions`, which only reads `getSignatureString`).
 template <bool latest>
@@ -81,8 +81,8 @@ public:
         std::call_once(snapshot_initialized, [this]
         {
             snapshot = latest
-                ? TransactionLog::instance().getLatestSnapshot()
-                : TransactionLog::instance().getOldestSnapshot();
+                ? TransactionManager::instance().getLatestSnapshot()
+                : TransactionManager::instance().getOldestSnapshot();
         });
         return result_type->createColumnConst(input_rows_count, snapshot);
     }
@@ -122,12 +122,13 @@ For more information see the page [Transactional (ACID) support](/concepts/featu
     FunctionDocumentation::Arguments arguments_transactionID = {};
     FunctionDocumentation::ReturnedValue returned_value_transactionID = {
     R"(
-Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`.
+Returns a tuple consisting of `start_csn`, `local_tid`, `host_id` and `session_node_version`.
 - `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began.
 - `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn.
 - `host_id`: UUID of the host that has started this transaction.
+- `session_node_version`: Version of the host's session znode at transaction start; lets peers detect a dead-session TID across replicas.
     )",
-    {"Tuple(UInt64, UInt64, UUID)"}
+    {"Tuple(UInt64, UInt64, UUID, Int64)"}
     };
     FunctionDocumentation::Examples examples_transactionID = {
     {
@@ -138,9 +139,9 @@ SELECT transactionID();
 ROLLBACK;
         )",
         R"(
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
         )"
     }
     };
