@@ -16,6 +16,12 @@ nogroup: tokens of each row
 nogroup: hasAnyTokens([22]) -> 1
 1
 nogroup: hasAnyTokens([a]) -> (none, letters are never matches)
+extract postprocessor: hasPhrase([tag:RED tag:GREEN]) -> 1
+1
+extract postprocessor: the same without the skip index
+1
+extract postprocessor: the reversed phrase matches nothing
+extract postprocessor: a phrase the tokenizer finds no token in matches nothing
 DDL validation
 bool literal: hasAnyTokens([green]) -> 1
 1

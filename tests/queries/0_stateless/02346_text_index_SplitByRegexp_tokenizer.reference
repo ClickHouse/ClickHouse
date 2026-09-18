@@ -39,3 +39,12 @@ phrase: hasPhrase([C# and]) -> 2 (not row 1 with C++)
 2
 phrase: hasPhrase([C++ and]) -> 1
 1
+postprocessor: hasPhrase([C# and]) -> 2 (not row 1 with C++)
+2
+postprocessor: the same without the skip index
+2
+postprocessor: the same without the direct read
+2
+postprocessor: the phrase is lowercased too: hasPhrase([c++ AND go]) -> 1
+1
+postprocessor: an absent phrase
