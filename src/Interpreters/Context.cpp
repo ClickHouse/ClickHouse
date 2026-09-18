@@ -7633,7 +7633,6 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
         mt_settings.applyCompatibilitySetting(getGlobalContext()->getSettingsRef()[Setting::compatibility]);
 
         mt_settings.loadFromConfig("merge_tree", config);
-
         shared->merge_tree_settings.emplace(mt_settings);
     }
 
@@ -7655,7 +7654,6 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
-
         shared->replicated_merge_tree_settings.emplace(mt_settings);
     }
 
