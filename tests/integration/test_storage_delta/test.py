@@ -4011,12 +4011,11 @@ def test_concurrent_queries(started_cluster, partitioned):
 
         select(0)
 
-        num_rows = sum(success) * 50
-        assert num_rows == int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME}",
-            )
-        )
+        # A commit that reports an error may still have taken effect, so an INSERT that raised
+        # can legitimately have committed its rows, and a committed one contributes all 50.
+        num_rows = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+        assert sum(success) * 50 <= num_rows <= (sum(success) + sum(failures)) * 50
+        assert num_rows % 50 == 0
 
     for _ in range(3):
         run_concurrent_queries()
@@ -4037,11 +4036,8 @@ def test_concurrent_queries(started_cluster, partitioned):
             "snappy.parquet"
         ):
             file_names.append(obj.object_name)
-    # A commit that reports an error may still have taken effect, so the writer no longer deletes
-    # the data files it wrote for it and the objects of the failed inserts are still here. Every
-    # failure above is a commit conflict and each failed insert wrote its full complement of
-    # files, so this stays an exact count rather than a lower bound: an unbounded leak is what
-    # this assertion exists to catch.
+    # Every failure above is a commit conflict, raised after all of that insert's files were
+    # written, and the files of a failed commit are kept, so this count is exact.
     files_per_insert = 50 if partitioned else 1
     assert len(file_names) == (sum(success) + sum(failures)) * files_per_insert
 
