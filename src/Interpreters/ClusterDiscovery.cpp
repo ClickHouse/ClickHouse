@@ -232,6 +232,7 @@ ClusterDiscovery::ClusterDiscovery(
         String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
         String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
+        bool secure = config.getBool(cluster_config_prefix + ".secure", false);
         clusters_info.emplace(
             key,
             ClusterInfo(
@@ -242,8 +243,8 @@ ClusterDiscovery::ClusterDiscovery(
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
                 /* password= */ password,
                 /* cluster_secret= */ cluster_secret,
-                /* port= */ context->getTCPPort(),
-                /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
+                /* port= */ getAdvertisedPort(secure),
+                /* secure= */ secure,
                 /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
                 /* observer_mode= */ is_observer,
                 /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
@@ -322,6 +323,16 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
 
 /// Reads node information from specified zookeeper nodes
 /// On error returns empty result
+UInt16 ClusterDiscovery::getAdvertisedPort(bool secure) const
+{
+    /// Peers connect to the advertised endpoint with the protocol selected by `secure`, so a secure
+    /// cluster must register the secure listener, not the plain one. Either way it is the port the
+    /// server actually *bound*, i.e. shifted by `port_offset`.
+    if (secure)
+        return context->getBoundTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
+    return context->getBoundTCPPort();
+}
+
 ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids)
 {
     NodesInfo result;
@@ -402,7 +413,10 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     ClusterConnectionParameters params{
         /* username= */ cluster_info.username,
         /* password= */ cluster_info.password,
-        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
+        /// The addresses come from Keeper, where every node registered itself on the port it actually
+        /// bound (see `getAdvertisedPort`), so locality detection must compare against the bound
+        /// port as well - otherwise a node with a non-zero `port_offset` would not recognize itself.
+        /* clickhouse_port= */ getAdvertisedPort(secure),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
@@ -629,7 +643,7 @@ void ClusterDiscovery::findDynamicClusters(
                     /* username= */ path.username,
                     /* password= */ path.password,
                     /* cluster_secret= */ path.cluster_secret,
-                    /* port= */ context->getTCPPort(),
+                    /* port= */ getAdvertisedPort(path.is_secure_connection),
                     /* secure= */ path.is_secure_connection,
                     /* shard_id= */ 0,
                     /* observer_mode= */ true,
@@ -877,6 +891,10 @@ String ClusterDiscovery::NodeInfo::serialize() const
     Poco::JSON::Object json;
     json.set("version", data_ver);
     json.set("address", address);
+    /// `parse` reads this flag and `makeCluster` skips every node whose flag differs from the
+    /// current node's, so a secure node that did not publish it would be skipped by all peers
+    /// (and by itself).
+    json.set("secure", secure);
     json.set("shard_id", shard_id);
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
