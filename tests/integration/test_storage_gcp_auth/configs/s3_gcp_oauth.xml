@@ -1,0 +1,25 @@
+<clickhouse>
+    <s3>
+        <!-- A server-configured GCP OAuth endpoint. The bare-URL `s3(...)` form cannot supply the GCP fields,
+             so this is the source identity an `extra_credentials(impersonate_service_account = ...)` is
+             impersonated from: the counterpart of an operator-provisioned key pair plus `role_arn`. -->
+        <gcp_oauth_endpoint>
+            <endpoint>http://resolver:22234/test/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcp_oauth_endpoint>
+
+        <!-- The same shape, against an endpoint that accepts the source token: `iam_credentials_endpoint` is set
+             server-wide (as a Private Service Connect endpoint would be) while no query names a target, so reads
+             that do not impersonate must keep working. -->
+        <gcp_oauth_no_target_endpoint>
+            <endpoint>http://resolver:22237/test/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcp_oauth_no_target_endpoint>
+    </s3>
+</clickhouse>
