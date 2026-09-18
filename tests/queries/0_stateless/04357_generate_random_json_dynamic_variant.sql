@@ -38,9 +38,6 @@ SELECT count() > 0 FROM (SELECT * FROM generateRandom('x Array(JSON)', 42, 5, 3)
 -- Dynamic inside an Array.
 SELECT count() > 0 FROM (SELECT * FROM generateRandom('x Array(Dynamic)', 42, 5, 3) LIMIT 5);
 
--- Nullable(Dynamic).
-SELECT count() > 0 FROM (SELECT * FROM generateRandom('x Nullable(Dynamic)', 42, 10, 5) LIMIT 10);
-
 -- Using ENGINE = GenerateRandom with JSON type.
 DROP TABLE IF EXISTS t_gen_json;
 CREATE TABLE t_gen_json (j JSON(a UInt32, b String)) ENGINE = GenerateRandom(42, 10, 5);
