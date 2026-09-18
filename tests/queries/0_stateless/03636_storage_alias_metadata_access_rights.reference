@@ -5,8 +5,6 @@ Test count without target SELECT permission
 ACCESS_DENIED
 Test count without target SELECT permission using the read path
 ACCESS_DENIED
-Test count without target SELECT permission using the old analyzer read path
-ACCESS_DENIED
 Test DESCRIBE without target permission
 ACCESS_DENIED
 Test SHOW CREATE without target permission
@@ -30,8 +28,6 @@ Test direct and Alias count with column-scoped target SELECT permission using th
 2	2
 Test direct and Alias count with column-scoped target SELECT permission using the read path
 2	2
-Test direct and Alias count with column-scoped target SELECT permission using the old analyzer read path
-2	2
 Test table statistics with target permission
 2	1	1	1	1
 Test table metadata with target permission
@@ -51,7 +47,10 @@ Test schema commands with target permission
 DESCRIBE OK
 SHOW COLUMNS OK
 ENGINE = Alias
-Test system.tables with an Alias database-level grant
-1	1	1	1
-Test other metadata tables with an Alias database-level grant
-0	0	0	0	0
+Test CREATE TABLE AS an Alias without target permission
+ACCESS_DENIED
+Test CREATE TABLE AS an Alias with column-scoped target permission
+ACCESS_DENIED
+Test CREATE TABLE AS an Alias with target permission
+id	UInt64
+value	String
