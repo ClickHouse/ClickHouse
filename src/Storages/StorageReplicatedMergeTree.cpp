@@ -746,7 +746,7 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeepe
 
 
 void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
-    const Strings & replicas, const String & mutation_id) const
+    const Strings & replicas, const String & mutation_id, bool only_active) const
 {
     if (replicas.empty())
         return;
@@ -889,7 +889,12 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
         /// This replica inactive, don't check anything
         if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
+        {
+            /// The other replicas still have to be waited for when only the active ones are required.
+            if (only_active)
+                continue;
             break;
+        }
 
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
@@ -917,6 +922,13 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
     if (!inactive_replicas.empty())
     {
+        if (only_active)
+        {
+            LOG_INFO(log, "Mutation {} is finished on all active replicas, will not wait for the inactive ones: {}. "
+                     "They will apply it when they become active", mutation_id, boost::algorithm::join(inactive_replicas, ", "));
+            return;
+        }
+
         throw Exception(ErrorCodes::UNFINISHED,
                         "Mutation is not finished because some replicas are inactive right now: {}. Mutation will be done asynchronously",
                         boost::algorithm::join(inactive_replicas, ", "));
@@ -7871,21 +7883,38 @@ EphemeralLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
     const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-    Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events)
+    Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events, bool only_active)
 {
-    LOG_DEBUG(log, "Waiting for all replicas to process {}", entry.znode_name);
+    LOG_DEBUG(log, "Waiting for {} replicas to process {}", only_active ? "active" : "all", entry.znode_name);
+
+    /// Waiting only for the active replicas means never waiting for an inactive one, and waiting for
+    /// an active one until it processes the entry or stops being active.
+    if (only_active)
+        wait_for_inactive_timeout = 0;
 
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(zkutil::joinZooKeeperPath(table_zookeeper_path, "replicas"));
     Strings unwaited;
+    Strings not_active;
     bool wait_for_inactive = wait_for_inactive_timeout != 0;
     for (const String & replica : replicas)
     {
-        if (wait_for_inactive || zookeeper->exists(zkutil::joinZooKeeperPath(table_zookeeper_path, "replicas", replica, "is_active")))
+        const String is_active_path = zkutil::joinZooKeeperPath(table_zookeeper_path, "replicas", replica, "is_active");
+        if (wait_for_inactive || zookeeper->exists(is_active_path))
         {
             auto & watch_event = watch_events.emplace(replica, std::make_shared<Poco::Event>()).first->second;
             if (!tryWaitForReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_inactive_timeout, watch_event))
-                unwaited.push_back(replica);
+            {
+                /// The replica could have stopped being active while we were waiting for it.
+                if (only_active && !getZooKeeper()->exists(is_active_path))
+                    not_active.push_back(replica);
+                else
+                    unwaited.push_back(replica);
+            }
+        }
+        else if (only_active)
+        {
+            not_active.push_back(replica);
         }
         else
         {
@@ -7893,16 +7922,20 @@ Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
         }
     }
 
-    LOG_DEBUG(log, "Finished waiting for all replicas to process {}", entry.znode_name);
+    if (!not_active.empty())
+        LOG_INFO(log, "Will not wait for replicas {} to process {} because they are not active. "
+                 "They will process it when they become active", fmt::join(not_active, ", "), entry.znode_name);
+
+    LOG_DEBUG(log, "Finished waiting for {} replicas to process {}", only_active ? "active" : "all", entry.znode_name);
     return unwaited;
 }
 
 void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
     const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
     Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-    const String & error_context)
+    const String & error_context, bool only_active)
 {
-    Strings unfinished_replicas = tryWaitForAllReplicasToProcessLogEntry(table_zookeeper_path, entry, wait_for_inactive_timeout, watch_events);
+    Strings unfinished_replicas = tryWaitForAllReplicasToProcessLogEntry(table_zookeeper_path, entry, wait_for_inactive_timeout, watch_events, only_active);
     if (unfinished_replicas.empty())
         return;
 
@@ -7912,9 +7945,10 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
 
 void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context)
 {
-    /// If necessary, wait until the operation is performed on itself or on all replicas.
+    /// If necessary, wait until the operation is performed on itself, on all replicas or on the active ones.
     Int64 wait_for_inactive_timeout = query_context->getSettingsRef()[Setting::replication_wait_for_inactive_replica_timeout];
-    if (query_context->getSettingsRef()[Setting::alter_sync] == 1)
+    const UInt64 alter_sync = query_context->getSettingsRef()[Setting::alter_sync];
+    if (alter_sync == 1)
     {
         auto & watch_event = watch_events.emplace(replica_name, std::make_shared<Poco::Event>()).first->second;
         bool finished = tryWaitForReplicaToProcessLogEntry(zookeeper_path, replica_name, entry, wait_for_inactive_timeout, watch_event);
@@ -7924,11 +7958,10 @@ void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const R
                             "most likely because the replica was shut down.", error_context, entry.znode_name);
         }
     }
-    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
-    /// does not have; here it waits for all replicas, like value 2.
-    else if (query_context->getSettingsRef()[Setting::alter_sync] == 2 || query_context->getSettingsRef()[Setting::alter_sync] == 3)
+    else if (alter_sync == 2 || alter_sync == 3)
     {
-        waitForAllReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context);
+        waitForAllReplicasToProcessLogEntry(
+            zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context, /*only_active=*/ alter_sync == 3);
     }
 }
 
@@ -8785,9 +8818,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     /// we have to wait
     auto zookeeper = getZooKeeper();
     Strings replicas;
-    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
-    /// does not have; here it waits for all replicas, like value 2.
-    if (mutations_sync == 2 || mutations_sync == 3) /// wait for all replicas
+    if (mutations_sync == 2 || mutations_sync == 3) /// wait for all replicas or only for the active ones
     {
         replicas = zookeeper->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, "replicas"));
         /// This replica should be first, to ensure that the mutation will be loaded into memory
@@ -8803,7 +8834,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     else if (mutations_sync == 1) /// just wait for ourself
         replicas.push_back(replica_name);
 
-    waitMutationToFinishOnReplicas(replicas, znode_name);
+    waitMutationToFinishOnReplicas(replicas, znode_name, /*only_active=*/ mutations_sync == 3);
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const

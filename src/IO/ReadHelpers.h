@@ -170,6 +170,11 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {

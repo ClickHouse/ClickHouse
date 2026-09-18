@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/Optimizations/debugHelpers.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -11,8 +11,8 @@
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
-#include <pcg_random.hpp>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <pcg_random.hpp>
 
 /*
  * This file contains helper functions for debugging and testing join optimization.
@@ -75,9 +75,12 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
             for (const auto & [key, value] : *column_bytes)
                 stats.column_stats[key].avg_bytes = value.convert<Float64>();
         }
-        LOG_DEBUG(getLogger("optimizeJoin"),
-            "Got a table statistics hint for table '{}' from '{}' query parameter, it is meant for testing only, do not use it in production",
-            table_name, CascadesParams::STAT_HINTS);
+        LOG_DEBUG(
+            getLogger("optimizeJoin"),
+            "Got a table statistics hint for table '{}' from '{}' query parameter, it is meant for testing only, do not use it in "
+            "production",
+            table_name,
+            CascadesParams::STAT_HINTS);
         return stats;
     }
     catch (const Poco::Exception & e)
@@ -116,8 +119,12 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
         stats.column_stats[col.name] = ColumnStats{.num_distinct_values = ndv};
     }
 
-    LOG_DEBUG(getLogger("optimizeJoin"), "Randomized statistics for '{}': rows={}, columns={}",
-        table_name, *stats.estimated_rows, stats.column_stats.size());
+    LOG_DEBUG(
+        getLogger("optimizeJoin"),
+        "Randomized statistics for '{}': rows={}, columns={}",
+        table_name,
+        *stats.estimated_rows,
+        stats.column_stats.size());
     return stats;
 }
 

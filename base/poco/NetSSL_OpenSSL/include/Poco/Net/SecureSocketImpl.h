@@ -218,6 +218,11 @@ namespace Net
 
 
     protected:
+        int completeHandshakeImpl(bool verifyPeer);
+        /// Completes the SSL handshake, and, if verifyPeer is true, validates the
+        /// peer certificate as a part of the same handshake, so that a validation
+        /// failure is accounted as a handshake failure.
+
         void acceptSSL();
         /// Assume per-object mutex is locked.
         /// Performs a server-side SSL handshake and certificate verification.
