@@ -50,3 +50,29 @@ SELECT count() FROM t_prefix_flag_group WHERE match(s, '^abc');
 SELECT count() FROM t_prefix_flag_group WHERE match(s, '^zz');
 
 DROP TABLE t_prefix_flag_group;
+
+-- The optional literal is a whole UTF-8 code point: `^é*c` requires nothing, and dropping only the
+-- last byte of `é` left the malformed prefix `0xC3`, which pruned the granule holding `c`.
+CREATE TABLE t_prefix_utf8 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
+INSERT INTO t_prefix_utf8 VALUES ('c'), ('éc'), ('ééc'), ('aéc'), ('ac'), ('zz');
+
+SELECT 'a quantifier over a multi-byte literal';
+SELECT match('c', '^é*c'), match('c', '^é(?m)*c'), match('c', '^é\Q\E*c');
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é*c');
+SELECT countIf(match(s, '^é*c')) FROM t_prefix_utf8;
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é?c');
+SELECT countIf(match(s, '^é?c')) FROM t_prefix_utf8;
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é(?m)*c');
+SELECT countIf(match(s, '^é(?m)*c')) FROM t_prefix_utf8;
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^é\Q\E*c');
+SELECT countIf(match(s, '^é\Q\E*c')) FROM t_prefix_utf8;
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^aé*c');
+SELECT countIf(match(s, '^aé*c')) FROM t_prefix_utf8;
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^aé(?i)(?m){0,2}c');
+SELECT countIf(match(s, '^aé(?i)(?m){0,2}c')) FROM t_prefix_utf8;
+
+SELECT 'a multi-byte literal without a quantifier still prunes';
+SELECT count() FROM t_prefix_utf8 WHERE match(s, '^éc');
+SELECT countIf(match(s, '^éc')) FROM t_prefix_utf8;
+
+DROP TABLE t_prefix_utf8;

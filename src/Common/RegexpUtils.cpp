@@ -1,4 +1,5 @@
 #include <Common/RegexpUtils.h>
+#include <Common/UTF8Helpers.h>
 
 #include <algorithm>
 #include <utility>
@@ -136,7 +137,24 @@ String extractCommonPrefixFromAlternationBranches(std::string_view expression)
     return common_prefix;
 }
 
-/// Extracts the prefix and its flags without looking at `requires_perfect_prefix`.
+/// A quantifier that allows zero occurrences makes the literal before it optional. RE2 compiles a
+/// valid UTF-8 pattern in UTF-8 mode, where such a literal is a whole code point, so the whole code
+/// point has to go: `^é*c` requires nothing, while dropping one byte leaves the malformed prefix
+/// `0xC3` which no matching string starts with. A pattern that is not valid UTF-8 falls back to
+/// Latin-1, where the quantifier applies to the last byte only; dropping the continuation bytes in
+/// front of it as well merely weakens the prefix, which stays correct.
+void dropLastLiteral(String & fixed_prefix)
+{
+    if (fixed_prefix.empty())
+        return;
+
+    size_t new_size = fixed_prefix.size() - 1;
+    while (new_size > 0 && UTF8::isContinuationOctet(static_cast<UInt8>(fixed_prefix[new_size])))
+        --new_size;
+
+    fixed_prefix.resize(new_size);
+}
+
 /// Whether `pos` points at a quantifier that allows zero occurrences of whatever precedes it.
 bool isZeroAllowingQuantifier(const char * pos, const char * end)
 {
@@ -195,6 +213,7 @@ const char * skipZeroWidthConstructs(const char * pos, const char * end)
     return pos;
 }
 
+/// Extracts the prefix and its flags without looking at `requires_perfect_prefix`.
 RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
 {
     /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
@@ -227,9 +246,8 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
                     /// An empty `\Q\E` quote is zero-width, like a pure flag group, so a quantifier
                     /// written after it - or after a whole chain of such constructs - applies to the
                     /// character before it: both `^ab\Q\E*c` and `^ab\Q\E(?i)*c` require only `a`.
-                    if (!fixed_prefix.empty()
-                        && isZeroAllowingQuantifier(skipZeroWidthConstructs(pos - 1, end), end))
-                        fixed_prefix.pop_back();
+                    if (isZeroAllowingQuantifier(skipZeroWidthConstructs(pos - 1, end), end))
+                        dropLastLiteral(fixed_prefix);
 
                     return {.prefix = fixed_prefix};
                 }
@@ -266,8 +284,8 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
                 /// and reporting `ab` as required pruned granules holding matching rows.
                 if (const char * after_zero_width = skipZeroWidthConstructs(pos, end); after_zero_width != pos)
                 {
-                    if (!fixed_prefix.empty() && isZeroAllowingQuantifier(after_zero_width, end))
-                        fixed_prefix.pop_back();
+                    if (isZeroAllowingQuantifier(after_zero_width, end))
+                        dropLastLiteral(fixed_prefix);
                 }
                 return {.prefix = fixed_prefix};
 
@@ -278,12 +296,11 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
             case '+':
                 return {.prefix = fixed_prefix};
 
-            /// Quantifiers that allow a zero number of occurrences make the previous character optional.
+            /// Quantifiers that allow a zero number of occurrences make the previous literal optional.
             case '{':
             case '?':
             case '*':
-                if (!fixed_prefix.empty())
-                    fixed_prefix.pop_back();
+                dropLastLiteral(fixed_prefix);
                 return {.prefix = fixed_prefix};
 
             default:
