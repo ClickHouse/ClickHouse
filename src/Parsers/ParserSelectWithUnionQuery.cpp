@@ -93,7 +93,7 @@ SELECT 'two' AS b, 3 AS c
 ```
 
 ```text title="Response"
-a    one    NULL
+1    one    NULL
 NULL two    3
 ```
 
@@ -150,9 +150,7 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 - [union_default_mode](/reference/settings/session-settings/other#union_default_mode) setting.
 )DOCS_MD",
         .syntax = R"(
-SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
-
-SELECT ... UNION ALL BY NAME SELECT ... [UNION ALL BY NAME SELECT ...]
+SELECT ... UNION [DISTINCT | ALL [BY NAME]] SELECT ... [UNION [DISTINCT | ALL [BY NAME]] SELECT ...]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "INTERSECT", "EXCEPT", "DISTINCT", "JOIN"},

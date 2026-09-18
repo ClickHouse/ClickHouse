@@ -60,6 +60,17 @@ FROM
 ) AS t(x)
 ORDER BY x;
 
+SELECT 'nested BY NAME under a single-child wrapper';
+SELECT (
+    SELECT sum(a)
+    FROM
+    (
+        SELECT 1 AS a
+        UNION ALL BY NAME
+        SELECT 2 AS a
+    )
+);
+
 SELECT 'name then position';
 SELECT *
 FROM
@@ -141,9 +152,15 @@ SELECT 'normalized AST JSON roundtrip';
 SELECT formatQueryFromJSON(
     replace(
         replace(
-            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
-            '"is_normalized":false',
-            '"is_normalized":true'),
+            replace(
+                replace(
+                    parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+                    '"column_match_mode":"POSITION"',
+                    '"column_match_mode":"NAME"'),
+                '"is_normalized":false',
+                '"is_normalized":true'),
+            '"list_of_modes":["UNION_ALL"]',
+            '"list_of_modes":[]'),
         '"list_of_column_match_modes":["NAME"]',
         '"list_of_column_match_modes":[]'));
 
