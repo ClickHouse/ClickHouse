@@ -1,6 +1,8 @@
 services:
   minio1:
-    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    # Mirror of quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z (see compose/mirror-images.sh).
+    # The minio/minio Docker Hub repository was deleted upstream; quay.io is not behind the proxy.
+    image: clickhouse/minio-minio:RELEASE.2024-09-13T20-26-02Z
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
