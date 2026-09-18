@@ -242,6 +242,13 @@ public:
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
+    /// A patch writes distinct values into distinct rows, which a Const column cannot represent.
+    /// Refuse instead of inheriting the IColumnHelper implementations: the in-place one reaches
+    /// `IColumn::updateAt` and throws anyway, but the copying one would silently discard every
+    /// patched value, because `ColumnConst::insertFrom` only advances the size.
+    ColumnPtr updateFrom(const Patch & patch) const override;
+    void updateInplaceFrom(const Patch & patch) override;
+
     size_t byteSize() const override
     {
         return data->byteSize() + sizeof(s);
