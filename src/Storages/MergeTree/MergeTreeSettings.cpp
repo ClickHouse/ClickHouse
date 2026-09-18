@@ -18,6 +18,7 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -2580,7 +2581,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
+struct MergeTreeSettingsImpl : public SettingsWithRecordedOrigin<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
@@ -2598,59 +2599,6 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     { return BaseSettings::operator[](t); }
     MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPL_SUBSCRIPT_OP_)
 #undef IMPL_SUBSCRIPT_OP_
-
-    /// Which settings the compatibility pass and the `<merge_tree>` config section assigned. A reader cannot
-    /// recover this afterwards: `loadFromConfig` assigns every key of the section, which sets the changed bit
-    /// even where the assigned value equals the default, so neither the bit nor a comparison of values says
-    /// where a value came from. Recorded here rather than beside the server's copy of the settings, because
-    /// each table copies that object and the marks have to travel with it - and because `SettingsImpl` records
-    /// its own compatibility marks the same way, as a bitmap over setting indexes: the count is known at
-    /// compile time, so this allocates nothing.
-    ///
-    /// A later assignment clears both marks, so a setting belongs to whoever assigned it last - the table's
-    /// own `SETTINGS` clause included, which is what makes the config section lose to it.
-    void set(std::string_view name, const Field & value) override
-    {
-        if (const size_t index = settingIndex(name); index != npos)
-        {
-            unmark(changed_by_compatibility, index);
-            unmark(changed_in_config, index);
-        }
-        BaseSettings::set(name, value);
-    }
-
-    void markChangedByCompatibility(std::string_view name) { mark(changed_by_compatibility, name); }
-    void markChangedInConfig(std::string_view name) { mark(changed_in_config, name); }
-    bool isChangedByCompatibility(std::string_view name) const { return isMarked(changed_by_compatibility, name); }
-    bool isChangedInConfig(std::string_view name) const { return isMarked(changed_in_config, name); }
-
-private:
-    static constexpr size_t npos = static_cast<size_t>(-1);
-    static constexpr size_t num_setting_bitmap_words
-        = (static_cast<size_t>(MergeTreeSettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
-    using SettingsBitmap = std::array<UInt64, num_setting_bitmap_words>;
-
-    SettingsBitmap changed_by_compatibility = {};
-    SettingsBitmap changed_in_config = {};
-
-    static size_t settingIndex(std::string_view name)
-    {
-        return MergeTreeSettingsTraits::Accessor::instance().find(MergeTreeSettingsTraits::resolveName(name));
-    }
-    static void mark(SettingsBitmap & bitmap, std::string_view name)
-    {
-        if (const size_t index = settingIndex(name); index != npos)
-            bitmap[index / 64] |= 1ULL << (index % 64);
-    }
-    static void unmark(SettingsBitmap & bitmap, size_t index)
-    {
-        bitmap[index / 64] &= ~(1ULL << (index % 64));
-    }
-    static bool isMarked(const SettingsBitmap & bitmap, std::string_view name)
-    {
-        const size_t index = settingIndex(name);
-        return index != npos && (bitmap[index / 64] & (1ULL << (index % 64))) != 0;
-    }
 };
 
 static void validateTableDisk(const DiskPtr & disk)
@@ -3114,8 +3062,7 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
 
             if (get(final_name) != previous_value)
             {
-                set(final_name, previous_value);
-                impl->markChangedByCompatibility(final_name);
+                impl->setWithOrigin<SettingOrigin::Compatibility>(final_name, previous_value);
             }
         }
     }
@@ -3177,8 +3124,7 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     {
         for (const String & key : config_keys)
         {
-            impl->set(key, config.getString(config_elem + "." + key));
-            impl->markChangedInConfig(key);
+            impl->setWithOrigin<SettingOrigin::Config>(key, config.getString(config_elem + "." + key));
         }
     }
     catch (Exception & e)
@@ -3277,15 +3223,6 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
     return MergeTreeSettingsImpl::stringToValueUtil(name, str);
 }
 
-bool MergeTreeSettings::isChangedByCompatibility(std::string_view name) const
-{
-    return impl->isChangedByCompatibility(name);
-}
-
-bool MergeTreeSettings::isChangedInConfig(std::string_view name) const
-{
-    return impl->isChangedInConfig(name);
-}
 
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {

@@ -50,6 +50,8 @@ void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOri
 /// `Other` where it does not. For an engine whose loader assigns every setting - from the session, as
 /// `PostgreSQLSettings::loadFromQueryContext` does, or by rebuilding the struct - which marks them all as
 /// changed even where the value is the default, so the change alone says nothing about where it is from.
+/// Only settings that enumeration left at `Default` or `Other`: a source the settings object recorded is
+/// known whatever the value.
 void setOriginByValue(SettingDescriptions & settings);
 
 /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as

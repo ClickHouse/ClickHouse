@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -55,7 +56,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)   \
 
 DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RABBITMQ_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
+struct RabbitMQSettingsImpl : public SettingsWithRecordedOrigin<RabbitMQSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
 
 RabbitMQSettings::RabbitMQSettings() : impl(std::make_unique<RabbitMQSettingsImpl>())
 {
@@ -100,8 +104,15 @@ void RabbitMQSettings::loadFromNamedCollection(const MutableNamedCollectionPtr &
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        if (named_collection->has(setting_name))
-            impl->set(setting_name, named_collection->get<String>(setting_name));
+        if (!named_collection->has(setting_name))
+            continue;
+
+        /// A key the engine arguments overrode holds their value, not the collection's.
+        const auto value = named_collection->get<String>(setting_name);
+        if (named_collection->isQueryOverridden(setting_name))
+            impl->set(setting_name, value);
+        else
+            impl->setWithOrigin<SettingOrigin::NamedCollection>(setting_name, value);
     }
 }
 

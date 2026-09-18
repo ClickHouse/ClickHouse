@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
@@ -38,7 +39,10 @@ namespace ErrorCodes
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
+struct DistributedSettingsImpl : public SettingsWithRecordedOrigin<DistributedSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
 
 DistributedSettings::DistributedSettings() : impl(std::make_unique<DistributedSettingsImpl>())
 {
@@ -66,7 +70,7 @@ void DistributedSettings::loadFromConfig(const String & config_elem, const Poco:
     try
     {
         for (const String & key : config_keys)
-            impl->set(key, config.getString(config_elem + "." + key));
+            impl->setWithOrigin<SettingOrigin::Config>(key, config.getString(config_elem + "." + key));
     }
     catch (Exception & e)
     {

@@ -72,6 +72,9 @@ struct KafkaSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
+    /// Unlike an assignment through `operator[]`, this forgets which source supplied the setting.
+    void set(std::string_view name, const Field & value);
+
     SettingsChanges getFormatSettings() const;
 
     void sanityCheck(ContextPtr global_context) const;

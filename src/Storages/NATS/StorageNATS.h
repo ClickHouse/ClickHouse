@@ -36,8 +36,7 @@ public:
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode,
         bool authentication_determined_by_table_,
-        bool fresh_definition_,
-        NameSet settings_from_named_collection_);
+        bool fresh_definition_);
 
     ~StorageNATS() override;
 
@@ -88,8 +87,6 @@ private:
 
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
-    /// Which settings the named collection supplied, recorded when the table was built.
-    NameSet settings_from_named_collection;
     std::vector<String> subjects;
 
     const String format_name;

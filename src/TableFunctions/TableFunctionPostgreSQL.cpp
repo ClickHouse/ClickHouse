@@ -58,7 +58,6 @@ private:
     /// Kept so that the storage this function builds can report the settings it works with, as a table
     /// created by the engine does. `PostgreSQLSettings` has no assignment operator - hence the optional.
     std::optional<PostgreSQLSettings> storage_settings;
-    NameSet settings_from_named_collection;
     std::optional<StoragePostgreSQL::Configuration> configuration;
 };
 
@@ -80,7 +79,6 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         String{},
         context,
         *storage_settings,
-        settings_from_named_collection,
         configuration->schema,
         configuration->on_conflict);
 
@@ -123,8 +121,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         }
     }
 
-    configuration.emplace(
-        StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings, nullptr, &settings_from_named_collection));
+    configuration.emplace(StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
     /// stored in a named collection.

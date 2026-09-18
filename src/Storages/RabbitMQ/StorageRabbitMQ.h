@@ -30,8 +30,7 @@ public:
             const ColumnsDescription & columns_,
             const String & comment,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            LoadingStrictnessLevel mode,
-            NameSet settings_from_named_collection_);
+            LoadingStrictnessLevel mode);
 
     ~StorageRabbitMQ() override;
 
@@ -97,8 +96,6 @@ public:
 private:
     ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
-    /// Which settings the named collection supplied, recorded when the table was built.
-    NameSet settings_from_named_collection;
 
     const String exchange_name;
     const String format_name;

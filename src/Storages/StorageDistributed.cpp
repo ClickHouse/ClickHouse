@@ -2863,15 +2863,10 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
 SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_context) const
 {
+    /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
+    /// applied over the compiled defaults, which the table's copy records - and then applies its own
+    /// `SETTINGS` clause.
     auto settings = distributed_settings->enumerateSettings();
-
-    /// A `Distributed` table starts from the server-effective settings - the `distributed` config
-    /// section applied over the compiled defaults - and then applies its own `SETTINGS` clause, so
-    /// anything the config changed and the definition does not restate came from the config.
-    NameSet changed_by_config;
-    for (const auto & configured : query_context->getDistributedSettings().enumerateSettings())
-        if (configured.origin != SettingOrigin::Default)
-            changed_by_config.insert(configured.name);
 
     /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the
     /// ones the definition does not state. Copying a field of the same type copies its changed bit as well,
@@ -2880,10 +2875,6 @@ SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_contex
     for (auto & setting : settings)
         if (setting.origin == SettingOrigin::Default && setting.value != setting.default_value)
             setting.origin = SettingOrigin::Other;
-
-    for (auto & setting : settings)
-        if (setting.origin == SettingOrigin::Other && changed_by_config.contains(setting.name))
-            setting.origin = SettingOrigin::Config;
 
     return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 }

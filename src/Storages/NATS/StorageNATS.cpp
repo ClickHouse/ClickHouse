@@ -110,12 +110,10 @@ StorageNATS::StorageNATS(
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode,
     bool authentication_determined_by_table_,
-    bool fresh_definition_,
-    NameSet settings_from_named_collection_)
+    bool fresh_definition_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
-    , settings_from_named_collection(std::move(settings_from_named_collection_))
     , subjects(parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_subjects]), ','))
     , format_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_format]))
     , schema_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_schema]))
@@ -1210,10 +1208,12 @@ bool resolveCredentialSource(
                 ErrorCodes::BAD_ARGUMENTS, "The credentials of the named collection cannot be dropped by an empty `nats_credentials`");
     }
 
+    /// Through `set`, so that the dropped setting is no longer reported as the named collection's: the
+    /// collection supplied it, but it no longer explains anything the table holds.
     if (credential_file_from_query && credentials_from_collection)
-        nats_settings[NATSSetting::nats_credentials] = String{};
+        nats_settings.set("nats_credentials", String{});
     else if (credentials_from_query && credential_file_from_collection)
-        nats_settings[NATSSetting::nats_credential_file] = String{};
+        nats_settings.set("nats_credential_file", String{});
 
     /// Whatever path is left is the one the collection defines, and it is accepted only when the
     /// collection itself comes from the server configuration file.
@@ -1248,12 +1248,10 @@ void registerStorageNATS(StorageFactory & factory)
         bool client_key_file_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
-        NameSet settings_from_named_collection;
         auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
         if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);
-            settings_from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
 
             credential_file_assigned_by_query = named_collection->isQueryOverridden("nats_credential_file");
             credentials_assigned_by_query = named_collection->isQueryOverridden("nats_credentials");
@@ -1339,13 +1337,6 @@ void registerStorageNATS(StorageFactory & factory)
             (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
                 && (!named_collection || collection_defined_in_config));
 
-        /// The resolution above drops whichever of the two credential settings the query did not choose, so a
-        /// collection that supplied the dropped one no longer explains anything the table holds.
-        if ((*nats_settings)[NATSSetting::nats_credentials].value.empty())
-            settings_from_named_collection.erase("nats_credentials");
-        if ((*nats_settings)[NATSSetting::nats_credential_file].value.empty())
-            settings_from_named_collection.erase("nats_credential_file");
-
         resolveCertificateSource(
             *nats_settings,
             collection_defined_in_config,
@@ -1365,8 +1356,7 @@ void registerStorageNATS(StorageFactory & factory)
             std::move(nats_settings),
             args.mode,
             authentication_determined_by_table,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
-            std::move(settings_from_named_collection));
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     };
 
     factory.registerStorage(
@@ -1704,10 +1694,8 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 
 SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
 {
-    /// See `SettingOrigin::NamedCollection`.
-    auto settings = nats_settings->enumerateSettings();
-    setOrigin(settings, settings_from_named_collection, SettingOrigin::NamedCollection);
-    settings = withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
+    /// A named collection's settings are recorded by the settings object; the definition wins over them.
+    auto settings = withOriginFromDefinition(nats_settings->enumerateSettings(), getStorageID(), query_context);
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no
     /// authentication of its own, takes it from the `nats` server config section.

@@ -72,7 +72,6 @@ private:
 
     mutable std::optional<mysqlxx::PoolWithFailover> pool;
     std::optional<StorageMySQL::Configuration> configuration;
-    NameSet settings_from_named_collection;
 
     /// The effective settings for this `mysql(...)` call, with `mysql_datatypes_support_level` set to
     /// the query-context value overridden by a function-local `SETTINGS` clause or named collection.
@@ -112,7 +111,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
         }
     }
 
-    configuration = StorageMySQL::getConfiguration(args, context, mysql_settings, nullptr, &settings_from_named_collection);
+    configuration = StorageMySQL::getConfiguration(args, context, mysql_settings);
     effective_settings.emplace(mysql_settings);
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
@@ -162,8 +161,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         ConstraintsDescription{},
         String{},
         context,
-        mysql_settings,
-        settings_from_named_collection);
+        mysql_settings);
 
     pool.reset();
 

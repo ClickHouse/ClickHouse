@@ -14409,22 +14409,10 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
 
 SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
 {
+    /// A `MergeTree` table starts from the server's settings, built by applying the `compatibility` setting and
+    /// then the `<merge_tree>` config section; the table's copy records which of the two assigned each setting.
     const auto merge_tree_settings = getSettings();
     auto settings = merge_tree_settings->enumerateSettings();
-
-    /// A `MergeTree` table starts from the server's settings, which are built by applying the `compatibility`
-    /// setting and then the `<merge_tree>` config section; the table's copy remembers which of the two assigned
-    /// each setting, since afterwards neither the changed bit nor the value can say.
-    for (auto & setting : settings)
-    {
-        if (setting.origin != SettingOrigin::Other)
-            continue;
-
-        if (merge_tree_settings->isChangedInConfig(setting.name))
-            setting.origin = SettingOrigin::Config;
-        else if (merge_tree_settings->isChangedByCompatibility(setting.name))
-            setting.origin = SettingOrigin::Compatibility;
-    }
 
     /// The bounds a profile puts on these settings, reported exactly as
     /// `system.merge_tree_settings` reports them.

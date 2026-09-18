@@ -89,8 +89,7 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_,
-        NameSet settings_from_named_collection_);
+        const String & collection_name_);
 
     ~StorageKafka2() override;
 
@@ -202,9 +201,6 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
     /// If named_collection is specified.
     String collection_name;
-    /// Which settings that collection supplied, recorded at construction: the engine arguments may override
-    /// a key of it, and it may be altered afterwards, so neither the collection nor the value can say later.
-    NameSet settings_from_named_collection;
 
     void scheduleStreamingTasksImpl() override;
 

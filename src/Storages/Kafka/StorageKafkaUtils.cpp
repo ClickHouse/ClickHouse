@@ -115,12 +115,10 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        NameSet settings_from_named_collection;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
-            settings_from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
         }
 
         if (has_settings)
@@ -289,8 +287,7 @@ void registerStorageKafka(StorageFactory & factory)
                     "(requires 'kafka_keeper_path' and 'kafka_replica_name' to be set)");
 
             return std::make_shared<StorageKafka>(
-                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name,
-                settings_from_named_collection);
+                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
@@ -357,8 +354,7 @@ void registerStorageKafka(StorageFactory & factory)
         (*kafka_settings)[KafkaSetting::kafka_replica_name].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_replica_name].value, info);
 
         return std::make_shared<StorageKafka2>(
-            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name,
-                settings_from_named_collection);
+            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage(
@@ -1189,18 +1185,14 @@ namespace DB::StorageKafkaUtils
 template <typename KafkaStorage>
 SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context)
 {
+    /// Three things set a `Kafka` table's settings, in this order: a named collection given in the engine
+    /// arguments, which the settings object records; the table's own `SETTINGS` clause; and the storage's
+    /// constructor, which pins a few format settings. Anything left as `Other` was set by the engine itself.
+    /// Saying so is the point of that value - guessing `named_collection` for it would be wrong, and there is
+    /// no source to name.
     auto settings = storage.kafka_settings->enumerateSettings();
 
-    /// The settings struct records only that a value differs from its default, not what changed it,
-    /// and for a `Kafka` table three things can have: a named collection given in the engine
-    /// arguments, the table's own `SETTINGS` clause, and the storage's constructor, which pins a
-    /// few format settings. They are applied in that order, so the later source wins.
-    ///
-    /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
-    /// guessing `named_collection` for it would be wrong, and there is no source to name.
-    setOrigin(settings, storage.settings_from_named_collection, SettingOrigin::NamedCollection);
-
-    /// The `SETTINGS` clause is applied last and so wins over the collection.
+    /// The `SETTINGS` clause is applied after the collection and so wins over it.
     settings = withOriginFromDefinition(std::move(settings), storage.getStorageID(), query_context);
 
     /// What the table works with: the constructor expands macros in these, and generates a client id when none is

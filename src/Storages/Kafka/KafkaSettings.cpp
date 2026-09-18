@@ -3,6 +3,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -73,7 +74,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KAFKA_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
+struct KafkaSettingsImpl : public SettingsWithRecordedOrigin<KafkaSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
 
 KafkaSettings::KafkaSettings() : impl(std::make_unique<KafkaSettingsImpl>())
 {
@@ -117,9 +121,21 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        if (named_collection->has(setting_name))
-            impl->set(setting_name, named_collection->get<String>(setting_name));
+        if (!named_collection->has(setting_name))
+            continue;
+
+        /// A key the engine arguments overrode holds their value, not the collection's.
+        const auto value = named_collection->get<String>(setting_name);
+        if (named_collection->isQueryOverridden(setting_name))
+            impl->set(setting_name, value);
+        else
+            impl->setWithOrigin<SettingOrigin::NamedCollection>(setting_name, value);
     }
+}
+
+void KafkaSettings::set(std::string_view name, const Field & value)
+{
+    impl->set(name, value);
 }
 
 void KafkaSettings::sanityCheck(ContextPtr global_context) const

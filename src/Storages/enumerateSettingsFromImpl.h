@@ -9,9 +9,10 @@ namespace DB
 /// Reads every setting of a `BaseSettings` instance into the common form both settings tables use.
 ///
 /// The instance decides what is reported: a default-constructed one describes an engine, the one a
-/// storage holds describes a table. `origin` is only as precise as the instance allows - a setting
-/// that differs from its default is `Other` here, because this cannot tell a config section from a
-/// named collection. A storage refines it, since only the storage knows where its values came from.
+/// storage holds describes a table. `origin` is only as precise as the instance allows: the source an
+/// instance built on `SettingsWithRecordedOrigin` recorded, and otherwise `Other` for a changed setting,
+/// because a plain instance cannot tell a config section from a named collection. A storage refines what
+/// is left, since only the storage knows where the rest of its values came from.
 template <typename SettingsImplType>
 SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
 {
@@ -36,6 +37,9 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
         if (described.value != described.default_value)
             described.masked_value = maskEngineSettingValue(described.name, setting.getValue(), described.value);
         described.origin = setting.isValueChanged() ? SettingOrigin::Other : SettingOrigin::Default;
+        if constexpr (requires { impl.recordedOrigin(described.name); })
+            if (const auto recorded = impl.recordedOrigin(described.name))
+                described.origin = *recorded;
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));

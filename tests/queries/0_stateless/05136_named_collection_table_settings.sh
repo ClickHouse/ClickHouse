@@ -2,9 +2,8 @@
 # Tags: no-fasttest
 # Tag justification: needs the Kafka engine, which is an optional build.
 #
-# A named collection is a source of its own in `system.table_settings`, and `Kafka` is the only
-# engine that keeps the name of the collection it was built from - the others cannot say where such
-# a setting came from and report `other`.
+# A named collection is a source of its own in `system.table_settings`: the settings object records
+# which of its values the collection supplied, so the table can say so for exactly those settings.
 #
 # A shell test rather than a `.sql` one because named collections are server-wide: the name has to
 # carry this test's database so two parallel runs do not collide on it, and `CREATE NAMED COLLECTION`

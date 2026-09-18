@@ -2,7 +2,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
-#include <Core/Names.h>
 #include <Interpreters/StorageID.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -22,14 +21,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-/// Which of the collection's keys the table actually took its values from: everything the collection
-/// holds, less what the engine arguments overrode (`ENGINE = MySQL(collection, key = value)`), which the
-/// collection records as the overrides are applied. A storage keeps this so that `system.table_settings`
-/// can say `named_collection` for exactly those settings and nothing else - the answer is only knowable
-/// while the table is created, and looking the collection up later would answer for whatever it holds
-/// then, not for what this table was built with.
-NameSet settingsSuppliedByNamedCollection(const NamedCollection & collection);
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.

@@ -39,7 +39,6 @@ public:
         const String & comment,
         ContextPtr context_,
         PostgreSQLSettings settings_,
-        NameSet settings_from_named_collection_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
@@ -85,12 +84,8 @@ public:
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
-    /// `from_named_collection`, when given, receives the settings the named collection supplied - empty when
-    /// the arguments were positional, or when every key of the collection was overridden by them. A table keeps
-    /// it so that it can say which of its settings came from there - see `getTableSettings`.
     static Configuration getConfiguration(
-        ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
-        const StorageID * table_id = nullptr, NameSet * from_named_collection = nullptr);
+        ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
 
@@ -122,9 +117,6 @@ private:
     /// The creator resolves these - the session's values overlaid with the `SETTINGS` clause - into the
     /// connection pool above. Kept so the table can say what it was built with.
     PostgreSQLSettings settings;
-    /// Which settings the named collection supplied, recorded when the table was built: neither the value nor
-    /// the collection as it stands later can tell one of these from a value the session supplied.
-    NameSet settings_from_named_collection;
 
     LoggerPtr log;
 };

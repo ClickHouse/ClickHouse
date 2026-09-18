@@ -174,8 +174,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
-    const String & collection_name_,
-    NameSet settings_from_named_collection_)
+    const String & collection_name_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
@@ -196,15 +195,15 @@ StorageKafka::StorageKafka(
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
-    , settings_from_named_collection(std::move(settings_from_named_collection_))
 {
     kafka_settings->sanityCheck(getContext());
 
     if (auto mode = getStreamingHandleErrorMode();
         mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
+        /// Through `set`: a value pinned here is the engine's, whichever source supplied the one it replaces.
+        kafka_settings->set("input_format_allow_errors_num", 0);
+        kafka_settings->set("input_format_allow_errors_ratio", 0);
     }
 
     StorageInMemoryMetadata storage_metadata;

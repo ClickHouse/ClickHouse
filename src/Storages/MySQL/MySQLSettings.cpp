@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -34,7 +35,10 @@ namespace ErrorCodes
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32, geometry) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', 'date2String', or 'geometry'. Must match the default of the 'mysql_datatypes_support_level' server setting, so that creating a MySQL database or table engine with the default settings does not persist a redundant SETTINGS clause.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
+struct MySQLSettingsImpl : public SettingsWithRecordedOrigin<MySQLSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
 
 MySQLSettings::MySQLSettings() : impl(std::make_unique<MySQLSettingsImpl>())
 {
@@ -128,8 +132,15 @@ void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collec
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        if (named_collection.has(setting_name))
-            impl->set(setting_name, named_collection.get<String>(setting_name));
+        if (!named_collection.has(setting_name))
+            continue;
+
+        /// A key the engine arguments overrode holds their value, not the collection's.
+        const auto value = named_collection.get<String>(setting_name);
+        if (named_collection.isQueryOverridden(setting_name))
+            impl->set(setting_name, value);
+        else
+            impl->setWithOrigin<SettingOrigin::NamedCollection>(setting_name, value);
     }
 }
 

@@ -101,7 +101,6 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & comment,
     ContextPtr context_,
     PostgreSQLSettings settings_,
-    NameSet settings_from_named_collection_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -110,7 +109,6 @@ StoragePostgreSQL::StoragePostgreSQL(
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
     , settings(std::move(settings_))
-    , settings_from_named_collection(std::move(settings_from_named_collection_))
     , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -135,13 +133,11 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
     /// where that is the compiled-in default and `other` where it is not - the rule `Join` and `Distributed`
     /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
     /// nothing here and the source has to come from the value.
+    ///
+    /// Except for what a named collection supplied, which the settings object records: neither the session's
+    /// nor a default, and the value cannot reveal it, since a collection may well state the default.
     SettingDescriptions descriptions = settings.enumerateSettings();
     setOriginByValue(descriptions);
-
-    /// Except for what a named collection supplied, which is neither the session's nor a default - and which
-    /// the value cannot reveal, since a collection may well state the default.
-    setOrigin(descriptions, settings_from_named_collection, SettingOrigin::NamedCollection);
-
     return withOriginFromDefinition(std::move(descriptions), getStorageID(), query_context);
 }
 
@@ -828,15 +824,11 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
-    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, NameSet * from_named_collection)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        if (from_named_collection)
-            *from_named_collection = settingsSuppliedByNamedCollection(*named_collection);
-
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
     else
@@ -907,9 +899,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        NameSet settings_from_named_collection;
-        auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, &settings_from_named_collection);
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
@@ -934,7 +924,6 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.comment,
             args.getContext(),
             std::move(postgresql_settings),
-            std::move(settings_from_named_collection),
             configuration.schema,
             configuration.on_conflict);
     },

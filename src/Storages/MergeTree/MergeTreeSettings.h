@@ -108,12 +108,6 @@ struct MergeTreeSettings
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
-    /// Whether the `compatibility` setting or the `<merge_tree>` config section is where this setting's value
-    /// comes from - what `system.table_settings` reports as its source. Both answer for the last assignment
-    /// only: a setting the table's own `SETTINGS` clause states belongs to the clause and to neither of these.
-    bool isChangedByCompatibility(std::string_view name) const;
-    bool isChangedInConfig(std::string_view name) const;
-
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
