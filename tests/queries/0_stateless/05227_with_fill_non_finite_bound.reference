@@ -1,12 +1,20 @@
-a finite bound still fills
+a TO bound towards the fill direction generated rows without end
+a TO bound against the fill direction filled nothing
+a TO bound with no STEP is checked as well
+a STALENESS value reaches the same constraint as TO
+a FROM bound left itself in the result and lost the rest of the fill
+a bound is checked after it is evaluated, not only as a literal
+STEP keeps its existing behaviour
+3
+3
+finite bounds still fill
 10
 0
 1
 2
 3
-a TO bound with no STEP is checked as well
-FROM and STEP keep their existing behaviour, which the fill loop guards at run time
-3
-3
-a finite staleness still fills
+-1
+0
+1
+2
 4
