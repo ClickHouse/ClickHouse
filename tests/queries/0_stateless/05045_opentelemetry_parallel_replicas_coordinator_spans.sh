@@ -17,10 +17,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   - replica-side `ParallelReplicasAnnouncement`/`ParallelReplicasReadRequest` spans with
 #     `clickhouse.replica_num` and `clickhouse.replicas_count`.
 # Only presence and lower bounds are asserted: how many replicas participate, announce and
-# request work before the reading completes depends on scheduling (the initiator may finish
-# and tear down the connections while announcements of slower replicas are still in flight).
-# The `parallel_replicas_wait_for_unused_replicas` failpoint disables the early cancellation
-# of replicas that did not get work, so that the remote replicas reliably at least start.
+# request work before the reading completes depends on scheduling (the coordinator cancels the
+# replicas that did not get work once all ranges are assigned, possibly before they even sent
+# their query).
+# `parallel_replicas_local_plan=0` makes every replica remote, the local one included: the
+# initiator reads nothing itself, so at least one replica must receive the query before any
+# range can be assigned, and that replica produces the spans asserted below. With the local
+# plan the local replica can take all the marks before a remote replica connects, and the only
+# way to keep the remote replicas alive is the `parallel_replicas_wait_for_unused_replicas`
+# failpoint, which is `ONCE` and server-global: any concurrently running parallel replicas
+# query consumes it, and the test becomes flaky.
 
 CLUSTER="test_cluster_one_shard_three_replicas_localhost"
 TABLE="t_pr_coordinator_spans"
@@ -61,13 +67,6 @@ ${CLICKHOUSE_CLIENT} -q "
 for async_socket in 1 0; do
     echo "=== async_socket_for_remote=$async_socket ==="
 
-    # The failpoint is registered as `ONCE`: a single query consumes it, so it is enabled before
-    # each query. Without it the synchronous path never even sends the query to the remote
-    # replicas: the local replica takes all the marks before the synchronous `RemoteSource` is
-    # scheduled, and the coordinator cancels the unused replicas before `sendQuery`. Deliberately
-    # not disabled at the end: other tests enable it too, and disabling would race against them.
-    ${CLICKHOUSE_CLIENT} -q "system enable failpoint parallel_replicas_wait_for_unused_replicas"
-
     trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
     query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-$async_socket"
 
@@ -80,6 +79,7 @@ for async_socket in 1 0; do
         --max_parallel_replicas=3 \
         --cluster_for_parallel_replicas="$CLUSTER" \
         --parallel_replicas_for_non_replicated_merge_tree=1 \
+        --parallel_replicas_local_plan=0 \
         --async_socket_for_remote="$async_socket" \
         --query_id "$query_id" \
         --query "select sum(k) from $TABLE format Null"
