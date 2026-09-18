@@ -44,6 +44,7 @@ doc_type: 'guide'
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 기본적으로 QUOTA는 사용량을 제한하지 않으면서 매시간 리소스 사용량을 추적합니다.
@@ -153,6 +154,7 @@ doc_type: 'guide'
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 정규화된 쿼리 해시를 기준으로 쿼터를 설정할 수도 있으며, 그러면 서로 다른 각 쿼리 패턴에 독립적인 쿼터 버킷이 할당됩니다. XML 구성에서는 이를 `<keyed_by_normalized_query_hash />`로 작성합니다:
