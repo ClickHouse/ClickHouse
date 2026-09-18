@@ -48,6 +48,22 @@ report() {
     echo "readable rows: $(${CLICKHOUSE_LOCAL} --query "SELECT count() FROM deltaLakeLocal('${path}')")"
 }
 
+bytes_report() {
+    local path="$1"
+    local rows
+    rows=$(rows_per_file "${path}")
+    ${CLICKHOUSE_LOCAL} --query "
+        WITH arrayMap(x -> toUInt64(x), splitByChar(',', '${rows}')) AS rows
+        SELECT
+            'versions: ' || toString($(find "${path}/_delta_log" -name '*.json' | wc -l | tr -d ' ') - 1),
+            'more than one data file: ' || toString(length(rows) > 1),
+            'no file exceeds the limit by more than one chunk: ' || toString(arrayMax(rows) <= 30000),
+            'all rows committed: ' || toString(arraySum(rows) = 200000)
+        FORMAT TSVRaw
+    " | tr '\t' '\n'
+    echo "readable rows: $(${CLICKHOUSE_LOCAL} --query "SELECT count() FROM deltaLakeLocal('${path}')")"
+}
+
 # 10000-row chunks reach the sink.
 CHUNKS="max_block_size = 10000, min_insert_block_size_rows = 10000, min_insert_block_size_bytes = 0, max_threads = 1, max_insert_threads = 1"
 INSERT_200K="SELECT number AS id, repeat('x', 100) AS s, toInt32(number % 2) AS p FROM numbers(200000)"
@@ -76,17 +92,16 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/bytes') ${INSERT_200K}
     SETTINGS delta_lake_insert_max_bytes_in_data_file = 2000000, ${CHUNKS};
 "
-ROWS=$(rows_per_file "${ROOT}/bytes")
-${CLICKHOUSE_LOCAL} --query "
-    WITH arrayMap(x -> toUInt64(x), splitByChar(',', '${ROWS}')) AS rows
-    SELECT
-        'versions: ' || toString($(find "${ROOT}/bytes/_delta_log" -name '*.json' | wc -l | tr -d ' ') - 1),
-        'more than one data file: ' || toString(length(rows) > 1),
-        'no file exceeds the limit by more than one chunk: ' || toString(arrayMax(rows) <= 30000),
-        'all rows committed: ' || toString(arraySum(rows) = 200000)
-    FORMAT TSVRaw
-" | tr '\t' '\n'
-echo "readable rows: $(${CLICKHOUSE_LOCAL} --query "SELECT count() FROM deltaLakeLocal('${ROOT}/bytes')")"
+bytes_report "${ROOT}/bytes"
+
+echo "-- bytes limit on a table partitioned by p: the rotation happens per partition too"
+bootstrap "${ROOT}/bytes_part" '["p"]'
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/bytes_part') ${INSERT_200K}
+    SETTINGS delta_lake_insert_max_bytes_in_data_file = 2000000, ${CHUNKS};
+"
+bytes_report "${ROOT}/bytes_part"
+echo "partition directories: $(find "${ROOT}/bytes_part" -maxdepth 1 -type d -name 'p=*' | wc -l | tr -d ' ')"
 
 echo "-- default limits (1M rows, 1 GiB): the same INSERT stays in a single file"
 bootstrap "${ROOT}/defaults" '[]'
