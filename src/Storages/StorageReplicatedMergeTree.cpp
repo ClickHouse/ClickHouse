@@ -179,6 +179,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
@@ -1481,7 +1482,7 @@ void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeepe
         auto code = zookeeper->tryRemove(zero_copy_locks_root);
         if (code == Coordination::Error::ZNOTEMPTY)
         {
-            LOG_WARNING(logger, "Zero copy locks are not empty for {}. There are some lost locks inside."
+            LOG_WARNING(logger, "Zero copy locks are not empty for {}. There are some lost locks inside. "
                               "Removing them all.", zero_copy_locks_root);
             zookeeper->tryRemoveRecursive(zero_copy_locks_root);
         }
@@ -1776,7 +1777,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     {
         LOG_ERROR(
             logger,
-            "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage,"
+            "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage, "
             "but someone is removing it right now.",
             zookeeper_path);
     }
@@ -4461,7 +4462,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if (!canEnqueueBackgroundTask())
         {
             ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
-            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
+            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate. "
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
@@ -6277,7 +6278,11 @@ void StorageReplicatedMergeTree::read(
         return;
     }
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
+    /// With `parallel_replicas_plan_based` do not build the query-based reading step either: the
+    /// plan-based implementation is meant to replace it, so a query the planner never saw reads
+    /// locally instead of falling back to the implementation being replaced.
+    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer]
+        && !settings[Setting::parallel_replicas_plan_based])
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
         return;
@@ -6764,35 +6769,49 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata", entry.metadata_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(entry.alter_version), -1));
 
-    auto table_id = getStorageID();
-    auto alter_context = getContext();
-
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    bool is_in_replicated_database = database->getEngineName() == "Replicated";
-
-    if (is_in_replicated_database)
     {
-        auto mutable_alter_context = Context::createCopy(getContext());
-        const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
-        mutable_alter_context->makeQueryContext();
-        auto alter_txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, replicated->getZooKeeperPath(),
-                                                                       /* is_initial_query */ false, /* task_zk_path */ "");
-        mutable_alter_context->initZooKeeperMetadataTransaction(alter_txn);
-        alter_context = mutable_alter_context;
-
-        for (auto & op : requests)
-            alter_txn->addOp(std::move(op));
-        requests.clear();
-        /// Requests will be executed by database in setTableStructure
-    }
-    else
-    {
-        zookeeper->multi(requests, /* check_session_valid */ true);
-    }
-
-    {
+        /// Acquire the DDLGuard and locks before writing to ZooKeeper so the per-replica metadata nodes
+        /// and setTableStructure apply together. On contention, shutdown or timeout return without
+        /// touching ZooKeeper: the entry stays in the queue and is retried without recording an exception.
+        auto background_ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
+            shared_from_this(),
+            (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations],
+            [this] { return !shutdown_called && !partial_shutdown_called; });
+        if (!background_ddl_guard)
+        {
+            LOG_INFO(log, "Cannot acquire the DDL guard to apply metadata alter version {}, will retry", entry.alter_version);
+            return false;
+        }
         auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+        /// Refresh table_id: a rename could have slipped in while we were waiting for the guard.
+        auto table_id = getStorageID();
+        auto alter_context = getContext();
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        bool is_in_replicated_database = database->getEngineName() == "Replicated";
+
+        if (is_in_replicated_database)
+        {
+            auto mutable_alter_context = Context::createCopy(getContext());
+            const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
+            mutable_alter_context->makeQueryContext();
+            auto alter_txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, replicated->getZooKeeperPath(),
+                                                                           /* is_initial_query */ false, /* task_zk_path */ "");
+            mutable_alter_context->initZooKeeperMetadataTransaction(alter_txn);
+            alter_context = mutable_alter_context;
+
+            for (auto & op : requests)
+                alter_txn->addOp(std::move(op));
+            requests.clear();
+            /// Requests will be executed by database in setTableStructure
+        }
+        else
+        {
+            zookeeper->multi(requests, /* check_session_valid */ true);
+        }
+
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
@@ -6961,7 +6980,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
 
 void StorageReplicatedMergeTree::alter(
-    const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder)
+    const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::alter");
     assertNotReadonly();
@@ -6998,6 +7017,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
+        auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
@@ -7007,21 +7027,41 @@ void StorageReplicatedMergeTree::alter(
             setInMemoryMetadata(future_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            if (statistics_changed)
+                setInMemoryMetadata(*old_metadata);
+            throw;
+        }
         return;
     }
 
     if (commands.isCommentAlter())
     {
+        auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            setInMemoryMetadata(*old_metadata);
+            throw;
+        }
         return;
     }
 
@@ -7032,6 +7072,7 @@ void StorageReplicatedMergeTree::alter(
     if (commands.areNonReplicatedAlterCommands())
     {
         merge_strategy_picker.refreshState();
+        auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
@@ -7048,8 +7089,18 @@ void StorageReplicatedMergeTree::alter(
             setInMemoryMetadata(future_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            setInMemoryMetadata(*old_metadata);
+            throw;
+        }
         return;
     }
 
@@ -7182,7 +7233,19 @@ void StorageReplicatedMergeTree::alter(
                 setInMemoryMetadata(metadata_copy);
             }
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            try
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            }
+            catch (...)
+            {
+                /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+                if (settings_are_changed)
+                    changeSettings(current_metadata->settings_changes, table_lock_holder);
+                if (comment_is_changed)
+                    setInMemoryMetadata(*current_metadata);
+                throw;
+            }
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -7311,6 +7374,9 @@ void StorageReplicatedMergeTree::alter(
     }
 
     table_lock_holder.unlock();
+
+    /// ALTER is durable in ZK; further DDL serializes through ZK, so drop the local guard.
+    ddl_guard.reset();
 
     LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
 
@@ -7855,7 +7921,9 @@ void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const R
                             "most likely because the replica was shut down.", error_context, entry.znode_name);
         }
     }
-    else if (query_context->getSettingsRef()[Setting::alter_sync] == 2)
+    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
+    /// does not have; here it waits for all replicas, like value 2.
+    else if (query_context->getSettingsRef()[Setting::alter_sync] == 2 || query_context->getSettingsRef()[Setting::alter_sync] == 3)
     {
         waitForAllReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context);
     }
@@ -7927,10 +7995,16 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            String log_pointer = getZooKeeper()->getWatch(
-                fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
-                nullptr,
-                Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
+            String log_pointer;
+            /// The replica can be removed while we are waiting for it, and then it never processes
+            /// the entry. Report it as unfinished instead of failing with a Keeper error.
+            if (!getZooKeeper()->tryGetWatch(
+                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                    log_pointer,
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync}))
+                break;
+
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
             {
                 pulled_to_queue = true;
@@ -7961,7 +8035,9 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         /// If not found in the log, it is already in the queue.
         LOG_DEBUG(log, "Looking for log entry with id `{}` in the log", entry.log_entry_id);
 
-        String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer");
+        String log_pointer;
+        if (!getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", log_pointer))
+            return false;
 
         Strings log_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "log");
         UInt64 log_index = 0;
@@ -7998,10 +8074,13 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             {
                 Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
-                log_pointer = getZooKeeper()->getWatch(
-                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
-                    nullptr,
-                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
+                if (!getZooKeeper()->tryGetWatch(
+                        fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                        log_pointer,
+                        nullptr,
+                        Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync}))
+                    break;
+
                 if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 {
                     pulled_to_queue = true;
@@ -8029,7 +8108,11 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
       * Its number may not match the `log` node. Therefore, we search by comparing the content.
       */
 
-    Strings queue_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "replicas" / replica / "queue");
+    Strings queue_entries;
+    if (getZooKeeper()->tryGetChildren(fs::path(table_zookeeper_path) / "replicas" / replica / "queue", queue_entries)
+        != Coordination::Error::ZOK)
+        return false;
+
     String queue_entry_to_wait_for;
 
     for (const String & entry_name : queue_entries)
@@ -8699,7 +8782,9 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     /// we have to wait
     auto zookeeper = getZooKeeper();
     Strings replicas;
-    if (mutations_sync == 2) /// wait for all replicas
+    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
+    /// does not have; here it waits for all replicas, like value 2.
+    if (mutations_sync == 2 || mutations_sync == 3) /// wait for all replicas
     {
         replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
         /// This replica should be first, to ensure that the mutation will be loaded into memory
@@ -11581,7 +11666,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
         else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
                      new_part_info.getPartitionId(),
-                     table_metadata->getPartitionKey().sample_block))
+                     MergeTreePartition::adjustPartitionKey(table_metadata, getContext()).sample_block))
         {
             partition = MergeTreePartition(*parsed_partition);
         }

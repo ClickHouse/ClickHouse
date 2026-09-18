@@ -379,7 +379,7 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
-    size_t matched_right_rows_,
+    std::optional<size_t> matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -563,7 +563,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
+                rhs_columns.push_back(IColumn::mutate(column->cut(prev_offset, num_rhs_rows)));
 
             if (is_last)
                 columns.clear();

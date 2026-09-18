@@ -78,6 +78,18 @@ public:
         return storage ? storage->getDataPaths() : Strings{};
     }
 
+    ColumnSizeByName getColumnSizes() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getColumnSizes() : ColumnSizeByName{};
+    }
+
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{};
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
         auto storage = nestedIfResolved();

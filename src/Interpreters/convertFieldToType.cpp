@@ -398,8 +398,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
         {
-            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
-            return src;
+            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type,
+            /// but only a value that fits `UInt32` is representable: range-check it, or the column
+            /// insertion downstream truncates it modulo 2^32 and an exact `IN` constant matches an
+            /// unrelated row - `dt IN (toUInt64(4294967296))` matched the epoch row.
+            return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
