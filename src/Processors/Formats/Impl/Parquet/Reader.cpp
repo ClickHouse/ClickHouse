@@ -1033,14 +1033,15 @@ void Reader::initializePrefetches()
             /// it. If some smaller atom did register hashes, we still enable it for those - the
             /// unregistered over-cap hashes are handled conservatively in `BloomFilterLookup::findAnyHash`.
             /// We prepare the bloom filter even for a dictionary-filter-eligible column that also carries
-            /// one, as a fallback: the exact dictionary path can still decline at runtime when its decoded
-            /// page or value set does not fit the pruning memory budget (see `decodeDictionaryPage` and
-            /// `hashDictionaryValues`), and without this the row group would then be read in full even
-            /// though its bloom filter could have ruled it out - a regression from the pre-existing
-            /// bloom-only behavior. `applyBloomAndDictionaryFilters` still prefers the exact dictionary
-            /// filter and only falls back to the bloom filter for that case; the only extra cost here is
-            /// the small bloom-filter header read, since the filter blocks are prefetched lazily
-            /// (`likely_to_be_used=false`) and read only if the fallback is actually taken.
+            /// one, and check it first: it is the cheaper of the two - a 32-byte block per queried value
+            /// against a dictionary page of up to `dictionary_filter_limit_bytes` - and it has no false
+            /// negatives, so a row group it rules out needs no dictionary page read at all
+            /// (`ReadStage::BloomFilterBlocks`, `applyBloomFilters`). It is also the fallback for a row
+            /// group it does not rule out: the exact dictionary path can still decline at runtime when
+            /// its decoded page or value set does not fit the pruning memory budget (see
+            /// `decodeDictionaryPage` and `hashDictionaryValues`), and without this the row group would
+            /// then be read in full even though its bloom filter could have ruled it out - a regression
+            /// from the pre-existing bloom-only behavior.
             /// The bloom filter is built only from the chunk's non-null values, so on a chunk that may
             /// contain nulls read into a non-nullable output it cannot be used at all: with
             /// `input_format_null_as_default` disabled, pruning would suppress the
@@ -1409,7 +1410,7 @@ bool Reader::decodeDictionaryPage(
     /// used, and reserve it live so several row groups pruning in parallel cannot collectively overshoot
     /// the watermark. `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary
     /// page (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
-    /// still decompress to many times that. On the pruning path (`BloomFilterBlocksOrDictionary` stage)
+    /// still decompress to many times that. On the pruning path (`Dictionary` stage)
     /// `reservation` is a live handle on the shared stage budget - the reader's memory high watermark
     /// minus what the stage already holds (the decoded dictionaries and value sets other row groups are
     /// holding right now, plus this batch's not-yet-flushed pruning memory; see
@@ -1706,7 +1707,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     /// the pruning stage already holds - the decoded dictionaries charged in `ReadManager::runTask`,
     /// plus the value sets already reserved by other dictionary lookups, whether earlier in this same
     /// row-group filter evaluation or concurrently on another worker thread. Because the reservation is
-    /// held live in the shared `BloomFilterBlocksOrDictionary` stage counter (see
+    /// held live in the shared `Dictionary` stage counter (see
     /// `PruningMemoryReservation`), neither a predicate over several dictionary-filtered columns nor
     /// several row groups pruning in parallel can let each value set use the full budget and
     /// collectively overshoot the watermark. If the reservation would exceed the budget, skip the
@@ -1902,10 +1903,28 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
     return value_hashes->containsAny(hashes);
 }
 
+bool Reader::applyBloomFilters(RowGroup & row_group)
+{
+    KeyCondition::ColumnIndexToBloomFilter filter_map;
+    for (size_t i = 0; i < row_group.columns.size(); ++i)
+    {
+        ColumnChunk & column = row_group.columns[i];
+        /// Same condition as the `else if` bloom branch of `applyBloomAndDictionaryFilters`, including
+        /// the chunks whose blocks were not prefetched - `findAnyHash` reports those as possibly
+        /// present, which is what a bloom filter with no blocks to probe has to say.
+        if (column.use_bloom_filter)
+            filter_map.emplace(
+                primitive_columns[i].idx_in_output_block,
+                std::make_unique<BloomFilterLookup>(prefetcher, column));
+    }
+    return bloom_filter_condition->checkInHyperrectangle(
+        row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;
+}
+
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation)
 {
     /// A single budget shared by every dictionary lookup in this row-group filter evaluation, and -
-    /// because it charges the shared `BloomFilterBlocksOrDictionary` stage counter - by every row group
+    /// because it charges the shared `Dictionary` stage counter - by every row group
     /// pruning in parallel on other worker threads. Each lookup's value set stays alive (in its
     /// `DictionaryLookup`) until the evaluation finishes, so without shared accounting a predicate over
     /// several dictionary-filtered columns, or several concurrent row groups, would let each value set
@@ -1921,6 +1940,10 @@ bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryR
         /// fallback for when the dictionary path declines because its value set does not fit the pruning
         /// memory budget. `decodeDictionaryPage` failing earlier (in `ReadManager::runTask`) clears
         /// `use_dictionary_filter`, so that case is handled by the `else if` bloom branch below.
+        /// This runs only on the row groups `applyBloomFilters` did not already rule out, so preferring
+        /// the dictionary here costs nothing: such a row group is going to be read anyway - which needs
+        /// the dictionary page regardless - unless the dictionary rules it out exactly, which is
+        /// precisely a bloom filter false positive.
         if (column.use_dictionary_filter)
         {
             auto lookup = std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], reservation);

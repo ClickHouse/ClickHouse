@@ -374,7 +374,7 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
-        /// When the dictionary is decoded on the pruning path (`BloomFilterBlocksOrDictionary` stage),
+        /// When the dictionary is decoded on the pruning path (`Dictionary` stage),
         /// its decoded footprint is reserved live against the shared pruning-stage budget through this
         /// handle so it is visible to every row group pruning in parallel, not only after the batch
         /// flushes (see `PruningMemoryReservation`, `ReadManager::runTask` / `pruningMemoryReservation`,
@@ -575,7 +575,7 @@ struct Reader
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
     /// On the dictionary-filter pruning path, pass a bounded `reservation` (see
     /// `ReadManager::pruningMemoryReservation`): the decoded dictionary's full footprint is predicted
-    /// from the page header and reserved live against the shared `BloomFilterBlocksOrDictionary` stage
+    /// from the page header and reserved live against the shared `Dictionary` stage
     /// budget *before* anything is decoded, so a dictionary that would push the pruning memory past the
     /// reader's high watermark - across the several row groups pruning in parallel - is rejected before
     /// `Dictionary::decode` allocates anything and false is returned so the caller falls back to a full
@@ -594,9 +594,19 @@ struct Reader
     /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
-    /// Returns false if the row group was filtered out and should be skipped.
+    /// Returns false if the row group was filtered out and should be skipped, using only the bloom
+    /// filters whose blocks have been read (`BloomFilterBlocks` stage). Columns that have no bloom
+    /// filter, including the ones that will be checked against their dictionary page in the next
+    /// stage, are left out of the filter map and so treated as "may match"; a bloom filter has no
+    /// false negatives, so a `false` here is final and the dictionary pages need not be read at all.
+    bool applyBloomFilters(RowGroup & row_group);
+
+    /// Returns false if the row group was filtered out and should be skipped. Runs after
+    /// `applyBloomFilters` on the row groups it did not rule out, and re-evaluates the whole
+    /// condition, this time preferring the exact dictionary filter for every column that has a
+    /// decoded dictionary page.
     /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
-    /// still available for pruning, charged live to the shared `BloomFilterBlocksOrDictionary` stage
+    /// still available for pruning, charged live to the shared `Dictionary` stage
     /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
     /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
     /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
