@@ -778,18 +778,21 @@ void S3ObjectStorage::applyNewSettings(
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
+    /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
     auto apply_endpoint_settings = [&]
     {
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         {
-            modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+            if (options.allow_client_change)
+                modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
             modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
         }
     };
 
     auto apply_config_settings = [&]
     {
-        modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+        if (options.allow_client_change)
+            modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
         modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
     };
 
