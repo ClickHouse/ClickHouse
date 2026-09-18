@@ -29,6 +29,8 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
                         getPromQLText(query_piece, context), query_piece.type, ResultType::INSTANT_VECTOR);
     }
 
+    const auto & scalar_data_type = query_piece.value_data_type ? query_piece.value_data_type : context.scalar_data_type;
+
     switch (query_piece.store_method)
     {
         case StoreMethod::EMPTY:
@@ -40,7 +42,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             String structure = fmt::format("{} UInt64, {} Array(Nullable({}))",
                 ColumnNames::Group,
                 ColumnNames::Values,
-                context.scalar_data_type->getName());
+                scalar_data_type->getName());
 
             builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -65,7 +67,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             ASTPtr value = (query_piece.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(query_piece.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(query_piece.scalar_value, scalar_data_type)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             builder.select_list.push_back(makeASTFunction(

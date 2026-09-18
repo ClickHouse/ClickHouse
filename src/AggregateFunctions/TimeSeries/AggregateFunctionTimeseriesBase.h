@@ -73,7 +73,8 @@ public:
     using ValueType = typename Traits::ValueType;
 
     /// The result for one grid point: a number, or a `std::pair` of numbers stored as a tuple whose element names
-    /// the traits define in `getResultTupleElementNames`.
+    /// the traits define in `getResultTupleElementNames`. The `ts_of_*` functions and `timeSeriesTimestampToGrid`
+    /// return timestamps in seconds as `Float64` regardless of the value type.
     using ResultType = typename Traits::ResultType;
     using ResultWriter = AggregateFunctionTimeSeriesResultWriter<ResultType>;
 

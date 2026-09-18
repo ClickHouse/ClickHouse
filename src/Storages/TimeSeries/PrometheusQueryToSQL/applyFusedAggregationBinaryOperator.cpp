@@ -108,7 +108,11 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     }
 
     if (argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+        res.value_data_type = argument.value_data_type;
+        return res;
+    }
 
     argument = toVectorGrid(std::move(argument), context);
 

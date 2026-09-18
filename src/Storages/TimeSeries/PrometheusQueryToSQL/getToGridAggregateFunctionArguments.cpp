@@ -32,8 +32,10 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
         {
             /// values: arrayResize([], <count_of_time_steps>, <scalar_value>)
             /// where <scalar_value> is a literal or the `value` column of the single-row subquery.
+            const auto & scalar_data_type
+                = range_vector.value_data_type ? range_vector.value_data_type : context.scalar_data_type;
             ASTPtr value = (range_vector.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(range_vector.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(range_vector.scalar_value, scalar_data_type)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             values = makeASTFunction(

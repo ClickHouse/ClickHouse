@@ -95,6 +95,12 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"timestamp",
+             {
+                 "timeSeriesTimestampToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"max_over_time",
              {
                  "timeSeriesMaxToGrid",
@@ -206,7 +212,11 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
-        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = arguments[0].value_data_type;
+        return res;
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
@@ -216,7 +226,12 @@ SQLQueryPiece applyFunctionOverRange(
     auto argument = std::move(arguments[0]);
 
     if (argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
+    {
+        /// The range vector is empty, so is the result; keep its value type override (e.g. the `Float64` of `timestamp()`).
+        SQLQueryPiece res{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = argument.value_data_type;
+        return res;
+    }
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
 

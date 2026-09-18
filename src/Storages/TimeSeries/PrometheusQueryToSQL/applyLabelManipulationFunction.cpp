@@ -180,8 +180,10 @@ SQLQueryPiece applyLabelManipulationFunction(
             }
             else
             {
+                const auto & scalar_data_type
+                    = first_argument.value_data_type ? first_argument.value_data_type : context.scalar_data_type;
                 ASTPtr value = (first_argument.store_method == StoreMethod::CONST_SCALAR)
-                    ? timeSeriesScalarToAST(first_argument.scalar_value, context.scalar_data_type)
+                    ? timeSeriesScalarToAST(first_argument.scalar_value, scalar_data_type)
                     : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
                 values = makeASTFunction(

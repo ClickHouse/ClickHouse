@@ -21,6 +21,14 @@ SQLQueryPiece applyBinaryOperatorOr(
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 
+    /// If both arguments are empty then the result is also empty, with the value type overrides merged.
+    if ((left_argument.store_method == StoreMethod::EMPTY) && (right_argument.store_method == StoreMethod::EMPTY))
+    {
+        SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
+        return res;
+    }
+
     /// If one of the arguments is empty then we return the other argument.
     if (left_argument.store_method == StoreMethod::EMPTY)
     {
@@ -201,6 +209,9 @@ SQLQueryPiece applyBinaryOperatorOr(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
+    /// The values of the result may come from either argument, so their value types must agree;
+    /// conflicting overrides are dropped in favour of the table's own scalar type.
+    res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
 
     return res;
 }
