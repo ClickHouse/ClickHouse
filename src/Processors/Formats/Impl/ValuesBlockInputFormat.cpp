@@ -585,12 +585,13 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 
     /// Try to deduce template of expression and use it to parse the following rows
+    std::exception_ptr template_exception;
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
                                 std::to_string(column_idx));
-        std::exception_ptr exception;
+        std::exception_ptr & exception = template_exception;
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
@@ -660,18 +661,34 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+    std::pair<Field, DataTypePtr> value_raw;
+    Field value;
+    try
+    {
+        value_raw = evaluateConstantExpression(ast, context);
+
+        if (format_settings.null_as_default)
+            tryToReplaceNullFieldsInComplexTypesWithDefaultValues(value_raw.first, type);
+
+        /// This materializes a value into a column (the `INSERT` VALUES expression fallback), so convert
+        /// to the nearest representable floating-point value like CAST, consistent with the streaming
+        /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
+        /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
+        value = convertFieldToType(value_raw.first, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+    }
+    catch (const Exception & e)
+    {
+        /// `TYPE_MISMATCH` here means `convertFieldToType` has no rule for this pair of types, which is
+        /// never the real story when the template path already evaluated the very same expression and
+        /// failed for a concrete reason - typically a value outside the range of the target type under
+        /// `date_time_overflow_behavior = 'throw'`. That diagnostic names the offending value, so prefer
+        /// it. Any other failure here is about the real expression and is reported as is.
+        if (template_exception && e.code() == ErrorCodes::TYPE_MISMATCH)
+            std::rethrow_exception(template_exception);
+        throw;
+    }
 
     Field & expression_value = value_raw.first;
-
-    if (format_settings.null_as_default)
-        tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
-
-    /// This materializes a value into a column (the `INSERT` VALUES expression fallback), so convert
-    /// to the nearest representable floating-point value like CAST, consistent with the streaming
-    /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
-    /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))
