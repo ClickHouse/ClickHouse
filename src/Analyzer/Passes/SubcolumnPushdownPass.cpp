@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/SubcolumnPushdownPass.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -8,6 +9,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 
@@ -107,6 +109,72 @@ bool isSourceQuerySafeToRewrite(const QueryNode & source_query)
         && !source_query.hasQualify();
 }
 
+using NodeSet = std::unordered_set<const IQueryTreeNode *>;
+
+void collectSubcolumnAccessesExposedToAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys, NodeSet & exposed)
+{
+    if (!node)
+        return;
+
+    /// An expression that is a grouping key is fine as it is, and so is everything below it.
+    for (const auto & key : group_by_keys)
+    {
+        if (node->isEqual(*key))
+            return;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        /// The arguments of an aggregate function are evaluated before the aggregation.
+        if (function_node->isAggregateFunction())
+            return;
+
+        if (function_node->getFunctionName() == "getSubcolumn")
+        {
+            exposed.insert(node.get());
+            return;
+        }
+    }
+
+    /// A nested query is its own scope.
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return;
+
+    for (const auto & child : node->getChildren())
+        collectSubcolumnAccessesExposedToAggregation(child, group_by_keys, exposed);
+}
+
+/// In an aggregating query, an expression that is evaluated after the aggregation (the projection, `HAVING`,
+/// `ORDER BY`, window definitions, ...) must be a grouping key, a function of grouping keys, or an aggregate.
+/// `tup.a` is a function of the key `tup`, but the plain column `tup.a` that the rewrite would turn it into is
+/// not, so such a query would fail to plan (`Not found column tup.a in block`). Collect the `getSubcolumn`
+/// nodes of `query` that are in such a position and are neither a grouping key themselves nor an argument of
+/// an aggregate function: those must be left alone.
+NodeSet collectSubcolumnAccessesExposedToAggregation(const QueryNode & query)
+{
+    NodeSet exposed;
+
+    if (!query.hasGroupBy() && !query.isGroupByAll())
+        return exposed;
+
+    /// With `GROUPING SETS` the keys are nested one level deeper.
+    QueryTreeNodes group_by_keys;
+    for (const auto & key : query.getGroupBy().getNodes())
+    {
+        if (const auto * key_list = key->as<ListNode>(); key_list && query.isGroupByWithGroupingSets())
+            group_by_keys.insert(group_by_keys.end(), key_list->getNodes().begin(), key_list->getNodes().end());
+        else
+            group_by_keys.push_back(key);
+    }
+
+    for (const auto & section : {query.getProjectionNode(), query.getHaving(), query.getWindowNode(), query.getQualify(),
+                                 query.getOrderByNode(), query.getInterpolate(), query.getLimitByNode()})
+        collectSubcolumnAccessesExposedToAggregation(section, group_by_keys, exposed);
+
+    return exposed;
+}
+
 /// Collect all getSubcolumn calls that can be optimized, plus all columns referencing each source.
 /// Groups by source node so we can clone each source only once and update all references.
 class CollectSubcolumnAccessesVisitor : public InDepthQueryTreeVisitor<CollectSubcolumnAccessesVisitor>
@@ -114,8 +182,9 @@ class CollectSubcolumnAccessesVisitor : public InDepthQueryTreeVisitor<CollectSu
 public:
     using Base = InDepthQueryTreeVisitor<CollectSubcolumnAccessesVisitor>;
 
-    explicit CollectSubcolumnAccessesVisitor(ContextPtr context_)
+    CollectSubcolumnAccessesVisitor(ContextPtr context_, NodeSet nodes_to_skip_)
         : context(std::move(context_))
+        , nodes_to_skip(std::move(nodes_to_skip_))
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -138,6 +207,10 @@ public:
 
         /// getSubcolumn must have exactly 2 arguments: the column and the subcolumn name
         if (args.size() != 2)
+            return;
+
+        /// This access is evaluated after an aggregation and is not a grouping key, see above.
+        if (nodes_to_skip.contains(node.get()))
             return;
 
         auto * column_node = args[0]->as<ColumnNode>();
@@ -235,6 +308,7 @@ public:
 
 private:
     ContextPtr context;
+    NodeSet nodes_to_skip;
     std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> subcolumn_accesses_by_source;
     std::unordered_map<IQueryTreeNode *, std::vector<ColumnNode *>> all_columns_by_source;
 };
@@ -275,8 +349,10 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
     if (!context->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries])
         return;
 
-    /// Collect all subcolumn accesses and all columns grouped by source
-    CollectSubcolumnAccessesVisitor collector(context);
+    /// Collect all subcolumn accesses and all columns grouped by source. Only a source that is the join tree
+    /// of the root query is rewritten (see `tryCloneTopLevelQueryNode`), so the root query is the only one
+    /// whose aggregation can be affected by the rewrite.
+    CollectSubcolumnAccessesVisitor collector(context, collectSubcolumnAccessesExposedToAggregation(*root_query_node));
     collector.visit(query_tree_node);
 
     auto & subcolumn_accesses_by_source = collector.getSubcolumnAccessesBySource();
@@ -423,6 +499,12 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             }
         }
 
+        /// The source query may carry a column alias list (`FROM (...) t(r, x)`). Those aliases were already
+        /// applied by name to the projection columns when the source was resolved, and `resolveProjectionColumns`
+        /// re-applies them positionally, so with the projection grown or shrunk above it would either throw
+        /// (`Number of aliases does not match number of projection columns`) or rename the wrong columns.
+        /// The names in `projection_columns` are the final ones, so the alias list is no longer needed.
+        cloned_query_source->setProjectionAliasesToOverride({});
         cloned_query_source->resolveProjectionColumns(std::move(projection_columns));
     }
 }
