@@ -48,7 +48,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -56,6 +55,7 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -262,87 +262,99 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     return res;
 }
 
-/// The columns the query the storage is asked about sorts by, on either analyzer path: only those
-/// cross the cast below the shards' sort, so only their conversion can corrupt the merged order.
-/// `std::nullopt` means the query does not sort its result at all. An engaged but empty set means it
-/// sorts by something whose source columns could not be established - a positional `ORDER BY 1` or
-/// an `ORDER BY ALL` on the old analyzer path - and then every column has to be treated as sorted by.
-std::optional<NameSet> getOrderByColumns(const SelectQueryInfo & query_info)
+/// The columns of the table the storage is asked about that the query's sorting key expressions read,
+/// on the analyzer path: only those cross the cast below the shards' sort, so only their conversion can
+/// corrupt the merged order. A column of another table (a joined one, a subquery) or of another scope
+/// (a lambda's argument) is not cast by this storage, whatever its name is, so a mere name coincidence
+/// with a sloppily declared column of this table refuses nothing.
+struct SortedByColumns
 {
-    if (query_info.query_tree)
+    /// The source columns of the sorting key could not be established, and every column of the table
+    /// has to be treated as sorted by. Set when the query comes without a query tree (the old analyzer
+    /// cannot be enabled since 26.9, so this is a safeguard) and for a column whose origin cannot be
+    /// traced (see `getSortedByColumns`).
+    bool unknown = false;
+    NameSet names;
+
+    /// The query does not rely on the shards' order at all: it has no ORDER BY, or its sorting key
+    /// reads no column of this table (a constant such as `ORDER BY tuple()`, or a joined table's column).
+    bool none() const { return !unknown && names.empty(); }
+};
+
+SortedByColumns getSortedByColumns(const SelectQueryInfo & query_info)
+{
+    SortedByColumns result;
+
+    if (!query_info.query_tree)
     {
-        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
-        {
-            if (!query_node->hasOrderBy())
-                return {};
-
-            /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
-            NameSet columns;
-            auto collect = [&columns](const QueryTreeNodePtr & node, auto & self) -> void
-            {
-                /// A subquery sorts and returns its own columns; the ones inside it are not what
-                /// this stream is sorted by.
-                const auto node_type = node->getNodeType();
-                if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-                    return;
-
-                if (const auto * column_node = node->as<ColumnNode>())
-                    columns.insert(column_node->getColumnName());
-
-                for (const auto & child : node->getChildren())
-                    if (child)
-                        self(child, self);
-            };
-            collect(query_node->getOrderByNode(), collect);
-            return columns;
-        }
+        result.unknown = true;
+        return result;
     }
 
-    if (query_info.query)
+    const auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node || !query_node->hasOrderBy())
+        return result;
+
+    /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
+    auto collect = [&result, &query_info](const QueryTreeNodePtr & node, auto & self) -> void
     {
-        if (const auto * select_query = query_info.query->as<ASTSelectQuery>())
+        /// A subquery sorts and returns its own columns; the ones inside it are not what this
+        /// stream is sorted by.
+        const auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            return;
+
+        if (const auto * column_node = node->as<ColumnNode>())
         {
-            const auto order_by = select_query->orderBy();
-            if (!order_by)
-                return {};
-
-            /// `ORDER BY ALL` names no column: it sorts by everything the query selects.
-            if (select_query->order_by_all)
-                return NameSet{};
-
-            NameSet columns;
-            for (const auto & element : order_by->children)
+            const auto source = column_node->getColumnSourceOrNull();
+            if (!source)
             {
-                const auto * order_by_element = element->as<ASTOrderByElement>();
-                if (!order_by_element || order_by_element->children.empty())
-                    return NameSet{};
-
-                const auto & expression = order_by_element->children.front();
-
-                /// A bare literal is a positional argument, which this path sees unresolved.
-                /// Deeper literals are ordinary constants of an expression and say nothing.
-                if (expression->as<ASTLiteral>())
-                    return NameSet{};
-
-                auto collect = [&columns](const ASTPtr & node, auto & self) -> void
-                {
-                    if (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
-                        return;
-
-                    if (const auto * identifier = node->as<ASTIdentifier>())
-                        columns.insert(identifier->shortName());
-
-                    for (const auto & child : node->children)
-                        if (child)
-                            self(child, self);
-                };
-                collect(expression, collect);
+                result.unknown = true;
+                return;
             }
-            return columns;
-        }
-    }
 
-    return {};
+            if (source.get() == query_info.table_expression.get())
+            {
+                result.names.insert(column_node->getColumnName());
+            }
+            else if (const auto * array_join_node = source->as<ArrayJoinNode>())
+            {
+                /// An ARRAY JOIN column is an element of an array expression, and the array is what
+                /// crosses the cast: `ORDER BY a` over `ARRAY JOIN arr AS a` sorts by the elements of
+                /// `arr`, so the columns of that expression are the ones to check. The resolved column
+                /// carries only the name, its expression is kept in the ARRAY JOIN node.
+                bool traced = false;
+                for (const auto & array_join_expression : array_join_node->getJoinExpressions().getNodes())
+                {
+                    const auto * array_join_column = array_join_expression->as<ColumnNode>();
+                    if (!array_join_column || array_join_column->getColumnName() != column_node->getColumnName())
+                        continue;
+
+                    traced = true;
+                    if (array_join_column->hasExpression())
+                        self(array_join_column->getExpression(), self);
+                    else
+                        result.unknown = true;
+                }
+                if (!traced)
+                    result.unknown = true;
+            }
+            else if (source->getNodeType() == QueryTreeNodeType::JOIN)
+            {
+                /// A column of a JOIN itself (not of one of its sides) cannot be attributed to a table.
+                result.unknown = true;
+            }
+            /// A column of another table expression, or a lambda's argument, does not cross this
+            /// table's cast: nothing to check for it. An ALIAS column of this table keeps its
+            /// expression as a child and the columns it reads are collected below.
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                self(child, self);
+    };
+    collect(query_node->getOrderByNode(), collect);
+    return result;
 }
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
@@ -653,8 +665,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// sloppily declared column keeps working as long as nothing orders by it.
     if (nodes > 0)
     {
-        if (auto order_by_columns = getOrderByColumns(query_info))
-            checkRemoteTableConversionPreservesOrder(local_context, storage_snapshot, cluster, *order_by_columns);
+        const auto sorted_by_columns = getSortedByColumns(query_info);
+        if (!sorted_by_columns.none())
+            checkRemoteTableConversionPreservesOrder(
+                local_context, storage_snapshot, cluster, sorted_by_columns.unknown ? std::nullopt : std::make_optional(sorted_by_columns.names));
     }
 
     if (settings[Setting::distributed_group_by_no_merge])
@@ -722,7 +736,7 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
     const ClusterPtr & cluster,
-    const NameSet & order_by_columns) const
+    const std::optional<NameSet> & order_by_columns) const
 {
     if (remote_table_function_ptr)
         return;
@@ -750,9 +764,9 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     {
         /// A column the query does not sort by is converted above the shards' sort like any other
         /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
-        /// there is none of this check's business. An empty set means the sorted-by columns are
+        /// there is none of this check's business. `std::nullopt` means the sorted-by columns are
         /// unknown and every column has to be checked.
-        if (!order_by_columns.empty() && !order_by_columns.contains(remote_column.name))
+        if (order_by_columns && !order_by_columns->contains(remote_column.name))
             continue;
 
         auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);

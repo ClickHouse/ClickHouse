@@ -24,6 +24,9 @@ DROP TABLE IF EXISTS dist_wide;
 DROP TABLE IF EXISTS dist_narrow_dec;
 DROP TABLE IF EXISTS t_mixed;
 DROP TABLE IF EXISTS dist_mixed;
+DROP TABLE IF EXISTS dim;
+DROP TABLE IF EXISTS t_arr;
+DROP TABLE IF EXISTS dist_arr;
 
 CREATE TABLE t_str (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_str SELECT toString(number % 21) FROM numbers(100);
@@ -44,7 +47,6 @@ SELECT count() FROM (SELECT DISTINCT ON (s) s FROM dist_int8 ORDER BY s ASC LIMI
 -- As strings the three largest values are 9, 8, 7, which is what came back before.
 SELECT DISTINCT s FROM dist_int8 ORDER BY s DESC LIMIT 3; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT s FROM dist_int8 ORDER BY s DESC LIMIT 3; -- { serverError INCOMPATIBLE_COLUMNS }
-SELECT s FROM dist_int8 ORDER BY s DESC LIMIT 3 SETTINGS enable_analyzer = 0; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT s FROM dist_int8 ORDER BY s DESC LIMIT 3 SETTINGS prefer_localhost_replica = 0; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT s FROM dist_int8 ORDER BY s DESC LIMIT 3 SETTINGS distributed_push_down_limit = 0; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT s FROM dist_int8 ORDER BY s DESC LIMIT 3 SETTINGS distributed_group_by_no_merge = 2; -- { serverError INCOMPATIBLE_COLUMNS }
@@ -54,7 +56,11 @@ SELECT s FROM dist_one_int8 ORDER BY s DESC LIMIT 3; -- { serverError INCOMPATIB
 SELECT '-- without ORDER BY nothing relies on the shard order, so the queries still work';
 SELECT count() FROM dist_int8;
 SELECT count() FROM (SELECT DISTINCT s FROM dist_int8);
-SELECT count() FROM (SELECT s, count() FROM dist_int8 GROUP BY s);
+-- `group_by_two_level_threshold` is pinned: with it 1 the shards send a two-level `String` state that the
+-- initiator cannot merge into its single-level `Int8` one (`UNKNOWN_AGGREGATED_DATA_VARIANT`). That is a
+-- separate defect of the mismatch, present without this change (https://github.com/ClickHouse/ClickHouse/issues/120781);
+-- here only the order is the subject.
+SELECT count() FROM (SELECT s, count() FROM dist_int8 GROUP BY s) SETTINGS group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
 SELECT count() FROM (SELECT * FROM dist_int8 LIMIT 1 BY s);
 -- An ORDER BY outside the query over the table is applied by the initiator to converted values.
 SELECT * FROM (SELECT DISTINCT s FROM dist_int8) ORDER BY s DESC LIMIT 3;
@@ -91,15 +97,49 @@ CREATE TABLE t_mixed (k Int32, s String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_mixed SELECT number, toString(number % 21) FROM numbers(100);
 CREATE TABLE dist_mixed (k Int32, s Int8) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_mixed);
 SELECT k FROM dist_mixed ORDER BY k DESC LIMIT 2;
-SELECT k FROM dist_mixed ORDER BY k DESC LIMIT 2 SETTINGS enable_analyzer = 0;
 -- The mismatched column can be selected as long as it is not sorted by.
 SELECT s FROM dist_mixed ORDER BY k DESC LIMIT 2;
 -- Sorting by it is still refused, whether it is selected or not, and through an expression over it.
 SELECT s FROM dist_mixed ORDER BY s DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT k FROM dist_mixed ORDER BY s DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
-SELECT k FROM dist_mixed ORDER BY s DESC LIMIT 2 SETTINGS enable_analyzer = 0; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT k FROM dist_mixed ORDER BY -s DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT k FROM dist_mixed ORDER BY k, s LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+-- An alias of the column, and an alias of an expression over it, are resolved back to it.
+SELECT s AS x FROM dist_mixed ORDER BY x LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT -s AS x FROM dist_mixed ORDER BY x LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+
+SELECT '-- a sorting key that reads no column of the table does not rely on the shard order';
+SELECT count() FROM (SELECT s FROM dist_mixed ORDER BY tuple() LIMIT 2);
+SELECT count() FROM (SELECT s FROM dist_mixed ORDER BY 1 + 1 LIMIT 2);
+SELECT count() FROM (SELECT s FROM dist_mixed ORDER BY 'x' LIMIT 2);
+-- A positional argument names the column it stands for.
+SELECT s FROM dist_mixed ORDER BY 1 DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT k FROM dist_mixed ORDER BY 1 DESC LIMIT 2;
+SELECT k FROM dist_mixed ORDER BY ALL LIMIT 2;
+SELECT s FROM dist_mixed ORDER BY ALL LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+
+SELECT '-- a column of another table or scope with the same name is not this table''s column';
+CREATE TABLE dim (k Int32, s Int8) ENGINE = MergeTree ORDER BY k;
+INSERT INTO dim SELECT number, number % 7 FROM numbers(100);
+-- `dim.s` is a real `Int8` on the shards and the initiator alike; `dist_mixed.s` is not sorted by.
+SELECT dist_mixed.k, dim.s FROM dist_mixed JOIN dim ON dist_mixed.k = dim.k ORDER BY dim.s DESC, dist_mixed.k DESC LIMIT 2 SETTINGS distributed_product_mode = 'local';
+SELECT dist_mixed.k, dim.s FROM dist_mixed GLOBAL JOIN dim ON dist_mixed.k = dim.k ORDER BY dim.s DESC, dist_mixed.k DESC LIMIT 2;
+-- ... while sorting by this table's `s` through the join stays refused.
+SELECT dist_mixed.k FROM dist_mixed JOIN dim ON dist_mixed.k = dim.k ORDER BY dist_mixed.s DESC LIMIT 2 SETTINGS distributed_product_mode = 'local'; -- { serverError INCOMPATIBLE_COLUMNS }
+-- A lambda argument named like the column is a value of the array, not the column.
+SELECT k FROM dist_mixed ORDER BY arrayMap(s -> s + 1, [k]) DESC LIMIT 2;
+-- A subquery over the table sorted by an unrelated column, with an outer sort by the retyped one, is
+-- sorted by the initiator over converted values.
+SELECT s FROM (SELECT k, s FROM dist_mixed ORDER BY k LIMIT 10) ORDER BY s DESC LIMIT 2;
+
+SELECT '-- an ARRAY JOIN column is traced back to its array';
+CREATE TABLE t_arr (k Int32, arr Array(String)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_arr SELECT number, [toString(number % 21), toString(number % 13)] FROM numbers(100);
+CREATE TABLE dist_arr (k Int32, arr Array(Int8)) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_arr);
+SELECT a FROM dist_arr ARRAY JOIN arr AS a ORDER BY a DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT arr FROM dist_arr ARRAY JOIN arr ORDER BY arr DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT k FROM dist_arr ARRAY JOIN arr AS a ORDER BY k DESC LIMIT 2;
+SELECT a FROM dist_arr ARRAY JOIN [1, 2] AS a ORDER BY a DESC LIMIT 2;
 
 SELECT '-- a smaller decimal scale rounds distinct values together, so it is refused';
 CREATE TABLE dist_narrow_dec (dec Decimal(18, 1)) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_wide);
@@ -112,6 +152,9 @@ SELECT DISTINCT A FROM dist_u32 ORDER BY A ASC LIMIT 3; -- { serverError INCOMPA
 SELECT count() FROM (SELECT DISTINCT A FROM dist_u32);
 
 DROP TABLE dist_u32;
+DROP TABLE dist_arr;
+DROP TABLE t_arr;
+DROP TABLE dim;
 DROP TABLE dist_mixed;
 DROP TABLE t_mixed;
 DROP TABLE dist_narrow_dec;

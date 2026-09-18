@@ -32,10 +32,30 @@
 -- only the columns the query sorts by are checked
 99
 99
-99
-99
 15
 15
+-- a sorting key that reads no column of the table does not rely on the shard order
+2
+2
+2
+99
+99
+0
+0
+-- a column of another table or scope with the same name is not this table\'s column
+97	6
+97	6
+97	6
+97	6
+99
+99
+4
+4
+-- an ARRAY JOIN column is traced back to its array
+99
+99
+2
+2
 -- a smaller decimal scale rounds distinct values together, so it is refused
 50
 -- an equal-width sign change does not preserve the order
