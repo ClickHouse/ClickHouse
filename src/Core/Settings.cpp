@@ -9400,8 +9400,8 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
 )", PRIVATE_PREVIEW) \
     \
-    DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
-Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+    DECLARE_WITH_ALIAS(DoubleAuto, promql_evaluation_time, Field("auto"), R"(
+Sets the evaluation time to be used with promql dialect, as a Unix timestamp in seconds with an optional fraction. 'auto' means the current time.
 )", PRIVATE_PREVIEW, evaluation_time) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.

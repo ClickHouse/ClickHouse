@@ -165,7 +165,7 @@ namespace Setting
     extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsSnappyMode snappy_mode;
