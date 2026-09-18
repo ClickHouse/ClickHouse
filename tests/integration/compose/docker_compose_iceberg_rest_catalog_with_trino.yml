@@ -21,7 +21,7 @@ services:
     cpus: 3
   minio:
     # See the note in compose/docker_compose_minio.yml on the image source.
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    image: clickhouse/minio-minio:RELEASE.2026-08-04T00-00-00Z
     environment:
       - MINIO_ROOT_USER=minio
       - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
@@ -39,9 +39,10 @@ services:
   mc:
     depends_on:
       - minio
-    # `pgsty/mc` is the matching fork of the MinIO client; it dropped the `config host` and
+    # Mirror of pgsty/mc:RELEASE.2026-09-16T00-00-00Z (see compose/mirror-images.sh).
+    # pgsty/mc is the matching fork of the MinIO client; it dropped the `config host` and
     # `policy` commands that upstream had already deprecated, hence `alias set`/`anonymous set`.
-    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
+    image: clickhouse/minio-mc:RELEASE.2026-09-16T00-00-00Z
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
