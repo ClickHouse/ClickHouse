@@ -262,6 +262,27 @@
                 </replica>
             </shard-->
         </test_cluster_one_shard_three_replicas_localhost>
+        <!-- Same as test_cluster_one_shard_three_replicas_localhost but with an interserver <secret>,
+             so remote read nodes authenticate as the initiating user (needed to test RBAC, e.g.
+             role-scoped row policies, over parallel replicas). -->
+        <test_cluster_one_shard_three_replicas_localhost_secret>
+            <secret>123457</secret>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_one_shard_three_replicas_localhost_secret>
         <test_cluster_two_shard_three_replicas_localhost>
             <shard>
                 <internal_replication>false</internal_replication>
