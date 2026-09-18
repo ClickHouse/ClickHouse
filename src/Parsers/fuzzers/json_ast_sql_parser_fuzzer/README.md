@@ -248,14 +248,14 @@ skipped), so a mutated statement cannot destroy the fixture.
 
 Query errors are expected outcomes. Findings are crashes, sanitizer reports, `LOGICAL_ERROR`
 exceptions (fatal in sanitizer and debug builds) and hangs. `tests/fuzz/json_ast_sql_execution_fuzzer.options`
-passes `--max_execution_time=10` and network timeouts to `clickhouse local`, like `clickhouse_fuzzer`.
+passes `--max_execution_time=5`, `--max_rows_to_read` and network timeouts to `clickhouse local`, like `clickhouse_fuzzer`.
 
 ```bash
 ninja -C build_fuzz json_ast_sql_execution_fuzzer
 EXEC_FUZZER=build_fuzz/programs/local/fuzzers/json_ast_sql_execution_fuzzer
 mkdir -p tmp/json_ast_exec_corpus
 $EXEC_FUZZER -timeout=60 -rss_limit_mb=8192 -max_len=65536 tmp/json_ast_exec_corpus tests/fuzz/json_ast_sql_parser_fuzzer.in \
-    -ignore_remaining_args=1 --max_execution_time=10 --max_memory_usage=2000000000
+    -ignore_remaining_args=1 --max_execution_time=5 --max_rows_to_read=1000000 --max_memory_usage=2000000000
 ```
 
 It consumes the same seed corpus as the parser fuzzer (`tests/fuzz/build.sh` copies it under the
