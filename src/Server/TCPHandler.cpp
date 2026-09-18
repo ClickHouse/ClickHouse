@@ -2633,6 +2633,11 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         passed_params = readQueryParameters(*in);
 
+    /// The packet is read, so the data packets that always follow it are owed from here on, whether
+    /// or not the rest of the query is set up successfully. Marking it any later would strand that
+    /// data for the next query on this connection to read as its first packet.
+    state->read_all_data = false;
+
     if (is_interserver_mode)
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
@@ -2857,8 +2862,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         std::chrono::milliseconds ms(sleep_after_receiving_query.totalMilliseconds());
         std::this_thread::sleep_for(ms);
     }
-
-    state->read_all_data = false;
 }
 
 void TCPHandler::processObsoleteIgnoredPartUUIDs()
