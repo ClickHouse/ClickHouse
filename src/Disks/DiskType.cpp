@@ -65,6 +65,8 @@ String DataSourceDescription::name() const
             {
                 case ObjectStorageType::S3:
                     return "s3";
+                case ObjectStorageType::GCS:
+                    return "gcs";
                 case ObjectStorageType::HDFS:
                     return "hdfs";
                 case ObjectStorageType::Azure:
