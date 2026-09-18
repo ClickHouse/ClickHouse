@@ -1197,7 +1197,7 @@ def test_password_masking(started_cluster):
                 WHERE table = 'mongodb_uri_password_masking' AND database = currentDatabase();
                 """
         )
-        == "CREATE TABLE default.mongodb_uri_password_masking (`_id` String) ENGINE = MongoDB(\\'mongodb://testuser:[HIDDEN]@127.0.0.1:27017/example\\', \\'test_clickhouse\\')\n"
+        == "CREATE TABLE default.mongodb_uri_password_masking (`_id` String) ENGINE = MongoDB(\\'mongodb://[HIDDEN]@127.0.0.1:27017/example\\', \\'test_clickhouse\\')\n"
     )
     assert (
         node.query(
@@ -1206,7 +1206,7 @@ def test_password_masking(started_cluster):
         WHERE table = 'mongodb_uri_password_masking' AND database = currentDatabase();
         """
         )
-        == "MongoDB(\\'mongodb://testuser:[HIDDEN]@127.0.0.1:27017/example\\', \\'test_clickhouse\\')\n"
+        == "MongoDB(\\'mongodb://[HIDDEN]@127.0.0.1:27017/example\\', \\'test_clickhouse\\')\n"
     )
     node.query("DROP TABLE IF EXISTS mongodb_uri_password_masking;")
 
@@ -1227,7 +1227,43 @@ def test_password_masking(started_cluster):
         )
         == "CREATE DICTIONARY default.mongodb_dictionary_uri_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(URI \\'mongodb://[HIDDEN]@127.0.0.1:27017/example\\' COLLECTION \\'test_clickhouse\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
     )
+    # system.dictionaries.source is produced by MongoDBDictionarySource::toString, a different code
+    # path than the query text above; it also feeds the "Created dictionary source '{}'" server log.
+    # The whole userinfo must be masked. mongocxx may normalize the URI, so assert on substrings.
+    dictionary_source = node.query(
+        """
+        SELECT source FROM system.dictionaries
+        WHERE name = 'mongodb_dictionary_uri_password_masking' AND database = currentDatabase();
+        """
+    )
+    assert "mypassword" not in dictionary_source and "testuser" not in dictionary_source
+    assert "[HIDDEN]" in dictionary_source
     node.query("DROP DICTIONARY IF EXISTS mongodb_dictionary_uri_password_masking;")
+
+    # The query-text sanitizer must mask the whole userinfo, which the old password-only masker did
+    # not: a password that itself contains '@' left its tail visible, and a bare userinfo token with
+    # no ':' was not masked at all. Each statement may fail to connect, but system.query_log must
+    # store neither cleartext. The probes are split in the checking query so it carries no secret.
+    for uri in [
+        "mongodb://muser:first@atmongoprobe@127.0.0.1:27017/example",
+        "mongodb://mongotokenprobe@127.0.0.1:27017/example",
+    ]:
+        node.query(
+            f"CREATE OR REPLACE TABLE mongodb_uri_userinfo_masking (_id String) ENGINE = MongoDB('{uri}', 'test_clickhouse')",
+            ignore_error=True,
+        )
+    node.query("DROP TABLE IF EXISTS mongodb_uri_userinfo_masking;")
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        node.query(
+            """
+        SELECT count() FROM system.query_log
+        WHERE event_date >= yesterday()
+          AND (query LIKE '%' || 'atmongo' || 'probe%' OR query LIKE '%' || 'mongotoken' || 'probe%')
+        """
+        )
+        == "0\n"
+    )
 
     node.query(
         """

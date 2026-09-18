@@ -289,9 +289,12 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const Vec
 
 std::string MongoDBDictionarySource::toString() const
 {
-    /// This is used only for logging and display, so mask any password embedded in the URI.
+    /// This is used only for logging and display, so mask the whole userinfo embedded in the URI.
+    /// Mask the userinfo, not just the password: a MongoDB URI can carry a password that itself
+    /// contains '@' or a bare credential token with no ':' separator, both of which a password-only
+    /// masker leaves partly visible. This matches `findMongoDBSecretArguments` used for query text.
     std::string uri = configuration->uri->to_string();
-    maskURIPassword(&uri);
+    maskURIUserinfo(uri);
     return fmt::format("MongoDB: {}", uri);
 }
 #endif
