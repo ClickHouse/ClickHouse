@@ -1,0 +1,14 @@
+1	1	1	1
+{"name":"key","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":"","is_subcolumn":0}
+{"name":"payload","type":"Tuple(\n    overridden UInt64,\n    inherited String,\n    nested Tuple(\n        score Float64,\n        label String))","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":0}
+{"name":"payload.overridden","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"Delta(8), LZ4","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.inherited","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.inherited.size","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested","type":"Tuple(\n    score Float64,\n    label String)","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested.score","type":"Float64","default_type":"","default_expression":"","comment":"","codec_expression":"Gorilla(8), ZSTD(1)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested.label","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+{"name":"payload.nested.label.size","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"ZSTD(3)","ttl_expression":"","is_subcolumn":1}
+1	1	1	1
+1
+1
+1	1
