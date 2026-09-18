@@ -173,10 +173,8 @@ public:
     /// `readExpressionChild`'s screen applied to every element of the "children" array.
     ASTs readExpressionChildren() const;
 
-    /// `readChildOfType<ASTFunction>` with that screen applied to the restored function's ARGUMENTS
-    /// and not to the function node itself, for a slot holding a legitimately argument-less function
-    /// whose arguments are expressions: the deprecated positional `MergeTree(date, key, granularity)`
-    /// engine arguments become key expressions in `registerStorageMergeTree`.
+    /// `readChildOfType<ASTFunction>` with that screen applied to the restored function's ARGUMENTS and not to the function
+    /// node itself, for a slot whose function is legitimately argument-less while its arguments are expressions.
     ASTPtr readFunctionChildWithExpressionArguments(const char * key) const;
 
     /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the

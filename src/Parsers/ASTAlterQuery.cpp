@@ -252,8 +252,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
-    /// `predicate`, `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single
-    /// parser-produced node type, so they are restored generically.
+    /// `predicate`, `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single parser-produced node type.
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
