@@ -189,6 +189,50 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
     }
 }
 
+/// In implicit-SELECT mode (no `SELECT` keyword, e.g. `clickhouse-local`'s `1 + 2`), the very
+/// first element of the SELECT expression list starts at the very first token of the whole
+/// query, i.e. there is no previous token at all. `ExpressionLayer`'s trailing-comma-before-alias
+/// lookahead used to decrement a copy of the token iterator without checking for this,
+/// underflowing `TokenIterator::index` (an unsigned `size_t`) to `SIZE_MAX` and corrupting the
+/// shared token cache used to compute where the statement ends - which broke splitting
+/// multi-statement input. This must parse cleanly, not hang or misparse.
+TEST(ParserQuery, ImplicitSelectTrailingCommaDoesNotUnderflow)
+{
+    const std::vector<String> queries = {
+        "1 AS from",
+        "1 AS from, FROM numbers(1)",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert*/ false, /*implicit_select*/ true);
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
+/// The underflow corrupted the shared token cache used to compute where a statement ends, which
+/// is exactly what `splitMultipartQuery` relies on to find the boundary between two statements
+/// in multi-query input. Exercise that path directly rather than just parsing a single statement
+/// in isolation, matching the original bug report (`1 AS from; upper('Hello')` merged into one
+/// oversized "statement" and was rejected as "Multi-statements are not allowed").
+TEST(ParserQuery, ImplicitSelectTrailingCommaDoesNotCorruptMultiStatementSplit)
+{
+    const String queries_text = "1 AS from; upper('Hello')";
+    std::vector<String> queries_list;
+    auto parse_res = splitMultipartQuery(queries_text, queries_list, 0, 0, 0, false, true);
+
+    ASSERT_TRUE(parse_res.second) << "failed to fully split: " << queries_text;
+    ASSERT_EQ(2, queries_list.size());
+    EXPECT_EQ("1 AS from;", queries_list[0]);
+    EXPECT_EQ("upper('Hello')", queries_list[1]);
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry

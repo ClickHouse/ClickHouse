@@ -101,6 +101,9 @@ public:
 
     ALWAYS_INLINE bool isValid() { return get().type < TokenType::EndOfStream; }
 
+    /// Whether this iterator points at the first token of the stream (decrementing further would underflow).
+    ALWAYS_INLINE bool atBegin() const { return index == 0; }
+
     /// Rightmost token we had looked.
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
 };
