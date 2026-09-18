@@ -50,3 +50,7 @@ RENAME DATABASE {CLICKHOUSE_DATABASE_2:Identifier} TO {CLICKHOUSE_DATABASE_1:Ide
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
+
+-- The renames left nothing behind under either name.
+SELECT count() FROM system.tables
+    WHERE database IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}, currentDatabase());
