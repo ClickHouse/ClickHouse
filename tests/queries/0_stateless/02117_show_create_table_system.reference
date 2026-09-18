@@ -688,7 +688,7 @@ CREATE TABLE system.processes
     `initial_query_id` String,
     `initial_address` IPv6,
     `initial_port` UInt16,
-    `interface` Enum8('Unknown' = 0, 'TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10),
+    `interface` Enum8('Unknown' = 0, 'TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10, 'Mongo' = 11),
     `os_user` String,
     `client_hostname` String,
     `client_name` String,
