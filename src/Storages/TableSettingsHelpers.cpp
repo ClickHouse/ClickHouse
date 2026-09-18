@@ -1,6 +1,5 @@
 #include <Storages/TableSettingsHelpers.h>
 
-#include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -15,12 +14,9 @@
 namespace DB
 {
 
-/// The settings a table's stored `CREATE` query states, copied out.
-///
-/// This is the source `SHOW CREATE TABLE` renders, and the only one every engine keeps:
-/// `StorageInMemoryMetadata::settings_changes` is populated by `MergeTree`, `Memory` and
-/// `ALTER ... MODIFY SETTING` alone, despite its comment naming `Kafka` and `RabbitMQ`. `ALTER`
-/// writes its changes back into the `CREATE` query too, so this stays current.
+/// The stored `CREATE` query rather than `StorageInMemoryMetadata::settings_changes`: it is what
+/// `SHOW CREATE TABLE` renders and the only source every engine keeps, while `settings_changes` is populated
+/// by a few engines only. `ALTER ... MODIFY SETTING` writes back into the `CREATE` query, so this stays current.
 SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
 {
     if (table_id.database_name.empty())
@@ -42,13 +38,13 @@ SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, Contex
 }
 
 SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const StorageID & table_id, ContextPtr context, const SettingNameNormalizer & normalize)
+    SettingDescriptions settings, const StorageID & table_id, ContextPtr context, SettingNameNormalizer normalize)
 {
     return withOriginFromDefinition(std::move(settings), getSettingsStatedInDefinition(table_id, context), normalize);
 }
 
 SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const SettingsChanges & stated, const SettingNameNormalizer & normalize)
+    SettingDescriptions settings, const SettingsChanges & stated, SettingNameNormalizer normalize)
 {
     NameSet stated_in_definition;
     for (const auto & change : stated)

@@ -16,8 +16,9 @@ namespace DB
 /// When several sources wrote a setting, the one reported is whichever wrote it last, and that order is the
 /// engine's. The values are declared in the order the engines apply them - each later source overriding the
 /// earlier ones, as when the table is built - and the column is an `Enum8` of them, so `ORDER BY source` sorts
-/// by that precedence: keep it when adding a value. Most engines apply the table's own `SETTINGS` clause after
-/// a config section, `compatibility` and a named collection, so `Definition` outranks those. `S3Queue` and
+/// by that precedence: keep it when adding a value. `Other` is the exception - the catch-all, set wherever an
+/// engine cannot tell the source, including before any other. Most engines apply the table's own `SETTINGS`
+/// clause after a config section, `compatibility` and a named collection, so `Definition` outranks those. `S3Queue` and
 /// `AzureQueue` apply `SharedMetadata` after the definition, deliberately: an `ALTER ... MODIFY SETTING` on
 /// another replica has already changed the value this replica uses while its own `CREATE` query still states
 /// the old one. An engine that adds a source has to decide where it belongs relative to the definition.

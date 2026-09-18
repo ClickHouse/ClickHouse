@@ -41,6 +41,7 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/TableSettingsHelpers.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/SettingsChanges.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
@@ -2222,6 +2223,16 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
 {
     /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper,
     /// the metadata object and plain members of this storage.
+    ///
+    /// It also reports whether it read the shared metadata: it returns an untouched object when this table
+    /// has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that state
+    /// nothing below came from Keeper, so neither the values nor the source may say it did. Taken from this
+    /// call rather than sampled again later, which would describe the table a moment later - a startup
+    /// finishing in between would put the stamp back on values that never came from there.
+    ///
+    /// Defensive rather than reachable from SQL today: reading a table whose startup threw waits on its
+    /// startup job and rethrows, so the query fails before it can report anything. The guard is here because
+    /// this function must not answer for Keeper on a state `getSettings` itself refuses to answer for.
     bool rebuilt_from_shared_metadata = false;
     auto settings = getSettings(&rebuilt_from_shared_metadata).enumerateSettings();
 
@@ -2241,16 +2252,6 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// definition states it: `registerQueueStorage` turns those into the table's `FormatSettings`, which the
     /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
     /// that distinction is visible, before `setOriginByValue` below overwrites it.
-    ///
-    /// `getSettings` reports whether it read the shared metadata: it returns an untouched object when this
-    /// table has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that
-    /// state nothing below came from Keeper, so neither the values nor the source may say it did. Taken from
-    /// the call above rather than sampled again here, which would describe the table a moment later - a
-    /// startup finishing in between would put the stamp back on values that never came from there.
-    ///
-    /// Defensive rather than reachable from SQL today: reading a table whose startup threw waits on its
-    /// startup job and rethrows, so the query fails before it can report anything. The guard is here because
-    /// this function must not answer for Keeper on a state `getSettings` itself refuses to answer for.
 
     /// What the rebuild did not assign: the definition is then the only source of the value the table works
     /// with. The shared-metadata settings belong here only when the rebuild did not run - when it did, they

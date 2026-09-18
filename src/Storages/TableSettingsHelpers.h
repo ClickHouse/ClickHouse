@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SettingDescription.h>
 
-#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -14,8 +13,8 @@ namespace DB
 class SettingsChanges;
 struct StorageID;
 
-/// Helpers for `IStorage::getTableSettings` overrides, kept out of `IStorage.h` because none of them needs the
-/// storage - only its id, passed where it matters - and that header is included by hundreds of translation units.
+/// Helpers for `IStorage::getTableSettings` overrides. Free functions, since none of them needs the storage
+/// beyond its id.
 ///
 /// An override starts from the enumeration of a settings struct - every setting `Default`, or `Other` once
 /// assigned - and corrects each row to what the engine knows. Every engine applies them in one order: the base
@@ -28,7 +27,7 @@ struct StorageID;
 /// the two are the same. For an engine that accepts legacy spellings its loader rewrites -
 /// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
 /// without declaring them as aliases, so nothing else can know they refer to the same setting.
-using SettingNameNormalizer = std::function<std::optional<std::string_view>(std::string_view)>;
+using SettingNameNormalizer = std::optional<std::string_view> (*)(std::string_view);
 
 /// The `SETTINGS` clause of the table's stored `CREATE` query, copied out. Empty when there is none, or when
 /// the catalog does not know the table, as for a table function's storage.
@@ -38,14 +37,13 @@ SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, Contex
 /// matching aliases and names as `normalize` rewrites them. The second form takes a clause already read,
 /// for an engine that needs its values as well as its names, so that both come from one reading.
 SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const StorageID & table_id, ContextPtr context, const SettingNameNormalizer & normalize = {});
+    SettingDescriptions settings, const StorageID & table_id, ContextPtr context, SettingNameNormalizer normalize = nullptr);
 SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const SettingsChanges & stated, const SettingNameNormalizer & normalize = {});
+    SettingDescriptions settings, const SettingsChanges & stated, SettingNameNormalizer normalize = nullptr);
 
-/// Sets `origin` for every setting in `names`, by canonical name only. Unlike the definition, the sources
-/// this is for name settings canonically: every engine's `loadFromNamedCollection` looks its settings up
-/// by that name, so a collection key spelled as an alias is ignored by the loader and must not be
-/// attributed here either.
+/// Sets `origin` for every setting in `names`, matched by canonical name only, not by alias. For a named
+/// collection that is also what the loader does: every engine's `loadFromNamedCollection` looks its settings
+/// up by canonical name, so a collection key spelled as an alias is ignored and must not be attributed.
 void setOrigin(SettingDescriptions & settings, const NameSet & names, SettingOrigin origin);
 
 /// Recomputes `origin` from the value alone: `Default` where it equals the compiled-in default and
