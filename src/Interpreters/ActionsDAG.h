@@ -307,6 +307,9 @@ public:
     bool hasCorrelatedColumns() const noexcept;
     bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
+    /// Returns true for stateful functions or functions non-deterministic within the query,
+    /// including functions in lambda bodies.
+    bool hasNonDeterministicOrStatefulFunctions() const;
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
