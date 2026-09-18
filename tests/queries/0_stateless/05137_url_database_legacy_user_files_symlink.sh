@@ -49,4 +49,7 @@ echo '--- SELECT through a symlink inside user_files'
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB}.\`${LINK_NAME}/data.csv\` ORDER BY ALL"
 
 echo '--- a missing file through the same symlink reports that it does not exist'
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB}.\`${LINK_NAME}/missing.csv\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|FILE_DOESNT_EXIST'
+# Which of the two codes reports the missing file depends on the run configuration (the catalog's
+# `UNKNOWN_TABLE` or the delegate's `FILE_DOESNT_EXIST`), and either one is the point of the test:
+# it is not `PATH_ACCESS_DENIED`. Print how many of them the error carries.
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB}.\`${LINK_NAME}/missing.csv\`" 2>&1 | grep -c -m1 -E 'UNKNOWN_TABLE|FILE_DOESNT_EXIST'

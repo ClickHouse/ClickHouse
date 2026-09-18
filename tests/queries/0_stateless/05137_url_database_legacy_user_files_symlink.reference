@@ -9,4 +9,4 @@ c2	Nullable(String)
 1	one
 2	two
 --- a missing file through the same symlink reports that it does not exist
-UNKNOWN_TABLE
+1
