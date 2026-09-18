@@ -1,7 +1,8 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas, no-replicated-database
 -- no-fasttest: the JSON cases need the JSON type.
 -- no-parallel-replicas: EXPLAIN indexes = 1 gains a per-node Granules block, and
 -- use_skip_indexes_on_data_read is not supported with parallel replicas.
+-- no-replicated-database: hypothetical indexes are session-scoped and not replicated
 
 -- Auto statistics can drop a whole part before any skip index is read, which would make the
 -- assertions below measure something other than the skip index.
@@ -19,8 +20,10 @@ SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_
 INSERT INTO t_dyn SELECT number, number FROM numbers(64);
 
 SELECT 'no index      ', count() FROM t_dyn WHERE d != 1048577 SETTINGS use_skip_indexes = 0;
-SELECT 'bulk          ', count() FROM t_dyn WHERE d != 1048577;
+SELECT 'bulk          ', count() FROM t_dyn WHERE d != 1048577 SETTINGS secondary_indices_enable_bulk_filtering = 1;
 SELECT 'granule       ', count() FROM t_dyn WHERE d != 1048577 SETTINGS secondary_indices_enable_bulk_filtering = 0;
+SELECT 'granules 16/16', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_dyn WHERE d != 1048577
+    SETTINGS secondary_indices_enable_bulk_filtering = 0) WHERE explain LIKE '%Granules: 16/16%';
 
 SELECT '-- 2. Dynamic column, IS NULL on the granule path';
 DROP TABLE IF EXISTS t_dyn_null;
@@ -47,6 +50,8 @@ INSERT INTO t_json SELECT number, concat('{"a":', toString(number), '}') FROM nu
 
 SELECT 'no index      ', count() FROM t_json WHERE j.a != 1048577 SETTINGS use_skip_indexes = 0;
 SELECT 'granule       ', count() FROM t_json WHERE j.a != 1048577 SETTINGS secondary_indices_enable_bulk_filtering = 0;
+SELECT 'granules 16/16', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json WHERE j.a != 1048577
+    SETTINGS secondary_indices_enable_bulk_filtering = 0) WHERE explain LIKE '%Granules: 16/16%';
 
 SELECT '-- 5. JSON subcolumn absent from every row, IS NULL';
 DROP TABLE IF EXISTS t_json_absent;
@@ -67,6 +72,8 @@ INSERT INTO t_var SELECT number, if(number % 2 = 0, NULL, number) FROM numbers(6
 
 SELECT 'no index      ', count() FROM t_var WHERE v IS NULL SETTINGS use_skip_indexes = 0;
 SELECT 'granule       ', count() FROM t_var WHERE v IS NULL SETTINGS secondary_indices_enable_bulk_filtering = 0;
+SELECT 'granules 16/16', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_var WHERE v IS NULL
+    SETTINGS secondary_indices_enable_bulk_filtering = 0) WHERE explain LIKE '%Granules: 16/16%';
 
 SELECT '-- 7. Two useful indexes and a disjunction, which reaches the granule path at defaults';
 DROP TABLE IF EXISTS t_or;
@@ -105,6 +112,25 @@ SELECT 'granule       ', count() FROM t_str WHERE s = '3' SETTINGS secondary_ind
 SELECT 'granules 1/16 ', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_str WHERE s = '3'
     SETTINGS secondary_indices_enable_bulk_filtering = 0) WHERE explain LIKE '%Granules: 1/16%';
 
+SELECT '-- 10. The build-path range: an empirical EXPLAIN WHATIF estimate';
+DROP TABLE IF EXISTS t_dyn_hypo;
+-- No materialized index, so the baseline is a full scan and the estimate is attributable to the
+-- hypothetical index alone. The empirical estimator is the only consumer of an aggregator-built
+-- granule, so this is the one place the build-path range is observable.
+CREATE TABLE t_dyn_hypo (k UInt64, d Dynamic)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_dyn_hypo SELECT number, number FROM numbers(64);
+
+CREATE HYPOTHETICAL INDEX idx_h ON t_dyn_hypo (d) TYPE set(100) GRANULARITY 1;
+
+-- source: empirical is asserted because evaluateIndex falls back to statistical and then to
+-- applicability_only, either of which would report a skip ratio this arm cannot interpret.
+SELECT replaceRegexpAll(trim(explain), ' +', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT count() FROM t_dyn_hypo WHERE d != 1048577)
+WHERE explain LIKE '%skip_ratio:%' OR explain LIKE '%source:%'
+ORDER BY line;
+
 DROP TABLE t_dyn;
 DROP TABLE t_dyn_null;
 DROP TABLE t_json;
@@ -113,3 +139,4 @@ DROP TABLE t_var;
 DROP TABLE t_or;
 DROP TABLE t_comp;
 DROP TABLE t_str;
+DROP TABLE t_dyn_hypo;
