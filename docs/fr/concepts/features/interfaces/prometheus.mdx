@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Les endpoints de requête acceptent également les paramètres dans un corps de formulaire. Sans `--get`, curl envoie les paramètres au format `application/x-www-form-urlencoded` via `POST` :
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 Utilisez l’endpoint de formatage de requête pour analyser et formater une expression PromQL sans l’évaluer :
 
 ```bash
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana ajoute `/api/v1/query` ou `/api/v1/query_range` à cette URL de base et ajoute `customQueryParameters` à chaque requête.
+
+Avec `httpMethod: POST`, Grafana envoie les paramètres de requête dans le corps de la requête. ClickHouse lit le corps de la requête ainsi que la chaîne de requête de l’URL, de sorte que `customQueryParameters` s’applique toujours. Utilisez `POST` pour les expressions PromQL longues, car une URL a une limite de longueur.
 
 <Note>
   Seuls les endpoints de requête `/api/v1/query`, `/api/v1/query_range` et `/api/v1/format_query`, ainsi que les endpoints de métadonnées `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` et `/api/v1/metadata`, sont implémentés. `/api/v1/series` nécessite au moins un sélecteur de séries `match[]`, prend en charge les paramètres facultatifs `start`, `end` et `limit`, et renvoie l’union des séries correspondant à chaque sélecteur. `/api/v1/labels` accepte les mêmes paramètres, `match[]` étant facultatif, et renvoie les noms de libellés triés des séries correspondantes (ou de toutes les séries lorsqu’aucun sélecteur n’est fourni). `/api/v1/label/<name>/values` accepte les mêmes paramètres que `/api/v1/labels` et renvoie les valeurs triées d’un libellé, `<name>` pouvant utiliser l’échappement Prometheus `U__...` pour les noms de libellés contenant des caractères en dehors de `[a-zA-Z0-9_]`. Ces endpoints couvrent ce qu’une source de données Prometheus dans Grafana utilise pour parcourir les libellés, les variables de modèle et l’autocomplétion du générateur de requêtes.

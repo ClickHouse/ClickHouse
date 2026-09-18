@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+쿼리 엔드포인트는 form body로 전달된 매개변수도 허용합니다. `--get` 없이 실행하면 curl은 매개변수를 `application/x-www-form-urlencoded` 형식으로 `POST` 요청에 담아 전송합니다:
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 PromQL 표현식을 평가하지 않고 파싱하여 포맷팅하려면 format-query 엔드포인트를 사용하십시오:
 
 ```bash
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana는 이 기준 URL 뒤에 `/api/v1/query` 또는 `/api/v1/query_range`를 추가하고, 각 요청에 `customQueryParameters`를 추가합니다.
+
+`httpMethod: POST`를 사용하면 Grafana는 쿼리 매개변수를 request body로 전송합니다. ClickHouse는 request body와 URL 쿼리 문자열을 모두 읽으므로 `customQueryParameters`는 계속 적용됩니다. URL에는 길이 제한이 있으므로 긴 PromQL 표현식에는 `POST`를 사용하십시오.
 
 <Note>
   쿼리 엔드포인트인 `/api/v1/query`, `/api/v1/query_range`, `/api/v1/format_query`와 메타데이터 엔드포인트 `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. `/api/v1/labels`는 동일한 매개변수를 허용하며, `match[]`는 선택 사항이고 일치하는 시리즈의 정렬된 레이블 이름을 반환합니다(셀렉터가 제공되지 않은 경우 모든 시리즈의 레이블 이름을 반환합니다). `/api/v1/label/<name>/values`는 `/api/v1/labels`와 동일한 매개변수를 허용하며 하나의 레이블에 대한 정렬된 값을 반환합니다. 이때 `<name>`에는 `[a-zA-Z0-9_]` 범위를 벗어나는 문자를 포함하는 레이블 이름에 대해 Prometheus의 `U__...` 이스케이프를 선택적으로 사용할 수 있습니다. 이러한 엔드포인트는 Grafana Prometheus 데이터 소스가 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 기능을 모두 다룹니다.

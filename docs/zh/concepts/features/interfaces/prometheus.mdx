@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+查询端点也接受以表单请求正文形式传递的参数。若不使用 `--get`，curl 会通过 `POST` 以 `application/x-www-form-urlencoded` 发送这些参数：
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 使用格式化查询端点解析并格式化 PromQL 表达式，而不对其求值：
 
 ```bash
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana 会将 `/api/v1/query` 或 `/api/v1/query_range` 追加到此基础 URL，并在每个请求中添加 `customQueryParameters`。
+
+在 `httpMethod: POST` 下，Grafana 会将查询参数放在请求正文中发送。ClickHouse 会同时读取请求正文和 URL 查询字符串，因此 `customQueryParameters` 仍然生效。对于较长的 PromQL 表达式，请使用 `POST`，因为 URL 存在长度限制。
 
 <Note>
   目前仅实现了查询端点 `/api/v1/query`、`/api/v1/query_range` 和 `/api/v1/format_query` 以及元数据端点 `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values` 和 `/api/v1/metadata`。`/api/v1/series` 至少需要一个 `match[]` 序列选择器，支持可选的 `start`、`end` 和 `limit` 参数，并返回每个选择器匹配的序列的并集。`/api/v1/labels` 接受相同的参数，其中 `match[]` 为可选项，并返回匹配的序列的已排序标记名称 (未提供选择器时则返回所有序列的标记名称) 。`/api/v1/label/<name>/values` 接受与 `/api/v1/labels` 相同的参数，并返回某个标记的已排序值，其中 `<name>` 可选地使用 Prometheus 的 `U__...` 转义方式来表示包含 `[a-zA-Z0-9_]` 之外字符的标记名称。这些端点涵盖了 Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的功能。

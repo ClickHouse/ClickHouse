@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+クエリエンドポイントは、フォームボディでのパラメータ受け渡しにも対応しています。`--get` を指定しない場合、curl はパラメータを `application/x-www-form-urlencoded` として `POST` で送信します。
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 フォーマット-query エンドポイントを使用して、PromQL 式を評価せずにパースおよびフォーマットします。
 
 ```bash
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_range` を付加し、各リクエストに `customQueryParameters` を追加します。
+
+`httpMethod: POST` の場合、Grafana はクエリパラメータをリクエストボディで送信します。ClickHouse はリクエストボディと URL のクエリ文字列の両方を読み取るため、`customQueryParameters` は引き続き適用されます。URL には長さの制限があるため、長い PromQL 式には `POST` を使用してください。
 
 <Note>
   実装されているのは、クエリエンドポイント `/api/v1/query`、`/api/v1/query_range`、`/api/v1/format_query`、およびメタデータエンドポイント `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`、`/api/v1/metadata` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` シリーズセレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致するシリーズのユニオンを返します。`/api/v1/labels` は同じパラメータを受け付けますが、`match[]` は任意であり、一致するシリーズのソート済みラベル名を返します (セレクターが指定されていない場合はすべてのシリーズのラベル名を返します) 。`/api/v1/label/<name>/values` は `/api/v1/labels` と同じパラメータを受け付け、1 つのラベルのソート済みの値を返します。`<name>` には、`[a-zA-Z0-9_]` 以外の文字を含むラベル名に対して Prometheus の `U__...` エスケープを任意で使用できます。これらのエンドポイントは、Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用する機能をカバーします。

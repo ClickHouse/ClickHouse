@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+تقبل نقاط نهاية الاستعلام المعلمات أيضاً في متن نموذج. فبدون `--get`، يرسل curl المعلمات بصيغة `application/x-www-form-urlencoded` عبر `POST`:
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 استخدم نقطة نهاية تنسيق الاستعلام لتحليل تعبير PromQL وتنسيقه دون تقييمه:
 
 ```bash
@@ -151,7 +164,7 @@ curl --user default:<password> --get \
   --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
 ```
 
-يُعاد التعبير مُسلسلاً من الاستعلام المُحلَّل، مع توحيد المسافات البيضاء، وإزالة التعليقات، وحذف الأقواس الزائدة، وتحويل المدد إلى أعداد بالثواني: `sum by (job) (http_requests_total{code="200"}) / 2`. لا تقوم نقطة النهاية هذه بتقييم التعبير، لذا فهي لا تحتاج إلى المعاملين `database` و`table`.
+يُعاد التعبير مُسلسلاً من الاستعلام المُحلَّل، مع توحيد المسافات البيضاء، وإزالة التعليقات، وحذف الأقواس الزائدة، وتحويل المدد إلى أعداد بالثواني: `sum by (job) (http_requests_total{code="200"}) / 2`. لا تقوم نقطة النهاية هذه بتقييم التعبير، لذا فهي لا تحتاج إلى المعلمتين `database` و`table`.
 
 راجع [ميزات PromQL المدعومة](/ar/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) للاطلاع على قائمة الدالات وعوامل التجميع التي تستخدمها واجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالات الجداول.
 
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 يُلحق Grafana المسارَين ‎`/api/v1/query` أو ‎`/api/v1/query_range` بعنوان URL الأساسي هذا، ويضيف `customQueryParameters` إلى كل طلب.
+
+عند استخدام `httpMethod: POST`، يرسل Grafana معلمات الاستعلام في متن الطلب. ويقرأ ClickHouse متن الطلب واستعلام عنوان URL معًا، لذا يظل `customQueryParameters` ساريًا. استخدم `POST` لتعبيرات PromQL الطويلة، لأن عنوان URL له حد أقصى للطول.
 
 <Note>
   لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لتسمية واحدة، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء التسميات التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.

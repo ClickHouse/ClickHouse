@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Los endpoints de consulta también aceptan los parámetros en el cuerpo de un formulario. Sin `--get`, curl envía los parámetros como `application/x-www-form-urlencoded` mediante `POST`:
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 Utilice el endpoint de formato de consulta para analizar y formatear una expresión de PromQL sin evaluarla:
 
 ```bash
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana agrega `/api/v1/query` o `/api/v1/query_range` a esta URL base y añade `customQueryParameters` a cada solicitud.
+
+Con `httpMethod: POST`, Grafana envía los parámetros de consulta en el cuerpo de la solicitud. ClickHouse lee el cuerpo de la solicitud y la cadena de consulta de la URL, por lo que `customQueryParameters` sigue aplicándose. Use `POST` para expresiones PromQL largas, ya que una URL tiene un límite de longitud.
 
 <Note>
   Solo están implementados los endpoints de consulta `/api/v1/query`, `/api/v1/query_range` y `/api/v1/format_query` y los endpoints de metadatos `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` y `/api/v1/metadata`. `/api/v1/series` requiere al menos un selector de series `match[]`, admite los parámetros opcionales `start`, `end` y `limit`, y devuelve la unión de las series coincidentes con cada selector. `/api/v1/labels` acepta los mismos parámetros, con `match[]` como opcional, y devuelve los nombres de etiquetas ordenados de las series coincidentes (o de todas las series cuando no se proporcionan selectores). `/api/v1/label/<name>/values` acepta los mismos parámetros que `/api/v1/labels` y devuelve los valores ordenados de una etiqueta, donde `<name>` puede usar opcionalmente el escapado `U__...` de Prometheus para nombres de etiquetas que contienen caracteres fuera de `[a-zA-Z0-9_]`. Estos endpoints cubren lo que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas.

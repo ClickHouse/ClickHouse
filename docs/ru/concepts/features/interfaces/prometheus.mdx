@@ -143,6 +143,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Конечные точки запросов также принимают параметры в теле формы. Без `--get` curl отправляет параметры в формате `application/x-www-form-urlencoded` методом `POST`:
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 Используйте конечную точку format-запроса, чтобы разобрать и отформатировать выражение PromQL без его вычисления:
 
 ```bash
@@ -169,13 +182,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana добавляет `/api/v1/query` или `/api/v1/query_range` к этому базовому URL, а также `customQueryParameters` к каждому запросу.
+
+При `httpMethod: POST` Grafana передаёт параметры запроса в теле запроса. ClickHouse читает как тело запроса, так и строку запроса URL, поэтому `customQueryParameters` по-прежнему применяется. Используйте `POST` для длинных выражений PromQL, поскольку длина URL ограничена.
 
 <Note>
   Реализованы только конечные точки запросов `/api/v1/query`, `/api/v1/query_range` и `/api/v1/format_query`, а также конечные точки метаданных `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` и `/api/v1/metadata`. Для `/api/v1/series` требуется как минимум один селектор серий `match[]`; она поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому селектору. `/api/v1/labels` принимает те же параметры, при этом `match[]` необязателен, и возвращает отсортированные имена меток соответствующих серий (или всех серий, если селекторы не указаны). `/api/v1/label/<name>/values` принимает те же параметры, что и `/api/v1/labels`, и возвращает отсортированные значения одной метки, причём в `<name>` может использоваться принятое в Prometheus экранирование `U__...` для имён меток, содержащих символы вне `[a-zA-Z0-9_]`. Этих конечных точек достаточно для всего, что источник данных Prometheus в Grafana использует для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов.

@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-18T11:10:15.760Z",
+          "updatedAt": "2026-09-18T11:36:15.987Z",
           "fileName": "docs.json",
           "postProcessHash": "06e4dfbf312293c3556f1982a25a1ebe17e82e6dc6dea1eee8ba84b41ac4e9ec"
         },
         "ja": {
-          "updatedAt": "2026-09-18T11:10:14.828Z",
+          "updatedAt": "2026-09-18T11:36:15.028Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-18T11:10:15.294Z",
+          "updatedAt": "2026-09-18T11:36:15.515Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-18T11:10:15.450Z",
+          "updatedAt": "2026-09-18T11:36:15.675Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-18T11:10:15.131Z",
+          "updatedAt": "2026-09-18T11:36:15.356Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-18T11:10:14.979Z",
+          "updatedAt": "2026-09-18T11:36:15.194Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-18T11:10:14.664Z",
+          "updatedAt": "2026-09-18T11:36:14.849Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-18T11:10:15.606Z",
+          "updatedAt": "2026-09-18T11:36:15.832Z",
           "fileName": "docs.json"
         }
       },
@@ -31584,47 +31584,47 @@
     },
     {
       "fileId": "a61142d4da2cfb50c3abfd7bd13ffdc9a17ba50dd54ad060a3b84bd33b804de1",
-      "versionId": "8ffae22e35e3b294eddd2ffa421d0ecff086e3417239f7e4c0a7193bcca9a654",
+      "versionId": "292765650f03d5c1cda8c2904723805a9067096c37c68ca8e87e1dc0af951cf9",
       "translations": {
-        "ru": {
-          "updatedAt": "2026-09-16T04:10:11.114Z",
-          "fileName": "ru/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "c61a7248b9865ce19167f47d5e78bbf5642bfc7307e8dfe69e3516e72c39912d"
-        },
-        "ja": {
-          "updatedAt": "2026-09-16T04:10:11.115Z",
-          "fileName": "ja/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "acb46788537a71769575c579cec46816241c48bae044334e508296ef545e2149"
-        },
         "zh": {
-          "updatedAt": "2026-09-16T04:10:11.115Z",
+          "updatedAt": "2026-09-18T11:36:19.767Z",
           "fileName": "zh/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "718dbffb39ae21a1bfa2589c8e4c0e6d7b8662b98ea39c7f6311076a9ef3ea75"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-16T04:10:11.116Z",
-          "fileName": "pt-BR/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "f73f5d3153b8e5722d01ad9085b7e7b06fa37fa3ddaf07f42df4304f5e8c4236"
+          "postProcessHash": "be20081b326ef2a5f00ca642451e660332d04dd8122d1c34d7f4aa0a7c073ae4"
         },
         "ko": {
-          "updatedAt": "2026-09-16T04:10:11.117Z",
+          "updatedAt": "2026-09-18T11:36:19.768Z",
           "fileName": "ko/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "47ee1e8e8b569a92e1889117dbb136ca0ea06f7bd9d326e544a5c527e0b7a051"
+          "postProcessHash": "127138aa50677043b0d365ef1df944da4958c8fe6503496f18fa54ffbcf54f94"
         },
         "es": {
-          "updatedAt": "2026-09-16T04:10:11.117Z",
+          "updatedAt": "2026-09-18T11:36:19.768Z",
           "fileName": "es/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "478921360daacba9dfd4814b95286280cbfd2bee11e3cb03483235425aac0950"
+          "postProcessHash": "eb6a4c47f3eb89aff0d2b4d059f31fb4c34048392b1776954b467c92f617c837"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-18T11:36:19.769Z",
+          "fileName": "pt-BR/concepts/features/interfaces/prometheus.mdx",
+          "postProcessHash": "ec4891fbf7b9f411681c3bef3035b11facfed50eade71d373d1a9290a8c1547e"
         },
         "fr": {
-          "updatedAt": "2026-09-16T04:10:11.118Z",
+          "updatedAt": "2026-09-18T11:36:19.770Z",
           "fileName": "fr/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "49451128e7d2a74ace939edadea0e62d6efa1cfa25e2c639abbd3a9d2d1d98c7"
+          "postProcessHash": "f5e544696d40a379d04c3a8f684aba557a19755d9f31547463f9eedc11044a1b"
+        },
+        "ru": {
+          "updatedAt": "2026-09-18T11:36:19.770Z",
+          "fileName": "ru/concepts/features/interfaces/prometheus.mdx",
+          "postProcessHash": "8b85670b0fdc762f84ab9e705f04f1bec8d30e1b75b4efc2d7af2d49043c759b"
+        },
+        "ja": {
+          "updatedAt": "2026-09-18T11:36:19.771Z",
+          "fileName": "ja/concepts/features/interfaces/prometheus.mdx",
+          "postProcessHash": "cebc7d0fac2c08e6bd7c98312628ce8c144eb6346ed6c414c90e6685683abc43"
         },
         "ar": {
-          "updatedAt": "2026-09-16T04:10:11.118Z",
+          "updatedAt": "2026-09-18T11:36:19.772Z",
           "fileName": "ar/concepts/features/interfaces/prometheus.mdx",
-          "postProcessHash": "9029cea9fdd67feea4dca9853cd7f2ddfcce314c7ade76eafb0bc0de1666a4c5"
+          "postProcessHash": "5c02da14cbb88409b39167e209edeb2c5480308d8ea8195a9615e8a2318f3629"
         }
       },
       "fileName": "concepts/features/interfaces/prometheus.mdx"
