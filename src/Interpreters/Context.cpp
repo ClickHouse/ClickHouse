@@ -2885,7 +2885,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             ASTCreateQuery create;
             create.set(create.select, query);
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+            auto sample_block = getSettingsRef()[Setting::allow_experimental_analyzer]
+                ? InterpreterSelectQueryAnalyzer::getSampleBlock(query, getQueryContext())
+                : InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
