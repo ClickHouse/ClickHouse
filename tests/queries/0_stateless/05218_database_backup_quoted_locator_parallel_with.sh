@@ -30,11 +30,19 @@ PARALLEL WITH
 ATTACH DATABASE $ATTACHED_DATABASE_NAME ENGINE = Backup('$BACKUP_DATABASE_NAME', 'Disk(\\'backups\\', \\'$BACKUP_DATABASE_NAME\\')');
 """ 2>&1 | grep -q -F 'Expected function' && echo 'refused'
 
+# Each block below must start from the same state: whether the sibling `CREATE DATABASE` of a
+# `PARALLEL WITH` whose other statement threw is committed or rolled back depends on how the
+# statements were scheduled, and with `max_threads = 1` it is committed. Drop it in between, so the
+# refusal under test is what the block observes, not a leftover "database already exists".
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $OTHER_DATABASE_NAME"
+
 $CLICKHOUSE_CLIENT -q """
 CREATE DATABASE $OTHER_DATABASE_NAME
 PARALLEL WITH
 CREATE DATABASE $ATTACHED_DATABASE_NAME ENGINE = Backup('$BACKUP_DATABASE_NAME', 'Disk(\\'backups\\', \\'$BACKUP_DATABASE_NAME\\')');
 """ 2>&1 | grep -q -F 'Expected function' && echo 'refused'
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $OTHER_DATABASE_NAME"
 
 # The function form goes through the same wrapper.
 $CLICKHOUSE_CLIENT -q """
