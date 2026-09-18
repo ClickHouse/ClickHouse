@@ -137,7 +137,7 @@ void SocketImpl::connect(const SocketAddress& address, const Poco::Timespan& tim
 			if (!poll(timeout, SELECT_READ | SELECT_WRITE | SELECT_ERROR))
 				throw Poco::TimeoutException("connect timed out", address.toString());
 			err = socketError();
-			if (err != 0) error(err);
+			if (err != 0) error(err, address.toString());
 		}
 	}
 	catch (Poco::Exception&)
@@ -1101,9 +1101,9 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_ENETRESET:
 		throw NetException("Network dropped connection on reset", arg, code);
 	case POCO_ECONNABORTED:
-		throw ConnectionAbortedException(code);
+		throw ConnectionAbortedException(arg, code);
 	case POCO_ECONNRESET:
-		throw ConnectionResetException(code);
+		throw ConnectionResetException(arg, code);
 	case POCO_ENOBUFS:
 		throw IOException("No buffer space available", code);
 	case POCO_EISCONN:
@@ -1113,7 +1113,7 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_ESHUTDOWN:
 		throw NetException("Cannot send after socket shutdown", code);
 	case POCO_ETIMEDOUT:
-		throw TimeoutException(code);
+		throw TimeoutException(arg, code);
 	case POCO_ECONNREFUSED:
 		throw ConnectionRefusedException(arg, code);
 	case POCO_EHOSTDOWN:
