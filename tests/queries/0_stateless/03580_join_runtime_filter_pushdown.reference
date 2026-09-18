@@ -1,16 +1,16 @@
-Expression
+Expression (((Project names + Projection) + Post Join Actions))
   Join (JOIN FillRightFirst)
     Expression (Left Pre Join Actions)
       Expression
         Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)
-            Filter
+            Filter (((Apply runtime join filter + Calculate left join keys) + Change column names to column identifiers))
               ReadFromSystemNumbers
-          Expression
+          Expression ((((Apply runtime join filter + Calculate left join keys) + Post Join Actions) + Right Pre Join Actions))
             BuildRuntimeFilter (Build runtime join filter on modulo(__table3.number, 3_UInt8))
-              Filter
+              Filter ((((((Apply runtime join filter + Calculate left join keys) + Post Join Actions) + Right Pre Join Actions) + Calculate right join keys) + Change column names to column identifiers))
                 ReadFromSystemNumbers
     Expression (Right Pre Join Actions)
       BuildRuntimeFilter (Build runtime join filter on plus(__table4.number, 2_UInt8))
-        Expression
+        Expression ((Calculate right join keys + Change column names to column identifiers))
           ReadFromSystemNumbers
