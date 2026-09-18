@@ -210,8 +210,6 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-/// An absent cardinality is charged `unknown_relation_rows`, so a relation the optimizer cannot
-/// estimate never looks cheaper to join than one it can.
 inline double rowsForJoinCost(const std::optional<UInt64> & estimated_rows, UInt64 unknown_relation_rows)
 {
     return static_cast<double>(estimated_rows.value_or(unknown_relation_rows));

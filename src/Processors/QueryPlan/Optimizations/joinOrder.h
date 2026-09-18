@@ -90,8 +90,7 @@ struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
 
-    /// Row count the cost model charges for a relation or partial plan with no cardinality estimate:
-    /// the largest `relation_stats` estimate, or 1 when no relation is estimated. See `computeJoinCost`.
+    /// Rows charged to a relation or partial plan with no cardinality estimate.
     UInt64 unknown_relation_rows = 1;
 
     std::vector<JoinActionRef> edges;
