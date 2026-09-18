@@ -45,6 +45,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     const bool has_server = config.has(prefix_str + "server");
     const bool has_roles = config.has(prefix_str + "roles");
     const bool has_role_mapping = config.has(prefix_str + "role_mapping");
+    const bool has_exclude_users = config.has(prefix_str + "exclude_users");
 
     if (!has_server)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'server' field for LDAP user directory");
@@ -75,9 +76,31 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         }
     }
 
+    std::set<String> excluded_user_names_cfg;
+    if (has_exclude_users)
+    {
+        Poco::Util::AbstractConfiguration::Keys exclude_users_keys;
+        config.keys(prefix_str + "exclude_users", exclude_users_keys);
+        for (const auto & key : exclude_users_keys)
+        {
+            // Only `<user>` entries are meaningful here; anything else is most likely a typo that would
+            // silently exclude nobody, so it is rejected instead of ignored.
+            if (key != "user" && !key.starts_with("user["))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected key '{}' in exclude_users for LDAP user directory, only 'user' entries are allowed", key);
+
+            const auto excluded_user_name = config.getString(prefix_str + "exclude_users." + key);
+            if (excluded_user_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty user name in exclude_users for LDAP user directory");
+
+            excluded_user_names_cfg.insert(excluded_user_name);
+        }
+    }
+
     ldap_server_name = ldap_server_name_cfg;
     role_search_params.swap(role_search_params_cfg);
     common_role_names.swap(common_roles_cfg);
+    excluded_user_names.swap(excluded_user_names_cfg);
 
     users_external_roles.clear();
     users_per_roles.clear();
@@ -393,6 +416,13 @@ String LDAPAccessStorage::getStorageParamsJSON() const
     }
     params_json.set("role_mappings", role_mappings_json);
 
+    Poco::JSON::Array excluded_user_names_json;
+    for (const auto & user_name : excluded_user_names)
+    {
+        excluded_user_names_json.add(user_name);
+    }
+    params_json.set("exclude_users", excluded_user_names_json);
+
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(params_json, oss);
@@ -404,7 +434,86 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
     std::lock_guard lock(mutex);
+
+    /// `memory_storage` must never hold a name listed in `exclude_users` (see `authenticateImpl`), so the
+    /// answer is known without looking, and both `findImpl` overloads must give it.
+    if (type == AccessEntityType::USER && excluded_user_names.contains(name))
+        return {};
+
     return memory_storage.find(type, name);
+}
+
+
+std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name, bool force_external_lookup) const
+{
+    std::lock_guard lock(mutex);
+
+    /// Names listed in `exclude_users` are never resolved through LDAP, not even by the forced lookup
+    /// that `EXECUTE AS` performs, and `memory_storage` must never hold them (see `authenticateImpl`).
+    /// Decided before touching the memory storage so that this overload can never disagree with the
+    /// plain one above.
+    if (type == AccessEntityType::USER && excluded_user_names.contains(name))
+    {
+        if (force_external_lookup)
+            LOG_DEBUG(getLogger(), "Skipping excluded user {}: the name is listed in exclude_users", name);
+        return {};
+    }
+
+    auto id = memory_storage.find(type, name);
+
+    /// Only USER lookups go to LDAP; other entity types (roles, profiles, ...) live
+    /// elsewhere and are not resolvable through the LDAP directory.
+    if (!force_external_lookup || type != AccessEntityType::USER)
+        return id;
+
+    const bool has_role_mapping = !role_search_params.empty();
+
+    /// An entry may exist in memory yet have been materialized without resolving role
+    /// mapping -- notably the interserver `AlwaysAllowCredentials` path in distributed
+    /// `EXECUTE AS`, which caches the user with empty `external_roles`. Such incomplete
+    /// entries have fewer `users_external_roles[name]` entries than `role_search_params`
+    /// (a real login always leaves one per search param, even if empty); refresh them
+    /// via the service bind.
+    if (id && has_role_mapping)
+    {
+        const auto eit = users_external_roles.find(name);
+        const bool needs_refresh = (eit == users_external_roles.end()) || (eit->second.size() != role_search_params.size());
+        if (needs_refresh)
+        {
+            LDAPClient::SearchResultsList external_roles;
+            if (access_control.getExternalAuthenticators().findLDAPUser(
+                    ldap_server_name,
+                    name,
+                    &role_search_params,
+                    &external_roles))
+            {
+                updateAssignedRolesNoLock(*id, name, external_roles);
+            }
+        }
+    }
+
+    if (id)
+        return id;
+
+    LDAPClient::SearchResultsList external_roles;
+    if (!access_control.getExternalAuthenticators().findLDAPUser(
+            ldap_server_name,
+            name,
+            has_role_mapping ? &role_search_params : nullptr,
+            has_role_mapping ? &external_roles : nullptr))
+    {
+        return {};
+    }
+
+    /// Materialize the user with the resolved role mapping. The shape mirrors the
+    /// already-tested first-login path in `authenticateImpl`, so the entry is
+    /// indistinguishable from one created by a real LDAP login.
+    auto new_user = std::make_shared<User>();
+    new_user->setName(name);
+    new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+    new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+    assignRolesNoLock(*new_user, external_roles);
+    return memory_storage.insert(new_user);
 }
 
 
@@ -446,7 +555,22 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     bool /* allow_plaintext_password */) const
 {
     std::lock_guard lock(mutex);
-    auto id = memory_storage.find<User>(credentials.getUserName());
+
+    const auto & user_name = credentials.getUserName();
+
+    /// Names listed in `exclude_users` are never served by this storage: no candidate user is built,
+    /// no address check runs and the LDAP server is never contacted, for `BasicCredentials` and
+    /// interserver `AlwaysAllowCredentials` alike. They are reported as "not found" rather than as
+    /// an error so that `MultipleAccessStorage` continues with the storages that follow.
+    if (excluded_user_names.contains(user_name))
+    {
+        LOG_DEBUG(getLogger(), "Skipping excluded user {}: the name is listed in exclude_users", user_name);
+        if (throw_if_user_not_exists)
+            throwNotFound(AccessEntityType::USER, user_name, getStorageName());
+        return {};
+    }
+
+    auto id = memory_storage.find<User>(user_name);
     UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
 
     std::shared_ptr<User> new_user;
@@ -454,7 +578,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     {
         // User does not exist, so we create one, and will add it if authentication is successful.
         new_user = std::make_shared<User>();
-        new_user->setName(credentials.getUserName());
+        new_user->setName(user_name);
         new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
         new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
         user = new_user;
@@ -471,7 +595,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // We treat this situation as if there is no such user because we don't want to block
         // other storages following this LDAPAccessStorage from trying to authenticate on their own.
         if (throw_if_user_not_exists)
-            throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
+            throwNotFound(AccessEntityType::USER, user_name, getStorageName());
         else
             return {};
     }
@@ -484,14 +608,17 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
     }
-    else
+    else if (!typeid_cast<const AlwaysAllowCredentials *>(&credentials))
     {
         // Just in case external_roles are changed. This will be no-op if they are not.
+        // Interserver `AlwaysAllowCredentials` skip the LDAP round-trip (see `areLDAPCredentialsValidNoLock`),
+        // so `external_roles` is empty for them; updating from it would wipe the roles mapped at the user's
+        // last password login until the next one (https://github.com/ClickHouse/ClickHouse/pull/101920).
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
 
     if (id)
-        return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP), .user_name = credentials.getUserName() };
+        return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP), .user_name = user_name };
     return std::nullopt;
 }
 
