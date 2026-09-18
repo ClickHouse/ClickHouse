@@ -20,6 +20,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -909,6 +910,28 @@ struct AnalysisOfVarianceMoments
         readVectorBinary(xs1, buf);
         readVectorBinary(xs2, buf);
         readVectorBinary(ns, buf);
+
+        validateDeserialized();
+    }
+
+    /// Aggregate function states can be constructed from untrusted data, e.g. by `CAST` from `String`,
+    /// so deserialization has to check the invariants that `merge` and finalization rely on
+    /// (a genuine state produced by `add` and `merge` satisfies them by construction):
+    ///  - `xs1`, `xs2` and `ns` have the same size, since they are indexed together;
+    ///  - the number of groups does not exceed `MAX_GROUPS_NUMBER`.
+    void validateDeserialized() const
+    {
+        if (xs1.size() != xs2.size() || xs1.size() != ns.size())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted aggregate function state: the sizes of the group sums ({}), squared sums ({}) and counts ({}) differ",
+                xs1.size(), xs2.size(), ns.size());
+
+        if (xs1.size() > MAX_GROUPS_NUMBER)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted aggregate function state: too many groups for analysis of variance (should be no more than {}, got {})",
+                MAX_GROUPS_NUMBER, xs1.size());
     }
 
     Float64 getMeanAll() const
