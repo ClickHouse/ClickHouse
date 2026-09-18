@@ -1037,7 +1037,7 @@ TEST_F(ConnectionPoolTest, LegacyStreamApiHalfReadResponseIsNotPreserved)
         ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
 
         /// Read a part of the body and leave the rest of it in the socket.
-        char first;
+        char first = 0;
         response_body.read(&first, 1);
         ASSERT_EQ(data[0], first);
     }
