@@ -659,50 +659,53 @@ def test_barrier_synchronised_concurrent_appends(started_cluster, partitioned):
 
 def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
     node = started_cluster.instances["node1"]
-    path = randomize_table_name("test_ch_deltars_race")
     schema = pa.schema([("id", pa.int64(), False), ("who", pa.string(), False)])
-    create_empty_delta_table(started_cluster, "s3", path, schema)
-    node.query(f"CREATE TABLE {path} (id Int64, who String) ENGINE = {delta_engine_definition(started_cluster, 's3', path)}")
     safe_storage_options = {k: v for k, v in get_storage_options(started_cluster).items() if k != "AWS_S3_ALLOW_UNSAFE_RENAME"}
     safe_storage_options["conditional_put"] = "etag"
-
     rounds = 8
-    ch_ok = []
-    rs_ok = []
-    ch_errors = []
-    rs_errors = []
-    barrier = threading.Barrier(2)
 
-    def clickhouse_writer():
-        for r in range(rounds):
-            barrier.wait()
-            try:
-                node.query(f"INSERT INTO {path} SELECT number + {r * 100}, 'clickhouse' FROM numbers(10)")
-                ch_ok.append(r)
-            except Exception as e:  # pylint: disable=broad-except
-                ch_errors.append(str(e))
+    # Retried on a fresh table until at least one writer loses the commit race.
+    for attempt in range(3):
+        path = randomize_table_name("test_ch_deltars_race")
+        create_empty_delta_table(started_cluster, "s3", path, schema)
+        node.query(f"CREATE TABLE {path} (id Int64, who String) ENGINE = {delta_engine_definition(started_cluster, 's3', path)}")
+        ch_ok, rs_ok, ch_errors, rs_errors = [], [], [], []
+        barrier = threading.Barrier(2)
 
-    def deltars_writer():
-        for r in range(rounds):
-            barrier.wait()
-            batch = pa.Table.from_pydict({"id": pa.array([10000 + r * 100 + i for i in range(10)], pa.int64()), "who": pa.array(["delta-rs"] * 10)})
-            try:
-                write_deltalake(
-                    f"s3://{started_cluster.minio_bucket}/{path}",
-                    batch,
-                    storage_options=safe_storage_options,
-                    mode="append",
-                )
-                rs_ok.append(r)
-            except Exception as e:  # pylint: disable=broad-except
-                rs_errors.append(str(e))
+        def clickhouse_writer(path=path, barrier=barrier, ch_ok=ch_ok, ch_errors=ch_errors):
+            for r in range(rounds):
+                barrier.wait()
+                try:
+                    node.query(f"INSERT INTO {path} SELECT number + {r * 100}, 'clickhouse' FROM numbers(10)")
+                    ch_ok.append(r)
+                except Exception as e:  # pylint: disable=broad-except
+                    ch_errors.append(str(e))
 
-    threads = [threading.Thread(target=clickhouse_writer), threading.Thread(target=deltars_writer)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    logging.info("clickhouse ok=%s errors=%s; delta-rs ok=%s errors=%s", len(ch_ok), ch_errors, len(rs_ok), rs_errors)
+        def deltars_writer(path=path, barrier=barrier, rs_ok=rs_ok, rs_errors=rs_errors):
+            for r in range(rounds):
+                barrier.wait()
+                batch = pa.Table.from_pydict({"id": pa.array([10000 + r * 100 + i for i in range(10)], pa.int64()), "who": pa.array(["delta-rs"] * 10)})
+                try:
+                    write_deltalake(
+                        f"s3://{started_cluster.minio_bucket}/{path}",
+                        batch,
+                        storage_options=safe_storage_options,
+                        mode="append",
+                    )
+                    rs_ok.append(r)
+                except Exception as e:  # pylint: disable=broad-except
+                    rs_errors.append(str(e))
+
+        threads = [threading.Thread(target=clickhouse_writer), threading.Thread(target=deltars_writer)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        logging.info("attempt %s: clickhouse ok=%s errors=%s; delta-rs ok=%s errors=%s", attempt, len(ch_ok), ch_errors, len(rs_ok), rs_errors)
+        if ch_errors or rs_errors:
+            break
+        node.query(f"DROP TABLE {path}")
+    assert ch_errors or rs_errors, "no writer lost the race in three attempts: the conflict path was not exercised"
 
     for e in ch_errors:
         assert "commit conflict at version" in e, e
