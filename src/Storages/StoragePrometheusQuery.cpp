@@ -2,24 +2,35 @@
 
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Core/UUID.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <IO/WriteHelpers.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/Prometheus/PrometheusQueryClassifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
+#include <Storages/TimeSeries/PromQLNativePlanBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -28,12 +39,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace Setting
 {
+    extern const SettingsBool enable_promql_native_plan;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsUInt64 max_promql_native_output_groups;
+    extern const SettingsUInt64 min_promql_native_query_range_points;
 }
 
 namespace
@@ -53,6 +68,115 @@ String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, st
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
     return String(value.getDataAt());
 }
+
+const PrometheusQueryTree::Node * findH0NativeFragment(
+    const PrometheusQueryTree & promql_query,
+    bool is_query_range)
+{
+    const auto * root = promql_query.getRoot();
+    if (!root || root->node_type != PrometheusQueryTree::NodeType::Function)
+        return nullptr;
+
+    const auto * function = typeid_cast<const PrometheusQueryTree::Function *>(root);
+    if (!function || function->function_name != "clamp_max" || function->getArguments().size() != 2)
+        return nullptr;
+
+    const auto * fragment = function->getArguments().front();
+    const auto * bound = function->getArguments().back();
+    if (!bound || bound->node_type != PrometheusQueryTree::NodeType::Scalar)
+        return nullptr;
+
+    if (!extractPromQLRangeSumByQuery(fragment, is_query_range))
+        return nullptr;
+
+    return fragment;
+}
+
+const PrometheusQueryTree::Node * findH1NativeFragment(
+    const PrometheusQueryTree & promql_query,
+    bool is_query_range)
+{
+    if (!extractPromQLRangeTopKByQuery(promql_query, is_query_range))
+        return nullptr;
+
+    const auto * root = promql_query.getRoot();
+    if (!root || root->node_type != PrometheusQueryTree::NodeType::AggregationOperator)
+        return nullptr;
+
+    const auto * aggregation = typeid_cast<const PrometheusQueryTree::AggregationOperator *>(root);
+    if (!aggregation || aggregation->getArguments().size() != 2)
+        return nullptr;
+
+    return aggregation->getArguments().at(1);
+}
+
+std::shared_ptr<const PrometheusQueryTree> clonePromQLSubtree(
+    const PrometheusQueryTree::Node * root,
+    UInt32 timestamp_scale)
+{
+    std::vector<std::unique_ptr<PrometheusQueryTree::Node>> nodes;
+    auto * cloned_root = root->clone(nodes);
+    return std::make_shared<const PrometheusQueryTree>(std::move(nodes), cloned_root, timestamp_scale);
+}
+
+class StoragePromQLNativeFragment final : public IStorage
+{
+public:
+    StoragePromQLNativeFragment(
+        const StorageID & table_id,
+        std::shared_ptr<const PrometheusQueryTree> promql_query_,
+        PrometheusQueryEvaluationSettings evaluation_settings_,
+        size_t max_output_groups_)
+        : IStorage(table_id)
+        , promql_query(std::move(promql_query_))
+        , evaluation_settings(std::move(evaluation_settings_))
+        , max_output_groups(max_output_groups_)
+    {
+        const auto nullable_scalar_type = makeNullable(evaluation_settings.scalar_data_type);
+        StorageInMemoryMetadata metadata;
+        metadata.setColumns(ColumnsDescription({
+            {TimeSeriesColumnNames::Group, std::make_shared<DataTypeUInt64>()},
+            {TimeSeriesColumnNames::Values, std::make_shared<DataTypeArray>(nullable_scalar_type)},
+        }));
+        setInMemoryMetadata(metadata);
+    }
+
+    std::string getName() const override { return "PromQLNativeFragment"; }
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override
+    {
+        if (!tryBuildPromQLNativeVectorGridPlan(
+                query_plan,
+                column_names,
+                storage_snapshot,
+                query_info,
+                context,
+                processed_stage,
+                max_block_size,
+                num_streams,
+                *promql_query,
+                evaluation_settings,
+                max_output_groups))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The admitted PromQL native fragment cannot build its VECTOR_GRID plan");
+        }
+    }
+
+private:
+    const std::shared_ptr<const PrometheusQueryTree> promql_query;
+    const PrometheusQueryEvaluationSettings evaluation_settings;
+    const size_t max_output_groups;
+};
 
 }
 
@@ -181,28 +305,102 @@ VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()
 void StoragePrometheusQuery::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageSnapshotPtr & /* storage_snapshot */,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
-    QueryProcessingStage::Enum /* processed_stage */,
-    size_t /* max_block_size */,
-    size_t /* num_streams */)
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
-    LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
-    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
-    ASTPtr select_query = converter.getSQL();
+    const bool is_query_range = config.evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE;
+    const auto min_native_range_points = context->getSettingsRef()[Setting::min_promql_native_query_range_points];
+    const auto query_range_points = is_query_range
+        ? PrometheusQueryToSQL::stepsInTimeSeriesRange(
+            *config.evaluation_settings.start_time,
+            *config.evaluation_settings.end_time,
+            *config.evaluation_settings.step)
+        : 1;
+    const bool native_range_admitted = !is_query_range || !min_native_range_points || query_range_points >= min_native_range_points;
+    const bool native_plan_enabled = context->getSettingsRef()[Setting::enable_promql_native_plan];
 
-    LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
-    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    if (native_plan_enabled && !native_range_admitted)
+    {
+        LOG_INFO(
+            log,
+            "PromQL range has {} evaluation points, below min_promql_native_query_range_points={}; using the SQL plan",
+            query_range_points,
+            min_native_range_points.value);
+    }
+
+    if (native_plan_enabled
+        && native_range_admitted
+        && extractPromQLRangeSumByQuery(*config.promql_query, is_query_range)
+        && tryBuildPromQLNativePlan(
+            query_plan,
+            column_names,
+            storage_snapshot,
+            query_info,
+            context,
+            processed_stage,
+            max_block_size,
+            num_streams,
+            *config.promql_query,
+            config.evaluation_settings,
+            context->getSettingsRef()[Setting::max_promql_native_output_groups]))
+    {
+        LOG_INFO(log, "Using the native execution plan to evaluate promql: {}", *config.promql_query);
+        return;
+    }
 
     /// Isolate the settings required by generated PromQL from the outer query.
     auto query_context = Context::createCopy(context);
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    std::optional<PrometheusQueryToSQL::NativeFragmentDescription> native_fragment;
+    if (native_plan_enabled && native_range_admitted)
+    {
+        const auto * fragment_node = findH0NativeFragment(
+            *config.promql_query,
+            is_query_range);
+        if (!fragment_node)
+            fragment_node = findH1NativeFragment(*config.promql_query, is_query_range);
+        if (fragment_node)
+        {
+            auto fragment_query = clonePromQLSubtree(fragment_node, config.promql_query->getTimestampScale());
+            String fragment_name = "__promql_native_fragment_" + toString(UUIDHelpers::generateV4());
+            std::ranges::replace(fragment_name, '-', '_');
+
+            TemporaryTableHolder fragment_holder(
+                query_context,
+                [fragment_query, evaluation_settings = config.evaluation_settings,
+                 max_output_groups = context->getSettingsRef()[Setting::max_promql_native_output_groups]](const StorageID & table_id)
+                {
+                    return std::make_shared<StoragePromQLNativeFragment>(
+                        table_id, fragment_query, evaluation_settings, max_output_groups);
+                });
+            query_context->addExternalTable(fragment_name, std::move(fragment_holder));
+            native_fragment = PrometheusQueryToSQL::NativeFragmentDescription{
+                .node = fragment_node,
+                .table_name = std::move(fragment_name),
+            };
+        }
+    }
+
+    LOG_INFO(
+        log,
+        "Building {} to evaluate promql: {}",
+        native_fragment ? "hybrid native-fragment/SQL plan" : "SQL",
+        *config.promql_query);
+    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings, native_fragment};
+    ASTPtr select_query = converter.getSQL();
+
+    LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

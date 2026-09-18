@@ -9,6 +9,8 @@
 #include <Core/Types.h>
 #include <city.h>
 
+#include <atomic>
+
 
 namespace DB
 {
@@ -64,6 +66,33 @@ public:
     /// `id_column` is allowed to be Nullable, in that case rows with NULL identifiers are skipped.
     /// `tags_vector` must contain one element per row of `id_column`.
     void storeTags(const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    /// Starts building a complete series dictionary for the native PromQL execution path.
+    /// Unlike `storeTags`, this mode requires one physical identifier per unique full set of tags.
+    /// The build must be started before storing any identifiers in this collector.
+    void startNativeSeriesDictionaryBuild();
+
+    /// Adds identifiers and tags to the native series dictionary.
+    /// Repeated rows for the same identifier and tags are allowed. Different identifiers with the
+    /// same full set of tags are rejected because PromQL cannot distinguish those physical series.
+    void storeTagsForNativeSeriesDictionary(
+        const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    /// Publishes a successfully built native series dictionary. A build which encountered an
+    /// exception is terminal and cannot be finished.
+    void finishNativeSeriesDictionaryBuild();
+
+    /// Marks an in-progress native series dictionary build as failed. This is idempotent and is
+    /// intended for pipeline cancellation and exceptions outside `storeTagsForNativeSeriesDictionary`.
+    void abortNativeSeriesDictionaryBuild() noexcept;
+
+    /// Cancels a native series dictionary build and revokes a dictionary which raced with
+    /// cancellation after reaching the sealed state. Finish and cancellation are serialized by
+    /// the collector mutex, so a completed cancellation never leaves the dictionary published.
+    void cancelNativeSeriesDictionaryBuild() noexcept;
+
+    /// Uses acquire ordering so a samples source can verify that the tags dependency completed.
+    bool isNativeSeriesDictionaryBuilt() const;
 
     /// Returns the group assigned to a specified set of tags.
     /// If that set of tags hasn't been added to the collector yet then this functions adds it.
@@ -237,6 +266,13 @@ private:
                         size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
     template <typename IDGetter>
+    void storeTagsForNativeSeriesDictionaryTyped(
+        const IDGetter & id_getter,
+        const IColumn & id_data,
+        const UInt8 * null_map,
+        const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    template <typename IDGetter>
     void getGroupByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
 
     template <typename IDGetter>
@@ -246,6 +282,22 @@ private:
     /// which don't match any of the typed maps.
     void storeTagsGeneric(const IColumn & id_data, const UInt8 * null_map,
                           size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    void storeTagsForNativeSeriesDictionaryGeneric(
+        const IColumn & id_data,
+        const UInt8 * null_map,
+        const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    enum class NativeSeriesDictionaryState : UInt8
+    {
+        Disabled,
+        Building,
+        Sealed,
+        Failed,
+    };
+
+    void ensureStandardStoreIsAllowedUnlocked() TSA_REQUIRES(mutex);
+    void ensureNativeSeriesDictionaryIsBuildingUnlocked() const TSA_REQUIRES(mutex);
 
     void getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
 
@@ -266,6 +318,11 @@ private:
     IDMap<std::pair<UInt64, UInt64>> id_map_pair_uint64_uint64 TSA_GUARDED_BY(mutex);
     IDMap<std::pair<UInt64, UInt128>> id_map_pair_uint64_uint128 TSA_GUARDED_BY(mutex);
     GenericIDMap generic_id_map TSA_GUARDED_BY(mutex);
+
+    NativeSeriesDictionaryState native_series_dictionary_state TSA_GUARDED_BY(mutex)
+        = NativeSeriesDictionaryState::Disabled;
+    VectorWithMemoryTracking<UInt8> native_series_dictionary_group_has_id TSA_GUARDED_BY(mutex);
+    std::atomic_bool native_series_dictionary_built{false};
 };
 
 }

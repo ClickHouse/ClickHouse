@@ -1,6 +1,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
@@ -21,8 +23,32 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    SQLQueryPiece makeNativeFragmentQueryPiece(const Node * node, ConverterContext & context)
+    {
+        chassert(context.native_fragment);
+        chassert(context.native_fragment->node == node);
+
+        const auto & range = context.node_range_getter.get(node);
+
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.from_table = context.native_fragment->table_name;
+
+        SQLQueryPiece result{node, node->result_type, StoreMethod::VECTOR_GRID};
+        result.metric_name_dropped = true;
+        result.start_time = range.start_time;
+        result.end_time = range.end_time;
+        result.step = range.step;
+        result.select_query = builder.getSelectQuery();
+        return result;
+    }
+
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
     {
+        if (context.native_fragment && context.native_fragment->node == node)
+            return makeNativeFragmentQueryPiece(node, context);
+
         switch (node->node_type)
         {
             case NodeType::Scalar:
@@ -115,9 +141,13 @@ namespace
 }
 
 
-Converter::Converter(std::shared_ptr<const PrometheusQueryTree> promql_tree_, PrometheusQueryEvaluationSettings settings_)
+Converter::Converter(
+    std::shared_ptr<const PrometheusQueryTree> promql_tree_,
+    PrometheusQueryEvaluationSettings settings_,
+    std::optional<NativeFragmentDescription> native_fragment_)
     : promql_tree(std::move(promql_tree_))
     , settings(std::move(settings_))
+    , native_fragment(std::move(native_fragment_))
     , result_type(DB::PrometheusQueryToSQL::getResultType(*promql_tree, settings))
 {
 }
@@ -131,7 +161,7 @@ ColumnsDescription Converter::getResultColumns() const
 
 ASTPtr Converter::getSQL() const
 {
-    ConverterContext context{promql_tree, settings};
+    ConverterContext context{promql_tree, settings, native_fragment};
     auto query_piece = visitNode(promql_tree->getRoot(), context);
     query_piece.type = result_type;
     return finalizeSQL(std::move(query_piece), context);

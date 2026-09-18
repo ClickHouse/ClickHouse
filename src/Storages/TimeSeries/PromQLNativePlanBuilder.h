@@ -1,0 +1,46 @@
+#pragma once
+
+#include <Core/Names.h>
+#include <Core/QueryProcessingStage.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
+
+
+namespace DB
+{
+
+class PrometheusQueryTree;
+class QueryPlan;
+
+/// Builds the native execution plan for a supported PromQL expression.
+/// Returns false without changing `query_plan` when the expression or storage layout is unsupported.
+bool tryBuildPromQLNativePlan(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams,
+    const PrometheusQueryTree & promql_query,
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    size_t max_output_groups);
+
+/// Builds the native plan for one exact range-sum subtree and exposes its
+/// internal `VECTOR_GRID` contract: `group UInt64`, `values Array(Nullable(T))`.
+bool tryBuildPromQLNativeVectorGridPlan(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams,
+    const PrometheusQueryTree & promql_query,
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    size_t max_output_groups);
+
+}

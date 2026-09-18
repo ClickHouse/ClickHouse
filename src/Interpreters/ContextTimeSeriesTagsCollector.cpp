@@ -35,7 +35,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -66,6 +68,14 @@ namespace
     [[noreturn]] void throwUnknownID(const IColumn & id_column, size_t row)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown identifier {}", applyVisitor(FieldVisitorToString{}, id_column[row]));
+    }
+
+    [[noreturn]] void throwMultipleIDsWithSameTags(const TagNamesAndValuesPtr & tags)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+            "Multiple series have the same tags {}, duplicate series in the same result set are not allowed",
+            ContextTimeSeriesTagsCollector::toString(tags));
     }
 
     /// Represents an identifier column with Const/Sparse/LowCardinality/Nullable wrappers removed.
@@ -930,6 +940,88 @@ ContextTimeSeriesTagsCollector::ContextTimeSeriesTagsCollector()
 ContextTimeSeriesTagsCollector::~ContextTimeSeriesTagsCollector() = default;
 
 
+void ContextTimeSeriesTagsCollector::startNativeSeriesDictionaryBuild()
+{
+    std::lock_guard lock{mutex};
+
+    if (native_series_dictionary_state != NativeSeriesDictionaryState::Disabled)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Native series dictionary build was already started");
+
+    if (!id_map_uint64.map.empty()
+        || !id_map_uint128.map.empty()
+        || !id_map_pair_uint64_uint64.map.empty()
+        || !id_map_pair_uint64_uint128.map.empty()
+        || !generic_id_map.map.empty())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot start native series dictionary build after time series identifiers were stored");
+    }
+
+    native_series_dictionary_group_has_id.resize(groups.size(), 0);
+    native_series_dictionary_state = NativeSeriesDictionaryState::Building;
+}
+
+
+void ContextTimeSeriesTagsCollector::finishNativeSeriesDictionaryBuild()
+{
+    std::lock_guard lock{mutex};
+
+    if (native_series_dictionary_state != NativeSeriesDictionaryState::Building)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Native series dictionary build is not in progress or has failed");
+
+    native_series_dictionary_state = NativeSeriesDictionaryState::Sealed;
+    native_series_dictionary_built.store(true, std::memory_order_release);
+}
+
+
+bool ContextTimeSeriesTagsCollector::isNativeSeriesDictionaryBuilt() const
+{
+    return native_series_dictionary_built.load(std::memory_order_acquire);
+}
+
+
+void ContextTimeSeriesTagsCollector::abortNativeSeriesDictionaryBuild() noexcept
+{
+    std::lock_guard lock{mutex};
+    if (native_series_dictionary_state == NativeSeriesDictionaryState::Building)
+        native_series_dictionary_state = NativeSeriesDictionaryState::Failed;
+}
+
+
+void ContextTimeSeriesTagsCollector::cancelNativeSeriesDictionaryBuild() noexcept
+{
+    std::lock_guard lock{mutex};
+    if ((native_series_dictionary_state == NativeSeriesDictionaryState::Building)
+        || (native_series_dictionary_state == NativeSeriesDictionaryState::Sealed))
+    {
+        native_series_dictionary_state = NativeSeriesDictionaryState::Failed;
+        native_series_dictionary_built.store(false, std::memory_order_release);
+    }
+}
+
+
+void ContextTimeSeriesTagsCollector::ensureStandardStoreIsAllowedUnlocked()
+{
+    if (native_series_dictionary_state == NativeSeriesDictionaryState::Disabled)
+        return;
+
+    if (native_series_dictionary_state == NativeSeriesDictionaryState::Building)
+        native_series_dictionary_state = NativeSeriesDictionaryState::Failed;
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Cannot use the standard tags collector after native series dictionary build was started");
+}
+
+
+void ContextTimeSeriesTagsCollector::ensureNativeSeriesDictionaryIsBuildingUnlocked() const
+{
+    if (native_series_dictionary_state != NativeSeriesDictionaryState::Building)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Native series dictionary build is not in progress or has failed");
+}
+
+
 Group ContextTimeSeriesTagsCollector::getGroupForTags(const TagNamesAndValuesPtr & tags)
 {
     TagsKey key{tags};
@@ -990,15 +1082,36 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupForTags(
 
 Group ContextTimeSeriesTagsCollector::tryAddGroupUnlocked(TagsKey && key)
 {
+    if (auto it = groups_for_tags.find(key); it != groups_for_tags.end())
+        return it->second;
+
     UInt64 hash = key.hash;
     TagNamesAndValuesPtr tags = key.tags;
-    auto [it, inserted] = groups_for_tags.try_emplace(std::move(key), groups.size());
-    if (inserted)
+    Group group = groups.size();
+
+    groups.push_back(std::move(tags));
+    try
     {
-        groups.push_back(std::move(tags));
         sampling_keys.push_back(hash);
     }
-    return it->second;
+    catch (...)
+    {
+        groups.pop_back();
+        throw;
+    }
+
+    try
+    {
+        auto [it, inserted] = groups_for_tags.try_emplace(std::move(key), group);
+        chassert(inserted);
+        return it->second;
+    }
+    catch (...)
+    {
+        sampling_keys.pop_back();
+        groups.pop_back();
+        throw;
+    }
 }
 
 
@@ -1164,6 +1277,11 @@ const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsColle
 
 void ContextTimeSeriesTagsCollector::storeTags(const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
 {
+    {
+        std::lock_guard lock{mutex};
+        ensureStandardStoreIsAllowedUnlocked();
+    }
+
     auto unwrapped = unwrapIDColumn(id_column);
     const NullMap * null_map = unwrapped.null_map;
     size_t num_rows = unwrapped.data->size();
@@ -1196,6 +1314,46 @@ void ContextTimeSeriesTagsCollector::storeTags(const ColumnPtr & id_column, cons
     }
 
     storeTagsGeneric(*unwrapped.data, null_map_data, num_rows_to_store, tags_vector);
+}
+
+
+void ContextTimeSeriesTagsCollector::storeTagsForNativeSeriesDictionary(
+    const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+{
+    try
+    {
+        auto unwrapped = unwrapIDColumn(id_column);
+        const NullMap * null_map = unwrapped.null_map;
+        size_t num_rows = unwrapped.data->size();
+        chassert(num_rows == tags_vector.size());
+
+        const UInt8 * null_map_data = null_map ? null_map->data() : nullptr;
+
+        bool dispatched = dispatchIDType(*unwrapped.data, [&](const auto & id_getter)
+        {
+            storeTagsForNativeSeriesDictionaryTyped(id_getter, *unwrapped.data, null_map_data, tags_vector);
+        });
+        if (dispatched)
+            return;
+
+        if (ColumnPtr materialized = tryMaterializeUnhandledLowCardinalityID(*unwrapped.data))
+        {
+            dispatched = dispatchIDType(*materialized, [&](const auto & id_getter)
+            {
+                storeTagsForNativeSeriesDictionaryTyped(id_getter, *materialized, null_map_data, tags_vector);
+            });
+            if (!dispatched)
+                storeTagsForNativeSeriesDictionaryGeneric(*materialized, null_map_data, tags_vector);
+            return;
+        }
+
+        storeTagsForNativeSeriesDictionaryGeneric(*unwrapped.data, null_map_data, tags_vector);
+    }
+    catch (...)
+    {
+        abortNativeSeriesDictionaryBuild();
+        throw;
+    }
 }
 
 
@@ -1242,6 +1400,7 @@ void ContextTimeSeriesTagsCollector::storeTagsTyped(
 
     {
         std::lock_guard lock{mutex};
+        ensureStandardStoreIsAllowedUnlocked();
         auto & id_map = getTypedIDMap<IDType>().map;
 
         for (size_t i = 0; i != num_rows; ++i)
@@ -1263,6 +1422,78 @@ void ContextTimeSeriesTagsCollector::storeTagsTyped(
             else if (it->getMapped() != group)
                 throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
         }
+    }
+}
+
+
+template <typename IDGetter>
+void ContextTimeSeriesTagsCollector::storeTagsForNativeSeriesDictionaryTyped(
+    const IDGetter & id_getter,
+    const IColumn & id_data,
+    const UInt8 * null_map,
+    const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+{
+    using IDType = typename IDGetter::IDType;
+
+    std::vector<std::pair<IDType, Group>> inserted_ids;
+    inserted_ids.reserve(tags_vector.size());
+
+    std::lock_guard lock{mutex};
+    ensureNativeSeriesDictionaryIsBuildingUnlocked();
+
+    const size_t initial_groups_size = groups.size();
+    const size_t initial_group_has_id_size = native_series_dictionary_group_has_id.size();
+
+    try
+    {
+        auto & id_map = getTypedIDMap<IDType>().map;
+
+        for (size_t i = 0; i != tags_vector.size(); ++i)
+        {
+            if (null_map && null_map[i])
+                continue;
+
+            Group group = tryAddGroupUnlocked(tags_vector[i]);
+
+            const IDType id = id_getter.get(i);
+            if (auto it = id_map.find(id); it != id_map.end())
+            {
+                if (it->getMapped() != group)
+                    throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
+                continue;
+            }
+
+            if (group >= native_series_dictionary_group_has_id.size())
+                native_series_dictionary_group_has_id.resize(group + 1, 0);
+            if (native_series_dictionary_group_has_id[group])
+                throwMultipleIDsWithSameTags(tags_vector[i]);
+
+            typename HashMap<IDType, Group, IDMapHash>::LookupResult it = nullptr;
+            bool inserted = false;
+            id_map.emplace(id, it, inserted);
+            chassert(inserted);
+            it->getMapped() = group;
+            native_series_dictionary_group_has_id[group] = 1;
+            inserted_ids.emplace_back(id, group);
+        }
+    }
+    catch (...)
+    {
+        auto & id_map = getTypedIDMap<IDType>().map;
+        for (const auto & [id, group] : inserted_ids)
+        {
+            id_map.erase(id);
+            native_series_dictionary_group_has_id[group] = 0;
+        }
+        while (groups.size() > initial_groups_size)
+        {
+            groups_for_tags.erase(TagsKey{groups.back()});
+            groups.pop_back();
+            sampling_keys.pop_back();
+        }
+        native_series_dictionary_group_has_id.resize(initial_group_has_id_size);
+        native_series_dictionary_state = NativeSeriesDictionaryState::Failed;
+        throw;
     }
 }
 
@@ -1308,6 +1539,7 @@ void ContextTimeSeriesTagsCollector::storeTagsGeneric(
 
     {
         std::lock_guard lock{mutex};
+        ensureStandardStoreIsAllowedUnlocked();
 
         for (size_t i = 0; i != num_rows; ++i)
         {
@@ -1329,6 +1561,74 @@ void ContextTimeSeriesTagsCollector::storeTagsGeneric(
             else if (it->getMapped() != group)
                 throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
         }
+    }
+}
+
+
+void ContextTimeSeriesTagsCollector::storeTagsForNativeSeriesDictionaryGeneric(
+    const IColumn & id_data,
+    const UInt8 * null_map,
+    const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+{
+    Arena temp_arena;
+    auto ids = serializeIDs(id_data, null_map, temp_arena);
+
+    std::vector<std::pair<std::string_view, Group>> inserted_ids;
+    inserted_ids.reserve(tags_vector.size());
+
+    std::lock_guard lock{mutex};
+    ensureNativeSeriesDictionaryIsBuildingUnlocked();
+
+    const size_t initial_groups_size = groups.size();
+    const size_t initial_group_has_id_size = native_series_dictionary_group_has_id.size();
+
+    try
+    {
+        for (size_t i = 0; i != tags_vector.size(); ++i)
+        {
+            if (null_map && null_map[i])
+                continue;
+
+            const auto id = ids[i];
+            Group group = tryAddGroupUnlocked(tags_vector[i]);
+
+            if (auto it = generic_id_map.map.find(id); it != generic_id_map.map.end())
+            {
+                if (it->getMapped() != group)
+                    throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
+                continue;
+            }
+
+            if (group >= native_series_dictionary_group_has_id.size())
+                native_series_dictionary_group_has_id.resize(group + 1, 0);
+            if (native_series_dictionary_group_has_id[group])
+                throwMultipleIDsWithSameTags(tags_vector[i]);
+
+            GenericIDMap::Map::LookupResult it = nullptr;
+            bool inserted = false;
+            generic_id_map.map.emplace(ArenaKeyHolder{id, generic_id_map.arena}, it, inserted);
+            chassert(inserted);
+            it->getMapped() = group;
+            native_series_dictionary_group_has_id[group] = 1;
+            inserted_ids.emplace_back(id, group);
+        }
+    }
+    catch (...)
+    {
+        for (const auto & [id, group] : inserted_ids)
+        {
+            generic_id_map.map.erase(id);
+            native_series_dictionary_group_has_id[group] = 0;
+        }
+        while (groups.size() > initial_groups_size)
+        {
+            groups_for_tags.erase(TagsKey{groups.back()});
+            groups.pop_back();
+            sampling_keys.pop_back();
+        }
+        native_series_dictionary_group_has_id.resize(initial_group_has_id_size);
+        native_series_dictionary_state = NativeSeriesDictionaryState::Failed;
+        throw;
     }
 }
 

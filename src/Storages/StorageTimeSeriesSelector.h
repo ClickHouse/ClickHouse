@@ -14,6 +14,12 @@ struct TimeSeriesSettings;
 class StorageTimeSeriesSelector : public StorageWithCommonVirtualColumns
 {
 public:
+    enum class SamplesReadOrder
+    {
+        Unordered,
+        IdBucket,
+    };
+
     struct Configuration
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
@@ -47,6 +53,25 @@ public:
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
         const DataTypePtr & timestamp_data_type);
+
+    /// Return whether the samples metadata describes an ascending `(id, bucket, ...)` sorting key.
+    static bool hasSamplesIdBucketOrder(const StorageMetadataPtr & samples_table_metadata);
+
+    /// Return whether the selected samples table has the physical order required by an ordered native read.
+    static bool canReadSamplesInOrder(const StoragePtr & samples_table, const StorageMetadataPtr & samples_table_metadata);
+
+    /// Build the selector plan, optionally preserving the samples table's `(id, bucket)` order.
+    /// Returns false when ordered mode is requested but the selected samples table cannot provide that order.
+    bool buildQueryPlan(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams,
+        SamplesReadOrder samples_read_order);
 
     void readImpl(
         QueryPlan & query_plan,

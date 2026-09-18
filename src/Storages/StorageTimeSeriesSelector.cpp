@@ -19,9 +19,11 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -33,7 +35,9 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -75,6 +79,19 @@ String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, st
     if (value.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
     return String(value.getDataAt());
+}
+
+ASTPtr makeOrderByIDAndBucket()
+{
+    auto order_by = make_intrusive<ASTExpressionList>();
+    for (const auto * column_name : {TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Bucket})
+    {
+        auto order_by_element = make_intrusive<ASTOrderByElement>();
+        order_by_element->children.push_back(make_intrusive<ASTIdentifier>(column_name));
+        order_by_element->direction = 1;
+        order_by->children.push_back(std::move(order_by_element));
+    }
+    return order_by;
 }
 
 }
@@ -441,6 +458,7 @@ namespace
                                         const DataTypePtr & timestamp_data_type,
                                         UInt64 bucket_step_seconds,
                                         bool use_prewhere,
+                                        StorageTimeSeriesSelector::SamplesReadOrder samples_read_order,
                                         ASTs whole_metric_id_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -460,6 +478,9 @@ namespace
             auto & select_list = select_list_exp->children;
 
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+
+            if (samples_read_order == StorageTimeSeriesSelector::SamplesReadOrder::IdBucket)
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
 
             select_list.push_back(makeASTFunction(
                 "timeSeriesSliceSortedArray",
@@ -485,6 +506,9 @@ namespace
 
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
+
+        if (samples_read_order == StorageTimeSeriesSelector::SamplesReadOrder::IdBucket)
+            select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, makeOrderByIDAndBucket());
 
         /// PREWHERE (bucket >= <min_bucket>) AND (bucket <= <max_bucket>) AND (max_time >= min_time) AND (min_time <= max_time)
         ///          AND (id IN <select_query_from_tags_table>)
@@ -518,7 +542,8 @@ namespace
     /// Makes the final select query by wrapping the select query from the samples table into an outer
     /// SELECT which casts the columns to the data types expected by this storage:
     ///
-    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(time_series, 'Array(Tuple(DateTime64(3), Float64))') AS time_series
+    /// SELECT _CAST(id, 'UInt64') AS id, [_CAST(bucket, 'DateTime64(3)') AS bucket,]
+    ///        _CAST(time_series, 'Array(Tuple(DateTime64(3), Float64))') AS time_series
     /// FROM (select_query_from_samples_table)
     ///
     /// The inner query reads the samples table columns as is (see makeSelectQueryFromSamplesTable()),
@@ -533,11 +558,13 @@ namespace
     ASTPtr makeSelectQuery(ASTPtr select_query_from_samples_table,
                            const DataTypePtr & id_data_type,
                            const DataTypePtr & timestamp_data_type,
-                           const DataTypePtr & scalar_data_type)
+                           const DataTypePtr & scalar_data_type,
+                           bool include_bucket)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT _CAST(id, 'UInt64') AS id, _CAST(time_series, 'Array(Tuple(DateTime64(3), Float64))') AS time_series
+        /// SELECT _CAST(id, 'UInt64') AS id, [_CAST(bucket, 'DateTime64(3)') AS bucket,]
+        ///        _CAST(time_series, 'Array(Tuple(DateTime64(3), Float64))') AS time_series
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
@@ -545,6 +572,15 @@ namespace
             select_list.push_back(makeASTFunction(
                 "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+
+            if (include_bucket)
+            {
+                select_list.push_back(makeASTFunction(
+                    "_CAST",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket),
+                    make_intrusive<ASTLiteral>(timestamp_data_type->getName())));
+                select_list.back()->setAlias(TimeSeriesColumnNames::Bucket);
+            }
 
             DataTypePtr time_series_data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_data_type, scalar_data_type}));
 
@@ -886,7 +922,47 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
 }
 
 
-void StorageTimeSeriesSelector::readImpl(
+bool StorageTimeSeriesSelector::hasSamplesIdBucketOrder(const StorageMetadataPtr & samples_table_metadata)
+{
+    if (!samples_table_metadata)
+        return false;
+
+    const auto & sorting_key = samples_table_metadata->getSortingKey();
+    if (!sorting_key.expression_list_ast || sorting_key.expression_list_ast->children.size() < 2)
+        return false;
+
+    if (sorting_key.column_names.size() < 2
+        || sorting_key.column_names[0] != TimeSeriesColumnNames::ID
+        || sorting_key.column_names[1] != TimeSeriesColumnNames::Bucket)
+        return false;
+
+    if (!sorting_key.reverse_flags.empty()
+        && (sorting_key.reverse_flags.size() != sorting_key.expression_list_ast->children.size()
+            || sorting_key.reverse_flags[0]
+            || sorting_key.reverse_flags[1]))
+        return false;
+
+    if (!sorting_key.expression_list_ast->children[0] || !sorting_key.expression_list_ast->children[1])
+        return false;
+
+    const auto * id = sorting_key.expression_list_ast->children[0]->as<ASTIdentifier>();
+    const auto * bucket = sorting_key.expression_list_ast->children[1]->as<ASTIdentifier>();
+    return id && id->isShort() && id->name() == TimeSeriesColumnNames::ID
+        && bucket && bucket->isShort() && bucket->name() == TimeSeriesColumnNames::Bucket;
+}
+
+
+bool StorageTimeSeriesSelector::canReadSamplesInOrder(
+    const StoragePtr & samples_table,
+    const StorageMetadataPtr & samples_table_metadata)
+{
+    return samples_table
+        && dynamic_cast<const MergeTreeData *>(samples_table.get())
+        && hasSamplesIdBucketOrder(samples_table_metadata);
+}
+
+
+bool StorageTimeSeriesSelector::buildQueryPlan(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -894,7 +970,8 @@ void StorageTimeSeriesSelector::readImpl(
     ContextPtr context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
-    size_t /* num_streams */)
+    size_t /* num_streams */,
+    SamplesReadOrder samples_read_order)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
@@ -912,7 +989,7 @@ void StorageTimeSeriesSelector::readImpl(
             /// A time range entirely outside of that range can't contain samples, so the result is empty.
             auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
             query_plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(std::move(header)))));
-            return;
+            return true;
         }
         min_time.value = std::clamp<Int64>(min_time.value, 0, max_timestamp);
         max_time.value = std::clamp<Int64>(max_time.value, 0, max_timestamp);
@@ -962,6 +1039,9 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table = time_series_storage->getTargetTable(samples_table_kind, context);
     auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+
+    if (samples_read_order == SamplesReadOrder::IdBucket && !canReadSamplesInOrder(samples_table, samples_table_metadata))
+        return false;
 
     bool samples_table_can_use_prewhere = samples_table->supportsPrewhere() && samples_table->canMoveConditionsToPrewhere();
     if (samples_table_can_use_prewhere)
@@ -1030,10 +1110,15 @@ void StorageTimeSeriesSelector::readImpl(
         config.timestamp_data_type,
         bucket_step_seconds,
         samples_table_can_use_prewhere,
+        samples_read_order,
         std::move(whole_metric_id_range_conditions));
 
     ASTPtr select_query = makeSelectQuery(
-        std::move(select_query_from_samples_table), config.id_data_type, config.timestamp_data_type, config.scalar_data_type);
+        std::move(select_query_from_samples_table),
+        config.id_data_type,
+        config.timestamp_data_type,
+        config.scalar_data_type,
+        samples_read_order == SamplesReadOrder::IdBucket);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
@@ -1043,6 +1128,30 @@ void StorageTimeSeriesSelector::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query, interpreter_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    return true;
+}
+
+
+void StorageTimeSeriesSelector::readImpl(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    buildQueryPlan(
+        query_plan,
+        column_names,
+        storage_snapshot,
+        query_info,
+        context,
+        processed_stage,
+        max_block_size,
+        num_streams,
+        SamplesReadOrder::Unordered);
 }
 
 }

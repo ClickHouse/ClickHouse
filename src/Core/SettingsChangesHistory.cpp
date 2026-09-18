@@ -100,6 +100,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
+            {"enable_promql_native_plan", false, false, "New setting to enable native plans for supported PromQL expressions; disabled by default."},
+            {"enable_promql_native_parallel_processing", false, false, "New setting to shard supported native PromQL plans by primary-key ranges; disabled by default."},
+            {"max_promql_native_output_groups", 1000000, 1000000, "New setting bounding the number of output label groups held by a native PromQL plan."},
+            {"min_promql_native_query_range_points", 0, 0, "New setting to keep short PromQL range queries on the SQL plan."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
