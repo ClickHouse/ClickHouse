@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "Recopilar un paquete de soporte para solucionar problemas"
+sidebarTitle: "Recopilar un paquete de soporte"
+description: "Use el gráfico de Helm `support-bundle` para recopilar datos de diagnóstico de un clúster privado de ClickHouse."
+---
+
+Use el gráfico de Helm `support-bundle` para recopilar datos de diagnóstico de un clúster privado de ClickHouse. El archivo resultante se puede compartir con el soporte de ClickHouse para acelerar la resolución de incidentes.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+El gráfico de Helm requiere [Troubleshoot](https://troubleshoot.sh/), un plugin de kubectl para diagnosticar el clúster. Instálalo con [Krew](https://krew.sigs.k8s.io/):
+
+```bash
+kubectl krew install support-bundle
+```
+
+O consulta la [documentación de Troubleshoot](https://troubleshoot.sh/docs/) para ver otros métodos de instalación.
+
+<div id="generating-and-running-the-bundle">
+  ## Generación y ejecución del paquete
+</div>
+
+El gráfico de Helm no instala ningún recurso en el clúster. En su lugar, genera un manifest `SupportBundle` que utiliza el plugin `kubectl support-bundle`.
+
+Dado un clúster de ClickHouse llamado `default-xx-01`, renderiza el gráfico de Helm de forma local y ejecuta el paquete:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  --set-json='supportBundle.clickhouseClusterName="default-xx-01"' > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+El plugin recopila los datos y escribe un archivo `tar.gz` en el directorio actual.
+
+<div id="what-is-collected">
+  ## Qué se recopila
+</div>
+
+El paquete recopila datos de dos fuentes: el espacio de nombres de ClickHouse Operator y el espacio de nombres del clúster (derivado como `ns-<cluster-name>`).
+
+**ClickHouse Operator** (se puede activar o desactivar con `supportBundle.collectors.operator.enabled`):
+
+* Logs del contenedor de la implementación del operador
+* Recursos de Kubernetes en el espacio de nombres del operador (Pods, Services, ConfigMaps, Events, etc.)
+* Valores de la release de Helm para los charts instalados en el espacio de nombres del operador
+
+**ClickHouse Cluster** (se puede activar o desactivar con `supportBundle.collectors.clickhouseCluster.enabled`):
+
+* Logs del contenedor de ClickHouse Server
+* Logs del contenedor de ClickHouse Keeper
+* Recursos de Kubernetes en el espacio de nombres del clúster
+* Valores de la release de Helm para los charts instalados en el espacio de nombres del clúster
+* Salida de `SELECT version()` del primer pod de ClickHouse Server
+* Salida del comando `mntr` de Keeper en el primer pod de Keeper
+
+Los datos sensibles —contraseñas, credenciales de S3, secretos del clúster y hashes de contraseñas— se ocultan automáticamente.
+
+<div id="customizing-collection">
+  ## Personalización de la recopilación
+</div>
+
+La configuración predeterminada está pensada para la mayoría de los casos, pero puede ajustarse. Por ejemplo, para recopilar solo las últimas 24 horas de logs y omitir los datos del operador:
+
+```yaml
+supportBundle:
+  clickhouseClusterName: "default-xx-01"
+  collectors:
+    operator:
+      enabled: false
+    clickhouseCluster:
+      enabled: true
+      logs:
+        maxAge: "24h"
+        maxLines: 50000
+```
+
+Renderiza con el archivo de values personalizado:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  -f custom-values.yaml > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+Si ClickHouse Operator se instaló en un espacio de nombres distinto del predeterminado, configure `supportBundle.collectors.operator.namespace` en consecuencia.

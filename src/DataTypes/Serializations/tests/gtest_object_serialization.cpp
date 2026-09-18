@@ -107,7 +107,7 @@ TEST(ObjectSerialization, JSONSerialization)
 
 }
 
-/// flattenSharedDataPathsForBucket must densify each shared-data path into a column that has one
+/// flattenAndBucketSharedDataPaths must densify each shared-data path into a column that has one
 /// entry per row (the stored value where the path is present, a default where it is absent), for an
 /// arbitrary subrange [start, end). This exercises rows with different, overlapping and missing paths,
 /// empty rows and trailing gaps -- the exact shape the merge/serialization path produces.
@@ -121,11 +121,12 @@ void checkFlattenedSharedData(
     size_t end,
     const std::map<String, DensePath> & expected)
 {
-    auto bucket = flattenSharedDataPathsForBucket(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 0, 1);
+    auto buckets = flattenAndBucketSharedDataPaths(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 1);
+    ASSERT_EQ(buckets.size(), 1u);
 
     std::map<String, ColumnPtr> path_to_column;
-    for (const auto & [path, column] : bucket)
-        path_to_column[String(path)] = column;
+    for (const auto & [path, column] : buckets[0])
+        path_to_column[path] = column;
 
     ASSERT_EQ(path_to_column.size(), expected.size());
     for (const auto & [path, values] : expected)
@@ -334,7 +335,7 @@ TEST(ObjectSerialization, InvalidNumberOfSharedDataBuckets)
 
 /// The per-granule `num_paths` count in the `ADVANCED` (V3) shared-data structure stream is another
 /// raw count read from a possibly-untrusted on-disk part and used to size `all_paths` before any path
-/// bytes are read (`SerializationObjectSharedData::deserializeChunkStructurePrefix`). Unlike the
+/// bytes are read (`SerializationObjectSharedData::deserializeStructureGranulePrefix`). Unlike the
 /// outer-prefix counts (covered above and by `04350_json_native_too_many_paths`), this one is reached
 /// only when reading a MergeTree part, not through the `Native` input format, so it needs its own
 /// coverage. A `SIZE_MAX`-family count must be rejected up front as `INCORRECT_DATA` "too many paths";
@@ -373,10 +374,10 @@ static void expectGranulePathCountRejected(size_t num_paths, int expected_error_
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    auto column = DataTypeObject::getTypeOfSharedData()->createColumn();
+    ColumnPtr column = DataTypeObject::getTypeOfSharedData()->createColumn();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(*column, /*limit=*/1, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/0, /*limit=*/1, settings, state, nullptr);
         FAIL() << "Expected an exception for a corrupted granule num_paths count " << num_paths;
     }
     catch (const Exception & e)

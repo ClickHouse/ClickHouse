@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "组件版本"
+sidebarTitle: "组件版本"
+description: "所有 ClickHouse 私网组件的当前稳定版本。"
+---
+
+所有 ClickHouse 私网组件的当前稳定版本。将制品复制到您的 registry 并通过 Helm 安装时，请使用这些标签。
+
+<div id="container-images">
+  ## 容器镜像
+</div>
+
+| 组件                       | 镜像标签                | 描述                                  |
+| ------------------------ | ------------------- | ----------------------------------- |
+| clickhouse-server        | `25.12.1.1497`      | ClickHouse server (标准版)             |
+| clickhouse-server (FIPS) | `25.12.1.1497-fips` | 符合 FIPS 140-2 要求的 ClickHouse server |
+| clickhouse-keeper        | `26.2.1.258`        | 分布式协调服务 (ZooKeeper 替代方案)            |
+| clickhouse-keeper (FIPS) | `26.2.1.258-fips`   | 符合 FIPS 140-2 要求的 ClickHouse Keeper |
+| clickhouse-operator      | `main-1.18587.1`    | 用于集群生命周期管理的 Kubernetes Operator     |
+
+<div id="helm-charts">
+  ## Helm 图表
+</div>
+
+| 图表                             | 版本          | 描述                         |
+| ------------------------------ | ----------- | -------------------------- |
+| helm/clickhouse-operator-helm  | `1.18587.1` | 安装 ClickHouse Operator     |
+| helm/onprem-clickhouse-cluster | `1.1.311`   | 创建 ClickHouseCluster 自定义资源 |
+| helm/airgap-management         | `1.165.1`   | 可选的管理 API                  |
+| helm/preflight-check           | `1.31.0`    | 安装前验证                      |
+| helm/support-bundle            | `1.11.0`    | 收集用于故障排查的诊断数据              |
+
+<div id="api">
+  ## API
+</div>
+
+| 组件                | 版本        |
+| ----------------- | --------- |
+| airgap-management | `1.165.1` |
+
+<div id="notes">
+  ## 说明
+</div>
+
+* **operator 的 Helm 图表版本** (`1.18587.1`) 与 operator **镜像标签** (`main-1.18587.1`) 不同。通过 `helm install` 安装时请使用 Helm 图表版本，复制容器镜像时请使用镜像标签。
+* **FIPS 构建**会在 server 和 Keeper 的标准镜像标签后追加 `-fips`。
+* 构建这些文档时，版本标签会自动自动替换。如果你看到原始模板变量 (例如 `25.12.1.1497`) ，则说明构建步骤尚未运行。

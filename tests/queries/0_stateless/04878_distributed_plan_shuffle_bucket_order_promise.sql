@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, no-old-analyzer
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -36,13 +36,9 @@ SET serialize_query_plan = 0;
 -- Arming, asserted separately from the results below, on the same rewritten plan the guard acts on:
 -- `distributed = 1` shows the per-shard plans, and the settings sit on the inner query because the
 -- wrapper's own `SETTINGS` clause, which keeps the wrapper itself out of the rewrite, would otherwise
--- apply to the plan being explained as well. The initiator merges bucket by bucket, it does so over
--- more than one producer, and both are required for a duplicated bucket to be observable.
-SELECT count() > 0 FROM
-    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
-        SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1)
-    WHERE explain ILIKE '%memory-efficient%'
-    SETTINGS make_distributed_plan = 0;
+-- apply to the plan being explained as well. Only the several-producers half is asserted here. Master
+-- also asserts the bucket-by-bucket merge, but `Mode: memory-efficient` is printed by
+-- `MergingAggregatedStep::describeActions` only from 26.8 on, so no plan text on this branch carries it.
 SELECT count() > 1 FROM
     (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
         SETTINGS make_distributed_plan = 1, distributed_aggregation_memory_efficient = 1)
@@ -153,15 +149,8 @@ SELECT countIf(explain ILIKE '%by hash(%') = 0
                  distributed_plan_force_shuffle_aggregation = 1)
     SETTINGS make_distributed_plan = 0;
 
--- The boundary of the row above: with only memory-bound merging on, the merge over the shard output is
--- not the memory-efficient one, so nothing there reads the bucket order the demotion preserves.
-SELECT count() = 0 FROM
-    (EXPLAIN PLAN actions = 1, distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_shuffle_bucket_order) GROUP BY k
-        SETTINGS make_distributed_plan = 1,
-                 distributed_aggregation_memory_efficient = 0,
-                 enable_memory_bound_merging_of_aggregation_results = 1,
-                 distributed_plan_force_shuffle_aggregation = 1)
-    WHERE explain ILIKE '%memory-efficient%'
-    SETTINGS make_distributed_plan = 0;
+-- Master closes with the boundary of the row above, that the merge over the shard output is not the
+-- memory-efficient one. Dropped here for the same reason as the arming row: matching
+-- `%memory-efficient%` is vacuous on a branch whose plan text never prints it.
 
 DROP TABLE t_shuffle_bucket_order;

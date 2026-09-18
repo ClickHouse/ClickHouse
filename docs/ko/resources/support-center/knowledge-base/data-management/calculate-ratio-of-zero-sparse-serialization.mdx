@@ -10,7 +10,7 @@ keywords: ['빈 값/0 값 비율', '계산']
   ## 테이블의 모든 컬럼에서 빈값/0 값의 비율을 계산하는 방법
 </div>
 
-컬럼이 희소(비어 있거나 대부분 0인 값)한 경우, ClickHouse는 이를 희소 포맷으로 인코딩해 계산을 자동으로 최적화할 수 있습니다. 즉, 쿼리 실행 중에는 데이터를 완전히 압축 해제하지 않아도 됩니다. 또한 컬럼이 얼마나 희소한지 알고 있다면 [`ratio_of_defaults_for_sparse_serialization` 설정](/ko/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization)을 사용해 해당 비율을 지정함으로써 직렬화를 최적화할 수 있습니다.
+컬럼이 희소(비어 있거나 대부분 0인 값)한 경우, ClickHouse는 이를 희소 포맷으로 인코딩해 계산을 자동으로 최적화할 수 있습니다. 즉, 쿼리 실행 중에는 데이터를 완전히 압축 해제하지 않아도 됩니다. 또한 컬럼이 얼마나 희소한지 알고 있다면 [`ratio_of_defaults_for_sparse_serialization` 설정](/ko/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization)을 사용해 해당 비율을 지정함으로써 직렬화를 최적화할 수 있습니다.
 
 이 쿼리는 유용하지만 실행에 다소 시간이 걸릴 수 있습니다. 테이블의 모든 행을 분석하여 지정한 테이블의 각 컬럼에서 값이 0(또는 기본값)인 비율을 계산합니다:
 

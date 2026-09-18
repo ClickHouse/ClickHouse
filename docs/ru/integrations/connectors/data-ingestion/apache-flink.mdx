@@ -10,7 +10,7 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -147,7 +147,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
     ```java
     public static void main(String[] args) {
         // Настройте ClickHouseClient
-        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // Создайте ElementConverter
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clientConfig
+                clickHouseClientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clientConfig
+        clickHouseClientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -451,11 +451,11 @@ com.clickhouse.client.api.ServerException: Code: 33. DB::Exception: Cannot read 
 
 [//]: # "- Если ваша таблица использует движок таблицы `Replicated*MergeTree`:"
 
-[//]: # (  1. убедитесь, что для настройки сеанса сервера `insert_deduplicate=1` установлено нужное значение (при необходимости см. [пример](#client-options) выше о том, как его задать). Обратите внимание: для реплицируемых таблиц `insert_deduplicate` включён по умолчанию.)
+[//]: # "  1. убедитесь, что для настройки сеанса сервера `insert_deduplicate=1` установлено нужное значение (при необходимости см. [пример](#client-options) выше о том, как его задать). Обратите внимание: для реплицируемых таблиц `insert_deduplicate` включён по умолчанию."
 
-[//]: # "  2. при необходимости увеличьте один или оба параметра настроек таблицы `MergeTree`: [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) или [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)."
+[//]: # "  2. при необходимости увеличьте один или оба параметра настроек таблицы `MergeTree`: [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) или [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds)."
 
-[//]: # "- Если ваша таблица использует нереплицируемый движок таблицы `*MergeTree`, увеличьте значение настройки таблицы `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)."
+[//]: # "- Если ваша таблица использует нереплицируемый движок таблицы `*MergeTree`, увеличьте значение настройки таблицы `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)."
 
 [//]: #
 

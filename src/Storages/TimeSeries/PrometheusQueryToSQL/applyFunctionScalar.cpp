@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -20,8 +19,7 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    void checkArgumentTypes(
-        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
         if (arguments.size() != 1)
@@ -44,7 +42,7 @@ namespace
 
 
 SQLQueryPiece applyFunctionScalar(
-    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     chassert(isFunctionScalar(function_name));
@@ -59,22 +57,6 @@ SQLQueryPiece applyFunctionScalar(
     switch (argument.store_method)
     {
         case StoreMethod::EMPTY:
-        {
-            /// PromQL: scalar() returns NaN if its argument is an empty vector, so an argument which is known
-            /// to be empty at this point (e.g. scalar(clamp(v, 1, -1))) makes the result a NaN constant.
-            /// (If the evaluation range is empty then there is nothing to evaluate and the result stays empty.)
-            auto node_range = context.node_range_getter.get(function_node);
-            if (node_range.empty())
-                return res;
-
-            res.store_method = StoreMethod::CONST_SCALAR;
-            res.scalar_value = std::numeric_limits<Float64>::quiet_NaN();
-            res.start_time = node_range.start_time;
-            res.end_time = node_range.end_time;
-            res.step = node_range.step;
-            return res;
-        }
-
         case StoreMethod::CONST_SCALAR:
         case StoreMethod::SINGLE_SCALAR:
         case StoreMethod::SCALAR_GRID:
@@ -114,28 +96,20 @@ SQLQueryPiece applyFunctionScalar(
             }
             else
             {
-                /// SELECT arrayResize(arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)),
-                ///                    <count_of_time_steps>, NaN) AS values
+                /// SELECT arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)) AS values
                 /// FROM <vector_grid>
-                ///
-                /// arrayResize() here handles the case when <vector_grid> contains no rows at all:
-                /// the aggregate functions then return empty arrays, and the result must be NaN at each time step.
                 builder.select_list.push_back(makeASTFunction(
-                    "arrayResize",
+                    "arrayMap",
                     makeASTFunction(
-                        "arrayMap",
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
                         makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
-                            makeASTFunction(
-                                "if",
-                                makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
-                                makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                                timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
-                        makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                        makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))),
-                    make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
-                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
+                            "if",
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
+                            makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
+                            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
+                    makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
 
                 builder.select_list.back()->setAlias(ColumnNames::Values);
                 res.store_method = StoreMethod::SCALAR_GRID;

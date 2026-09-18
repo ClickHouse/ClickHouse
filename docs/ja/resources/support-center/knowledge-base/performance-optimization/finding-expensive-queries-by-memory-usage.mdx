@@ -6,7 +6,7 @@ tags: ['パフォーマンスと最適化']
 keywords: ['高コストなクエリ', 'メモリ使用量']
 ---
 
-<div id="using-the-systemquery-log-table">
+<div id="using-the-systemquery_log-table">
   ## `system.query_log` テーブルの使用
 </div>
 
@@ -29,7 +29,6 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -51,13 +50,7 @@ ORDER BY
 ```
 
 <Note>
-  `system.query_log` テーブルがない場合、クエリログが有効になっていない可能性があります。有効化の詳細については、[`query_log` setting](/ja/reference/settings/server-settings/settings/query#query_log) を参照してください。
-</Note>
-
-<Note>
-  **`query_log` には、送信したクエリ以外も含まれます**
-
-  1 つのクエリを送信すると、複数の行として記録されることがあります。たとえば、初期クエリ (`is_initial_query = 1`) に加えて、分散実行のための二次クエリやビューの評価に使用される内部クエリなど、派生クエリや内部処理のステップ (`is_initial_query = 0`) も含まれます。これらの内部行には独自の `query_id` 値があり、ClickHouse によって割り当てられ、ときには `queryView...` のようなラベルが含まれることもあるため、すべての `query_id` がクライアントから報告されたものと一致するとは限りません。実際に実行したクエリに使用量を対応付けるには、`is_initial_query = 1` で絞り込むか、`query_id = initial_query_id` で照合してください。詳しくは、[最も高コストなクエリを特定する方法](/ja/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) および [`query_log` reference](/ja/reference/system-tables/query_log) を参照してください。
+  `system.query_log` テーブルがない場合、クエリログが有効になっていない可能性があります。有効化の詳細については、[`query_log` setting](/ja/reference/settings/server-settings/settings#server_configuration_parameters-query-log) を参照してください。
 </Note>
 
 クラスターがない場合は、単一の `system.query_log` テーブルを直接クエリできます:
@@ -73,7 +66,6 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

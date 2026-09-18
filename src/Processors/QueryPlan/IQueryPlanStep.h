@@ -5,8 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <span>
 #include <string_view>
 #include <variant>
 #include <list>
@@ -38,8 +36,6 @@ class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
-
-using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -79,7 +75,7 @@ public:
     struct Serialization;
     struct Deserialization;
 
-    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
 
@@ -133,11 +129,6 @@ public:
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
 
-    /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
-    /// and no statistics are collected. A step that returns true must also attach a
-    /// `RuntimeDataflowStatisticsCollector` in `transformPipeline` when `dataflow_cache_updater` is set,
-    /// otherwise, should it end up at the replica-output boundary, the cached `output_bytes` stays 0 and
-    /// the transfer to the initiator is priced at zero.
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
@@ -191,8 +182,6 @@ public:
     /// Follow the pattern of classes with multi stage execution that already implements these methods
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
-
-    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;

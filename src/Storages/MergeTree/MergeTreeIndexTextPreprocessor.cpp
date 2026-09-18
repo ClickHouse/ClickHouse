@@ -126,7 +126,6 @@ ActionsDAG createActionsDAGForPreprocessor(
 
 MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
     : index_column_type(index_description.data_types.front())
-    , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, true))
     /// Use source index columns to execute index and preprocessor expressions.
     , original_actions(createActionsDAGForPreprocessor(
         index_description.expression->getRequiredColumnsWithTypes(),
@@ -148,19 +147,19 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
 {
     if (expression_ast)
     {
-        /// Only ASCII lower/upper applied directly to the index column maps 1:1 by byte, so a token contains
-        /// the same substrings as the original string and an ILIKE served from the dictionary agrees with
-        /// ILIKE on the column. Nested expressions and lowerUTF8/upperUTF8 do not: ICU full case mapping turns
-        /// non-ASCII characters into ASCII letters (`ß` into `SS`), inventing tokens that contain a needle
-        /// which ILIKE never finds in the row, so the index would report rows the predicate rejects.
+        /// Detect pure case-folding preprocessors of the exact form lower(expr), lowerUTF8(expr),
+        /// upper(expr), or upperUTF8(expr), where expr is the index expression itself.
+        /// Nested expressions such as lower(trim(col)) are not considered pure case folding
+        /// because the additional transformation would change the dictionary tokens in a way
+        /// that the ILIKE case-insensitive regex can no longer match them correctly.
         const auto * func = expression_ast->as<ASTFunction>();
         if (func && func->arguments && func->arguments->children.size() == 1)
         {
             const auto & name = getFunctionCanonicalNameIfAny(func->name);
-            if (name == "lower" || name == "upper")
+            if (name == "lower" || name == "lowerUTF8" || name == "upper" || name == "upperUTF8")
             {
                 const auto & arg = func->arguments->children.front();
-                is_ascii_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
+                is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
             }
         }
     }
@@ -180,16 +179,6 @@ std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const
         index_column = index_column->cut(start_row, n_rows);
 
     return {executeUnaryExpressionActions(actions_for_index_column, index_column, index_column_type, preprocessor_column_name, n_rows), 0};
-}
-
-ASTPtr MergeTreeIndexTextPreprocessor::getExpressionAST(const String & col_name) const
-{
-    if (!expression_ast_for_index_column)
-        return nullptr;
-
-    ASTPtr result = expression_ast_for_index_column->clone();
-    replaceExpressionToIdentifier(result, preprocessor_column_name, col_name);
-    return result;
 }
 
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const

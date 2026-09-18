@@ -13,14 +13,9 @@ class RPNBuilderTreeNode;
 
 struct ColumnStats
 {
+    /// TODO: Support min max
+    /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
-    /// Average uncompressed size of one value; 0 means unknown.
-    Float64 avg_bytes = 0;
-    /// Value range from `basic`/`minmax` statistics; unset when unknown.
-    std::optional<Field> min_value = {};
-    std::optional<Field> max_value = {};
-    /// Fraction of NULL values; unset when unknown.
-    std::optional<Float64> null_fraction = {};
 };
 
 struct RelationProfile
@@ -33,7 +28,6 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -68,11 +62,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
-    /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
-    /// ignored because the estimator contains whole-part statistics.
-    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {
@@ -105,43 +95,12 @@ public:
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
         Selectivity selectivity;
-        /// Selectivity of the atoms that were absorbed by a conjunctive merge without contributing
-        /// any range - currently only `FUNCTION_UNKNOWN`. Merging carries ranges across, so such an
-        /// atom has nothing to add to the merged clause, but it still has to be accounted for.
-        /// Keeping it here instead of finalizing the clause lets the ranges of a later conjunct on
-        /// the same column still merge with the earlier ones. `finalize` applies it at the end.
-        /// Only meaningful under `FUNCTION_AND`: `P(a OR unknown)` is not `P(a) * f`.
-        Selectivity absorbed_and_selectivity{1.0, 0.0};
-
-        bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
-
-        /// Carries no ranges and no null checks, so it contributes a bare number and nothing a merge
-        /// could represent: an unknown atom, a `LIKE` estimated by a default, or a clause already
-        /// reduced to a selectivity. Under `AND` such a factor is absorbed rather than forcing both
-        /// sides to be finalized, which is what keeps the ranges around it mergeable.
-        ///
-        /// `ALWAYS_TRUE` and `ALWAYS_FALSE` are deliberately excluded although they carry no ranges
-        /// either. They are read back as a `function` - the `AND`/`OR` folding drops or propagates a
-        /// constant operand by its tag, and `NOT` flips the tag - while `finalize` only ever sets
-        /// `selectivity`. Treating them as a factor would leave the tag saying the opposite of the
-        /// number and the folding would act on the tag.
-        bool isConstantFactor() const
-        {
-            if (function == ALWAYS_TRUE || function == ALWAYS_FALSE)
-                return false;
-
-            return column_ranges.empty() && column_not_ranges.empty()
-                && null_check_columns.empty() && not_null_check_columns.empty();
-        }
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
-
-    UInt64 getTotalRows() const { return total_rows; }
-
 private:
     friend class ColumnStatistics;
 
