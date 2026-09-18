@@ -20,6 +20,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Interpreters/Context.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -122,7 +123,9 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & base_url_,
     const std::string & catalog_credential_,
     const std::string & auth_scope_,
+    const std::string & auth_header_,
     const std::string & oauth_server_uri_,
+    bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
@@ -131,7 +134,12 @@ UnityV2Catalog::UnityV2Catalog(
     , log(getLogger("UnityV2Catalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
+    maybeSetAuthHeader(catalog_credential_, auth_header_);
+    if (auth_header)
+        return;
+
     auto colon_pos = catalog_credential_.find(':');
     if (colon_pos != std::string::npos)
     {
@@ -148,22 +156,19 @@ UnityV2Catalog::UnityV2Catalog(
 
 UnityV2Catalog::~UnityV2Catalog() = default;
 
-AccessToken UnityV2Catalog::retrieveAccessToken() const
+void UnityV2Catalog::maybeSetAuthHeader(const std::string & catalog_credential_, const std::string & auth_header_)
 {
-    DB::HTTPHeaderEntries headers;
-    headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
-    headers.emplace_back("Accept", "application/json");
+    if (!catalog_credential_.empty() || auth_header_.empty())
+        return;
 
-    std::string effective_oauth_uri = oauth_server_uri;
-    if (effective_oauth_uri.empty())
-    {
-        Poco::URI base(base_url_str);
-        base.setPathEtc("/oidc/v1/token");
-        effective_oauth_uri = base.toString();
-    }
+    auth_header = parseAuthHeader(auth_header_);
+    /// CREATE checks `http_forbid_headers`, ATTACH does not.
+    DB::HTTPHeaderEntries header_to_check{*auth_header};
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+}
 
-    /// The parameters always go into the request body, as RFC 6749 requires.
-    /// `oauth_server_use_request_body` is accepted but ignored, like the legacy Unity catalog does.
+std::string UnityV2Catalog::getOAuthRequestParams() const
+{
     String encoded_auth_scope;
     String encoded_client_id;
     String encoded_client_secret;
@@ -171,14 +176,33 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
     Poco::URI::encode(client_id, client_id, encoded_client_id);
     Poco::URI::encode(client_secret, client_secret, encoded_client_secret);
 
-    String body = fmt::format(
+    return fmt::format(
         "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
         encoded_auth_scope, encoded_client_id, encoded_client_secret);
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_ = std::move(body)](std::ostream & os)
-    {
-        os << body_;
-    };
+}
 
+AccessToken UnityV2Catalog::retrieveAccessToken() const
+{
+    DB::HTTPHeaderEntries headers;
+    headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
+    headers.emplace_back("Accept", "application/json");
+
+    Poco::URI url;
+    if (oauth_server_uri.empty())
+    {
+        url = Poco::URI(base_url_str);
+        url.setPathEtc("/oidc/v1/token");
+    }
+    else
+        url = Poco::URI(oauth_server_uri);
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    if (oauth_server_use_request_body)
+        out_stream_callback = [params = getOAuthRequestParams()](std::ostream & os) { os << params; };
+    else
+        url.setRawQuery(getOAuthRequestParams());
+
+    const std::string effective_oauth_uri = url.toString();
     auto [res_json, json_str] = makeHTTPRequestAndReadJSON(
         effective_oauth_uri, getContext(), /* bearer_token = */ "", {}, headers,
         Poco::Net::HTTPRequest::HTTP_POST, std::move(out_stream_callback));
@@ -227,6 +251,21 @@ std::string UnityV2Catalog::getBearerToken(bool force_refresh) const
     return access_token->token;
 }
 
+DB::HTTPHeaderEntries UnityV2Catalog::getAuthHeaders(bool force_refresh) const
+{
+    if (auth_header)
+        return {*auth_header};
+
+    auto token = getBearerToken(force_refresh);
+    /// Empty token: anonymous deployment.
+    if (token.empty())
+        return {};
+
+    DB::HTTPHeaderEntries headers{{"Authorization", "Bearer " + token}};
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    return headers;
+}
+
 template <typename Func>
 auto UnityV2Catalog::requestWithRetry(Func && make_request) const
 {
@@ -240,7 +279,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::getJSONRequest(
     return requestWithRetry([&](bool force_refresh)
     {
         return makeHTTPRequestAndReadJSON(
-            base_url / route, getContext(), getBearerToken(force_refresh), params);
+            base_url / route, getContext(), /* bearer_token = */ "", params, getAuthHeaders(force_refresh));
     });
 }
 
@@ -248,13 +287,14 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
     const std::string & route,
     std::function<void(std::ostream &)> out_stream_callback) const
 {
-    /// Some Unity servers answer HTTP 500 to a POST without an explicit `Content-Type`.
-    DB::HTTPHeaderEntries headers{{"Content-Type", "application/json"}};
     /// `out_stream_callback` is copied, not moved: the retry has to send the same body again.
     return requestWithRetry([&](bool force_refresh)
     {
+        auto headers = getAuthHeaders(force_refresh);
+        /// Some Unity servers answer HTTP 500 to a POST without an explicit `Content-Type`.
+        headers.emplace_back("Content-Type", "application/json");
         return makeHTTPRequestAndReadJSON(
-            base_url / route, getContext(), getBearerToken(force_refresh), {}, headers,
+            base_url / route, getContext(), /* bearer_token = */ "", {}, headers,
             Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
     });
 }
@@ -653,20 +693,26 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
 {
     std::string token;
+    std::string rest_auth_header;
     {
         std::lock_guard lock(token_mutex);
         if (iceberg_rest_catalog && !force_refresh)
             return iceberg_rest_catalog;
 
-        /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
-        ensureBearerToken(force_refresh);
-        token = access_token->token;
+        if (auth_header)
+            rest_auth_header = auth_header->name + ":" + auth_header->value;
+        else
+        {
+            /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
+            ensureBearerToken(force_refresh);
+            token = access_token->token;
+            /// Empty token: keep the embedded catalog anonymous too.
+            if (!token.empty())
+                rest_auth_header = "Authorization: Bearer " + token;
+        }
     }
 
     std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
-
-    /// An empty token means an anonymous Unity deployment, so keep the embedded catalog anonymous too.
-    std::string rest_auth_header = token.empty() ? "" : "Authorization: Bearer " + token;
 
     /// Built outside `token_mutex`: the `RestCatalog` ctor fetches `/v1/config` over the network,
     /// and holding the lock there would stall every Delta request waiting in `getBearerToken`.
@@ -686,7 +732,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
 
     std::lock_guard lock(token_mutex);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.
-    if (access_token && access_token->token == token)
+    if (auth_header || (access_token && access_token->token == token))
         iceberg_rest_catalog = catalog;
 
     return catalog;

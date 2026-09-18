@@ -17,7 +17,7 @@ namespace DataLake
 
 /// Unified Unity Catalog that supports both Delta and Iceberg tables
 /// in a single database, with auto-detection of table format.
-/// Supports both PAT and OAuth (client_id:client_secret) authentication.
+/// Supports PAT, OAuth (client_id:client_secret) and `auth_header`.
 class UnityV2Catalog final : public ICatalog, private DB::WithContext
 {
 public:
@@ -27,7 +27,9 @@ public:
         const std::string & base_url_,
         const std::string & catalog_credential_,
         const std::string & auth_scope_,
+        const std::string & auth_header_,
         const std::string & oauth_server_uri_,
+        bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
     ~UnityV2Catalog() override;
@@ -75,11 +77,13 @@ private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    /// Auth state: always resolved to a Bearer token for the standard Unity API.
+    /// Auth state: a user-supplied header, or a Bearer token (static or minted via OAuth).
+    std::optional<DB::HTTPHeaderEntry> auth_header;
     std::string client_id;
     std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
+    bool oauth_server_use_request_body = true;
     bool use_oauth = false;
 
     /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
@@ -104,10 +108,19 @@ private:
 
     std::string getBearerToken(bool force_refresh = false) const;
 
+    /// `auth_header` when set, otherwise the Bearer token.
+    DB::HTTPHeaderEntries getAuthHeaders(bool force_refresh) const;
+
+    /// Uses `auth_header_` only when `catalog_credential_` is empty, as in `RestCatalog`.
+    void maybeSetAuthHeader(const std::string & catalog_credential_, const std::string & auth_header_);
+
     void checkNamespaceExists(const std::string & schema_name) const;
 
     /// Fetches a token from the OAuth server.
     AccessToken retrieveAccessToken() const;
+
+    /// URL-encoded client-credentials grant parameters.
+    std::string getOAuthRequestParams() const;
 
     /// `force_refresh` mints a new token even when the cached one has not expired yet.
     void ensureBearerToken(bool force_refresh = false) const TSA_REQUIRES(token_mutex);

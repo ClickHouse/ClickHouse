@@ -20,6 +20,9 @@ class ReadBuffer;
 namespace DataLake
 {
 
+/// Parses "Name: value" into a header entry.
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
+
 struct AccessToken
 {
     std::string token;

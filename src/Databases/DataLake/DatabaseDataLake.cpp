@@ -137,11 +137,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-namespace
-{
-void validateUnityV2Settings(const DatabaseDataLakeSettings & database_settings);
-}
-
 namespace FailPoints
 {
     extern const char lightweight_show_tables[];
@@ -373,9 +368,6 @@ void DatabaseDataLake::initialize() const
                 break;
             }
 
-            /// Also covers the lazy path after ATTACH, so persisted unsupported settings fail on first use.
-            validateUnityV2Settings(settings);
-
             /// Databricks OIDC expects `all-apis`; the default `auth_scope` value targets Iceberg REST catalogs.
             const std::string unity_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
                 ? settings[DatabaseDataLakeSetting::auth_scope].value
@@ -385,7 +377,9 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 unity_auth_scope,
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -1329,8 +1323,6 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     /// Switching the Unity implementation replaces the catalog object rather than altering it in place.
     const bool implementation_changed = (*new_settings)[DatabaseDataLakeSetting::use_unity_catalog_v2].value
         != (*current_settings)[DatabaseDataLakeSetting::use_unity_catalog_v2].value;
-    if (implementation_changed && (*new_settings)[DatabaseDataLakeSetting::use_unity_catalog_v2].value)
-        validateUnityV2Settings(*new_settings);
 
     ASTPtr new_engine_definition;
     {
@@ -1480,24 +1472,6 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     }
 
     return create_table_query;
-}
-
-namespace
-{
-
-/// Settings that the legacy Unity catalog accepts but `UnityV2Catalog` does not wire through.
-void validateUnityV2Settings(const DatabaseDataLakeSettings & database_settings)
-{
-    /// A bearer token goes into `catalog_credential` directly, so reject `auth_header` instead of silently ignoring it.
-    if (!database_settings[DatabaseDataLakeSetting::auth_header].value.empty())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unity catalog with `use_unity_catalog_v2` does not support `auth_header`. "
-                        "Pass the token as `catalog_credential = '<token>'`, or an OAuth service principal "
-                        "as `catalog_credential = '<client_id>:<client_secret>'`");
-    }
-}
-
 }
 
 void registerDatabaseDataLake(DatabaseFactory & factory);

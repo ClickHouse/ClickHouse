@@ -103,6 +103,18 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 /// so that they ask for a fresh one on the next request.
 static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1);
 
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
+{
+    /// Parse a string of format "Authorization: <auth_scheme> <auth_token>"
+    /// into a key-value header "Authorization", "<auth_scheme> <auth_token>"
+
+    auto pos = auth_header.find(':');
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
+
+    return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
+}
+
 namespace
 {
 
@@ -126,18 +138,6 @@ std::pair<std::string, std::string> parseCatalogCredential(const std::string & c
         client_secret = catalog_credential.substr(pos + 1);
     }
     return std::pair(client_id, client_secret);
-}
-
-DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
-{
-    /// Parse a string of format "Authorization: <auth_scheme> <auth_token>"
-    /// into a key-value header "Authorization", "<auth_scheme> <auth_token>"
-
-    auto pos = auth_header.find(':');
-    if (pos == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
-
-    return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
 }
 
 std::string correctAPIURI(const std::string & uri)

@@ -299,42 +299,6 @@ def test_alter_switches_implementation(started_cluster):
     assert "cannot be altered" in error
 
 
-def test_unsupported_settings_rejected_on_lazy_init(started_cluster):
-    """Persisted unsupported settings must not block startup, but must fail the first use."""
-    node = started_cluster.instances["node1"]
-    db_name = unique_name("v2_stale_meta")
-
-    # Legacy ignores `auth_header`.
-    node.query(
-        f"""
-CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
-SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = 0,
-         vended_credentials = false, catalog_credential = '{PAT_TOKEN}',
-         auth_header = 'X-Custom: value'
-        """,
-        settings={GATE_SETTING: "1"},
-    )
-    assert DELTA_TABLE in show_tables(node, db_name, "default%")
-
-    error = node.query_and_get_error(
-        f"ALTER DATABASE {db_name} MODIFY SETTING {V2_SETTING} = 1"
-    )
-    assert "BAD_ARGUMENTS" in error and "auth_header" in error
-
-    # Simulate metadata from a build without validation.
-    node.stop_clickhouse()
-    node.exec_in_container(
-        ["sed", "-i", f"s/{V2_SETTING} = 0/{V2_SETTING} = 1/", f"/var/lib/clickhouse/metadata/{db_name}.sql"]
-    )
-    node.start_clickhouse()
-
-    assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
-    error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
-    assert "BAD_ARGUMENTS" in error and "auth_header" in error and "401" not in error
-
-    node.query(f"DROP DATABASE {db_name}")
-
-
 def test_list_and_read_delta_tables(started_cluster):
     """On an all-Delta catalog the new implementation must match the legacy one."""
     node = started_cluster.instances["node1"]
