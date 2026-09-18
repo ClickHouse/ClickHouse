@@ -2,7 +2,7 @@ Expression ((Project names + Projection))
 Header: 1 UInt8
   JoinLogical
   Header: __join_result_dummy UInt8
-    Filter
+    Filter ((Apply runtime join filter + Change column names to column identifiers))
     Header: __table1.c0 Int32
       ReadFromMemoryStorage
       Header: c0 Int32
@@ -17,7 +17,7 @@ Expression ((Project names + Projection))
 Header: 1 UInt8
   JoinLogical
   Header: __join_result_dummy UInt8
-    Filter
+    Filter ((Apply runtime join filter + Change column names to column identifiers))
     Header: __table1.c0 Int32
             __table1.c1 Int32
       ReadFromMemoryStorage

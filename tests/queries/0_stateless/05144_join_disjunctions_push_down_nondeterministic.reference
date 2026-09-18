@@ -1,0 +1,17 @@
+1
+1
+deterministic plan (enabled)
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(__table2.x, 100_UInt8)), and(equals(__table1.a, 2_UInt8), equals(__table2.x, 200_UInt8))) (removed)
+Prewhere filter column: or(equals(__table1.a, 1_UInt8), equals(__table1.a, 2_UInt8)) (removed)
+Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+deterministic plan (disabled)
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(__table2.x, 100_UInt8)), and(equals(__table1.a, 2_UInt8), equals(__table2.x, 200_UInt8))) (removed)
+nondeterministic plan
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(__table2.x, 100_UInt8), equals(modulo(rand(), 2_UInt8), 0_UInt8)), and(equals(__table1.a, 2_UInt8), equals(__table2.x, 200_UInt8))) (removed)
+Prewhere filter column: or(equals(__table1.a, 1_UInt8), equals(__table1.a, 2_UInt8)) (removed)
+Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+stateful plan
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(__table2.x, 100_UInt8), equals(timeSeriesTagsToGroup(_CAST([(\'x\', \'y\')]_Array(Tuple(String, String)), \'Array(Tuple(String, String))\'_String)), 0_UInt8)), and(equals(__table1.a, 2_UInt8), equals(__table2.x, 200_UInt8))) (removed)
+deterministic
+500000
+500000
