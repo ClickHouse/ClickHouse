@@ -9,6 +9,10 @@ ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
+=== the seams ask for naming the source, and for describing it ===
+grant SHOW TABLES ON
+grant SHOW TABLES ON
+grant SHOW COLUMNS ON
 === select, no grants ===
 ACCESS_DENIED
 ACCESS_DENIED

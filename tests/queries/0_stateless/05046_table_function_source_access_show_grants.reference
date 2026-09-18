@@ -6,6 +6,8 @@ cannot be used to create a table
 cannot be used to create a table
 cannot be used to create a table
 0
+grant SELECT ON
+grant SELECT ON
 === SHOW COLUMNS only ===
 a
 b

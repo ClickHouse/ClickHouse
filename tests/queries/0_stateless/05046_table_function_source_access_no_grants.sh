@@ -22,6 +22,13 @@ as_user_create_as()
         | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
 }
 
+# The privilege the denial names is the one the seam asked for, so an arm below changes if a seam
+# asks for something else or stops running at all.
+denied_grant()
+{
+    $CLICKHOUSE_CLIENT --user "$user_name" -q "$1" 2>&1 | grep -oE "grant [A-Z]+( [A-Z]+)* ON" | head -1
+}
+
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_source_access;
 DROP TABLE IF EXISTS t_not_mergetree;
@@ -64,6 +71,11 @@ as_user "DESCRIBE mergeTreeProjection(currentDatabase(), t_source_access, p_src)
 as_user "DESCRIBE mergeTreeIndex(currentDatabase(), t_not_mergetree)"
 as_user "DESCRIBE mergeTreeProjection(currentDatabase(), t_not_mergetree, p_src)"
 as_user "DESCRIBE viewIfPermitted(SELECT 1 ELSE mergeTreeIndex(currentDatabase(), t_source_access))"
+
+echo "=== the seams ask for naming the source, and for describing it ==="
+denied_grant "SELECT count() FROM mergeTreeProjection(currentDatabase(), t_source_access, p_src)"
+denied_grant "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)"
+denied_grant "DESCRIBE mergeTreeProjection(currentDatabase(), t_source_access, p_src)"
 
 echo "=== select, no grants ==="
 as_user "SELECT count() FROM mergeTreeIndex(currentDatabase(), t_not_mergetree)"

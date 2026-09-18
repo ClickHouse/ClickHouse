@@ -62,6 +62,11 @@ $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_p (b U
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ai (part_name String) AS mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)" 2>&1 | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
 $CLICKHOUSE_CLIENT --user "$user_show_tables" -q "CREATE TABLE t_ok_as_tf_ti (part_name String) AS mergeTreeTextIndex(currentDatabase(), t_source_access, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED\|cannot be used to create a table" | uniq
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_ok_as_tf_p', 't_ok_as_tf_ai', 't_ok_as_tf_ti')"
+# Naming the source is all the execution seam of these two asks for, so with exactly `SHOW TABLES`
+# the seam is satisfied and the next denial names the privilege of reading instead. Without that
+# grant the same two lines name `SHOW TABLES`, in the no-grants part of this test.
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "SELECT count() FROM mergeTreeProjection(currentDatabase(), t_source_access, p_src)" 2>&1 | grep -oE "grant [A-Z]+( [A-Z]+)* ON" | head -1
+$CLICKHOUSE_CLIENT --user "$user_show_tables" -q "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_source_access)" 2>&1 | grep -oE "grant [A-Z]+( [A-Z]+)* ON" | head -1
 
 # A third user holding exactly what a DESCRIBE of the source table requires and nothing more, so the
 # arms below fail if the structure seam demands anything stronger than SHOW COLUMNS.
