@@ -122,8 +122,7 @@ namespace
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
-        /// Identifies this upload among all writers to `dest_key`: stamped by `CreateMultipartUpload`,
-        /// handed to the completion to recover a lost response.
+        /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
         const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.
@@ -153,7 +152,6 @@ namespace
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
-            /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
             auto metadata = object_metadata.value_or(ObjectAttributes{});
             metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);

@@ -31,9 +31,8 @@ struct Settings;
 /// eventual-consistency quirks of the same class and are safe to retry (callers list parts in
 /// ascending order, so a genuine InvalidPartOrder cannot originate here). InvalidPart /
 /// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
-/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD means the
-/// upload id is gone and retrying cannot bring it back, so it is not retried here;
-/// `Client::CompleteMultipartUpload` resolves it from the request's idempotency id.
+/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD is not retried
+/// here; `Client::CompleteMultipartUpload` resolves it.
 bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
 
 class S3Exception : public Exception

@@ -233,14 +233,12 @@ public:
 /// Custom object metadata key under which a writer stamps the id identifying itself.
 static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 
-/// About 103 bits out of the 26 letters `getRandomASCIIString` draws from, and 22 of the 2 KB S3
-/// allows for an object's user metadata. It only has to be unique among writers racing for one key.
+/// 22 characters drawn from `a`-`z`, about 103 bits. It only has to be unique among the writers
+/// racing for one key.
 static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 
-/// Carries the id the writer stamped under `IDEMPOTENCY_ID_METADATA_KEY` on the object this request
-/// writes. Set it, and `DB::S3::Client` accepts a failure whose object proves to carry that id, i.e.
-/// an earlier attempt of this very write landed and lost its response. Left empty, the client asks
-/// nothing and reports the error as it is.
+/// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
+/// object carries it. Left empty, the client asks nothing.
 class RequestWithIdempotencyId
 {
 public:

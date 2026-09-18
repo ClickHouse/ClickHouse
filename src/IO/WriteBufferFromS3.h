@@ -93,9 +93,7 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
-    /// Identifies this buffer among all writers to `key`: stamped on the object it writes, and handed
-    /// to the requests that can fail on an object they themselves wrote, so `S3::Client` can tell a
-    /// replay of this write from a lost race for the key.
+    /// Unique identifier of this write, stamped on the object it creates so a replay can recognise it.
     const String idempotency_id;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);

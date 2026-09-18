@@ -304,11 +304,11 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
-    /// True only if the object at `key` carries `idempotency_id`, i.e. the request that set that id
-    /// is what wrote it. An absent object, a foreign id, an unreadable object, and an empty
-    /// `idempotency_id` all give false. Costs one HeadObject and logs its own verdict.
+    /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
+    /// One HeadObject. Logs a failed proof, at warning level if asked.
     bool isObjectWrittenWithIdempotencyId(
-        const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id) const;
+        const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
+        bool warn_if_unproven) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 

@@ -418,7 +418,6 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
     req.SetMetadata(metadataWithIdempotencyId());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
@@ -823,9 +822,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             else
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it. A 412 that this very write had already
-                /// landed never arrives here: the client proves that one by the idempotency id and
-                /// reports success instead.
+                /// not a genuine error — the caller handles it. A replay of our own write never reaches here.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

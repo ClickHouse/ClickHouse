@@ -552,10 +552,8 @@ Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipar
 }
 
 bool Client::isObjectWrittenWithIdempotencyId(
-    const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id) const
+    const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id, bool warn_if_unproven) const
 {
-    /// A match is what admits an object as the caller's own, so an empty id must never match one.
-    /// Writers always mint an id; an empty one means the caller did not ask for this check.
     if (idempotency_id.empty())
         return false;
 
@@ -565,19 +563,21 @@ bool Client::isObjectWrittenWithIdempotencyId(
     if (isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
 
-    /// Spell the type out: `HeadObjectRequest().WithBucket(...)` returns the SDK's base request, so
-    /// `auto` would slice ours away and reach the SDK's own HeadObject, skipping the api mode, the
-    /// extra headers and the region and URI overrides this client exists to apply.
+    /// Spell the type out: `WithBucket` returns the SDK's base request, so `auto` slices ours away and
+    /// the call skips the api mode, extra headers and region/URI overrides this client applies.
     HeadObjectRequest head_request;
     head_request.SetBucket(bucket);
     head_request.SetKey(key);
 
     auto head_outcome = HeadObject(head_request);
 
+    const auto logs_level = warn_if_unproven ? LogsLevel::warning : LogsLevel::information;
+    const auto priority = warn_if_unproven ? Poco::Message::PRIO_WARNING : Poco::Message::PRIO_INFORMATION;
+
     if (!head_outcome.IsSuccess())
     {
-        LOG_INFO(
-            log,
+        LOG_IMPL(
+            log, logs_level, priority,
             "There is no readable object at the key to prove the write by. Key: {}, Bucket: {}, HeadObject error: {}",
             key, bucket, head_outcome.GetError().GetMessage());
         return false;
@@ -588,7 +588,7 @@ bool Client::isObjectWrittenWithIdempotencyId(
     if (it != metadata.end() && it->second == idempotency_id)
         return true;
 
-    LOG_INFO(log, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
+    LOG_IMPL(log, logs_level, priority, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
     return false;
 }
 
@@ -600,35 +600,24 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// A completion that already landed comes back as one of two errors when it is replayed:
-    /// NO_SUCH_UPLOAD, because the server has consumed the upload id, or, for a conditional
-    /// completion, a 412 that its own result now fails. An upload aborted over a pre-existing object
-    /// and a lost CAS race report the very same two, so the error alone decides nothing: it may be
-    /// somebody else's object, and accepting it would report rows as stored that never were. The id
-    /// the upload stamped is what tells them apart. Neither error is retried.
+    /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
+    /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
     const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
         && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
             || outcome.GetError().GetExceptionName() == "PreconditionFailed");
 
     if (may_be_replay_of_a_landed_completion)
     {
-        const auto error_name = outcome.GetError().GetExceptionName();
+        /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
+        const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
 
-        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId()))
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), warn_if_unproven))
         {
             LOG_INFO(
                 log,
                 "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
-                error_name, key, bucket);
+                outcome.GetError().GetExceptionName(), key, bucket);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
-        }
-        else
-        {
-            LOG_INFO(
-                log,
-                "Multipart upload failed with {} and the key does not hold its result, reporting the error. "
-                "Key: {}, Bucket: {}",
-                error_name, key, bucket);
         }
     }
 
@@ -668,15 +657,13 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
 
-    /// A conditional PUT that already landed fails its own condition when it is replayed. A lost CAS
-    /// race over somebody else's object reports the same 412, so the error alone decides nothing --
-    /// only the id this PUT stamped tells the two apart.
+    /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
     if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
     {
         const auto & key = request.GetKey();
         const auto & bucket = request.GetBucket();
 
-        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId()))
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), /* warn_if_unproven= */ false))
         {
             LOG_INFO(log, "Object was put by an earlier attempt of this write. Key: {}, Bucket: {}", key, bucket);
             outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
