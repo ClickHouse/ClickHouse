@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -126,8 +127,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+class TimeSeriesCacheInvalidator final : public ICustomResourceHolder
+{
+public:
+    explicit TimeSeriesCacheInvalidator(StoragePtr target_table_)
+        : target_table(std::move(target_table_))
+    {
+    }
+
+    ~TimeSeriesCacheInvalidator() override
+    {
+        clearTimeSeriesMetricFamiliesCaches(target_table);
+    }
+
+private:
+    StoragePtr target_table;
+};
+}
+
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
+    bool allow_materialized_,
+    bool no_squash_,
+    bool no_destination_,
+    bool async_insert_,
+    bool invalidate_time_series_cache_)
     : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
@@ -135,6 +162,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_squash(no_squash_)
     , no_destination(no_destination_)
     , async_insert(async_insert_)
+    , invalidate_time_series_cache(invalidate_time_series_cache_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
@@ -1369,6 +1397,8 @@ BlockIO InterpreterInsertQuery::execute()
     /// dependent views (and will see the newly registered view).
     QueryPlanResourceHolder insert_resources;
     insert_resources.table_locks.emplace_back(std::move(table_lock));
+    if (invalidate_time_series_cache)
+        insert_resources.custom_resources.emplace_back(std::make_shared<TimeSeriesCacheInvalidator>(table));
     res.pipeline.addResources(std::move(insert_resources));
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))

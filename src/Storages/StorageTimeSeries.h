@@ -9,6 +9,7 @@
 
 namespace DB
 {
+class TimeSeriesInsertCache;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
@@ -54,6 +55,7 @@ public:
 
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
+    TimeSeriesInsertCache * getInsertCache(const ContextPtr & local_context);
 
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
@@ -142,13 +144,18 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    void resetInsertCache();
+
     MultiVersion<TimeSeriesSettings> storage_settings;
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+    bool insert_cache_initialized = false;
+    std::unique_ptr<TimeSeriesInsertCache> insert_cache;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
+void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table);
 
 }

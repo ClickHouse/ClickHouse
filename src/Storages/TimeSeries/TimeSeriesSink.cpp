@@ -4,6 +4,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -34,6 +36,13 @@
 #include <ranges>
 
 
+namespace ProfileEvents
+{
+extern const Event TimeSeriesMetricFamilyCacheHits;
+extern const Event TimeSeriesMetricFamilyCacheMisses;
+extern const Event TimeSeriesMetricFamilyCacheSkippedRows;
+}
+
 namespace DB
 {
 
@@ -54,6 +63,35 @@ namespace ErrorCodes
 
 namespace
 {
+    UInt128 hashColumnValue(const IColumn & column, size_t row)
+    {
+        SipHash hash;
+        column.updateHashWithValue(row, hash);
+        return hash.get128();
+    }
+
+    UInt128 hashMetricFamilyValue(
+        const IColumn & type_column,
+        const IColumn & unit_column,
+        const IColumn & help_column,
+        size_t row)
+    {
+        SipHash hash;
+        type_column.updateHashWithValue(row, hash);
+        unit_column.updateHashWithValue(row, hash);
+        help_column.updateHashWithValue(row, hash);
+        return hash.get128();
+    }
+
+    void filterBlock(Block & block, const PaddedPODArray<UInt8> & filter, size_t result_size)
+    {
+        for (size_t i = 0; i != block.columns(); ++i)
+        {
+            auto & column = block.safeGetByPosition(i).column;
+            column = column->filter(filter, result_size);
+        }
+    }
+
     /// Fills tag columns for the "tags" table by iterating over the columns metric_name and tags.
     void fillTagsColumns(
         const PaddedPODArray<UInt8> & filter,
@@ -392,7 +430,8 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         /* allow_materialized= */ true,
         /* no_squash= */ false,
         /* no_destination= */ false,
-        async_insert);
+        async_insert,
+        /* invalidate_time_series_cache= */ false);
 
     pipeline->io = interpreter.execute();
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
@@ -425,6 +464,8 @@ TimeSeriesSink::TimeSeriesSink(
     , log(getLogger("TimeSeriesSink"))
     , async_insert(async_insert_)
 {
+    insert_cache = time_series_storage.getInsertCache(context_);
+
     /// Determine which target tables need pipelines based on the columns mentioned in the INSERT query.
     /// If insert_columns is empty (e.g. INSERT INTO mytable VALUES ...), all columns are being inserted.
     auto is_insert_column = [&](const String & name)
@@ -833,7 +874,43 @@ void TimeSeriesSink::consumeMetricFamilies(const Block & block)
     metric_families_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
     metric_families_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
 
-    metric_families_pipeline->push(std::move(metric_families_block));
+    if (insert_cache)
+    {
+        const auto & names = *metric_families_block.getByName(TimeSeriesColumnNames::MetricFamilyName).column;
+        const auto & types = *metric_families_block.getByName(TimeSeriesColumnNames::Type).column;
+        const auto & units = *metric_families_block.getByName(TimeSeriesColumnNames::Unit).column;
+        const auto & helps = *metric_families_block.getByName(TimeSeriesColumnNames::Help).column;
+        PaddedPODArray<UInt8> cache_filter(metric_families_block.rows(), 1);
+        size_t misses = 0;
+
+        for (size_t row = 0; row != metric_families_block.rows(); ++row)
+        {
+            TimeSeriesInsertCache::Entry entry{
+                hashColumnValue(names, row),
+                hashMetricFamilyValue(types, units, helps, row)};
+            if (insert_cache->contains(entry.key_hash, entry.value_hash))
+                cache_filter[row] = 0;
+            else
+            {
+                pending_cache_entries.push_back(entry);
+                ++misses;
+            }
+        }
+
+        const size_t hits = metric_families_block.rows() - misses;
+        ::ProfileEvents::increment(::ProfileEvents::TimeSeriesMetricFamilyCacheHits, hits);
+        ::ProfileEvents::increment(::ProfileEvents::TimeSeriesMetricFamilyCacheMisses, misses);
+        ::ProfileEvents::increment(::ProfileEvents::TimeSeriesMetricFamilyCacheSkippedRows, hits);
+
+        if (misses)
+        {
+            if (misses != metric_families_block.rows())
+                filterBlock(metric_families_block, cache_filter, misses);
+            metric_families_pipeline->push(std::move(metric_families_block));
+        }
+    }
+    else
+        metric_families_pipeline->push(std::move(metric_families_block));
 }
 
 
@@ -846,7 +923,11 @@ void TimeSeriesSink::onFinish()
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
     if (metric_families_pipeline)
+    {
         metric_families_pipeline->executor->finish();
+        if (insert_cache)
+            insert_cache->insert(pending_cache_entries);
+    }
 }
 
 }

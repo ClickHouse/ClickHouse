@@ -13,6 +13,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageTimeSeries.h>
 
 #if USE_AVRO
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -137,6 +138,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     }
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
+    clearTimeSeriesMetricFamiliesCaches(table);
     return {};
 }
 

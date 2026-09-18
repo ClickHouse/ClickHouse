@@ -22,6 +22,8 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesInsertCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -32,6 +34,8 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <mutex>
+#include <unordered_map>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -45,6 +49,7 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsUInt64 insert_cache_max_size_bytes;
     extern const TimeSeriesSettingsUInt64 version;
 }
 
@@ -64,6 +69,9 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    std::mutex metric_families_caches_mutex;
+    std::unordered_multimap<UUID, TimeSeriesInsertCache *> metric_families_caches;
+
     /// Normalizes the create query.
     boost::intrusive_ptr<const ASTCreateQuery> makeNormalizedCreateQuery(
         const ASTCreateQuery & query, const ContextPtr & local_context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
@@ -73,10 +81,11 @@ namespace
         return copy;
     }
 
-    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
-        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+        if ((setting_name != "id_generator")
+            && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "insert_cache_max_size_bytes"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -232,7 +241,66 @@ UInt64 StorageTimeSeries::getVersion() const
 }
 
 
-StorageTimeSeries::~StorageTimeSeries() = default;
+StorageTimeSeries::~StorageTimeSeries()
+{
+    resetInsertCache();
+}
+
+void StorageTimeSeries::resetInsertCache()
+{
+    std::lock_guard lock(metric_families_caches_mutex);
+    if (insert_cache)
+    {
+        for (auto it = metric_families_caches.begin(); it != metric_families_caches.end(); ++it)
+        {
+            if (it->second == insert_cache.get())
+            {
+                metric_families_caches.erase(it);
+                break;
+            }
+        }
+    }
+    insert_cache.reset();
+    insert_cache_initialized = false;
+}
+
+TimeSeriesInsertCache * StorageTimeSeries::getInsertCache(const ContextPtr & local_context)
+{
+    std::lock_guard lock(metric_families_caches_mutex);
+    if (insert_cache_initialized)
+        return insert_cache.get();
+
+    const auto insert_cache_max_size_bytes = (*storage_settings.get())[TimeSeriesSetting::insert_cache_max_size_bytes];
+    if (!insert_cache_max_size_bytes)
+    {
+        insert_cache_initialized = true;
+        return nullptr;
+    }
+
+    if (!isInnerTable(ViewTarget::MetricFamilies))
+    {
+        insert_cache_initialized = true;
+        return nullptr;
+    }
+
+    const auto metric_families_table = getTargetTable(ViewTarget::MetricFamilies, local_context);
+    insert_cache_initialized = true;
+    if (metric_families_table->getName() != "ReplacingMergeTree")
+        return nullptr;
+
+    const Names expected_columns{
+        TimeSeriesColumnNames::MetricFamilyName,
+        TimeSeriesColumnNames::Type,
+        TimeSeriesColumnNames::Unit,
+        TimeSeriesColumnNames::Help};
+    const auto metadata = metric_families_table->getInMemoryMetadataPtr(local_context, false);
+    if (metadata->columns.getNamesOfPhysical() != expected_columns)
+        return nullptr;
+
+    insert_cache = std::make_unique<TimeSeriesInsertCache>(insert_cache_max_size_bytes);
+    metric_families_caches.emplace(metric_families_table->getStorageID().uuid, insert_cache.get());
+    return insert_cache.get();
+}
 
 
 const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
@@ -415,6 +483,9 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
     }
+
+    if (insert_cache)
+        insert_cache->clear();
 
     for (auto target_kind : getTargetKinds())
     {
@@ -609,7 +680,14 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     setInMemoryMetadata(new_metadata);
 
     if (new_settings)
+    {
+        const bool reset_insert_cache
+            = ((*storage_settings.get())[TimeSeriesSetting::insert_cache_max_size_bytes]
+                != (*new_settings)[TimeSeriesSetting::insert_cache_max_size_bytes]);
         storage_settings.set(std::move(new_settings));
+        if (reset_insert_cache)
+            resetInsertCache();
+    }
 }
 
 
@@ -790,6 +868,14 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
         ErrorCodes::UNEXPECTED_TABLE_ENGINE,
         "This operation can be executed on a TimeSeries table only, the engine of table {} is not TimeSeries",
         storage->getStorageID().getNameForLogs());
+}
+
+void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table)
+{
+    std::lock_guard lock(metric_families_caches_mutex);
+    auto [begin, end] = metric_families_caches.equal_range(target_table->getStorageID().uuid);
+    for (auto it = begin; it != end; ++it)
+        it->second->clear();
 }
 
 
@@ -1324,6 +1410,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
+| `insert_cache_max_size_bytes` | UInt64 | 16777216 | Maximum memory used by the replica-local cache for inserts into the inner metric families table. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |

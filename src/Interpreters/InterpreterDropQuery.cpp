@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -346,6 +347,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             /// Drop table data, don't touch metadata
             table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
+            clearTimeSeriesMetricFamiliesCaches(table);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -413,6 +415,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             /// Drop table data, don't touch metadata
             auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
             table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);
+            clearTimeSeriesMetricFamiliesCaches(table);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
