@@ -1,0 +1,13 @@
+g	UUID2
+glc	LowCardinality(UUID2)
+gn	Nullable(UUID2)
+u	UUID
+74be27de-1e4e-49d9-b579-fe0b331d3642
+UUID2
+Nullable(UUID)
+74be27de-1e4e-49d9-b579-fe0b331d3642
+Nullable(UUID2)
+true
+74be27de-1e4e-49d9-b579-fe0b331d3642
+74be27de-1e4e-49d9-b579-fe0b331d3642	74be27de-1e4e-49d9-b579-fe0b331d3642	74be27de-1e4e-49d9-b579-fe0b331d3642	74be27de-1e4e-49d9-b579-fe0b331d3642
+UUID2	Nullable(UUID2)	UUID2	UUID

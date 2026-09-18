@@ -1446,6 +1446,34 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 
     factory.registerFunction<detail::FunctionToUUID>(documentation_toUUID);
 
+    /// toUUID2 documentation
+    FunctionDocumentation::Description description_toUUID2 = R"(
+Converts a String value to a [UUID2](/reference/data-types/uuid2) value (the correctly-sorting variant of UUID).
+    )";
+    FunctionDocumentation::Syntax syntax_toUUID2 = "toUUID2(string)";
+    FunctionDocumentation::Arguments arguments_toUUID2 = {
+        {"string", "UUID as a string.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toUUID2 = {"Returns a UUID2 from the string representation of the UUID.", {"UUID2"}};
+    FunctionDocumentation::Examples examples_toUUID2 = {
+    {
+        "Usage example",
+        R"(
+SELECT toUUID2('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+        )",
+        R"(
+┌─uuid─────────────────────────────────┐
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
+└──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID2 = {26, 8};
+    FunctionDocumentation::Category category_toUUID2 = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toUUID2 = {description_toUUID2, syntax_toUUID2, arguments_toUUID2, {}, returned_value_toUUID2, examples_toUUID2, introduced_in_toUUID2, category_toUUID2};
+
+    factory.registerFunction<detail::FunctionToUUID2>(documentation_toUUID2);
+
     /// toIPv4 documentation
     FunctionDocumentation::Description description_toIPv4 = R"(
 Converts a string or a UInt32 form of IPv4 address to type IPv4.
@@ -2729,6 +2757,20 @@ SELECT
 
     factory.registerFunction<detail::FunctionToUUIDOrZero>(documentation_toUUIDOrZero);
 
+    /// toUUID2OrZero documentation
+    FunctionDocumentation::Description description_toUUID2OrZero = "Like [`toUUID2`](#toUUID2) but returns a zero UUID2 if the string cannot be parsed.";
+    FunctionDocumentation::Syntax syntax_toUUID2OrZero = "toUUID2OrZero(string)";
+    FunctionDocumentation::Arguments arguments_toUUID2OrZero = {
+        {"string", "UUID as a string.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toUUID2OrZero = {"Returns a UUID2, or a zero UUID2 on parse failure.", {"UUID2"}};
+    FunctionDocumentation::Examples examples_toUUID2OrZero = {};
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID2OrZero = {26, 8};
+    FunctionDocumentation::Category category_toUUID2OrZero = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toUUID2OrZero = {description_toUUID2OrZero, syntax_toUUID2OrZero, arguments_toUUID2OrZero, {}, returned_value_toUUID2OrZero, examples_toUUID2OrZero, introduced_in_toUUID2OrZero, category_toUUID2OrZero};
+
+    factory.registerFunction<detail::FunctionToUUID2OrZero>(documentation_toUUID2OrZero);
+
     /// toIPv4OrZero documentation
     FunctionDocumentation::Description description_toIPv4OrZero = R"(
 Converts an input value to a value of type [IPv4](/reference/data-types/ipv4) but returns zero IPv4 address in case of an error.
@@ -3985,6 +4027,20 @@ SELECT
     FunctionDocumentation documentation_toUUIDOrNull = {description_toUUIDOrNull, syntax_toUUIDOrNull, arguments_toUUIDOrNull, {}, returned_value_toUUIDOrNull, examples_toUUIDOrNull, introduced_in_toUUIDOrNull, category_toUUIDOrNull};
 
     factory.registerFunction<detail::FunctionToUUIDOrNull>(documentation_toUUIDOrNull);
+
+    /// toUUID2OrNull documentation
+    FunctionDocumentation::Description description_toUUID2OrNull = "Like [`toUUID2`](#toUUID2) but returns NULL if the string cannot be parsed.";
+    FunctionDocumentation::Syntax syntax_toUUID2OrNull = "toUUID2OrNull(string)";
+    FunctionDocumentation::Arguments arguments_toUUID2OrNull = {
+        {"string", "UUID as a string.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toUUID2OrNull = {"Returns a UUID2, or NULL on parse failure.", {"Nullable(UUID2)"}};
+    FunctionDocumentation::Examples examples_toUUID2OrNull = {};
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID2OrNull = {26, 8};
+    FunctionDocumentation::Category category_toUUID2OrNull = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toUUID2OrNull = {description_toUUID2OrNull, syntax_toUUID2OrNull, arguments_toUUID2OrNull, {}, returned_value_toUUID2OrNull, examples_toUUID2OrNull, introduced_in_toUUID2OrNull, category_toUUID2OrNull};
+
+    factory.registerFunction<detail::FunctionToUUID2OrNull>(documentation_toUUID2OrNull);
 
     /// toIPv4OrNull documentation
     FunctionDocumentation::Description description_toIPv4OrNull = R"(

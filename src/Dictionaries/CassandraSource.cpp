@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ExternalResultDescription.h>
+#include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
 #include <Dictionaries/CassandraSource.h>
 
@@ -142,6 +143,17 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, const CassVa
             assert_cast<ColumnUUID &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
             break;
         }
+        case ValueType::vtUUID2:
+        {
+            CassUuid value;
+            cass_value_get_uuid(cass_value, &value);
+            std::array<char, CASS_UUID_STRING_LENGTH> uuid_str{};
+            cass_uuid_string(value, uuid_str.data());
+            /// `UUID2` stores the value in the canonical (big-endian) layout, while `parse<UUID>` produces the
+            /// half-swapped `UUID` layout, so swap the halves back (matching `SerializationUUID2::deserializeText`).
+            assert_cast<ColumnUUID &>(column).insert(UUIDHelpers::swapHalves(parse<UUID>(uuid_str.data(), uuid_str.size())));
+            break;
+        }
         default:
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", static_cast<int>(type));
     }
@@ -256,6 +268,7 @@ void CassandraSource::assertTypes(const CassResultPtr & result)
                 expected_text = "timestamp";
                 break;
             case ExternalResultDescription::ValueType::vtUUID:
+            case ExternalResultDescription::ValueType::vtUUID2:
                 expected = CASS_VALUE_TYPE_UUID;
                 expected_text = "uuid";
                 break;

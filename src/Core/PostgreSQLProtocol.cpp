@@ -48,6 +48,10 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
             return {ColumnType::NUMERIC, -1};
 
         case TypeIndex::UUID:
+        /// `UUID2` is exposed to PostgreSQL clients as the same `uuid` type: the wire values are serialized as text
+        /// and `UUID2` produces the canonical UUID string, so existing clients keep decoding these columns as UUIDs
+        /// even when a bare `UUID` column is materialized to `UUID2` under `uuid_type_version = 2`.
+        case TypeIndex::UUID2:
             return {ColumnType::UUID, 16};
 
         default:

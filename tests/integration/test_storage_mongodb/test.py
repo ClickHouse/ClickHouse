@@ -219,6 +219,16 @@ def test_arrays(started_cluster):
                         subtype=4,
                     ),
                 ],
+                "arr_uuid2": [
+                    bson.Binary(
+                        uuid.UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed").bytes,
+                        subtype=4,
+                    ),
+                    bson.Binary(
+                        uuid.UUID("93376a07-c044-4281-a76e-ad27cf6973c5").bytes,
+                        subtype=4,
+                    ),
+                ],
                 "arr_arr_bool": [
                     [True, False, True],
                     [True],
@@ -259,6 +269,7 @@ def test_arrays(started_cluster):
         "arr_datetime64 Array(DateTime64),"
         "arr_string Array(String),"
         "arr_uuid Array(UUID),"
+        "arr_uuid2 Array(UUID2),"
         "arr_arr_bool Array(Array(Bool)),"
         "arr_arr_bool_nullable Array(Array(Nullable(Bool))),"
         "arr_empty Array(UInt64),"
@@ -310,6 +321,12 @@ def test_arrays(started_cluster):
     )
     assert (
         node.query("SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
+    )
+    # `Array(UUID2)` reads the same BSON binary (subtype 4) as `Array(UUID)` and must yield the
+    # same canonical textual values, exercising the `UUID2` branch of the BSON array reader.
+    assert (
+        node.query("SELECT arr_uuid2 FROM arrays_mongo_table WHERE key = 42")
         == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
     )
     assert (
@@ -1143,6 +1160,30 @@ def test_uuid(started_cluster):
         node.query("SELECT * FROM uuid_table")
 
     node.query("DROP TABLE uuid_table")
+
+    # Reading the same BSON binary (subtype 4) as a scalar `UUID2` column must yield the same
+    # canonical textual value, exercising the `UUID2` branch of the MongoDB scalar reader.
+    node.query(
+        f"""
+        CREATE OR REPLACE TABLE uuid2_table(
+        isValid UInt8,
+        kUUID   UUID2
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'uuid_table', 'root', '{mongo_pass}')
+        """
+    )
+    assert node.query("SELECT kUUID FROM uuid2_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+
+    # `IN` over a `UUID2` column with `UUID`-typed constants: the `$in` pushdown flattens the
+    # constant tuple into an array, and the conversion to `Array(UUID2)` must swap the halves of
+    # every element (otherwise the wrong binary values are sent and matching rows are missed).
+    assert (
+        node.query(
+            "SELECT kUUID FROM uuid2_table WHERE kUUID IN (toUUID('f0e77736-91d1-48ce-8f01-15123ca1c7ed'), toUUID('00000000-0000-0000-0000-000000000001'))"
+        )
+        == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+    )
+
+    node.query("DROP TABLE uuid2_table")
     uuid_mongo_table.drop()
 
 

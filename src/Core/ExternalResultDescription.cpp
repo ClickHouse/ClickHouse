@@ -100,6 +100,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDateTime, is_nullable);
         else if (which.isUUID())
             types.emplace_back(ValueType::vtUUID, is_nullable);
+        else if (which.isUUID2())
+            types.emplace_back(ValueType::vtUUID2, is_nullable);
         else if (which.isEnum8())
             types.emplace_back(ValueType::vtEnum8, is_nullable);
         else if (which.isEnum16())

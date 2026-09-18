@@ -659,10 +659,12 @@ ColumnPtr fillColumnWithRandomData(
             return column;
         }
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             auto column = ColumnUUID::create();
             column->getData().resize(limit);
             /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
+            /// The random bytes are layout-independent, so `UUID` and `UUID2` are filled the same way.
             fillBufferWithRandomNumbers<UInt128>(reinterpret_cast<char *>(column->getData().data()), limit, rng, fuzzy);
             return column;
         }

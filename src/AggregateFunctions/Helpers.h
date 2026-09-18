@@ -153,6 +153,7 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(args...);
     if (which.idx == TypeIndex::Time) return new AggregateFunctionTemplate<Int32>(args...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(args...);
+    if (which.idx == TypeIndex::UUID2) return new AggregateFunctionTemplate<UUID>(args...);
     if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4>(args...);
     if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6>(args...);
     return nullptr;

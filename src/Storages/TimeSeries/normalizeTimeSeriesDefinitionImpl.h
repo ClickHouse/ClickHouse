@@ -3,6 +3,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/ColumnsDescription.h>
+#include <base/types.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <map>
@@ -38,6 +39,12 @@ struct NormalizeTimeSeriesDefinitionParams
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
     /// Required for a new table.
     const Settings * query_settings = nullptr;
+
+    /// The `uuid_type_version` setting to materialize into the types of the inner columns: under version 2 a bare `UUID`
+    /// declared by the user (in INNER COLUMNS or in the `id_type` setting) becomes `UUID2`, and so does the default `id` type.
+    /// Must stay 1 (the historical `UUID`) unless the query is a primary user CREATE: an ATTACH, a restore from a backup
+    /// or a replayed DDL query must keep the stored types as they are, see `normalizeTimeSeriesDefinition`.
+    UInt64 uuid_type_version = 1;
 };
 
 /// Normalizes a TimeSeries table definition using only the definition and `params`, without access to the database catalog.

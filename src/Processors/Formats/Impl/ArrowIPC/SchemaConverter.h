@@ -143,6 +143,10 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema);
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);
 
+/// Whether a UUID field carries the ClickHouse-specific discriminator marking it as the correctly-sorting
+/// `UUID2` type (extra field-metadata key `ClickHouse:type` = `UUID2`). Implies `isUUIDField`.
+bool isUUID2Field(const ArrowField & field);
+
 /// The ClickHouse type name a field carries when the writer had no Arrow mapping for it and wrote it as an
 /// opaque column, or empty when the field is not one. The field's Arrow type says which encoding it holds:
 /// `Utf8` is the text form, `Binary` is `serializeBinary`.
