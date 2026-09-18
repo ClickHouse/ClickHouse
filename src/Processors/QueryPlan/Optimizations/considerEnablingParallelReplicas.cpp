@@ -34,7 +34,7 @@ using namespace DB::QueryPlanOptimizations;
 
 namespace ProfileEvents
 {
-extern const Event AutoParallelReplicasPlansBuilt;
+extern const Event AutoParallelReplicasPlanBuildAttempts;
 extern const Event AutoParallelReplicasMicroseconds;
 extern const Event AutoParallelReplicasPlanNotSuitable;
 extern const Event AutoParallelReplicasNoStatistics;
@@ -442,7 +442,10 @@ void considerEnablingParallelReplicas(
     /// Hand the plan being built the sets this plan has already filled. It is built and optimized
     /// purely to decide whether replicas pay off, and optimizing it would otherwise re-run every
     /// `IN` subquery.
-    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansBuilt);
+    ///
+    /// Counted before the call, not after: the attempt is what costs, and it is paid in full even
+    /// when the builder comes back empty because the query cannot use parallel replicas at all.
+    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildAttempts);
 
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
