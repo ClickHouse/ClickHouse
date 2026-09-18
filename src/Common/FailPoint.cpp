@@ -355,6 +355,7 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
     PAUSEABLE(keeper_changelog_readahead_serve_wait) \
     PAUSEABLE(keeper_local_logs_preprocessing_wait) \
+    REGULAR(keeper_never_pause_appending_entries) \
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     REGULAR(keeper_changelog_readahead_fill_exception) \

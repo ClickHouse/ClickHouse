@@ -61,16 +61,15 @@ ENTRIES_REFUSED = "Logs not preprocessed, ProcessReq callback with"
 NO_REPLAY_NEEDED = "No log preprocessing needed"
 
 NODE2_CONFIG = "/etc/clickhouse-server/config.d/enable_keeper2.xml"
-PAUSE_ANCHOR = "<raft_limits_response_limit>2</raft_limits_response_limit>"
-PAUSE_DISABLED = (
-    "<nuraft_test_disable_append_entries_pause>1"
-    "</nuraft_test_disable_append_entries_pause>"
-)
 WAIT_FAILPOINT = "keeper_local_logs_preprocessing_wait"
+NEVER_PAUSE_FAILPOINT = "keeper_never_pause_appending_entries"
 # Enabled from the config rather than over SQL, because the replay - and with it the first wait -
 # starts as the server comes up, before a query could reach it.
-FAILPOINT_ACTIVE = (
-    f"<fail_points_active><{WAIT_FAILPOINT}>1</{WAIT_FAILPOINT}></fail_points_active>"
+FAILPOINTS_ACTIVE = (
+    "<fail_points_active>"
+    f"<{WAIT_FAILPOINT}>1</{WAIT_FAILPOINT}>"
+    f"<{NEVER_PAUSE_FAILPOINT}>1</{NEVER_PAUSE_FAILPOINT}>"
+    "</fail_points_active>"
 )
 CONFIG_END = "</clickhouse>"
 
@@ -356,7 +355,7 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
     In the ordinary case the negative batch size hint stops the leader before a second request
     carrying entries can arrive, so no thread ever finds another one already waiting - which is
     what the first test asserts, and which leaves the refusal itself unexercised.
-    `nuraft_test_disable_append_entries_pause` takes the hint away, so the leader re-sends every
+    `keeper_never_pause_appending_entries` takes the hint away, so the leader re-sends every
     batch as fast as it is refused and threads of the Raft event loop reach the wait
     continuously. That is the shape a regression of the hint would produce, measured at ~11000
     requests per second while this fix was being written. One thread may wait; every other has
@@ -394,14 +393,11 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
     node2.stop_clickhouse(kill=True)
 
     try:
-        # 2) Take the hint away from node2 only, and leave the leader entries to re-send.
-        node2.replace_in_config(
-            NODE2_CONFIG, PAUSE_ANCHOR, PAUSE_ANCHOR + PAUSE_DISABLED
-        )
-        # And hold the first waiting thread there, so the second one meets an occupied gate. The
-        # deadline is one heartbeat less than the interval after which the leader re-sends, so
-        # without this the two never overlap and the refusal below is unreachable.
-        node2.replace_in_config(NODE2_CONFIG, CONFIG_END, FAILPOINT_ACTIVE + CONFIG_END)
+        # 2) Take the hint away from node2 only, so the leader keeps entries coming, and hold the
+        #    first waiting thread so the second one meets an occupied gate. The deadline and the
+        #    interval after which the leader re-sends are both 100 ms, so whether the two overlap
+        #    on timing alone is a coin flip; the second of these makes the refusal certain.
+        node2.replace_in_config(NODE2_CONFIG, CONFIG_END, FAILPOINTS_ACTIVE + CONFIG_END)
 
         zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
         try:
@@ -472,14 +468,15 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             zk.stop()
             zk.close()
     finally:
-        # A paused failpoint is released only by disabling it - nothing in shutdown does - so a
-        # failure before the release above would leave an asio worker blocked and the Raft
-        # instance unable to join its pool. Disabling one that is not enabled is a no-op.
-        try:
-            node2.query(f"SYSTEM DISABLE FAILPOINT {WAIT_FAILPOINT}")
-        except Exception as e:  # the server may be gone, and this must not mask the real failure
-            logging.info("could not disable %s: %s", WAIT_FAILPOINT, e)
-        node2.replace_in_config(
-            NODE2_CONFIG, PAUSE_ANCHOR + PAUSE_DISABLED, PAUSE_ANCHOR
-        )
-        node2.replace_in_config(NODE2_CONFIG, FAILPOINT_ACTIVE + CONFIG_END, CONFIG_END)
+        # Restoring the config only takes effect on the next start, so both fail points have to
+        # be turned off in the process that is running. A paused one is released by nothing but
+        # disabling it - not by shutdown - so a failure before the release above would otherwise
+        # leave an asio worker blocked and the Raft instance unable to join its pool. The other
+        # is not paused but stays enabled until told otherwise, which any later test would
+        # inherit. Disabling one that is not enabled is a no-op.
+        for fail_point in (WAIT_FAILPOINT, NEVER_PAUSE_FAILPOINT):
+            try:
+                node2.query(f"SYSTEM DISABLE FAILPOINT {fail_point}")
+            except Exception as e:  # the server may be gone; this must not mask the real failure
+                logging.info("could not disable %s: %s", fail_point, e)
+        node2.replace_in_config(NODE2_CONFIG, FAILPOINTS_ACTIVE + CONFIG_END, CONFIG_END)

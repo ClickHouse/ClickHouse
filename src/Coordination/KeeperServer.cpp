@@ -79,6 +79,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char keeper_local_logs_preprocessing_wait[];
+    extern const char keeper_never_pause_appending_entries[];
 }
 
 namespace CoordinationSetting
@@ -105,7 +106,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
-    extern const CoordinationSettingsBool nuraft_test_disable_append_entries_pause;
     extern const CoordinationSettingsBool nuraft_use_bg_thread_for_snapshot_io;
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
@@ -759,11 +759,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->keeper_context = keeper_context;
 
-    /// Only for the test that puts the bound of one waiting thread under pressure.
-    const bool never_pause = coordination_settings[CoordinationSetting::nuraft_test_disable_append_entries_pause];
-
-    state_machine->setAppendEntriesPauseCondition([this, never_pause]
+    state_machine->setAppendEntriesPauseCondition([this]
     {
+        /// Leaves the leader re-sending, which is how a test reaches the admission gate.
+        bool never_pause = false;
+        fiu_do_on(FailPoints::keeper_never_pause_appending_entries, { never_pause = true; });
+
         return !never_pause
             && !keeper_context->localLogsPreprocessed()
             && raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk;

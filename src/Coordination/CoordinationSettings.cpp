@@ -110,7 +110,6 @@ namespace ErrorCodes
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
     DECLARE(UInt64, write_snapshot_version, 8, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", HOT_RELOAD) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
-    DECLARE(Bool, nuraft_test_disable_append_entries_pause, false, "Never ask the leader to stop sending log entries while the local logs are being replayed after a restart. The leader then re-sends every batch as fast as it is refused, which is how the bound of one waiting Raft event loop thread is reached on purpose. Only for testing that bound; not for production use. Requires a restart.", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
     DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
     DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
