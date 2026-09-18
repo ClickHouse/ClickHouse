@@ -157,12 +157,14 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
-    TokenizerPtr token_extactor_)
+    TokenizerPtr token_extactor_,
+    NameSet columns_shadowing_map_subcolumns_)
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
     if (!predicate)
     {
@@ -536,7 +538,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
         {
             auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field))
+            if (!isJSONPathFilterSafe(key_type, value_field, value_type))
                 return false;
 
             out.key_column = json_info->header_position;
@@ -630,7 +632,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name))
+        if (auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
@@ -977,7 +979,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(
+        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
