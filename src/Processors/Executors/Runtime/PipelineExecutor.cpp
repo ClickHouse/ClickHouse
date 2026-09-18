@@ -166,8 +166,10 @@ static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus
 
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
-    /// It is allowed to cancel not started query by user.
-    if (reason == ExecutionStatus::CancelledByUser)
+    /// It is allowed to cancel a not started query by the user, or by a time limit that had already been
+    /// exceeded before the execution started: `finalizeExecution` then knows that the processors were
+    /// legitimately stopped before finishing, instead of reporting a stuck pipeline.
+    if (reason == ExecutionStatus::CancelledByUser || reason == ExecutionStatus::CancelledByTimeout)
         tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
 
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
@@ -282,12 +284,19 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 
 void PipelineExecutor::finalizeExecution()
 {
-    single_thread_cpu_slot.reset();
-    tasks.freeCPU();
-    {
-        std::lock_guard lock(spawn_mutex);
-        cpu_slots.reset();
-    }
+    /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
+    /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
+    /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
+    /// are released only after the hooks have run, on every exit path, and the memory reservation is synced
+    /// with the memory tracker one last time after them.
+    SCOPE_EXIT({
+        single_thread_cpu_slot.reset();
+        tasks.freeCPU();
+        {
+            std::lock_guard lock(spawn_mutex);
+            cpu_slots.reset();
+        }
+    });
 
     checkTimeLimit();
 
@@ -332,6 +341,11 @@ void PipelineExecutor::finalizeExecution()
     /// The whole progress of the query is known at this point, so the output formats can write their epilogue.
     for (const auto & processor : graph->getProcessors())
         processor->onPipelineFinished();
+
+    /// The memory retained by the epilogues has to reach the reservation, as the memory of the processors did.
+    WorkloadResources resources(nullptr, process_list_element);
+    if (resources.isMemorySyncNeeded())
+        resources.syncMemory();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)

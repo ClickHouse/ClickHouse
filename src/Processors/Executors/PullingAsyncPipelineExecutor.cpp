@@ -9,9 +9,24 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char pulling_async_pipeline_executor_delay_first_pull[];
+}
+
+namespace
+{
+
+constexpr std::string_view pulling_async_pipeline_executor_delay_first_pull_query_id_prefix
+    = "pulling_async_pipeline_executor_delay_first_pull_";
+
+}
 
 namespace ErrorCodes
 {
@@ -112,12 +127,26 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
+
+        /// Simulates a consumer that is slow to pull the first chunks, so that the time limit is exceeded while
+        /// the result is already sitting in the lazy format. Only a query whose id starts with the prefix is
+        /// delayed, so that the failpoint does not affect the queries of concurrently running tests.
+        fiu_do_on(FailPoints::pulling_async_pipeline_executor_delay_first_pull,
+        {
+            if (CurrentThread::getQueryId().starts_with(pulling_async_pipeline_executor_delay_first_pull_query_id_prefix))
+                sleepForMilliseconds(2000);
+        });
     }
 
     data->rethrowExceptionIfHas();
 
-    bool is_execution_finished
-        = !data->executor->checkTimeLimitSoft() || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
+    /// Throws when the time limit is exceeded with `timeout_overflow_mode = 'throw'`. With 'break' the partial result
+    /// is returned as a success: the check has cancelled the execution with `CancelledByTimeout`, so the pipeline
+    /// finishes on its own, the chunks that are already in the lazy format are pulled as usual, and the format is
+    /// finalized by the executor - only then is the end of the data reported.
+    data->executor->checkTimeLimit();
+
+    bool is_execution_finished = lazy_format ? lazy_format->isFinished() : data->is_finished.load();
 
     if (is_execution_finished)
     {
@@ -180,6 +209,12 @@ void PullingAsyncPipelineExecutor::cancel()
         if (!data->is_finished && data->executor)
             data->executor->cancel();
     });
+
+    /// The result is abandoned: a pipeline broken off by a time limit keeps the chunks queued in the lazy format
+    /// for the consumer and may be waiting for a free slot in its queue, so the queue is cleared and closed here,
+    /// otherwise the join below would wait for a pull that never comes.
+    if (lazy_format)
+        lazy_format->discardQueuedChunks();
 
     /// The following code is needed to rethrow exception from PipelineExecutor.
     /// It could have been thrown from pull(), but we will not likely call it again.
