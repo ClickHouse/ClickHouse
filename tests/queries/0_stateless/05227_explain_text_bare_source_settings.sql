@@ -11,3 +11,8 @@ SELECT formatQuerySingleLine('EXPLAIN TEXT SHOW TABLES FORMAT JSONEachRow SETTIN
 
 -- Source settings are preserved text: neither validated nor applied.
 EXPLAIN TEXT SHOW TABLES SETTINGS explain_text_unknown_setting = 1 FORMAT JSONEachRow;
+
+-- The clause follows the wrapped statement of EXECUTE AS and the last statement of PARALLEL WITH,
+-- as it does in the parenthesized form.
+SELECT formatQuerySingleLine('EXPLAIN TEXT EXECUTE AS u SHOW TABLES SETTINGS max_threads = 1');
+SELECT formatQuerySingleLine('EXPLAIN TEXT SELECT 1 PARALLEL WITH SHOW TABLES SETTINGS max_threads = 1');

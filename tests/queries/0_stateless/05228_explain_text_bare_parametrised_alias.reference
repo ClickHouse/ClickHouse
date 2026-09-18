@@ -1,0 +1,4 @@
+SELECT 1 AS {name:Identifier}
+WITH 1 AS {name:Identifier} SELECT {name:Identifier}
+SELECT 1 AS {name:Identifier}
+SELECT 1 AS {name:Identifier}

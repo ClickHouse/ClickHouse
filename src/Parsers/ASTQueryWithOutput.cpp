@@ -258,19 +258,24 @@ void ASTQueryWithOutput::normalizeOutputOptions()
     }
 }
 
-ASTQueryWithOutput * trailingQueryWithOutput(IAST * node)
+ASTQueryWithOutput * outputOptionsOwner(IAST * node)
 {
     while (node)
     {
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
         if (auto * execute_as = node->as<ASTExecuteAsQuery>())
         {
+            /// `ParserExecuteAsQuery` hoists the subquery's output options onto the wrapper, so the
+            /// wrapper owns them; a subquery that cannot carry them makes them invalid altogether
+            if (dynamic_cast<ASTQueryWithOutput *>(execute_as->subquery.get()))
+                return execute_as;
             node = execute_as->subquery.get();
             continue;
         }
 #endif
         if (auto * parallel = node->as<ASTParallelWithQuery>())
         {
+            /// nothing is hoisted here: the last statement owns a trailing option
             if (parallel->children.empty())
                 return nullptr;
             node = parallel->children.back().get();

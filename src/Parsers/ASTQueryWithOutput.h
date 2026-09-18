@@ -90,10 +90,11 @@ public:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 };
 
-/// The statement that a trailing output option (`FORMAT`, `INTO OUTFILE`, `SETTINGS`) belongs to:
-/// the subquery of `EXECUTE AS`, the last statement of `PARALLEL WITH`, otherwise `node` itself.
-/// Return nullptr when that statement cannot carry output options.
-ASTQueryWithOutput * trailingQueryWithOutput(IAST * node);
+/// The node that owns a trailing output option (`FORMAT`, `INTO OUTFILE`, `SETTINGS`), the way
+/// the parser assigns it: the `EXECUTE AS` wrapper (which hoists them from its subquery), the last
+/// statement of `PARALLEL WITH`, otherwise `node` itself. Returns nullptr when the statement that
+/// would receive the option cannot carry output options.
+ASTQueryWithOutput * outputOptionsOwner(IAST * node);
 
 /** Helper template for simple queries like SHOW PROCESSLIST.
   */

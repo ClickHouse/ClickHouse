@@ -266,7 +266,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     /// with `EXPLAIN TEXT`. A `SETTINGS` clause directly after the statement belongs to the statement,
     /// as it does for a `SELECT` (whose own parser takes it) and whenever actions follow, so attach it
     /// to the source the way `ParserQueryWithOutput` would have.
-    if (auto * query_with_output = trailingQueryWithOutput(query.get());
+    if (auto * query_with_output = outputOptionsOwner(query.get());
         query_with_output && !query_with_output->settings_ast)
     {
         auto saved = pos;

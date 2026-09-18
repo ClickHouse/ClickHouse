@@ -486,7 +486,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 
 Formats a query and optionally changes its pagination or output format without executing it. The source query is parsed without resolving referenced tables or running query optimization.
 
-The result contains exactly one row with one `String` column named `text`. Formatting uses multiple lines by default. Original whitespace and comments are not preserved.
+The result contains exactly one row with one `String` column named `text`. Formatting uses multiple lines by default. Original whitespace and comments are not preserved. The text contains the source query as written, including secrets such as passwords or access keys, so that it remains executable; this matches `formatQuery`.
 
 **Syntax**
 
@@ -508,7 +508,7 @@ Actions are applied from left to right. Separate consecutive actions with commas
 | `PAGE n` | Sets the offset to the current limit length multiplied by `n - 1`. Requires an existing `LIMIT` and a positive `UInt64` literal page number. `PAGE 1` removes the offset. |
 | `MODIFY FORMAT identifier` | Replaces or adds the source query's output `FORMAT`. |
 
-`MODIFY LIMIT`, `MODIFY OFFSET`, and `PAGE` require a single plain `SELECT`; they reject queries with multiple union branches. `MODIFY FORMAT` supports unions and other statements that accept output formats.
+`MODIFY LIMIT`, `MODIFY OFFSET`, and `PAGE` require a single plain `SELECT`; they reject queries with multiple union branches. `MODIFY FORMAT` supports unions and other statements that accept output formats. Inside `EXECUTE AS` or `PARALLEL WITH` it applies to the wrapped or last statement. `INSERT` is not among them, because its `FORMAT` describes the input data.
 
 `MODIFY OFFSET` and `PAGE` are not supported when the source query uses `LIMIT ... AFTER` or `LIMIT ... UNTIL`, including their combined form. This restriction also applies to `PAGE 1`.
 
@@ -516,13 +516,13 @@ For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. 
 
 **Source and result options**
 
-Parentheses make the source boundary explicit: options inside them belong to the source query, and options after them or after the action list belong to `EXPLAIN TEXT`.
+Parentheses make the source boundary explicit: options inside them belong to the source query, and options after them or after the action list belong to `EXPLAIN TEXT`. A leading parenthesis is treated as the source boundary when its closing parenthesis is followed by an action, an output option, or the end of the statement; otherwise the statement is read in bare form, so `EXPLAIN TEXT (SELECT 1) UNION ALL (SELECT 2)` formats the whole union.
 
-In the bare form with actions, output options before the first action belong to the source, and options after the action list belong to `EXPLAIN TEXT`. Without actions, a `SETTINGS` clause directly after the source statement stays with the source, while trailing `FORMAT` and `INTO OUTFILE` clauses belongs to `EXPLAIN TEXT`.
+In the bare form with actions, output options before the first action belong to the source, and options after the action list belong to `EXPLAIN TEXT`. Without actions, a `SETTINGS` clause directly after the source statement stays with the source, while trailing `FORMAT` and `INTO OUTFILE` clauses, and any `SETTINGS` after them, belong to `EXPLAIN TEXT`.
 
 `SETTINGS` parsed as part of the source `SELECT` remain source settings. To apply settings to `EXPLAIN TEXT`, put them after the source's closing parenthesis or after the action list.
 
-Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected when given in the outer `SETTINGS` clause because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead.
+Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, including parametrised aliases such as `AS {name:Identifier}`, even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected when given in the outer `SETTINGS` clause because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead.
 
 In bare syntax, action keywords take precedence over implicit aliases when they form a complete action. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting, while `EXPLAIN TEXT SELECT 1 PAGE` (no page number) formats `SELECT 1 AS PAGE`. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
 

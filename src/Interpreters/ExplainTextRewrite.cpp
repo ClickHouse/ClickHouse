@@ -117,10 +117,10 @@ void applyModifyFormat(ASTPtr & query, const ASTExplainTextAction & action)
         query = std::move(select_with_union);
     }
 
-    /// The parser gives a trailing `FORMAT` to the statement inside `EXECUTE AS` or at the end of
+    /// The parser gives a trailing `FORMAT` to the `EXECUTE AS` wrapper or to the last statement of
     /// `PARALLEL WITH`, so the rewrite must target the same node; a wrapper around a statement that
     /// cannot carry output options would otherwise format into SQL that does not parse back.
-    auto * query_with_output = trailingQueryWithOutput(query.get());
+    auto * query_with_output = outputOptionsOwner(query.get());
     if (!query_with_output)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MODIFY FORMAT requires a query that supports output options");
 
