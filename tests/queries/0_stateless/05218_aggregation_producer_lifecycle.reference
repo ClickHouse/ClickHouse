@@ -1,0 +1,56 @@
+threads=1, adaptive=0, external=0
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=1, adaptive=0, external=1
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=1, adaptive=1, external=0
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=1, adaptive=1, external=1
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=4, adaptive=0, external=0
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=4, adaptive=0, external=1
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=4, adaptive=1, external=0
+1	1
+1	1
+1
+1	1
+0	0
+0
+threads=4, adaptive=1, external=1
+1	1
+1	1
+1
+1	1
+0	0
+0

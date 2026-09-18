@@ -1,0 +1,6 @@
+empty	0
+never frozen	8	8192
+count final flush	16000	64000
+general final flush	16000	64000	2047968000	768000000
+key-only final flush	16000	127992000
+limited result	1

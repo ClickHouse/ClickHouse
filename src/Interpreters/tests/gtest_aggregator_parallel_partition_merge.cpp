@@ -120,7 +120,7 @@ struct Scenario
         for (const auto & block : blocks)
         {
             const size_t rows = block.front()->size();
-            aggregator.executeOnBlock(block, 0, rows, *variants, key_columns, aggregate_columns, no_more_keys, /*adaptive=*/nullptr);
+            aggregator.executeOnBlock(block, 0, rows, *variants, key_columns, aggregate_columns, no_more_keys, /*execution=*/nullptr);
         }
         return variants;
     }

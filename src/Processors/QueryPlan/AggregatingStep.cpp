@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
 #include <Columns/ColumnConst.h>
@@ -807,7 +807,7 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
-    /// The projection pipeline never runs the adaptive admission and never creates the
+    /// The projection pipeline never runs adaptive staging and never creates the
     /// adaptive shared state, so the flag it receives must not claim otherwise: it would only
     /// mis-drive the size-hint branch of `initDataVariantsWithSizeHint`.
     auto params_without_adaptive = params;

@@ -76,9 +76,8 @@ struct ManyAggregatedData
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
-    /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
-    /// aggregation's early-drain routing table to `variants`, and reading the size of a vector
-    /// that is concurrently grown is a data race.
+    /// The size of `variants` cannot be used instead: the merge can append the adaptive aggregation's
+    /// early-drain routing table while other producers are still returning from the barrier.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
@@ -98,26 +97,34 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
 /** Aggregates the stream of blocks using the specified key columns and aggregate functions.
-  * Columns with aggregate functions adds to the end of the block.
-  * If final = false, the aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
-  * This is necessary so that aggregation can continue (for example, by combining streams of partially aggregated data).
+  * Columns with aggregate functions are added to the end of the block.
+  * If `final = false`, the aggregate functions are not finalized: they are not replaced by their
+  * values, but contain intermediate calculation states. This is necessary so that aggregation can
+  * continue (for example, by combining streams of partially aggregated data).
   *
-  * For every separate stream of data separate AggregatingTransform is created.
-  * Every AggregatingTransform reads data from the first port till is is not run out, or max_rows_to_group_by reached.
-  * When the last AggregatingTransform finish reading, the result of aggregation is needed to be merged together.
-  * This task is performed by ConvertingAggregatedToChunksTransform.
-  * Last AggregatingTransform expands pipeline and adds second input port, which reads from ConvertingAggregated.
+  * For every separate stream of data, a separate `AggregatingTransform` is created.
+  * Every `AggregatingTransform` reads data from the first port until it runs out, or until
+  * `max_rows_to_group_by` is exceeded with `group_by_overflow_mode = 'break'`.
+  * When the last `AggregatingTransform` finishes reading and staging, the results must be merged.
+  * For in-memory aggregation, this task is performed by `ConvertingAggregatedToChunksTransform`.
+  * The last `AggregatingTransform` expands the pipeline and adds an input port, which reads
+  * from the merge pipeline.
   *
-  * Aggregation data is passed by ManyAggregatedData structure, which is shared between all aggregating transforms.
-  * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
-  * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
+  * Aggregation data is passed through `ManyAggregatedData`, shared between all aggregating transforms.
+  * During aggregation, every transform uses its own `AggregatedDataVariants` structure.
+  * During in-memory merging, all structures are passed to `ConvertingAggregatedToChunksTransform`.
+  *
+  * In adaptive mode, the first block needing staging creates partitioning, coalescing, and publication
+  * processors. A separate output sends them aggregate arguments and recorded misses. The producer waits
+  * for acknowledgement before checking memory and limits, and for publication to finish before entering
+  * the shared finish barrier. The public output always carries aggregation results.
   */
 class AggregatingTransform final : public IProcessor
 {
 public:
     AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
-    /// For Parallel aggregating.
+    /// For parallel aggregation.
     AggregatingTransform(
         SharedHeader header,
         AggregatingTransformParamsPtr params_,
@@ -138,64 +145,55 @@ public:
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
     void onCancel() noexcept override;
 
-protected:
-    void consume(Chunk chunk);
-
 private:
     size_t getGeneratingStepGroup() const;
+    void initGenerate();
+    void consume(Chunk & chunk);
+    void finishLocalAggregation();
 
-    /// To read the data that was flushed into the temporary data file.
-    Processors processors;
+    Status prepareAdaptive();
+    void workAdaptive();
+    void finishAdaptiveAggregation();
 
     AggregatingTransformParamsPtr params;
-    LoggerPtr log = getLogger("AggregatingTransform");
-
-    ColumnRawPtrs key_columns;
-    Aggregator::AggregateColumns aggregate_columns;
-
-    /** Used if there is a limit on the maximum number of rows in the aggregation,
-     *   and if group_by_overflow_mode == ANY.
-     *  In this case, new keys are not added to the set, but aggregation is performed only by
-     *   keys that have already managed to get into the set.
-     */
-    bool no_more_keys = false;
-
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
 
-    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
-    /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
-    /// included header (see `AdaptiveAggregationImpl.h`).
-    std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
-
-    size_t max_threads = 1;
-    size_t temporary_data_merge_threads = 1;
-    bool should_produce_results_in_order_of_bucket_number = true;
-    /// If we aggregate partitioned data merging is not needed.
-    bool skip_merging = false;
-
-    /// TODO: calculate time only for aggregation.
-    Stopwatch watch;
-
-    UInt64 src_rows = 0;
-    UInt64 src_bytes = 0;
-
-    std::atomic_flag is_generate_initialized;
+    /** Used if there is a limit on the maximum number of rows in the aggregation,
+      * and if `group_by_overflow_mode = 'any'`.
+      * In this case, new keys are not added to the set, but aggregation is performed only for
+      * keys that have already managed to get into the set.
+      */
+    bool no_more_keys = false;
     bool is_consume_finished = false;
-    bool is_pipeline_created = false;
-
     Chunk current_chunk;
     bool read_current_chunk = false;
 
+    LoggerPtr log = getLogger("AggregatingTransform");
+    ColumnRawPtrs key_columns;
+    Aggregator::AggregateColumns aggregate_columns;
+    /// TODO: Calculate time only for aggregation.
+    Stopwatch watch;
+    UInt64 src_rows = 0;
+    UInt64 src_bytes = 0;
     bool is_consume_started = false;
-
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    std::list<TemporaryBlockStreamHolder> tmp_files;
+    /// Owns adaptive execution and the ports of the lazily created staging pipeline.
+    struct AdaptiveState;
+    std::unique_ptr<AdaptiveState> adaptive;
 
+    /// Holds the merge processors, including readers for data flushed into temporary files,
+    /// before they are added to the pipeline.
+    Processors processors;
+    size_t max_threads = 1;
+    size_t temporary_data_merge_threads = 1;
+    bool should_produce_results_in_order_of_bucket_number = true;
+    /// If we aggregate partitioned data, merging is not needed.
+    bool skip_merging = false;
+    std::atomic_flag is_generate_initialized;
+    bool is_pipeline_created = false;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-
-    void initGenerate();
 };
 
 Chunk convertToChunk(const Block & block);

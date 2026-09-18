@@ -267,7 +267,7 @@ void TTLAggregationAlgorithm::calculateAggregates(const MutableColumns & aggrega
     aggregator->executeOnBlock(
         aggregate_chunk, /* row_begin= */ 0, length,
         aggregation_result, key_columns, columns_for_aggregator, no_more_keys,
-        /* adaptive= */ nullptr);
+        /*execution=*/nullptr);
 
 }
 
