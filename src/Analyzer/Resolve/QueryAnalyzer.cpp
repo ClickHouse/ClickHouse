@@ -2754,7 +2754,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             scope.scope_node->formatASTForErrorMessage());
 
                     result_projection_names.back() = *target_name;
-                    node_to_projection_name.insert_or_assign(node, *target_name);
                     rename_target = *target_name;
                 }
             }
@@ -2791,11 +2790,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             if (rename_target)
             {
                 /// RENAME creates a query alias in the same way as a regular SELECT alias.
-                /// Keep the alias on a clone so that shared matcher nodes are not modified.
+                /// Keep the alias on the projection clone so that shared matcher nodes are not modified
+                /// and the name survives a later projection re-resolution.
                 auto alias_node = node->clone();
                 alias_node->setAlias(*rename_target);
                 QueryExpressionsAliasVisitor visitor(scope.aliases);
                 visitor.visit(alias_node);
+                node = std::move(alias_node);
             }
 
             list->getNodes().push_back(node);
