@@ -486,7 +486,7 @@ ORDER BY tuple();
 
 DROP TABLE tab;
 
-SELECT '-- posting_list_codec must be none, bitpacking or pfordelta.';
+SELECT '-- posting_list_codec must be none, bitpacking or pfor.';
 
 CREATE TABLE tab
 (
@@ -511,7 +511,7 @@ DROP TABLE tab;
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfordelta')
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfor')
 )
 ENGINE = MergeTree
 ORDER BY tuple();

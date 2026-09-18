@@ -34,7 +34,7 @@ def started_cluster():
             stay_alive=True,
             user_configs=["configs/compatibility.xml"],
         )
-        # Parses the header but does not know `pfordelta`.
+        # Parses the header but does not know `pfor`.
         cluster.add_instance(
             "node_codec_aware",
             image="clickhouse/clickhouse-server",
@@ -465,10 +465,10 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
             node.restart_with_original_version()
 
 
-def test_downgrade_after_writing_pfordelta(started_cluster):
-    """An unknown codec must be refused, not decoded - which is why `pfordelta` needs no version bump."""
+def test_downgrade_after_writing_pfor(started_cluster):
+    """An unknown codec must be refused, not decoded - which is why `pfor` needs no version bump."""
     node = started_cluster.instances["node_codec_aware"]
-    table = "text_index_downgrade_pfordelta"
+    table = "text_index_downgrade_pfor"
 
     create_and_populate(node, table, posting_list_codec=None)
     assert run_search_queries(node, table) == expected_results()
@@ -480,7 +480,7 @@ def test_downgrade_after_writing_pfordelta(started_cluster):
 
         # The table now mixes the original parts with parts naming an unknown codec.
         node.query(
-            f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'pfordelta'"
+            f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'pfor'"
         )
 
         insert_new_part(node, table)
@@ -502,7 +502,7 @@ def test_downgrade_after_writing_pfordelta(started_cluster):
             f"SELECT count() FROM {table} WHERE hasToken(s, 'common')"
         )
         assert "Unknown posting list codec type" in error, (
-            f"expected the old server to reject the `pfordelta` part on its codec check, "
+            f"expected the old server to reject the `pfor` part on its codec check, "
             f"got:\n{error}"
         )
 

@@ -57,16 +57,16 @@ OPTIMIZE TABLE tab FINAL;
 SELECT count() FROM tab WHERE hasPhrase(str, 'corge grault');
 "
 
-echo '-- a pfordelta index is writable and readable under the pin'
+echo '-- a pfor index is writable and readable under the pin'
 # The codec is recorded per part, independently of the version, so the pin neither selects nor blocks it.
 $CLICKHOUSE_LOCAL --path "$data_path" --compatibility '26.5' -m -q "
-CREATE TABLE tab_pfordelta (id UInt32, str String, INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfordelta'))
+CREATE TABLE tab_pfor (id UInt32, str String, INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfor'))
 ENGINE = MergeTree ORDER BY id;
-INSERT INTO tab_pfordelta SELECT number, 'foo bar' FROM numbers(512);
-INSERT INTO tab_pfordelta SELECT number + 512, 'foo baz' FROM numbers(512);
-OPTIMIZE TABLE tab_pfordelta FINAL;
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'foo');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'bar');
+INSERT INTO tab_pfor SELECT number, 'foo bar' FROM numbers(512);
+INSERT INTO tab_pfor SELECT number + 512, 'foo baz' FROM numbers(512);
+OPTIMIZE TABLE tab_pfor FINAL;
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'foo');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'bar');
 "
 
 rm -rf "${data_path:?}"

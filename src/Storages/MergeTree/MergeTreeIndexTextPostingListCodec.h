@@ -275,7 +275,7 @@ public:
 class PostingListCodecPForDelta : public SegmentedPostingListCodecBase
 {
 public:
-    static const char * getName() { return "pfordelta"; }
+    static const char * getName() { return "pfor"; }
 
     PostingListCodecPForDelta() : SegmentedPostingListCodecBase(Type::PForDelta) {}
 };

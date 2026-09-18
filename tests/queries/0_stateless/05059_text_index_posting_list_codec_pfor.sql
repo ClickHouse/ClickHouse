@@ -1,4 +1,4 @@
--- Tests the `pfordelta` posting list codec against `bitpacking` and `none` on identical data.
+-- Tests the `pfor` posting list codec against `bitpacking` and `none` on identical data.
 
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
@@ -8,7 +8,7 @@ SET query_plan_optimize_count_from_text_index = 0;
 DROP TABLE IF EXISTS tab_src;
 DROP TABLE IF EXISTS tab_none;
 DROP TABLE IF EXISTS tab_bitpacking;
-DROP TABLE IF EXISTS tab_pfordelta;
+DROP TABLE IF EXISTS tab_pfor;
 
 CREATE TABLE tab_src (
     id UInt64,
@@ -42,10 +42,10 @@ CREATE TABLE tab_bitpacking (
 ENGINE = MergeTree
 ORDER BY id;
 
-CREATE TABLE tab_pfordelta (
+CREATE TABLE tab_pfor (
     id UInt64,
     str String,
-    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, posting_list_block_size = 512, posting_list_codec = 'pfordelta')
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, posting_list_block_size = 512, posting_list_codec = 'pfor')
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -56,8 +56,8 @@ INSERT INTO tab_none SELECT * FROM tab_src WHERE id >= 5000;
 INSERT INTO tab_bitpacking SELECT * FROM tab_src WHERE id < 5000;
 INSERT INTO tab_bitpacking SELECT * FROM tab_src WHERE id >= 5000;
 
-INSERT INTO tab_pfordelta SELECT * FROM tab_src WHERE id < 5000;
-INSERT INTO tab_pfordelta SELECT * FROM tab_src WHERE id >= 5000;
+INSERT INTO tab_pfor SELECT * FROM tab_src WHERE id < 5000;
+INSERT INTO tab_pfor SELECT * FROM tab_src WHERE id >= 5000;
 
 SELECT 'Before merge, materialize';
 SET text_index_posting_list_apply_mode = 'materialize';
@@ -76,35 +76,35 @@ SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'single');
 SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'raretwo');
 SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'rarefive');
 
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'dense');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'tailblock');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'outlier');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'single');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'raretwo');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'rarefive');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'dense');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'tailblock');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'outlier');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'single');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'raretwo');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'rarefive');
 
 SELECT 'Before merge, lazy';
 SET text_index_posting_list_apply_mode = 'lazy';
 
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'dense');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'tailblock');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'outlier');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'single');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'raretwo');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'rarefive');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'dense');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'tailblock');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'outlier');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'single');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'raretwo');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'rarefive');
 
 SELECT 'Intersection';
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'dense') AND hasToken(str, 'outlier');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'dense') AND hasToken(str, 'outlier');
 
 SELECT 'Row ids';
-SELECT arraySort(groupArray(id)) FROM tab_pfordelta WHERE hasToken(str, 'outlier');
-SELECT arraySort(groupArray(id)) FROM tab_pfordelta WHERE hasToken(str, 'rarefive');
+SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasToken(str, 'outlier');
+SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasToken(str, 'rarefive');
 
 SELECT 'After merge, materialize';
 
 OPTIMIZE TABLE tab_none FINAL;
 OPTIMIZE TABLE tab_bitpacking FINAL;
-OPTIMIZE TABLE tab_pfordelta FINAL;
+OPTIMIZE TABLE tab_pfor FINAL;
 
 SET text_index_posting_list_apply_mode = 'materialize';
 
@@ -122,33 +122,33 @@ SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'single');
 SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'raretwo');
 SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'rarefive');
 
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'dense');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'tailblock');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'outlier');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'single');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'raretwo');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'rarefive');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'dense');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'tailblock');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'outlier');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'single');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'raretwo');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'rarefive');
 
 SELECT 'After merge, lazy';
 SET text_index_posting_list_apply_mode = 'lazy';
 
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'dense');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'tailblock');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'outlier');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'single');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'raretwo');
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'rarefive');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'dense');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'tailblock');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'outlier');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'single');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'raretwo');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'rarefive');
 
 SELECT 'Intersection';
-SELECT count() FROM tab_pfordelta WHERE hasToken(str, 'dense') AND hasToken(str, 'outlier');
+SELECT count() FROM tab_pfor WHERE hasToken(str, 'dense') AND hasToken(str, 'outlier');
 
 SELECT 'Row ids';
-SELECT arraySort(groupArray(id)) FROM tab_pfordelta WHERE hasToken(str, 'outlier');
-SELECT arraySort(groupArray(id)) FROM tab_pfordelta WHERE hasToken(str, 'rarefive');
+SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasToken(str, 'outlier');
+SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasToken(str, 'rarefive');
 
 DROP TABLE tab_none;
 DROP TABLE tab_bitpacking;
-DROP TABLE tab_pfordelta;
+DROP TABLE tab_pfor;
 
 SELECT 'Table setting';
 
@@ -161,7 +161,7 @@ CREATE TABLE tab_setting (
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS text_index_posting_list_codec = 'pfordelta';
+SETTINGS text_index_posting_list_codec = 'pfor';
 
 INSERT INTO tab_setting SELECT id, if(id % 7 = 0, 'seven', 'other') FROM tab_src;
 OPTIMIZE TABLE tab_setting FINAL;
@@ -190,7 +190,7 @@ ALTER TABLE tab_mixed MODIFY SETTING text_index_posting_list_codec = 'bitpacking
 
 INSERT INTO tab_mixed SELECT 'hello world ' || toString(number) FROM numbers(1000);
 
-ALTER TABLE tab_mixed MODIFY SETTING text_index_posting_list_codec = 'pfordelta';
+ALTER TABLE tab_mixed MODIFY SETTING text_index_posting_list_codec = 'pfor';
 
 INSERT INTO tab_mixed SELECT 'foo bar ' || toString(number) FROM numbers(1000);
 
