@@ -10,6 +10,7 @@ namespace DB
 
 class ISink;
 class ISource;
+class IProcessor;
 class Block;
 
 /// Describes an individual stream of an Exchange, e.g. ShuffleExchange from M buckets to N buckets has M*N streams
@@ -46,11 +47,34 @@ struct IExchangeLookup : boost::noncopyable
 {
     virtual ~IExchangeLookup() = default;
 
+    /// The sink of one stream. Its input is the output of the processors of `createSerializer`: the
+    /// packets they make, or the data chunks as they are when there are no such processors.
     /// An advisory sink carries data the receiver is free to stop reading at any moment (a
     /// runtime filter): peer disconnects and resets stop the delivery instead of throwing.
     /// Data streams must pass false so a lost receiver stays an error.
     virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) = 0;
-    virtual std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) = 0;
+    /// `output_is_serialized`: the source hands out the packets of the exchange as they are, one per
+    /// chunk, for the processors of `createDeserializer` to turn into data; only an exchange kind that
+    /// returns such processors accepts true.
+    virtual std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) = 0;
+
+    /// A processor that turns data chunks into the form the sinks of exchange `exchange_id` send.
+    /// The send steps put one on every stream in front of a sink, so serialization runs on all
+    /// streams instead of in the single sink of a destination. Returns nullptr when the sinks send
+    /// data chunks as they are.
+    virtual std::shared_ptr<IProcessor> createSerializer(SharedHeader /*input_header*/, const String & /*exchange_id*/)
+    {
+        return nullptr;
+    }
+
+    /// The counterpart of `createSerializer` on the receiving side: a processor that turns the packets
+    /// of exchange `exchange_id` into data chunks. The receive steps put one on every stream behind
+    /// the sources, so deserialization runs on all streams instead of in the single source of a
+    /// sender. Returns nullptr when the sources hand out data chunks themselves.
+    virtual std::shared_ptr<IProcessor> createDeserializer(SharedHeader /*output_header*/, const String & /*exchange_id*/)
+    {
+        return nullptr;
+    }
 };
 
 using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;

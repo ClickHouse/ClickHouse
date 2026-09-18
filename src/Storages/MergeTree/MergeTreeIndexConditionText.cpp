@@ -2,8 +2,10 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <set>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
@@ -61,6 +63,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
+    extern const SettingsBool use_index_for_in_with_subqueries;
 }
 
 TextSearchQuery::TextSearchQuery(
@@ -140,10 +143,12 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -292,6 +297,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
+
+    /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
+    /// the matching rows. Nothing else is supported yet.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
@@ -906,6 +916,13 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
+    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
+    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
+    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
+    /// branch below, because every shape is matched the same way.
+    if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
+        return {};
+
     auto compile_pattern = [&](const String & pattern)
     {
         std::vector<OptimizedRegularExpression> patterns;
@@ -1084,6 +1101,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
+    /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
+    /// path. Partition hard, so none of them can emit a token in the pair format.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
+
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
@@ -1118,7 +1140,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
     {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
@@ -1543,7 +1565,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+        if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
         if (has_postprocessor)
             return false;
@@ -1691,6 +1713,56 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     return false;
 }
 
+/// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path
+/// makes the predicate false. That evaluation runs `FunctionIn`, which needs every `IN` set in the
+/// sub-DAG to exist, so build them here - but only sets index analysis is allowed to consult at all.
+static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, const ContextPtr & context)
+{
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        /// The decision is made once, at analysis time, so a set that keeps changing under the query
+        /// cannot be trusted: a concurrent `INSERT` of the default value would make the predicate true
+        /// for a missing key after those rows' granules were pruned.
+        if (future_set->isMutableDuringQuery())
+            return false;
+
+        /// `use_index_for_in_with_subqueries = 0` forbids using an index for a subquery set at all.
+        /// The ordered build enforces that by refusing to build, but refusing to build is not the same
+        /// as refusing to use: `ReadFromMergeTree::applyFilters` builds PREWHERE sets unordered when the
+        /// setting is off, and a read step analyzed after that finds the set ready. Ask the setting.
+        ///
+        /// This does not reach a `make_distributed_plan` worker task, where the set arrives as shipped
+        /// values (`SetSerializationKind::TupleValues`) and is rebuilt as a `FutureSetFromTuple`, losing
+        /// the fact that it came from a subquery. That gap is older and wider than this check: every
+        /// index consumer takes the same set through `buildOrderedSetInplace`, which never consults the
+        /// setting for a tuple carrier, so a worker also uses the primary key index for `pk IN (SELECT ...)`
+        /// with the setting off. Closing it means carrying the origin through set serialization.
+        if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries]
+            && typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+            return false;
+
+        /// Only the existence of the set matters: the evaluation needs `FunctionIn` to find a ready set,
+        /// but never reads its elements. Requiring `hasExplicitSetElements` on top of that gave up on a
+        /// set that exceeded `use_index_for_in_with_subqueries_max_values`.
+        future_set->buildOrderedSetInplace(context);
+        if (!future_set->get())
+            return false;
+    }
+
+    return true;
+}
+
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -1762,7 +1834,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name);
+        auto parsed = tryParseMapSubcolumnName(required_column.name, columns_shadowing_map_subcolumns);
         if (!parsed)
             return false;
 
@@ -1776,25 +1848,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
@@ -1809,6 +1864,77 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     auto tokens = stringToTokens(*key_const_value);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
+{
+    /// `m['key']` before the subcolumn rewrite.
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+            return std::nullopt;
+
+        if (!hasIndexForColumn(function.getArgumentAt(0).getColumnName()))
+            return std::nullopt;
+
+        Field key_field;
+        DataTypePtr key_type;
+        /// FixedString excluded, see traverseMapElementKeyValueNode.
+        if (!function.getArgumentAt(1).tryGetConstant(key_field, key_type) || !WhichDataType(key_type).isString())
+            return std::nullopt;
+
+        return key_field.safeGet<String>();
+    }
+
+    /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    if (!parsed)
+        return std::nullopt;
+
+    auto & [map_column_name, serialized_key] = *parsed;
+    if (!hasIndexForColumn(map_column_name))
+        return std::nullopt;
+
+    /// `serializeText` is the identity for the String keys this index requires, so this is the raw key.
+    /// Same assumption as traverseMapElementKeyNode.
+    return serialized_key;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
+    const String & function_name,
+    const RPNBuilderTreeNode & index_column_node,
+    TextIndexDirectReadMode direct_read_mode,
+    const DataTypePtr & value_type,
+    const Field & value_field,
+    RPNElement & out) const
+{
+    if (function_name != "equals")
+        return false;
+
+    /// A FixedString Field carries its zero padding, which the index does not store: the token would
+    /// never be found and exact direct read would drop rows. Scan instead.
+    if (!WhichDataType(value_type).isString())
+        return false;
+
+    auto key = tryGetMapElementKeyForIndexColumn(index_column_node);
+    if (!key)
+        return false;
+
+    /// `m['key'] = ''` also holds for rows without the key, which have no token. Keep the predicate,
+    /// as `equals` does for an empty needle.
+    const String & value = value_field.safeGet<String>();
+    if (value.empty())
+        return false;
+
+    /// `m['key']` is the key's first occurrence: is_rest = 0.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
+
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(
+        std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
     return true;
 }
 
@@ -1827,7 +1953,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
@@ -1873,25 +1999,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (!json_info)
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     /// Evaluate the function on a default column value.
     /// If the function returns true for the default value (what we'd get when the path is missing),

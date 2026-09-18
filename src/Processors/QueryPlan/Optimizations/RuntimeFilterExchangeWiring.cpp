@@ -20,14 +20,12 @@
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
 {
-
-RelationStats
-estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
 
 namespace
 {

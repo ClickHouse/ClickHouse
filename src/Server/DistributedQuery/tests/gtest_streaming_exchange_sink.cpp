@@ -3,12 +3,14 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Server/DistributedQuery/FutureConnection.h>
+#include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 
 #include <Poco/Net/ServerSocket.h>
@@ -59,8 +61,18 @@ QueryPipeline makeSinkPipeline(std::shared_ptr<FutureConnection> future_connecti
     for (size_t i = 0; i < 4; ++i)
         chunks.push_back(makeChunk(1024 * 1024, i));
 
-    QueryPipeline pipeline(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
-    pipeline.complete(std::make_shared<StreamingExchangeSink>(header, std::move(future_connection), "test_stream", advisory));
+    /// The sink sends packets, so the chunks go through the serializer first, as in a send step.
+    Pipe pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks)));
+    SharedHeader packets_header;
+    pipe.addSimpleTransform([&](const SharedHeader & stream_header) -> ProcessorPtr
+    {
+        auto serializer = std::make_shared<StreamingExchangeSerializingTransform>(
+            stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+        packets_header = serializer->getOutputs().front().getSharedHeader();
+        return serializer;
+    });
+    QueryPipeline pipeline(std::move(pipe));
+    pipeline.complete(std::make_shared<StreamingExchangeSink>(packets_header, std::move(future_connection), "test_stream", advisory));
     return pipeline;
 }
 

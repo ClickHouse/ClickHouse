@@ -1,19 +1,20 @@
 #include <string_view>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
-#include <Interpreters/Context.h>
+#include <Common/ThreadStatus.h>
 
 #include <algorithm>
 #include <mutex>
@@ -42,7 +43,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -275,23 +275,11 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
 {
-    if (!geometry.bloom_filter_bytes)
-        geometry.bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
-    if (geometry.bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter size {} is too big, maximum: {}",
-            geometry.bloom_filter_bytes,
-            MAX_RUNTIME_BLOOM_FILTER_BYTES);
-
-    if (!geometry.bloom_filter_hash_functions)
-        geometry.bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
-    if (geometry.bloom_filter_hash_functions > MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
-            geometry.bloom_filter_hash_functions,
-            MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
+    const auto bloom_filter_parameters = resolveRuntimeBloomFilterDefaults(
+        RuntimeBloomFilterParameters{geometry.bloom_filter_bytes, geometry.bloom_filter_hash_functions});
+    geometry.bloom_filter_bytes = bloom_filter_parameters.bytes;
+    geometry.bloom_filter_hash_functions = bloom_filter_parameters.hash_functions;
+    validateRuntimeBloomFilterParameters(bloom_filter_parameters);
 
     /// The exact phase is byte-bounded by the bloom size unless the plan raised it explicitly
     /// (runtime-filter transport does, from cardinality estimates).
@@ -399,14 +387,25 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
             OutputPort * partial_output = &resize->getOutputs().front();
             result.emplace_back(std::move(resize));
 
+            /// All legs of one filter use exchanges of the same kind, so one serializer (none for a
+            /// persisted exchange) serves every destination and the copies share its packets.
+            SharedHeader stream_header = partials_header;
+            if (auto serializer = settings.exchange_lookup->createSerializer(partials_header, destination_streams.front().exchange_id))
+            {
+                connect(*partial_output, serializer->getInputs().front());
+                partial_output = &serializer->getOutputs().front();
+                stream_header = partial_output->getSharedHeader();
+                result.emplace_back(std::move(serializer));
+            }
+
             if (destination_streams.size() > 1)
             {
-                auto copy = std::make_shared<CopyTransform>(partials_header, destination_streams.size());
+                auto copy = std::make_shared<CopyTransform>(stream_header, destination_streams.size());
                 connect(*partial_output, copy->getInputs().front());
                 auto output = copy->getOutputs().begin();
                 for (const auto & stream : destination_streams)
                 {
-                    auto sink = settings.exchange_lookup->createSink(partials_header, stream, /*advisory*/ true);
+                    auto sink = settings.exchange_lookup->createSink(stream_header, stream, /*advisory*/ true);
                     connect(*output++, sink->getPort());
                     result.emplace_back(std::move(sink));
                 }
@@ -414,7 +413,7 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
             }
             else
             {
-                auto sink = settings.exchange_lookup->createSink(partials_header, destination_streams.front(), /*advisory*/ true);
+                auto sink = settings.exchange_lookup->createSink(stream_header, destination_streams.front(), /*advisory*/ true);
                 connect(*partial_output, sink->getPort());
                 result.emplace_back(std::move(sink));
             }
@@ -441,13 +440,16 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(filter_name, ctx.out);
     writeBinary(allow_to_use_not_exact_filter, ctx.out);
 
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES)
+    /// Step version 1 carries the filter exchange topology. The registry picks version 0 for a peer
+    /// whose release predates the transport; such a peer would run the step as a local build and the
+    /// filter would silently never arrive, so the topology is refused rather than dropped.
+    if (ctx.step_version < 1)
     {
         if (hasFilterExchanges())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan: serializing a BuildRuntimeFilterStep with filter exchanges requires "
-                "query plan serialization version >= {}; all nodes must run the same version",
-                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES);
+                "make_distributed_plan: cannot serialize a BuildRuntimeFilterStep with filter exchanges "
+                "at step version {}; all nodes must run the same version",
+                ctx.step_version);
         return;
     }
 
@@ -487,7 +489,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     Strings tree_source_buckets;
     size_t tree_fan_in = 0;
     size_t num_exchanges = 0;
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES)
+    if (ctx.step_version >= 1)
     {
         readBinary(has_tree_exchange, ctx.in);
         if (has_tree_exchange > 1)
@@ -569,7 +571,11 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("BuildRuntimeFilter", BuildRuntimeFilterStep::deserialize);
+    /// Version 1 adds the filter exchange topology.
+    registry.registerStep(
+        "BuildRuntimeFilter",
+        BuildRuntimeFilterStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES}});
 }
 
 }

@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -24,6 +25,11 @@
 
 #include <algorithm>
 #include <optional>
+
+namespace DB
+{
+void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
+}
 
 using namespace DB;
 
@@ -611,6 +617,15 @@ void expectGeometryMatches(const RuntimeFilterGeometry & actual, const RuntimeFi
     EXPECT_DOUBLE_EQ(actual.max_ratio_of_set_bits_in_bloom_filter, expected.max_ratio_of_set_bits_in_bloom_filter);
 }
 
+/// The step version a stream at `plan_version` carries for `BuildRuntimeFilter`, chosen by the
+/// registry the way `QueryPlan::serialize` chooses it.
+UInt64 buildStepVersionToWrite(UInt64 plan_version)
+{
+    QueryPlanStepRegistry registry;
+    registerBuildRuntimeFilterStep(registry);
+    return registry.versionToWrite("BuildRuntimeFilter", plan_version);
+}
+
 QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 version)
 {
     QueryPlanSerializationSettings settings;
@@ -622,6 +637,7 @@ QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 
         .out = out,
         .registry = serialize_registry,
         .version = version,
+        .step_version = buildStepVersionToWrite(version),
     };
     step.serialize(serialization);
 
@@ -639,6 +655,7 @@ QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 
         .output_header = step.getOutputHeader(),
         .settings = settings,
         .version = version,
+        .step_version = buildStepVersionToWrite(version),
     };
     return BuildRuntimeFilterStep::deserialize(deserialization);
 }
@@ -660,6 +677,7 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTripsAtVersion7)
             .out = out,
             .registry = serialize_registry,
             .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+            .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
         };
         step.serialize(serialization);
         return out.str();
@@ -686,6 +704,7 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTripsAtVersion7)
         .out = out_again,
         .registry = serialize_registry,
         .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+        .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
     };
     restored->serialize(serialization);
     EXPECT_EQ(out_again.str(), payload);
@@ -703,6 +722,7 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
         .out = out,
         .registry = serialize_registry,
         .version = pre_exchanges_version,
+        .step_version = buildStepVersionToWrite(pre_exchanges_version),
     };
     try
     {
@@ -723,9 +743,10 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
     EXPECT_TRUE(restored->getFilterKey().empty());
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
-    /// `join_runtime_filter_exact_bytes_limit` is a version-15 setting name; a stream below that
-    /// version omits it and the reader falls back to the constructor floor (the bloom filter size
-    /// is the default when the setting is absent, and the limit defaults to the bloom size).
+    /// `join_runtime_filter_exact_bytes_limit` is written only from the version that knows the filter
+    /// exchanges; a stream below that version omits it and the reader falls back to the constructor
+    /// floor (the bloom filter size is the default when the setting is absent, and the limit
+    /// defaults to the bloom size).
     auto expected_geometry = makeGeometry();
     expected_geometry.exact_bytes_limit = restored->getGeometry().exact_bytes_limit;
     EXPECT_EQ(restored->getGeometry().exact_bytes_limit, 512 * 1024);
@@ -752,6 +773,7 @@ TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTripsAtVersion7)
             .out = out,
             .registry = serialize_registry,
             .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+            .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
         };
         step.serialize(serialization);
         return out.str();
@@ -778,6 +800,7 @@ TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTripsAtVersion7)
         .out = out_again,
         .registry = serialize_registry,
         .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+        .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
     };
     restored->serialize(serialization);
     EXPECT_EQ(out_again.str(), payload);
@@ -798,6 +821,7 @@ TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTripsAtVersion7)
             .out = out,
             .registry = serialize_registry,
             .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+            .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
         };
         step.serialize(serialization);
         return out.str();
@@ -820,6 +844,7 @@ TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTripsAtVersion7)
         .out = out_again,
         .registry = serialize_registry,
         .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+        .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
     };
     restored->serialize(serialization);
     EXPECT_EQ(out_again.str(), payload);

@@ -15,6 +15,7 @@
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 
 namespace DB
 {
@@ -68,10 +69,9 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
 
     auto partials_header = runtimeFilterPartialsHeader();
 
-    Pipes pipes;
+    VectorWithMemoryTracking<ExchangeStreamId> input_streams;
     for (size_t child = children_begin; child < children_end; ++child)
-        pipes.emplace_back(
-            settings.exchange_lookup->createSource(partials_header, ExchangeStreamId(input_exchange_id, source_buckets[child], bucket_id)));
+        input_streams.emplace_back(input_exchange_id, source_buckets[child], bucket_id);
 
     /// Destination streams, in the order the sinks are attached below.
     std::vector<ExchangeStreamId> destination_streams;
@@ -84,8 +84,9 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
                 destination_streams.emplace_back(output.exchange_id, bucket_id, destination_bucket);
     }
 
-    auto pipeline = std::make_unique<QueryPipelineBuilder>();
-    pipeline->init(Pipe::unitePipes(std::move(pipes)));
+    /// One stream per child: the merge counts the states it receives per input.
+    auto pipeline = std::make_unique<QueryPipelineBuilder>(
+        receiveExchangeStreams(partials_header, input_exchange_id, input_streams, settings, /*spread_over_max_threads*/ false));
 
     pipeline->addTransform(
         std::make_shared<MergeRuntimeFiltersTransform>(
@@ -99,8 +100,15 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
             /*filter_lookup_=*/nullptr,
             /*num_forward_destinations_=*/destination_streams.size()));
 
+    /// All legs of one filter use exchanges of the same kind, so one serializer (none for a persisted
+    /// exchange) serves every destination and the copies share its packets.
+    pipeline->addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+    {
+        return settings.exchange_lookup->createSerializer(header, destination_streams.front().exchange_id);
+    });
+
     if (destination_streams.size() > 1)
-        pipeline->addTransform(std::make_shared<CopyTransform>(partials_header, destination_streams.size()));
+        pipeline->addTransform(std::make_shared<CopyTransform>(pipeline->getSharedHeader(), destination_streams.size()));
 
     size_t next_sink = 0;
     pipeline->setSinks(
