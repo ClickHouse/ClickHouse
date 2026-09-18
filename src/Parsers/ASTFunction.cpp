@@ -181,7 +181,7 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeAlias(*this);
 }
 
-/// The node types whose `formatImpl` prints a bare query. `as` matches the exact type, and
+/// The select query node types the AST JSON format can build. `as` matches the exact type, and
 /// `ASTSelectIntersectExceptQuery` derives from `ASTSelectQuery`, so each one is listed.
 static bool isBareSelectQuery(const IAST * node)
 {
@@ -302,25 +302,28 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     /// prints exactly those two shapes through dedicated branches which emit the name and the select
     /// and then return, so `parameters` and the whole `finishFormatWithWindow` suffix (the NULLS
     /// action and `OVER ...`) never reach the output; under any other name a bare select formats into
-    /// text that does not parse back. Reject every combination the parser cannot produce. The checks
-    /// are case-insensitive because the parser dispatches to the table function parser on the
-    /// lowercased name, so any spelling hits the same parse-back constraints.
+    /// text that does not parse back. Nor can the accepted select carry query output options:
+    /// `ParserSelectWithUnionQuery` parses none, and `ASTQueryWithOutput::formatImpl` is `final`, so that
+    /// suffix is printed even from those branches. Reject every combination the parser cannot produce.
+    /// The checks are case-insensitive because the parser dispatches to the table function parser on
+    /// the lowercased name, so any spelling hits the same parse-back constraints.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
     if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
     {
-        bool is_view_shape = is_view && arguments && arguments->children.size() == 1
-            && arguments->children[0]->as<ASTSelectWithUnionQuery>();
-        bool is_view_if_permitted_shape = is_view_if_permitted && arguments && arguments->children.size() == 2
-            && arguments->children[0]->as<ASTSelectWithUnionQuery>() && arguments->children[1]->as<ASTFunction>();
-        bool is_table_function_shape = (is_view_shape || is_view_if_permitted_shape) && !parameters
-            && !isWindowFunction() && getNullsAction() == NullsAction::EMPTY;
+        const auto * view_select
+            = arguments && !arguments->children.empty() ? arguments->children[0]->as<ASTSelectWithUnionQuery>() : nullptr;
+        bool is_view_shape = is_view && arguments && arguments->children.size() == 1 && view_select;
+        bool is_view_if_permitted_shape = is_view_if_permitted && arguments && arguments->children.size() == 2 && view_select
+            && arguments->children[1]->as<ASTFunction>();
+        bool is_table_function_shape = (is_view_shape || is_view_if_permitted_shape) && !parameters && !isWindowFunction()
+            && getNullsAction() == NullsAction::EMPTY && !view_select->hasOutputOptions();
         if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A select query argument is only allowed in the table function 'view' (exactly one argument, a "
                 "`SelectWithUnionQuery`) or 'viewIfPermitted' (exactly two arguments, a `SelectWithUnionQuery` "
-                "followed by a function), without parameters, a window or a NULLS action, during AST JSON "
-                "deserialization");
+                "followed by a function), without parameters, a window, a NULLS action or query output options, "
+                "during AST JSON deserialization");
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
         /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and

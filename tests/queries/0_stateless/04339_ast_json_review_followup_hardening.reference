@@ -20,4 +20,5 @@ SELECT * FROM view(SELECT 1)
 SELECT count() OVER (ORDER BY x ASC) FROM t
 SELECT any(x) IGNORE NULLS FROM t
 SELECT quantile(0.9)(x) FROM t
+SELECT * FROM view(SELECT 1 SETTINGS max_threads = 1)
 1
