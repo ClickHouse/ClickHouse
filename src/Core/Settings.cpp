@@ -457,6 +457,11 @@ Timeout for receiving data from the network, in seconds. If no bytes were receiv
     DECLARE(Seconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC, R"(
 Timeout for sending data to the network, in seconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown. If you set this setting on the client, the 'receive_timeout' for the socket will also be set on the corresponding connection end on the server.
 )", 0) \
+    DECLARE(Seconds, sync_request_timeout, DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, R"(
+Timeout for synchronous protocol calls made by server-side connections, such as `Ping` and `TablesStatusRequest`, in seconds.
+
+This setting does not affect protocol requests made by `clickhouse-client`. For those requests, `clickhouse-client` uses the `sync_request_timeout` value from its client configuration, which also accepts fractional seconds, or `DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC` if it is not configured.
+)", 0) \
     DECLARE(Seconds, tcp_keep_alive_timeout, DEFAULT_TCP_KEEP_ALIVE_TIMEOUT /* less than DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC */, R"(
 The time in seconds the connection needs to remain idle before TCP starts sending keepalive probes
 )", 0) \
