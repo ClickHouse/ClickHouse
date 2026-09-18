@@ -134,12 +134,11 @@ void translateHeadersToGCS(Aws::Http::HttpRequest & request)
         if (!before.contains(name))
             request.SetHeaderValue(name, value);
 
-    /// GCS honours the standard spelling on a read, and supports no precondition at all on the `POST`
-    /// that completes a multipart upload.
+    /// Only a `PUT` takes a GCS write precondition: a read honours `If-None-Match`, the completing `POST` takes none.
     if (request.GetMethod() != Aws::Http::HttpMethod::HTTP_PUT)
         return;
 
-    /// `GetHeaderValue` asserts the header is present, so presence is checked first.
+    /// `GetHeaderValue` asserts the header is present.
     if (!request.HasHeader(IF_NONE_MATCH_HEADER) || request.GetHeaderValue(IF_NONE_MATCH_HEADER) != ANY_GENERATION)
         return;
 

@@ -104,18 +104,16 @@ static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3Reques
     return BufferAllocationPolicy::create(allocation_settings);
 }
 
-/// Whether the endpoint refused the write because the precondition did not hold. The SDK has no typed
-/// model error for it, so the raw code is kept in the exception name, which not every endpoint spells
-/// the same way; the status is `412` on all of them.
+/// The SDK has no typed model error for a refused precondition, so the raw code reaches only the
+/// exception name, which endpoints spell differently; the status is `412` on all of them.
 static bool isRefusedPrecondition(const Aws::S3::S3Error & error)
 {
     return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
         || error.GetExceptionName() == "PreconditionFailed";
 }
 
-/// The text an S3 error is reported with. Above this layer a refused precondition is recognised by the
-/// `PreconditionFailed` token in the message, and an endpoint's own name for the refusal reaches that
-/// message only when the SDK cannot map it to a typed error, so it is named here.
+/// Callers above this layer recognise a refused precondition by the `PreconditionFailed` token in the
+/// message, which an endpoint's own name for the refusal does not carry.
 static std::string describeRefusal(const Aws::S3::S3Error & error)
 {
     if (isRefusedPrecondition(error) && !error.GetMessage().contains("PreconditionFailed"))
