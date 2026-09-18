@@ -301,9 +301,8 @@ void registerStorageKafka(StorageFactory & factory)
                 "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
         const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
-        /// See `TableZnodeInfo::resolve`.
-        const auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
-        const auto is_replicated_database = database && database->getEngineName() == "Replicated";
+        const auto is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal()
+            && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
         // - with Atomic database only with ON CLUSTER queries, otherwise it is easy to misuse: each replica would have separate uuid generated.
@@ -340,6 +339,7 @@ void registerStorageKafka(StorageFactory & factory)
         info.table_id = args.table_id;
         if (is_replicated_database)
         {
+            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
             info.shard.reset();
             info.replica = getReplicatedDatabaseReplicaName(database);
         }

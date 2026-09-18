@@ -360,9 +360,11 @@ void expandPaimonKeeperMacrosIfNeeded(
     auto replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value;
 
     auto context = args.getContext();
-    const auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
-    const auto is_replicated_database = database && database->getEngineName() == "Replicated";
-    /// Unlike ReplicatedMergeTree (see the stricter pattern in TableZnodeInfo::resolve), Paimon's keeper_path stores
+    const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+    const auto is_replicated_database = is_on_cluster
+        && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+    /// Unlike ReplicatedMergeTree (which uses the stricter is_on_cluster || is_replicated_database ||
+    /// query.attach || query.has_uuid pattern in TableZnodeInfo::resolve), Paimon's keeper_path stores
     /// per-table incremental read state and does not require cross-replica path consistency.
     /// Using hasUUID() allows {uuid} expansion in Atomic databases, which is essential to guarantee
     /// unique keeper paths — especially after DROP + re-CREATE of the same table name.
@@ -386,7 +388,10 @@ void expandPaimonKeeperMacrosIfNeeded(
     Macros::MacroExpansionInfo info;
     info.table_id = args.table_id;
     if (is_replicated_database)
+    {
+        auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
         info.replica = getReplicatedDatabaseReplicaName(database);
+    }
     if (!allow_uuid_macro)
         info.table_id.uuid = UUIDHelpers::Nil;
     keeper_path = context->getMacros()->expand(keeper_path, info);
