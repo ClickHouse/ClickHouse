@@ -91,7 +91,31 @@ SYSTEM SYNC REPLICA t_prune_default PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_default' ORDER BY mutation_id;
 
+SELECT 'lambda parameter shadows alias';
+-- A lambda keeps its parameters as plain identifiers in the predicate. Inside the body such a name
+-- is the parameter, not the storage column of the same name, so an unrelated non-deterministic
+-- `ALIAS` column `x` must not disable pruning for `arrayExists(x -> x = 1, arr)`; a reference to
+-- the alias through another name inside the same lambda must still be seen.
+DROP TABLE IF EXISTS t_prune_alias_lambda;
+CREATE TABLE t_prune_alias_lambda (p UInt32, k UInt64, arr Array(UInt32), x UInt32 ALIAS toUnixTimestamp(now()))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_alias_lambda', 'r1')
+PARTITION BY p ORDER BY k;
+INSERT INTO t_prune_alias_lambda (p, k, arr) VALUES (1, 1, [1]), (2, 2, [2]);
+SYSTEM STOP REPLICATION QUEUES t_prune_alias_lambda;
+ALTER TABLE t_prune_alias_lambda DELETE WHERE p = 1 AND arrayExists(x -> x = 1, arr);
+ALTER TABLE t_prune_alias_lambda DELETE WHERE p = 1 AND arrayExists((x, y) -> x = y, arr, arr);
+-- The parameter is bound only inside its own lambda: the same name outside is the column again.
+ALTER TABLE t_prune_alias_lambda DELETE WHERE p = 1 AND arrayExists(x -> x = 1, arr) AND x > 0;
+-- The alias referenced from inside the lambda body under a different parameter name is the column.
+ALTER TABLE t_prune_alias_lambda DELETE WHERE p = 1 AND arrayExists(y -> y = x, arr);
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_alias_lambda PULL;
+SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_prune_alias_lambda' ORDER BY mutation_id;
+
 DROP TABLE t_prune_alias;
+DROP TABLE t_prune_alias_lambda;
 DROP TABLE t_prune_alias_ok;
 DROP TABLE t_prune_alias_qualified;
 DROP TABLE t_prune_alias_subcolumn;
