@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
@@ -161,7 +162,11 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
-                    StoragePtr storage = iterator->table();
+                    /// With `lazy_load_tables` the catalog holds a stand-in that keeps wrapping the table
+                    /// after it is loaded; without resolving it, a loaded lazy table would stay missing from
+                    /// `system.parts` and its siblings for as long as the server runs. Only the stand-ins
+                    /// whose tables are already loaded - listing parts must not be what loads the catalog.
+                    StoragePtr storage = resolveLazyTableIfLoaded(iterator->table());
                     if (!storage)
                         continue;
 

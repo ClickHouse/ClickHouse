@@ -2266,7 +2266,9 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 void InterpreterSystemQuery::waitLoadingParts()
 {
     getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// A command addressed to the table is an access to it, so a lazy-load stand-in is resolved
+    /// (and the table loaded) instead of being refused as not a `MergeTree` table.
+    StoragePtr table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
     {
@@ -2314,7 +2316,10 @@ void InterpreterSystemQuery::restartDisk(const String & disk_name)
         /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
         for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
-            auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get());
+            /// A server-wide scan only inspects tables: a lazy-load stand-in whose table is loaded is
+            /// resolved, an untouched one is skipped rather than loaded.
+            const auto table = resolveLazyTableIfLoaded(it->table());
+            auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
             if (!merge_tree)
                 continue;
 
@@ -2370,7 +2375,7 @@ MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const S
 void InterpreterSystemQuery::scheduleMerge(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_MERGES, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto & merge_tree = getMergeTreeWithManualSelector(table, table_id, "SCHEDULE MERGE");
 
     if (!query.scheduled_merge_parts || query.scheduled_merge_parts->children.empty())
@@ -2388,7 +2393,7 @@ void InterpreterSystemQuery::scheduleMerge(ASTSystemQuery & query)
 void InterpreterSystemQuery::syncMerges()
 {
     getContext()->checkAccess(AccessType::SYSTEM_MERGES, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto & merge_tree = getMergeTreeWithManualSelector(table, table_id, "SYNC MERGES");
 
     DynamicDelay poll_delay;
@@ -2442,7 +2447,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     if (!table_id.empty())
     {
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        StoragePtr table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
@@ -2464,7 +2469,9 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                /// An untouched lazy-load stand-in has no primary keys in memory to load or unload.
+                const auto table = resolveLazyTableIfLoaded(it->table());
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                 {
                     load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
@@ -2751,7 +2758,7 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table_ptr = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
@@ -2775,7 +2782,7 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table_ptr = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
