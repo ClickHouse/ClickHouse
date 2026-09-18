@@ -274,7 +274,8 @@ mapContainsKeyLike	1
 mapContainsKeyLike (no index)	1
 mapContainsValueLike	1
 mapContainsValueLike (no index)	1
-granules pruned	1
+granules pruned (keys)	1
+granules pruned (values)	1
 -- Control: ASCII lower maps every byte in place, so the index is still used
 like	1
 like (no index)	1

@@ -108,6 +108,25 @@ SELECT count() FROM tab WHERE multiSearchAny(str, ['Hello', 'ΣΟΣ']) SETTINGS 
 
 DROP TABLE tab;
 
+-- `upperUTF8` is admitted on the same terms as `lowerUTF8`.
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = ngrams(2), preprocessor = upperUTF8(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES ('ΣΟΣΑ'), ('Hello, world!');
+
+SELECT '-- upperUTF8 preprocessor: an all-ASCII needle keeps the index (expect 1, 1 and 1)';
+SELECT count() FROM tab WHERE str LIKE '%Hello%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE str LIKE '%Hello%' SETTINGS use_skip_indexes = 1;
+SELECT countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT str FROM tab WHERE str LIKE '%Hello%');
+
+DROP TABLE tab;
+
 -- soundex folds a whole word into a four-character code, so no character of the needle survives in place:
 -- 'hello, world!' becomes H464 while the needle 'hello' becomes H400.
 CREATE TABLE tab

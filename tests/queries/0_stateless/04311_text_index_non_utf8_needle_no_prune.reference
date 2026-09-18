@@ -35,6 +35,10 @@
 -- lowerUTF8 preprocessor: one non-ASCII needle in the array disables pruning (expect 2 and 2)
 2
 2
+-- upperUTF8 preprocessor: an all-ASCII needle keeps the index (expect 1, 1 and 1)
+1
+1
+1
 -- soundex preprocessor: multiMatchAny must not prune the matching granule (expect 1 and 1)
 1
 1

@@ -895,8 +895,9 @@ SELECT 'mapContainsKeyLike', count() FROM tabm WHERE mapContainsKeyLike(m, '%Hel
 SELECT 'mapContainsKeyLike (no index)', count() FROM tabm WHERE mapContainsKeyLike(m, '%Hello%') SETTINGS use_skip_indexes = 0;
 SELECT 'mapContainsValueLike', count() FROM tabm WHERE mapContainsValueLike(m, '%Hello%');
 SELECT 'mapContainsValueLike (no index)', count() FROM tabm WHERE mapContainsValueLike(m, '%Hello%') SETTINGS use_skip_indexes = 0;
--- One row per granule, so this fails if the index is refused or stops pruning the non-matching row.
-SELECT 'granules pruned', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT m FROM tabm WHERE mapContainsKeyLike(m, '%Hello%'));
+-- One row per granule, so these fail if either index is refused or stops pruning the non-matching row.
+SELECT 'granules pruned (keys)', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT m FROM tabm WHERE mapContainsKeyLike(m, '%Hello%'));
+SELECT 'granules pruned (values)', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT m FROM tabm WHERE mapContainsValueLike(m, '%Hello%'));
 
 DROP TABLE tabm;
 
