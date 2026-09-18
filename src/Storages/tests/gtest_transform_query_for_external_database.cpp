@@ -141,7 +141,7 @@ static void checkOld(
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
-        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
         literal_escaping_style, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
@@ -196,7 +196,7 @@ static void checkNewAnalyzer(
     query_info.table_expression = static_pointer_cast<ITableExpressionNode>(findTableExpression(query_node->getJoinTreeNode(), "table"));
 
     std::string transformed_query = transformQueryForExternalDatabase(
-        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
         literal_escaping_style, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
@@ -622,7 +622,7 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (field, value) IN (('foo', 'bar')))");
     /// A row value is also valid as an operand of a comparison.
     EXPECT_EQ(
@@ -665,17 +665,17 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT (field, value) FROM test.table)",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT (field, value) FROM test."table")");
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT ('foo', 'bar') FROM test.table)",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT ('foo', 'bar') FROM test."table")");
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table WHERE (field, value) IS NOT NULL)",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE (field, value) IS NOT NULL)");
 
     /// Expressions with no MySQL text form are rejected instead of being sent as broken SQL:
@@ -713,7 +713,7 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table WHERE (a > 0, value > 10))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND (value > 10))");
     EXPECT_EQ(
         formatQueryTableArgument(state,
@@ -724,30 +724,30 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table WHERE (field = 'foo') OR ((a > 0, value > 10)))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE (field = 'foo') OR ((a > 0) AND (value > 10)))");
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table GROUP BY field HAVING (count() > 1, a > 0))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" GROUP BY field HAVING (count() > 1) AND (a > 0))");
     /// A single-predicate `tuple` call is unwrapped to the predicate itself.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table WHERE tuple(a > 0))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE a > 0)");
     /// The folded `Tuple` literal carrier (a tuple of constants) is not a list of predicates the
     /// external database could evaluate - it is rejected for every dialect, including PostgreSQL,
     /// whose row constructors are otherwise valid anywhere but not as a condition.
     EXPECT_ANY_THROW(formatQueryTableArgument(state,
         "(SELECT field FROM test.table WHERE ('foo', 'bar'))",
-        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL));
+        IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL));
     /// A genuine row value next to a comparison inside the lowered conjunction still works.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table WHERE (a > 0, (field, value) = ('foo', 'bar')))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND ((field, value) = ('foo', 'bar')))");
 }
 
@@ -766,13 +766,25 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentPrewhere)
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field FROM test.table PREWHERE field = 'foo' WHERE value = 'bar')",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field FROM test."table" WHERE (field = 'foo') AND (value = 'bar'))");
     /// ... and the lowered filter is a boolean position: a tuple-of-predicates `PREWHERE`
     /// becomes a conjunction, the same way it does in `WHERE`.
     EXPECT_EQ(
         formatQueryTableArgument(state,
             "(SELECT field, value FROM test.table PREWHERE (a > 0, value > 10))",
-            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND (value > 10))");
+}
+
+TEST(TransformQueryForExternalDatabase, SubqueryColumnProjectionQuotesForTheDialect)
+{
+    /// The projected column names of a `query('...')` / `(SELECT ...)` table argument are quoted by
+    /// `quoteExternalIdentifier`, a separate if-chain whose fallback is ClickHouse backticks.
+    EXPECT_EQ(
+        buildQueryForExternalDatabaseSubquery("SELECT 1", {R"(a"b)"}, IdentifierQuotingStyle::DoubleQuotesPostgreSQL),
+        R"(SELECT "a""b" FROM (SELECT 1) AS __subquery)");
+    EXPECT_EQ(
+        buildQueryForExternalDatabaseSubquery("SELECT 1", {R"(a"b)"}, IdentifierQuotingStyle::DoubleQuotes),
+        R"(SELECT "a\"b" FROM (SELECT 1) AS __subquery)");
 }
