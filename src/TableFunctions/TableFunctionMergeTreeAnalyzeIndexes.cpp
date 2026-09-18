@@ -89,6 +89,9 @@ public:
 
     std::string getName() const override { return mergeTreeAnalyzeIndexFunctionName(resolve_by_uuid); }
 
+    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
