@@ -843,15 +843,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     ///    `hasAlterMutations` covers a pending `ALTER MODIFY COLUMN`, which is a `READ_COLUMN` alter
     ///    mutation rather than a data mutation: a read already returns the converted values while the
     ///    statistics still describe the values as they were written, so pruning a part against them
-    ///    drops rows the query has to see. The neighbouring gate for the top-k minmax index
-    ///    (`partHasStaleTopKIndex`) checks the same three flags.
+    ///    drops rows the query has to see. `hasMetadataMutations` covers a pending `DROP COLUMN` or
+    ///    `RENAME COLUMN`: the statistics are loaded under the names the columns have in the part,
+    ///    so once a column with the same name is added again (or another column is renamed onto the
+    ///    dropped name), a read returns the new column while the stale statistics of the dropped one
+    ///    would prune the part. The neighbouring gate for the top-k minmax index
+    ///    (`partHasStaleTopKIndex`) fences the same mutation kinds.
     /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
     ///    the on-the-fly mutations above) no longer describe the values the query sees.
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
         || (mutations_snapshot
             && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-                || mutations_snapshot->hasPatchParts()))
+                || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
         || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context)))
     {
         return parts;
@@ -916,7 +920,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 ///  - a lightweight update / patch part rewrites the indexed column, but the minmax still
 ///    advertises the pre-update values;
 ///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
-///    serialized with the old type, which order differently under the new type.
+///    serialized with the old type, which order differently under the new type;
+///  - a DROP COLUMN followed by adding a column with the same name (and an index with the same
+///    name on it) makes a read return the new column's default, but the part still holds the index
+///    file built over the dropped column's values.
 /// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
 /// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
@@ -934,9 +941,11 @@ static bool partHasStaleTopKIndex(
         return true;
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
-    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch);
+    /// hasMetadataMutations() covers DROP COLUMN and RENAME COLUMN.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
@@ -945,6 +954,16 @@ static bool partHasStaleTopKIndex(
         /// (which adds nothing to getAllUpdatedColumns(), so the canUseIndex check below misses it).
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
+
+        /// A pending DROP COLUMN of an indexed column: the column can only be indexed again if it was
+        /// added again under the same name, so a read returns its default while the part's index file
+        /// still describes the dropped column's values. The names in the index description are the
+        /// names in the current metadata, which in this case are the names the columns have in the part.
+        for (const auto & column_name : top_k_index->index.column_names)
+        {
+            if (alter_conversions->isColumnDropped(column_name))
+                return true;
+        }
 
         /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
         /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
