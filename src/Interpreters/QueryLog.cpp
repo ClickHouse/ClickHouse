@@ -398,12 +398,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         {
             /// The serialization is built here rather than kept in a static, because a
             /// SerializationJSON carries mutable per-use caches that must not be shared across
-            /// queries (see the comment on SerializationJSON::create). Only a query that enabled
-            /// `log_query_plans` reaches this branch, and for it the JSON parse dominates anyway.
-            /// The type has to be heap-allocated: IDataType derives from enable_shared_from_this
-            /// and building the serialization calls getPtr() on it, which throws bad_weak_ptr for
-            /// an object that no shared_ptr owns. That exception would escape into the SystemLog
-            /// flush and lose the whole batch, not just this column.
+            /// queries.
             const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
             const auto plan_serialization = plan_type->getDefaultSerialization();
 
