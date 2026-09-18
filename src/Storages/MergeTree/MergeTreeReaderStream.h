@@ -84,6 +84,7 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;
+    std::optional<size_t> last_right_mark;
     std::optional<size_t> last_right_offset;
 
 protected:
@@ -144,6 +145,11 @@ protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
+
+private:
+    size_t getRightMarkIncluded(size_t right_mark_non_included, size_t column_position);
+    size_t getRightOffsetInStripe(size_t right_mark_included, size_t column_position, const MarkInCompressedFile & stripe_end);
+    size_t estimateRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
 };
 
 /// Class for reading a single column from file that contains multiple columns
@@ -172,14 +178,18 @@ class MergeTreeReaderStreamAllOfMultipleColumns : public MergeTreeReaderStreamMu
 {
 public:
     template <typename... Args>
-    explicit MergeTreeReaderStreamAllOfMultipleColumns(Args &&... args)
+    explicit MergeTreeReaderStreamAllOfMultipleColumns(size_t last_column_position_, Args &&... args)
         : MergeTreeReaderStreamMultipleColumns{std::forward<Args>(args)...}
+        , last_column_position(last_column_position_)
     {
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
+
+private:
+    const size_t last_column_position;
 };
 
 }

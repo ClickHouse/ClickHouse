@@ -1,0 +1,190 @@
+<test run_all_queries="1" requires_s3="1">
+    <!-- `0` writes the shared-block layout used before 26.4; `1` writes per-column blocks.
+         Both layouts are created by each tested binary, independently of its defaults.
+         Performance CI starts a local SeaweedFS endpoint for this benchmark. -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+        <enable_filesystem_cache>0</enable_filesystem_cache>
+        <use_page_cache_for_object_storage>0</use_page_cache_for_object_storage>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+        <max_read_buffer_size_remote_fs>65536</max_read_buffer_size_remote_fs>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>per_column</name>
+            <values><value>0</value><value>1</value></values>
+        </substitution>
+        <substitution>
+            <name>column</name>
+            <values><value>seq</value><value>c31</value><value>c63</value></values>
+        </substitution>
+        <substitution>
+            <name>column_filter</name>
+            <values><value>seq &gt;= 8192 AND seq &lt; 57344</value><value>1</value></values>
+        </substitution>
+        <substitution>
+            <name>part_filter</name>
+            <values><value>seq &lt; 128</value><value>1</value></values>
+        </substitution>
+    </substitutions>
+
+    <!-- Many small granules expose the cost of repeatedly finding a shared-block end.
+         Reading the last column is a control: its boundary already ends the granule. -->
+    <create_query>
+        CREATE TABLE compact_boundary_columns_{per_column}
+        (
+            seq UInt64,
+            c01 UInt64 DEFAULT seq + 1,
+            c02 UInt64 DEFAULT seq + 2,
+            c03 UInt64 DEFAULT seq + 3,
+            c04 UInt64 DEFAULT seq + 4,
+            c05 UInt64 DEFAULT seq + 5,
+            c06 UInt64 DEFAULT seq + 6,
+            c07 UInt64 DEFAULT seq + 7,
+            c08 UInt64 DEFAULT seq + 8,
+            c09 UInt64 DEFAULT seq + 9,
+            c10 UInt64 DEFAULT seq + 10,
+            c11 UInt64 DEFAULT seq + 11,
+            c12 UInt64 DEFAULT seq + 12,
+            c13 UInt64 DEFAULT seq + 13,
+            c14 UInt64 DEFAULT seq + 14,
+            c15 UInt64 DEFAULT seq + 15,
+            c16 UInt64 DEFAULT seq + 16,
+            c17 UInt64 DEFAULT seq + 17,
+            c18 UInt64 DEFAULT seq + 18,
+            c19 UInt64 DEFAULT seq + 19,
+            c20 UInt64 DEFAULT seq + 20,
+            c21 UInt64 DEFAULT seq + 21,
+            c22 UInt64 DEFAULT seq + 22,
+            c23 UInt64 DEFAULT seq + 23,
+            c24 UInt64 DEFAULT seq + 24,
+            c25 UInt64 DEFAULT seq + 25,
+            c26 UInt64 DEFAULT seq + 26,
+            c27 UInt64 DEFAULT seq + 27,
+            c28 UInt64 DEFAULT seq + 28,
+            c29 UInt64 DEFAULT seq + 29,
+            c30 UInt64 DEFAULT seq + 30,
+            c31 UInt64 DEFAULT seq + 31,
+            c32 UInt64 DEFAULT seq + 32,
+            c33 UInt64 DEFAULT seq + 33,
+            c34 UInt64 DEFAULT seq + 34,
+            c35 UInt64 DEFAULT seq + 35,
+            c36 UInt64 DEFAULT seq + 36,
+            c37 UInt64 DEFAULT seq + 37,
+            c38 UInt64 DEFAULT seq + 38,
+            c39 UInt64 DEFAULT seq + 39,
+            c40 UInt64 DEFAULT seq + 40,
+            c41 UInt64 DEFAULT seq + 41,
+            c42 UInt64 DEFAULT seq + 42,
+            c43 UInt64 DEFAULT seq + 43,
+            c44 UInt64 DEFAULT seq + 44,
+            c45 UInt64 DEFAULT seq + 45,
+            c46 UInt64 DEFAULT seq + 46,
+            c47 UInt64 DEFAULT seq + 47,
+            c48 UInt64 DEFAULT seq + 48,
+            c49 UInt64 DEFAULT seq + 49,
+            c50 UInt64 DEFAULT seq + 50,
+            c51 UInt64 DEFAULT seq + 51,
+            c52 UInt64 DEFAULT seq + 52,
+            c53 UInt64 DEFAULT seq + 53,
+            c54 UInt64 DEFAULT seq + 54,
+            c55 UInt64 DEFAULT seq + 55,
+            c56 UInt64 DEFAULT seq + 56,
+            c57 UInt64 DEFAULT seq + 57,
+            c58 UInt64 DEFAULT seq + 58,
+            c59 UInt64 DEFAULT seq + 59,
+            c60 UInt64 DEFAULT seq + 60,
+            c61 UInt64 DEFAULT seq + 61,
+            c62 UInt64 DEFAULT seq + 62,
+            c63 UInt64 DEFAULT seq + 63
+        )
+        ENGINE = MergeTree ORDER BY seq
+        SETTINGS disk = disk(
+                type = s3,
+                endpoint = 'http://localhost:11111/test/compact-read-column-boundary/',
+                access_key_id = 'clickhouse',
+                secret_access_key = 'clickhouse'),
+            index_granularity = 8, index_granularity_bytes = 10485760,
+            min_bytes_for_wide_part = 1073741824,
+            min_bytes_for_full_part_storage = 0,
+            write_marks_for_substreams_in_compact_parts = 0,
+            compress_per_column_in_compact_parts = {per_column},
+            auto_statistics_types = ''
+    </create_query>
+    <create_query>SYSTEM STOP MERGES compact_boundary_columns_{per_column}</create_query>
+    <fill_query>
+        INSERT INTO compact_boundary_columns_{per_column} (seq)
+        SELECT number FROM numbers(65536)
+    </fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 8192 OR countIf(
+            if({per_column} = 0,
+                `seq.mark`.offset_in_compressed_file = `c63.mark`.offset_in_compressed_file,
+                `seq.mark`.offset_in_compressed_file &lt; `c63.mark`.offset_in_compressed_file)) != 8192,
+            'Unexpected compact column compression layout')
+        FROM mergeTreeIndex(currentDatabase(), 'compact_boundary_columns_{per_column}', with_marks = true)
+        WHERE rows_in_granule &gt; 0
+    </fill_query>
+
+    <!-- One granule per packed part. The unrequested tail exceeds the remote read buffer,
+         so prewarming marks does not hide an oversized S3 range request. `CODEC(NONE)`
+         keeps this deterministic and uses the same codec for both physical columns. -->
+    <create_query>
+        CREATE TABLE compact_boundary_parts_{per_column}
+        (
+            seq UInt64 CODEC(NONE),
+            payload String CODEC(NONE)
+        )
+        ENGINE = MergeTree PARTITION BY seq ORDER BY tuple()
+        SETTINGS disk = disk(
+                type = s3,
+                endpoint = 'http://localhost:11111/test/compact-read-column-boundary/',
+                access_key_id = 'clickhouse',
+                secret_access_key = 'clickhouse'),
+            min_bytes_for_wide_part = 1073741824,
+            min_bytes_for_full_part_storage = 1073741824,
+            write_marks_for_substreams_in_compact_parts = 0,
+            compress_per_column_in_compact_parts = {per_column},
+            auto_statistics_types = ''
+    </create_query>
+    <create_query>SYSTEM STOP MERGES compact_boundary_parts_{per_column}</create_query>
+    <fill_query>
+        INSERT INTO compact_boundary_parts_{per_column}
+        SELECT number, repeat('x', 131072) FROM numbers(256)
+        SETTINGS max_partitions_per_insert_block = 256
+    </fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 256 OR sum(rows) != 256
+            OR countIf(part_type = 'Compact' AND part_storage_type = 'Packed') != 256,
+            'Expected 256 single-row packed Compact parts')
+        FROM system.parts
+        WHERE active AND database = currentDatabase() AND table = 'compact_boundary_parts_{per_column}'
+    </fill_query>
+
+    <!-- Vary selected versus all columns independently of filtered versus full scans.
+         `WHERE 1` scans all granules or all parts. -->
+    <query>
+        SELECT sum({column}) FROM compact_boundary_columns_{per_column}
+        WHERE {column_filter}
+    </query>
+    <query>
+        SELECT * APPLY(sum) FROM compact_boundary_columns_{per_column} WHERE {column_filter}
+    </query>
+    <query>
+        SELECT sum(seq) FROM compact_boundary_parts_{per_column} WHERE {part_filter}
+    </query>
+    <query>
+        SELECT sum(cityHash64(payload)) FROM compact_boundary_parts_{per_column} WHERE {part_filter}
+    </query>
+    <query>
+        SELECT sum(seq), sum(cityHash64(payload))
+        FROM compact_boundary_parts_{per_column} WHERE {part_filter}
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS compact_boundary_columns_{per_column} SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS compact_boundary_parts_{per_column} SYNC</drop_query>
+</test>

@@ -9,6 +9,7 @@ import tempfile
 import time
 import traceback
 import urllib.parse
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
@@ -2266,6 +2267,22 @@ def main():
                         entry.unlink()
 
         def run_tests():
+            if any(
+                ET.parse(f"./tests/performance/{test}").getroot().get("requires_s3") == "1"
+                for test in test_files
+            ):
+                seaweedfs_dir = Path(perf_wd) / "seaweedfs"
+                seaweedfs_dir.mkdir()
+                subprocess.run(
+                    [
+                        "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+                        "stateless",
+                        "./tests",
+                    ],
+                    env={**os.environ, "TEMP_DIR": str(seaweedfs_dir)},
+                    check=True,
+                )
+
             for test in test_files:
                 CHServer.run_test(
                     "./tests/performance/" + test,
