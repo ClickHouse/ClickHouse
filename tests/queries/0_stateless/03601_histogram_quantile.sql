@@ -9,6 +9,10 @@ FROM (
 GROUP BY number
 ORDER BY number;
 
+-- Reject a serialized state that claims an enormous grid before allocating the grid arrays.
+SELECT finalizeAggregation(CAST(unhex('01FFFFFFFF0F'), 'AggregateFunction(quantilePrometheusHistogramArray(0.5), Float64, Array(Float64))'))
+SETTINGS max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
+
 SELECT quantilePrometheusHistogram(0.9)(toFloat32(args.1), args.2 + number) -- Float32 upper bound values
 FROM (
     SELECT arrayJoin(arrayZip(
@@ -292,3 +296,28 @@ FROM (
 )
 GROUP BY number
 ORDER BY number;
+
+-- Merging states with different grid sizes must handle both sparse and dense RHS buckets.
+SELECT quantilePrometheusHistogramArrayMerge(0.5)(state)
+FROM
+(
+    SELECT quantilePrometheusHistogramArrayState(0.5)(le, values) AS state
+    FROM
+    (
+        SELECT toFloat64(0) AS le, CAST([0., 0., 0., 0.], 'Array(Nullable(Float64))') AS values
+        UNION ALL
+        SELECT toFloat64(1) AS le, CAST([10., 10., 10., 10.], 'Array(Nullable(Float64))') AS values
+        UNION ALL
+        SELECT inf AS le, CAST([20., 20., 20., 20.], 'Array(Nullable(Float64))') AS values
+    )
+    UNION ALL
+    SELECT quantilePrometheusHistogramArrayState(0.5)(le, values) AS state
+    FROM
+    (
+        SELECT toFloat64(0) AS le, CAST([0., NULL, NULL], 'Array(Nullable(Float64))') AS values
+        UNION ALL
+        SELECT toFloat64(1) AS le, CAST([20., NULL, NULL], 'Array(Nullable(Float64))') AS values
+        UNION ALL
+        SELECT inf AS le, CAST([40., NULL, NULL], 'Array(Nullable(Float64))') AS values
+    )
+);
