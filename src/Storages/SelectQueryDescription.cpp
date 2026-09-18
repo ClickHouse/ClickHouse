@@ -191,6 +191,9 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     if (refreshable)
         return result;
 
+    /// Runs first: an arm that is not a `SELECT` is rejected here, before the cast below.
+    checkAllowedQueries(query, {});
+
     /// We trigger only for the first found table
     ASTSelectQuery & new_inner_query = query.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
 
@@ -199,7 +202,6 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     visitor.setKeptCTEReferences(ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(query));
     visitor.visit(new_inner_query);
 
-    checkAllowedQueries(query, {});
     /// Extracting first found table ID, looking through CTE references
     result.select_table_id = extractDependentTableFromSelectQuery(new_inner_query, {});
     result.inner_query = new_inner_query.clone();
