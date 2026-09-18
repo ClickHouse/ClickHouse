@@ -396,7 +396,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     UInt64 removed_position_delete_files = 0;
 
     /// Paranoia. Partition's key values are converted from iceberg's manifest to clickhouse's representation
-    /// We're trying to protect ourselfs againts ambigious conversions which might lead to several partitions matches a single clickhouse's defintion
+    /// We're trying to protect ourselves against ambiguous conversions which might lead to several partitions matches a single clickhouse's defintion
     Row partition_key_value_for_assert;
     auto assert_on_ambigious_partition_key = [&](const auto & parsed_entry)
     {
