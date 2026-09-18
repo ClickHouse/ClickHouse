@@ -484,7 +484,10 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path);
-    writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+    undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path), [&]
+    {
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+    });
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::finalize()
@@ -568,7 +571,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
     if (prefix_path_written)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path);
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+        undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path), [&]
+        {
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+        });
         return;
     }
 
@@ -678,7 +684,10 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     if (prefix_path_written)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path_to);
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+        undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_to), [&]
+        {
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+        });
     }
 
     if (!copy_attempted)
@@ -746,7 +755,10 @@ void MetadataStorageFromPlainObjectStorageHardLinkOperation::undo()
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageHardLinkOperation"), "Reversing the hard link '{}' to '{}'", path_to, path_from);
-    writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+    undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageHardLinkOperation"), fmt::format("restore the metadata of the directory of '{}'", path_to), [&]
+    {
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+    });
 }
 
 MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -905,10 +917,20 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), "Reversing the metadata rewrite for the move from '{}' to '{}'", path_from, path_to);
 
         if (prefix_path_written_to)
-            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
+        {
+            undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_to), [&]
+            {
+                writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
+            });
+        }
 
         if (prefix_path_written_from)
-            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+        {
+            undoWithRetries(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), fmt::format("restore the metadata of the directory of '{}'", path_from), [&]
+            {
+                writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+            });
+        }
 
         return;
     }
