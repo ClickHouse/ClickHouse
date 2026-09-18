@@ -4,6 +4,7 @@
 #include <type_traits>
 
 #include <Functions/IFunction.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
@@ -1233,6 +1234,13 @@ private:
         if (!col_array)
             return nullptr;
 
+        /// Checked once on entry so that a deadline that has already passed is observed even by a call that
+        /// charges no work.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
+
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
@@ -1268,13 +1276,16 @@ private:
 
         auto & data = col_res->getData();
 
+        const size_t arr_size = arr.size();
+
         for (size_t row = 0; row < size; ++row)
         {
             const auto & value = (*item_arg)[row];
 
             data[row] = 0;
 
-            for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
+            size_t i = 0;
+            for (; i < arr_size; ++i)
             {
                 if (arr[i].isNull())
                 {
@@ -1297,6 +1308,8 @@ private:
                 if constexpr (!ConcreteAction::resume_execution)
                     break;
             }
+
+            budget.chargeUnits(i + 1);
         }
 
         return col_res;
