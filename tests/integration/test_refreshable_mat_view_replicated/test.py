@@ -9,7 +9,7 @@ from jinja2 import Environment, Template
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, wait_condition
+from helpers.test_tools import wait_condition
 
 cluster = ClickHouseCluster(__file__)
 
@@ -843,286 +843,148 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     _drop_sync_objects()
 
 
+def coordination_path(node, database, table):
+    uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{database}' AND name = '{table}'"
+    ).strip()
+    return f"/clickhouse/tables/{uuid}/1"
+
+
+def request_znodes(zk, path):
+    # One "request-<replica>" znode per replica that accepted a `SYSTEM REFRESH VIEW` it hasn't started.
+    zk.sync(path)
+    return sorted(c for c in zk.get_children(path) if c.startswith("request-"))
+
+
+class WaitView(threading.Thread):
+    """`SYSTEM WAIT VIEW` in the background, so that the test can check that it does not return yet."""
+
+    def __init__(self, node, table):
+        super().__init__()
+        self.node, self.table, self.error = node, table, None
+        self.start()
+
+    def run(self):
+        try:
+            self.node.query(f"SYSTEM WAIT VIEW {self.table}", timeout=180)
+        except Exception as e:
+            self.error = e
+
+    def assert_waiting(self):
+        time.sleep(3)
+        assert (
+            self.is_alive()
+        ), "SYSTEM WAIT VIEW returned before the requested refresh ran"
+
+    def assert_finished(self):
+        self.join(timeout=180)
+        assert not self.is_alive(), "SYSTEM WAIT VIEW did not return"
+        assert self.error is None, self.error
+
+
 def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):
-    # `SYSTEM WAIT VIEW` must cover a `SYSTEM REFRESH VIEW` another replica accepted but hasn't started.
-    # The request is queued behind a running refresh, so it exists without an attempt for that long.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
-        to_clause="tgt1",
-        # 5 rows, one second each: every refresh takes ~5s and appends 5 rows.
-        select_query="SELECT now() + sleepEachRow(1) a FROM numbers(5) SETTINGS max_block_size = 1",
-        with_append=True,
-        on_cluster="default",
-        empty=True,
-        settings={"refresh_retries": "0"},
+    # `SYSTEM WAIT VIEW` must cover a `SYSTEM REFRESH VIEW` that another replica accepted but hasn't
+    # started: queued behind a running refresh, or not even written to Keeper yet.
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 HOUR",
+            to_clause="tgt1",
+            # 5 rows, one second each: every refresh takes ~5s and appends 5 rows.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(5) SETTINGS max_block_size = 1",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+            settings={"refresh_retries": "0"},
+        )
     )
-    node.query(create_sql)
 
+    # Queued: requested while the first refresh is still running.
     node.query("SYSTEM REFRESH VIEW test_rmv")
     get_rmv_info(node, "test_rmv", wait_status="Running")
-    # node2 has read the current coordination state, so this is not about a stale cache.
-    get_rmv_info(node2, "test_rmv", wait_status="RunningOnAnotherReplica")
-
-    # Accepted by `node` while refresh #1 is still running, so it cannot start yet.
     node.query("SYSTEM REFRESH VIEW test_rmv")
-
     node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    assert node.query("SELECT count() FROM tgt1").strip() == "10"
 
-    # Both refreshes must be done by now: 5 rows each.
-    rows = node.query("SELECT count() FROM tgt1").strip()
-    assert rows == "10", f"node2 stopped waiting after {rows} rows, expected 10"
-
-
-def test_wait_view_covers_request_before_any_attempt_starts(fn3_setup_tables):
-    # The same before any attempt exists: the refresh is requested on `node` and its coordination
-    # write is parked, so nothing is running anywhere. A wait on node2 must still cover the request.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
-        to_clause="tgt1",
-        select_query="SELECT now() a FROM numbers(5)",
-        with_append=True,
-        on_cluster="default",
-        empty=True,
-        settings={"refresh_retries": "0"},
-    )
-    node.query(create_sql)
-
+    # Not started: the scheduling pass that would start it is parked inside its Keeper write.
     fp = "refresh_mv_pause_inside_coordination_write"
     node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
-    released = False
     try:
         node.query("SYSTEM REFRESH VIEW test_rmv")
-        # `node` is now parked before publishing the attempt to Keeper.
         node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
-        assert node.query("SELECT count() FROM tgt1").strip() == "0"
-
-        wait_done = []
-
-        def wait_on_node2():
-            node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
-            wait_done.append(time.time())
-
-        waiter = threading.Thread(target=wait_on_node2)
-        waiter.start()
-        try:
-            # The wait must not finish while the requested refresh has not run.
-            time.sleep(3)
-            assert not wait_done, "node2 stopped waiting before the requested refresh ran"
-        finally:
-            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
-            released = True
-            waiter.join(timeout=180)
-
-        assert wait_done, "node2 never finished waiting"
-        rows = node.query("SELECT count() FROM tgt1").strip()
-        assert rows == "5", f"node2 stopped waiting after {rows} rows, expected 5"
+        waiter = WaitView(node2, "test_rmv")
+        waiter.assert_waiting()
     finally:
-        if not released:
-            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+    waiter.assert_finished()
+    assert node.query("SELECT count() FROM tgt1").strip() == "15"
 
 
-def test_drop_view_with_unconsumed_refresh_request(fn3_setup_tables):
-    # A request made while the view is stopped cluster-wide is never consumed. Dropping the view must
-    # still remove the coordination znode, which would fail with a request znode left under it.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
-        to_clause="tgt1",
-        select_query="SELECT now() a",
-        with_append=True,
-        on_cluster="default",
-        empty=True,
+def test_wait_view_with_refresh_requested_on_stopped_replica(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 HOUR",
+            to_clause="tgt1",
+            select_query="SELECT now() a FROM numbers(5)",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+            settings={"refresh_retries": "0"},
+        )
     )
-    node.query(create_sql)
+    zk = cluster.get_kazoo_client("zoo1")
+    path = coordination_path(node, "default", "test_rmv")
 
-    uuid = node.query(
-        "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_rmv'"
-    ).strip()
-    znode_path = f"/clickhouse/tables/{uuid}/1"
-
-    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
-    for n in nodes:
-        get_rmv_info(n, "test_rmv", wait_status="Disabled")
-
-    # Accepted and published, but the cluster-wide stop means it can never run.
-    node.query("SYSTEM REFRESH VIEW test_rmv")
-    wait_condition(
-        lambda: node.query(
-            f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}'"
-            " AND name LIKE 'request-%'"
-        ).strip(),
-        lambda x: x == "1",
-        max_attempts=50,
-        delay=0.2,
-    )
-
-    node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
-
-    # `system.zookeeper` throws instead of returning nothing for a path that is gone, and the
-    # parent may be gone too, so ask the parent for the child and treat either absence as removed.
-    def coordination_znode_gone():
-        try:
-            return (
-                node.query(
-                    f"SELECT count() FROM system.zookeeper"
-                    f" WHERE path = '/clickhouse/tables/{uuid}' AND name = '1'"
-                ).strip()
-                == "0"
-            )
-        except helpers.client.QueryRuntimeException:
-            return True
-
-    assert coordination_znode_gone(), "the view's coordination znode was left behind in Keeper"
-
-
-def test_wait_view_covers_request_on_another_replica_while_stopped_locally(
-    fn3_setup_tables,
-):
-    # A replica stopped with `SYSTEM STOP VIEW` or `SYSTEM PAUSE VIEW` is Disabled: no refresh starts
-    # *there*. Another replica's request is run by that replica, so `SYSTEM WAIT VIEW` here must wait.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
-        to_clause="tgt1",
-        select_query="SELECT now() a FROM numbers(5)",
-        with_append=True,
-        on_cluster="default",
-        empty=True,
-        settings={"refresh_retries": "0"},
-    )
-    node.query(create_sql)
-
-    uuid = node.query(
-        "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_rmv'"
-    ).strip()
-    znode_path = f"/clickhouse/tables/{uuid}/1"
-
-    # `node` holds on to the request until it is resumed, so it stays owed but not started; node2 -
-    # the waiter - is stopped separately, so it is Disabled for a purely local reason.
+    # Stopped on the requesting replica only: the request is owed until `SYSTEM START VIEW` there, so
+    # a waiter must not return before that, even though it is Disabled itself for a local reason.
     node.query("SYSTEM STOP VIEW test_rmv")
     node2.query("SYSTEM PAUSE VIEW test_rmv")
     for n in nodes:
         get_rmv_info(n, "test_rmv", wait_status="Disabled")
-
     node.query("SYSTEM REFRESH VIEW test_rmv")
-    wait_condition(
-        lambda: node2.query(
-            f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}'"
-            " AND name LIKE 'request-%'"
-        ).strip(),
-        lambda x: x == "1",
-        max_attempts=50,
-        delay=0.2,
-    )
+    assert request_znodes(zk, path) == ["request-1"]
+    waiter = WaitView(node2, "test_rmv")
+    waiter.assert_waiting()
+    node.query("SYSTEM START VIEW test_rmv")
+    waiter.assert_finished()
+    assert node.query("SELECT count() FROM tgt1").strip() == "5"
+    assert request_znodes(zk, path) == []
 
-    wait_done = []
-
-    def wait_on_node2():
-        node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
-        wait_done.append(time.time())
-
-    waiter = threading.Thread(target=wait_on_node2)
-    waiter.start()
-    try:
-        time.sleep(3)
-        assert not wait_done, "node2 stopped waiting before the requested refresh ran"
-        assert node.query("SELECT count() FROM tgt1").strip() == "0"
-    finally:
-        node.query("SYSTEM START VIEW test_rmv")
-        waiter.join(timeout=180)
-
-    assert wait_done, "node2 never finished waiting"
-    rows = node.query("SELECT count() FROM tgt1").strip()
-    assert rows == "5", f"node2 stopped waiting after {rows} rows, expected 5"
-
-
-def test_wait_view_returns_while_view_stopped_cluster_wide(fn3_setup_tables):
-    # The other side: stopped cluster-wide, the request is deferred on every replica, so there is
-    # nothing to wait for until `SYSTEM START REPLICATED VIEW`. `SYSTEM WAIT VIEW` must return.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
-        to_clause="tgt1",
-        select_query="SELECT now() a FROM numbers(5)",
-        with_append=True,
-        on_cluster="default",
-        empty=True,
-        settings={"refresh_retries": "0"},
-    )
-    node.query(create_sql)
-
-    uuid = node.query(
-        "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_rmv'"
-    ).strip()
-    znode_path = f"/clickhouse/tables/{uuid}/1"
-
+    # Stopped cluster-wide: no replica would run the request, so there is nothing to wait for.
     node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
     for n in nodes:
         get_rmv_info(n, "test_rmv", wait_status="Disabled")
-
     node.query("SYSTEM REFRESH VIEW test_rmv")
-    wait_condition(
-        lambda: node2.query(
-            f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}'"
-            " AND name LIKE 'request-%'"
-        ).strip(),
-        lambda x: x == "1",
-        max_attempts=50,
-        delay=0.2,
-    )
-
+    assert request_znodes(zk, path) == ["request-1"]
     for n in nodes:
         n.query("SYSTEM WAIT VIEW test_rmv", timeout=30)
+    assert node.query("SELECT count() FROM tgt1").strip() == "5"
 
-    assert node.query("SELECT count() FROM tgt1").strip() == "0"
+    # The request is still owed. Dropping the view must remove the coordination znode all the same.
+    node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
+    assert zk.exists(path) is None
 
 
-def test_detach_view_retracts_unconsumed_refresh_request(started_cluster):
-    # DETACH keeps the Keeper session alive, so a request znode would outlive the table and block other
-    # replicas' `SYSTEM WAIT VIEW`. Publishing is parked so that the shutdown's last pass can't retract it.
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
+def test_refresh_request_does_not_outlive_its_replica(started_cluster):
+    # A request that nobody would run must be retracted, or `SYSTEM WAIT VIEW` on other replicas would
+    # wait for as long as this replica's Keeper session lives.
+    zk = cluster.get_kazoo_client("zoo1")
+    # `DETACH DATABASE` is not replicated, unlike `DETACH TABLE`, which a Replicated database refuses.
+    node.query(
+        "CREATE DATABASE detach_db ON CLUSTER default"
+        " ENGINE = Replicated('/clickhouse/detach_db/', '{shard}', '{replica}')"
+    )
     try:
-        # A Replicated database refuses `DETACH TABLE` and replicates `DETACH TABLE PERMANENTLY`, so
-        # `DETACH DATABASE`, which is not replicated, is what detaches on one replica only.
-        node.query(
-            "CREATE DATABASE detach_db ON CLUSTER default"
-            " ENGINE = Replicated('/clickhouse/detach_db/', '{shard}', '{replica}')"
-        )
         node.query(
             "CREATE MATERIALIZED VIEW detach_db.mv REFRESH EVERY 1 HOUR"
             " ENGINE = ReplicatedMergeTree ORDER BY x EMPTY AS SELECT number AS x FROM numbers(5)"
         )
-        uuid = node.query(
-            "SELECT uuid FROM system.tables WHERE database = 'detach_db' AND name = 'mv'"
-        ).strip()
-        request_znodes = (
-            f"SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/{uuid}/1'"
-            " AND name LIKE 'request-%'"
-        )
+        path = coordination_path(node, "detach_db", "mv")
 
+        # Detached while `SYSTEM REFRESH VIEW` is about to publish its request.
         fp = "refresh_mv_pause_before_publishing_refresh_request"
         node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
-        released = False
-        detached = False
         try:
             requester = threading.Thread(
                 target=lambda: node.query(
@@ -1130,27 +992,46 @@ def test_detach_view_retracts_unconsumed_refresh_request(started_cluster):
                 )
             )
             requester.start()
-            try:
-                node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
-                node.query("DETACH DATABASE detach_db")
-                detached = True
-            finally:
-                node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
-                released = True
-                requester.join(timeout=180)
-            assert (
-                not requester.is_alive()
-            ), "SYSTEM REFRESH VIEW got stuck behind the DETACH"
-
-            # The request znode must not outlive the detached view.
-            assert_eq_with_retry(node2, request_znodes, "0", retry_count=150, sleep_time=0.2)
-            # Nothing is owed anymore, so node2 must not wait for the detached replica's request.
-            node2.query("SYSTEM WAIT VIEW detach_db.mv", timeout=30)
+            node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
+            node.query("DETACH DATABASE detach_db")
         finally:
-            if not released:
-                node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
-            if detached:
-                node.query("ATTACH DATABASE detach_db")
+            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+        requester.join(timeout=180)
+        assert (
+            not requester.is_alive()
+        ), "SYSTEM REFRESH VIEW got stuck behind the DETACH"
+        wait_condition(
+            lambda: request_znodes(zk, path),
+            lambda r: r == [],
+            max_attempts=150,
+            delay=0.2,
+        )
+        node2.query("SYSTEM WAIT VIEW detach_db.mv", timeout=30)
+        node.query("ATTACH DATABASE detach_db")
+
+        # Coordination given up (Keeper lost a required feature flag) while a request was pending.
+        node.query("SYSTEM STOP VIEW detach_db.mv")
+        node.query("SYSTEM REFRESH VIEW detach_db.mv")
+        assert request_znodes(zk, path) == ["request-1"]
+        fp = "refresh_mv_force_scheduling_feature_flags_missing"
+        node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+        try:
+            node.query("SYSTEM START VIEW detach_db.mv")
+            wait_condition(
+                lambda: request_znodes(zk, path),
+                lambda r: r == [],
+                max_attempts=150,
+                delay=0.2,
+            )
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+        assert (
+            node.query(
+                "SELECT status FROM system.view_refreshes WHERE database = 'detach_db' AND view = 'mv'"
+            ).strip()
+            == "Disabled"
+        )
+        node2.query("SYSTEM WAIT VIEW detach_db.mv", timeout=30)
     finally:
         for n in nodes:
             n.query("DROP DATABASE IF EXISTS detach_db SYNC")

@@ -250,18 +250,12 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Whether another replica published a "request-<replica>" znode for a SYSTEM REFRESH VIEW
-        /// it accepted but hasn't started. Ours is `out_of_schedule_refresh_requested` instead.
+        /// Whether another replica has a "request-<replica>" znode: a SYSTEM REFRESH VIEW it accepted
+        /// but hasn't started. Ours is `out_of_schedule_refresh_requested` instead.
         bool other_replica_request_znode_exists = false;
-        /// Number of `run` calls that published a request znode but haven't yet set
-        /// `out_of_schedule_refresh_requested`; the scheduling pass must not retract the znode meanwhile.
-        UInt64 publishing_requests = 0;
-        /// Bumped on every read of the znodes above. `wait` uses it to tell that what it looks at
-        /// was read after the wait started, instead of trusting a possibly stale copy.
+        /// Bumped on every read of the znodes above, so that `wait` can tell a read made after it
+        /// started from a possibly stale copy.
         UInt64 znodes_read_count = 0;
-        /// Bumped on every scheduling pass that failed with a Keeper error, so that `wait` can stop
-        /// waiting for a read that won't happen while Keeper is unreachable.
-        UInt64 scheduling_keeper_errors = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -336,7 +330,8 @@ private:
         std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
-        /// `shutdown` was called. A request znode must not outlive it: nobody would run or retract it.
+        /// `shutdown` was called. Unlike `stop_requested`, never reverts; our request znode must not
+        /// outlive it, see `run`.
         bool shutdown_requested = false;
 
         /// Solves this unusual case:
@@ -361,6 +356,8 @@ private:
     /// Never locked for blocking operations (e.g. creating the internal table or reading from zookeeper).
     /// Can't be locked while holding `executor_mutex`.
     mutable std::mutex mutex;
+    /// Serializes `run`, whose Keeper write happens with `mutex` released.
+    std::mutex request_mutex;
 
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
@@ -455,14 +452,14 @@ private:
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
-    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
+    /// If `retract_request`, our "request-<replica>" znode is removed in the same multi.
+    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, bool retract_request = false);
 
     /// Enter the permanent, non-resumable "coordination unavailable" state (sets
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
-    /// The same from a scheduling pass: also retracts our request znode (the last time we touch
-    /// Keeper, done with the mutex released) and sets the state to Disabled.
+    /// The same from a scheduling pass: also retracts our request znode and sets the state to Disabled.
     void giveUpCoordination(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, std::unique_lock<std::mutex> & lock);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
