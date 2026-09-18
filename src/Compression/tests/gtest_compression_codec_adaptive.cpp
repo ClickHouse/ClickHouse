@@ -60,7 +60,7 @@ void expectPool(const char * name, std::initializer_list<std::string_view> extra
     EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name; /// default is always [1]
     size_t i = 2;
     for (const auto extra : extras)
-        EXPECT_EQ(pool[i++]->getCodecDesc()->formatForLogging(), extra) << "type " << name;
+        EXPECT_EQ(pool[i++]->getCodecDescription()->formatForLogging(), extra) << "type " << name;
 }
 
 /// Compress `bytes` with the adaptive codec for `type_name` and return the winner's on-disk method byte.

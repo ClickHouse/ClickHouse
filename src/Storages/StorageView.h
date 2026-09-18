@@ -54,7 +54,7 @@ public:
         size_t num_streams) override;
 
     void drop() override;
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
 

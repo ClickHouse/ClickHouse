@@ -63,6 +63,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
@@ -156,6 +157,11 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
     extern const int FILE_CHANGED_DURING_READ;
+}
+
+namespace FailPoints
+{
+    extern const char file_read_inject_version_token_mismatch[];
 }
 
 using String = std::string;
@@ -1378,6 +1384,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    total_bytes_to_read = file_source_.total_bytes_to_read;
 
     is_db_table = false;
 
@@ -2585,6 +2592,8 @@ public:
                 /// and keeps the byte size - the same residual window every single-pass read of a
                 /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
                 auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
+                /// Armed, this stands in for a replacement of the file: the inode is what a rename changes.
+                fiu_do_on(FailPoints::file_read_inject_version_token_mismatch, { file_stat.st_ino = 0; });
                 if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
                     throwFileChanged(path);
 
