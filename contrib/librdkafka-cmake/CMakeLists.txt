@@ -48,6 +48,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_mock.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_mock_cgrp.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_mock_handlers.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_mock_sharegrp.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_msg.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_reader.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_writer.c"
@@ -68,6 +69,7 @@ set(SRCS
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c"     # WITH_SASL_SCRAM, see below
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_win32.c"     # WIN32
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c"            # WITH_SSL, see below
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_share_acknowledgement.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_sticky_assignor.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_subscription.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_telemetry.c"
@@ -93,6 +95,9 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdregex.c"
   "${RDKAFKA_SOURCE_DIR}/rdstring.c"
   "${RDKAFKA_SOURCE_DIR}/rdunittest.c"
+  "${RDKAFKA_SOURCE_DIR}/rdunittest_acknowledge.c"
+  "${RDKAFKA_SOURCE_DIR}/rdunittest_fetcher.c"
+  "${RDKAFKA_SOURCE_DIR}/rdunittest_msgset_errors.c"
   "${RDKAFKA_SOURCE_DIR}/rdvarint.c"
   "${RDKAFKA_SOURCE_DIR}/rdxxhash.c"
   # "${RDKAFKA_SOURCE_DIR}/regexp.c" # NOT HAVE_REGEX

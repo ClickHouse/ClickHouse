@@ -1,0 +1,21 @@
+pending mutations	1
+patch only	0	10	aaa	a	10	a
+patch only	1	98	bbc	d	98	d
+patch only	2	99	ccc	c	99	c
+patch only	3	99	ccc	c	99	c
+patch only	4	10	aaa	a	10	a
+on fly var	0	b	20	b
+on fly var	1	d	98	d
+on fly var	2	c	99	c
+on fly var	3	c	99	c
+on fly var	4	b	20	b
+on fly fixed	0	20	bbb
+on fly fixed	1	98	bbc
+on fly fixed	2	99	ccc
+on fly fixed	3	99	ccc
+on fly fixed	4	20	bbb
+on fly all	0	20	bbb	b	20	b
+on fly all	1	98	bbc	d	98	d
+on fly all	2	99	ccc	c	99	c
+on fly all	3	99	ccc	c	99	c
+on fly all	4	20	bbb	b	20	b

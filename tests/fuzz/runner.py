@@ -55,6 +55,14 @@ def parse_libfuzzer_output(output_log: Path):
     #   INFO: 4436 files found in corpus/clickhouse_fuzzer
     inputs_found = re.compile(r"^INFO:\s+(\d+) files found in (\S+)")
 
+    # A progress line starts at the very beginning of the line and its event is a word. Both
+    # anchors matter: a sanitizer stack trace is a series of lines like
+    #   "    #140 0xaada2314ee40 in DB::ParserCollectionOfLiterals<DB::Tuple>::parseImpl(...)"
+    # and taking those for progress lines made the report describe a five-hour run that had
+    # executed 34930 inputs as one that "executed 140 inputs" - the depth of the stack that
+    # libFuzzer printed last - with every other statistic missing.
+    progress = re.compile(r"^#(\d+)\s+([A-Za-z_]+)\b")
+
     with open(output_log, "r", encoding="utf-8", errors="replace") as file:
         for line in file:
             match = inputs_found.match(line)
@@ -62,12 +70,12 @@ def parse_libfuzzer_output(output_log: Path):
                 stats.setdefault("input_files", {})[match.group(2)] = int(match.group(1))
                 continue
 
-            fields = line.split()
-            if len(fields) < 2 or not fields[0].startswith("#") or not fields[0][1:].isdigit():
+            match = progress.match(line)
+            if not match:
                 continue
-            executed = int(fields[0][1:])
-            event = fields[1]
-            values = parse_fields(fields[2:])
+            executed = int(match.group(1))
+            event = match.group(2)
+            values = parse_fields(line.split()[2:])
             values["executed"] = executed
 
             if event == "NEW":

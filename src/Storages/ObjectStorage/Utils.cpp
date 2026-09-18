@@ -13,6 +13,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -165,6 +166,24 @@ std::string relativizePathUnderPrefix(const std::string & prefix, const std::str
         return path;
 
     return fs::relative(path, prefix).string();
+}
+
+std::string formatObjectPath(
+    const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info)
+{
+    if (configuration.supportsFullyQualifiedPaths())
+    {
+        if (const auto qualified = trySplitFullyQualifiedObjectPath(path))
+        {
+            const std::string object_namespace(qualified->object_namespace);
+            return joinPathUnderPrefix(
+                include_connection_info ? configuration.getDataSourceDescriptionForNamespace(object_namespace) : object_namespace,
+                std::string(qualified->key));
+        }
+    }
+
+    return joinPathUnderPrefix(
+        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(), path);
 }
 
 Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)

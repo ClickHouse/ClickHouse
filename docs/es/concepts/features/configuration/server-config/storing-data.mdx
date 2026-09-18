@@ -639,7 +639,7 @@ Ejemplo de configuración del disco:
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...
+                <endpoint>...</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -689,8 +689,9 @@ Ejemplo de configuración para versiones posteriores o iguales a 22.8:
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 Ejemplo de configuración para versiones anteriores a la versión 22.8:
@@ -715,8 +716,9 @@ Ejemplo de configuración para versiones anteriores a la versión 22.8:
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 Ajustes de **configuración del disco** de caché del sistema de archivos:
