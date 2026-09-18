@@ -5,6 +5,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -12,6 +13,11 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char totals_having_transform_pause[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -169,6 +175,12 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     if (!chunk)
         return;
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     auto finalized = chunk.clone();
     if (final)
         finalizeChunk(finalized, aggregates_mask);
@@ -266,13 +278,23 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             if (filter)
             {
                 for (size_t row = 0; row < size; ++row)
+                {
+                    if ((row & 0xFFF) == 0 && isCancelled())
+                        return;
                     if ((*filter)[row])
                         totals_column.insertMergeFrom(vec[row]);
+                }
             }
             else
             {
+                FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_pause);
+
                 for (size_t row = 0; row < size; ++row)
+                {
+                    if ((row & 0xFFF) == 0 && isCancelled())
+                        return;
                     totals_column.insertMergeFrom(vec[row]);
+                }
             }
         }
     }
