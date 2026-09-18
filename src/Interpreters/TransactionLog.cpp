@@ -480,8 +480,6 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
         NOEXCEPT_SCOPE_STRICT({
-            /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
-            /// (overflow is possible in a several weeks/months of active usage)
             allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
         });
     }

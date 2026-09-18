@@ -33,7 +33,7 @@ ClickHouse のパーティション化では、カラムまたは SQL 式に基�
 <Warning>
   **`ttl_only_drop_parts`**
 
-  設定 [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings#ttl_only_drop_parts) は常に使用することを推奨します。この設定を有効にすると、ClickHouse は、その中のすべての行が期限切れになった時点でパーツ全体を削除します。有効期限 (TTL) で期限切れになった行を部分的にクリーンアップする代わりにパーツ全体を削除することで (`ttl_only_drop_parts=0` の場合は、リソース負荷の高い mutation によって実行されます)、`merge_with_ttl_timeout` を短く設定でき、システム性能への影響も抑えられます。有効期限 (TTL) の期限切れを実行する単位 (たとえば日) と同じ単位でデータをパーティション化していれば、パーツには自然にその期間のデータだけが含まれるようになります。これにより、`ttl_only_drop_parts=1` を効率的に適用できます。
+  設定 [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) は常に使用することを推奨します。この設定を有効にすると、ClickHouse は、その中のすべての行が期限切れになった時点でパーツ全体を削除します。有効期限 (TTL) で期限切れになった行を部分的にクリーンアップする代わりにパーツ全体を削除することで (`ttl_only_drop_parts=0` の場合は、リソース負荷の高い mutation によって実行されます)、`merge_with_ttl_timeout` を短く設定でき、システム性能への影響も抑えられます。有効期限 (TTL) の期限切れを実行する単位 (たとえば日) と同じ単位でデータをパーティション化していれば、パーツには自然にその期間のデータだけが含まれるようになります。これにより、`ttl_only_drop_parts=1` を効率的に適用できます。
 </Warning>
 
 デフォルトでは、有効期限 (TTL) が切れたデータは、ClickHouse が[データパーツをマージする](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)ときに削除されます。ClickHouse はデータの期限切れを検出すると、予定外のマージを実行します。
@@ -50,7 +50,7 @@ ClickHouse のパーティション化では、カラムまたは SQL 式に基�
 
 有効期限 (TTL) を変更するには、次のいずれかの方法を使用します。
 
-1. **テーブルのスキーマを変更する (推奨)&#x20;**。この方法では、たとえば [clickhouse-client](/ja/concepts/features/interfaces/cli) または [Cloud SQL Console](/ja/products/cloud/features/sql-console-features/sql-console) を使って ClickHouse インスタンスに接続する必要があります。たとえば、次の DDL を使用して `otel_logs` テーブルの 有効期限 (TTL) を変更できます。
+1. **テーブルのスキーマを変更する (推奨)&#x20;**。この方法では、たとえば [clickhouse-client](/ja/concepts/features/interfaces/client) または [Cloud SQL Console](/ja/products/cloud/features/sql-console-features/sql-console) を使って ClickHouse インスタンスに接続する必要があります。たとえば、次の DDL を使用して `otel_logs` テーブルの 有効期限 (TTL) を変更できます。
 
 ```sql
 ALTER TABLE default.otel_logs

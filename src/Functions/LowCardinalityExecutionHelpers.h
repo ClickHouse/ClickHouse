@@ -5,15 +5,37 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
 
 #include <optional>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
 
 namespace LowCardinalityExecutionHelpers
 {
@@ -165,9 +187,60 @@ inline ColumnPtr dictionaryMatchesForSelectedIndexes(
     return sparse_matches;
 }
 
-/// Returns false if the constant value is not present in the dictionary. If the constant is NULL,
-/// returns true and sets [dictionary_index] to the default LC null index, matching the existing
-/// Array(LowCardinality) index-function behavior.
+/// Is [code] a cast declining its input, rather than a fault of the caller? Anything else (a memory
+/// limit, a logical error, a cancellation) is not an answer about the value and must propagate.
+inline bool isConstantCastDecline(int code)
+{
+    return code == ErrorCodes::CANNOT_CONVERT_TYPE
+        || code == ErrorCodes::CANNOT_PARSE_BOOL
+        || code == ErrorCodes::CANNOT_PARSE_DATE
+        || code == ErrorCodes::CANNOT_PARSE_DATETIME
+        || code == ErrorCodes::CANNOT_PARSE_IPV4
+        || code == ErrorCodes::CANNOT_PARSE_IPV6
+        || code == ErrorCodes::CANNOT_PARSE_NUMBER
+        || code == ErrorCodes::CANNOT_PARSE_TEXT
+        || code == ErrorCodes::CANNOT_PARSE_UUID
+        || code == ErrorCodes::DECIMAL_OVERFLOW
+        || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::NOT_IMPLEMENTED
+        || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
+
+/// Did [value] survive the cast that produced [image]? The cast alone cannot report loss, since it
+/// truncates UInt64(256) to UInt8(0) and succeeds, so compare the two in the type they meet in, where
+/// neither side's padding is a difference.
+inline bool targetTypeRepresentsValue(
+    const ColumnPtr & value, const DataTypePtr & value_type, const ColumnPtr & image, const DataTypePtr & image_type)
+{
+    try
+    {
+        /// Without a common type the pair only compares as numbers, so [value_type] is where they meet.
+        const auto common_type = tryGetLeastSupertype(DataTypes{value_type, image_type});
+        const auto compare_type = common_type ? makeNullable(common_type) : makeNullable(value_type);
+
+        const auto restored = castColumnAccurateOrNull({image, image_type, ""}, compare_type);
+        if (restored->empty() || restored->isNullAt(0))
+            return false;
+
+        const auto original = castColumnAccurateOrNull({value, value_type, ""}, compare_type);
+        if (original->empty() || original->isNullAt(0))
+            return false;
+
+        return accurateEquals((*restored)[0], (*original)[0]);
+    }
+    catch (const Exception & e)
+    {
+        if (!isConstantCastDecline(e.code()))
+            throw;
+
+        return false;
+    }
+}
+
+/// Returns false if the constant value is not present in the dictionary. A NULL constant is present
+/// only in a dictionary that can hold one, and then it sits in slot 0, the LC null index.
 /// Keep this inlined: the Array(LowCardinality) index functions are sensitive to this setup codegen.
 inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
     const ColumnLowCardinality & low_cardinality_data,
@@ -180,16 +253,39 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     auto value = recursiveRemoveLowCardinality(value_column);
     if (value->isNullAt(0))
-        return true;
+    {
+        /// Slot 0 is the NULL value only in a nullable dictionary. In a non-nullable one it holds the
+        /// nested type's default value, which a NULL needle does not equal, so answering from it would
+        /// report every default element as a NULL.
+        return low_cardinality_data.nestedIsNullable();
+    }
 
     auto value_type_without_low_cardinality = recursiveRemoveLowCardinality(value_type);
+    auto original_value = value;
+    auto cast_type = target_type;
     value = castColumn({value, value_type_without_low_cardinality, ""}, target_type);
 
     if (value->isNullable())
+    {
         value = assert_cast<const ColumnNullable &>(*value).getNestedColumnPtr();
+        cast_type = removeNullable(cast_type);
+    }
 
-    std::string_view elem = value->getDataAt(0);
-    if (auto maybe_index = low_cardinality_data.getDictionary().getOrFindValueIndex(elem))
+    const auto & dictionary = low_cardinality_data.getDictionary();
+
+    /// The cast narrows without reporting loss, so Int8(-1) reaches the dictionary as UInt8(255) and a
+    /// DateTime reaches a Date dictionary with its time of day dropped, and either would be answered
+    /// from an element that the comparison this function stands for tells apart. A constant that did
+    /// not survive the cast equals no element, whichever slot its image happens to hit -- the default
+    /// one, which holds its value whether or not any row references it, as much as any other -- so
+    /// decline before looking it up.
+    /// Padding a String to a FixedString is not such a loss, and is not treated as one: the two meet
+    /// as String, where the padding the cast added is trimmed back off.
+    if (!target_type->equals(*value_type_without_low_cardinality)
+        && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
+        return false;
+
+    if (auto maybe_index = dictionary.getOrFindValueIndex(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;

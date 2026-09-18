@@ -29,6 +29,10 @@ import urllib3
 
 temp_dir = "../../ci/tmp"
 
+# Emitted once per RabbitMQ container recreation. ci/jobs/integration_test_job.py
+# matches this literal, so it is an interface: renaming it zeroes the reported count.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -41,7 +45,6 @@ try:
     import pymongo
     import pymysql
     import nats
-    from filelock import FileLock, Timeout
     from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
@@ -52,12 +55,14 @@ except Exception as e:
 
 import docker
 from dict2xml import dict2xml
+from filelock import FileLock, Timeout
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
+from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
     dremio_user,
@@ -86,6 +91,9 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
+# `temp_dir` is relative to tests/integration; anchoring it here makes it independent of
+# the cwd, which differs between a CI job and a native pytest run.
+TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
 
 
 def find_default_config_path():
@@ -162,6 +170,10 @@ def _create_env_file(path, variables):
     return path
 
 
+# The python-side budget a command gets when its caller forwards none.
+RUN_AND_CHECK_DEFAULT_TIMEOUT = 300
+
+
 def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
@@ -169,7 +181,7 @@ def run_and_check(
     input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
-    timeout=300,
+    timeout=RUN_AND_CHECK_DEFAULT_TIMEOUT,
     nothrow=False,
     detach=False,
 ) -> str:
@@ -222,7 +234,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
             )
     return out
 
@@ -417,41 +429,25 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "status",
-        ),
-        stdout=subprocess.PIPE,
+    # The container state shows whether it is still running and whether it was OOM-killed,
+    # and the process list shows where the entrypoint is stuck if the node never came up.
+    run_and_check(
+        ["docker", "inspect", "--format", "{{json .State}}", rabbitmq_id],
+        nothrow=True,
     )
-    p.communicate()
+    run_and_check(docker_exec(rabbitmq_id, "ps"), nothrow=True)
 
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "listeners",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "environment",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
+    for diagnostic in ("status", "listeners", "environment"):
+        run_and_check(
+            docker_exec(
+                "-e",
+                f"RABBITMQ_ERLANG_COOKIE={cookie}",
+                rabbitmq_id,
+                "rabbitmq-diagnostics",
+                diagnostic,
+            ),
+            nothrow=True,
+        )
 
 
 async def check_nats_is_available(cluster, connect_timeout=10):
@@ -681,6 +677,7 @@ class ClickHouseCluster:
         self.base_redis_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
+        self.base_hdfs_cmd = []
         self.base_prometheus_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
@@ -707,6 +704,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = False
         self.with_nats = False
         self.with_odbc_drivers = False
+        self.with_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
@@ -731,6 +729,7 @@ class ClickHouseCluster:
         self.minio_bucket_db_disk = "root-db-disk"
         self.minio_s3_port = 9000
         self.minio_port = 9001
+        self.hms_catalog_port = 9083
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
@@ -748,7 +747,6 @@ class ClickHouseCluster:
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
-        self._hms_catalog_port = None
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -823,6 +821,8 @@ class ClickHouseCluster:
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
         self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
+        # Counts calls to wait_rabbitmq_to_start; `attempt` restarts at 0 in each one.
+        self.rabbitmq_wait_calls = 0
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -830,6 +830,15 @@ class ClickHouseCluster:
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
         self.nats_ssl_context = None
+
+        # available when with_hdfs == True
+        self.hdfs_host = "hdfs1"
+        self.hdfs_ip = None
+        self.hdfs_name_port = 50070
+        self.hdfs_data_port = 50075
+        self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
+        self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
+        self.hdfs_api = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1077,13 +1086,6 @@ class ClickHouseCluster:
             return self._glue_catalog_port
         self._glue_catalog_port = self.port_pool.get_port()
         return self._glue_catalog_port
-
-    @property
-    def hms_catalog_port(self):
-        if self._hms_catalog_port:
-            return self._hms_catalog_port
-        self._hms_catalog_port = self.port_pool.get_port()
-        return self._hms_catalog_port
 
     @property
     def redis_port(self):
@@ -1864,7 +1866,6 @@ class ClickHouseCluster:
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
-        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
         env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
             docker_compose_yml_dir, "hms_core_site_minio1.xml"
         )
@@ -1974,6 +1975,24 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml"),
         )
         return self.base_jdbc_bridge_cmd
+
+    def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hdfs = True
+        env_variables["HDFS_HOST"] = self.hdfs_host
+        env_variables["HDFS_NAME_PORT"] = str(self.hdfs_name_port)
+        env_variables["HDFS_DATA_PORT"] = str(self.hdfs_data_port)
+        env_variables["HDFS_LOGS"] = self.hdfs_logs_dir
+        env_variables["HDFS_FS"] = "bind"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml")]
+        )
+        self.base_hdfs_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml"),
+        )
+        return self.base_hdfs_cmd
 
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_nginx = True
@@ -2101,6 +2120,7 @@ class ClickHouseCluster:
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_arrowflight=False,
+        with_hdfs=False,
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
@@ -2125,7 +2145,6 @@ class ClickHouseCluster:
         with_letsencrypt_pebble=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
-        use_old_analyzer=None,
         use_distributed_plan=None,
         hostname=None,
         env_variables=None,
@@ -2202,9 +2221,12 @@ class ClickHouseCluster:
         self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
-        # (affect only WITH_COVERAGE=1 build)
+        # (affect only WITH_COVERAGE=1 build).
+        # %c enables continuous mode: counters are memory-mapped into the file,
+        # so the profile survives SIGKILL / `docker kill` intact instead of being
+        # lost or half-written by an exit-time dump interrupted by the kill.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw"
+            "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -2257,7 +2279,6 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
-            use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -2439,6 +2460,11 @@ class ClickHouseCluster:
         if with_nats and not self.with_nats:
             cmds.append(
                 self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_hdfs and not self.with_hdfs:
+            cmds.append(
+                self.setup_hdfs_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nginx and not self.with_nginx:
@@ -2707,6 +2733,11 @@ class ClickHouseCluster:
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
+            if detach:
+                # A detached exec is left running, so docker reports `ExitCode: None` for it; a
+                # value here would only mean it happened to finish first, which was not waited for.
+                return exec_id if get_exec_id else output
+
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
             if exit_code:
                 container_info = self.docker_client.api.inspect_container(container_id)
@@ -2726,10 +2757,8 @@ class ClickHouseCluster:
                     logging.debug(message)
                 else:
                     raise Exception(message)
-            if not detach:
-                assert not get_exec_id
-                return output.decode()
-            return exec_id if get_exec_id else output
+            assert not get_exec_id
+            return output.decode()
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -3119,34 +3148,80 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait MySQL C# Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=120):
+    def wait_rabbitmq_to_start(self, timeout=120, retries=2):
         self.print_all_docker_pieces()
-        self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+        self.rabbitmq_wait_calls += 1
+        call = self.rabbitmq_wait_calls
 
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie
-                ):
-                    logging.debug("RabbitMQ is available")
-                    return True
-            except Exception as ex:
-                logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(1)
+        for attempt in range(retries):
+            if attempt > 0:
+                # The container occasionally hangs on startup: the entrypoint produces
+                # no output at all and the Erlang node never registers with epmd, while
+                # a fresh container on the same host starts in seconds. Recreate it and
+                # wait again instead of failing the whole test module.
+                #
+                # The broker log is copied out first: it lives under `instances_dir`,
+                # which is removed on teardown and on a second `start()`. S3 upload keys
+                # are built from the basename alone, so it must be unique along every
+                # axis that can produce two copies in one job: the pytest process, the
+                # cluster, the waiter call and the attempt.
+                #
+                # Only that name is logged, never the directory: `project_name` is
+                # stripped of everything non-alphanumeric so the name holds no
+                # whitespace, while the directory above it may.
+                name = (
+                    f"rabbit-{self.project_name}-pid{os.getpid()}"
+                    f"-call{call}-attempt{attempt}.log"
+                )
+                snapshot = name
+                try:
+                    os.makedirs(TEMP_ABS_DIR, exist_ok=True)
+                    shutil.copyfile(
+                        os.path.join(self.rabbitmq_logs_dir, "rabbit.log"),
+                        os.path.join(TEMP_ABS_DIR, name),
+                    )
+                except Exception as ex:
+                    logging.debug("Unable to preserve the RabbitMQ log: %s", ex)
+                    snapshot = ""
+                logging.warning(
+                    "%s attempt=%s snapshot=%s RabbitMQ did not start in %s seconds,"
+                    " recreating the container",
+                    RABBITMQ_RECREATE_TOKEN,
+                    attempt,
+                    snapshot,
+                    timeout,
+                )
+                run_and_check(
+                    ["docker", "rm", "-f", "-v", self.rabbitmq_docker_id],
+                    nothrow=True,
+                )
+                run_and_check(
+                    self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"]
+                )
+                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
 
-        start = time.time()
-        while time.time() - start < timeout:
+            self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+
+            start = time.time()
+            while time.time() - start < timeout:
+                try:
+                    if check_rabbitmq_is_available(
+                        self.rabbitmq_docker_id, self.rabbitmq_cookie
+                    ):
+                        logging.debug("RabbitMQ is available")
+                        return True
+                except Exception as ex:
+                    logging.debug("RabbitMQ await_startup failed, %s:", ex)
+                    time.sleep(1)
+
             try:
-                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "a+") as f:
                     subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
-                break
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
-                time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
@@ -3229,6 +3304,32 @@ class ClickHouseCluster:
         raise Exception(
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
+
+    def make_hdfs_api(self, timeout=180):
+        self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
+        self.hdfs_api = HDFSApi(
+            user="root",
+            timeout=timeout,
+            host=self.hdfs_host,
+            data_port=self.hdfs_data_port,
+            proxy_port=self.hdfs_name_port,
+            hdfs_ip=self.hdfs_ip,
+        )
+
+    def wait_hdfs_to_start(self, timeout=300):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
+                logging.debug("Connected to HDFS and SafeMode disabled! ")
+                return
+            except Exception as ex:
+                logging.exception(
+                    "Can't connect to HDFS or preparations are not done yet " + str(ex)
+                )
+                time.sleep(1)
+
+        raise Exception("Can't wait HDFS to start")
 
     def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
         retries = 0
@@ -3975,10 +4076,25 @@ class ClickHouseCluster:
                 self.nats_ssl_context.load_verify_locations(
                     p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
                 )
+                # A broker started with `--tlsverify` demands a client certificate, including from
+                # the availability probe in `wait_nats_is_available`. One started without ignores it.
+                self.nats_ssl_context.load_cert_chain(
+                    p.join(self.nats_cert_dir, "client", "client-cert.pem"),
+                    p.join(self.nats_cert_dir, "client", "client-key.pem"),
+                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
                 self.wait_nats_is_available()
+
+            if self.with_hdfs and self.base_hdfs_cmd:
+                logging.debug("Setup HDFS")
+                os.makedirs(self.hdfs_logs_dir)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.up_called = True
+                self.make_hdfs_api()
+                self.wait_hdfs_to_start()
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug("Setup nginx")
@@ -4337,9 +4453,9 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance:
+            if not sanitizer_assert_instance and not ignore_sanitizer:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r") as f:
+                with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -4839,7 +4955,6 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
-        use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
         clickhouse_path_dir,
@@ -4965,7 +5080,6 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.use_old_analyzer = use_old_analyzer
         self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
 
@@ -5043,6 +5157,10 @@ class ClickHouseInstance:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
+        if not sanitizer_name:
+            # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). -fsanitize=
+            # also matches CFI, which traps on a bad vcall or cast with no sanitizer runtime attached.
+            return "-DSANITIZER" in build_opts
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
     def is_debug_build(self):
@@ -5505,7 +5623,7 @@ class ClickHouseInstance:
                 time.sleep(1)
                 continue
             else:
-                logging.debug("Clickhouse process running.")
+                logging.debug("ClickHouse process running.")
                 if expected_to_fail:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
@@ -5711,12 +5829,18 @@ class ClickHouseInstance:
         look_behind_lines=10000,
     ):
         start_time = time.time()
+        # The outer (python) budget must exceed the container-side `timeout` below, so
+        # that one expires first and the pipeline can exit with the lines it collected.
+        # It is also never shorter than the default: the container-side `timeout` signals
+        # only its direct child, while `docker exec` returns once the whole pipeline has
+        # exited, so a short inner value does not bound the outer wait.
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
                 f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
-            ]
+            ],
+            timeout=max(timeout + 60, RUN_AND_CHECK_DEFAULT_TIMEOUT),
         )
 
         # if repetitions>1 grep will return success even if not enough lines were collected,
@@ -6029,7 +6153,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             deadline = start_time + timeout
@@ -6042,7 +6166,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
@@ -6232,30 +6356,21 @@ class ClickHouseInstance:
                     "0_common_min_cpu_busy_time.xml", self.config_d_dir
                 )
 
-        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
             os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
         )
 
-        # If specific version was used there can be no
-        # enable_analyzer setting, so do this only if it was
-        # explicitly requested.
-        if self.tag:
-            use_old_analyzer = False
+        # If specific version was used there can be no such setting,
+        # so do this only if it was explicitly requested.
         if self.tag != "latest":
             use_distributed_plan = False
         # Prefer specified in the test option:
-        if self.use_old_analyzer is not None:
-            use_old_analyzer = self.use_old_analyzer
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
-
-        if use_old_analyzer:
-            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if use_distributed_plan:
             write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)

@@ -27,29 +27,31 @@ doc_type: 'reference'
 
 В таблице ниже приведено сравнение поддерживаемых типов данных ORC и соответствующих им [типов данных](/ru/reference/data-types/index) ClickHouse в запросах `INSERT` и `SELECT`.
 
-| Тип данных ORC (`INSERT`)             | Тип данных ClickHouse                                                               | Тип данных ORC (`SELECT`) |
-| ------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------- |
-| `Boolean`                             | [Bool](/ru/reference/data-types/boolean)                                               | `Boolean`                 |
-| `Tinyint`                             | [Int8/UInt8](/ru/reference/data-types/int-uint)/[Enum8](/ru/reference/data-types/enum)    | `Tinyint`                 |
-| `Smallint`                            | [Int16/UInt16](/ru/reference/data-types/int-uint)/[Enum16](/ru/reference/data-types/enum) | `Smallint`                |
-| `Int`                                 | [Int32/UInt32](/ru/reference/data-types/int-uint)                                      | `Int`                     |
-| `Bigint`                              | [Int64/UInt64](/ru/reference/data-types/int-uint)                                      | `Bigint`                  |
-| `Float`                               | [Float32](/ru/reference/data-types/float)                                              | `Float`                   |
-| `Double`                              | [Float64](/ru/reference/data-types/float)                                              | `Double`                  |
-| `Decimal`                             | [Decimal](/ru/reference/data-types/decimal)                                            | `Decimal`                 |
-| `Date`                                | [Date32](/ru/reference/data-types/date32)                                              | `Date`                    |
-| `Timestamp`                           | [DateTime64](/ru/reference/data-types/datetime64)                                      | `Timestamp`               |
-| `String`, `Varchar`, `Binary`          | [String](/ru/reference/data-types/string)                                              | `String`                   |
-| `Char`                                 | [FixedString](/ru/reference/data-types/fixedstring)                                    | `String`                   |
-| `List`                                | [Array](/ru/reference/data-types/array)                                                | `List`                    |
-| `Struct`                              | [Tuple](/ru/reference/data-types/tuple)                                                | `Struct`                  |
-| `Map`                                 | [Map](/ru/reference/data-types/map)                                                    | `Map`                     |
-| `Int`                                 | [IPv4](/ru/reference/data-types/int-uint)                                              | `Int`                     |
-| `Binary`                              | [IPv6](/ru/reference/data-types/ipv6)                                                  | `Binary`                  |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/ru/reference/data-types/int-uint)                     | `Binary`                  |
-| `Binary`                              | [Decimal256](/ru/reference/data-types/decimal)                                         | `Binary`                  |
+| Тип данных ORC (`INSERT`)     | Тип данных ClickHouse                                                               | Тип данных ORC (`SELECT`) |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------------- |
+| `Boolean`                     | [Bool](/ru/reference/data-types/boolean)                                               | `Boolean`                 |
+| `Tinyint`                     | [Int8/UInt8](/ru/reference/data-types/int-uint)/[Enum8](/ru/reference/data-types/enum)    | `Tinyint`                 |
+| `Smallint`                    | [Int16/UInt16](/ru/reference/data-types/int-uint)/[Enum16](/ru/reference/data-types/enum) | `Smallint`                |
+| `Int`                         | [Int32/UInt32](/ru/reference/data-types/int-uint)                                      | `Int`                     |
+| `Bigint`                      | [Int64/UInt64](/ru/reference/data-types/int-uint)                                      | `Bigint`                  |
+| `Float`                       | [Float32](/ru/reference/data-types/float)                                              | `Float`                  |
+| `Double`                      | [Float64](/ru/reference/data-types/float)                                              | `Double`                 |
+| `Decimal`                     | [Decimal](/ru/reference/data-types/decimal)                                            | `Decimal`                 |
+| `Date`                        | [Date32](/ru/reference/data-types/date32)                                              | `Date`                   |
+| `Timestamp`                   | [DateTime64](/ru/reference/data-types/datetime64)                                      | `Timestamp`               |
+| `String`, `Varchar`, `Binary` | [String](/ru/reference/data-types/string)                                              | `String`                  |
+| `Char`                        | [FixedString](/ru/reference/data-types/fixedstring)                                    | `String`                  |
+| `List`                        | [Array](/ru/reference/data-types/array)                                                | `List`                    |
+| `Struct`                      | [Tuple](/ru/reference/data-types/tuple)                                                | `Struct`                  |
+| `Map`                         | [Map](/ru/reference/data-types/map)                                                    | `Map`                     |
+| `Int`                         | [IPv4](/ru/reference/data-types/int-uint)                                              | `Int`                     |
+| `Binary`                      | [IPv6](/ru/reference/data-types/ipv6)                                                  | `Binary`                 |
+| `Binary`                      | [Int128/UInt128/Int256/UInt256](/ru/reference/data-types/int-uint)                     | `Binary`                 |
+| `Binary`                      | [Decimal256](/ru/reference/data-types/decimal)                                         | `Binary`                 |
+| `Union`                       | [Variant](/ru/reference/data-types/variant)                                            | `Union`                   |
 
 * Другие типы не поддерживаются.
+* Столбец ORC `Union` считывается как [Variant](/ru/reference/data-types/variant) с типами ветвей объединения, а столбец `Variant` записывается как ORC `Union` с его типами ветвей. Обратите внимание, что `Variant` сортирует типы ветвей, поэтому порядок ветвей может отличаться от порядка в ORC-файле. Объединения с повторяющимися типами ветвей (например, `uniontype<int,int>`) не поддерживаются.
 * Массивы могут быть вложенными и принимать в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
 * Типы данных столбцов таблицы ClickHouse не обязаны совпадать с соответствующими полями данных ORC. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [преобразует](/ru/reference/functions/regular-functions/type-conversion-functions#CAST) данные к типу, заданному для столбца таблицы ClickHouse.
 
@@ -112,13 +114,13 @@ FORMAT ORC
   ## Настройки формата
 </div>
 
-| Настройка                                                                                                                                                                              | Описание                                                                                                        | По умолчанию |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------ |
-| [`output_format_orc_string_as_string`](/ru/reference/settings/formats#output_format_orc_string_as_string)                                                                                  | Использовать тип ORC String вместо Binary для столбцов String.                                                  | `true`        |
-| [`output_format_orc_compression_method`](/ru/reference/settings/formats#output_format_orc_compression_method)                                                                             | Метод сжатия, используемый для выходного формата ORC. Значение по умолчанию                                     | `zstd`       |
-| [`input_format_orc_case_insensitive_column_matching`](/ru/reference/settings/formats#input_format_orc_case_insensitive_column_matching)                                                    | Игнорировать регистр при сопоставлении столбцов ORC со столбцами ClickHouse.                                    | `false`       |
-| [`input_format_orc_allow_missing_columns`](/ru/reference/settings/formats#input_format_orc_allow_missing_columns)                                                                          | Разрешить отсутствующие столбцы при чтении данных ORC.                                                          | `true`        |
-| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/ru/reference/settings/formats#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference)      | Разрешить пропускать столбцы с неподдерживаемыми типами при автоматическом определении схемы для формата ORC.   | `false`       |
+| Настройка                                                                                                                                                                                       | Описание                                                                                                      | По умолчанию |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------ |
+| [`output_format_orc_string_as_string`](/ru/reference/settings/formats/output-format#output_format_orc_string_as_string)                                                                            | Использовать тип ORC String вместо Binary для столбцов String.                                                | `true`       |
+| [`output_format_orc_compression_method`](/ru/reference/settings/formats/output-format#output_format_orc_compression_method)                                                                        | Метод сжатия, используемый для выходного формата ORC. Значение по умолчанию                                   | `zstd`       |
+| [`input_format_orc_case_insensitive_column_matching`](/ru/reference/settings/formats/input-format#input_format_orc_case_insensitive_column_matching)                                               | Игнорировать регистр при сопоставлении столбцов ORC со столбцами ClickHouse.                                  | `false`      |
+| [`input_format_orc_allow_missing_columns`](/ru/reference/settings/formats/input-format#input_format_orc_allow_missing_columns)                                                                     | Разрешить отсутствующие столбцы при чтении данных ORC.                                                        | `true`       |
+| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/ru/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference) | Разрешить пропускать столбцы с неподдерживаемыми типами при автоматическом определении схемы для формата ORC. | `false`      |
 
 Для обмена данными с Hadoop можно использовать [движок таблицы HDFS](/ru/reference/engines/table-engines/integrations/hdfs).
 

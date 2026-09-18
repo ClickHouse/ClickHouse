@@ -14,10 +14,10 @@ ClickStack prend en charge les visualisations basées sur des requêtes SQL écr
 Les visualisations basées sur SQL sont utiles lorsque vous devez aller au-delà du Chart Explorer — par exemple, pour effectuer des jointures entre des tables ou créer des agrégations complexes qui ne sont pas prises en charge par le chart builder.
 
 <div id="creating-a-raw-sql-chart">
-  ## Création d’une visualisation SQL
+  ## Création d’une visualisation basée sur SQL
 </div>
 
-Pour créer une visualisation SQL, ouvrez l’éditeur d’une tuile de tableau de bord et sélectionnez l’onglet **SQL**.
+Pour créer une visualisation basée sur SQL, ouvrez l’éditeur d’une tuile de tableau de bord et sélectionnez l’onglet **SQL**.
 
 <Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Bouton SQL Editor" size="lg" />
 
@@ -25,7 +25,7 @@ Pour créer une visualisation SQL, ouvrez l’éditeur d’une tuile de tableau 
 
 1. Sélectionnez une **connexion ClickHouse** sur laquelle exécuter la requête.
 2. Sélectionnez éventuellement une **Source** — cela permet d’appliquer à votre visualisation des filtres au niveau du tableau de bord via la macro `$__filters`.
-3. Rédigez votre requête SQL dans l’éditeur, en utilisant des paramètres de requête et des macros pour l’intégrer à l’intervalle de temps et aux filtres du tableau de bord.
+3. Rédigez votre requête SQL dans l’éditeur, en utilisant des paramètres de requête et des macros pour l’intégrer à l’intervalle de temps, aux filtres et aux variables du tableau de bord.
 4. Cliquez sur le bouton **play** pour prévisualiser les résultats, puis sur **Save**.
 
 <div id="query-parameters">
@@ -124,6 +124,22 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 Lorsqu’une **Source** est sélectionnée dans le graphique et que les filtres du tableau de bord sont actifs, `$__filters` se développe en conditions `WHERE` SQL correspondantes. Lorsqu’aucune source n’est sélectionnée ou qu’aucun filtre n’est appliqué, il se développe en `(1=1)` ; il peut donc toujours être inclus sans risque dans une clause `WHERE`.
 
+Seuls les filtres pour lesquels la **Condition de filtre de diffusion** est activée sont appliqués par `$__filters`. Les filtres exposés en tant que variables sont référencés explicitement, comme décrit ci-dessous.
+
+<div id="dashboard-variables">
+  ### Macros de variables de tableau de bord
+</div>
+
+Lorsqu&#39;un filtre de tableau de bord est [disponible sous forme de variable](/fr/clickstack/features/dashboards/overview#dashboard-variables), ses valeurs sélectionnées peuvent être référencées n&#39;importe où dans la requête. Ces macros ne sont disponibles que dans les tuiles d&#39;un tableau de bord déclarant au moins une variable.
+
+| Macro                                         | Description                                                                                                                            |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Se développe en `toString(<filter expression>) IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, sinon en `1=1`. |
+| `$__filter(<expression>, $<variable>)`        | Se développe en `<expression> IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, sinon en `1=1`.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Se développe en `<condition>` lorsque la variable comporte une sélection, sinon en `1=1`.                                              |
+
+Les valeurs d&#39;une variable peuvent également être interpolées directement sous la forme `$name` ou `${name}`, avec un format facultatif : `${name:sqlstring}` (par défaut), `${name:csv}` ou `${name:regex}`. Dans le format par défaut, une référence directe renvoie `NULL` tant qu&#39;aucune valeur n&#39;est sélectionnée ; utilisez donc de préférence les macros ci-dessus partout où un prédicat est attendu.
+
 <div id="how-results-are-plotted">
   ## Comment les résultats de la requête sont représentés
 </div>
@@ -214,6 +230,24 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### Graphique en courbes — utilisation des variables de tableau de bord
+</div>
+
+Étant donné un tableau de bord comportant une variable `service` sur `ServiceName` et une variable `severity` sur `SeverityText`, cette requête limite le graphique à la sélection actuelle du service et exclut les niveaux de gravité sélectionnés. Les deux macros se développent en `1=1` lorsqu’aucune valeur n’est sélectionnée pour leur variable ; le graphique s’affiche donc sans filtre jusqu’à ce que l’utilisateur sélectionne une valeur.
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
   ### Graphique en barres empilées — nombre d’erreurs par niveau de gravité
 </div>
@@ -287,4 +321,6 @@ L’unique valeur numérique `total_errors` de la première ligne est affichée.
 * Les visualisations basées sur SQL s’exécutent en mode `readonly` — seules les requêtes `SELECT` sont autorisées.
 * Les visualisations basées sur SQL doivent contenir exactement une requête SQL — les requêtes multiples ne sont pas prises en charge.
 * L’éditeur SQL propose des suggestions d’autocomplétion pour les paramètres de requête comme pour les macros.
-* Une source doit être sélectionnée pour appliquer les filtres du dashboard aux visualisations basées sur SQL. Pour un filtrage précis, la source doit correspondre à la table interrogée.
+* Une source doit être sélectionnée pour appliquer les filtres du tableau de bord aux visualisations basées sur SQL. Pour un filtrage précis, la source doit correspondre à la table interrogée.
+* Les variables de tableau de bord n’ont pas besoin de source — les valeurs proviennent des listes déroulantes de filtres du tableau de bord, et non de la source propre à la tuile.
+* Les alertes sur une tuile SQL qui référence une variable de tableau de bord sont évaluées avec chaque variable dans son état vide, et non avec les valeurs sélectionnées sur le tableau de bord.

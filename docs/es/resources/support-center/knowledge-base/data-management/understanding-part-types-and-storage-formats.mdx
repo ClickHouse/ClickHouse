@@ -28,8 +28,8 @@ Los tipos de partes determinan cómo se organizan los datos de las columnas dent
 
 El tipo de parte se controla mediante los siguientes ajustes de tabla:
 
-* [`min_bytes_for_wide_part`](/es/reference/settings/merge-tree-settings#min_bytes_for_wide_part): bytes mínimos para que una parte use el formato `Wide`
-* [`min_rows_for_wide_part`](/es/reference/settings/merge-tree-settings#min_rows_for_wide_part): filas mínimas para que una parte use el formato `Wide`
+* [`min_bytes_for_wide_part`](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): bytes mínimos para que una parte use el formato `Wide`
+* [`min_rows_for_wide_part`](/es/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): filas mínimas para que una parte use el formato `Wide`
 
 Si la cantidad de bytes o filas de una parte de datos es menor que el valor del ajuste correspondiente, la parte se almacena en formato `Compact`; de lo contrario, usa el formato `Wide`.
 
@@ -71,10 +71,10 @@ Las estadísticas del tamaño de las columnas no se calculan para las partes com
 
 Los formatos de almacenamiento determinan cómo se almacenan físicamente en disco los archivos de una parte.
 
-| Formato    | Descripción                                                               | Disponibilidad         |
-| ---------- | ------------------------------------------------------------------------- | ---------------------- |
-| **Full**   | Cada archivo se almacena de forma individual en el directorio de la parte | Código abierto y Cloud |
-| **Packed** | Todos los archivos se agrupan en un único archivo                         | Código abierto y Cloud |
+| Formato    | Descripción                                                                                                                                                        | Disponibilidad         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
+| **Full**   | Cada archivo se almacena de forma individual en el directorio de la parte                                                                                          | Código abierto y Cloud |
+| **Packed** | La mayoría de los archivos de la parte se agrupan en un único archivo de almacenamiento (las proyecciones y algunos archivos de servicio se escriben por separado) | Código abierto y Cloud |
 
 <div id="full-storage">
   ### Almacenamiento Full
@@ -86,7 +86,7 @@ En el almacenamiento Full, cada parte está formada por varios archivos independ
   ### Almacenamiento Packed
 </div>
 
-En el almacenamiento Packed, todos los archivos de las partes se agrupan en un único archivo. Esto reduce significativamente el número de operaciones con archivos, lo cual es fundamental para el almacenamiento remoto, como S3, donde cada solicitud conlleva latencia y costo.
+En el almacenamiento Packed, la mayoría de los archivos de las partes se agrupan en un único archivo. Las proyecciones y algunos archivos de servicio - `txn_version.txt`, `delete-on-destroy.txt` y `invalidated_system_columns.txt` - se siguen escribiendo por separado, porque pueden crearse o reescribirse después de que se haya escrito la propia parte. Esto reduce significativamente el número de operaciones con archivos, lo cual es fundamental para el almacenamiento remoto, como S3, donde cada solicitud conlleva latencia y costo.
 
 **Beneficios del almacenamiento Packed:**
 
@@ -101,9 +101,9 @@ En el almacenamiento Packed, todos los archivos de las partes se agrupan en un �
 
 Una parte utiliza almacenamiento Packed si se cumple **alguna** de estas condiciones:
 
-* Bytes no comprimidos &lt; [`min_bytes_for_full_part_storage`](/es/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* Número de filas &lt; [`min_rows_for_full_part_storage`](/es/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* Nivel de fusión &lt; [`min_level_for_full_part_storage`](/es/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* Bytes no comprimidos &lt; [`min_bytes_for_full_part_storage`](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* Número de filas &lt; [`min_rows_for_full_part_storage`](/es/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* Nivel de fusión &lt; [`min_level_for_full_part_storage`](/es/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 El almacenamiento Packed es de activación opcional: los tres ajustes tienen `0` como valor predeterminado, por lo que las partes usan almacenamiento Full a menos que aumente uno de ellos.
 
@@ -153,6 +153,10 @@ Estos dos conceptos son ortogonales y puede haber cualquier combinación:
 </div>
 
 Puede consultar el tipo de parte y el tipo de almacenamiento de las partes existentes en la tabla [`system.parts`](/es/reference/system-tables/parts):
+
+<Note>
+  En ClickHouse open-source, `part_storage_type` está disponible en `system.parts` a partir de la versión 26.9. En la versión 26.8 y anteriores, omita `part_storage_type` de la consulta y agrupe y ordene únicamente por `part_type`.
+</Note>
 
 ```sql
 SELECT

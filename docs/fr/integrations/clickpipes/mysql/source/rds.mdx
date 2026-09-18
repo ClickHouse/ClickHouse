@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/fr/clickpipes/_iam_authentication.mdx";
 
 Ce guide étape par étape vous montre comment configurer Amazon RDS MySQL afin de répliquer des données dans ClickHouse Cloud à l’aide de [MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index). Pour les questions fréquentes sur le MySQL CDC, consultez la [page des FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).
 
@@ -140,13 +141,7 @@ Connectez-vous à votre instance RDS MySQL avec un utilisateur administrateur, p
   ### Utiliser l’authentification IAM (facultatif)
 </div>
 
-Au lieu d’utiliser un mot de passe, vous pouvez authentifier l’utilisateur ClickPipes via le contrôle d’accès basé sur les rôles d’AWS IAM. Créez l’utilisateur comme suit, puis accordez-lui les mêmes privilèges de schéma et de réplication que ceux indiqués ci-dessus :
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-Consultez [AWS IAM DB authentication (RDS/Aurora)](/fr/integrations/clickpipes/postgres/auth) pour obtenir la procédure complète de configuration du rôle IAM et de la policy requis afin que ClickPipes puisse s’authentifier de cette manière.
+<IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
   ## Configurer l’accès au réseau
@@ -156,7 +151,7 @@ Consultez [AWS IAM DB authentication (RDS/Aurora)](/fr/integrations/clickpipes/p
   ### Contrôle d’accès basé sur les adresses IP
 </div>
 
-Pour restreindre le trafic vers votre instance Aurora MySQL, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips) aux **Inbound rules** de votre groupe de sécurité RDS.
+Pour restreindre le trafic vers votre instance Aurora MySQL, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux **Inbound rules** de votre groupe de sécurité RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Où trouver le groupe de sécurité dans RDS MySQL ?" size="lg" border />
 

@@ -32,7 +32,7 @@ hdfs(URI, format, structure)
 | `format`    | ファイルの[フォーマット](/ja/reference/formats/index)。                                                                                    |
 | `structure` | テーブルの構造。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                               |
 
-<div id="returned_value">
+<div id="returned-value">
   ## 戻り値
 </div>
 
@@ -55,7 +55,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="globs_in_path">
+<div id="globs-in-path">
   ## path 内のグロブ
 </div>
 
@@ -91,7 +91,7 @@ FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name 
 
 3. これら2つのディレクトリ内のすべてのファイルの行数を確認します:
 
-{/* */}
+{{/* */}}
 
 ```sql
 SELECT count(*)
@@ -138,9 +138,9 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
   ## ストレージ設定
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings#hdfs_truncate_on_insert) - insert 前にファイルを切り詰めることを許可します。デフォルトでは無効です。
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings#hdfs_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
-* [hdfs&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings#hdfs_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは無効です。
+* [hdfs&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - insert 前にファイルを切り詰めることを許可します。デフォルトでは無効です。
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
+* [hdfs&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは無効です。
 
 <div id="related">
   ## 関連項目

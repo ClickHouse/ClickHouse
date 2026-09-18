@@ -46,6 +46,10 @@ Admin users are assigned the `sql_console_admin` role by default, so nothing cha
 
 ### Granular access control {#granular-access-control}
 
+<Tip>
+Prefer [cloud-managed database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) to manage database access from the console. `sql-console-role:<email>` roles are not compatible with [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 This access control functionality can also be configured manually for user-level granularity. Before assigning the new `sql_console_*` roles to users, SQL console user-specific database roles matching the namespace `sql-console-role:<email>` should be created. For example: 
 
 ```sql

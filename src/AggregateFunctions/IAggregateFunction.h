@@ -331,6 +331,21 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
+    /** A version of `addBatch` for callers that guarantee that every entry in `places` is non-null.
+      * Implementations that don't benefit from this guarantee can use the default implementation.
+      */
+    virtual void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const
+    {
+        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
     /// The version of "addBatch", that handle sparse columns as arguments.
     virtual void addBatchSparse(
         size_t row_begin,
@@ -556,6 +571,31 @@ public:
         }
     }
 
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+        }
+    }
+
     void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const final // NOLINT
     {
         for (size_t i = start; i < size; ++i)
@@ -581,6 +621,10 @@ public:
             try
             {
                 static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+
+                /// Appending the pointer allocates, so it can throw as well, and then the state
+                /// would be neither destroyed here nor owned by the column.
+                data.push_back(place);
             }
             catch (...)
             {
@@ -588,7 +632,6 @@ public:
                 throw;
             }
 
-            data.push_back(place);
             place += total_size_of_state;
         }
     }

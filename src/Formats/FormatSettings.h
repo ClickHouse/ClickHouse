@@ -48,6 +48,9 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
+    /// Cap for power-of-two growth of the JSON column's internal String buffers while materializing (0 = unlimited).
+    size_t json_max_string_column_growth_step = 0;
+
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
@@ -56,7 +59,7 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
-    /// tolerates leading zeros during parsing integers
+    /// Infers a number, not a `String`, for an integer with leading zeros
     bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
@@ -196,6 +199,8 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
+        UInt64 output_record_batch_rows = 0;
+        UInt64 output_record_batch_bytes = 0;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -322,6 +327,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
+        bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
@@ -332,6 +338,7 @@ struct FormatSettings
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
+        size_t max_row_size_for_json_each_row = 0;
     } json{};
 
     struct
@@ -386,6 +393,7 @@ struct FormatSettings
         UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_wide_integer_as_decimal = false;
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
@@ -598,6 +606,9 @@ struct FormatSettings
         UInt64 width = 1024;
         UInt64 height = 1024;
         String terminal_mode;
+        UInt64 time_multiplier_seconds = 1;
+        UInt64 time_divisor_seconds = 60;
+        bool streaming_animation = false;
     } image{};
 
     struct

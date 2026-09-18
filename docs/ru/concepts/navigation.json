@@ -1,12 +1,13 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "Основные понятия",
+  "item": "Concepts",
   "pages": [
     "ru/concepts/index",
     {
       "expanded": true,
-      "group": "Основы",
+      "group": "Fundamentals",
       "pages": [
+        "ru/concepts/core-concepts/index",
         "ru/concepts/core-concepts/glossary",
         "ru/concepts/core-concepts/parts",
         "ru/concepts/core-concepts/partitions",
@@ -14,44 +15,45 @@
         "ru/concepts/core-concepts/primary-indexes",
         "ru/concepts/core-concepts/query-parallelism",
         "ru/concepts/core-concepts/academic-overview"
-      ],
-      "root": "ru/concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Концепции ClickHouse",
+      "group": "ClickHouse concepts",
       "pages": [
+        "ru/concepts/features/index",
         {
-          "group": "Материализованные представления",
+          "group": "Materialized views",
           "pages": [
+            "ru/concepts/features/materialized-views/index",
             "ru/concepts/features/materialized-views/incremental-materialized-view",
             "ru/concepts/features/materialized-views/refreshable-materialized-view",
             "ru/concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "ru/concepts/features/materialized-views/index"
+          ]
         },
         {
-          "group": "Словари",
+          "group": "Dictionaries",
           "pages": [
+            "ru/concepts/features/dictionaries/index",
             "ru/concepts/features/dictionaries/best-practices"
-          ],
-          "root": "ru/concepts/features/dictionaries/index"
+          ]
         },
         {
-          "group": "Проекции",
+          "group": "Projections",
           "pages": [
             "ru/concepts/features/projections/projections",
             "ru/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Производительность",
+          "group": "Performance",
           "pages": [
+            "ru/concepts/features/performance/index",
             "ru/concepts/features/performance/prewhere",
             "ru/concepts/features/performance/allocation-profiling",
             "ru/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "Кэши",
+              "group": "Caches",
               "pages": [
                 "ru/concepts/features/performance/caches/caches",
                 "ru/concepts/features/performance/caches/query-cache",
@@ -60,7 +62,7 @@
               ]
             },
             {
-              "group": "Индексы пропуска данных",
+              "group": "Skipping-indexes",
               "pages": [
                 "ru/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ru/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -68,7 +70,7 @@
             },
             "ru/concepts/features/performance/lazy-materialization",
             {
-              "group": "Устранение неполадок",
+              "group": "Troubleshooting",
               "pages": [
                 "ru/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ru/concepts/features/performance/troubleshoot/oom-canary",
@@ -76,14 +78,13 @@
                 "ru/concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "ru/concepts/features/performance/index"
+          ]
         },
         {
           "group": "Operations",
           "pages": [
             {
-              "group": "Вставка",
+              "group": "Insert",
               "pages": [
                 "ru/concepts/features/operations/insert/inserting-data",
                 "ru/concepts/features/operations/insert/asyncinserts",
@@ -94,39 +95,37 @@
               ]
             },
             {
-              "group": "Выборка",
+              "group": "Select",
               "pages": [
                 "ru/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Обновление",
+              "group": "Update",
               "pages": [
+                "ru/concepts/features/operations/update/index",
                 "ru/concepts/features/operations/update/overview",
-                "ru/concepts/features/operations/update/on-fly-mutations",
                 "ru/concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "ru/concepts/features/operations/update/index"
+              ]
             },
             {
-              "group": "Удаление",
+              "group": "Delete",
               "pages": [
+                "ru/concepts/features/operations/delete/index",
                 "ru/concepts/features/operations/delete/overview",
-                "ru/concepts/features/operations/delete/delete-mutations",
                 "ru/concepts/features/operations/delete/drop-partition",
                 "ru/concepts/features/operations/delete/lightweight-delete",
                 "ru/concepts/features/operations/delete/truncate",
                 "ru/concepts/features/operations/delete/ttl"
-              ],
-              "root": "ru/concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
         {
-          "group": "Конфигурация",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "Настройки",
+              "group": "Settings",
               "pages": [
                 "ru/concepts/features/configuration/settings/overview",
                 "ru/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "Конфигурация сервера",
+              "group": "Server config",
               "pages": [
                 "ru/concepts/features/configuration/server-config/configuration-files",
                 "ru/concepts/features/configuration/server-config/storing-data",
@@ -150,27 +149,30 @@
                 "ru/concepts/features/configuration/server-config/workload-scheduling",
                 "ru/concepts/features/configuration/server-config/quotas",
                 "ru/concepts/features/configuration/server-config/composable-protocols",
-                "ru/concepts/features/configuration/server-config/startup-scripts"
+                "ru/concepts/features/configuration/server-config/startup-scripts",
+                "ru/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
-          "group": "Безопасность и аутентификация",
+          "group": "Security and auth",
           "pages": [
+            "ru/concepts/features/security/index",
             "ru/concepts/features/security/access-rights",
             "ru/concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "ru/concepts/features/security/tls/index",
                 "ru/concepts/features/security/tls/configuring-tls",
                 "ru/concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "ru/concepts/features/security/tls/index"
+              ]
             },
             {
-              "group": "Внешние аутентификаторы",
+              "group": "External authenticators",
               "pages": [
+                "ru/concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,16 +190,15 @@
                 "ru/concepts/features/security/external-authenticators/http",
                 "ru/concepts/features/security/external-authenticators/kerberos",
                 "ru/concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "ru/concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "ru/concepts/features/security/index"
+          ]
         },
         {
-          "group": "Резервное копирование и восстановление",
+          "group": "Backup and restore",
           "pages": [
             "ru/concepts/features/backup-restore/overview",
+            "ru/concepts/features/backup-restore/restore-settings",
             "ru/concepts/features/backup-restore/local-disk",
             "ru/concepts/features/backup-restore/s3-endpoint",
             "ru/concepts/features/backup-restore/azure-blob-storage",
@@ -206,25 +207,31 @@
           ]
         },
         {
-          "group": "Интерфейсы",
+          "group": "Interfaces",
           "pages": [
+            "ru/concepts/features/interfaces/native-clients-interfaces-index",
             "ru/concepts/features/interfaces/cli",
             "ru/concepts/features/interfaces/client",
+            "ru/concepts/features/interfaces/mcp",
             {
-              "group": "Драйверы и интерфейсы",
+              "group": "Drivers and interfaces",
               "pages": [
+                "ru/concepts/features/interfaces/overview",
                 "ru/concepts/features/interfaces/http",
+                "ru/concepts/features/interfaces/framing-formats",
                 "ru/concepts/features/interfaces/tcp",
+                "ru/concepts/features/interfaces/adbc",
                 "ru/concepts/features/interfaces/jdbc",
                 "ru/concepts/features/interfaces/mysql",
-                "ru/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "ru/concepts/features/interfaces/postgresql",
                 "ru/concepts/features/interfaces/prometheus",
                 "ru/concepts/features/interfaces/ssh",
                 "ru/concepts/features/interfaces/grpc",
                 "ru/concepts/features/interfaces/arrowflight"
-              ],
-              "root": "ru/concepts/features/interfaces/overview"
+              ]
             },
             "ru/concepts/features/interfaces/cpp",
             "ru/concepts/features/interfaces/schema-inference",
@@ -232,18 +239,20 @@
             "ru/concepts/features/interfaces/web-sql",
             "ru/concepts/features/interfaces/web-ui-color-coding",
             "ru/concepts/features/interfaces/web-ui-pinned-columns",
+            "ru/concepts/features/interfaces/web-ui-result-shaping",
             "ru/concepts/features/interfaces/web-terminal",
             {
-              "group": "Сторонние клиенты",
-              "pages": [],
-              "root": "ru/concepts/features/interfaces/third-party/index"
+              "group": "Third-party clients",
+              "pages": [
+                "ru/concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "ru/concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
-          "group": "Инструменты и утилиты",
+          "group": "Tools and utilities",
           "pages": [
+            "ru/concepts/features/tools-and-utilities/index",
             "ru/concepts/features/tools-and-utilities/backupview",
             "ru/concepts/features/tools-and-utilities/clickhouse-benchmark",
             "ru/concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +264,15 @@
             "ru/concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "ru/concepts/features/tools-and-utilities/odbc-bridge",
             "ru/concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "ru/concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "ru/concepts/features/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Лучшие практики",
+      "group": "Best practices",
       "pages": [
+        "ru/concepts/best-practices/index",
         "ru/concepts/best-practices/choosing-a-primary-key",
         "ru/concepts/best-practices/select-data-type",
         "ru/concepts/best-practices/use-materialized-views",
@@ -276,9 +284,7 @@
         "ru/concepts/best-practices/avoid-optimize-final",
         "ru/concepts/best-practices/avoidnullablecolumns",
         "ru/concepts/best-practices/json-type"
-      ],
-      "root": "ru/concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "ru/concepts/index"
+  ]
 }

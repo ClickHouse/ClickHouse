@@ -6,7 +6,7 @@ tags: ['安全与身份验证', '错误与异常']
 keywords: ['错误', 'SSL 证书', '210']
 ---
 
-<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+<div id="resolving-ssl-certificate-verify-error-in-clickhouse">
   ## 解决 ClickHouse 中代码 210 的 SSL 证书验证失败错误
 </div>
 
@@ -46,8 +46,39 @@ keywords: ['错误', 'SSL 证书', '210']
 </openSSL>
 ```
 
-<div id="additional-resources">
-  ## 更多资源
+<div id="python-clients-on-macos">
+  ## macOS 上的 Python 客户端
 </div>
 
-参见 [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/zh/concepts/features/interfaces/cli#custom-config-files)
+Python 客户端报告此错误的方式略有不同，通常显示为：
+
+`ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
+
+在 macOS 上，来自 python.org 的 Python 构建会通过 OpenSSL 的默认路径而不是系统钥匙串来验证证书。对于全新安装，这些路径默认并不指向任何根证书包：安装程序虽然附带了 [certifi](https://pypi.org/project/certifi/)，但在你运行随附的 `Install Certificates.command` 脚本之前，不会将其链接到 OpenSSL 的默认位置。在此之前，客户端无法验证 ClickHouse Cloud 的服务器证书，即使该证书本身是有效的。这个问题普遍存在于 python.org 提供的 macOS 版 Python 构建中 (Python 3.6 及更高版本) ，并不只影响 Python 3.11。
+
+运行 `Install Certificates.command`，将 certifi 链接到 OpenSSL 的默认证书路径。请根据你的安装情况调整路径中的版本号：
+
+```bash
+open "/Applications/Python 3.11/Install Certificates.command"
+```
+
+或者，直接将客户端配置为使用 certifi 证书包。[ClickHouse Connect](/zh/integrations/language-clients/python/index) 不会自行回退到 certifi，因此请通过 `ca_cert` 参数传入该证书包：
+
+```python
+import certifi
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host='HOSTNAME.clickhouse.cloud',
+    port=8443,
+    username='default',
+    password='YOUR_SECRET_PASSWORD',
+    ca_cert=certifi.where(),
+)
+```
+
+<div id="additional-resources">
+  ## 其他资源
+</div>
+
+请参阅 [`clickhouse-client` 配置文档](/zh/concepts/features/interfaces/client#configuration_files)。

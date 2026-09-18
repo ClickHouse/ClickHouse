@@ -96,7 +96,7 @@ struct ArrowType
     std::string unsupported_type_name;
 
     /// Physical buffer layout of a `TypeKind::Unsupported` field, when it is known. The reader cannot
-    /// decode these types, but knowing the layout lets `skipField` advance the node/buffer cursors past an
+    /// decode these types, but knowing the layout lets `advanceField` advance the node/buffer cursors past an
     /// unrequested column of such a type (subset-of-columns support), instead of failing a `SELECT` of the
     /// other columns. `Unknown` means the layout is not known and the column cannot be skipped.
     enum class SkipLayout : UInt8

@@ -35,18 +35,18 @@ notLike(haystack, pattern[, escape_character])
         "Usage example",
         "SELECT notLike('ClickHouse', '%House%');",
         R"(
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
         )"
     },
     {
         "Non-matching pattern",
         "SELECT notLike('ClickHouse', '%SQL%');",
         R"(
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
         )"
     }
     };

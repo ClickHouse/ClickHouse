@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: the mixed equi + inequality JOIN ON is only supported by the analyzer.
-
 SELECT count()
 FROM
 (
