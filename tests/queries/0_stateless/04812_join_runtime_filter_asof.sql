@@ -20,7 +20,13 @@ CREATE TABLE t_rf_asof_right (id UInt64, ts UInt64, val UInt64) ENGINE = MergeTr
 
 -- id=1 and id=3 have matches on the right side; id=2 and id=4 have no right-side rows at
 -- all, so the runtime filter on `id` should drop them before the ASOF closest-match check.
-INSERT INTO t_rf_asof_left VALUES (1, 10, 100), (1, 20, 200), (2, 5, 50), (3, 15, 150), (4, 8, 80);
+-- id=1, ts=1 is the negative `ASOF` case: `id` has build-side rows (ts=5, ts=15), but every one
+-- of them fails `l.ts >= r.ts`, so this row must still be dropped by the join itself. Since the
+-- runtime filter only checks the equality key `id` (not the closest-match predicate), it lets this
+-- row through to the join unchanged; it is the join's own `ASOF` matching, not the filter, that
+-- excludes it. This proves the filter stays an over-approximation rather than a semantics-changing
+-- prefilter.
+INSERT INTO t_rf_asof_left VALUES (1, 1, 999), (1, 10, 100), (1, 20, 200), (2, 5, 50), (3, 15, 150), (4, 8, 80);
 INSERT INTO t_rf_asof_right VALUES (1, 5, 1000), (1, 15, 1001), (3, 10, 3000), (3, 20, 3001);
 
 SELECT '--- ASOF INNER JOIN: same result without and with runtime filter ---';
