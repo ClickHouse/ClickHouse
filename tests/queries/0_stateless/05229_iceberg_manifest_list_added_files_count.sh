@@ -34,7 +34,8 @@ check()
     local table_path=$2
 
     local snapshot
-    snapshot=$(find "${table_path}metadata" -maxdepth 1 -name 'snap-*.avro' -type f | sort | tail -1)
+    snapshot=$(find "${table_path}metadata" -maxdepth 1 -name 'snap-*.avro' -type f -printf '%T@ %p\n' \
+        | sort -n | tail -1 | cut -d' ' -f2-)
 
     ${CLICKHOUSE_CLIENT} --query "
         SELECT splitByChar('/', manifest_path)[-1], added_files_count, existing_files_count
@@ -49,14 +50,17 @@ for version in 1 2; do
     table="v${version}_${CLICKHOUSE_DATABASE}"
     table_path="${USER_FILES_PATH}/${table}/"
 
-    ${CLICKHOUSE_CLIENT} --query "
+    # Reading back a v1 table logs a warning about the writing engine, which is a different bug.
+    client="${CLICKHOUSE_CLIENT} --send_logs_level=fatal"
+
+    ${client} --query "
         CREATE TABLE ${table} (n UInt64) ENGINE = IcebergLocal('${table_path}')
         SETTINGS iceberg_format_version = ${version}"
 
-    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    ${client} --allow_insert_into_iceberg=1 --query "
         INSERT INTO ${table} SELECT number FROM numbers(10) SETTINGS ${ROLLOVER}"
 
-    ${CLICKHOUSE_CLIENT} --query "
+    ${client} --query "
         SELECT 'v${version}', 'data_files', countIf(content = 'DATA'), 'snapshots', uniqExact(snapshot_id)
         FROM system.iceberg_files WHERE database = currentDatabase() AND table = '${table}'"
 
