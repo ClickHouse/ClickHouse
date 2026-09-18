@@ -10,7 +10,7 @@ doc_type: 'guide'
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="billing-compliance">
-  ## 청구 규정 준수
+  ## 청구 규정 준수 {#billing-compliance}
 </div>
 
 ClickHouse Cloud를 사용하려면 조직에 활성 상태의 유효한 청구 수단이
@@ -34,15 +34,14 @@ ClickHouse는 조직 단위로 서비스 요금을 청구합니다. 현재 청�
 아래를 참조하십시오.
 
 <div id="direct-payg">
-  ### 신용카드로 Pay-as-you-go 청구
+  ### 신용카드로 Pay-as-you-go 청구 {#direct-payg}
 </div>
 
 신용카드를 사용해 ClickHouse Cloud 사용량을 월별 후불 방식으로 결제할 수 있습니다.
 신용카드를 추가하려면 다음 [지침](#add-credit-card)을 따르십시오.
 
-ClickHouse의 월별 청구 주기는 조직에서 티어
-(Basic, Scale 또는 Enterprise)를 선택하고 조직 내에서 첫 번째 서비스를 생성한 날부터
-시작됩니다.
+새로 생성된 ClickHouse 조직의 월별 청구 주기는 매월 1일에 시작됩니다.
+기존 조직은 해당 월의 다른 날짜에 시작하는 청구 주기를 그대로 유지할 수 있습니다.
 
 등록된 신용카드에는 일반적으로 월별
 청구 주기 종료 시점에 요금이 청구되지만, 주기 중 미납 금액이
@@ -64,29 +63,28 @@ ClickHouse의 월별 청구 주기는 조직에서 티어
 서비스가 삭제됩니다.
 
 <div id="cloud-marketplace-payg">
-  ### Cloud marketplace Pay-As-You-Go 청구
+  ### Cloud marketplace Pay-As-You-Go 청구 {#cloud-marketplace-payg}
 </div>
 
 Pay-As-You-Go(Pay-As-You-Go) 청구는 지원되는 클라우드 마켓플레이스
 (AWS, GCP 또는 Azure) 중 하나를 통해 조직에 요금이 청구되도록 구성할 수도 있습니다. Marketplace PAYG 청구에 가입하려면 다음
 [안내](#marketplace-payg)를 따르십시오.
 
-Direct PAYG를 통한 청구와 마찬가지로 Marketplace PAYG의 경우에도 ClickHouse의 월별 청구 주기는 조직에서 티어(Basic, Scale,
-또는 Enterprise)를 선택하고 첫 번째 서비스를 생성한 날부터 시작됩니다.
+Direct PAYG와 마찬가지로, Marketplace PAYG를 사용하는 신규 ClickHouse 조직의 월별 청구 주기는 매월 1일에 시작됩니다.
 
 다만 마켓플레이스의 요구 사항에 따라 Pay-As-You-Go(Pay-As-You-Go) 사용 요금은 시간 단위로 보고됩니다. 인보이스는 해당 마켓플레이스와 체결한 계약 약관에 따라 발행되며, 일반적으로
 달력 월 기준 청구 주기를 따릅니다.
 
-예를 들어 1월 18일에 조직의 첫 번째 서비스를 생성한 경우, ClickHouse Cloud에서의 첫 번째 사용량 청구 주기는 1월 18일부터 2월 17일
-하루가 끝날 때까지입니다. 그러나 첫 번째 인보이스는 클라우드 마켓플레이스에서 2월 초에 받을 수 있습니다.
+기존 조직은 청구 주기가 매월 다른 날짜에 시작될 수 있습니다.
+이러한 조직은 ClickHouse Cloud 사용량 명세서의 날짜가 마켓플레이스 인보이스의 날짜와 다를 수 있습니다.
 
-다만 PAYG 마켓플레이스 구독이 취소되거나 자동 갱신에 실패하면,
+다만 PAYG 마켓플레이스 subscription이 취소되거나 자동 갱신에 실패하면,
 조직에 등록된 신용카드가 있는 경우 청구는 해당 신용카드로 전환됩니다. 신용카드를 추가하려면 [지원팀에 문의](/ko/resources/about/support)하여
 도움을 받으십시오. 유효한 신용카드가 등록되어 있지 않으면, 위에서 설명한 [Direct PAYG](#direct-payg)의 미납 인보이스
 제한 사항이 동일하게 적용됩니다. 여기에는 서비스 중단 및 최종적인 데이터 삭제가 포함됩니다.
 
 <div id="committed-spend-contract">
-  ### 약정 계약 청구
+  ### 약정 계약 청구 {#committed-spend-contract}
 </div>
 
 다음과 같은 방법으로 약정 계약을 통해 조직용 크레딧을 구매할 수 있습니다.
@@ -101,8 +99,7 @@ Direct PAYG를 통한 청구와 마찬가지로 Marketplace PAYG의 경우에도
 
 조직에 적용된 크레딧(예: 약정 계약 또는 환불을 통해 제공된 크레딧)은
 주문서 또는 수락한 비공개 제안에 명시된 기간 동안 사용할 수 있습니다.
-크레딧은 부여된 날부터 차감되기 시작하며, 첫 번째 조직 tier(Basic, Scale 또는 Enterprise)가
-선택된 날짜를 기준으로 하는 청구 기간에 따라 사용됩니다.
+크레딧은 부여된 날부터 차감되기 시작합니다. 신규 조직의 월별 청구 기간은 매월 1일에 시작됩니다. 기존 조직은 첫 번째 조직 tier가 선택된 날짜를 기준으로 하는 청구 기간을 계속 유지할 수 있습니다.
 
 조직이 클라우드 마켓플레이스 약정 계약을 사용하지 **않는** 상태에서 크레딧을
 모두 사용했거나 크레딧이 만료되면, 해당 조직은 자동으로
@@ -127,9 +124,7 @@ Pay-As-You-Go (PAYG) 청구로 전환됩니다. 이 경우, 조직에 등록된
 기존 크레딧이 만료되거나 모두 소진되기 전에 추가 크레딧을 구매하려면
 [문의해 주십시오](https://clickhouse.com/company/contact).
 
-<div id="add-credit-card">
-  ### 신용카드로 결제하는 방법
-</div>
+### 신용카드로 결제하는 방법 {#add-credit-card}
 
 ClickHouse Cloud UI의 청구 섹션으로 이동하여 아래와 같이 표시된 &#39;Add Credit Card&#39;
 버튼을 클릭해 설정을 완료하십시오. 궁금한 점이 있으면 [지원팀에 문의하십시오](/ko/resources/about/support).
@@ -137,7 +132,7 @@ ClickHouse Cloud UI의 청구 섹션으로 이동하여 아래와 같이 표시�
 <Image img="/images/cloud/manage/billing_compliance.webp" size="md" alt="신용카드를 추가하는 방법" />
 
 <div id="marketplace-payg">
-  ## 마켓플레이스를 통해 결제하는 방법
+  ## 마켓플레이스를 통해 결제하는 방법 {#marketplace-payg}
 </div>
 
 지원되는 마켓플레이스(AWS, GCP 또는 Azure) 중 하나를 통해 결제하려면

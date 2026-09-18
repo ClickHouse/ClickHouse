@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-18T13:47:29.435Z",
+          "updatedAt": "2026-09-18T16:34:15.001Z",
           "fileName": "docs.json",
           "postProcessHash": "06e4dfbf312293c3556f1982a25a1ebe17e82e6dc6dea1eee8ba84b41ac4e9ec"
         },
         "ja": {
-          "updatedAt": "2026-09-18T13:47:28.604Z",
+          "updatedAt": "2026-09-18T16:34:14.186Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-18T13:47:28.993Z",
+          "updatedAt": "2026-09-18T16:34:14.599Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-18T13:47:29.124Z",
+          "updatedAt": "2026-09-18T16:34:14.738Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-18T13:47:28.859Z",
+          "updatedAt": "2026-09-18T16:34:14.467Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-18T13:47:28.738Z",
+          "updatedAt": "2026-09-18T16:34:14.333Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-18T13:47:28.468Z",
+          "updatedAt": "2026-09-18T16:34:14.002Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-18T13:47:29.257Z",
+          "updatedAt": "2026-09-18T16:34:14.871Z",
           "fileName": "docs.json"
         }
       },
@@ -84525,99 +84525,97 @@
     },
     {
       "fileId": "6999f1caff31316787c0e6bacb590f98effa8ea4974d689069bbecd53c9063a8",
-      "versionId": "52ad37439372d9b00952b5bd7a7d8f6e1f2377be346c65949932a5113e0a2566",
+      "versionId": "8863849a81eb5a6720feba7faeaf47244eea9a8e7fbfd22346bb5590542eb91b",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.142Z",
+          "updatedAt": "2026-09-18T16:34:18.317Z",
           "fileName": "es/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "50dcf955701b1cead4a430016af530d9a69b8600230357712eaa0f38cdf046a4"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
-          "fileName": "ja/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "ce8544e6db2a8a8fc020bc8db243644c9b01036e8d15659e2556e5396643d7b5"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
-          "fileName": "ko/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "f8ffbc4cf3f463b240abd737ba273faa6357797361eb1ad120456a8a6330c6ef"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
-          "fileName": "pt-BR/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "5ec39303163bc20306b3a0b9e34aceb26e6a288806cb7910f2eb4cb4d6db71fc"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
-          "fileName": "ru/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "aef474182bdada307338ab31e5b54812cd314babf837f46e32e8cfe3ed4bbca0"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
-          "fileName": "zh/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "106a8e6c042016b2651bd8a3fdb3a4cf8993deab1af4d129c863a28db8b1aebe"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
-          "fileName": "ar/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "632a0b9eca8448cc9215d596ce2225d538a9f4cbfbd21ec3dd12b1614e5363aa"
+          "postProcessHash": "8d39b848cb97db68731e1df93c9800e47eb2fdbab5eb071abd536a6042effa9c"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.143Z",
+          "updatedAt": "2026-09-18T16:34:18.317Z",
           "fileName": "fr/products/cloud/reference/billing/billing-compliance.mdx",
-          "postProcessHash": "34eb0faacba78599d5c7cf4c984d6d583789995988900c42c52572f8fbfbe2d7"
+          "postProcessHash": "0bea88a0f01c90e73495e67c1d31ca8de94bf0afb32f9aee5716b48be80130de"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-18T16:34:18.318Z",
+          "fileName": "pt-BR/products/cloud/reference/billing/billing-compliance.mdx",
+          "postProcessHash": "5d53515a3292aa4faa699304f0c55abf17e53c1630f7e39793e89a041908c676"
+        },
+        "zh": {
+          "updatedAt": "2026-09-18T16:34:18.318Z",
+          "fileName": "zh/products/cloud/reference/billing/billing-compliance.mdx",
+          "postProcessHash": "dd93f00cc512554038c396052afd025350dd3e193701c168ef72c51b5d9cc3cb"
+        },
+        "ru": {
+          "updatedAt": "2026-09-18T16:34:18.319Z",
+          "fileName": "ru/products/cloud/reference/billing/billing-compliance.mdx",
+          "postProcessHash": "201fa1893350b7b3d159c9a371d55663d68e5abf4bc4ea9b628e5f5bfa7c3510"
+        },
+        "ja": {
+          "updatedAt": "2026-09-18T16:34:18.319Z",
+          "fileName": "ja/products/cloud/reference/billing/billing-compliance.mdx",
+          "postProcessHash": "b2fc91942617c7b1bde893b98b8be539169f0047ca2083fed2c52813b4fb7596"
+        },
+        "ar": {
+          "updatedAt": "2026-09-18T16:34:18.320Z",
+          "fileName": "ar/products/cloud/reference/billing/billing-compliance.mdx",
+          "postProcessHash": "8f57c8cb8e9ccaaa5c64595c36d8aae9d90dfb5b99e8621c16a19a30a977cdda"
+        },
+        "ko": {
+          "updatedAt": "2026-09-18T16:34:18.320Z",
+          "fileName": "ko/products/cloud/reference/billing/billing-compliance.mdx",
+          "postProcessHash": "411479aa877750ba1534b0081f96a2a87bfc82ae2b9408220207a1273dfb6298"
         }
       },
-      "fileName": "products/cloud/reference/billing/billing-compliance.mdx",
-      "staged": false
+      "fileName": "products/cloud/reference/billing/billing-compliance.mdx"
     },
     {
       "fileId": "b1da80dca7ef4373782392a48b00cc03e61b59d051c90d7e65d143a8b28e256b",
-      "versionId": "83e224c78019470301026d62623db6c0b34a0308ed2c404b5950a5f12858615e",
+      "versionId": "032f0857d670823f96c73f87cadc3c8ba3c3636b8365e6d57b3225a2c4d67eb7",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.144Z",
-          "fileName": "es/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "f7bce3ccb77801b297d94f8fc8150daff38b4b824bb6118bc27a555f82b7c939"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.144Z",
-          "fileName": "ja/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "d41a6a6cb5a7353e718a4b715cacd924ab3b8bc24206513c3556c9ed39de785c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.144Z",
-          "fileName": "ko/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "1276f82a8d6617dad18be3a73a1a87d94216acb543d1d1efd2e0417c98949186"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.144Z",
-          "fileName": "pt-BR/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "1bba501366881f0f0452b456fa6b9d4832085ecdec5773f6d065a8ced42e88e4"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.145Z",
-          "fileName": "ru/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "14fcf1e326773df18d3143fe99058170ba3e45bece8e26617abcd1cbb3c81e47"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.145Z",
-          "fileName": "zh/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "ad5a33fceff843206f45292cae8a658018557215c32afb58f5476da154bbc460"
+        "fr": {
+          "updatedAt": "2026-09-18T16:34:18.313Z",
+          "fileName": "fr/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "8b3e9a946e5b5dc16cef730c00523b1c8b322026617d0332b840a3720ef7f9f3"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.145Z",
+          "updatedAt": "2026-09-18T16:34:18.313Z",
           "fileName": "ar/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "2ae8d977a8f3ee80f37b88a1e0c9412398923c37a7ee18459ba1c41770583402"
+          "postProcessHash": "617ecf8f0f9971f0a5706db008d92cb6d6b65ae227966f3daa54c4d935bd6cba"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.145Z",
-          "fileName": "fr/products/cloud/reference/billing/billing-overview.mdx",
-          "postProcessHash": "60139c849efb00e6d8a08b7eb3f72a6eb485d34a548781b4b3e525ae4fce8bd2"
+        "ko": {
+          "updatedAt": "2026-09-18T16:34:18.314Z",
+          "fileName": "ko/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "7b6ac9e1b5909c155eb463c509d4fdfb7635ca29167d8cadc8eca768148c4bb3"
+        },
+        "ru": {
+          "updatedAt": "2026-09-18T16:34:18.314Z",
+          "fileName": "ru/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "315d6d9c69d03b8cd00223ba91ffe40e11a1ee2d835c593aff860460d9b7498e"
+        },
+        "es": {
+          "updatedAt": "2026-09-18T16:34:18.315Z",
+          "fileName": "es/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "51f76427e95a175bf178d8345af69d970767d7340247f2aafae8581b8f11082f"
+        },
+        "zh": {
+          "updatedAt": "2026-09-18T16:34:18.316Z",
+          "fileName": "zh/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "74035ad09a1973daf391cf4ae5a92f463815405b215c958f79167f6d1a3b2f85"
+        },
+        "ja": {
+          "updatedAt": "2026-09-18T16:34:18.316Z",
+          "fileName": "ja/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "ec77b45eacfeb9b65a872fb82eb7c6f49f73f1939f54017a5ce76a2ed1220cd3"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-18T16:34:18.316Z",
+          "fileName": "pt-BR/products/cloud/reference/billing/billing-overview.mdx",
+          "postProcessHash": "a944261cc7efe493c549ab6acdc981cad95eb9c47d6e3e18737626b01d938323"
         }
       },
-      "fileName": "products/cloud/reference/billing/billing-overview.mdx",
-      "staged": false
+      "fileName": "products/cloud/reference/billing/billing-overview.mdx"
     },
     {
       "fileId": "6b2c16e5a196453b2f1b2e8b3f43ea0545c6c5fdcbecece6b3f4ebcdfd4bd23a",
@@ -100340,51 +100338,50 @@
     },
     {
       "fileId": "782f8c43e4fe9b6330cac941c7fa0ea59d038a6b3f35813930941098236d3167",
-      "versionId": "7a84e5010548a72aa3aa51338d78367f10ed1a864e508c2073129122556fe03b",
+      "versionId": "e8565beedb61e262dc2e611b8b8e80a78634459d6c98d9f61960a2e7d120bde9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-08-18T23:25:00.183Z",
+          "updatedAt": "2026-09-18T16:34:18.312Z",
           "fileName": "fr/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "adb76ad4e5e60792f98b646958ebd80bfba0d48d0435f340b43b149ca7ebd942"
-        },
-        "ar": {
-          "updatedAt": "2026-08-18T23:25:00.215Z",
-          "fileName": "ar/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "d767d4feff6b0c2a044e8861f5359099e36e2c9b0059668ec0160f4c5368aa10"
+          "postProcessHash": "7cc74310e00dc871174aa3ffd18fde8c53e1caea796f65880820921135c37ba0"
         },
         "zh": {
-          "updatedAt": "2026-08-18T23:25:00.268Z",
+          "updatedAt": "2026-09-18T16:34:18.312Z",
           "fileName": "zh/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "9e4ffdd6a9bd25d72016bd316c5f9b4d6ec4828e82538f0f9df8b476379e4ae7"
-        },
-        "es": {
-          "updatedAt": "2026-08-18T23:25:00.292Z",
-          "fileName": "es/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "b7e5dd3d41a03a138a387dca3b0057efa29ee78713b1a7c9a40872dc732983b1"
+          "postProcessHash": "de22d01ee700c7ee65b1ffbf4ff553700299cfca6207fc90b6847177b35c785a"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-18T23:25:00.311Z",
+          "updatedAt": "2026-09-18T16:34:18.313Z",
           "fileName": "pt-BR/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "b7b24eb0502cf37b3d5c2b6abef961c7730ea5e91b13776570870c0670d35bbf"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T23:25:00.334Z",
-          "fileName": "ko/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "59c23f90c4d1a5e7ce05568640841d0d2f362191edf97597cb7b7c6d71b96c44"
+          "postProcessHash": "b91fdbfa8ce0048d672d87a8bab542a34939aa067adbaa73768143c2ba684a48"
         },
         "ru": {
-          "updatedAt": "2026-08-18T23:25:00.336Z",
+          "updatedAt": "2026-09-18T16:34:18.315Z",
           "fileName": "ru/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "02edb450d60dad07b580edd622fe94025c9d7d188cb5a4a7ed92f72fc7cc86ae"
+          "postProcessHash": "a9a28ef60eeb6ab58da838b0c99a5ccc839042f9bde61b95521af5acbc1715b9"
+        },
+        "es": {
+          "updatedAt": "2026-09-18T16:34:18.315Z",
+          "fileName": "es/products/cloud/reference/billing/marketplace/overview.mdx",
+          "postProcessHash": "be933a25d4e32a2b9b01d2392aec0c9b84d659d2a1d666aefc6dc466c07bdf65"
         },
         "ja": {
-          "updatedAt": "2026-08-18T23:25:00.404Z",
+          "updatedAt": "2026-09-18T16:34:18.317Z",
           "fileName": "ja/products/cloud/reference/billing/marketplace/overview.mdx",
-          "postProcessHash": "053a65431ba6ff6f0dde28dcecd155d8ac7a89cdfe15651c0750d507b93546a1"
+          "postProcessHash": "1cbc78d9d0e3749b460af116f989f5b637a7233b05faf8264065967b4674bc21"
+        },
+        "ko": {
+          "updatedAt": "2026-09-18T16:34:18.317Z",
+          "fileName": "ko/products/cloud/reference/billing/marketplace/overview.mdx",
+          "postProcessHash": "e93610787a03d21a8b2aa3b7ad0da10cb462f1112ce8d013162fc6f2d2021dd5"
+        },
+        "ar": {
+          "updatedAt": "2026-09-18T16:34:18.319Z",
+          "fileName": "ar/products/cloud/reference/billing/marketplace/overview.mdx",
+          "postProcessHash": "4316801b167ad297a6f7ac562515d95f627e78f988a5139c88e6c4ce0fce28a6"
         }
       },
-      "fileName": "products/cloud/reference/billing/marketplace/overview.mdx",
-      "staged": false
+      "fileName": "products/cloud/reference/billing/marketplace/overview.mdx"
     },
     {
       "fileId": "bf258b1cf0a6a75b419079ff0b23c7dc5af2834a611f12a0975364031a911cbe",
