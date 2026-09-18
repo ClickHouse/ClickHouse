@@ -132,14 +132,17 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNames)
         {"Custom-Auth-Token", "KeepTheValue"},
     });
 
-    const DB::HTTPHeaderEntries seen(headers.begin(), headers.end());
+    std::vector<std::string> names;
+    std::vector<std::string> values;
+    for (const auto & header : headers)
+    {
+        names.push_back(header.name);
+        values.push_back(header.value);
+    }
 
-    ASSERT_EQ(seen.size(), 3u);
-    EXPECT_EQ(seen[0].name, "x-amz-meta-owner");
-    EXPECT_EQ(seen[1].name, "x-amz-storage-class");
-    EXPECT_EQ(seen[2].name, "custom-auth-token");
+    EXPECT_EQ(names, (std::vector<std::string>{"x-amz-meta-owner", "x-amz-storage-class", "custom-auth-token"}));
     /// Values are untouched.
-    EXPECT_EQ(seen[2].value, "KeepTheValue");
+    EXPECT_EQ(values, (std::vector<std::string>{"analytics", "GLACIER", "KeepTheValue"}));
 }
 
 /// The headers ClickHouse adds itself go through the same door, so the invariant does not depend on
@@ -149,11 +152,9 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNamesOnPushBack)
     DB::NormalizedHTTPHeaderEntries headers;
     headers.push_back({"X-Amz-Server-Side-Encryption-Customer-Key", "KeepTheValue"});
 
-    const DB::HTTPHeaderEntries seen(headers.begin(), headers.end());
-
-    ASSERT_EQ(seen.size(), 1u);
-    EXPECT_EQ(seen[0].name, "x-amz-server-side-encryption-customer-key");
-    EXPECT_EQ(seen[0].value, "KeepTheValue");
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers.begin()->name, "x-amz-server-side-encryption-customer-key");
+    EXPECT_EQ(headers.begin()->value, "KeepTheValue");
 }
 
 

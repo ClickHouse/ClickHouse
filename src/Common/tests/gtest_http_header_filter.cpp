@@ -175,9 +175,8 @@ TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
     NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(allowed));
 
-    const HTTPHeaderEntries seen(allowed.begin(), allowed.end());
-    ASSERT_EQ(seen.size(), 1u);
-    EXPECT_EQ(seen[0].name, "x-amz-metaowner");
+    ASSERT_EQ(allowed.size(), 1u);
+    EXPECT_EQ(allowed.begin()->name, "x-amz-metaowner");
 }
 
 /// Case normalization must compose with whitespace/control-character stripping:
