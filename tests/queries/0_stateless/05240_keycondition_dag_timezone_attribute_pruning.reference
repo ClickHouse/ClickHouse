@@ -58,6 +58,12 @@ oracle_bool_in	1
 partition_bool_in	1
 partition_bool_in_false	1
 control_bool_in_absent	0
+oracle_bool_direct_cast_eq	8
+key_bool_direct_cast_eq	8
+oracle_bool_direct_cast_in	8
+key_bool_direct_cast_in	8
+control_bool_direct_cast_exact	8
+control_bool_direct_cast_exact_false	8
 oracle_array_array	1
 partition_array_array	1
 oracle_array_lowcardinality	1

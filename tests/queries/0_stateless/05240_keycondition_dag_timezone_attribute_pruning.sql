@@ -338,6 +338,23 @@ SELECT 'partition_bool_in', count() FROM (SELECT b FROM k_bool_in WHERE b IN (SE
 SELECT 'partition_bool_in_false', count() FROM (SELECT b FROM k_bool_in WHERE b IN (SELECT 0::UInt8));
 SELECT 'control_bool_in_absent', count() FROM (SELECT b FROM k_bool_in WHERE b IN (SELECT 2::UInt8));
 
+-- The same refusal reached on the DIRECT-`CAST` carrier rather than through a function call: a key of
+-- `b::String` makes the transform DAG a bare `CAST` on the input, which `convertColumnForDeterministicDag`
+-- would otherwise apply straight to the `UInt8` element and render as `1` instead of the key's `true`.
+-- The leaf refusal has to be reached BEFORE that fast path, so this pair declines the atom instead.
+CREATE TABLE oracle_bool_cast (b Bool) ENGINE = Memory;
+INSERT INTO oracle_bool_cast SELECT number % 2 = 1 FROM numbers(16);
+CREATE TABLE k_bool_cast (b Bool) ENGINE = MergeTree ORDER BY b::String SETTINGS index_granularity = 1;
+INSERT INTO k_bool_cast SELECT number % 2 = 1 FROM numbers(16);
+SELECT 'oracle_bool_direct_cast_eq', count() FROM oracle_bool_cast WHERE b = 1::UInt8;
+SELECT 'key_bool_direct_cast_eq', count() FROM k_bool_cast WHERE b = 1::UInt8;
+SELECT 'oracle_bool_direct_cast_in', count() FROM oracle_bool_cast WHERE b IN (1::UInt8);
+SELECT 'key_bool_direct_cast_in', count() FROM k_bool_cast WHERE b IN (1::UInt8);
+-- The element that does carry the key's own name still prunes, so the refusal above is the leaf policy
+-- rather than a blanket decline of the direct-`CAST` carrier.
+SELECT 'control_bool_direct_cast_exact', count() FROM k_bool_cast WHERE b = true;
+SELECT 'control_bool_direct_cast_exact_false', count() FROM k_bool_cast WHERE b = false;
+
 CREATE TABLE oracle_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = Memory;
 INSERT INTO oracle_arr_arr SELECT [[toDateTime(1675195200, 'UTC')]];
 CREATE TABLE k_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = MergeTree
