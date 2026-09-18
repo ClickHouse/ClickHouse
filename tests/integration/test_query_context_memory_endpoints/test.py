@@ -352,6 +352,33 @@ def test_endpoint_setup_limit_and_recovery(endpoint, batching_limit, limit, leve
         run_endpoint(endpoint, user)
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "prometheus_query",
+        "prometheus_format_query",
+        "prometheus_read",
+        "prometheus_write_empty",
+    ],
+)
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+@pytest.mark.parametrize(
+    "limit,level",
+    [("max_memory_usage", "Query"), ("max_memory_usage_for_user", "User")],
+)
+def test_prometheus_response_buffer_limit_and_recovery(
+    endpoint, batching_limit, limit, level
+):
+    with payload_user(limit, batching_limit, "context_memory_control") as user:
+        node.query(
+            f"ALTER USER {user} MODIFY SETTINGS http_response_buffer_size = {PAYLOAD_SIZE}"
+        )
+        with pytest.raises(Exception, match=f"{level} memory limit exceeded"):
+            run_endpoint(endpoint, user)
+        node.query(f"ALTER USER {user} MODIFY SETTINGS {limit} = 0")
+        run_endpoint(endpoint, user)
+
+
 def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=None):
     with payload_user("max_memory_usage", batching_limit, profile) as user:
         node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")

@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <IO/SnappyBasicReadBuffer.h>
 #include <IO/SnappyBasicWriteBuffer.h>
@@ -70,7 +71,7 @@ public:
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
-    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
+    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) = 0;
     virtual void onException() {}
 
 protected:
@@ -98,7 +99,7 @@ public:
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
-    void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response, QueryScope & /* query_scope */) override
     {
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
         auto & out = getOutputStream(response);
@@ -140,12 +141,11 @@ public:
     virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) override
     {
-        QueryScope query_scope;
         SCOPE_EXIT({
             context.reset();
-            query_scope = QueryScope{};
+            MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
             request_credentials.reset();
             session.reset();
             params.reset();
@@ -346,14 +346,16 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+        response.setChunkedTransferEncoding(false);
+        /// Include the response allocation in admission, before an insert can reset the user tracker.
+        getOutputStream(response);
+
         ProcessList::EntryPtr process_list_entry;
         if (write_request.timeseries().empty() && write_request.metadata().empty())
             process_list_entry = admitRequest("Prometheus empty remote write");
 
         protocol.write(write_request.timeseries(), write_request.metadata());
-
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
-        response.setChunkedTransferEncoding(false);
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote write protocol is disabled");
@@ -723,12 +725,12 @@ public:
         current_impl->beforeHandlingRequest(request);
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) override
     {
         /// `current_impl` was selected in beforeHandlingRequest().
         /// Forward the whole request to it so its own authentication, context setup,
         /// and endpoint dispatch run exactly as for a dedicated single-protocol handler.
-        current_impl->handleRequest(request, response);
+        current_impl->handleRequest(request, response, query_scope);
     }
 
     void onException() override
@@ -819,6 +821,10 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
+    QueryScope query_scope;
+    /// Finalize or cancel and release the response buffer before detaching its query tracker.
+    SCOPE_EXIT({ write_buffer_from_response.reset(); });
+
     try
     {
         write_event = write_event_;
@@ -832,12 +838,16 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         setResponseDefaultHeaders(response);
 
         impl->beforeHandlingRequest(request);
-        impl->handleRequest(request, response);
+        impl->handleRequest(request, response, query_scope);
 
         getOutputStream(response).finalize();
     }
     catch (...)
     {
+        /// Preserve the original exception while accounting for the error response.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        /// A rejected response-buffer allocation must not be retried at the requested size.
+        http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
@@ -852,8 +862,6 @@ WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HT
     if (write_buffer_from_response)
         return *write_buffer_from_response;
 
-    /// The response buffer is finalized and destroyed after the request query scope.
-    MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
         response, http_method == HTTPRequest::HTTP_HEAD, write_event, http_response_buffer_size);
 
