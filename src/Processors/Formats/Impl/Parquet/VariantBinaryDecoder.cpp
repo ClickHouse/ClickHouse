@@ -756,8 +756,14 @@ DataTypePtr tryBuildExactArrayType(const std::vector<DecodedVariantValue> & elem
     if (!element_type)
         return {};
 
+    /// No exact type when the element type cannot be inside `Nullable` (e.g. `[[1], null]`); the
+    /// array is then materialized through `inferVariantMaterializationType`.
     if (has_nulls)
+    {
         element_type = makeVariantExactOutputTypeNullable(element_type);
+        if (!element_type)
+            return {};
+    }
 
     return std::make_shared<DataTypeArray>(element_type);
 }
@@ -791,8 +797,14 @@ DataTypePtr tryBuildExactArrayType(const std::vector<VariantValue> & elements)
     if (!element_type)
         return {};
 
+    /// No exact type when the element type cannot be inside `Nullable` (e.g. `[[1], null]`); the
+    /// array is then materialized through `inferVariantMaterializationType`.
     if (has_nulls)
+    {
         element_type = makeVariantExactOutputTypeNullable(element_type);
+        if (!element_type)
+            return {};
+    }
 
     return std::make_shared<DataTypeArray>(element_type);
 }
@@ -1486,11 +1498,13 @@ void insertVariantValueIntoTypedColumn(
 
     if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
     {
+        /// A `VARIANT` value is not necessarily an object (e.g. a top-level array or scalar requested as `JSON`).
         if (!tryInsertObjectLikeValueIntoTypedColumn(column, *object_type, value, format_settings, depth + 1))
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected `Parquet` `VARIANT` object-like value while materializing exact type {}",
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot read `Parquet` `VARIANT` value of type {} as {}: an object is expected",
+                value.exact_type ? value.exact_type->getName() : inferVariantMaterializationType(value, format_settings, depth + 1)->getName(),
                 type->getName());
         }
         return;

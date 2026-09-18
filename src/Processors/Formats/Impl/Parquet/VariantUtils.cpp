@@ -220,9 +220,18 @@ DataTypePtr makeVariantExactOutputTypeNullable(const DataTypePtr & type)
     {
         DataTypePtr dictionary_type = low_cardinality->getDictionaryType();
         if (!typeid_cast<const DataTypeNullable *>(dictionary_type.get()))
+        {
+            if (!dictionary_type->canBeInsideNullable())
+                return nullptr;
             dictionary_type = makeNullable(dictionary_type);
+        }
         return std::make_shared<DataTypeLowCardinality>(dictionary_type);
     }
+
+    /// `Array`, `Map`, `Dynamic` and `Variant` cannot be wrapped: a `VARIANT` array such as `[[1], null]`
+    /// has no exact ClickHouse type and must be materialized through a non-exact element carrier.
+    if (!type->canBeInsideNullable())
+        return nullptr;
 
     return makeNullable(type);
 }
@@ -389,7 +398,13 @@ DataTypePtr inferVariantMaterializationType(const VariantReader::VariantValue & 
         }
 
         if (has_null_elements)
+        {
             common_element_type = makeVariantExactOutputTypeNullable(common_element_type);
+            /// E.g. `[[1], null]`: the element type cannot be inside `Nullable`, and `Dynamic` is the only
+            /// element type that holds both the nested arrays and the nulls.
+            if (!common_element_type)
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>());
+        }
 
         return std::make_shared<DataTypeArray>(common_element_type);
     }

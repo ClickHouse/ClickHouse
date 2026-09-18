@@ -31,6 +31,9 @@ String getVariantTypeHintForMetadata(const IDataType * type);
 
 DataTypePtr unwrapVariantTypeHint(DataTypePtr type);
 DataTypePtr makeVariantWrappedTypedValueType(const DataTypePtr & type);
+/// Wraps the element type of a `VARIANT` array that contains nulls into `Nullable` (or
+/// `LowCardinality(Nullable)`). Returns nullptr when the type cannot be inside `Nullable`
+/// (`Array`, `Map`, `Dynamic`, `Variant`), i.e. when the array has no exact ClickHouse type.
 DataTypePtr makeVariantExactOutputTypeNullable(const DataTypePtr & type);
 DataTypePtr getParquetVariantScalarType(VariantPrimitiveType primitive_type, std::optional<UInt8> scale = {});
 DataTypePtr inferVariantMaterializationType(const VariantReader::VariantValue & value, const FormatSettings & format_settings, size_t depth = 1);
