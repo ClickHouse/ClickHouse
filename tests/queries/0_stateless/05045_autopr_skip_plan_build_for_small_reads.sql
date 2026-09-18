@@ -22,10 +22,6 @@ SET enable_analyzer=1;
 SET max_threads=4;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET automatic_parallel_replicas_min_bytes_per_replica=1048576;
--- This test asserts the threshold gates themselves, so it must run with them on. The
--- `AutoParallelReplicas` stateless jobs turn them off in their server profile so that the cost model
--- decides every query, and `no-random-settings` gives no protection against a server profile.
-SET automatic_parallel_replicas_ignore_thresholds=0;
 -- This test asserts that the gate rejects a read, and the gate declines to size any read while the
 -- range-split fault injection is armed - it can turn an ordinary read into an in-order one that also
 -- reads the sorting key. `clickhouse-test` randomizes that setting, so pin it off here.

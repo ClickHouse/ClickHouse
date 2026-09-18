@@ -338,8 +338,7 @@ void considerEnablingParallelReplicas(
     /// never switches to parallel replicas, and the threshold does not apply to it, so such queries
     /// are exempt and keep collecting statistics however little they read.
     const bool threshold_applies = optimization_settings.automatic_parallel_replicas_mode == 1
-        && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica != 0
-        && !optimization_settings.automatic_parallel_replicas_ignore_thresholds;
+        && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica != 0;
     if (threshold_applies)
     {
         const auto min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
@@ -516,8 +515,7 @@ void considerEnablingParallelReplicas(
                 replicas_plan_cost_estimation);
             if (local_plan_cost_estimation > replicas_plan_cost_estimation)
             {
-                if (!optimization_settings.automatic_parallel_replicas_ignore_thresholds
-                    && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+                if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
                 {
                     LOG_DEBUG(
