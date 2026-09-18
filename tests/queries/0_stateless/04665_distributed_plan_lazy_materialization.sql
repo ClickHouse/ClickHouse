@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
 -- Lazy materialization for ORDER BY ... LIMIT applies inside a distributed-plan fragment: the
 -- fragment carries the local top-N bound, and the worker defers the wide column to a second read of
 -- only the rows its local top-N kept. Results must be identical to the non-distributed plan.

@@ -74,7 +74,7 @@ Many integrations require a feature flag before first use. Check your service ve
 
 For catalog connections, each catalog type has its own flag. See [Connecting to catalogs](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) for an overview and the [DataLakeCatalog reference](/reference/engines/database-engines/datalake) for setting details. Per-catalog setup lives in the [catalog guides](/guides/use-cases/data-warehousing/reference).
 
-For writes, Iceberg requires [allow_insert_into_iceberg](/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta from 26.2). See [Writing to data lakes](/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake requires [allow_delta_lake_writes](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). The [support matrix](/guides/use-cases/data-warehousing/support-matrix) lists which flags apply to each format and operation.
+For writes, Iceberg requires [allow_insert_into_iceberg](/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta from 26.2). See [Writing to data lakes](/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake requires [allow_delta_lake_writes](/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+). The [support matrix](/guides/use-cases/data-warehousing/support-matrix) lists which flags apply to each format and operation.
 
 ## Improve query performance {#query-performance}
 
@@ -240,7 +240,7 @@ Store the end version after each successful load and pass it as the start versio
 
 #### Delta Lake writes {#delta-write-settings}
 
-Beyond [allow_delta_lake_writes](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), control output file size on insert:
+Beyond [allow_delta_lake_writes](/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+), control output file size on insert:
 
 | Setting                                                                                                            | Since | Purpose                         |
 | ------------------------------------------------------------------------------------------------------------------ | ----- | ------------------------------- |
