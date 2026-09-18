@@ -903,9 +903,9 @@ DROP TABLE tabm;
 
 SELECT '-- Control: ASCII lower maps every byte in place, so the index is still used';
 
--- Each control table below holds one matching and one non-matching row at index_granularity = 1: with both
--- rows in one granule, a granule that holds the match is always read and the counts cannot tell an index
--- that prunes correctly from one that is refused.
+-- Each control table below holds one matching and one non-matching row at index_granularity = 1. The
+-- counts alone cannot tell a refused index from one that prunes, because the granule holding the match is
+-- read either way; the EXPLAIN assertion is what observes the other granule being pruned.
 
 CREATE TABLE tab
 (
