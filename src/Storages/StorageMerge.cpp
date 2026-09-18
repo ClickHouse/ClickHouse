@@ -438,9 +438,9 @@ std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints() 
     return result;
 }
 
-bool StorageMerge::hasAutomaticLowCardinalitySerialization() const
+bool StorageMerge::hasAutomaticLowCardinalitySerialization(const String & column_name) const
 {
-    return traverseTablesUntil([](const auto & table) { return table->hasAutomaticLowCardinalitySerialization(); }) != nullptr;
+    return traverseTablesUntil([&](const auto & table) { return table->hasAutomaticLowCardinalitySerialization(column_name); }) != nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const

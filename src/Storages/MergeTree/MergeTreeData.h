@@ -2064,7 +2064,7 @@ protected:
     SerializationInfoByName getSerializationHints() const override;
 
 public:
-    bool hasAutomaticLowCardinalitySerialization() const override;
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name) const override;
 
 protected:
     /// Recomputes @has_automatic_low_cardinality. Must be called under the parts lock, after

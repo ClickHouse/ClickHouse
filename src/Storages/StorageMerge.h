@@ -59,7 +59,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
     std::optional<SerializationInfoByName> tryGetSerializationHints() const override;
-    bool hasAutomaticLowCardinalitySerialization() const override;
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name) const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;

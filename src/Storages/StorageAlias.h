@@ -237,10 +237,10 @@ public:
         return target->tryGetSerializationHints();
     }
 
-    bool hasAutomaticLowCardinalitySerialization() const override
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name) const override
     {
         auto target = tryGetTargetTable();
-        return target && target->hasAutomaticLowCardinalitySerialization();
+        return target && target->hasAutomaticLowCardinalitySerialization(column_name);
     }
 
     ActionLock getActionLock(StorageActionBlockType type) override

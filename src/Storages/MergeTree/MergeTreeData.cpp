@@ -13633,18 +13633,34 @@ SerializationInfoByName MergeTreeData::getSerializationHints() const
     return serialization_hints.clone();
 }
 
-bool MergeTreeData::hasAutomaticLowCardinalitySerialization() const
+bool MergeTreeData::hasAutomaticLowCardinalitySerialization(const String & column_name) const
 {
-    /// Not just the columns encoded in the current active parts: a part that encodes a column can be
-    /// committed while a query is being analyzed and still belong to the parts that query reads.
-    /// While the threshold is nonzero every `String`/`FixedString` column is a potential candidate, so
-    /// the answer has to be `true` regardless of the current parts, or an optimization keyed on it would
-    /// depend on insert and merge timing. Once the threshold is back to zero no new encoded part can
-    /// appear, and only the parts that are already encoded matter.
+    /// Not just "is the column encoded in an active part right now": a part that encodes it can be
+    /// committed while a query is being analyzed and still belong to the parts that query reads, so
+    /// an optimization keyed on the current parts alone would depend on insert and merge timing.
+    /// While the threshold is nonzero, a `String`/`FixedString` column with a cardinality statistic
+    /// (declared explicitly or added by `auto_statistics_types`) can be encoded by any write, so the
+    /// answer is `true` regardless of the current parts. A column without such a statistic is never
+    /// chosen (see `chooseColumnsForAutomaticLowCardinality`), so only the parts that are already
+    /// encoded matter for it, as for every column once the threshold is back to zero.
     if ((*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0)
-        return true;
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto * column = metadata_snapshot->getColumns().tryGet(column_name);
+        if (column && isStringOrFixedString(column->type)
+            && (column->statistics.types_to_desc.contains(StatisticsType::Uniq)
+                || column->statistics.types_to_desc.contains(StatisticsType::UniqV2)))
+            return true;
+    }
 
-    return has_automatic_low_cardinality.load(std::memory_order_relaxed);
+    /// Cheap negative answer for the common case before taking the parts lock.
+    if (!has_automatic_low_cardinality.load(std::memory_order_relaxed))
+        return false;
+
+    auto lock = readLockParts();
+    auto it = serialization_hints.find(column_name);
+    return it != serialization_hints.end() && it->second
+        && ISerialization::hasKind(it->second->getKindStack(), ISerialization::Kind::LOW_CARDINALITY);
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

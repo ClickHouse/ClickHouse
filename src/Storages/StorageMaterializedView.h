@@ -51,7 +51,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
     std::optional<SerializationInfoByName> tryGetSerializationHints() const override { return getTargetTable()->tryGetSerializationHints(); }
-    bool hasAutomaticLowCardinalitySerialization() const override { return getTargetTable()->hasAutomaticLowCardinalitySerialization(); }
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name) const override { return getTargetTable()->hasAutomaticLowCardinalitySerialization(column_name); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 

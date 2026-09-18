@@ -326,12 +326,14 @@ public:
     /// Same as getSerializationHints() but may return nullopt in some specific engines like Alias
     virtual std::optional<SerializationInfoByName> tryGetSerializationHints() const { return getSerializationHints(); }
 
-    /// Whether a read from this table can hit a column stored with automatic (non-native)
-    /// `LowCardinality` serialization. This is a superset of the columns currently stored that way:
-    /// a table that can still write such a part answers `true` even before the first one exists, so
-    /// that the answer does not change under a concurrent write while a query is being analyzed.
+    /// Whether a read of @column_name from this table can hit a part that stores the column with
+    /// automatic (non-native) `LowCardinality` serialization. This is a superset of "the column is
+    /// stored that way in some active part": while the table can still write such a part for the
+    /// column (the feature is enabled and the column has a cardinality statistic) it answers `true`
+    /// even before the first one exists, so that the answer does not change under a concurrent write
+    /// while a query is being analyzed. A column that can never be encoded answers `false`.
     /// Unlike getSerializationHints() this is cheap, so query analysis can use it.
-    virtual bool hasAutomaticLowCardinalitySerialization() const { return false; }
+    virtual bool hasAutomaticLowCardinalitySerialization(const String & /*column_name*/) const { return false; }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
