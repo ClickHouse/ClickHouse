@@ -254,3 +254,85 @@ def test_total_proj_pk_ig_in_memory_fields(started_cluster):
 
     # finally drop the table
     node.query("DROP TABLE test_proj_pk_bytes;")
+
+
+def test_projection_primary_key_counted_in_total_pk_fields(started_cluster):
+    node.query("""CREATE TABLE test_projection_only_pk_bytes
+    (
+       a UInt64,
+       b UInt64,
+       PROJECTION p (SELECT b, a ORDER BY b)
+    )
+    Engine=MergeTree()
+    ORDER BY tuple()
+    SETTINGS index_granularity=1""")
+
+    query_total_pk_bytes = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalPrimaryKeyBytesInMemory';"
+    query_total_pk_bytes_allocated = """SELECT value FROM system.asynchronous_metrics
+                                  WHERE metric = 'TotalPrimaryKeyBytesInMemoryAllocated';"""
+    query_parts_pk_bytes = """SELECT sum(primary_key_bytes_in_memory)
+                              FROM system.parts
+                              WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+    query_parts_pk_bytes_allocated = """SELECT sum(primary_key_bytes_in_memory_allocated)
+                                        FROM system.parts
+                                        WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+    query_parts_pk_size = """SELECT sum(primary_key_size)
+                             FROM system.parts
+                             WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+    query_projection_parts_pk_bytes = """SELECT sum(primary_key_bytes_in_memory)
+                                         FROM system.projection_parts
+                                         WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+    query_projection_parts_pk_bytes_allocated = """SELECT sum(primary_key_bytes_in_memory_allocated)
+                                                   FROM system.projection_parts
+                                                   WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+    query_parts_columns_pk_bytes = """SELECT max(primary_key_bytes_in_memory)
+                                      FROM system.parts_columns
+                                      WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+    query_parts_columns_pk_bytes_allocated = """SELECT max(primary_key_bytes_in_memory_allocated)
+                                                FROM system.parts_columns
+                                                WHERE active AND database = currentDatabase() AND table = 'test_projection_only_pk_bytes';"""
+
+    total_pk_bytes_before = int(node.query(query_total_pk_bytes).strip())
+    total_pk_bytes_allocated_before = int(node.query(query_total_pk_bytes_allocated).strip())
+
+    node.query("""INSERT INTO test_projection_only_pk_bytes SELECT number, number * 2 FROM numbers(10000)""")
+    node.query("""SELECT b, a FROM test_projection_only_pk_bytes WHERE b = 1000
+                  SETTINGS optimize_use_projections=1, force_optimize_projection=1""")
+
+    def res_total_pk_bytes():
+        return int(node.query(query_total_pk_bytes).strip())
+
+    def res_total_pk_bytes_allocated():
+        return int(node.query(query_total_pk_bytes_allocated).strip())
+
+    _, total_pk_bytes_after = query_until_condition(
+        total_pk_bytes_before, res_total_pk_bytes, condition=greater
+    )
+    assert total_pk_bytes_after > total_pk_bytes_before
+
+    _, total_pk_bytes_allocated_after = query_until_condition(
+        total_pk_bytes_allocated_before, res_total_pk_bytes_allocated, condition=greater
+    )
+    assert total_pk_bytes_allocated_after > total_pk_bytes_allocated_before
+
+    def res_projection_parts_pk_bytes():
+        return int(node.query(query_projection_parts_pk_bytes).strip())
+
+    _, projection_parts_pk_bytes = query_until_condition(
+        0, res_projection_parts_pk_bytes, condition=greater
+    )
+
+    def res_projection_parts_pk_bytes_allocated():
+        return int(node.query(query_projection_parts_pk_bytes_allocated).strip())
+
+    _, projection_parts_pk_bytes_allocated = query_until_condition(
+        0, res_projection_parts_pk_bytes_allocated, condition=greater
+    )
+
+    assert int(node.query(query_parts_pk_bytes).strip()) >= projection_parts_pk_bytes
+    assert int(node.query(query_parts_pk_bytes_allocated).strip()) >= projection_parts_pk_bytes_allocated
+    assert int(node.query(query_parts_pk_size).strip()) > 0
+    assert int(node.query(query_parts_columns_pk_bytes).strip()) >= projection_parts_pk_bytes
+    assert int(node.query(query_parts_columns_pk_bytes_allocated).strip()) >= projection_parts_pk_bytes_allocated
+
+    node.query("DROP TABLE test_projection_only_pk_bytes;")
