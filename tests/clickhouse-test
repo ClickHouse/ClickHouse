@@ -6746,6 +6746,11 @@ ORDER BY (test_name, callee_offset)
         else:
             blacklist_check.extend(blacklist)
 
+    if args.autopr:
+        # Tests that break specifically when the optimization rewrites the plan - not the same set as
+        # the ones that break with parallel replicas forced on, which is why this is its own list.
+        blacklist_tolerate_only.extend(try_get_skip_list(base_dir, "../autopr_blacklist.txt"))
+
     if args.no_async_insert is True:
         skip_list_async_inserts = try_get_skip_list(
             base_dir, "../async_insert_blacklist.txt"

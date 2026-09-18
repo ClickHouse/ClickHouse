@@ -1,0 +1,19 @@
+    Tests that do not work when automatic parallel replicas rewrites the plan.
+    Used only by the `AutoParallelReplicas` stateless jobs, and tolerate-only: a listed test may fail
+    without failing the job, and - unlike parallel_replicas_blacklist.txt - a listed test that passes
+    is NOT reported as needing removal. The optimization only switches a query when its statistics say
+    it pays off, so a pass here carries no information either way.
+
+    Do not put a test here that merely fails with parallel replicas: that is
+    parallel_replicas_blacklist.txt. These specifically pass with parallel replicas forced on and fail
+    only when the rewrite is done by the optimization.
+
+    A plan rewritten by automatic parallel replicas never populates the query condition cache, so the
+    next query over the same condition misses it. `system.query_condition_cache` holds one entry after
+    a single-node run and none after a rewritten one. Forcing parallel replicas directly populates it
+    normally, so this is specific to the rewritten plan - the same root cause as
+    https://github.com/ClickHouse/ClickHouse/pull/115153, whose reads carry ranges but not conditions.
+03229_query_condition_cache_profile_events
+04320_query_condition_cache_topk_correctness
+05099_query_condition_cache_formatdatetime_settings
+03783_autopr_dataflow_cache_reuse_qcc
