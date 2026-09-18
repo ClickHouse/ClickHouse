@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
+    extern const SettingsBool query_plan_optimize_lazy_materialization_with_ties;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_file;
     extern const SettingsBool query_plan_optimize_prewhere;
@@ -320,6 +321,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
+    optimize_lazy_materialization_with_ties = from[Setting::query_plan_optimize_lazy_materialization_with_ties];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
     optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
