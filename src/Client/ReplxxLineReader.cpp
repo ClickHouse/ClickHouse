@@ -800,8 +800,9 @@ ReplxxLineReader::~ReplxxLineReader()
         if (overwrite_mode)
             rx.print("%s", "\033[0 q");
     }
-    catch (const std::runtime_error &)
+    catch (const std::runtime_error &) // NOLINT(bugprone-empty-catch)
     {
+        /// Deliberately empty: see the comment above.
     }
 }
 
