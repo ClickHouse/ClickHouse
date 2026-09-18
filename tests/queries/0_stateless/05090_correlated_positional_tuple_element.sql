@@ -4,7 +4,7 @@
 -- the list naming a column the subquery no longer reads, and decorrelation then looked for the
 -- subcolumn in a join carrying the whole column: `NOT_FOUND_COLUMN_IN_BLOCK`.
 
--- Correlated subqueries are a feature of the new analyzer only.
+-- Correlated subqueries are supported by the analyzer only, so do not take the randomized value.
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- The bug needs the optimization that rewrites the function into a subcolumn read, and the last
