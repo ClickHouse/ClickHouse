@@ -1,4 +1,4 @@
--- Tags: long, no-fasttest, no-old-analyzer
+-- Tags: long, no-fasttest
 -- no-fasttest: requires object storage
 
 DROP TABLE IF EXISTS test_3;
