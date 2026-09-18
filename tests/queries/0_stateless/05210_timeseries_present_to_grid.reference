@@ -1,0 +1,16 @@
+-- result type and values
+[1,1,1]	Array(Nullable(Float64))
+-- a grid point whose window has no samples is NULL
+[1,1,NULL]
+-- the values do not matter: NaN samples are present too
+[1,1,1]
+-- the same samples passed as rows and as an array of tuples
+[1,1,1]
+[1,1,1]
+-- the result follows the value type
+Array(Nullable(Float32))
+-- partial states merge
+[1,1,1,NULL]
+-- a grid without samples
+[NULL,NULL,NULL]
+-- invalid arguments

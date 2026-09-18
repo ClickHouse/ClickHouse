@@ -271,7 +271,6 @@ struct Client : DB::S3::Client
 
     explicit Client(
         std::shared_ptr<S3MemStrore> mock_s3_store,
-        bool disable_checksum = false,
         bool is_s3express_bucket = false,
         std::string_view endpoint = {})
         : DB::S3::Client(
@@ -282,7 +281,6 @@ struct Client : DB::S3::Client
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
-                .disable_checksum = disable_checksum,
                 .gcs_issue_compose_request = false,
                 .is_s3express_bucket = is_s3express_bucket,
             })
@@ -291,13 +289,12 @@ struct Client : DB::S3::Client
 
     static std::shared_ptr<Client> CreateClient(
         String bucket = "mock-s3-bucket",
-        bool disable_checksum = false,
         bool is_s3express_bucket = false,
         std::string_view endpoint = {})
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store, disable_checksum, is_s3express_bucket, endpoint);
+        return std::make_shared<Client>(s3store, is_s3express_bucket, endpoint);
     }
 
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(std::string_view endpoint = {})
@@ -1346,31 +1343,6 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
     }
 }
 
-TEST_F(WBS3Test, DisabledChecksumAcceptsMD5UnderFIPS)
-{
-    /// `s3_disable_checksum` sends no checksum at all, so `MD5` must not be rejected here even under FIPS.
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer("checksum_disabled_md5_fips");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-}
-
 TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
 {
     S3::S3RequestSettings request_settings;
@@ -1433,8 +1405,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
 {
     /// `GCS` requires `x-goog-*` and rejects `SigV4`-signed requests carrying `x-amz-checksum-*`, so even
     /// an explicit algorithm must not reach the request.
-    client = MockS3::Client::CreateClient(
-        bucket, /* disable_checksum */ false, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
     ASSERT_TRUE(client->isClientForGCS());
 
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
@@ -1474,117 +1445,11 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
     ASSERT_TRUE(injection->put_object_should_compute_content_md5);
 }
 
-TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultDisabledChecksumSinglepart)
-{
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    auto buffer = getWriteBuffer("checksum_empty_default_disabled_singlepart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_F(WBS3Test, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithm)
-{
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-
-    auto buffer = getWriteBuffer("checksum_disabled_precedence");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-    ASSERT_FALSE(injection->put_object_request_checksum_required);
-    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-}
-
-TEST_P(SyncAsync, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithmMultipart)
-{
-    /// The multipart requests are built separately from `PutObject`, so the precedence has to be asserted here too.
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("checksum_disabled_precedence_multipart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::NOT_SET));
-    ASSERT_THAT(injection->upload_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::IsEmpty()));
-}
-
-TEST_F(WBS3Test, CopyDataDisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithmMultipart)
-{
-    /// `copyDataToS3File` has its own request builder, so it needs the same assertion as `WriteBufferFromS3`.
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    const String data(10, 'a');
-    CreateReadBuffer create_read_buffer = [data]() -> std::unique_ptr<SeekableReadBuffer>
-    {
-        return std::make_unique<ReadBufferFromString>(data);
-    };
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
-
-    copyDataToS3File(
-        create_read_buffer,
-        0,
-        data.size(),
-        client,
-        bucket,
-        "copy_checksum_disabled_precedence_multipart",
-        request_settings,
-        nullptr,
-        getAsyncPolicy().getScheduler(),
-        std::nullopt);
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::NOT_SET));
-    ASSERT_THAT(injection->upload_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_sha256_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::IsEmpty()));
-    ASSERT_EQ(data, client->store->GetBucketStore(bucket).objects["copy_checksum_disabled_precedence_multipart"]);
-}
-
 TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
 {
     /// S3Express forces CRC32 only as a default; an explicit SHA256 must survive `setIsS3ExpressBucket`,
     /// which is applied when the request is sent (after the upload algorithm has been chosen).
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ false, /* is_s3express_bucket */ true);
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ true);
 
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
@@ -1599,29 +1464,6 @@ TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
 
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
     ASSERT_TRUE(injection->put_object_request_checksum_required);
-}
-
-TEST_P(SyncAsync, S3ExpressDisabledChecksumKeepsMultipartChecksums)
-{
-    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true, /* is_s3express_bucket */ true);
-
-    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
-    setInjectionModel(injection);
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("s3express_disabled_checksum_multipart");
-    writeAsOneBlock(*buffer, 10);
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->create_multipart_upload_algorithm);
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
-    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::CRC32));
-    ASSERT_EQ(injection->upload_part_crc32_checksums, injection->complete_part_crc32_checksums);
-    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::Not(testing::IsEmpty())));
 }
 
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {

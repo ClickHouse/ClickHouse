@@ -44,6 +44,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        bool flat_namespaces_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -73,6 +74,9 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
+    /// Inherited by every catalog based on the Iceberg REST protocol.
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -88,7 +92,8 @@ public:
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
     struct Config
     {
@@ -140,6 +145,7 @@ protected:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        bool flat_namespaces_,
         DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
@@ -154,6 +160,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
+    bool flat_namespaces = false;
     mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -180,10 +187,10 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    /// Whether this catalog has flat (single-level) namespaces and ignores the `parent` filter when
-    /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
-    /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
-    /// listing is skipped for them (see `parseNamespaces`).
+    /// Whether this catalog has flat (single-level) namespaces, either because its type is always flat
+    /// (BigLake, Databricks Delta Sharing, S3 Tables) or because of the `flat_namespaces` database
+    /// setting. Such catalogs are never asked for sub-namespaces (see `getNamespacesRecursive`): they
+    /// either echo the parent back for any `parent` (which would recurse without bound) or reject it.
     bool hasFlatNamespaces() const;
 
     /// List the immediate child namespaces directly under `base_namespace`
@@ -271,6 +278,7 @@ public:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        bool flat_namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
@@ -385,6 +393,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        bool flat_namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override

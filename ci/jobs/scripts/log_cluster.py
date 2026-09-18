@@ -97,14 +97,11 @@ class LogCluster:
     def workflow_start_time(cls):
         """Start of the workflow this job belongs to, as a UTC datetime string.
 
-        `Info().workflow_start_time` is GitHub's `created_at` of the run
-        (`2026-08-14T17:01:52Z`), resolved by the config job: the same value
-        for every job of the run, and a rerun keeps it. Grouping rows by it
-        therefore reconstructs one workflow run.
+        `Info().workflow_start_time` is a Unix timestamp resolved by the config
+        job: the same value for every job of the run, and a rerun keeps it.
+        Grouping rows by it therefore reconstructs one workflow run.
         """
-        return Utils.gh_str_to_datetime(Info().workflow_start_time).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        return Utils.timestamp_to_str(Info().workflow_start_time)
 
     @classmethod
     def meta_values(cls, check_start_time, check_name="", commit_sha=""):

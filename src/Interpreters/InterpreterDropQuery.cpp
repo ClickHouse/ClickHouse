@@ -521,9 +521,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         query_for_table.setDatabase(database_name);
         query_for_table.sync = query.sync;
 
-        /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
-        /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || !query.has_like)
+        /// `TRUNCATE TABLES` keeps storages alive and is handled below without preparing them for shutdown.
+        if (!truncate || !query.has_tables)
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -698,8 +697,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         }
     }
 
-    /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && query.has_like)
+    /// Truncate all tables or only those matching the optional `LIKE` pattern.
+    if (truncate && query.has_tables)
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);

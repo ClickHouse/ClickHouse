@@ -13,3 +13,6 @@ RENAME DATABASE a TO b
 SYSTEM DROP REPLICA \'r\'
 SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01/\'
 BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')
+SELECT lambda(tuple(), 1)
+SELECT arrayMap(() -> 1, [1])
+SELECT * APPLY lambda(1)(tuple(x), x + 1)

@@ -257,7 +257,7 @@ public:
             /// Use combined `@` subcolumn that merges literal value and sub-object.
             /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
             /// column: literal if present, sub-object as JSON if not, NULL otherwise.
-            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
+            String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
             auto merged_type = data_type_object.getSubcolumnType(combined_name);
 
             /// Typed paths are always present in a JSON column, even when the key was missing

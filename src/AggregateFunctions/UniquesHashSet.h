@@ -127,8 +127,6 @@ private:
     /// The value is divided by 2 ^ skip_degree
     bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
-    HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
-
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
     {
@@ -342,9 +340,20 @@ public:
         free();
     }
 
+    static HashValue hash(Value key) { return static_cast<HashValue>(Hash()(key)); }
+
+    void ALWAYS_INLINE prefetch(HashValue hash_value) const
+    {
+        __builtin_prefetch(&buf[place(hash_value)]);
+    }
+
     void ALWAYS_INLINE insert(Value x)
     {
-        const HashValue hash_value = hash(x);
+        insertHash(hash(x));
+    }
+
+    void ALWAYS_INLINE insertHash(HashValue hash_value)
+    {
         if (!good(hash_value))
             return;
 

@@ -40,7 +40,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
     else
     {
-        ostr << func_name;
+        ostr << backQuoteIfNeed(func_name);
 
         if (parameters)
         {
@@ -53,7 +53,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
 
     if (!column_name_prefix.empty())
-        ostr << ", '" << column_name_prefix << "')";
+        ostr << ", " << quoteString(column_name_prefix) << ")";
 }
 
 void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const

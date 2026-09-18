@@ -652,7 +652,7 @@ public:
         bool hasAlterMutations() const final { return counters.num_alter > 0; }
         bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
         bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-        bool hasLightweightDeletedMask() const final { return params.has_lightweight_delete_parts; }
+        bool hasLightweightDeletedMask() const final;
 
     protected:
         NameSet getColumnsUpdatedInPatches() const;
@@ -969,6 +969,27 @@ public:
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, const DataPartsAnyLock & lock);
+
+    /// What happens to the data of a batch that is about to be removed without a transaction.
+    enum class NonTransactionalRemovalKind
+    {
+        /// The data is discarded. A creation that was rolled back is fine to remove.
+        Discard,
+        /// The data is republished elsewhere, as in `MOVE PARTITION TO TABLE`. The creation must be
+        /// committed: committing it in the destination cannot be taken back, so a creation that is
+        /// still running (and may roll back) must not be moved.
+        Republish,
+    };
+
+    /// Throws `SERIALIZATION_ERROR` if any of `parts` may not be removed without a transaction yet --
+    /// either because the transaction that created it has not committed, or because another
+    /// transaction is already removing it and holds its removal lock.
+    ///
+    /// `NonTransactionalRemovalLocks` already keeps a removal batch all-or-nothing, but `REPLACE
+    /// PARTITION` and `MOVE PARTITION TO TABLE` commit their own new parts *before* removing the old
+    /// ones, so a removal refused at that point leaves the partition half replaced or half moved.
+    /// Those callers check here first, under the same parts lock they commit with.
+    void checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const;
 
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper

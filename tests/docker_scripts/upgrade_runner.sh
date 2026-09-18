@@ -413,7 +413,7 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
 #       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
 # `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
-#       broker is unavailable during upgrade (no broker is running in the upgrade test environment). Filtered
+#       broker is unavailable during upgrade (several tests point at a deliberately unreachable broker). Filtered
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
@@ -424,6 +424,20 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Filtered via regex in the secondary pipe below to require both the `StorageKafka2` engine context AND
 #       the `Broker transport failure` symptom together, so real `StorageKafka2` regressions (auth errors,
 #       timeouts, protocol errors, other broker errors) still surface.
+# `StorageKafka` + `Consumer error: Broker: Unknown topic or partition`, and the aggregate count line after
+#       it, are the deleted-topic variant of the same class. The six `NNNNN_kafka*` stateless tests that
+#       create real topics (03918, 03919, 03920, 03921, 03922, 03923) clean up in two halves that fail
+#       independently: the `DROP TABLE`s go through the server, the `rpk topic delete`s straight to the
+#       Redpanda started above, which runs for the whole job. A server death between a test's last query and
+#       its cleanup (here the stress-phase server aborted) leaves the Kafka table and its view behind, topic
+#       already gone. The upgrade restart reattaches the table, the surviving view keeps it streaming, and the
+#       consumer polls a topic the broker no longer has; topic auto-creation is off on both sides, hence
+#       `UNKNOWN_TOPIC_OR_PART` rather than the transport failure covered above. Both lines come from
+#       `StorageKafkaUtils::eraseMessageErrors`, so the entries cover `Kafka2` too. Both anchor the
+#       `NNNNN_kafka` token to the start of the backquoted table name, so a database or a longer name carrying
+#       it does not match. That scope is needed because the count line carries no error text of its own and
+#       `Authentication failed` above can already remove its partner line. Removable once the previous
+#       release's copies of these tests stop deleting a topic whose table may survive.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -606,6 +620,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
+    | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
+    | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*There were [0-9][0-9]* messages with an error" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \

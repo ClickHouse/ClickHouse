@@ -271,9 +271,9 @@ def test_multi_component_id():
 
 # Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
 def test_microsecond_precision():
-    node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")
+    node.query("CREATE TABLE prometheus (samples Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")
     check(eps=1e-9) # Here eps > 0 because otherwise the check will fail because of different precisions.
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -282,7 +282,7 @@ def test_microsecond_precision():
 
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6))")
     check(eps=1e-9)
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -290,9 +290,9 @@ def test_microsecond_precision():
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
 def test_float32_scalar():
-    node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries")
+    node.query("CREATE TABLE prometheus (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries")
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -301,7 +301,7 @@ def test_float32_scalar():
 
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (value Float32)")
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))

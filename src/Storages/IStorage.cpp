@@ -239,7 +239,7 @@ Pipe IStorage::alterPartition(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operations are not supported by storage {}", getName());
 }
 
-void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
+void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);

@@ -4,12 +4,22 @@
 #include <Processors/Executors/Runtime/PollingQueue.h>
 #include <Processors/Executors/Runtime/ThreadsQueue.h>
 #include <Processors/Executors/Runtime/TasksQueue.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <vector>
+
+#include <boost/container/devector.hpp>
 
 namespace DB
 {
 
+class IProcessor;
 class StepWallClockRegistry;
 
 /// Manage tasks which are ready for execution. Used in PipelineExecutor.
@@ -28,11 +38,11 @@ class ExecutorTasks
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
-    TaskQueue<ExecutingGraph::Node> task_queue;
+    TaskQueue<IProcessor> task_queue;
 
     /// Async tasks should be processed with higher priority, but also require task stealing logic.
     /// So we have a separate queue specifically for them.
-    TaskQueue<ExecutingGraph::Node> fast_task_queue;
+    TaskQueue<IProcessor> fast_task_queue;
     std::atomic_bool has_fast_tasks = false; // Required only to enable local task optimization
 
     /// Queue which stores tasks where processors returned Async status after prepare.
@@ -64,8 +74,8 @@ class ExecutorTasks
 public:
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     void finish();
     bool isFinished() const { return finished; }
@@ -73,7 +83,7 @@ public:
     void rethrowFirstThreadException(const LoggerPtr & log);
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
-    void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
+    void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<IProcessor> & queue, std::unique_lock<std::mutex> & lock);
 
     /// It sets the task for specified thread `context`.
     /// If task was succeessfully found, one thread is woken up to process the remaining tasks.

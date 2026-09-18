@@ -198,9 +198,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
+    evaluation_settings.time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
-        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     if (!params.lookback_delta_param.empty())
@@ -459,7 +461,9 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
-    const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
+    const auto & time_series_column_with_type
+        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
+    const auto & time_series_column = time_series_column_with_type.column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
     const auto & offsets = array_column.getOffsets();
     const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
@@ -468,7 +472,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
     auto timestamp_data_type
         = typeid_cast<const DataTypeTuple &>(
-              *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+              *typeid_cast<const DataTypeArray &>(*time_series_column_with_type.type).getNestedType())
               .getElement(0);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -519,7 +523,8 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & end_param)
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     /// The optional `start` and `end` parameters are parsed the same way as on the query endpoints.
@@ -687,7 +692,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
-    /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
+    /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
     auto normalize_column = [](const char * column_name)
     {
@@ -697,7 +702,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
             make_intrusive<ASTLiteral>(String{}));
     };
 
-    /// groupUniqArray() deduplicates the metadata entries of each metric family: the Metrics target table typically
+    /// groupUniqArray() deduplicates the metadata entries of each metric family: the metric families target table typically
     /// contains duplicate rows until they're merged. With `limit_per_metric` set it also caps the number of entries
     /// per family, choosing an arbitrary subset like Prometheus does. arraySort() and ORDER BY make the result deterministic.
     auto group_uniq_array = makeASTFunction(
@@ -716,17 +721,17 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     metadata_entries->setAlias("metadata");
 
     /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family_name = metric]
+    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family_name = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
     builder.select_list.push_back(std::move(metadata_entries));
     builder.from_table_function = makeASTFunction(
-        "timeSeriesMetrics",
+        "timeSeriesMetricFamilies",
         make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
         make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()));
 
-    /// Filter on the raw column so the primary key of the Metrics target table can be used.
+    /// Filter on the raw column so the primary key of the metric families target table can be used.
     if (!metric_param.empty())
         builder.where = makeASTFunction(
             "equals",

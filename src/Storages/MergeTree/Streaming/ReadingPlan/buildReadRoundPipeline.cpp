@@ -50,39 +50,6 @@ namespace DB
 namespace
 {
 
-Names extendWithAuxiliaryColumns(
-    Names columns,
-    const StreamSettings & stream_settings,
-    const FilterDAGInfoPtr & row_level_filter,
-    const StorageMetadataPtr & metadata,
-    const ContextPtr & context)
-{
-    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
-
-    if (stream_settings.watermark)
-    {
-        if (!std::ranges::contains(columns, stream_settings.watermark->column))
-            columns.push_back(stream_settings.watermark->column);
-
-        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
-
-    if (row_level_filter)
-    {
-        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
-
-    return columns;
-}
-
 Pipe buildPartitionReadingPipeline(
     const ReadRoundContext & reading_context,
     const ReadState & state,
@@ -174,9 +141,7 @@ Pipe buildPartitionReadingPipeline(
         context);
     plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(convert)));
 
-    /// Build pipeline.
-    plan->optimize(opt_settings);
-    auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
+    auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
     return QueryPipelineBuilder::getPipe(std::move(*builder), resources);
 }
 

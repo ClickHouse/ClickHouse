@@ -40892,7 +40892,7 @@
     "source": "/sql-reference/table-functions/sqlite"
   },
   {
-    "destination": "/reference/functions/table-functions/timeSeriesMetrics",
+    "destination": "/reference/functions/table-functions/timeSeriesMetricFamilies",
     "source": "/sql-reference/table-functions/timeSeriesMetrics"
   },
   {
@@ -52682,6 +52682,10 @@
   {
     "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
     "source": "/integrations/airflow"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin",
+    "source": "/integrations/airflow/migrating-from-airflow-clickhouse-plugin"
   },
   {
     "destination": "/concepts/features/interfaces/documentation-search",

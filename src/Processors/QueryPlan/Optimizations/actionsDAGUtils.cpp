@@ -176,7 +176,10 @@ MatchedTrees::Matches matchTrees(
                         for (const auto * parent : *intersection)
                         {
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
-                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
+                            /// One function name resolves to different result types depending on the settings
+                            /// the DAG was built with, and differently-typed results are not one calculation.
+                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
+                                && parent->result_type->equals(*frame.node->result_type))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)

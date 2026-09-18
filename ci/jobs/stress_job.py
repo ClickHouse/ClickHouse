@@ -12,6 +12,21 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
+
+
+def container_memory_limit() -> int:
+    visible = Utils.physical_memory()
+    limit = visible - RUNNER_MEMORY_RESERVE
+    if limit <= 0:
+        raise RuntimeError(
+            f"Not enough RAM to run this job: {RUNNER_MEMORY_RESERVE} bytes are reserved for the "
+            f"runner agent outside the container and this host has {visible}. Docker refuses a "
+            f"negative --memory and reads 0 as no limit at all, so there is no safe cap to pass."
+        )
+    return limit
+
 
 def sanitize_test_result_line(line: str) -> str:
     # Drop bare CR in addition to escaping NUL. The writer escapes
@@ -169,6 +184,7 @@ def get_run_command(
         "--privileged "
         # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
         "--ulimit nofile=1048576:1048576 "
+        f"--memory={container_memory_limit()} "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "

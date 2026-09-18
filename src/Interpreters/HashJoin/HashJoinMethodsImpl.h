@@ -208,13 +208,18 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
     }
 
+    /// The counter only advances where the probe records row refs, so without them its zero counts
+    /// nothing and must stay distinguishable from a measured zero.
+    const std::optional<size_t> matched_right_rows
+        = added_columns.record_row_refs ? std::optional<size_t>(added_columns.lazy_output.hash_table_matches) : std::nullopt;
+
     auto join_result = std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
         std::move(added_columns.columns),
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
-        added_columns.lazy_output.hash_table_matches,
+        matched_right_rows,
         std::move(block),
         HashJoinResult::Properties{
             *join.table_join,

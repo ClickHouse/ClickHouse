@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- Baseline contract for `IN (subquery)` under `make_distributed_plan`: the set is built once on
 -- the initiator and its values ship with the worker tasks (`GLOBAL IN` semantics). This is the
 -- default path; `rewrite_in_to_join` remains available as an explicit opt-in that turns the

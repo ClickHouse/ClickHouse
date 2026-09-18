@@ -1,0 +1,15 @@
+nullable_string_key
+1	Nullable(UInt32)	x	Dynamic	[1,2]	Array(UInt32)
+2	Nullable(UInt32)	5	Dynamic	[]	Array(UInt32)
+nullable_string_key_values_match_plain_key
+1	1	1
+1	1	1
+null_key
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+nullable_json_and_nullable_key
+{"a":1}	1	Nullable(UInt32)
+\N	\N	Nullable(UInt32)
+non_constant_key_is_rejected

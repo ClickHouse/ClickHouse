@@ -52,7 +52,7 @@ from ci.praktika.utils import Shell
 
 CHANGELOG_FILE = "CHANGELOG.md"
 BRANCH_PREFIX = "auto/changelog-"
-RAW_BEGIN = "<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->"
+RAW_BEGIN = "<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->"
 RAW_BEGIN_PREFIX = "<!-- CHANGELOG-RAW-BEGIN"
 RAW_END = "<!-- CHANGELOG-RAW-END -->"
 STATE_TRAILER = "Changelog-generated-up-to:"
@@ -1214,7 +1214,7 @@ def generate_raw_entries(version, from_ref, to_sha):
         f"Update changelog for {version}: generate raw entries "
         f"({from_short}..{to_short})\n\n"
         f"{entries} raw entries generated with tests/ci/changelog.py "
-        f"by the NightlyChangelog CI job.\n\n"
+        f"by the nightly changelog CI job.\n\n"
         f"{STATE_TRAILER} {to_sha}\n"
     )
     Shell.check(f"git add {CHANGELOG_FILE}", strict=True)
@@ -1729,7 +1729,7 @@ def edit_raw_entries(version):
     ]
     message = (
         f"Update changelog for {version}: edit new entries\n\n"
-        f"Edited by the NightlyChangelog CI job following {EDIT_SKILL}.\n"
+        f"Edited by the nightly changelog CI job following {EDIT_SKILL}.\n"
         + ("\n" + "\n".join(trailers) + "\n" if trailers else "")
     )
     Shell.check(f"git add {CHANGELOG_FILE}", strict=True)
@@ -1779,7 +1779,7 @@ def ensure_pr(branch, version):
     body = f"""\
 Automated daily preparation of `CHANGELOG.md` for the upcoming {version} release.
 
-Every day the `NightlyChangelog` CI job appends the raw changelog entries for the pull requests newly merged into `master` (generated with `utils/changelog/changelog.py`) as one commit, and edits them following `.claude/skills/edit-changelog/SKILL.md` as a separate commit, so both the raw and the edited state stay reviewable. The point up to which entries were generated is recorded as a `{STATE_TRAILER}` trailer in the generate commits.
+Every day the nightly changelog CI job appends the raw changelog entries for the pull requests newly merged into `master` (generated with `utils/changelog/changelog.py`) as one commit, and edits them following `.claude/skills/edit-changelog/SKILL.md` as a separate commit, so both the raw and the edited state stay reviewable. The point up to which entries were generated is recorded as a `{STATE_TRAILER}` trailer in the generate commits.
 
 This pull request stays a draft until the release. The release manager finalizes it manually: fills in the release date and the presentation/video links (the `FIXME` placeholders), reviews the entries, and marks it ready.
 

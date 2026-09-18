@@ -57,7 +57,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsBool allow_join_right_table_sorting;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
@@ -224,7 +224,7 @@ TableJoin::TableJoin(
     , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
-    , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
+    , allow_join_sorting(settings[Setting::allow_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
     , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])

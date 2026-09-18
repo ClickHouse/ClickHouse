@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
@@ -125,8 +126,18 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     return result;
 }
 
-void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation)
+/// `equal_ranges`, when requested, receives the ranges (of two or more positions of the permutation) whose
+/// rows compare equal on the whole description; only supported for a full sort (no limit).
+void getBlockSortPermutationImpl(
+    const Block & block,
+    const SortDescription & description,
+    IColumn::PermutationSortStability stability,
+    UInt64 limit,
+    IColumn::Permutation & permutation,
+    EqualRanges * equal_ranges = nullptr)
 {
+    chassert(!equal_ranges || limit == 0);
+
     if (block.empty())
         return;
 
@@ -159,6 +170,25 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
                 *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation);
         else
             column->getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+
+        /// The single-column sort does not track the equal ranges: the galloping search finds them in the
+        /// sorted order of the permutation, cheaply both for the long ranges of a skewed input and for the
+        /// singleton ranges of a distinct one. Every probe is a virtual comparison, so the linear probe is
+        /// kept short (as in `IColumn::getEqualRangeEndAssumeSorted`); the comparison honors the collation.
+        if (equal_ranges)
+        {
+            static constexpr size_t linear_probe = 8;
+            PartialSortingLessWithCollation compare(columns_with_sort_descriptions);
+            const size_t size = permutation.size();
+            for (size_t begin = 0; begin < size;)
+            {
+                const size_t range_end = findEqualRangeEndAssumeSorted(
+                    begin, size, linear_probe, [&](size_t pos) { return compare.compare(permutation[begin], permutation[pos]) == 0; });
+                if (range_end - begin > 1)
+                    equal_ranges->emplace_back(begin, range_end);
+                begin = range_end;
+            }
+        }
     }
     else
     {
@@ -205,6 +235,9 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
                 "updatePermutation returned equal_ranges not sorted by `from`");
 #endif
         }
+
+        if (equal_ranges)
+            *equal_ranges = std::move(ranges);
     }
 }
 
@@ -373,6 +406,55 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     transformColumnsWithSharedIndex(
         columns,
         [&](const ColumnPtr & col) { return is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
+    block.setColumns(columns);
+}
+
+void sortBlockAndDeduplicate(Block & block, const SortDescription & description, IColumn::PermutationSortStability stability)
+{
+#ifndef NDEBUG
+    block.checkNumberOfRows();
+#endif
+    IColumn::Permutation permutation;
+    EqualRanges equal_ranges;
+    getBlockSortPermutationImpl(block, description, stability, /*limit=*/ 0, permutation, &equal_ranges);
+
+#ifndef NDEBUG
+    checkSortedWithPermutation(block, description, /*limit=*/ 0, permutation);
+#endif
+
+    Columns columns = block.getColumns();
+
+    /// No non-constant sort column: every row is equal to the first one.
+    if (permutation.empty())
+    {
+        if (block.rows() > 1)
+        {
+            transformColumnsWithSharedIndex(columns, [](const ColumnPtr & col) { return col->cut(0, 1); });
+            block.setColumns(columns);
+        }
+        return;
+    }
+
+    if (!equal_ranges.empty())
+    {
+        /// Keep the first position of each equal range. The write position never passes the read
+        /// position, so retained entries can be compacted in the existing permutation.
+        size_t read_pos = 0;
+        size_t write_pos = 0;
+        for (const auto & range : equal_ranges)
+        {
+            while (read_pos <= range.from)
+                permutation[write_pos++] = permutation[read_pos++];
+            read_pos = range.to;
+        }
+        while (read_pos < permutation.size())
+            permutation[write_pos++] = permutation[read_pos++];
+        permutation.resize(write_pos);
+    }
+    else if (isIdentityPermutation(permutation, /*limit=*/ 0))
+        return;
+
+    transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(permutation, permutation.size()); });
     block.setColumns(columns);
 }
 

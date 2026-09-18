@@ -4,11 +4,13 @@
 
 #if USE_AWS_S3
 
+#include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 #include <IO/S3/ChecksumAlgorithm.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
+#include <aws/core/http/HttpRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
@@ -40,6 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 }
+
+#include <string>
 
 namespace DB::S3
 {
@@ -112,6 +116,16 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 }
 };
 
+/// Replace the significant `x-amz-` headers with their `x-goog-` analogue; GCS ignores the
+/// `x-amz-` spelling silently.
+Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
+
+void translateHeadersToGCS(Aws::Http::HttpRequest & request);
+
+/// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
+/// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
+std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
+
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {
@@ -130,19 +144,6 @@ public:
         }
 
         return params;
-    }
-
-    Aws::String GetChecksumAlgorithmName() const override
-    {
-        chassert(!is_s3express_bucket || checksum);
-
-        /// Return empty string is enough to disable checksums (see
-        /// AWSClient::AddChecksumToRequest [1] for more details).
-        ///
-        ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
-        if (!hasFlexibleChecksum() && !checksum)
-            return "";
-        return BaseRequest::GetChecksumAlgorithmName();
     }
 
     /// TODO Understand what is it. Maybe we need it...
@@ -176,9 +177,6 @@ public:
         api_mode = api_mode_;
     }
 
-    /// Disable checksum to avoid extra read of the input stream
-    void disableChecksum() const { checksum = false; }
-
     void setIsS3ExpressBucket()
     {
         is_s3express_bucket = true;
@@ -207,16 +205,11 @@ protected:
     mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
-    mutable bool checksum = true;
     bool is_s3express_bucket = false;
     RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::MD5;
 };
 
-class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
-{
-public:
-    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
-};
+using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
 
 class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
 {
@@ -234,14 +227,14 @@ class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
     bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum() && checksum; }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
 {
 public:
     bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum() && checksum; }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
 class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
@@ -259,14 +252,14 @@ class DeleteObjectRequest : public ExtendedRequest<Model::DeleteObjectRequest>
 {
 public:
     bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
 };
 
 class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
 {
 public:
     bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
 };
 
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>

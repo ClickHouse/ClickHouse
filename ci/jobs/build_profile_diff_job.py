@@ -302,7 +302,7 @@ def walk_cutoff(event_time: str, days: int) -> str:
     now = datetime.datetime.now(datetime.timezone.utc)
     anchor = now
     if event_time:
-        anchor = min(Utils.gh_str_to_datetime(event_time), now)
+        anchor = min(Utils.to_datetime(event_time, input_format="iso"), now)
     start = anchor.date() - datetime.timedelta(days=days + UPLOAD_DELAY_DAYS)
     return f"{start.isoformat()}T00:00:00Z"
 

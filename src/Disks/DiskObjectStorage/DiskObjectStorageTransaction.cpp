@@ -300,7 +300,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         ForkWriteBuffer::WriteBufferPtrs writers;
         for (const auto & location : enabled_locations)
         {
-            size_t use_buffer_size = buf_size;
             std::unique_ptr<WriteBufferFromFileBase> writer;
 
             if (location == disk_tx->cluster->getLocalLocation())
@@ -308,10 +307,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 ObjectStoragePtr object_storage = disk_tx->object_storages->takePointingTo(location);
 
                 #if ENABLE_DISTRIBUTED_CACHE
-                    bool use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(write_settings, *object_storage);
-
-                    if (use_distributed_cache && write_settings.distributed_cache_settings.write_through_cache_buffer_size)
-                        use_buffer_size = write_settings.distributed_cache_settings.write_through_cache_buffer_size;
+                    bool use_distributed_cache = disk_tx->metadata_storage->mayCacheByObjectPath()
+                        && DistributedCache::canUseDistributedCacheForWrite(write_settings, *object_storage);
                 #endif
 
                 writer = object_storage->writeObject(
@@ -319,7 +316,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     /// We always use mode Rewrite because we simulate append using metadata and different files
                     WriteMode::Rewrite,
                     /*attributes=*/std::nullopt,
-                    use_buffer_size,
+                    buf_size,
                     write_settings);
 
                 #if ENABLE_DISTRIBUTED_CACHE
@@ -334,7 +331,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     /// We always use mode Rewrite because we simulate append using metadata and different files
                     WriteMode::Rewrite,
                     /*attributes=*/std::nullopt,
-                    use_buffer_size,
+                    buf_size,
                     write_settings);
             }
 

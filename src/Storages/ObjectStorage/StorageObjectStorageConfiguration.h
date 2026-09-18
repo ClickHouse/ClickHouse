@@ -201,6 +201,8 @@ public:
     virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
+    virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
+
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
@@ -377,6 +379,8 @@ public:
     String url_overridden_by_base_setting;
 
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;

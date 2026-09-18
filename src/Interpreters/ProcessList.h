@@ -259,7 +259,7 @@ public:
     void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
-    /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
+    /// Optional argument `exception` allows to set an exception, a copy of which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }

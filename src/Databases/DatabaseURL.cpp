@@ -264,9 +264,10 @@ private:
 DatabaseURL::DatabaseURL(const String & name_, const String & base_url_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), base_url(base_url_)
 {
+    /// Not echoed back: password masking anchors on the `://` this value lacks, so it would log the password.
     if (!base_url.empty() && !hasURLScheme(base_url))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The base URL of a URL database must contain a scheme (e.g. https://), got: {}", base_url);
+                        "The base URL of a URL database must contain a scheme (e.g. https://)");
 }
 
 String DatabaseURL::getTableURL(const String & name) const

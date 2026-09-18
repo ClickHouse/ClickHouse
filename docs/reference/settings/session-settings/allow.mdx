@@ -52,6 +52,18 @@ When enabled, ClickHouse will calculate the size of files required for each subc
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
 (but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
 
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}]}/>
+
+Allow to execute correlated subqueries.
+
 ## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -72,6 +84,48 @@ Enable parallel per-partition pre-deduplication of the subquery result when buil
 
 Enable custom error code in function throwIf(). If true, thrown exceptions may have unexpected error codes.
 
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_glue_catalog`"}]}]}/>
+
+Allow database engine `DataLakeCatalog` with `catalog_type = 'glue'`
+
+Cloud default value: `1`.
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_iceberg`"}]}]}/>
+
+Allow database engine `DataLakeCatalog` with `catalog_type = 'iceberg'`
+
+Cloud default value: `1`.
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_unity_catalog`"}]}]}/>
+
+Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
+
+Cloud default value: `1`.
+
 ## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -89,6 +143,28 @@ If it is set to true, then a user is allowed to executed DDL queries.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}]}]}/>
 
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
+
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."}]}]}/>
+
+Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."}]}]}/>
+
+Enables delta-kernel writes feature.
 
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
@@ -144,6 +220,16 @@ Enables the `fuzzQuery` function that applies random AST mutations to a query st
 
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**Aliases**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."}]}]}/>
+
+Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
+
 ## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -195,6 +281,30 @@ Possible values:
 
 - [Sampling Query Profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler)
 - System table [trace_log](/reference/system-tables/trace_log)
+
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_join_right_table_sorting`."}]}]}/>
+
+If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]}/>
+
+Allow storing Kafka related offsets in ClickHouse Keeper. When enabled, a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
 
 ## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
@@ -272,9 +382,9 @@ Therefore, please do not enable this setting.
 
 ## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "New setting controlling whether extracted Tuple subcolumns can be nullable."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "New setting controlling whether extracted Tuple subcolumns can be nullable."}]}]}/>
 
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 
@@ -383,6 +493,18 @@ It helps to avoid unnecessary data copy during formatting.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
+
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}]}]}/>
+
+Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
 
 ## allow_window_partitions_independently {#allow_window_partitions_independently}
 

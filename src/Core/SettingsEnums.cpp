@@ -280,6 +280,11 @@ IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
      {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
      {"zstd", FormatSettings::ArrowCompression::ZSTD}})
 
+IMPLEMENT_SETTING_ENUM(ArrowUnsupportedTypes, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::ArrowUnsupportedTypes::THROW},
+     {"text", FormatSettings::ArrowUnsupportedTypes::TEXT},
+     {"binary", FormatSettings::ArrowUnsupportedTypes::BINARY}})
+
 IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ORCCompression::NONE},
      {"snappy", FormatSettings::ORCCompression::SNAPPY},
@@ -466,7 +471,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
      {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
-     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED},
+     {"advanced_chunked", MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeDynamicSerializationVersion,

@@ -95,7 +95,7 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void onProbePhaseFinish(size_t matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
 
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
 

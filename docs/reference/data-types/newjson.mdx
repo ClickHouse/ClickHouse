@@ -197,6 +197,31 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
+Bracket syntax `json['key']` can also be used to access JSON paths. Nested access is supported via chaining:
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+The bracket syntax works for `Nullable(JSON)` as well, and returns the same value and type as the
+equivalent dot syntax, following the same nullability rules as `json.key`: a path that can represent
+`NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for a `NULL` row,
+while a non-nullable typed path such as `Array` or `Map` keeps its default value there.
+
+Chained bracket access is flattened into a single JSON path when `optimize_functions_to_subcolumns`
+is enabled, so `json['a']['b']` reads the path `a.b` just like `json.a.b` does: a row where `a` holds
+a scalar instead of an object has no `a.b` and yields `NULL`. Without that optimization the outer
+access is applied to the `Dynamic` value of `json['a']` instead, and such a row follows the
+`dynamic_throw_on_type_mismatch` setting.
+
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
 
 ```sql title="Query"
@@ -1053,7 +1078,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 ## Lazy Type Hints (Experimental) {#lazy-type-hints}
 
 <Note>
-This feature is experimental and requires the setting `allow_experimental_json_lazy_type_hints` to be enabled.
+This feature is experimental and requires the setting `enable_json_lazy_type_hints` to be enabled.
 </Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
@@ -1069,7 +1094,7 @@ This means you can add type hints instantly, and the data will be gradually conv
 ### Enabling Lazy Type Hints {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Example {#lazy-type-hints-example}
@@ -1080,7 +1105,7 @@ CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
 -- Enable experimental setting
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
@@ -1122,7 +1147,7 @@ To materialize type hints in existing data, you can either:
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
 - Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
   - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
-  - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
+  - an explicit **data skipping index** — drop the index first, or disable `enable_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
   - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
 
   Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.

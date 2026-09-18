@@ -4,7 +4,7 @@
 -- the fixture tables of those tests (TPC-H nation/region are scale-independent).
 -- Expected results verified against the .result files of the original tests.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 CREATE TABLE nation (n_nationkey Int64, n_name String, n_regionkey Int64, n_comment String) ENGINE = Memory;

@@ -106,13 +106,12 @@ The Merge process depends on `settings_constraints_replace_previous`:
 
 ## Read-only mode {#read-only}
 
-Read-only mode is enabled by the `readonly` setting which is not to be confused
-with the `readonly` constraint type:
-- `readonly=0`: No read-only restrictions.
-- `readonly=1`: Only read queries are allowed and settings cannot be changed 
-   unless `changeable_in_readonly` is set.
-- `readonly=2`: Only read queries are allowed, but settings can be changed, 
-  except for `readonly` setting itself.
+Read-only mode is enabled by the `readonly` setting, which is not to be confused with the `readonly`
+constraint type. When `readonly = 1`, a setting that would otherwise be refused can still be changed if
+a `changeable_in_readonly` constraint allows it. For what the values of the setting mean, see the
+[settings reference](/reference/settings/session-settings/other#readonly); for which classes of query
+each value permits, and for how the HTTP interface sets it, see
+[permissions for queries](/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
 ### Example {#example-read-only}
 

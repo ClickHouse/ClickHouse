@@ -145,6 +145,14 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 /// with `pathToString` where a syscall wrapper or a log line wants a string.
 fs::path resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
+    /// A path with an embedded NUL cannot be validated: `std::string` and `fs::path` compare the whole
+    /// value, while every syscall the resolved path is later passed to (`open`, `mkdir`, `stat`) stops at
+    /// the NUL. A path shaped as `<target>\0/<traversal back into the base directory>` would therefore
+    /// pass the containment check below and still make the kernel operate on `<target>`, anywhere on the
+    /// filesystem. `listObjects` rejects such a path for its own reason - keep both checks.
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path contains an embedded NUL byte");
+
     const auto configured_base = pathFromString(base_path).lexically_normal();
     auto candidate = pathFromString(path); /// Not `const`: it is returned below, and constness would block the move.
 

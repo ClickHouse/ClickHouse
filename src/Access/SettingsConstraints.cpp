@@ -3,6 +3,7 @@
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
@@ -60,6 +61,16 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     if (settingConstraintIter != SETTINGS_SOURCE_RESTRICTIONS.end())
         return settingConstraintIter->second;
     return SettingSourceRestrictions(); // allows everything
+}
+
+/// The analyzer became mandatory in v26.9: `enable_analyzer` (canonically
+/// `allow_experimental_analyzer`) is an obsolete setting frozen at its default value, and the old
+/// query analysis is not supported anymore. Unlike the other obsolete settings, a change of this one
+/// is refused rather than ignored: the value decides how a query is analyzed, so accepting it and
+/// running the query the other way would silently return a different result.
+bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & new_value)
+{
+    return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;
 }
 
 /// Settings that are always allowed to change in readonly mode, regardless of the user profile's
@@ -445,6 +456,23 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         if (getCurrentValueOfSetting(current_settings, change.name, current_value)
             && new_value == castValueOfSetting<Settings>(change.name, current_value))
             return true;
+    }
+
+    if (isChangeDisablingTheAnalyzer(setting_name, new_value))
+    {
+        if (reaction == THROW_ON_VIOLATION)
+            throw Exception(
+                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                "Setting '{}' cannot be disabled: the analyzer is mandatory since v26.9 and the old query analysis is no longer "
+                "supported. Remove '{} = 0' from the query, the session, the settings profile and the client configuration. "
+                "To compare with the old query analysis, use a ClickHouse version older than v26.9",
+                change.name, change.name);
+        /// Not on the clamp paths. They are reached for a query that another server sent to this one,
+        /// and the analyzer is still turned off for a whole query by a few remaining internal code
+        /// paths on the initiator (`EXPLAIN AST`, a view read by the old interpreter); the servers of a
+        /// cluster have to keep agreeing on how such a query is analyzed. Dropping the change instead
+        /// would make the initiator and this server disagree.
+        return true;
     }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);

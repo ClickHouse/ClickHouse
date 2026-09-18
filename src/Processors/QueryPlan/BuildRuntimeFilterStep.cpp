@@ -1,19 +1,20 @@
 #include <string_view>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
-#include <Interpreters/Context.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -32,14 +33,7 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int PARAMETER_OUT_OF_BOUND;
 }
-
-/// Runtime bloom filter should be small and fast otherwise it is pointless
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
-static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
-static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 
 
 static ITransformingStep::Traits getTraits()
@@ -92,21 +86,11 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
 {
-    if (!bloom_filter_bytes)
-        bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
-    if (bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter size {} is too big, maximum: {}",
-            bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
-
-    if (!bloom_filter_hash_functions)
-        bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
-    if (bloom_filter_hash_functions > MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
-            bloom_filter_hash_functions, MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
+    const auto bloom_filter_parameters
+        = resolveRuntimeBloomFilterDefaults(RuntimeBloomFilterParameters{bloom_filter_bytes, bloom_filter_hash_functions});
+    bloom_filter_bytes = bloom_filter_parameters.bytes;
+    bloom_filter_hash_functions = bloom_filter_parameters.hash_functions;
+    validateRuntimeBloomFilterParameters(bloom_filter_parameters);
 }
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

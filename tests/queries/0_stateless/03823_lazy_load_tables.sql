@@ -35,16 +35,17 @@ SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND na
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't2';
 
--- Verify views, materialized views, dictionaries, and table functions are NOT lazy-loaded.
+-- Verify views, materialized views, dictionaries, aliases, and table functions are NOT lazy-loaded.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE_1:Identifier}.mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.src;
 CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict (id UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(0);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.al ENGINE = Alias({CLICKHOUSE_DATABASE_1:String}, 'src');
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name IN ('src', 'mv') ORDER BY name;
+SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name IN ('al', 'src', 'mv') ORDER BY name;
 SELECT name FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict';
 
 -- RENAME on an unloaded lazy proxy.

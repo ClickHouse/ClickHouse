@@ -953,7 +953,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 /// FIXME: This can happen if we created a publication with this table but then got an exception that this
                 /// table has primary key or something else.
                 LOG_ERROR(log,
-                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})"
+                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {}) "
                           "Please manually remove this table from replication (DETACH TABLE query) to avoid redundant replication",
                           table_name, storages.size());
                 markTableAsSkipped(relation_id, table_name);

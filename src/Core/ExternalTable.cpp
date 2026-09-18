@@ -28,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Poco/Net/MessageHeader.h>
 
 
@@ -42,6 +43,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 static Block materializeScalar(InputFormatPtr input)
@@ -266,6 +268,22 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     }
 
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
+
+    /// The schema of an external table is bound once, by the first part that names it (see the branch above),
+    /// and the `_structure` / `_types` fields of every later part with the same name must describe that same
+    /// schema. The input format parses the part with the schema its own fields declare, and the columns then
+    /// reach the table as a `Chunk`, which carries no types at all: `MemorySink::consume` labels them with the
+    /// table header again. A part declaring other types would therefore not be rejected anywhere, and its data
+    /// would later be read as the type the header names - a type confusion on data the client controls.
+    if (resolved && !isCompatibleHeader(sample_block, metadata_snapshot->getSampleBlock()))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Structure of the data for external table {} does not match the structure of the table. "
+            "Received:\n{}\nExpected:\n{}",
+            backQuoteIfNeed(temporary_id.table_name),
+            sample_block.dumpStructure(),
+            metadata_snapshot->getSampleBlock().dumpStructure());
+
     auto sink = storage->write(ASTPtr(), metadata_snapshot, getContext(), /*async_insert=*/false);
 
     /// Write data

@@ -3,7 +3,7 @@
 -- wrapping statement, joined `UNNEST` must pad with NULLs, and the aggregates
 -- must return NULL (not the type default) over an empty input.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 SELECT '-- the semantic settings survive an explicit SETTINGS clause';

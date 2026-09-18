@@ -1799,14 +1799,6 @@ void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values,
     }
 }
 
-std::optional<Field> UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/) const
-{
-    if (data.size() != input_size)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
-
-    return Field(decodeParquetUUID(data.data()));
-}
-
 std::optional<Field> FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)

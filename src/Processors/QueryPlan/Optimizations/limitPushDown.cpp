@@ -199,7 +199,7 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset);
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, limit_by->alwaysReadTillEnd());
 }
 
 }

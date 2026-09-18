@@ -57,3 +57,7 @@ SELECT randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 0, 800); -- {
 SELECT randomHadamardTransform([]::Array(Float32), 0, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT randomHadamardTransform([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT randomHadamardTransform([1, 2]::Array(Float32), materialize(1)); -- { serverError ILLEGAL_COLUMN }
+
+-- AVX2 Test for Dimensions of the form 2^k
+SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(64), 'Array(Float32)'), 42));
+SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(256), 'Array(Float32)'), 42));

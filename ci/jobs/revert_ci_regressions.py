@@ -1320,7 +1320,7 @@ def culprit_guard(
     merged_at = pull_request.get("mergedAt") or ""
     if not merged_at:
         return f"pull request #{number} has no merge time recorded"
-    merged = Utils.gh_str_to_datetime(merged_at)
+    merged = Utils.to_datetime(merged_at, input_format="iso")
     if now - merged > timedelta(days=MAX_CULPRIT_AGE_DAYS):
         return (
             f"pull request #{number} was merged {(now - merged).days} days ago, longer "

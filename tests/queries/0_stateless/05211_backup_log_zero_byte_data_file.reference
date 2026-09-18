@@ -1,0 +1,30 @@
+-- Log, the zero-byte column is the only data file
+source total_rows	100
+BACKUP_CREATED
+RESTORED
+restored total_rows	100
+-- Log, a normal column comes first
+BACKUP_CREATED
+RESTORED
+restored sum(k)	4950
+restored s reads as source	1
+-- restoring that backup onto the non-empty source table appends to it
+RESTORED
+total_rows after appending	200
+-- TinyLog, a normal column comes first
+BACKUP_CREATED
+RESTORED
+restored sum(k)	4950
+restored s reads as source	1
+-- TinyLog, the zero-byte column comes first
+BACKUP_CREATED
+RESTORED
+restored total_bytes matches source	1
+-- TinyLog, the zero-byte column alone: it keeps no row count on disk, so the rows are gone
+BACKUP_CREATED
+RESTORED
+restored count()	0
+-- a Log table that was never inserted into carries no data to back up
+BACKUP_CREATED
+RESTORED
+restored count()	0

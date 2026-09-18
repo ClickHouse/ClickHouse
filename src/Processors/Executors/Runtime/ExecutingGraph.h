@@ -19,7 +19,6 @@ namespace DB
 /// Graph of executing pipeline.
 class ExecutingGraph
 {
-public:
     struct Node;
 
     /// Edge represents connection between OutputPort and InputPort.
@@ -110,10 +109,12 @@ public:
         }
     };
 
+
+public:
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
@@ -126,10 +127,10 @@ public:
         Cancelled,
     };
 
-    /// Update processor at `start_node` (call IProcessor::prepare).
+    /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(Node * start_node, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);

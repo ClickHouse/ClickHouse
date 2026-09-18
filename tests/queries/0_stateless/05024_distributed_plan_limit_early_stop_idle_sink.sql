@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer
+-- Tags: no-fasttest
 -- no-fasttest: the remote distributed plan needs the stateless worker configuration.
--- no-old-analyzer: `make_distributed_plan` requires the analyzer.
 -- A satisfied `LIMIT` must stop the upstream stages even when nothing flows through them
 -- anymore. Probe rows match the first join only in the first block, so after that block every
 -- stage upstream of the `LIMIT` goes silent. The backward stop must then cross idle exchanges:

@@ -43,11 +43,6 @@ workflow = Workflow.Config(
         *[job for job in JobConfigs.unittest_jobs if "fuzzer" not in job.name],
         *[
             job
-            for job in JobConfigs.integration_test_asan_master_jobs
-            if "asan" in job.name
-        ],
-        *[
-            job
             for job in JobConfigs.integration_test_jobs_required
             if any(t in job.name for t in ("asan", "release"))
         ],

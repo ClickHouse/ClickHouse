@@ -1,27 +1,27 @@
-#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Columns/ColumnConst.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -457,11 +457,6 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
         if (hint)
             statistics.column_statistics[column_name].avg_bytes = *hint;
     }
-}
-
-namespace QueryPlanOptimizations
-{
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 }
 
 /// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.

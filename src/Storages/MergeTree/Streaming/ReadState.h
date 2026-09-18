@@ -37,6 +37,7 @@ public:
     bool isSourceMarkedIdle() const;
 
     PartitionCursor getPartitionCursor(const std::string & partition) const;
+    const std::map<std::string, PartitionCursor> & getPartitionCursors() const;
     Field getPartitionWatermark(const std::string & partition) const;
     bool isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const;
 

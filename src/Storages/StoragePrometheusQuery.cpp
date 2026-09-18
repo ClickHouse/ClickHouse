@@ -107,9 +107,10 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    UInt64 time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -149,6 +150,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;

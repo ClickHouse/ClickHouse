@@ -270,7 +270,7 @@ private:
 
     void validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const;
 
-    void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope);
+    void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope, bool validate_key_types);
 
     void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 

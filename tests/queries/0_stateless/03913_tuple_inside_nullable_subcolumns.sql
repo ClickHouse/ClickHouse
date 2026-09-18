@@ -26,12 +26,12 @@ INSERT INTO test_variant VALUES (CAST(toUInt64(5), 'Variant(Tuple(UInt64, String
 
 SET allow_experimental_nullable_tuple_type = 0;
 SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String)')), getSubcolumn(v, 'Tuple(UInt64, String)') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String)');
-SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null');
 SELECT toTypeName(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64') FROM test_variant ORDER BY isNull(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64');
 
 SET allow_experimental_nullable_tuple_type = 1;
 SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String)')), getSubcolumn(v, 'Tuple(UInt64, String)') FROM test_variant ORDER BY isNull(getSubcolumn(v, 'Tuple(UInt64, String)')), getSubcolumn(v, 'Tuple(UInt64, String)');
-SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null');
 SELECT toTypeName(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64') FROM test_variant ORDER BY isNull(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64');
 DROP TABLE test_variant;
 
@@ -42,12 +42,12 @@ INSERT INTO test_dynamic VALUES (CAST(tuple(toUInt64(1), 'x'), 'Dynamic(max_type
 
 SET allow_experimental_nullable_tuple_type = 0;
 SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))');
-SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null');
 SELECT toTypeName(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64') FROM test_dynamic ORDER BY isNull(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64');
 
 SET allow_experimental_nullable_tuple_type = 1;
 SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))') FROM test_dynamic ORDER BY isNull(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))');
-SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null');
 SELECT toTypeName(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64') FROM test_dynamic ORDER BY isNull(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64');
 DROP TABLE test_dynamic;
 

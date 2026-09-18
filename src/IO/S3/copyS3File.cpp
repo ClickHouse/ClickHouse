@@ -102,7 +102,6 @@ namespace
             /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
             , upload_checksum_algorithm(
                 use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
-                        && (!client_ptr->isChecksumDisabled() || client_ptr->isS3ExpressBucket())
                     ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
                     : std::nullopt)
             , num_parts(0)
