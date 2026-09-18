@@ -55,6 +55,12 @@ schema inference reads it back as [String](/reference/data-types/string).
 (Vortex chooses dictionary and other encodings adaptively by itself).
 [DateTime](/reference/data-types/datetime) columns are written as `vortex.timestamp` with second precision,
 so they are read back as [DateTime64](/reference/data-types/datetime64) with scale 0.
+A `vortex.timestamp` carries a unit and not a scale, so only the scales that a unit spells exactly -
+0, 3, 6 and 9 - survive schema inference; every other scale is written in the next wider unit and
+inferred as that unit's scale, so [DateTime64](/reference/data-types/datetime64)`(1)` and `(2)` come back
+as `DateTime64(3)`, `(4)` and `(5)` as `DateTime64(6)`, and `(7)` and `(8)` as `DateTime64(9)`. The values
+are rescaled and keep their meaning; only the declared scale widens, and naming the type explicitly reads
+it back unchanged. The same holds for [Time64](/reference/data-types/time64).
 `vortex.time` is a time of day, while [Time/Time64](/reference/data-types/time64) in ClickHouse also holds
 negative values and values of 24 hours and more; writing such a value throws instead of writing a wrong one.
 [IPv4](/reference/data-types/ipv4) columns are written as `U32` because Vortex has no type for IP addresses,
