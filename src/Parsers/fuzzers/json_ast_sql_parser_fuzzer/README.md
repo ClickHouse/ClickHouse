@@ -248,15 +248,25 @@ skipped), so a mutated statement cannot destroy the fixture.
 
 Query errors are expected outcomes. Findings are crashes, sanitizer reports, `LOGICAL_ERROR`
 exceptions (fatal in sanitizer and debug builds) and hangs. `tests/fuzz/json_ast_sql_execution_fuzzer.options`
-passes `--max_execution_time=5`, `--max_rows_to_read` and network timeouts to `clickhouse local`, like `clickhouse_fuzzer`.
+passes `--max_execution_time=2`, `--max_rows_to_read` and network timeouts to `clickhouse local`, like `clickhouse_fuzzer`.
 
 ```bash
 ninja -C build_fuzz json_ast_sql_execution_fuzzer
 EXEC_FUZZER=build_fuzz/programs/local/fuzzers/json_ast_sql_execution_fuzzer
 mkdir -p tmp/json_ast_exec_corpus
-$EXEC_FUZZER -timeout=60 -rss_limit_mb=8192 -max_len=65536 tmp/json_ast_exec_corpus tests/fuzz/json_ast_sql_parser_fuzzer.in \
-    -ignore_remaining_args=1 --max_execution_time=5 --max_rows_to_read=1000000 --max_memory_usage=2000000000
+$EXEC_FUZZER -detect_leaks=0 -timeout=60 -rss_limit_mb=8192 -max_len=65536 -jobs=2 -workers=2 -max_total_time=2400 \
+    tmp/json_ast_exec_corpus tests/fuzz/json_ast_sql_parser_fuzzer.in \
+    -ignore_remaining_args=1 --output-format=Null --max_execution_time=2 --max_rows_to_read=1000000 \
+    --max_memory_usage=2000000000 --connect_timeout=1 --external_storage_connect_timeout_sec=1 \
+    --http_connection_timeout=1 --http_send_timeout=1 --http_receive_timeout=1 --http_max_tries=1
 ```
+
+A query costs a few hundred milliseconds in a sanitizer build, so expect a few executions per
+second per worker. Prefer `-jobs=N -workers=N` over `-fork=N` for this target: every fork-mode job
+starts a fresh process that loads the fixture and replays the whole corpus, which dominates once the
+corpus has a few thousand inputs. Keep the corpus small with `-merge=1` (below), and keep the network
+and read limits from `tests/fuzz/json_ast_sql_execution_fuzzer.options`, otherwise mutants that call
+`mysql`, `remote` or `url`, or read from `numbers()` without a limit, wait for the timeouts.
 
 It consumes the same seed corpus as the parser fuzzer (`tests/fuzz/build.sh` copies it under the
 execution fuzzer's name). `JSON_AST_FUZZER_DUMP` and `JSON_AST_FUZZER_STATS` work as above;

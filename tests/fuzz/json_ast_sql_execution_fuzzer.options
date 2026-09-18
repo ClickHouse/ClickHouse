@@ -11,13 +11,21 @@ detect_leaks = 0
 
 [fuzzer_arguments]
 --output-format=Null
---max_execution_time=5
+--max_execution_time=2
 # Infinite sources (`numbers()`, `generateRandom()`) otherwise run until the time limit on every input.
 --max_rows_to_read=1000000
 --max_bytes_to_read=2000000000
 --max_memory_usage=2000000000
 --max_parser_backtracks=10000
 --max_query_size=0
+# Table functions and engines that reach out to other servers (`mysql`, `remote`, `url`, `s3`) must fail fast.
+--connect_timeout=1
+--connect_timeout_with_failover_ms=200
+--connections_with_failover_max_tries=1
+--receive_timeout=2
+--send_timeout=2
+--external_storage_connect_timeout_sec=1
+--external_storage_rw_timeout_sec=1
 --http_connection_timeout=1
 --http_send_timeout=1
 --http_receive_timeout=1
