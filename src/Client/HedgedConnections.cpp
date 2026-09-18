@@ -3,6 +3,7 @@
 
 #include <Client/HedgedConnections.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -21,7 +22,7 @@ namespace Setting
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
-    extern const SettingsDialect dialect;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -135,6 +136,27 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     pipeline_for_new_replicas.add(send_query_plan);
 }
 
+bool HedgedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
+{
+    /// The first replica is established before the query is sent, but a later hedge may
+    /// select any remaining replica: one whose version is not known yet, or an already
+    /// established usable but stale one that `setBestUsableReplica` keeps for later.
+    /// Use the SQL fallback rather than making that hedge unavailable after a timeout.
+    if (hedged_connections_factory.maySelectReplicaBelowQueryPlanSerializationVersion(version))
+        return false;
+
+    for (const OffsetState & offset_state : offset_states)
+    {
+        for (const ReplicaState & replica : offset_state.replicas)
+        {
+            if (replica.connection && replica.connection->getQueryPlanSerializationVersion() < version)
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -197,9 +219,9 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
-        /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-        modified_settings[Setting::dialect] = Dialect::clickhouse;
-        modified_settings[Setting::dialect].changed = false;
+        /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the
+        /// overrides below, so all of them are marked changed afterwards and are serialized.
+        prepareSecondaryQuerySettings(modified_settings);
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],
@@ -226,6 +248,13 @@ void HedgedConnections::sendQuery(
         /// all servers involved in the distributed query processing.
         modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
 
+        /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
+        /// servers of a distributed query must agree on it even when it comes only from server/profile
+        /// defaults. Force it into the changed set, so it is always sent to the remote servers.
+        modified_settings.set(
+            "enable_packed_string_keys_in_aggregation",
+            static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
+
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
 
@@ -250,12 +279,25 @@ void HedgedConnections::disconnect()
             if (replica.connection)
                 finishProcessReplica(replica, true);
 
-    if (hedged_connections_factory.hasEventsInProcess())
-    {
-        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
-            epoll.remove(hedged_connections_factory.getFileDescriptor());
+    /// Must precede the factory stop: it empties the factory epoll, after which
+    /// numberOfProcessingReplicas() reads 0 and the descriptor would leak.
+    if (hedged_connections_factory.hasEventsInProcess()
+        && hedged_connections_factory.numberOfProcessingReplicas() > 0)
+        epoll.remove(hedged_connections_factory.getFileDescriptor());
 
+    stopChoosingReplicasAndRetractPending();
+}
+
+void HedgedConnections::stopChoosingReplicasAndRetractPending()
+{
+    if (hedged_connections_factory.hasEventsInProcess())
         hedged_connections_factory.stopChoosingReplicas();
+
+    /// Unconditional: an offset can be queued while the factory is already idle.
+    while (!offsets_queue.empty())
+    {
+        offset_states[offsets_queue.front()].next_replica_in_process = false;
+        offsets_queue.pop();
     }
 }
 
@@ -296,8 +338,7 @@ void HedgedConnections::sendCancel()
     /// had been created differs from the thread where the dtor of
     /// QueryPipeline will be called and the initial thread could be already
     /// destroyed (especially when the system is under pressure).
-    if (hedged_connections_factory.hasEventsInProcess())
-        hedged_connections_factory.stopChoosingReplicas();
+    stopChoosingReplicasAndRetractPending();
 
     cancelled = true;
 
@@ -359,7 +400,18 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
+    {
+        /// A reader can get here after `RemoteQueryExecutor::finish` cancelled and drained these
+        /// connections from another pipeline thread: `onUpdatePorts` runs in parallel with `read`
+        /// once LIMIT closes the port. Nothing is left to read then, and that is not an error.
+        if (cancelled)
+        {
+            Packet res;
+            res.type = Protocol::Server::EndOfStream;
+            return res;
+        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+    }
 
     if (epoll.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending events in epoll.");
@@ -398,9 +450,15 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
             offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
             offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
+            ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
+
+            /// The factory is already stopped, so no replacement can arrive; marking the offset
+            /// as pending would suppress the timeout exit in resumePacketReceiver().
+            if (cancelled)
+                continue;
+
             offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(static_cast<int>(location.offset));
-            ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
         }
         else
@@ -534,11 +592,13 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
     }
 
     /// If we disabled changing replica with all offsets, we need to stop choosing new replicas.
-    if (hedged_connections_factory.hasEventsInProcess() && offsets_with_disabled_changing_replica == offset_states.size())
+    if (offsets_with_disabled_changing_replica == offset_states.size())
     {
-        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
+        if (hedged_connections_factory.hasEventsInProcess()
+            && hedged_connections_factory.numberOfProcessingReplicas() > 0)
             epoll.remove(hedged_connections_factory.getFileDescriptor());
-        hedged_connections_factory.stopChoosingReplicas();
+
+        stopChoosingReplicasAndRetractPending();
     }
 }
 

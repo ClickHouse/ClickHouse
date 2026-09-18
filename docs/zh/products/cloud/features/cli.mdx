@@ -79,30 +79,30 @@ clickhousectl cloud service delete <service-id>
 创建和管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
 
 ```bash
-# 列出 Postgres 服务
+# List Postgres services
 clickhousectl cloud postgres list
 
-# 创建 Postgres 服务
+# Create a Postgres service
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
-  --size c6gd.xlarge \
+  --size m6gd.xlarge \
   --pg-version 18
 
-# 获取服务详情
+# Get service details
 clickhousectl cloud postgres get <pg-id>
 
-# 更新服务
-clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
+# Update a service
+clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
 
-# 重置密码
+# Reset the password
 clickhousectl cloud postgres reset-password <pg-id> --generate
 
-# 只读副本与时间点恢复
+# Read replicas and point-in-time restore
 clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 
-# 删除服务
+# Delete a service
 clickhousectl cloud postgres delete <pg-id>
 ```
 

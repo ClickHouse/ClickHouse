@@ -1,4 +1,5 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
@@ -99,16 +100,39 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->setComment(node->clone());
     if (auto node = getCodec())
         res->setCodec(node->clone());
+    /// `ParserColumnDeclaration` inserts `settings` right after `codec`, before `statistics_desc`,
+    /// `ttl` and `collation`; reproduce that order so the copy has the same shape - and the same
+    /// tree hash - as the original.
+    if (auto node = getSettings())
+        res->setSettings(node->clone());
     if (auto node = getStatisticsDesc())
         res->setStatisticsDesc(node->clone());
     if (auto node = getTTL())
         res->setTTL(node->clone());
     if (auto node = getCollation())
         res->setCollation(node->clone());
-    if (auto node = getSettings())
-        res->setSettings(node->clone());
 
     return res;
+}
+
+void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` is part of `getID`, which the default implementation hashes. The rest of the
+    /// non-child members carry meaning and must be hashed here: `x UInt8 DEFAULT 1` and
+    /// `x UInt8 MATERIALIZED 1` differ only in `default_specifier`.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 64, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
+    hash_state.update(default_specifier);
+    hash_state.update(null_modifier.has_value());
+    if (null_modifier.has_value())
+        hash_state.update(*null_modifier);
+    hash_state.update(static_cast<UInt8>(ephemeral_default));
+    hash_state.update(static_cast<UInt8>(primary_key_specifier));
+    /// The role each child plays (the type, the default expression, the comment, ...) is recorded
+    /// only in `packed_indices`. Without it, `x UInt8 COMMENT 'a'` and `x UInt8 TTL 'a'` would
+    /// hash equally: both have the same literal as the only child besides the type.
+    hash_state.update(packed_indices);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
@@ -173,6 +197,12 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
             nested_frame.need_parens = true;
         ttl->format(ostr, format_settings, state, nested_frame);
     }
+
+    /// The specifier survives only where the parser does not normalize it away (`ALTER TABLE ...
+    /// ADD/MODIFY COLUMN`): `ParserCreateQuery` moves per-column PRIMARY KEY into the storage
+    /// definition and clears it. Not printing it would silently drop it from the formatted query.
+    if (primary_key_specifier)
+        ostr << ' ' << "PRIMARY KEY";
 
     if (auto collation = getCollation())
     {
@@ -274,10 +304,12 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     /// `ttl`/`default_expression` are arbitrary expressions and stay untyped.
     setComment(r.readStringLiteralChild("comment"));
     setCodec(r.readSpecialFunctionChild("codec", "CODEC"));
+    /// `ParserColumnDeclaration` inserts `settings` right after `codec`; reproduce that order so
+    /// the restored AST has the same shape - and the same tree hash - as a parsed one.
+    setSettings(r.readChildOfType<ASTSetQuery>("settings"));
     setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
     setTTL(r.readChild("ttl"));
     setCollation(r.readChildOfType<ASTCollation>("collation"));
-    setSettings(r.readChildOfType<ASTSetQuery>("settings"));
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)

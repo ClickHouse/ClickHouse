@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouse 프라이머리 키는 어떻게 다릅니까?
 </div>
 
-[여기](/ko/get-started/migrate/bigquery/index)에 설명했듯이, BigQuery와 마찬가지로 ClickHouse는 테이블의 프라이머리 키(primary key) 컬럼 값에 고유성을 강제하지 않습니다.
+[여기](/ko/get-started/migrate/bigquery/overview)에 설명했듯이, BigQuery와 마찬가지로 ClickHouse는 테이블의 프라이머리 키(primary key) 컬럼 값에 고유성을 강제하지 않습니다.
 
 BigQuery의 클러스터링과 유사하게 ClickHouse 테이블의 데이터는 프라이머리 키 컬럼 순서대로 정렬되어 디스크에 저장됩니다. 이 정렬 순서는 쿼리 최적화기가 재정렬을 피하고, 조인 시 메모리 사용량을 줄이며, LIMIT 절에서 short-circuit를 수행하는 데 활용됩니다.
 반면 BigQuery와 달리 ClickHouse는 프라이머리 키 컬럼 값을 기반으로 [희소 프라이머리 인덱스(sparse primary index)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 자동으로 생성합니다. 이 인덱스는 프라이머리 키 컬럼에 대한 필터가 포함된 모든 쿼리의 속도를 높이는 데 사용됩니다. 구체적으로는 다음과 같습니다.
@@ -263,11 +263,11 @@ Ok.
   #### 권장 사항
 </div>
 
-파티셔닝은 데이터 관리 기법으로 고려해 볼 수 있습니다. 특히 시계열 데이터를 운영할 때 클러스터에서 데이터를 만료 처리해야 하는 경우에 적합합니다. 예를 들어 가장 오래된 파티션은 [간단히 삭제할 수 있습니다](/ko/reference/statements/alter/partition#drop-partitionpart).
+파티셔닝은 고려해 볼 만한 데이터 관리 기법입니다. 특히 시계열 데이터를 운영할 때 클러스터에서 데이터를 만료 처리해야 하는 경우에 적합합니다. 예를 들어 가장 오래된 파티션은 [간단히 삭제할 수 있습니다](/ko/reference/statements/alter/partition#drop-partitionpart).
 
 중요: 파티셔닝 키 표현식이 카디널리티가 높은 집합을 만들지 않도록 하십시오. 즉, 100개가 넘는 파티션을 생성하는 것은 피해야 합니다. 예를 들어 클라이언트 식별자나 이름처럼 카디널리티가 높은 컬럼으로 데이터를 파티셔닝하지 마십시오. 대신 클라이언트 식별자나 이름을 `ORDER BY` 표현식의 첫 번째 컬럼으로 두십시오.
 
-> 내부적으로 ClickHouse는 삽입된 데이터에 대해 [파트를 생성합니다](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design). 더 많은 데이터가 삽입될수록 파트 수는 증가합니다. 쿼리 성능을 저하시킬 수 있는 과도한 파트 수(읽어야 할 파일 수가 더 많아지기 때문입니다)를 방지하기 위해, 파트는 백그라운드 비동기 프로세스에서 함께 머지됩니다. 파트 수가 [미리 구성된 한도](/ko/reference/settings/merge-tree-settings#parts_to_throw_insert)를 초과하면 ClickHouse는 삽입 시 [&quot;too many parts&quot; 오류](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)와 함께 예외를 발생시킵니다. 이는 정상적인 운영에서는 발생하지 않아야 하며, ClickHouse가 잘못 구성되었거나 잘못 사용된 경우(예: 작은 삽입이 너무 많은 경우)에만 발생합니다. 파트는 각 파티션마다 서로 독립적으로 생성되므로, 파티션 수가 증가하면 파트 수도 증가합니다. 즉, 파티션 수의 배수가 됩니다. 따라서 카디널리티가 높은 파티셔닝 키는 이 오류를 유발할 수 있으므로 피해야 합니다.
+> 내부적으로 ClickHouse는 삽입된 데이터에 대해 [파트를 생성합니다](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design). 더 많은 데이터가 삽입될수록 파트 수는 증가합니다. 쿼리 성능을 저하시킬 수 있는 과도한 파트 수(읽어야 할 파일 수가 더 많아지기 때문입니다)를 방지하기 위해, 파트는 백그라운드 비동기 프로세스에서 함께 머지됩니다. 파트 수가 [미리 구성된 한도](/ko/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)를 초과하면 ClickHouse는 삽입 시 [&quot;too many parts&quot; 오류](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)와 함께 예외를 발생시킵니다. 이는 정상적인 운영에서는 발생하지 않아야 하며, ClickHouse가 잘못 구성되었거나 잘못 사용된 경우(예: 작은 삽입이 너무 많은 경우)에만 발생합니다. 파트는 각 파티션마다 서로 독립적으로 생성되므로, 파티션 수가 증가하면 파트 수도 증가합니다. 즉, 파티션 수의 배수가 됩니다. 따라서 카디널리티가 높은 파티셔닝 키는 이 오류를 유발할 수 있으므로 피해야 합니다.
 
 <div id="materialized-views-vs-projections">
   ## 구체화된 뷰(Materialized View)와 PROJECTION

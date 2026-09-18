@@ -299,16 +299,25 @@ void KeeperOverDispatcher::multi(
     multi(std::span(requests), std::move(callback));
 }
 
+KeeperOverDispatcher::ResponseCallback KeeperOverDispatcher::promotingMultiCallback(MultiCallback callback)
+{
+    return [user_callback = std::move(callback)](const ZooKeeperResponsePtr & response)
+    {
+        auto & multi_response = dynamic_cast<MultiResponse &>(*response);
+        /// In-process responses do not pass through ZooKeeperMultiResponse::readImpl, so a
+        /// failed multi still has a ZOK aggregate here; normalize it before the user callback.
+        promoteMultiResponseError(multi_response);
+        user_callback(multi_response);
+    };
+}
+
 void KeeperOverDispatcher::multi(
     std::span<const RequestPtr> requests,
     MultiCallback callback)
 {
     const auto request = std::shared_ptr<ZooKeeperMultiRequest>(new ZooKeeperMultiRequest(requests, {}));  // NOLINT(modernize-make-shared)
 
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
-    {
-        callback(dynamic_cast<const MultiResponse &>(*response));
-    });
+    pushRequest(request, promotingMultiCallback(std::move(callback)));
 }
 
 void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)

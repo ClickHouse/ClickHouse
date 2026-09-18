@@ -1,10 +1,11 @@
 {
   "groups": [
     {
-      "group": "Главная",
+      "group": "Home",
       "icon": "house",
-      "pages": [],
-      "root": "ru/integrations/language-clients/index"
+      "pages": [
+        "ru/integrations/language-clients/index"
+      ]
     },
     {
       "$ref": "js/navigation.json"
@@ -31,14 +32,13 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "Сторонние клиенты",
+      "group": "Third-party clients",
       "icon": "users",
       "pages": [
-        "ru/integrations/language-clients/third-party/moose-olap",
         "ru/integrations/language-clients/third-party/client-libraries"
       ]
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "Клиентские библиотеки"
+  "item": "Language clients"
 }

@@ -344,8 +344,8 @@ void WindowStep::serialize(Serialization & ctx) const
 
     writeStringBinary(window_description.window_name, ctx.out);
 
-    serializeSortDescription(window_description.partition_by, ctx.out);
-    serializeSortDescription(window_description.order_by, ctx.out);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.version);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.version);
 
     serializeWindowFrame(window_description.frame, ctx.out);
 
@@ -371,8 +371,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     WindowDescription window_description;
     readStringBinary(window_description.window_name, ctx.in);
 
-    deserializeSortDescription(window_description.partition_by, ctx.in);
-    deserializeSortDescription(window_description.order_by, ctx.in);
+    deserializeSortDescription(window_description.partition_by, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(window_description.order_by, ctx.in, ctx.version, ctx.max_type_complexity);
 
     window_description.frame = deserializeWindowFrame(ctx.in);
 

@@ -42,7 +42,7 @@ QueryPlan makeTrivialPlan()
 /// plan via ensureSerialized) is sent to several connections that may have negotiated different query
 /// plan serialization versions. serializeForReceiver must therefore reuse the cache only for a receiver
 /// that understands the cached version, and re-serialize on the fly for an older receiver - otherwise a
-/// not-yet-upgraded replica in a rolling upgrade would get a version-5 stream and reject it.
+/// not-yet-upgraded replica in a rolling upgrade would get a newer-versioned stream and reject it.
 TEST(QueryPlanSerializeForReceiver, CachedPlanReSerializedForOlderReceiver)
 {
     auto plan = makeTrivialPlan();
@@ -61,9 +61,9 @@ TEST(QueryPlanSerializeForReceiver, CachedPlanReSerializedForOlderReceiver)
         EXPECT_EQ(readLeadingVersion(out.str()), 5u);
     }
 
-    /// A receiver older than version 5 (a pre-PR server) must NOT get the cached version-5 stream. The
-    /// plan is re-serialized on the fly at the receiver's version, which omits the version-5 settings, so
-    /// the stream differs from the cache and carries the older version header.
+    /// A receiver older than the cached version must NOT get the cached stream. The plan is
+    /// re-serialized on the fly at the receiver's version, which omits the settings that version does
+    /// not know, so the stream differs from the cache and carries the older version header.
     {
         WriteBufferFromOwnString out;
         plan.serializeForReceiver(out, 4);
@@ -75,9 +75,9 @@ TEST(QueryPlanSerializeForReceiver, CachedPlanReSerializedForOlderReceiver)
 
 /// A step that cannot be written below its own minimum serialization version at all (WindowStep is
 /// only registered under QueryPlanStepRegistry since version 4) must raise the plan's required
-/// version, so that a serialization path without version negotiation (the stateless-worker task in
-/// DistributedPlanExecutor, pinned to version 3) serializes such a plan at the version it needs
-/// instead of hitting the fail-closed check in WindowStep::serialize.
+/// version, so that a caller which does not serialize at the newest version anyway (see
+/// QueryPlan::serializeForReceiver) serializes such a plan at the version it needs instead of hitting
+/// the fail-closed check in WindowStep::serialize.
 TEST(QueryPlanRequiredSerializationVersion, WindowStepRaisesRequiredVersion)
 {
     auto plan = makeTrivialPlan();

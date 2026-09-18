@@ -1,5 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <array>
@@ -25,6 +26,8 @@ namespace DB
     DECLARE(UInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.", 0) \
     DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
+    DECLARE(UInt64, max_bytes_before_external_distinct, 0, "Tracked query memory threshold that triggers external `DISTINCT`. See the corresponding query setting in `Settings`.", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_distinct, 0., "Fraction of available memory used to derive the external `DISTINCT` trigger. See the corresponding query setting in `Settings`.", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, "If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, "If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
@@ -57,6 +60,10 @@ namespace DB
     DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 100'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before aggregation", 0) \
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
     DECLARE(Bool, enable_parallel_single_level_merge, false, "Parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently.", 0) \
+    DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, "Use the PackedStringRef-based hash table for single-String-key aggregation.", 0) \
+    DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or adaptive_aggregator_freeze_threshold_bytes of memory, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
+    DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 0, "The number of keys at which the adaptive aggregator freezes a thread's local hash table.", 0) \
+    DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The memory size at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
@@ -118,7 +125,10 @@ namespace DB
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
+    DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
+    DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
 
 
 // clang-format on
@@ -143,12 +153,12 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-/// Settings added in query plan serialization version 5 (see DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
-/// They must not be emitted when serializing for a receiver older than version 5: such a receiver does
-/// not know these names and BaseSettings::readBinary throws on unknown setting names, which would break
-/// mixed-version distributed queries (with serialize_query_plan) even when these settings are at
-/// their defaults.
-static constexpr std::array<std::string_view, 2> settings_since_version_5 =
+/// Settings added in query plan serialization version
+/// DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION. They must not be emitted
+/// when serializing for a receiver older than that: such a receiver does not know these names and
+/// BaseSettings::readBinary throws on unknown setting names, which would break mixed-version
+/// distributed queries (with serialize_query_plan) even when these settings are at their defaults.
+static constexpr std::array<std::string_view, 2> join_in_memory_compression_settings =
 {
     "max_memory_usage",
     "enable_join_in_memory_compression",
@@ -156,16 +166,17 @@ static constexpr std::array<std::string_view, 2> settings_since_version_5 =
 
 void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out, UInt64 version) const
 {
-    if (version >= 5)
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION)
     {
         impl->writeChangedBinary(out);
         return;
     }
 
-    /// Omit the version-5 settings for an older receiver by resetting them to defaults on a copy
-    /// (resetting clears the "changed" flag, so writeChangedBinary no longer emits them).
+    /// Omit the join in-memory compression settings for an older receiver by resetting them to
+    /// defaults on a copy (resetting clears the "changed" flag, so writeChangedBinary no longer
+    /// emits them).
     QueryPlanSerializationSettingsImpl filtered(*impl);
-    for (const auto & name : settings_since_version_5)
+    for (const auto & name : join_in_memory_compression_settings)
         filtered.resetToDefault(name);
     filtered.writeChangedBinary(out);
 }
@@ -179,7 +190,7 @@ bool QueryPlanSerializationSettings::isChanged(std::string_view name) const
     return impl->isChanged(name);
 }
 
-/// Which of the version-5 settings the join implementation that a step will really run can consume.
+/// Which of the join in-memory compression settings the join implementation that a step will really run can consume.
 struct JoinSettingsConsumption
 {
     bool in_memory_compression = false;
@@ -229,7 +240,7 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
                 /// not evaluate the trigger at all) and the compression pass is a forced
                 /// `shrinkStoredBlocksToFit(..., true)`, which skips the threshold branch entirely. Its
                 /// only memory bounds are `max_rows_in_join` / `max_bytes_in_join`
-                /// (`GraceHashJoin::hasMemoryOverflow`), neither of which is a version-5 setting.
+                /// (`GraceHashJoin::hasMemoryOverflow`), neither of which is a version-gated setting.
                 /// `GraceHashJoin` is built only for the kinds it supports, so keep scanning: an
                 /// unsupported shape falls through to the next algorithm in the list.
                 result.in_memory_compression = true;
@@ -274,17 +285,17 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
 
 UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
 {
-    /// This cannot be keyed on the "changed" flags of the version-5 settings: a step assigns every
+    /// This cannot be keyed on the "changed" flags of the join in-memory compression settings: a step assigns every
     /// setting it serializes, and assignment marks a setting changed even when the value equals the
     /// default (see JoinSettings::updatePlanSettings), so e.g. `max_memory_usage` is flagged on every
-    /// serialized join step and a flag-based check would raise every join fragment to version 5.
+    /// serialized join step and a flag-based check would raise every join fragment to that version.
     /// Key it on behavior instead: only an actually enabled in-memory join compression requires the
     /// higher version, because dropping `enable_join_in_memory_compression` from the stream would
     /// silently disable the requested feature. `max_memory_usage` does not raise the version even
     /// though HashJoin also consumes it with compression off (as the shrinkStoredBlocksToFit
     /// trigger): a receiver that does not get it from the stream restores it from its query context
-    /// settings (see JoinStepLogical::deserialize), and a pre-version-5 receiver behaves exactly
-    /// like a pre-version-5 server - a graceful degradation.
+    /// settings (see JoinStepLogical::deserialize), and such a receiver behaves exactly like a
+    /// server from before the setting existed - a graceful degradation.
     /// The exception is a step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged
     /// by JoinSettings::updatePlanSettings): the receiver's query context carries only the outer
     /// query's value, so an omitted step-local value cannot be restored and the stream must carry it.
@@ -302,8 +313,8 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// (join_kind_consumes_in_memory_compression): a `ConstantJoin` (a CROSS JOIN or a join with a
     /// constant predicate) keeps its own threshold-based compression path and never consults
     /// `enable_join_in_memory_compression`, and PASTE join stores no build side - raising such a
-    /// fragment to version 5 would only make older receivers reject a stream whose extra setting
-    /// they would ignore anyway.
+    /// fragment to the newer version would only make older receivers reject a stream whose extra
+    /// setting they would ignore anyway.
     /// A `DirectKeyValueJoin` (a dictionary or key-value storage on the right side) needs no such
     /// exception, even though it ignores `enable_join_in_memory_compression` too: it is chosen only
     /// when the right side is a `JoinStepLogicalLookup` (see `buildQueryPlanForJoinNode`), a step
@@ -329,7 +340,7 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
         && (consumption.step_local_max_memory_usage || join_executes_as_constant_join);
 
     if (compression_matters || step_local_max_memory_usage_matters)
-        return 5;
+        return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION;
     return 1;
 }
 

@@ -1,11 +1,16 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Core/Field.h>
 #include <gtest/gtest.h>
 
@@ -27,6 +32,28 @@ TEST(ColumnObject, CreateEmpty)
     ASSERT_TRUE(col_object.getSharedDataPathsAndValues().second->empty());
     ASSERT_EQ(col_object.getMaxDynamicTypes(), 10);
     ASSERT_EQ(col_object.getMaxDynamicPaths(), 20);
+}
+
+TEST(ColumnObject, HasOnlyTypeDefaults)
+{
+    auto static_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
+    auto static_column = static_type->createColumn();
+    auto & static_object = assert_cast<ColumnObject &>(*static_column);
+
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+    static_object.insert(Object{});
+    static_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+
+    auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1)");
+    auto dynamic_column = dynamic_type->createColumn();
+    auto & dynamic_object = assert_cast<ColumnObject &>(*dynamic_column);
+
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{});
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_FALSE(dynamic_object.hasOnlyTypeDefaults());
 }
 
 TEST(ColumnObject, GetName)
@@ -331,29 +358,6 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
     ASSERT_EQ(col_object2[2], (Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}}));
 }
 
-TEST(ColumnObject, SkipSerializedInArena)
-{
-    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, b.d UInt32, a.b Array(String))");
-    auto col = type->createColumn();
-    auto & col_object = assert_cast<ColumnObject &>(*col);
-    col_object.insert(Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}});
-    col_object.insert(Object{{"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}});
-    col_object.insert(Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}});
-
-    Arena arena;
-    const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
-
-    auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    ASSERT_TRUE(in.eof());
-}
-
 TEST(ColumnObject, rollback)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.a UInt32, a.b UInt32)");
@@ -438,7 +442,7 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
         dynamic_paths[path] = IColumn::mutate(column);
 
-    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 16);
+    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 4, 16);
     column_object->repairDuplicatesInDynamicPathsAndSharedData(0);
     ASSERT_EQ((*column_object)[0], (Object{{"a", Field(1u)}}));
     ASSERT_EQ((*column_object)[1], (Object{{"a", Field(1u)}, {"b", Field(1u)}, {"c", Field(1u)}}));
@@ -491,6 +495,103 @@ TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
     col_object.deserializeAndInsertFromArena(buf, nullptr);
     ASSERT_EQ(col_object.size(), 2u);
     ASSERT_EQ(col_object[1], col_object[0]);
+}
+
+/// A logically equal object must hash identically whether its paths are stored in dynamic path
+/// columns or in shared_data.
+TEST(ColumnObject, HashIsIndependentOfDynamicVsSharedLayout)
+{
+    std::vector<Object> rows = {
+        Object{{"a", Field(1)}, {"b", Field("x")}, {"c", Field(2.5)}, {"d", Array{Field(1), Field(2)}}},
+        Object{{"a", Field(10)}, {"e", Field("y")}, {"f", Field(7u)}},
+        Object{{"g", Field(Null())}, {"a", Field(-3)}},
+    };
+
+    auto build = [&](const String & type_str)
+    {
+        auto type = DataTypeFactory::instance().get(type_str);
+        auto col = type->createColumn();
+        auto & obj = assert_cast<ColumnObject &>(*col);
+        for (const auto & row : rows)
+            obj.insert(row);
+        return col;
+    };
+
+    /// Large budget -> every path lives in its own dynamic path column.
+    auto all_dynamic = build("JSON(max_dynamic_types=32, max_dynamic_paths=64)");
+    /// Tiny budget -> overflow paths spill into shared_data.
+    auto with_shared = build("JSON(max_dynamic_types=32, max_dynamic_paths=2)");
+
+    /// Make sure something actually ended up in shared_data.
+    const auto & shared_offsets = assert_cast<const ColumnObject &>(*with_shared).getSharedDataOffsets();
+    ASSERT_GT(shared_offsets.back(), 0u);
+
+    for (size_t n = 0; n < rows.size(); ++n)
+    {
+        SipHash ha;
+        SipHash hb;
+        all_dynamic->updateHashWithValue(n, ha);
+        with_shared->updateHashWithValue(n, hb);
+        ASSERT_EQ(ha.get128(), hb.get128()) << "hash mismatch at row " << n;
+    }
+}
+
+/// A shared_data entry can legitimately be encoded as the Nothing type with no payload: this is
+/// exactly how `SerializationDynamic::serializeBinary` encodes a NULL value (see
+/// SerializationDynamic.cpp: "Serialize NULL as Nothing type with no value"), and pre-existing code in
+/// ColumnObject.cpp (e.g. `getValueNameImpl`, and the shared-data duplicate-repair path) already
+/// special-cases `isNothing(...)` on a type decoded from shared_data for exactly this reason.
+///
+/// NOTE: this is NOT reachable via `insertRangeFrom` demoting a NULL dynamic-path value into
+/// shared_data: `ColumnObject::serializePathAndValueIntoSharedData` explicitly skips NULL values
+/// ("we cannot distinguish cases when path has Null value or is absent in the row and consider them
+/// equivalent"), so demotion of a NULL never writes a shared_data entry for that path/row at all. We
+/// build the entry directly instead, using the same encoding `SerializationDynamic::serializeBinary`
+/// produces for a NULL value.
+///
+/// Decoding such an entry must not throw (`SerializationNothing::deserializeBinary` always throws
+/// `NOT_IMPLEMENTED`) and must hash deterministically, so hash-based GROUP BY / DISTINCT / uniq* keep
+/// working on it.
+TEST(ColumnObject, HashSharedDataNothingEntry)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=0)");
+    auto col = type->createColumn();
+    auto & object = assert_cast<ColumnObject &>(*col);
+
+    /// Manually append a shared_data entry for path "g" whose value is encoded as Nothing (a
+    /// serialized NULL with no payload).
+    auto [shared_data_paths, shared_data_values] = object.getSharedDataPathsAndValues();
+    shared_data_paths->insertData("g", 1);
+    auto & shared_data_values_chars = shared_data_values->getChars();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+        encodeDataType(std::make_shared<DataTypeNothing>(), value_buf);
+    }
+    shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
+    object.getSharedDataOffsets().push_back(shared_data_paths->size());
+
+    ASSERT_EQ(object.size(), 1u);
+
+    /// Must not throw (regression: used to throw NOT_IMPLEMENTED from SerializationNothing).
+    SipHash actual;
+    ASSERT_NO_THROW(object.updateHashWithValue(0, actual));
+
+    /// The hash must match hashing the path together with ColumnVariant::NULL_DISCRIMINATOR directly,
+    /// i.e. the same null handling ColumnDynamic::updateHashWithValue performs for a NULL value,
+    /// rather than hashing a type name and attempting to deserialize a value that doesn't exist.
+    /// SipHash::get128 finalizes and mutates internal state, so it must only be called once per
+    /// instance (see the ATTENTION note on SipHash::get128) - capture the result instead of calling
+    /// it again below.
+    SipHash expected;
+    expected.update(std::string_view("g"));
+    expected.update(ColumnVariant::NULL_DISCRIMINATOR);
+    auto actual_hash = actual.get128();
+    ASSERT_EQ(expected.get128(), actual_hash);
+
+    /// Hashing must be deterministic across repeated calls.
+    SipHash actual_again;
+    object.updateHashWithValue(0, actual_again);
+    ASSERT_EQ(actual_hash, actual_again.get128());
 }
 
 TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)

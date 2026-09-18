@@ -45,7 +45,7 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
 }
 
 
-ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
     const ColumnWithTypeAndName & elem = arguments[0];
 
@@ -75,8 +75,13 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
     {
-        /// Merely return the embedded null map.
-        return nullable->getNullMapColumnPtr();
+        /// A null map byte only has to be non-zero to mean NULL, so it cannot be returned as the result.
+        auto res_column = ColumnUInt8::create(input_rows_count);
+        const auto & null_map = nullable->getNullMapData();
+        auto & res_data = res_column->getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res_data[i] = null_map[i] != 0;
+        return res_column;
     }
 
     /// Since no element is nullable, return a zero-constant column representing
@@ -104,7 +109,7 @@ REGISTER_FUNCTION(IsNull)
     FunctionDocumentation::Description description = R"(
 Checks if the argument is `NULL`.
 
-Also see: operator [`IS NULL`](/sql-reference/operators#is_null).
+Also see: operator [`IS NULL`](/reference/operators#is_null).
     )";
     FunctionDocumentation::Syntax syntax = "isNull(x)";
     FunctionDocumentation::Arguments arguments = {

@@ -96,3 +96,19 @@ settings disk=disk(name='test7',
                    endpoint = 'http://localhost:11111/test/common/',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse); -- { serverError UNKNOWN_ELEMENT_IN_CONFIG }
+
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='02963_web_meta_on_local',
+                   type = object_storage,
+                   object_storage_type = local_blob_storage,
+                   path='./02963_web_meta_on_local/',
+                   metadata_type = web); -- { serverError INVALID_CONFIG_PARAMETER }
+
+drop table if exists test;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='02963_web_index_meta_on_local',
+                   type = object_storage,
+                   object_storage_type = local_blob_storage,
+                   path='./02963_web_index_meta_on_local/',
+                   metadata_type = web_index); -- { serverError INVALID_CONFIG_PARAMETER }

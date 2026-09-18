@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -36,8 +37,11 @@ QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings
  * Usage lifecycle within QueryPlan (de)serialization:
  * Serialize:
  *  1. For every node/step in depth-first traversal QueryPlan::serialize creates a QueryPlanSerializationSettings instance.
- *  2. The step is asked to `serializeSettings(settings)` (step-specific method)
+ *  2. The step is asked to `serializeSettings(settings, version)` (step-specific method)
  *     so it copies only the settings it depends on (usually via context->getSettingsRef()).
+ *     `version` is the query-plan serialization version the stream is being written with
+ *     (already the minimum of ours and the peer's), so a step can withhold a setting name
+ *     the receiving peer would reject as unknown.
  *  3. `writeChangedBinary()` writes out just the non-default values after the step header, preceding the step-specific payload.
  * Deserialize:
  *  1. A new settings instance is constructed per step right after reading the step's output header.
@@ -54,8 +58,9 @@ struct QueryPlanSerializationSettings
     /// Serialize only settings that differ from defaults.
     /// `version` is the negotiated query plan serialization version of the receiver: settings that
     /// were introduced after that version are omitted, because a receiver does not know their names
-    /// and `readBinary` throws on unknown setting names.
-    void writeChangedBinary(WriteBuffer & out, UInt64 version) const;
+    /// and `readBinary` throws on unknown setting names. It defaults to this server's own version,
+    /// i.e. "write everything", which is what a caller that is not talking to a peer wants.
+    void writeChangedBinary(WriteBuffer & out, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION) const;
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
@@ -68,7 +73,7 @@ struct QueryPlanSerializationSettings
     /// changing the receiver's behavior, i.e. the version below which `writeChangedBinary` would
     /// omit a version-gated setting whose value actually matters. Returns the baseline version 1
     /// when omitting the version-gated settings degrades gracefully (the receiver then behaves like
-    /// an older server); in particular, a version-5 setting merely being marked changed does not
+    /// an older server); in particular, a version-gated setting merely being marked changed does not
     /// raise the version, because steps mark every serialized setting changed even at its default.
     UInt64 getMinRequiredVersion() const;
 
@@ -81,7 +86,7 @@ struct QueryPlanSerializationSettings
     /// Whether the serializing join step's kind can resolve to an implementation that consults
     /// `enable_join_in_memory_compression`. CROSS (and COMMA, always executed as CROSS) join keeps
     /// its own dedicated threshold-based compression path and PASTE join stores no build side, so
-    /// their fragments must not be raised to the version carrying the setting - a pre-version-5
+    /// their fragments must not be raised to the version carrying the setting - an older
     /// receiver would reject them during a rolling upgrade for a setting they never consume. Not a
     /// serialized setting; it only feeds getMinRequiredVersion. Defaults to true so a step that
     /// does not know its join kind keeps the conservative version bump.
@@ -97,8 +102,9 @@ struct QueryPlanSerializationSettings
     /// Whether `MergeJoin` supports the serializing join step's shape (its kind, strictness and
     /// single-clause ON expression), i.e. whether `join_algorithm = 'partial_merge'` /
     /// `'prefer_partial_merge'` really builds a `MergeJoin` for it and `'auto'` really builds a
-    /// `JoinSwitcher`. Those implementations consume none of the version-5 settings (a `JoinSwitcher`
-    /// only the compression one), so such a fragment must not be raised to version 5 just because the
+    /// `JoinSwitcher`. Those implementations consume none of the join in-memory compression settings
+    /// (a `JoinSwitcher` only the compression one), so such a fragment must not be raised to the version
+    /// carrying them just because the
     /// `join_algorithm` set also contains a hash fallback that will never be reached. Not a serialized
     /// setting; it only feeds getMinRequiredVersion. Defaults to false so a step that does not know
     /// its shape keeps the conservative version bump.
@@ -107,7 +113,8 @@ struct QueryPlanSerializationSettings
     /// Whether `FullSortingMergeJoin` supports the serializing join step's shape, i.e. whether an
     /// enabled `join_algorithm = 'full_sorting_merge'` / `'parallel_full_sorting_merge'` really
     /// builds one for it instead of falling through to a later entry in the list. It consumes none
-    /// of the version-5 settings, so such a fragment must not be raised to version 5 just because
+    /// of the join in-memory compression settings, so such a fragment must not be raised to the
+    /// version carrying them just because
     /// the `join_algorithm` set also contains a hash fallback that will never be reached. Not a
     /// serialized setting; it only feeds getMinRequiredVersion. Defaults to false so a step that
     /// does not know its shape keeps the conservative version bump.
