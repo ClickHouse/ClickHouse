@@ -16,5 +16,7 @@ merge_max_block_size	1234	config
 index_granularity	16384	other
 -- settings compatibility rolled back, against the current defaults
 1	0
+-- a session's compatibility does not decide what the server's defaults are reported to be
+0
 -- and none of them when nothing sets anything
 0

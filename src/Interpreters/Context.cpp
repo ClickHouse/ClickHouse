@@ -7611,7 +7611,12 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        ///
+        /// From the global context, not from this one: the baseline is built once and then shared by every
+        /// session and by every table created afterwards, so taking the `compatibility` of whichever session
+        /// happens to ask first would let that session decide the server's defaults until restart - including
+        /// what `system.engine_settings` reports them to be.
+        mt_settings.applyCompatibilitySetting(getGlobalContext()->getSettingsRef()[Setting::compatibility]);
 
         mt_settings.loadFromConfig("merge_tree", config);
 
@@ -7630,9 +7635,9 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
 
-        /// Respect compatibility setting from the default profile.
-        /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        /// Respect compatibility setting from the default profile, and from the global context rather than
+        /// this one - see `getMergeTreeSettings`.
+        mt_settings.applyCompatibilitySetting(getGlobalContext()->getSettingsRef()[Setting::compatibility]);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);

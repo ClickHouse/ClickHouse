@@ -2233,15 +2233,22 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
     /// that distinction is visible, before the loop below overwrites it.
     ///
-    /// The shared-metadata settings are excluded rather than merely expected to be absent. `getSettings`
-    /// returns an untouched object when this table has not finished `startup()` - databases load
-    /// asynchronously, and a table whose startup threw stays queryable - or after `shutdown()` dropped the
-    /// metadata handle. Everything then looks unassigned, and without this the values below would be taken
-    /// from the `CREATE` query and still stamped `SharedMetadata`, naming Keeper as the source of a value
-    /// Keeper was never asked for.
+    /// `getSettings` returns an untouched object when this table has not finished `startup()` or after
+    /// `shutdown()` dropped the metadata handle, and the same condition holds here: in that state nothing
+    /// below came from Keeper, so neither the values nor the source may say it did.
+    ///
+    /// Defensive rather than reachable from SQL today: reading a table whose startup threw waits on its
+    /// startup job and rethrows, so the query fails before it can report anything. The guard is here because
+    /// this function must not answer for Keeper on a state `getSettings` itself refuses to answer for.
+    const bool rebuilt_from_shared_metadata = startup_finished && tryGetFilesMetadata() != nullptr;
+
+    /// What the rebuild did not assign: the definition is then the only source of the value the table works
+    /// with. The shared-metadata settings belong here only when the rebuild did not run - when it did, they
+    /// carry what Keeper holds, which is what the table uses however its own `CREATE` query reads.
     NameSet not_assigned_by_rebuild;
     for (const auto & setting : settings)
-        if (setting.origin == SettingOrigin::Default && !held_in_shared_metadata.contains(setting.name))
+        if (setting.origin == SettingOrigin::Default
+            && (!rebuilt_from_shared_metadata || !held_in_shared_metadata.contains(setting.name)))
             not_assigned_by_rebuild.insert(setting.name);
 
     /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
@@ -2267,10 +2274,13 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
 
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
-    /// replica's `CREATE` query still states whatever it was created with.
-    for (auto & setting : settings)
-        if (held_in_shared_metadata.contains(setting.name))
-            setting.origin = SettingOrigin::SharedMetadata;
+    /// replica's `CREATE` query still states whatever it was created with. Only where the rebuild
+    /// read it, though - otherwise these rows carry what the definition states, as every other
+    /// unassigned setting does, and saying `shared_metadata` would name a source never consulted.
+    if (rebuilt_from_shared_metadata)
+        for (auto & setting : settings)
+            if (held_in_shared_metadata.contains(setting.name))
+                setting.origin = SettingOrigin::SharedMetadata;
 
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
     /// so the rebuilt settings object always carries its default. Report what the table actually

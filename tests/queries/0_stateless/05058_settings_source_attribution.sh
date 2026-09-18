@@ -87,6 +87,14 @@ CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a;
 SELECT count() > 0 AS rolled_back, countIf(value = \`default\`) AS same_as_default
 FROM system.table_settings WHERE table = 'mt' AND source = 'compatibility';"
 
+echo "-- a session's compatibility does not decide what the server's defaults are reported to be"
+# The `MergeTree` baseline is built once and shared by every session and every table created afterwards, so
+# it takes the compatibility of the server, not of whoever asks first. Coverage of that rule rather than a
+# regression guard: on a server whose baseline is already built, a session could not have poisoned it anyway.
+$CLICKHOUSE_CLIENT -q "
+SET compatibility = '23.3';
+SELECT countIf(value != \`default\`) FROM system.engine_settings WHERE engine_name = 'MergeTree';"
+
 echo "-- and none of them when nothing sets anything"
 $CLICKHOUSE_LOCAL -q "
 CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a;
