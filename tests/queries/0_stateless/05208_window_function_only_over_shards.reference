@@ -21,3 +21,7 @@ synchronous socket	2
 synchronous socket	2
 hedged requests	2
 hedged requests	2
+constant next to the window function	1	2
+constant next to the window function	1	2
+constant, every shard is remote	x	2
+constant, every shard is remote	x	2

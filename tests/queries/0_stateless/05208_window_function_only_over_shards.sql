@@ -23,3 +23,10 @@ SELECT 'without block marshalling', c FROM (SELECT count() OVER () AS c FROM rem
 SELECT 'without compression', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, network_compression_method = 'NONE';
 SELECT 'synchronous socket', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, use_hedged_requests = 0, async_socket_for_remote = 0;
 SELECT 'hedged requests', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, use_hedged_requests = 1;
+
+-- A constant next to the window function is computed by the shards, so their blocks do carry a column
+-- and the row count travels in it. Kept as a regression guard for the shape: the initiator can also
+-- reconstruct such a constant itself instead of reading it from the block, and it then sizes it from
+-- the row count the block carries.
+SELECT 'constant next to the window function', c1, c2 FROM (SELECT 1 AS c1, count() OVER () AS c2 FROM remote('127.0.0.{1,2}', system.one)) ORDER BY c1, c2;
+SELECT 'constant, every shard is remote', c1, c2 FROM (SELECT 'x' AS c1, count() OVER () AS c2 FROM remote('127.0.0.{1,2}', system.one)) ORDER BY c1, c2 SETTINGS prefer_localhost_replica = 0;
