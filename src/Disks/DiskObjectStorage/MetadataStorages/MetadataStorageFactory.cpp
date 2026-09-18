@@ -1,5 +1,4 @@
 #include <base/pathToString.h>
-#include <Common/assert_cast.h>
 #include <Common/Macros.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
@@ -32,6 +31,18 @@ void checkSingleLocation(const ClusterConfigurationPtr & cluster)
 {
     if (cluster->getConfiguration().size() > 1)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Disk supports only single location clusters");
+}
+
+const WebObjectStorage & getWebObjectStorage(const ObjectStoragePtr & object_storage, std::string_view metadata_type)
+{
+    const auto * web_object_storage = dynamic_cast<const WebObjectStorage *>(object_storage.get());
+    if (!web_object_storage)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Metadata type `{}` requires a web object storage, but the disk is configured with {} object storage",
+            metadata_type,
+            object_storage->getName());
+    return *web_object_storage;
 }
 
 std::string getObjectKeyCompatiblePrefix(
@@ -220,7 +231,7 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*local_object_storage));
+        return std::make_shared<MetadataStorageFromStaticFilesWebServer>(getWebObjectStorage(local_object_storage, "web"));
     });
 }
 
@@ -237,7 +248,7 @@ static void registerMetadataStorageFromIndexPages(MetadataStorageFactory & facto
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-        return std::make_shared<MetadataStorageFromIndexPages>(assert_cast<const WebObjectStorage &>(*local_object_storage));
+        return std::make_shared<MetadataStorageFromIndexPages>(getWebObjectStorage(local_object_storage, "web_index"));
     });
 }
 
