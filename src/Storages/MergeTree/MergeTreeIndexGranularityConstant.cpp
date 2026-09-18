@@ -105,6 +105,11 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
     if (end == 0)
         return 0;
 
+    /// The range contains only the final mark, which has no rows.
+    /// Without this check `end - begin` below underflows.
+    if (begin >= num_marks_without_final)
+        return 0;
+
     size_t total_rows = 0;
     if (end >= num_marks_without_final)
     {
