@@ -6,9 +6,9 @@ title: 'Prometheus HTTP API and PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
 
 ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
 
@@ -16,7 +16,17 @@ To expose ClickHouse's own metrics for a Prometheus server to scrape, see the [P
 
 ## Prerequisites {#prerequisites}
 
-### Enable the TimeSeries setting {#enable-the-timeseries-setting}
+The setup steps differ between ClickHouse Cloud and self-managed ClickHouse. Follow the section for your deployment.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+PromQL support in ClickHouse Cloud is in private preview. The services that take part in the private preview already have the `enable_time_series_table` setting and the Prometheus API endpoints configured. Other ClickHouse Cloud services do not have this configuration, and you cannot enable the feature yourself on such a service. The `SET enable_time_series_table` statement and the `http_handlers` configuration in the next sections apply to self-managed deployments.
+</Note>
+
+On a service that takes part in the private preview, continue at [Create a TimeSeries table](#create-a-timeseries-table). The service serves the endpoint paths listed in the [endpoint table](#configure-prometheus-api).
+
+### Self-managed: enable the TimeSeries setting {#enable-the-timeseries-setting}
 
 Enable the `enable_time_series_table` setting for the user that creates and accesses the table:
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 For HTTP API requests, enable `enable_time_series_table` in the profile of the API user.
 
-### Configure the Prometheus API endpoints {#configure-prometheus-api}
+### Self-managed: configure the Prometheus API endpoints {#configure-prometheus-api}
 
 Configure one prefix-routed handler on the main ClickHouse HTTP port:
 

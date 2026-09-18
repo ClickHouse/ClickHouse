@@ -50,7 +50,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_COMP
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX = 8;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS = 11;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -118,11 +119,13 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
 /// `STALENESS` and the column alias) to a serialized sort description, so a plan with
 /// `ORDER BY ... WITH FILL` can be shipped in full.
-/// Version 19 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
+/// Version 19 writes a per-step serialization version next to every step, so a step can change its
+/// own bytes without moving this global version (see the constant below).
+/// Version 20 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
 /// filtering of a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view. An older worker does not read the
 /// flag and would optimize the fragment as if the view were an ordinary subquery, which is exactly the
 /// row disclosure the flag prevents, so the serializer fails closed on a plan that carries a barrier.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -148,7 +151,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
-/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// First query-plan serialization version that registers a `LimitRange` step. Gates serializing a
 /// `LimitRangeStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
 /// First query-plan serialization version that carries the estimate-derived decisions of
@@ -160,10 +163,19 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_AL
 /// bounds in a serialized sort description. Gates `FillingStep::serialize` and the fill payload in
 /// `serializeSortDescription`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP = 18;
+/// First query-plan serialization version that writes a per-step serialization version next to each
+/// step. Each step owns its version and bumps it on any change to its bytes; the version travels on
+/// the wire so a reader refuses a step version it does not know rather than misparsing it. The global
+/// version then only needs to move once per release, not on every step change.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS = 19;
+/// First global query-plan version that writes version 1 of `Distinct` and `PreDistinct`, adding the
+/// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
+/// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 /// First query-plan serialization version that carries the per-step security-barrier flag. Used to fail
 /// closed when a plan containing a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view is about to be sent
 /// to a peer that would silently optimize the barrier away.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 19;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
