@@ -874,13 +874,16 @@ def test_default_codec_recovered_from_lz4hc_part(start_cluster):
     node4.query("DROP TABLE lz4hc_default_codec SYNC")
 
 
-def test_default_codec_recovered_from_encryption_only_default(start_cluster):
-    # Under `'AES_128_GCM_SIV'` every stream is a bare encryption frame, which the recovery must accept as proof of the default.
+@pytest.mark.parametrize(
+    "default", ["AES_128_GCM_SIV", "AES_128_GCM_SIV, AES_256_GCM_SIV"]
+)
+def test_default_codec_recovered_from_encryption_only_default(start_cluster, default):
+    # With an encryption-only default every stream is an encryption frame or chain, which the recovery must accept as proof of the default.
     node4.query(
-        """
+        f"""
     CREATE TABLE encryption_only_default (n Nullable(UInt64))
     ENGINE MergeTree ORDER BY tuple()
-    SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = 'AES_128_GCM_SIV'
+    SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = '{default}'
     """
     )
     node4.query(
@@ -895,7 +898,7 @@ def test_default_codec_recovered_from_encryption_only_default(start_cluster):
         .strip()
         .split("\t")
     )
-    assert codec == "AES_128_GCM_SIV"
+    assert codec == default
 
     node4.query(f"ALTER TABLE encryption_only_default DETACH PART '{part_name}'")
 

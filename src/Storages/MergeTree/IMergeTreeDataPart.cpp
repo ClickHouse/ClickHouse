@@ -2242,13 +2242,13 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
 
                 auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
 
-                /// The default is the chain's single generic stage, searched for because structural substreams drop type-specific ones.
-                /// A bare `NONE` or encryption frame counts too.
+                /// The default is the chain's generic or encryption stage, searched for because structural substreams drop type-specific ones.
+                /// A bare `NONE` frame counts too.
                 if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
                 {
                     for (const auto & stage : multiple->getCodecs())
                     {
-                        if (stage->isGenericCompression())
+                        if (stage->isGenericCompression() || stage->isEncryption())
                         {
                             result = stage;
                             break;
