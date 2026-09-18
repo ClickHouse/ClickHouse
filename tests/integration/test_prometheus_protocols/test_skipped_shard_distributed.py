@@ -237,10 +237,15 @@ def test_every_replica_is_checked_not_one_per_shard():
     response = write("two_replicas", "/rep/write")
     assert response.status_code >= 400, response.text
     assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    # Both refusals name the replica they count, never the sibling that verified.
+    assert f"{node2.name}:9000" in response.text, response.text
+    assert f"{node1.name}:9000" not in response.text, response.text
     error = node1.query_and_get_error(
         f"SELECT * FROM prometheusQuery(prom_rep, 'm', {START_TIME})"
     )
     assert "UNEXPECTED_TABLE_ENGINE" in error
+    assert f"{node2.name}:9000" in error, error
+    assert f"{node1.name}:9000" not in error, error
     # The refused write reached neither replica.
     assert node2.query("SELECT count() FROM ts_rep").strip() == "0"
     assert node1.query(series_count("two_replicas", "ts_rep")).strip() == "0"
@@ -284,7 +289,7 @@ def test_a_missing_shard_table_is_refused_for_a_write_and_never_validated():
     response = write("while_missing", "/missing/write")
     assert response.status_code >= 500, response.text
     assert "ALL_CONNECTION_TRIES_FAILED" in response.text
-    assert "no table" in response.text, response.text
+    assert "no table default.ts_missing" in response.text, response.text
     pending = node1.query(
         "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_missing'"
     )

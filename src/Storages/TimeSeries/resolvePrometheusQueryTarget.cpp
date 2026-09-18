@@ -34,7 +34,6 @@
 
 #include <algorithm>
 #include <ranges>
-#include <set>
 
 
 namespace DB
@@ -192,6 +191,14 @@ namespace
         /// requires READ ON REMOTE above, so the probe reports nothing the caller's own cluster() could not.
         auto probe_context = Context::createCopy(context->getGlobalContext());
         probe_context->makeQueryContext();
+        /// A secondary query of the request it serves, as the wire already sends it: a shard can then name that
+        /// request, and the kind pins the per-probe id ask() sets out of the initial one.
+        probe_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        probe_context->setInitialQueryId(context->getInitialQueryId());
+        if (const auto & initial_address = context->getClientInfo().initial_address)
+            probe_context->setInitialAddress(*initial_address);
+        /// The initial user is left unset: an interserver secret authenticates a secondary query as the user it
+        /// names, while the probe asks each replica on this server's own rights.
         probe_context->setCurrentQueryId("");
         /// An unreachable replica then answers nothing rather than failing the probe; a missing table is still
         /// an exception, which the caller of a shard cannot be left to discover for itself.
@@ -202,29 +209,28 @@ namespace
         probe_context->setSetting("describe_include_virtual_columns", false);
         probe_context->setSetting("print_pretty_type_names", false);
 
-        UInt64 wrong_engine_replicas = 0;
-        UInt64 wrong_type_replicas = 0;
-        std::set<String> wrong_types;
+        Strings wrong_engine_replicas;
+        Strings wrong_type_replicas;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
         Strings unavailable_on_shard;
         UInt64 verified_on_shard = 0;
-        auto judge = [&](const String & replica, const String & engine, const String & ts_type, const String & unavailable)
+        /// Two entries of one cluster can differ only by the database each selects, so every reason names the table
+        /// as its own replica resolves it: an address alone tells those two apart in neither refusal.
+        auto judge = [&](const String & replica, const String & replica_table, const String & engine,
+                         const String & ts_type, const String & unavailable)
         {
             if (!unavailable.empty())
                 unavailable_on_shard.push_back(fmt::format("{} ({})", replica, unavailable));
             /// A replica that answered but names no engine of its own holds a view or a dictionary.
             else if (engine != "TimeSeries")
-                ++wrong_engine_replicas;
+                wrong_engine_replicas.push_back(fmt::format("{} ({})", replica, replica_table));
             /// Not exposed to the probe, or not there at all: the type went unchecked either way.
             else if (ts_type.empty())
                 unavailable_on_shard.push_back(fmt::format(
-                    "{} (no `{}` column on {})", replica, samples_column, backQuoteIfNeed(remote_id.table_name)));
+                    "{} (no `{}` column on {})", replica, samples_column, replica_table));
             else if (ts_type != time_series_type)
-            {
-                ++wrong_type_replicas;
-                wrong_types.insert(ts_type);
-            }
+                wrong_type_replicas.push_back(fmt::format("{} on {} ({})", ts_type, replica, replica_table));
             else
                 ++verified_on_shard;
         };
@@ -245,6 +251,12 @@ namespace
             verified_on_shard = 0;
             for (const auto [pool, address] : std::views::zip(shard_info.per_replica_pools, shard_addresses))
             {
+                /// The name this replica resolves: its own entry's default database is selected on the connection
+                /// before the query, and an entry that declares one is never local (Cluster::Address::isLocal).
+                const String replica_table = remote_id.database_name.empty() && !address.default_database.empty()
+                    ? backQuoteIfNeed(address.default_database) + "." + backQuoteIfNeed(remote_id.table_name)
+                    : qualified_name;
+
                 /// A replica that is this server itself is read and written in-process on this context (both pin
                 /// prefer_localhost_replica on, the read parallel replicas off), so its table is resolved here, as they will.
                 if (address.is_local)
@@ -260,6 +272,7 @@ namespace
                     String engine;
                     String ts_type;
                     String unavailable;
+                    const String local_table = local_id ? local_id.getFullTableName() : replica_table;
                     if (const auto table = DatabaseCatalog::instance().tryGetTable(local_id, context))
                     {
                         engine = table->getName();
@@ -268,8 +281,8 @@ namespace
                             ts_type = column->type->getName();
                     }
                     else
-                        unavailable = fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name));
-                    judge(pool->getAddress(), engine, ts_type, unavailable);
+                        unavailable = fmt::format("no table {}", local_table);
+                    judge(pool->getAddress(), local_table, engine, ts_type, unavailable);
                     continue;
                 }
 
@@ -303,16 +316,30 @@ namespace
                     /// a replica that may not answer here is left to the check its own insert makes on its target.
                     if (e.code() == ErrorCodes::ACCESS_DENIED)
                         continue;
+                    /// The entry's own database is selected on the connection and the wrapper's qualifies the
+                    /// name, so either of the two can be the one the replica could not find; name both, once each.
+                    if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+                    {
+                        Strings databases;
+                        if (!remote_id.database_name.empty())
+                            databases.push_back(backQuoteIfNeed(remote_id.database_name));
+                        if (!address.default_database.empty() && address.default_database != remote_id.database_name)
+                            databases.push_back(backQuoteIfNeed(address.default_database));
+                        unavailable = databases.empty()
+                            ? "unknown database"
+                            : fmt::format("unknown database {}", fmt::join(databases, " or "));
+                    }
                     /// SHOW CREATE TABLE reports a name it cannot produce a DDL for as its own code, DESC as
                     /// the plain one; anything else leaves the target unverified, as an unreachable replica does.
-                    const bool no_table = e.code() == ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY
-                        || e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
-                    unavailable = no_table ? fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name)) : "unreachable";
+                    else if (e.code() == ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY || e.code() == ErrorCodes::UNKNOWN_TABLE)
+                        unavailable = fmt::format("no table {}", replica_table);
+                    else
+                        unavailable = "unreachable";
                 }
                 /// A connection the pool could not open is skipped rather than raised, so it answers nothing.
                 if (unavailable.empty() && !answered)
                     unavailable = "unreachable";
-                judge(pool->getAddress(), engine, ts_type, unavailable);
+                judge(pool->getAddress(), replica_table, engine, ts_type, unavailable);
             }
 
             /// An internally replicated shard takes the batch on one replica, which the sink picks by
@@ -321,20 +348,21 @@ namespace
                 unavailable_replicas.insert(unavailable_replicas.end(), unavailable_on_shard.begin(), unavailable_on_shard.end());
         }
 
-        if (wrong_engine_replicas)
+        if (!wrong_engine_replicas.empty())
             throw Exception(
                 ErrorCodes::UNEXPECTED_TABLE_ENGINE,
-                "This operation is not supported over table {}: {} shard-local target(s) named {} are not TimeSeries tables",
-                storage.getStorageID().getNameForLogs(), wrong_engine_replicas, backQuoteIfNeed(remote_id.table_name));
+                "This operation is not supported over table {}: {} shard-local target(s) named {} are not TimeSeries tables on {}",
+                storage.getStorageID().getNameForLogs(), wrong_engine_replicas.size(), backQuoteIfNeed(remote_id.table_name),
+                fmt::join(wrong_engine_replicas, ", "));
 
-        if (wrong_type_replicas)
+        if (!wrong_type_replicas.empty())
             throw Exception(
                 /// A write must be refused with a retryable status, or Prometheus drops the batch it could resend.
                 for_write ? ErrorCodes::INCOMPATIBLE_SCHEMA : ErrorCodes::TYPE_MISMATCH,
                 "This operation is not supported over table {}: {} shard-local target(s) named {} declare `{}` as {} "
                 "while the table declares {}",
-                storage.getStorageID().getNameForLogs(), wrong_type_replicas, backQuoteIfNeed(remote_id.table_name),
-                samples_column, fmt::join(wrong_types, ", "), time_series_type);
+                storage.getStorageID().getNameForLogs(), wrong_type_replicas.size(), backQuoteIfNeed(remote_id.table_name),
+                samples_column, fmt::join(wrong_type_replicas, ", "), time_series_type);
 
         /// A replica the check could not see would take the samples unchecked.
         if (for_write && !unavailable_replicas.empty())

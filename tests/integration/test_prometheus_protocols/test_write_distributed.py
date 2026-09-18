@@ -256,6 +256,10 @@ def test_remote_write_rejects_non_timeseries_shards():
     response = write("/bad/write", "bad_metric")
     assert response.status_code >= 400
     assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    # Both entries of this cluster share an address, so the refusal names the table each shard resolves
+    # rather than a bare count that points at neither of them.
+    assert "(shard_0.mt_bad)" in response.text, response.text
+    assert "(shard_1.mt_bad)" in response.text, response.text
     # Nothing was written anywhere, on either shard.
     assert (
         node.query(
@@ -272,6 +276,11 @@ def test_remote_write_rejects_a_mismatching_time_series_type():
     # The refusal names both types, and nothing was written to either shard.
     assert "Array(Tuple(DateTime64(0), Float64))" in response.text
     assert "Array(Tuple(DateTime64(3), Float64))" in response.text
+    # The shard's own type is named beside the replica and the name that replica resolves. Both entries of
+    # this cluster share an address, so only that name tells the two shards apart.
+    assert "Array(Tuple(DateTime64(3), Float64)) on " in response.text, response.text
+    assert "(shard_0.ts_local)" in response.text, response.text
+    assert "(shard_1.ts_local)" in response.text, response.text
     assert count_on_the_shards("prom_dist_coarse", "coarse_metric") == 0
 
 
