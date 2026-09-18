@@ -74,8 +74,8 @@ CREATE TABLE tab_time_ref ENGINE = Log AS SELECT * FROM tab_time;
 SELECT 'nullable_time_equals', (SELECT count() FROM tab_time WHERE toString(t) = '100:00:00')
     = (SELECT count() FROM tab_time_ref WHERE toString(t) = '100:00:00');
 
--- Where `toString` is monotonic on the wrapped type, a `Nullable` key is now pruned like a plain one, except
--- for the granule that holds the `NULL`: `CAST` to `String` still throws on it.
+-- Where `toString` is monotonic on the wrapped type, a `Nullable` key is now pruned like a plain one; `CAST`
+-- to `String` throws on a `NULL`, so it keeps the granule that may hold one.
 CREATE TABLE tab_str (s Nullable(String)) ENGINE = MergeTree ORDER BY s
     SETTINGS allow_nullable_key = 1, index_granularity = 2;
 INSERT INTO tab_str VALUES ('aa'), ('bb'), ('cc'), ('dd'), ('ee'), (NULL);
@@ -83,10 +83,11 @@ CREATE TABLE tab_str_ref ENGINE = Log AS SELECT * FROM tab_str;
 
 SELECT 'nullable_string_range', (SELECT count() FROM tab_str WHERE toString(s) >= 'cc')
     = (SELECT count() FROM tab_str_ref WHERE toString(s) >= 'cc');
-SELECT 'nullable_string_prunes', (SELECT sum(granules_read) < sum(granules_total)
+-- Only the granule ['cc', 'ee'] is read; the last one, ['ee', NULL], is pruned as for a plain key.
+SELECT 'nullable_string_prunes', (SELECT sum(granules_read) = 1 AND sum(granules_total) = 3
     FROM (SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) AS granules_read,
                  toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')) AS granules_total
-          FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str WHERE toString(s) = 'aa'
+          FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str WHERE toString(s) = 'dd'
                 SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)));
 SELECT count() FROM tab_str WHERE CAST(s AS String) = 'cc'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 

@@ -3313,6 +3313,18 @@ FunctionBasePtr createFunctionBaseCast(
     {
     }
 
+    /// A `NULL` cast to a non-`Nullable` type throws, and a `NULL` key sorts last, so a range open on one side
+    /// may hold one and stays unpruned. A range open on both sides is the whole key and prunes nothing anyway.
+    if (monotonicity && isNullableOrLowCardinalityNullable(arguments.front().type) && !isNullableOrLowCardinalityNullable(return_type))
+    {
+        monotonicity = [inner = std::move(monotonicity)](const IDataType & type, const Field & left, const Field & right) -> IFunction::Monotonicity
+        {
+            if (left.isNull() != right.isNull())
+                return {};
+            return inner(type, left, right);
+        };
+    }
+
     return std::make_unique<detail::FunctionCast>(
         *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
