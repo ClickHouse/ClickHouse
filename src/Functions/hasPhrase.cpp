@@ -344,7 +344,7 @@ If no text index is defined, the function performs a brute-force column scan whi
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `icu`, or `array`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
 Note that `splitByRegexp` is not supported for `hasPhrase` when the text index also defines a postprocessor.
 
 If `input` is an [Array(String)](/reference/data-types/array), its elements are the tokens themselves and are not tokenized,
