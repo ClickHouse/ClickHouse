@@ -11,6 +11,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -389,6 +390,30 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (all_equal)
             return types[0];
+    }
+
+    /// Row shares ColumnTuple with Tuple, so the common type of a mix involving Row
+    /// is found for the equivalent named Tuples. Nested Rows (e.g. inside Array) are
+    /// handled by the recursive rules below, which see them at the top level.
+    {
+        bool have_row = false;
+        for (const auto & type : types)
+        {
+            if (typeid_cast<const DataTypeRow *>(type.get()))
+            {
+                have_row = true;
+                break;
+            }
+        }
+
+        if (have_row)
+        {
+            DataTypes lowered_types;
+            lowered_types.reserve(types.size());
+            for (const auto & type : types)
+                lowered_types.emplace_back(lowerRowTypesToTuples(type));
+            return getLeastSupertype<on_error>(lowered_types);
+        }
     }
 
     /// If one of the types is Dynamic, the supertype is Dynamic
