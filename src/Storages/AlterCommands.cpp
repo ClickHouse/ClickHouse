@@ -1161,9 +1161,23 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
+        /// Keep the stored body exactly as it was and swap only the `WITH SETTINGS` clause.
+        /// The two bodies are equal as ASTs but may differ as text, and the serialized `projections`
+        /// field is compared byte-for-byte by replicas that do not know about the AST comparison,
+        /// so republishing the new spelling would make a replica carrying the original spelling
+        /// fail to join with `METADATA_MISMATCH`.
+        auto preserved_decl = old_projection.definition_ast->clone();
+        auto & preserved_projection_decl = preserved_decl->as<ASTProjectionDeclaration &>();
+        preserved_decl->reset(preserved_projection_decl.with_settings);
+        if (const auto * new_with_settings = new_projection.definition_ast->as<ASTProjectionDeclaration &>().with_settings)
+            preserved_decl->set(preserved_projection_decl.with_settings, new_with_settings->clone());
+
+        auto preserved_projection = ProjectionDescription::getProjectionFromAST(
+            preserved_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
         /// Intentionally not a mutation because the new settings apply lazily
         /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
-        metadata.projections.replace(std::move(new_projection));
+        metadata.projections.replace(std::move(preserved_projection));
     }
     else if (type == DROP_PROJECTION)
     {
