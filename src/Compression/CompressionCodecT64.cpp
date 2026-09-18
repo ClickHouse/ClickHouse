@@ -402,28 +402,14 @@ void transposeBytes(T value, UInt64 * matrix, UInt32 col)
 template <typename T>
 T reverseTransposeBytes(const UInt64 * matrix, UInt32 col)
 {
-    T value = 0;
+    UInt64 value = 0;
     const auto * matrix8 = reinterpret_cast<const unsigned char *>(matrix);
 
-    if constexpr (sizeof(T) > 4)
-    {
-        value |= static_cast<UInt64>(matrix8[64 * 7 + col]) << (8 * 7);
-        value |= static_cast<UInt64>(matrix8[64 * 6 + col]) << (8 * 6);
-        value |= static_cast<UInt64>(matrix8[64 * 5 + col]) << (8 * 5);
-        value |= static_cast<UInt64>(matrix8[64 * 4 + col]) << (8 * 4);
-    }
+    /// Byte k of the value is stored at matrix row k (each row is 64 bytes) and belongs at bit 8 * k.
+    for (size_t k = 0; k < sizeof(T); ++k)
+        value |= static_cast<UInt64>(matrix8[64 * k + col]) << (8 * k);
 
-    if constexpr (sizeof(T) > 2)
-    {
-        value |= static_cast<UInt32>(matrix8[64 * 3 + col]) << (8 * 3);
-        value |= static_cast<UInt32>(matrix8[64 * 2 + col]) << (8 * 2);
-    }
-
-    if constexpr (sizeof(T) > 1)
-        value |= static_cast<UInt32>(matrix8[64 * 1 + col]) << (8 * 1);
-
-    value |= static_cast<UInt32>(matrix8[col]);
-    return value;
+    return static_cast<T>(value);
 }
 
 
