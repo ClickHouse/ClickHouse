@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=False, use_old_analyzer=True)
+node1 = cluster.add_instance("node1", with_zookeeper=False)
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,

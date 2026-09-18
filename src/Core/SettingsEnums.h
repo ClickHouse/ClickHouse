@@ -315,6 +315,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetComp
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(ArrowUnsupportedTypes, FormatSettings::ArrowUnsupportedTypes)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
 enum class Dialect : uint8_t
@@ -396,6 +398,7 @@ enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
+    EXCLUSIVE,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
