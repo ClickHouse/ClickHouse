@@ -133,7 +133,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 }
 
 /// check if a DAG node only depends on sorting key columns
-/// (ActionsDAG version of isExpressionOverSortingKey)
+/// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))
@@ -159,6 +159,12 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
         return false;
     if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
+
+    /// a folded lambda hides its body behind a constant column
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column
+        && !allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+        return false;
+
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
@@ -755,7 +761,8 @@ Pipe ReadFromMergeTree::readFromPool(
       * Because time spend during filling per thread tasks can be greater than whole query
       * execution for big tables with small limit.
       */
-    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && !query_info.small_limit_above_array_join
+        && (allow_prefetched_remote || allow_prefetched_local);
 
     if (use_prefetched_read_pool)
     {
