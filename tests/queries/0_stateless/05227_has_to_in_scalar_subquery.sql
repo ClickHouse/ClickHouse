@@ -251,8 +251,8 @@ SELECT 'pk result literal', count() FROM tab_pk_lc WHERE has(['1', '2', '3'], k)
 SELECT 'pk result scalar', count() FROM tab_pk_lc WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(4)), k);
 
 -- The same four rows without the rewrite. They must match the rows above, which makes those an
--- equivalence oracle instead of a snapshot, and they are the only remaining coverage of the has()
--- atom over a LowCardinality key in KeyCondition (the rewrite makes it unreachable by default).
+-- equivalence oracle instead of a snapshot; at the default setting the has() atom over a
+-- LowCardinality key is not reached at all (03402 covers it with the rewrite off too).
 SELECT 'pk granules literal off', trimLeft(explain) FROM (
     EXPLAIN indexes=1 SELECT count() FROM tab_pk_lc WHERE has(['1', '2', '3'], k) SETTINGS optimize_rewrite_has_to_in = 0
     ) WHERE explain LIKE '%Granules:%';
