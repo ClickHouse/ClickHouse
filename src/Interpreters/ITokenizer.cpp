@@ -49,7 +49,7 @@ namespace ErrorCodes
 
 String ITokenizer::formatTokenForLogs(std::string_view token) const
 {
-    return quoteString(token);
+    return doubleQuoteString(token);
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -607,7 +607,7 @@ KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::st
 String KeyValuePairsTokenizer::formatTokenForLogs(std::string_view token) const
 {
     const auto decoded = decodeToken(token);
-    return fmt::format("{{{}: {}}}", quoteString(decoded.key), quoteString(decoded.value));
+    return fmt::format("{{{}: {}}}", doubleQuoteString(decoded.key), doubleQuoteString(decoded.value));
 }
 
 bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const

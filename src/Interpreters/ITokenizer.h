@@ -62,7 +62,7 @@ public:
     /// Returns a formatted description of the tokenizer with arguments.
     virtual String getDescription() const = 0;
 
-    /// Renders a stored token for logs and `EXPLAIN`: single-quoted, with quotes, backslashes and control bytes escaped.
+    /// Renders a stored token for logs and `EXPLAIN`: double-quoted, with quotes, backslashes and control bytes escaped.
     virtual String formatTokenForLogs(std::string_view token) const;
 
     virtual const char * getTokenizerName() const = 0;
@@ -487,7 +487,7 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     /// The inverse of `encodeToken`. The views alias `token`. Throws if the token is not in the pair format.
     static DecodedToken decodeToken(std::string_view token);
 
-    /// A token is a `Map` entry rendered as its literal: {'key': 'value'}, both parts quoted and escaped like the base rendering.
+    /// A token is a `Map` entry: {"key": "value"}, both parts quoted and escaped like the base rendering.
     String formatTokenForLogs(std::string_view token) const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;

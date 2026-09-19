@@ -18,13 +18,13 @@ CreatingSets (Create sets before main query execution)
             Skip
               Name: idx_attrs_keys
               Description: text GRANULARITY 100000000
-              Condition: (mode: All; tokens: [\'entity\'])
+              Condition: (mode: All; tokens: ["entity"])
               Parts: 1/1
               Granules: 5/5
             Skip
               Name: idx_attrs_values
               Description: text GRANULARITY 100000000
-              Condition: (mode: Any; tokens: [\'e1\', \'e2\'])
+              Condition: (mode: Any; tokens: ["e1", "e2"])
               Parts: 1/1
               Granules: 3/5
             Ranges: 2
