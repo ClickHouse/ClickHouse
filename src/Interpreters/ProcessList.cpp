@@ -117,7 +117,11 @@ ProcessList::EntryPtr ProcessList::insert(
     const IAST * ast,
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
-    bool is_internal)
+    bool is_internal,
+    QuerySlotPtr query_slot,
+    bool use_workload_resources,
+    std::chrono::steady_clock::time_point workload_admission_deadline,
+    const std::atomic_bool * workload_admission_cancelled)
 {
     EntryPtr res;
 
@@ -139,23 +143,24 @@ ProcessList::EntryPtr ProcessList::insert(
     // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
     // and memory reservations together as a single allocation. Splitting their admission across the
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
-    QuerySlotPtr query_slot;
     MemoryReservationPtr memory_reservation;
-    if (!is_unlimited_query)
+    if (!is_unlimited_query || use_workload_resources)
     {
         // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
         // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
         // budget. `saturatedMilliseconds` caps the wait at ~1 year (the standard idiom — a longer timeout
         // is effectively no timeout); 0 is the explicit "no timeout" and maps to an infinite deadline.
         const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
-        const auto admission_deadline = admission_timeout_ms
-            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
-            : std::chrono::steady_clock::time_point::max();
+        const auto admission_deadline = workload_admission_deadline != std::chrono::steady_clock::time_point::max()
+            ? workload_admission_deadline
+            : admission_timeout_ms
+                ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+                : std::chrono::steady_clock::time_point::max();
 
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
         String query_resource_name = workload_entity_storage->getQueryResourceName();
-        if (!query_resource_name.empty())
+        if (!query_slot && !query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
                 query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
@@ -170,7 +175,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline, workload_admission_cancelled);
             }
         }
     }

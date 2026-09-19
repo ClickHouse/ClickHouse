@@ -7666,6 +7666,11 @@ SETTINGS additional_result_filter = 'x != 2'
     DECLARE(String, workload, "default", R"(
 Name of workload to be used to access resources
 )", 0) \
+    DECLARE(String, refresh_workload, "", R"(
+Workload used for refreshable materialized view admission and execution. Specify it in the stored SELECT settings. A non-empty value overrides `workload` for the complete refresh, including its SELECT and internal operations, without changing the workload of the CREATE or ALTER query.
+
+An empty value preserves the existing `workload` behavior. This setting has no effect on ordinary query execution. QUERY admission for refreshes also requires `use_query_slot_to_refresh_materialized_view` and a configured QUERY resource.
+)", 0) \
     DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
 The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
 It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by

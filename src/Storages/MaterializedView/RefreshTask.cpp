@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -34,11 +35,16 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
+#include <Common/saturatedDuration.h>
+#include <Common/Scheduler/ISchedulerQueue.h>
+#include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric RefreshingViews;
+    extern const Metric ConcurrentQueryScheduled;
 }
 
 namespace ProfileEvents
@@ -49,6 +55,7 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
     extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
+    extern const Event ConcurrentQueryWaitMicroseconds;
 }
 
 namespace DB
@@ -58,6 +65,8 @@ namespace Setting
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsString workload;
+    extern const SettingsMilliseconds workload_admission_timeout_ms;
 }
 
 namespace ServerSetting
@@ -65,6 +74,7 @@ namespace ServerSetting
     extern const ServerSettingsString default_replica_name;
     extern const ServerSettingsString default_replica_path;
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsBool use_query_slot_to_refresh_materialized_view;
 }
 
 namespace RefreshSetting
@@ -85,6 +95,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int TABLE_UUID_MISMATCH;
+    extern const int RESOURCE_ACCESS_DENIED;
+    extern const int QUERY_SLOT_ACQUISITION_TIMEOUT;
 }
 
 namespace FailPoints
@@ -131,6 +143,158 @@ namespace FailPoints
     /// normalize before giving up coordination.
     extern const char refresh_mv_skip_execution[];
 }
+
+/// The scheduler only publishes an outcome and wakes the refresh scheduling task. It never runs
+/// user callbacks or takes RefreshTask::mutex. The classifier keeps the queue and constraints alive
+/// even after this object is transferred to the process list.
+class RefreshTask::AsyncQuerySlot final : public QuerySlotBase
+{
+public:
+    AsyncQuerySlot(RefreshTask & task_, ClassifierPtr classifier_, ResourceLink link_, String workload_,
+        std::chrono::steady_clock::time_point admission_deadline_)
+        : task(task_), classifier(std::move(classifier_)), link(link_), workload(std::move(workload_)), admission_deadline(admission_deadline_)
+    {
+    }
+
+    ~AsyncQuerySlot() override
+    {
+        cancel();
+        std::unique_lock lock(slot_mutex);
+        /// Cancellation may lose to dequeue. Wait only for that in-flight scheduler notification,
+        /// never for admission, and keep both the task and classifier alive until it has returned.
+        cv.wait(lock, [this] { return ready; });
+        release();
+    }
+
+    void enqueue()
+    {
+        scheduled.emplace(CurrentMetrics::ConcurrentQueryScheduled);
+        stopwatch.restart();
+        ready = false;
+        try
+        {
+            link.queue->enqueueRequest(this);
+        }
+        catch (...)
+        {
+            /// A throwing enqueue did not publish the request. Resolve it as an admission error.
+            failed(std::current_exception());
+        }
+    }
+
+    void cancel()
+    {
+        if (link.queue->cancelRequest(this))
+        {
+            std::lock_guard lock(slot_mutex);
+            complete();
+        }
+    }
+
+    bool isReady() const
+    {
+        std::lock_guard lock(slot_mutex);
+        return ready;
+    }
+
+    void expireIfTimedOut()
+    {
+        if (admission_deadline == std::chrono::steady_clock::time_point::max()
+            || std::chrono::steady_clock::now() < admission_deadline)
+            return;
+        if (!link.queue->cancelRequest(this))
+            return;
+
+        std::lock_guard lock(slot_mutex);
+        timed_out = true;
+        complete();
+    }
+
+    UInt64 nextCheckDelayMs() const
+    {
+        if (admission_deadline == std::chrono::steady_clock::time_point::max())
+            return 1000;
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            admission_deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0)
+            return 1;
+        return static_cast<UInt64>(std::min<Int64>(remaining, 1000));
+    }
+
+    std::chrono::steady_clock::time_point getAdmissionDeadline() const
+    {
+        return admission_deadline;
+    }
+
+    void checkGranted(const String & current_workload) const
+    {
+        std::lock_guard lock(slot_mutex);
+        chassert(ready);
+        if (timed_out)
+            throw Exception(ErrorCodes::QUERY_SLOT_ACQUISITION_TIMEOUT,
+                "Timed out waiting to acquire a query slot for workload scheduling (exceeded workload_admission_timeout_ms)");
+        if (exception)
+            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Unable to obtain a query slot: {}",
+                getExceptionMessage(exception, /* with_stacktrace = */ false));
+        if (!granted)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh query-slot admission was cancelled");
+        if (workload != current_workload)
+            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED,
+                "Refresh workload changed from '{}' to '{}' while waiting for a query slot; retry admission",
+                workload, current_workload);
+    }
+
+private:
+    void execute() override
+    {
+        std::lock_guard lock(slot_mutex);
+        granted = true;
+        acquired();
+        complete();
+    }
+
+    void failed(const std::exception_ptr & ptr) override
+    {
+        std::lock_guard lock(slot_mutex);
+        exception = ptr;
+        complete();
+    }
+
+    void complete()
+    {
+        scheduled.reset();
+        ProfileEvents::increment(ProfileEvents::ConcurrentQueryWaitMicroseconds, stopwatch.elapsedMicroseconds());
+        ready = true;
+        try
+        {
+            task.scheduling_task->schedule();
+        }
+        catch (...)
+        {
+            /// Preserve an original admission error. The already-armed scheduling check will
+            /// consume this failure, so it neither escapes the scheduler nor strands a slot.
+            if (!exception)
+                exception = std::current_exception();
+        }
+        cv.notify_all();
+    }
+
+    RefreshTask & task;
+    ClassifierPtr classifier;
+    ResourceLink link;
+    String workload;
+    mutable std::mutex slot_mutex;
+    std::condition_variable cv;
+    bool ready = true;
+    bool granted = false;
+    bool timed_out = false;
+    std::exception_ptr exception;
+    std::chrono::steady_clock::time_point admission_deadline;
+    std::optional<CurrentMetrics::Increment> scheduled;
+    Stopwatch stopwatch;
+};
+
+RefreshTask::~RefreshTask() = default;
 
 namespace
 {
@@ -367,6 +531,13 @@ void RefreshTask::shutdown()
     scheduling_task->deactivate();
     execution_task->deactivate();
 
+    {
+        std::lock_guard guard(mutex);
+        /// Quiesce any scheduler notification before the final Keeper reconciliation or destruction.
+        execution.query_slot.reset();
+        execution.admission_exception = nullptr;
+    }
+
     /// Best-effort final update of information in zookeeper, to reflect that this replica is not
     /// running a refresh anymore.
     try
@@ -552,6 +723,13 @@ void RefreshTask::pause()
     /// If `stop_requested` was already set (e.g. by `SYSTEM STOP VIEW`), this is a no-op.
     if (std::exchange(scheduling.stop_requested, true))
         return;
+    /// A query slot can be granted before the execution task starts. Cancel both queued
+    /// admission and that dispatch window; neither has started refreshing the target yet.
+    if ((execution.query_slot
+            && (execution.state == ExecutionState::State::WaitingForResource
+                || execution.state == ExecutionState::State::Requested))
+        || execution.waiting_for_workload_admission.load(std::memory_order_relaxed))
+        interruptExecution();
     scheduleRefresh(guard);
 }
 
@@ -659,7 +837,7 @@ void RefreshTask::wait(const ContextPtr & context)
         if (state == RefreshState::Scheduling)
             /// We're not sure whether refresh is running. Keep waiting.
             return false;
-        if (state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)
+        if (state == RefreshState::WaitingForResource || state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)
         {
             if (coordination.root_znode.last_success_end_time > seen_success_end_time)
                 /// Refresh completed, and immediately another one started.
@@ -749,7 +927,7 @@ bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point de
     duration = std::max(duration, std::chrono::steady_clock::duration(0));
     return wait_cv.wait_for(lock, duration, [&]
         {
-            return state != RefreshState::Running && state != RefreshState::Scheduling;
+            return state != RefreshState::WaitingForResource && state != RefreshState::Running && state != RefreshState::Scheduling;
         });
 }
 
@@ -807,6 +985,42 @@ void RefreshTask::doScheduling(bool is_shutdown)
     {
         setState(RefreshState::Scheduling, lock);
 
+        if (!is_shutdown && execution.state == ExecutionState::State::WaitingForResource)
+        {
+            if (!execution.query_slot->isReady())
+                execution.query_slot->expireIfTimedOut();
+
+            if (execution.query_slot->isReady())
+            {
+                /// Cancellation can race with scheduler dequeue. If stop/pause won before execution
+                /// started, release even a concurrently granted slot here instead of dispatching a
+                /// backlogged RefreshExec merely to observe the cancellation.
+                if (execution.interrupt_execution.load())
+                {
+                    execution.query_slot.reset();
+                    execution.admission_exception = nullptr;
+                    execution.znode.last_attempt_time = std::chrono::floor<std::chrono::seconds>(currentTime());
+                    execution.znode.last_attempt_error = "cancelled";
+                    execution.znode.refresh_running = false;
+                    execution.state = ExecutionState::State::Finished;
+                    scheduling_task->schedule();
+                }
+                else
+                {
+                    /// Resolve admission before coordination early returns as well: losing Keeper
+                    /// capabilities or ownership must not strand an already-cancelled attempt.
+                    execution_task->schedule();
+                    execution.state = ExecutionState::State::Requested;
+                }
+            }
+            else
+            {
+                /// Completion normally wakes us immediately. Keep a scheduled check both as a
+                /// fallback wake-up and to enforce the admission deadline without blocking a worker.
+                scheduling_task->scheduleAfter(execution.query_slot->nextCheckDelayMs());
+            }
+        }
+
         if (coordination.unavailable)
         {
             /// Coordination is permanently unavailable (Keeper lacks required feature flags, detected
@@ -840,6 +1054,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 /// give-up happens here.
                 if (!is_shutdown
                     && (execution.state == ExecutionState::State::Requested
+                        || execution.state == ExecutionState::State::WaitingForResource
                         || execution.state == ExecutionState::State::Running))
                 {
                     interruptExecution();
@@ -854,7 +1069,8 @@ void RefreshTask::doScheduling(bool is_shutdown)
                     /// Finished (same as the is_shutdown block after readZnodesIfNeeded) so the
                     /// reconciliation below actually clears `refresh_running` and `/running`.
                     chassert(execution.state != ExecutionState::State::Running);
-                    if (execution.state == ExecutionState::State::Requested)
+                    if (execution.state == ExecutionState::State::Requested
+                        || execution.state == ExecutionState::State::WaitingForResource)
                     {
                         execution.znode.last_attempt_error = "shutdown";
                         execution.znode.refresh_running = false;
@@ -988,7 +1204,8 @@ void RefreshTask::doScheduling(bool is_shutdown)
             if (is_shutdown)
             {
                 chassert(execution.state != ExecutionState::State::Running);
-                if (execution.state == ExecutionState::State::Requested)
+                if (execution.state == ExecutionState::State::Requested
+                        || execution.state == ExecutionState::State::WaitingForResource)
                 {
                     /// execution_task was deactivated by shutdown before refresh started.
                     execution.znode.last_attempt_error = "shutdown";
@@ -1030,6 +1247,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
                     scheduling_task->schedule();
                     break;
                 }
+                case ExecutionState::State::WaitingForResource:
                 case ExecutionState::State::Requested:
                 case ExecutionState::State::Running:
                 {
@@ -1039,9 +1257,14 @@ void RefreshTask::doScheduling(bool is_shutdown)
                         updateCoordinationState(coordination.root_znode, /*running=*/ true, zookeeper, lock, /*only_running_znode=*/ true);
                     }
 
-                    if (view->getContext()->getRefreshSet().refreshesStopped())
+                    if (view->getContext()->getRefreshSet().refreshesStopped() || coordination.paused_znode_exists)
                         interruptExecution();
 
+                    if (execution.state == ExecutionState::State::WaitingForResource)
+                    {
+                        setState(RefreshState::WaitingForResource, lock);
+                        break;
+                    }
                     setState(RefreshState::Running, lock);
                     break;
                 }
@@ -1178,6 +1401,47 @@ void RefreshTask::doScheduling(bool is_shutdown)
         execution.out_of_schedule = out_of_schedule;
         execution.state = ExecutionState::State::Requested;
 
+        execution.admission_exception = nullptr;
+        try
+        {
+            if (view->getContext()->getServerSettings()[ServerSetting::use_query_slot_to_refresh_materialized_view])
+            {
+                ASTPtr select_query;
+                auto admission_context = view->createRefreshContext("refresh workload admission", select_query);
+                auto workload_storage = admission_context->getWorkloadEntityStoragePtr();
+                auto query_resource = workload_storage->getQueryResourceName();
+                if (!query_resource.empty())
+                {
+                    auto classifier = admission_context->getWorkloadClassifier();
+                    if (auto link = classifier->get(query_resource))
+                    {
+                        const UInt64 admission_timeout_ms = static_cast<UInt64>(
+                            admission_context->getSettingsRef()[Setting::workload_admission_timeout_ms].totalMilliseconds());
+                        const auto admission_deadline = admission_timeout_ms
+                            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+                            : std::chrono::steady_clock::time_point::max();
+
+                        /// Arm before enqueue: completion (including failure) may happen immediately.
+                        scheduling_task->scheduleAfter(
+                            admission_timeout_ms ? std::max<UInt64>(1, std::min<UInt64>(1000, admission_timeout_ms)) : 1000);
+                        execution.query_slot = std::make_unique<AsyncQuerySlot>(*this, std::move(classifier), link,
+                            admission_context->getSettingsRef()[Setting::workload], admission_deadline);
+                        execution.state = ExecutionState::State::WaitingForResource;
+                        execution.query_slot->enqueue();
+                        setState(RefreshState::WaitingForResource, lock);
+                        return;
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            /// Configuration/authorization errors use the normal refresh failure and retry path.
+            execution.admission_exception = std::current_exception();
+            execution.query_slot.reset();
+            execution.state = ExecutionState::State::Requested;
+        }
+
         execution_task->schedule();
         setState(RefreshState::Running, lock);
     }
@@ -1243,12 +1507,15 @@ void RefreshTask::executeRefresh()
     }
 
     std::vector<StorageID> deps = set_handle.getDependencies();
+    auto query_slot = std::move(execution.query_slot);
+    auto admission_exception = std::exchange(execution.admission_exception, nullptr);
 
     lock.unlock();
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, cursor_after_refresh);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, cursor_after_refresh,
+            std::move(query_slot), std::move(admission_exception));
     }
     catch (...)
     {
@@ -1291,7 +1558,8 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message,
+    CursorTreeNodePtr & out_cursor, std::unique_ptr<AsyncQuerySlot> query_slot, std::exception_ptr admission_exception)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1317,7 +1585,25 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
     try
     {
-        refresh_context = view->createRefreshContext(log_comment);
+        query_for_logging = "(workload admission)";
+        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+        if (execution.interrupt_execution.load())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+        if (admission_exception)
+            std::rethrow_exception(admission_exception);
+
+        /// Do not retain the pre-admission context across the wait: SQL SECURITY, the SELECT and
+        /// the database may have changed. Build a fresh, internally consistent definition now.
+        ASTPtr select_query;
+        refresh_context = view->createRefreshContext(log_comment, select_query);
+        if (query_slot)
+            query_slot->checkGranted(refresh_context->getSettingsRef()[Setting::workload]);
+
+        const auto admission_deadline = query_slot
+            ? query_slot->getAdmissionDeadline()
+            : std::chrono::steady_clock::time_point::max();
+        const bool use_workload_resources =
+            view->getContext()->getServerSettings()[ServerSetting::use_query_slot_to_refresh_materialized_view];
 
         const bool incremental = isIncremental();
 
@@ -1353,11 +1639,19 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         }
 
         {
+            /// Release admission before the target-table exchange or error cleanup. Planning may
+            /// fail before the slot is adopted by `ProcessList`, so cover both owners.
+            SCOPE_EXIT({
+                query_slot.reset();
+                if (process_list_entry)
+                    process_list_entry->getQueryStatus()->releaseQuerySlot();
+            });
+
             /// Create a table.
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             QueryScope query_scope;
-            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, table_to_drop, stream_cursor);
+            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, std::move(select_query), table_to_drop, stream_cursor);
             new_table_id = refresh_query->table_id;
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
@@ -1365,8 +1659,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
-            process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
+            {
+                execution.waiting_for_workload_admission.store(true, std::memory_order_relaxed);
+                SCOPE_EXIT({ execution.waiting_for_workload_admission.store(false, std::memory_order_relaxed); });
+                process_list_entry = refresh_context->getProcessList().insert(
+                    query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal,
+                    std::move(query_slot), use_workload_resources, admission_deadline, &execution.interrupt_execution);
+            }
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
 
@@ -1726,7 +2025,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 
 void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
 {
-    if (state != RefreshState::Running)
+    if (state != RefreshState::WaitingForResource && state != RefreshState::Running)
         state = RefreshState::Scheduling;
     scheduling_task->schedule();
 }
@@ -1846,6 +2145,17 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
 void RefreshTask::interruptExecution()
 {
     chassert(!mutex.try_lock());
+    if (execution.query_slot)
+    {
+        if (execution.state == ExecutionState::State::Requested)
+        {
+            /// Admission is resolved, but execution has not taken ownership yet. Release the slot
+            /// now even if `RefreshExec` is backlogged; its pending invocation observes cancellation.
+            execution.query_slot.reset();
+        }
+        else
+            execution.query_slot->cancel();
+    }
     std::shared_ptr<QueryStatus> query_status;
     {
         std::unique_lock lock(execution.executor_mutex);
