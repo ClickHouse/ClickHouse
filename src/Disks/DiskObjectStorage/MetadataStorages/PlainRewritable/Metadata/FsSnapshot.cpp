@@ -38,11 +38,9 @@ Ptr walk(Ptr node, const NormalizedPath & path)
 {
     for (const auto & step : path)
     {
-        const auto it = node->subdirectories.find(step);
-        if (it == node->subdirectories.end())
+        node = node->subdirectories.get(step);
+        if (!node)
             return nullptr;
-
-        node = it->second;
     }
 
     return node;
@@ -60,9 +58,10 @@ void traverseNode(const std::string & path, const FsNodePtr & start, const std::
 
         observe(node_path, node);
 
-        unvisited.reserve(unvisited.size() + node->subdirectories.size());
-        for (const auto & [subdir, subnode] : node->subdirectories)
+        node->subdirectories.forEach([&](const auto & subdir, const auto & subnode)
+        {
             unvisited.emplace_back(node_path / subdir, subnode);
+        });
     }
 }
 
@@ -75,11 +74,9 @@ bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
         if (!isVirtual(node) && node->info->files.contains(step))
             return true;
 
-        const auto it = node->subdirectories.find(step);
-        if (it == node->subdirectories.end())
+        node = node->subdirectories.get(step);
+        if (!node)
             return false;
-
-        node = it->second;
     }
 
     return false;
@@ -93,12 +90,12 @@ std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const Normali
     for (const auto & step : path)
     {
         FsNodePtr cloned_child;
-        if (auto it = node->subdirectories.find(step); it != node->subdirectories.end())
-            cloned_child = std::make_shared<FsNode>(*it->second);
+        if (auto child = node->subdirectories.get(step))
+            cloned_child = std::make_shared<FsNode>(*child);
         else
             cloned_child = std::make_shared<FsNode>();
 
-        node->subdirectories[step] = cloned_child;
+        node->subdirectories.set(step, cloned_child);
         node = std::move(cloned_child);
     }
 
@@ -111,12 +108,12 @@ void trimPath(FsNodePtr node, const NormalizedPath & path)
     for (const auto & step : path)
     {
         spine.emplace_back(node, step);
-        node = node->subdirectories.at(step);
+        node = node->subdirectories.get(step);
     }
 
     for (const auto & [parent, name] : spine | std::views::reverse)
     {
-        const FsNodePtr & child = parent->subdirectories.at(name);
+        const FsNodePtr child = parent->subdirectories.get(name);
         if (!isVirtual(child) || !child->subdirectories.empty())
             break;
 
@@ -145,7 +142,7 @@ FsNodePtr moveTree(const FsNodePtr & root, const NormalizedPath & from, const No
     trimPath(without_subtree, from.parent_path());
 
     const auto [cloned_root, cloned_to_parent] = clonePath(without_subtree, to.parent_path());
-    cloned_to_parent->subdirectories[to.filename()] = detached;
+    cloned_to_parent->subdirectories.set(to.filename(), detached);
 
     return cloned_root;
 
@@ -252,7 +249,7 @@ void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
     if (isVirtual(node))
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Creation of a file under the virtual directory is not possible");
 
-    if (node->subdirectories.contains(normalized_path.filename()))
+    if (node->subdirectories.get(normalized_path.filename()))
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "There is a subdirectory '{}' under the path '{}'. Can't create file", normalized_path.filename().string(), normalized_path.parent_path().string());
 
     if (node->info->files.contains(normalized_path.filename()))
@@ -294,7 +291,7 @@ std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) con
         return {};
 
     std::vector<std::string> result;
-    result.append_range(node->subdirectories | std::views::keys);
+    node->subdirectories.forEach([&](const auto & name, const auto &) { result.push_back(name); });
 
     if (!isVirtual(node))
         result.append_range(node->info->files | std::views::keys);
