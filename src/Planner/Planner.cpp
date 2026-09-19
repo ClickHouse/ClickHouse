@@ -697,7 +697,10 @@ ALWAYS_INLINE void addExpressionStep(
                 planner_context, query_plan, key_actions, in_to_join_subquery.key_correlated_subtrees,
                 select_query_options, "Compute the left arguments of IN", useful_sets);
         buildQueryPlanForUncorrelatedInSubquery(
-            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options);
+            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options,
+            std::make_shared<GlobalPlannerContext>(
+                nullptr, nullptr, nullptr,
+                collectFiltersForAnalysis(in_to_join_subquery.subquery.subquery, select_query_options, /*post_filter=*/ nullptr)));
     }
 
     auto actions = std::move(expression_actions->dag);
@@ -730,7 +733,10 @@ ALWAYS_INLINE void addFilterStep(
                 planner_context, query_plan, key_actions, in_to_join_subquery.key_correlated_subtrees,
                 select_query_options, "Compute the left arguments of IN", useful_sets);
         buildQueryPlanForUncorrelatedInSubquery(
-            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options);
+            planner_context, query_plan, in_to_join_subquery.subquery, select_query_options,
+            std::make_shared<GlobalPlannerContext>(
+                nullptr, nullptr, nullptr,
+                collectFiltersForAnalysis(in_to_join_subquery.subquery.subquery, select_query_options, /*post_filter=*/ nullptr)));
     }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);

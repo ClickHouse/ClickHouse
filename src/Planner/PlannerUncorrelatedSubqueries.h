@@ -25,6 +25,9 @@ class QueryPlan;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
+class GlobalPlannerContext;
+using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
+
 /// `x IN (subquery)` where the subquery reads nothing from the outer query.
 struct UncorrelatedInSubquery
 {
@@ -73,6 +76,7 @@ void buildQueryPlanForUncorrelatedInSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     const UncorrelatedInSubquery & in_subquery,
-    const SelectQueryOptions & select_query_options);
+    const SelectQueryOptions & select_query_options,
+    GlobalPlannerContextPtr subquery_global_planner_context);
 
 }
