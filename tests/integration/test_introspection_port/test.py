@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.client import Client
@@ -58,6 +60,26 @@ def test_introspection_port(started_cluster):
     )
     assert introspection_client().query("EXISTS TABLE system.one") == "1\n"
     introspection_client().query("SHOW PROCESSLIST")
+
+    # Reaches the interpreter and fails on its argument instead of being refused.
+    # A fresh id per run keeps the kind assertion below scoped to this execution.
+    describe_cache_query_id = f"introspection_test_describe_cache_{uuid.uuid4()}"
+    assert "There is no cache by name" in introspection_client().query_and_get_error(
+        "DESCRIBE FILESYSTEM CACHE 'nonexistent'", query_id=describe_cache_query_id
+    )
+    # Impersonating another user is not a diagnostic query, so it stays refused.
+    # On a regular port the same statement reports UNKNOWN_USER instead.
+    assert "QUERY_IS_PROHIBITED" in introspection_client().query_and_get_error(
+        "EXECUTE AS foo"
+    )
+    # It is admitted as a DESCRIBE, not as some other kind that the port also accepts.
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        "SELECT DISTINCT query_kind FROM system.query_log"
+        f" WHERE query_id = '{describe_cache_query_id}'",
+        "Describe",
+    )
 
     node.query("SYSTEM STOP LISTEN CUSTOM 'introspection_native'")
     assert introspection_client().query("SELECT 1") == "1\n"
