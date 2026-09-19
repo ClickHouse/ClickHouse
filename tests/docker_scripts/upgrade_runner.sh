@@ -216,6 +216,31 @@ timeout 1m clickhouse-client --query "SELECT 'Unfinished mutations left:', count
 # The report is only interesting when there was something to kill
 [ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
 
+# A mutation submitted to the old server and finished by the new one is a real part of the upgrade
+# contract - a submitted mutation is persisted and continues to execute after a restart - and the kill
+# above takes away whatever the stress phase happened to leave of it. It was never a dependable check
+# anyway: which mutations survive a run, and whether they are valid at all, is decided by which test file
+# the stress runner interrupted. Submit one deliberately instead, so the upgrade always carries exactly
+# one, known to be valid. It is created after the kill loop, so that loop does not kill it.
+#
+# `SYSTEM STOP MERGES` holds the mutation unfinished without making it broken, and it is in-memory state,
+# so the upgraded server starts with merges enabled and has to pick the mutation up on its own.
+echo "Submit a mutation that the upgraded server has to finish"
+
+mutation_across_upgrade_submitted=0
+
+if timeout 1m clickhouse-client --query "
+    DROP TABLE IF EXISTS default.mutation_across_upgrade SYNC;
+    CREATE TABLE default.mutation_across_upgrade (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO default.mutation_across_upgrade SELECT number, number FROM numbers(1000);
+    SYSTEM STOP MERGES default.mutation_across_upgrade;
+    ALTER TABLE default.mutation_across_upgrade UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;"
+then
+    mutation_across_upgrade_submitted=1
+else
+    echo -e "Cannot submit the mutation that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
+fi
+
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -395,6 +420,42 @@ clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', versi
 
 # Let the server run for a while before checking log.
 sleep 60
+
+# The mutation submitted to the previous release before the upgrade has to be resumed and finished by the
+# new server on its own: the `SYSTEM STOP MERGES` that held it did not survive the restart, and nothing
+# starts it explicitly. `sum(v)` is checked too, so that the mutation is required to have been applied to
+# the data and not only marked done. The `sleep` above is normally enough, the loop is for a loaded runner.
+if [ "$mutation_across_upgrade_submitted" = 1 ]
+then
+    mutation_across_upgrade_finished=0
+
+    for _ in {1..60}
+    do
+        mutation_across_upgrade_finished=$(timeout 1m clickhouse-client --query "
+            SELECT
+                (SELECT count() = 1 AND countIf(NOT is_done OR latest_fail_reason != '') = 0
+                    FROM system.mutations WHERE database = 'default' AND table = 'mutation_across_upgrade')
+                AND (SELECT sum(v) FROM default.mutation_across_upgrade) = 500500") ||:
+
+        if [ "$mutation_across_upgrade_finished" = 1 ]
+        then
+            break
+        fi
+
+        sleep 1
+    done
+
+    if [ "$mutation_across_upgrade_finished" = 1 ]
+    then
+        echo -e "The mutation submitted before the upgrade was finished by the new server$OK" >> /test_output/test_results.tsv
+    else
+        timeout 1m clickhouse-client --query "
+            SELECT * FROM system.mutations
+            WHERE database = 'default' AND table = 'mutation_across_upgrade'
+            FORMAT Vertical" > /test_output/mutation_across_upgrade.txt ||:
+        echo -e "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
+    fi
+fi
 
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
