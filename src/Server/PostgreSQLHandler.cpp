@@ -339,6 +339,7 @@ PostgreSQLHandler::PostgreSQLHandler(
         params.cipherList = config.getString(prefix + Poco::Net::SSLManager::CFG_CIPHER_LIST, Poco::Net::SSLManager::VAL_CIPHER_LIST);
         params.cipherList
             = config.getString(prefix + Poco::Net::SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
+        params.cipherSuites = config.getString(prefix + Poco::Net::SSLManager::CFG_CIPHER_SUITES, "");
 
         bool require_tlsv1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1, false);
         bool require_tlsv1_1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_1, false);

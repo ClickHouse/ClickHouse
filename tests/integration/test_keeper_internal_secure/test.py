@@ -15,6 +15,7 @@ RAFT_PEER_VERIFICATION_DISABLED_LOG = (
     r"`openSSL\.client\.verificationMode` is set to `none`"
 )
 CIPHER_LIST_REJECTED_LOG = r"Cannot set cipher list"
+CIPHER_SUITES_REJECTED_LOG = r"Cannot set cipher suites"
 
 cluster = ClickHouseCluster(__file__)
 nodes = [
@@ -286,7 +287,7 @@ def check_cipher_list_is_enforced(ssl_conf_file, allowed_cipher, excluded_cipher
     run_test()
 
 
-def check_rejected_cipher_list(ssl_conf_file):
+def check_rejected_ssl_conf(ssl_conf_file, rejected_log=CIPHER_LIST_REJECTED_LOG):
     stop_all_clickhouse()
     for node in nodes:
         setupSsl(node, "WithoutPassPhrase", None, ssl_conf_file)
@@ -295,7 +296,7 @@ def check_rejected_cipher_list(ssl_conf_file):
     nodes[0].start_clickhouse(expected_to_fail=True)
 
     nodes[0].wait_for_log_line(
-        CIPHER_LIST_REJECTED_LOG, look_behind_lines=f"+{log_anchors[nodes[0].name]}"
+        rejected_log, look_behind_lines=f"+{log_anchors[nodes[0].name]}"
     )
 
     # The listener is never brought up, so the Keeper port stays closed.
@@ -354,6 +355,32 @@ def test_secure_raft_works_with_tls13_only_cipher_list(started_cluster):
 
 
 def test_secure_raft_rejects_unlexable_cipher_list(started_cluster):
-    check_rejected_cipher_list(
+    check_rejected_ssl_conf(
         ssl_conf_file="configs/ssl_conf_cipher_unlexable.yml",
+    )
+
+
+def test_secure_raft_rejects_bad_cipher_suites(started_cluster):
+    check_rejected_ssl_conf(
+        ssl_conf_file="configs/ssl_conf_bad_cipher_suites.yml",
+        rejected_log=CIPHER_SUITES_REJECTED_LOG,
+    )
+
+
+def test_secure_raft_works_with_blank_cipher_suites(started_cluster):
+    check_valid_configuration(
+        "WithoutPassPhrase",
+        None,
+        ssl_conf_file="configs/ssl_conf_blank_cipher_suites.yml",
+    )
+
+    # Untrimmed, this value reaches OpenSSL, which parses it to an empty TLS 1.3 suite list
+    # and refuses the context, so the arm only means something while the value is whitespace.
+    configured_hex = nodes[0].query(
+        "SELECT hex(value) FROM system.server_settings "
+        "WHERE name = 'openSSL.server.cipherSuites'"
+    ).strip()
+    assert configured_hex.startswith("0A") and configured_hex.endswith("20"), (
+        "fixture is not armed: cipherSuites reached the server without the whitespace "
+        f"this arm needs: {configured_hex}"
     )

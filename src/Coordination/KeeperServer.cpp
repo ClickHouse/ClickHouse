@@ -160,6 +160,10 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     if (config.has(cipher_list_property))
         params.cipherList = config.getString(cipher_list_property);
 
+    const String cipher_suites_property = config_prefix + "cipherSuites";
+    if (config.has(cipher_suites_property))
+        params.cipherSuites = config.getString(cipher_suites_property);
+
     const String dh_params_file_property = config_prefix + "dhParamsFile";
     if (config.has(dh_params_file_property))
         params.dhParamsFile = config.getString(dh_params_file_property);
