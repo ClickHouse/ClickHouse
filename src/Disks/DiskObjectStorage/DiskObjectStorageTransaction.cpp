@@ -58,7 +58,13 @@ void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) 
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
         for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
-            blob_killer->triggerAndWait();
+        {
+            if (!blob_killer->triggerAndWait())
+            {
+                LOG_WARNING(getLogger("DiskObjectStorageTransaction"), "Blob removal made no progress, not waiting for it anymore");
+                break;
+            }
+        }
 
         if (watch.elapsed() > 100'000)
             LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Waiting for blob removal took {} ms", watch.elapsed() / 1000);
