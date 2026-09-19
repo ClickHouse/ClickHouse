@@ -847,7 +847,7 @@ For example, consider the following tables:
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
 
 <Note>
-`ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
+`ASOF JOIN` is supported only by the `hash` join algorithm and the merge join algorithms (`full_sorting_merge`, `parallel_full_sorting_merge`, `sorted_merge`, `parallel_sorted_merge`).
 It's **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
 </Note>
 
