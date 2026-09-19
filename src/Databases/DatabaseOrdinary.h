@@ -92,6 +92,12 @@ public:
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
     static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
 
+    /// Whether the stored definition says `table_readonly = 1`. A converted table keeps the settings
+    /// of the table it was converted from, and `table_readonly` is not supported for
+    /// `ReplicatedMergeTree`, so both conversion entrypoints (the `convert_to_replicated` flag and
+    /// `ATTACH TABLE ... AS REPLICATED`) have to refuse such a table before their side effects.
+    static bool isTableReadonlyInDefinition(const ASTCreateQuery & create_query);
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).

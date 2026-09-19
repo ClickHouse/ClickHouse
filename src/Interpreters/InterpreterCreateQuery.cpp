@@ -3927,6 +3927,18 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// `table_readonly` is not supported for `ReplicatedMergeTree` and the conversion keeps the
+    /// settings of the table it converts, so it would produce a table in that unsupported state.
+    /// The startup `convert_to_replicated` flag only logs and leaves such a table alone, because
+    /// throwing there would take the whole database load down; here the conversion is a query of
+    /// its own, so it is refused outright, before any of the side effects below.
+    if (to_replicated && DatabaseOrdinary::isTableReadonlyInDefinition(create))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot attach table {} as replicated: it has `table_readonly = 1`, which is not supported for "
+            "ReplicatedMergeTree. Reset the setting with `ALTER TABLE ... RESET SETTING table_readonly` first.",
+            backQuoteIfNeed(create.getTable()));
+
     /// Must precede every side effect below: neither the transaction metadata removal nor the
     /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
     if (to_replicated)
