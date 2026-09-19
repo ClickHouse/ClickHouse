@@ -591,6 +591,27 @@ def test_dynamic_disk_include_locations_child_is_restricted():
     assert "ACCESS_DENIED" in error or "must provide its credentials explicitly" in error, error
 
 
+def test_dynamic_disk_include_locations_child_local_path_is_fenced():
+    # The same shape, for the local filesystem rather than S3: an `include` can inject a
+    # `locations.<name>` child whose backend is `local` and whose `path` is outside
+    # `custom_local_disks_base_directory`. A disk root that names no local path of its own must not let
+    # that child through -- `RegisterDiskObjectStorage` builds one object storage per child, each with
+    # its own `path`.
+    node_with_includes.query("DROP TABLE IF EXISTS t_loc_local SYNC")
+    error = node_with_includes.query_and_get_error(
+        "CREATE TABLE t_loc_local (x UInt8) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk(type = object_storage, include = 'evil_locations_local_path')",
+        settings={"dynamic_disk_allow_include": 1},
+    )
+    assert "must be inside" in error, error
+    assert (
+        node_with_includes.query(
+            "SELECT count() FROM system.disks WHERE path = '/etc/clickhouse-server/'"
+        ).strip()
+        == "0"
+    )
+
+
 def test_persistent_table_does_not_reuse_credentialed_client_across_sessions():
     # A persistent S3 table whose credentials are server-managed (use_environment_credentials) is non-static, so
     # its client is rebuilt per query. An opt-in session reading it builds a credentialed client in the shared
