@@ -4,11 +4,12 @@
 
 -- Regression test for a logical error 'conflicted_part_name.has_value()' in
 -- ReplicatedMergeTreeSink::finishDelayed. When a synchronous insert is fully
--- deduplicated, the sink logged the name of the conflicting part. That name is
--- resolved from the dedup node in Keeper, but the node can legitimately be gone
--- by then (e.g. concurrent DROP PARTITION removed it), in which case the part
--- name stays unset and reading it tripped a chassert. The failpoint below forces
--- that "name not resolved" state deterministically.
+-- deduplicated, the sink logged the name of the conflicting part, resolved from
+-- the dedup node in Keeper; an unset name tripped a chassert.
+-- A conflict whose node is gone is now pruned instead, so a surviving conflict
+-- always carries a part name and the unresolved-name state is produced only by
+-- the failpoint below. The test also guards that the failpoint does not drive
+-- that prune: if it did, this insert would loop instead of deduplicating.
 
 SYSTEM DISABLE FAILPOINT rmt_dedup_conflict_part_name_missing;
 
