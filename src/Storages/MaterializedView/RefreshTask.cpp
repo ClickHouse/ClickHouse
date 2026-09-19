@@ -341,8 +341,7 @@ void RefreshTask::startup()
         view_id = view->getStorageID();
         auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
 
-        /// `set_handle` is not thread safe and shutdown() resets it under `mutex`, so the emplace()
-        /// that assigns it belongs inside this critical section.
+        /// `set_handle` is not thread safe and shutdown() resets it under `mutex`.
         context->getRefreshSet().emplace(view_id, inner_table_id, initial_dependencies, shared_from_this());
 
         scheduleRefresh(guard);
