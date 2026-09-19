@@ -1,9 +1,11 @@
+#include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <base/types.h>
 #include <base/defines.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/CurrentThread.h>
@@ -94,33 +96,33 @@ bool ExecutionThreadContext::executeTask()
         span = std::make_unique<OpenTelemetry::SpanHolder>(processor->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
+
     std::optional<Stopwatch> execution_time_watch;
 
     const size_t group = processor->getQueryPlanStepGroup();
 
-    StepWallClock * clock = nullptr;
-    if (step_to_wall_clock_registry)
-    {
-        /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
-        /// and are not attributed to any query plan step, so there is no clock for them.
-        if (const auto * step = processor->getQueryPlanStep())
-        {
-            auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
-            /// We will search in the registry only initially or when the group of the processor changed
-            if (!cached_clock)
-                cached_clock = step_to_wall_clock_registry->find(step, group);
+    /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
+    /// and are not attributed to any query plan step, so there is no clock for them.
+    const auto * step = processor->getQueryPlanStep();
 
-            clock = cached_clock;
-            chassert(clock);
-            if (clock)
-                clock->onEnter();
-        }
+    StepWallClock * clock = nullptr;
+    if (step_to_wall_clock_registry && step)
+    {
+        auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
+        /// We will search in the registry only initially or when the group of the processor changed
+        if (!cached_clock)
+            cached_clock = step_to_wall_clock_registry->find(step, group);
+
+        clock = cached_clock;
+        chassert(clock);
+        if (clock)
+            clock->onEnter();
     }
 
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors || step_to_wall_clock_registry)
+    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
         execution_time_watch.emplace();
 #endif
 
@@ -136,18 +138,21 @@ bool ExecutionThreadContext::executeTask()
         success = false;
     }
 
-    if (profile_processors || step_to_wall_clock_registry)
+    UInt64 elapsed_ns = 0;
+
+    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
     {
-        UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        elapsed_ns = execution_time_watch->elapsedNanoseconds();
         processor->elapsed_ns += elapsed_ns;
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
 
     if (clock)
-    {
         clock->onLeave();
-    }
+
+    if (collect_work_intervals)
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, step);
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
@@ -172,6 +177,11 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
         std::rethrow_exception(exception);
+}
+
+WorkIntervals ExecutionThreadContext::takeWorkIntervals()
+{
+    return std::move(work_intervals);
 }
 
 }

@@ -57,12 +57,22 @@ struct AnalyzedStepData
     bool label_stages = false;
 };
 
+struct StepTimeAndConcurrency
+{
+    UInt64 step_time_ns = 0;
+    UInt64 branch_time_ns = 0;
+    /// Empty when the corresponding time is zero: a step (or a subtree) that did no work has no concurrency.
+    std::optional<double> step_concurrency;
+    std::optional<double> branch_concurrency;
+};
+
 struct StepStatsContext
 {
     const IQueryPlanStep * step = nullptr;
     StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
+    const StepTimeAndConcurrency * time_and_conc_stats = nullptr;
     StepGroupStatsByGroupId group_stats;
 };
 
