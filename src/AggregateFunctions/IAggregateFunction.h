@@ -91,6 +91,7 @@ public:
     virtual String getName() const = 0;
 
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
+    /// Versioned functions include the version selected by the current protocol revision.
     virtual DataTypePtr getStateType() const;
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
