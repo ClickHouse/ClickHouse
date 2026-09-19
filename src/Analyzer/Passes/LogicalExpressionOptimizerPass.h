@@ -107,8 +107,7 @@ namespace DB
  * -------------------------------
  *
  * 8. Prune redundant comparisons and detect conflicting comparison conditions on the same expression
- *     within AND chains.  Controlled by setting `optimize_redundant_comparisons`, except for a
- *     contradiction between two `equals` on the same expression, which is detected either way.
+ *     within AND chains.  Controlled by `optimize_redundant_comparisons`, except an always-false `equals` pair.
  *     Handles all six comparison operators (=, !=, <, <=, >, >=) and their combinations:
  *     duplicate removal, contradiction detection, and range tightening.
  * -------------------------------

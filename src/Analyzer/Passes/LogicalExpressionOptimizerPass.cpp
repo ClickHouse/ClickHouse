@@ -417,8 +417,7 @@ struct ExpressionFilters
     /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
     /// collapse), NaN constants, and everything when pruning is disabled.
     std::vector<ComparisonFilterInfo> opaque_filters;
-    /// With pruning disabled, the position in `opaque_filters` of the first `equals` on this
-    /// expression: a later `equals` with a different value makes the whole AND false.
+    /// Index in `opaque_filters` of the first `equals` on this expression; set only when pruning is disabled.
     std::optional<size_t> first_equals_position;
 };
 
@@ -884,9 +883,8 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
 }
 
 /// Insert a new comparison filter for `expression` into `filter_map`.
-/// Performs type conversion, and, when `enable_pruning` is true, boundary folding and
-/// comparison against existing filters for the same expression; otherwise only two `equals`
-/// on the same expression are compared, against each other.
+/// Performs type conversion; with `enable_pruning` also boundary folding and comparison against
+/// every existing filter for the expression, otherwise only against the first `equals` seen.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 static AddComparisonFilterResult addComparisonFilter(
@@ -931,8 +929,6 @@ static AddComparisonFilterResult addComparisonFilter(
         return AddComparisonFilterResult::ADDED;
     }
 
-    /// `optimize_redundant_comparisons` gates pruning, boundary folding and strengthening; a
-    /// contradiction between two `equals` on the same expression collapses the AND either way.
     if (!enable_pruning)
     {
         auto result = AddComparisonFilterResult::ADDED;
@@ -1887,8 +1883,7 @@ private:
     /** Optimize AND chains by analyzing comparison conditions on the same expression.
       * This method performs two things in a single pass:
       *
-      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled; a
-      *     contradiction between two `equals` on the same expression is detected either way):
+      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled, except an always-false `equals` pair):
       *     Given an AND expression where the same column appears in multiple comparisons
       *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
       *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
