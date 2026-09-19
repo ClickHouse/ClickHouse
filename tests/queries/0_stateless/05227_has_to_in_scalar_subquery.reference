@@ -109,3 +109,69 @@ selective skip index off	Granules: 2/10
 selective result	128
 selective result off	128
 selective result no skip index	128
+bloom granules	Granules: 10/10
+bloom granules	Name: idx_uid
+bloom granules	Granules: 2/10
+bloom granules off	Granules: 10/10
+bloom granules off	Name: idx_uid
+bloom granules off	Granules: 2/10
+bloom granules scalar	Granules: 10/10
+bloom granules scalar	Name: idx_uid
+bloom granules scalar	Granules: 2/10
+bloom granules scalar off	Granules: 10/10
+bloom granules scalar off	Name: idx_uid
+bloom granules scalar off	Granules: 2/10
+bloom forced	128
+bloom forced off	128
+bloom result	128
+bloom result off	128
+bloom result no skip index	128
+bloom result scalar	128
+bloom result scalar off	128
+bloom result scalar no skip index	128
+tokenbf granules	Granules: 10/10
+tokenbf granules	Name: idx_uid
+tokenbf granules	Granules: 2/10
+tokenbf granules off	Granules: 10/10
+tokenbf granules off	Name: idx_uid
+tokenbf granules off	Granules: 2/10
+tokenbf granules scalar	Granules: 10/10
+tokenbf granules scalar	Name: idx_uid
+tokenbf granules scalar	Granules: 2/10
+tokenbf granules scalar off	Granules: 10/10
+tokenbf granules scalar off	Name: idx_uid
+tokenbf granules scalar off	Granules: 2/10
+tokenbf forced	128
+tokenbf forced off	128
+tokenbf result	128
+tokenbf result off	128
+tokenbf result no skip index	128
+tokenbf result scalar	128
+tokenbf result scalar off	128
+tokenbf result scalar no skip index	128
+ngrambf granules	Granules: 10/10
+ngrambf granules	Name: idx_uid
+ngrambf granules	Granules: 10/10
+ngrambf granules off	Granules: 10/10
+ngrambf granules off	Name: idx_uid
+ngrambf granules off	Granules: 10/10
+ngrambf granules scalar	Granules: 10/10
+ngrambf granules scalar	Name: idx_uid
+ngrambf granules scalar	Granules: 10/10
+ngrambf granules scalar off	Granules: 10/10
+ngrambf granules scalar off	Name: idx_uid
+ngrambf granules scalar off	Granules: 10/10
+ngrambf forced	128
+ngrambf forced off	128
+ngrambf result	128
+ngrambf result off	128
+ngrambf result no skip index	128
+ngrambf result scalar	128
+ngrambf result scalar off	128
+ngrambf result scalar no skip index	128
+narrow cast removing lowcardinality	Granules: 10/10
+narrow cast removing lowcardinality	Name: idx_uid
+narrow cast removing lowcardinality	Granules: 2/10
+narrow cast to fixedstring	Granules: 10/10
+narrow cast keeping lowcardinality	Granules: 10/10
+narrow tostring	Granules: 10/10

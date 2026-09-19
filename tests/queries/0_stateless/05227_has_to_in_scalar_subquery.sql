@@ -324,3 +324,110 @@ SELECT 'selective result no skip index', count() FROM tab_set_index_selective
     WHERE uid IN ((SELECT groupUniqArray(uid) FROM tab_set_index_selective WHERE id < 128)) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_set_index_selective;
+
+-- A hash-based skip index finds its column by the atom's rendered name, so the cast that wraps a
+-- LowCardinality needle has to be matched too. For each index family below the granules dropped and the
+-- acceptance by `force_data_skipping_indices` have to be the same with the rewrite on and off, and the
+-- counts have to match the unindexed read. Fixture as above: each granule holds a single uid and the
+-- needle names two of them. `ngrambf_v1` cannot discriminate 1-character values, so it prunes nothing in
+-- either arm; the rows below still pin that it is consulted at all.
+
+DROP TABLE IF EXISTS tab_bloom_lc;
+DROP TABLE IF EXISTS tab_tokenbf_lc;
+DROP TABLE IF EXISTS tab_ngrambf_lc;
+CREATE TABLE tab_bloom_lc (id UInt32, uid LowCardinality(String), INDEX idx_uid uid TYPE bloom_filter(0.01) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE tab_tokenbf_lc (id UInt32, uid LowCardinality(String), INDEX idx_uid uid TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE tab_ngrambf_lc (id UInt32, uid LowCardinality(String), INDEX idx_uid uid TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO tab_bloom_lc SELECT number, toString(intDiv(number, 64)) FROM numbers(640);
+INSERT INTO tab_tokenbf_lc SELECT number, toString(intDiv(number, 64)) FROM numbers(640);
+INSERT INTO tab_ngrambf_lc SELECT number, toString(intDiv(number, 64)) FROM numbers(640);
+
+SELECT 'bloom granules', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'bloom granules off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'bloom granules scalar', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_bloom_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'bloom granules scalar off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_bloom_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'bloom forced', count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS force_data_skipping_indices = 'idx_uid';
+SELECT 'bloom forced off', count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS force_data_skipping_indices = 'idx_uid', optimize_rewrite_has_to_in = 0;
+SELECT 'bloom result', count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1;
+SELECT 'bloom result off', count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'bloom result no skip index', count() FROM tab_bloom_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 0;
+SELECT 'bloom result scalar', count() FROM tab_bloom_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_bloom_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1;
+SELECT 'bloom result scalar off', count() FROM tab_bloom_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_bloom_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'bloom result scalar no skip index', count() FROM tab_bloom_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_bloom_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 0;
+
+SELECT 'tokenbf granules', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'tokenbf granules off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'tokenbf granules scalar', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_tokenbf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_tokenbf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'tokenbf granules scalar off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_tokenbf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_tokenbf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'tokenbf forced', count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS force_data_skipping_indices = 'idx_uid';
+SELECT 'tokenbf forced off', count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS force_data_skipping_indices = 'idx_uid', optimize_rewrite_has_to_in = 0;
+SELECT 'tokenbf result', count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1;
+SELECT 'tokenbf result off', count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'tokenbf result no skip index', count() FROM tab_tokenbf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 0;
+SELECT 'tokenbf result scalar', count() FROM tab_tokenbf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_tokenbf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1;
+SELECT 'tokenbf result scalar off', count() FROM tab_tokenbf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_tokenbf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'tokenbf result scalar no skip index', count() FROM tab_tokenbf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_tokenbf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 0;
+
+SELECT 'ngrambf granules', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'ngrambf granules off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'ngrambf granules scalar', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_ngrambf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_ngrambf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'ngrambf granules scalar off', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_ngrambf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_ngrambf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'ngrambf forced', count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS force_data_skipping_indices = 'idx_uid';
+SELECT 'ngrambf forced off', count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS force_data_skipping_indices = 'idx_uid', optimize_rewrite_has_to_in = 0;
+SELECT 'ngrambf result', count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1;
+SELECT 'ngrambf result off', count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'ngrambf result no skip index', count() FROM tab_ngrambf_lc WHERE has(['1', '2'], uid) SETTINGS use_skip_indexes = 0;
+SELECT 'ngrambf result scalar', count() FROM tab_ngrambf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_ngrambf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1;
+SELECT 'ngrambf result scalar off', count() FROM tab_ngrambf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_ngrambf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'ngrambf result scalar no skip index', count() FROM tab_ngrambf_lc WHERE has((SELECT groupUniqArray(uid) FROM tab_ngrambf_lc WHERE id < 128), uid) SETTINGS use_skip_indexes = 0;
+
+-- Only a cast that does nothing but remove `LowCardinality` may reach the index, because only then does
+-- the argument hold the bytes the index hashed. The three below are written directly, since the rewrite
+-- emits no other cast shape: a narrower target type, a target type that keeps `LowCardinality`, and a
+-- value-preserving conversion that is not a cast at all. None of them may be answered from the index.
+SELECT 'narrow cast removing lowcardinality', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE CAST(uid, 'String') IN ('1', '2') SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'narrow cast to fixedstring', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE CAST(uid, 'FixedString(4)') IN ('1', '2') SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'narrow cast keeping lowcardinality', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE CAST(uid, 'LowCardinality(FixedString(4))') IN ('1', '2') SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+SELECT 'narrow tostring', trimLeft(explain) FROM (
+    EXPLAIN indexes=1 SELECT count() FROM tab_bloom_lc WHERE toString(uid) IN ('1', '2') SETTINGS use_skip_indexes = 1
+    ) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
+
+DROP TABLE tab_bloom_lc;
+DROP TABLE tab_tokenbf_lc;
+DROP TABLE tab_ngrambf_lc;

@@ -61,6 +61,20 @@ FROM t_05228_dist_over_dist GROUP BY p ORDER BY p;
 SELECT 'above fold cutoff', has((SELECT groupUniqArray(repeat(toString(number), 200)) FROM numbers(1800)), repeat(uids, 200)) AS p, count()
 FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_05228_local) GROUP BY p ORDER BY p;
 
+-- That count is the same whether or not the rewrite fires, so it discriminates only while an
+-- unguarded rewrite errors. These two pin the shape itself: the predicate above the cutoff stays
+-- `has`, and the same predicate below it does not, so declining every size would fail the second row.
+SELECT 'above cutoff keeps has', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT has((SELECT groupUniqArray(repeat(toString(number), 200)) FROM numbers(1800)), repeat(uids, 200)) AS p, count()
+    FROM t_05228_local GROUP BY p
+    ) WHERE explain ILIKE '%function_name: has%';
+SELECT 'below cutoff keeps has', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT has((SELECT groupUniqArray(repeat(toString(number), 200)) FROM numbers(1200)), repeat(uids, 200)) AS p, count()
+    FROM t_05228_local GROUP BY p
+    ) WHERE explain ILIKE '%function_name: has%';
+
 -- Controls: a literal array (the same node on both sides) and a plain tuple `IN` (not rewritten at
 -- all) have to keep answering in the same shape.
 SELECT 'literal array control', has(['0', '1', '2'], uid) AS p, count()
