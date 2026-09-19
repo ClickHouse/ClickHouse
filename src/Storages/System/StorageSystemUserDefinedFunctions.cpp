@@ -10,6 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>
 #include <Common/ExternalLoaderStatus.h>
+#include <Core/SettingsEnums.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunction.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -74,6 +75,8 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "Milliseconds for reading from command stdout."},
         {"command_write_timeout", std::make_shared<DataTypeUInt64>(),
             "Milliseconds for writing to command stdin."},
+        {"command_pipe_capacity", std::make_shared<DataTypeUInt64>(),
+            "Capacity in bytes asked of the pipes to the command. 0 keeps the kernel's default."},
         {"pool_size", std::make_shared<DataTypeUInt64>(),
             "Number of command process instances. Only for 'executable_pool' type."},
         {"send_chunk_header", std::make_shared<DataTypeUInt8>(),
@@ -83,7 +86,23 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
         {"lifetime", std::make_shared<DataTypeUInt64>(),
             "Reload interval in seconds. 0 means reload is disabled."},
         {"deterministic", std::make_shared<DataTypeUInt8>(),
-            "Whether function returns the same result for the same arguments (boolean)."}
+            "Whether function returns the same result for the same arguments (boolean)."},
+        {"stderr_reaction", std::make_shared<DataTypeString>(),
+            "What is done with the command's stderr output: 'none', 'log', 'log_first', 'log_last' or 'throw'. "
+            "Empty when the function failed to load."},
+        {"check_exit_code", std::make_shared<DataTypeUInt8>(),
+            "Whether a non-zero exit code of the command fails the query (boolean)."},
+        {"use_shared_memory", std::make_shared<DataTypeUInt8>(),
+            "Whether the data is exchanged with the command through a shared-memory file instead of "
+            "the `stdin`/`stdout` pipes (boolean)."},
+        {"shared_memory_size", std::make_shared<DataTypeUInt64>(),
+            "Initial size in bytes of the shared-memory region. 0 when `use_shared_memory` is disabled."},
+        {"shared_memory_max_size", std::make_shared<DataTypeUInt64>(),
+            "Size in bytes the shared-memory region may grow to on demand. Equal to `shared_memory_size` "
+            "when the region may not grow; 0 when `use_shared_memory` is disabled."},
+        {"shared_memory_pipeline", std::make_shared<DataTypeUInt8>(),
+            "Whether the next input block is serialized into a second shared-memory region on a "
+            "background thread while the command is still processing the current one (boolean)."}
     };
 }
 
@@ -165,6 +184,7 @@ void StorageSystemUserDefinedFunctions::fillData(
             res_columns[i++]->insert(exec_config.command_termination_timeout_seconds);
             res_columns[i++]->insert(exec_config.command_read_timeout_milliseconds);
             res_columns[i++]->insert(exec_config.command_write_timeout_milliseconds);
+            res_columns[i++]->insert(exec_config.command_pipe_capacity);
             res_columns[i++]->insert(exec_config.pool_size);
             res_columns[i++]->insert(exec_config.send_chunk_header ? 1 : 0);
             res_columns[i++]->insert(exec_config.execute_direct ? 1 : 0);
@@ -174,14 +194,30 @@ void StorageSystemUserDefinedFunctions::fillData(
             res_columns[i++]->insert(lifetime.max_sec);
 
             res_columns[i++]->insert(config.is_deterministic ? 1 : 0);
+
+            res_columns[i++]->insert(SettingFieldExternalCommandStderrReactionTraits::toString(exec_config.stderr_reaction));
+            res_columns[i++]->insert(exec_config.check_exit_code ? 1 : 0);
+
+            /// Reported as the loader resolved them, not as they were written: with the transport
+            /// off every one of these is at its own zero, because the loader refuses a
+            /// configuration that spells any of them out without `use_shared_memory`. With it on,
+            /// `shared_memory_max_size` is already pinned to `shared_memory_size` when the region
+            /// is not allowed to grow, so this column answers "how large can it get" rather than
+            /// repeating the raw `0` that means "it cannot".
+            res_columns[i++]->insert(exec_config.use_shared_memory ? 1 : 0);
+            res_columns[i++]->insert(exec_config.shared_memory_size);
+            res_columns[i++]->insert(exec_config.shared_memory_max_size);
+            res_columns[i++]->insert(exec_config.shared_memory_pipeline ? 1 : 0);
         }
         else
         {
             // Failed to load - configuration unavailable, insert defaults for all config fields
             // Config fields: type, command, format, return_type, return_name, argument_types, argument_names,
             // max_command_execution_time, command_termination_timeout, command_read_timeout, command_write_timeout,
-            // pool_size, send_chunk_header, execute_direct, lifetime, deterministic
-            constexpr size_t config_fields_count = 16;
+            // command_pipe_capacity, pool_size, send_chunk_header, execute_direct, lifetime, deterministic,
+            // stderr_reaction, check_exit_code, use_shared_memory, shared_memory_size, shared_memory_max_size,
+            // shared_memory_pipeline
+            constexpr size_t config_fields_count = 23;
             for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }

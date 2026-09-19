@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import pytest
 
@@ -234,6 +235,22 @@ def test_executable_function_input_slow_python_timeout_increased(started_cluster
         )
         == "Key 0\nKey 1\nKey 2\n"
     )
+
+
+def test_executable_function_limit_over_an_endless_command_returns_at_once(started_cluster):
+    skip_test_msan(node)
+
+    # The command never stops writing; the query takes three rows and is done. With the exit code
+    # not checked, nothing about the command's exit is waited for - its stdout is closed and the
+    # next write kills it with SIGPIPE, as it always did - and the query returns at once, whether
+    # or not its stderr is observed. Draining the command's stdout while waiting for it to exit
+    # would keep it alive, and the query waiting, for the whole `command_termination_timeout`.
+    query = "SELECT * FROM executable('endless.sh', 'TabSeparated', 'value String', SETTINGS {settings}) LIMIT 3"
+    for settings in ("stderr_reaction = 'none'", "stderr_reaction = 'log'"):
+        started = time.monotonic()
+        assert node.query(query.format(settings=settings)) == "row\nrow\nrow\n"
+        elapsed = time.monotonic() - started
+        assert elapsed < 5, f"the query waited {elapsed:.1f}s for a command that never exits on its own ({settings})"
 
 
 def test_executable_storage_no_input_bash(started_cluster):

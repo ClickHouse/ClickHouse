@@ -269,6 +269,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             command_arguments.erase(command_arguments.begin());
         }
 
+        /// Executable dictionaries run over the pipes. Reject the shared-memory options rather
+        /// than ignoring them: a dictionary configured for that transport would otherwise load and
+        /// silently use a different one.
+        checkSharedMemoryIsNotConfigured(config, settings_config_prefix, "Executable dictionary source");
+
         ExecutableDictionarySource::Configuration configuration
         {
             .command = std::move(command_value),
@@ -288,7 +293,9 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
-            .execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false)
+            .execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false),
+            .use_shared_memory = false,
+            .shared_memory_size = 0
         };
 
         auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
@@ -336,12 +343,14 @@ Setting fields:
 |---------|-------------|
 | `command` | The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`). |
 | `format` | The file format. All the formats described in [Formats](/reference/formats/index) are supported. |
-| `command_termination_timeout` | The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. Specified in seconds. Default value is `10`. Optional. |
+| `command_termination_timeout` | The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. The same budget applies once the command has finished writing its output: with `check_exit_code` enabled, a command that has not exited within `command_termination_timeout` seconds after that fails the dictionary load (its exit code could not be checked) and is sent SIGTERM, rather than being waited for indefinitely; a value of `0` sends the signal at once where the command is being discarded, but leaves that wait for the exit status unbounded, as the wait was before. Specified in seconds. Default value is `10`. Optional. |
 | `command_read_timeout` | Timeout for reading data from command stdout in milliseconds. Default value `10000`. Optional. |
 | `command_write_timeout` | Timeout for writing data to command stdin in milliseconds. Default value `10000`. Optional. |
 | `implicit_key` | The executable source file can return only values, and the correspondence to the requested keys is determined implicitly by the order of rows in the result. Default value is `false`. |
 | `execute_direct` | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](/reference/settings/server-settings/settings/user#user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional. |
 | `send_chunk_header` | Controls whether to send row count before sending a chunk of data to process. Default value is `false`. Optional. |
+| `stderr_reaction` | What is done with the command's `stderr` output: `none` (read and discarded), `log` (logged at once), `log_first` (the first 4 KiB logged after the command exits), `log_last` (the last 4 KiB), `throw` (any output fails the load; with `log_first`/`log_last` and a non-zero exit code the output is included in the exception). Default value is `log_last`. Optional. |
+| `check_exit_code` | Whether a non-zero exit code of the command fails the dictionary load. Default value is `true`. Optional. |
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 )DOCS_MD",

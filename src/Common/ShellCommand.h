@@ -1,6 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <utility>
+#include <string_view>
 #include <unordered_map>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -63,6 +66,18 @@ public:
         std::vector<int> read_fds;
 
         std::vector<int> write_fds;
+
+        /// Descriptors of this process that the child inherits, as `{child_fd, parent_fd}`: in the
+        /// child, `parent_fd` is `dup2`-ed onto `child_fd` before `exec`. The copy is not
+        /// close-on-exec whatever the original is, which is the point: the original can - and for
+        /// a shared-memory region does - stay close-on-exec, so that no other child started from
+        /// another thread in the meantime gets it by accident. Only this child does, and only under
+        /// the number it is told: the original is closed in the child before `exec` whether or not
+        /// it was close-on-exec, so a caller handing over a pipe end does not leave a second copy
+        /// of it in the child under the original number - unless that number is itself where
+        /// something else is installed in the child (a standard stream, a `read_fds`/`write_fds`
+        /// pipe, another inherited descriptor), in which case what is there now is what stays.
+        std::vector<std::pair<int, int>> inherited_fds;
 
         bool pipe_stdin_only = false;
 
@@ -131,6 +146,55 @@ public:
     /// or signalled exit is not raised as an error. Returns whether the child was waited.
     bool tryWaitWithoutStatusCheck();
 
+    /// Wait for a child that is being thrown away, discarding whatever it writes to `stdout` and
+    /// `stderr` meanwhile, bounded by the shared `command_termination_timeout` budget.
+    ///
+    /// `wait` cannot be used for this: it reaps first and closes the pipes only afterwards, so a
+    /// child that is blocked writing into an output pipe nobody drains any more never gets to
+    /// exit, and the wait never returns. Closing its stdin does not help - a process blocked in
+    /// `write` is not waiting for input - and no timeout applies to a blocking `waitpid`. Draining
+    /// lets such a child run to its own exit, which also keeps the exit status meaningful: closing
+    /// the output pipes instead would kill it with `SIGPIPE` and report our own teardown as the
+    /// command's failure.
+    ///
+    /// Only `stdout` and `stderr` are drained. `Config::read_fds` - extra descriptors the child
+    /// could also write to - has no user in the codebase; a command that acquires one and floods it
+    /// would have to be drained here as well.
+    ///
+    /// `stderr_sink`, when given, receives what the child writes to `stderr` while it is being
+    /// waited for. Without it those bytes are simply dropped, which is all a caller with no use for
+    /// them can do - but a caller that has one must be given them: an executable UDF with
+    /// `stderr_reaction` `throw` promises that anything the command writes to `stderr` fails the
+    /// query, and this is the last stretch in which a command can still write. It is called on this
+    /// thread, and an exception from it propagates: the child is then left to the destructor.
+    ///
+    /// Returns whether the child was reaped. One that is still running when the budget runs out is
+    /// left to the destructor, which closes the pipes and signals it. Throws on a non-zero or
+    /// signalled exit, exactly like `wait`.
+    ///
+    /// `check_exit_status` is how a caller with `check_exit_code` switched off waits without
+    /// turning the command's own exit code into a query failure: the child is still reaped, and
+    /// its output still reaches `stderr_sink`, but a non-zero or signalled exit is not raised.
+    ///
+    /// `no_grace_means_unbounded` is for the one caller that used to `wait` for a command with no
+    /// bound at all - the non-pooled command whose output has ended - and for which a grace period
+    /// of zero would otherwise turn that wait into a single probe that fails nondeterministically:
+    /// with it, zero keeps the old meaning, and the wait for the exit status is unbounded. A
+    /// pooled worker that is being discarded was never waited for before, and for it zero means
+    /// what it means everywhere else: no grace, signal at once - so that a worker which closes
+    /// its stdout and then never exits cannot pin the query, and the pool's slot, forever.
+    /// How long the command is given to exit on its own before it is signalled
+    /// (`command_termination_timeout`). Zero means it is given no time at all, which a caller that
+    /// wants the exit status has to know about: there is then no difference between a command that
+    /// is slow to exit and one that never will, and reporting the second is not warranted.
+    UInt64 terminationTimeoutSeconds() const
+    {
+        return config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+    }
+
+    using StderrSink = std::function<void(std::string_view)>;
+    bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true, bool no_grace_means_unbounded = false);
+
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
@@ -173,9 +237,40 @@ private:
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
     struct tryWaitResult;
 
-    tryWaitResult tryWaitImpl(bool blocking, bool check_exit_status = true);
+    /// `close_streams = false` leaves the child's pipes open after it has been reaped. Only
+    /// `waitDrainingOutput` wants that, and it wants it badly: reaping closes the descriptors, and
+    /// whatever the child had already written and not yet been read is gone with them - including,
+    /// under `stderr_reaction` `throw`, the diagnostic the query was supposed to fail on. The
+    /// caller closes them itself once it has read them to the end.
+    tryWaitResult tryWaitImpl(bool blocking, bool check_exit_status = true, bool close_streams = true);
+
+    /// Closes everything `tryWaitImpl` would have closed on a reap.
+    void closeStreams();
+
+    /// Reads both output pipes until they end or `budget_ms` runs out, handing what comes off
+    /// stderr to `stderr_sink`. Does not reap and does not touch the termination deadline.
+    /// Reads exactly the bytes the pipes hold at this moment (`FIONREAD`), with no deadline: they
+    /// are there, so the reads cannot block, and nothing may cost them - see `waitDrainingOutput`.
+    void readBufferedOutput(int (&drain_fds)[2], const StderrSink & stderr_sink) const;
+
+    /// Reads what the pipes hold, for at most `budget_ms`. With `budget_is_quiet_time` the budget
+    /// is spent only while nothing arrives: every read pushes the deadline forward, so what is
+    /// already in the pipes is read whole however long that takes, and only the wait for more is
+    /// bounded - within a hard cap of `max_total_ms`, for a grandchild that keeps the pipe fed.
+    /// `stdout_bytes_drained`, if given, is increased by the number of bytes taken off `stdout`.
+    void drainOutputPipes(
+        int (&drain_fds)[2],
+        const StderrSink & stderr_sink,
+        UInt64 budget_ms,
+        bool budget_is_quiet_time = false,
+        UInt64 max_total_ms = 0,
+        size_t * stdout_bytes_drained = nullptr) const;
 
     void handleProcessRetcode(int retcode) const;
+
+    /// Decodes a raw `waitpid` status and throws for anything but a clean zero exit. Separate from
+    /// the reap so a caller can read the child's last words off its pipes before this can throw.
+    void handleProcessStatus(int status) const;
 
     static LoggerPtr getLogger();
 
