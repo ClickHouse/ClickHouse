@@ -140,6 +140,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 processing_state_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
@@ -470,6 +471,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
@@ -1444,6 +1446,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "processing_state_cache_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
@@ -1478,6 +1481,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "processing_state_cache_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
@@ -1658,7 +1662,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 void StorageObjectStorageQueue::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())
@@ -1797,7 +1802,7 @@ void StorageObjectStorageQueue::alter(
         });
 
         LOG_TRACE(
-            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}): {})",
             new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
@@ -1958,6 +1963,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds] = static_cast<UInt32>(metadata->getProcessingStateCacheTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
@@ -2019,8 +2025,8 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     if (move_between_databases && !can_be_moved_between_databases)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot move Storage{}Queue table between databases because the `keeper_path` setting is not explicitly set."
-            "By default, the `keeper_path` includes the UUID of the database where the table was created, making it non-portable."
+            "Cannot move Storage{}Queue table between databases because the `keeper_path` setting is not explicitly set. "
+            "By default, the `keeper_path` includes the UUID of the database where the table was created, making it non-portable. "
             "Please set an explicit `keeper_path` to allow moving the table", configuration->getEngineName());
     }
 }
