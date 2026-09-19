@@ -656,7 +656,15 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    return node->function_base->isInjective({});
+    if (node->function_base->isInjective({}))
+        return true;
+
+    size_t fixed_args = 0;
+    for (const auto & child : node->children)
+        if (child->type == ActionsDAG::ActionType::COLUMN)
+            ++fixed_args;
+    static const std::vector<String> injective = {"plus", "minus", "negate", "tuple"};
+    return (fixed_args + 1 >= node->children.size()) && (std::ranges::find(injective, node->function_base->getName()) != injective.end());
 }
 
 NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
