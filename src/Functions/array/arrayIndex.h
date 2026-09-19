@@ -4,6 +4,7 @@
 #include <type_traits>
 
 #include <Functions/IFunction.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
@@ -80,6 +81,13 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+/// One constant array searched for every row of the needle, so `rows` is the needle's row count.
+struct ConstHaystack
+{
+    size_t rows;
+    CancellationBudget & budget;
+};
+
 template <
     typename ConcreteAction,
     bool RightArgIsConstant = false,
@@ -173,10 +181,12 @@ public:
         const NullMap * const null_map_data,
         const NullMap * const null_map_item,
         size_t row_index,
-        ArrOffset current_offset)
+        ArrOffset current_offset,
+        CancellationBudget * budget = nullptr)
     {
         ResultType current = 0;
-        for (size_t j = 0; j < array_size; ++j)
+        size_t j = 0;
+        for (; j < array_size; ++j)
         {
             if constexpr (Case == 2) /// Right arg is Nullable
                 if (hasNull(null_map_item, row_index))
@@ -205,6 +215,8 @@ public:
             if constexpr (!ConcreteAction::resume_execution)
                 break;
         }
+        if (budget)
+            budget->chargeUnits(j + 1);
         return current;
     }
 
@@ -234,7 +246,8 @@ private:
         const NullMap * const null_map_data,
         const NullMap * const null_map_item,
         size_t row_index,
-        ArrOffset current_offset)
+        ArrOffset current_offset,
+        CancellationBudget * budget = nullptr)
     {
         /** Use binary search if the following conditions are met.
           *   1. The array type is not nullable. (Case = 1)
@@ -246,7 +259,7 @@ private:
         {
             return lowerBound(data, target, array_size, current_offset);
         }
-        return linearSearch<Case>(data, target, array_size, null_map_data, null_map_item, row_index, current_offset);
+        return linearSearch<Case>(data, target, array_size, null_map_data, null_map_item, row_index, current_offset, budget);
     }
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
@@ -258,13 +271,26 @@ private:
         const Target & target,
         ResultArr & result,
         [[maybe_unused]] const NullMap * const null_map_data,
-        [[maybe_unused]] const NullMap * const null_map_item)
+        [[maybe_unused]] const NullMap * const null_map_item,
+        const ConstHaystack * const_haystack)
     {
         if constexpr (std::is_same_v<Data, IColumn> && std::is_same_v<Target, IColumn>)
         {
             /// Generic variant is using IColumn::compare function that only allows to compare columns of identical types.
             if (typeid(data) != typeid(target))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Columns {} and {} cannot be compared", data.getName(), target.getName());
+        }
+
+        if (const_haystack)
+        {
+            const size_t array_size = offsets[0];
+            result.resize(const_haystack->rows);
+
+            for (size_t i = 0; i < const_haystack->rows; ++i)
+                result[i] = getIndex<Case>(
+                    data, target, array_size, null_map_data, null_map_item, i, 0, &const_haystack->budget);
+
+            return;
         }
 
         const size_t size = offsets.size();
@@ -288,16 +314,17 @@ public:
         const Target & value,
         ResultArr & result,
         const NullMap * const null_map_data,
-        const NullMap * const null_map_item)
+        const NullMap * const null_map_item,
+        const ConstHaystack * const_haystack = nullptr)
     {
         if (!null_map_data && !null_map_item)
-            process<1>(data, offsets, value, result, null_map_data, null_map_item);
+            process<1>(data, offsets, value, result, null_map_data, null_map_item, const_haystack);
         else if (!null_map_data && null_map_item)
-            process<2>(data, offsets, value, result, null_map_data, null_map_item);
+            process<2>(data, offsets, value, result, null_map_data, null_map_item, const_haystack);
         else if (null_map_data && !null_map_item)
-            process<3>(data, offsets, value, result, null_map_data, null_map_item);
+            process<3>(data, offsets, value, result, null_map_data, null_map_item, const_haystack);
         else
-            process<4>(data, offsets, value, result, null_map_data, null_map_item);
+            process<4>(data, offsets, value, result, null_map_data, null_map_item, const_haystack);
     }
 };
 
@@ -310,9 +337,10 @@ struct Null
     static void process(
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<ResultType> & result,
-        [[maybe_unused]] const NullMap * null_map_data)
+        [[maybe_unused]] const NullMap * null_map_data,
+        const ConstHaystack * const_haystack = nullptr)
     {
-        const size_t size = offsets.size();
+        const size_t size = const_haystack ? const_haystack->rows : offsets.size();
 
         if (!null_map_data)
         {
@@ -322,14 +350,12 @@ struct Null
 
         result.resize(size);
 
-        ColumnArray::Offset current_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
+        auto row_result = [&](size_t array_size, ColumnArray::Offset current_offset) -> ResultType
         {
             ResultType current = 0;
-            const size_t array_size = offsets[i] - current_offset;
+            size_t j = 0;
 
-            for (size_t j = 0; j < array_size; ++j)
+            for (; j < array_size; ++j)
             {
                 if (!(*null_map_data)[current_offset + j])
                     continue;
@@ -340,7 +366,27 @@ struct Null
                     break;
             }
 
-            result[i] = current;
+            if (const_haystack)
+                const_haystack->budget.chargeUnits(j + 1);
+
+            return current;
+        };
+
+        if (const_haystack)
+        {
+            const size_t array_size = offsets[0];
+
+            for (size_t i = 0; i < size; ++i)
+                result[i] = row_result(array_size, 0);
+
+            return;
+        }
+
+        ColumnArray::Offset current_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            result[i] = row_result(offsets[i] - current_offset, current_offset);
             current_offset = offsets[i];
         }
     }
@@ -364,17 +410,11 @@ private:
         OffsetT<IsConst> item_offsets,
         PaddedPODArray<ResultType> & result,
         [[maybe_unused]] const NullMap * data_map,
-        [[maybe_unused]] const NullMap * item_map)
+        [[maybe_unused]] const NullMap * item_map,
+        const ConstHaystack * const_haystack)
     {
-        const size_t size = offsets.size();
-        result.resize(size);
-
-        ArrayOffset current_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
+        auto row_result = [&](size_t i, ArrayOffset array_size, ArrayOffset current_offset) -> ResultType
         {
-            const ArrayOffset array_size = offsets[i] - current_offset;
-
             [[maybe_unused]] Offset value_pos = 0;
             [[maybe_unused]] Offset value_size = 0;
 
@@ -385,8 +425,9 @@ private:
             }
 
             ResultType current = 0;
+            size_t j = 0;
 
-            for (size_t j = 0; j < array_size; ++j)
+            for (; j < array_size; ++j)
             {
                 const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
                 const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
@@ -422,7 +463,31 @@ private:
                     break;
             }
 
-            result[i] = current;
+            if (const_haystack)
+                const_haystack->budget.chargeUnits(j + 1);
+
+            return current;
+        };
+
+        if (const_haystack)
+        {
+            const ArrayOffset array_size = offsets[0];
+            result.resize(const_haystack->rows);
+
+            for (size_t i = 0; i < const_haystack->rows; ++i)
+                result[i] = row_result(i, array_size, 0);
+
+            return;
+        }
+
+        const size_t size = offsets.size();
+        result.resize(size);
+
+        ArrayOffset current_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            result[i] = row_result(i, offsets[i] - current_offset, current_offset);
             current_offset = offsets[i];
         }
     }
@@ -432,16 +497,17 @@ private:
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
         OffsetT<IsConst> item_offsets,
-        PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map)
+        PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map,
+        const ConstHaystack * const_haystack)
     {
         if (data_map && item_map)
-            processImpl<IsConst, true, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, true, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map, const_haystack);
         else if (data_map)
-            processImpl<IsConst, true, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, true, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map, const_haystack);
         else if (item_map)
-            processImpl<IsConst, false, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, false, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map, const_haystack);
         else
-            processImpl<IsConst, false, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, false, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map, const_haystack);
     }
 
 public:
@@ -449,18 +515,20 @@ public:
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
         Offset item_offsets, PaddedPODArray<ResultType> & result,
-        const NullMap * data_map, const NullMap * item_map)
+        const NullMap * data_map, const NullMap * item_map,
+        const ConstHaystack * const_haystack = nullptr)
     {
-        invokeCheckNullMaps<true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        invokeCheckNullMaps<true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map, const_haystack);
     }
 
     static void process(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
         const ColumnString::Offsets & item_offsets, PaddedPODArray<ResultType> & result,
-        const NullMap * data_map, const NullMap * item_map)
+        const NullMap * data_map, const NullMap * item_map,
+        const ConstHaystack * const_haystack = nullptr)
     {
-        invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map, const_haystack);
     }
 };
 }
@@ -545,9 +613,9 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (auto res = executeMap(arguments, result_type))
+        if (auto res = executeMap(arguments, result_type, input_rows_count))
             return res;
 
         if (auto res = executeObject(arguments, result_type))
@@ -613,7 +681,8 @@ private:
     /// the needle by a cast, did find it. Bring the pair to that type first, so that what is compared
     /// here is what `equals` compares, whichever way the haystack is encoded.
     ColumnPtr executeDifferentDateTimeUnits(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+        const Impl::ConstHaystack * const_haystack) const
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
         if (!array_type)
@@ -640,7 +709,7 @@ private:
         new_arguments[1].column = castColumn(arguments[1], common_type);
         new_arguments[1].type = common_type;
 
-        return executeArrayImpl(new_arguments, result_type);
+        return executeArrayImpl(new_arguments, result_type, const_haystack);
     }
 
     /** If one or both arguments passed to this function are nullable,
@@ -656,9 +725,11 @@ private:
       * (they are vectors of Fields, which may represent the NULL value),
       * they do not require any preprocessing.
       */
-    ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    ColumnPtr executeArrayImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+        const Impl::ConstHaystack * const_haystack = nullptr) const
     {
-        if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
+        if (auto res = executeDifferentDateTimeUnits(arguments, result_type, const_haystack))
             return res;
 
         const ColumnPtr & ptr = arguments[0].column;
@@ -678,7 +749,7 @@ private:
 
         if (!nullable && !arg_nullable)
         {
-            return executeOnNonNullable(arguments, result_type);
+            return executeOnNonNullable(arguments, result_type, const_haystack);
         }
 
         /** To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
@@ -727,19 +798,21 @@ private:
         }
 
         /// Now perform the function.
-        return executeOnNonNullable(source_columns, result_type);
+        return executeOnNonNullable(source_columns, result_type, const_haystack);
     }
 
 #define INTEGRAL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
 
-    ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    ColumnPtr executeOnNonNullable(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+        const Impl::ConstHaystack * const_haystack) const
     {
         ColumnPtr res;
-        if (!((res = executeNothing(arguments))
-              || (res = executeIntegral<INTEGRAL_PACK>(arguments))
+        if (!((res = executeNothing(arguments, const_haystack))
+              || (res = executeIntegral<INTEGRAL_PACK>(arguments, const_haystack))
               || (res = executeConst(arguments, result_type))
-              || (res = executeString(arguments))
-              || (res = executeGeneric(arguments))))
+              || (res = executeString(arguments, const_haystack))
+              || (res = executeGeneric(arguments, const_haystack))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
@@ -781,6 +854,7 @@ private:
         const IColumn & right;
         const ColumnArray::Offsets & offsets;
         NullMaps null_maps;
+        const Impl::ConstHaystack * const_haystack = nullptr;
     };
 
     /**
@@ -789,7 +863,7 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <typename... Integral>
-    static ColumnPtr executeIntegral(const ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeIntegral(const ColumnsWithTypeAndName & arguments, const Impl::ConstHaystack * const_haystack)
     {
         const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!array)
@@ -801,6 +875,7 @@ private:
             .right = *arguments[1].column,
             .offsets = array->getOffsets(),
             .null_maps = getNullMaps(arguments),
+            .const_haystack = const_haystack,
         };
 
         auto result = ResultColumnType::create();
@@ -839,7 +914,8 @@ private:
                 item_arg_const->template getValue<Resulting>(),
                 result.getData(),
                 data.null_maps.first,
-                nullptr);
+                nullptr,
+                data.const_haystack);
         else if (const auto * item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&data.right))
             Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 left_typed->getData(),
@@ -847,7 +923,8 @@ private:
                 item_arg_vector->getData(),
                 result.getData(),
                 data.null_maps.first,
-                data.null_maps.second);
+                data.null_maps.second,
+                data.const_haystack);
         else
             return false;
 
@@ -931,7 +1008,7 @@ private:
         return col_result;
     }
 
-    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
             return nullptr;
@@ -939,9 +1016,10 @@ private:
         if (!isMap(arguments[0].type))
             return nullptr;
 
-        auto non_const_map_column = arguments[0].column->convertToFullColumnIfConst();
+        /// A constant map holds its keys once, for all of its rows.
+        const auto * const_map = checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get());
 
-        const auto & map_column = assert_cast<const ColumnMap &>(*non_const_map_column);
+        const auto & map_column = const_map ? *const_map : assert_cast<const ColumnMap &>(*arguments[0].column);
         const auto & map_array_column = map_column.getNestedColumn();
         auto offsets = map_array_column.getOffsetsPtr();
         auto keys = map_column.getNestedData().getColumnPtr(0);
@@ -964,7 +1042,15 @@ private:
             argument.type = recursiveRemoveLowCardinality(argument.type);
         }
 
-        return executeArrayImpl(arguments_copy, result_type);
+        if (!const_map)
+            return executeArrayImpl(arguments_copy, result_type);
+
+        /// `CancellationBudget` keeps a pointer to the check, so the functor needs a name of its own.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+        const Impl::ConstHaystack const_haystack{input_rows_count, budget};
+
+        return executeArrayImpl(arguments_copy, result_type, &const_haystack);
     }
 
     /**
@@ -1163,7 +1249,7 @@ private:
         return res_col;
     }
 
-    static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments, const Impl::ConstHaystack * const_haystack)
     {
         const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!array)
@@ -1192,7 +1278,8 @@ private:
                     item_const_string->getDataAt(0).size(),
                     result->getData(),
                     null_map_data,
-                    null_map_item);
+                    null_map_item,
+                    const_haystack);
             else if (item_const_fixedstring)
                 Impl::String<ConcreteAction>::process(
                     left->getChars(),
@@ -1202,7 +1289,8 @@ private:
                     item_const_fixedstring->getN(),
                     result->getData(),
                     null_map_data,
-                    null_map_item);
+                    null_map_item,
+                    const_haystack);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnConst contains not String nor FixedString column");
         }
@@ -1216,7 +1304,8 @@ private:
                 item_arg_vector->getOffsets(),
                 result->getData(),
                 null_map_data,
-                null_map_item);
+                null_map_item,
+                const_haystack);
         }
         else
         {
@@ -1302,7 +1391,7 @@ private:
         return col_res;
     }
 
-    static ColumnPtr executeNothing(const ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeNothing(const ColumnsWithTypeAndName & arguments, const Impl::ConstHaystack * const_haystack)
     {
         const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!array)
@@ -1311,14 +1400,15 @@ private:
         if (arguments[1].column->onlyNull())
         {
             auto result = ResultColumnType::create();
-            Impl::Null<ConcreteAction>::process(array->getOffsets(), result->getData(), getNullMaps(arguments).first);
+            Impl::Null<ConcreteAction>::process(
+                array->getOffsets(), result->getData(), getNullMaps(arguments).first, const_haystack);
             return result;
         }
 
         return nullptr;
     }
 
-    static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments, const Impl::ConstHaystack * const_haystack)
     {
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!col_array)
@@ -1343,7 +1433,8 @@ private:
                 item_arg_const->getDataColumn(),
                 col_res->getData(), /// TODO This is wrong.
                 null_map_data,
-                nullptr);
+                nullptr,
+                const_haystack);
         }
         else
         {
@@ -1353,7 +1444,8 @@ private:
                 *item_arg,
                 col_res->getData(),
                 null_map_data,
-                null_map_item);
+                null_map_item,
+                const_haystack);
         }
 
         return col_res;
