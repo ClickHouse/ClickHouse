@@ -1,9 +1,11 @@
 #include <Planner/PlannerContext.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -187,10 +189,20 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
     return table_expression_data->getColumnIdentifierOrNull(column_name);
 }
 
-PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
+PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node) const
 {
+    /// An initiator holds an Array-typed scalar subquery as a `__getScalar` reference, while every other server
+    /// holds its value: a secondary server constant-folds the reference while re-resolving the shipped query, and
+    /// the AST sent to the next hop carries the value rather than the reference. Hash the value so that all of
+    /// them derive the same name.
+    QueryTreeNodePtr set_source_value_node;
+    if (auto scalar_column = tryGetScalarSubqueryColumn(set_source_node, getQueryContext()))
+        set_source_value_node = std::make_shared<ConstantNode>(
+            ConstantValue::wrapToColumnConst(scalar_column), set_source_node->getResultType());
+
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
-    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
+    const auto set_source_hash = (set_source_value_node ? set_source_value_node : set_source_node)
+                                     ->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
 
     const auto set_source_node_type = set_source_node->getNodeType();
     const bool left_operand_is_cast_to_set_source_type = set_source_node_type == QueryTreeNodeType::QUERY

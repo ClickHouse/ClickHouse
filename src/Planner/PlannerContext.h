@@ -191,7 +191,7 @@ public:
     using SetKey = std::string;
 
     /// Create set key for set source node
-    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
+    SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node) const;
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
