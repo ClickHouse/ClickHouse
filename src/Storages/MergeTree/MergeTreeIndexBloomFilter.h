@@ -75,6 +75,7 @@ public:
     MergeTreeIndexConditionBloomFilter(
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
+        StorageMetadataPtr metadata_snapshot_,
         const Block & header_,
         size_t hash_functions_,
         NameSet columns_shadowing_map_subcolumns_);
@@ -92,6 +93,8 @@ public:
     std::string getDescription() const override { return ""; }
 
 private:
+    /// The table's columns, to tell a JSON path apart from a column merely named like one.
+    StorageMetadataPtr metadata_snapshot;
     const Block & header;
     const size_t hash_functions;
     const NameSet columns_shadowing_map_subcolumns;
