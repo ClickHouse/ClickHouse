@@ -433,8 +433,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
         && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
-    /// A `FixedString` source parses through the same `ConvertThroughParsing` instantiations as a `String` one,
-    /// so it must reach the NULL-on-error parser too; `CastType::accurate` must reject such a value instead.
+    /// `CastType::accurate` rejects a text value it cannot represent instead of returning NULL.
     const bool parse_text_returning_null_on_error = requested_result_is_nullable
         && (which.isString() || (which.isFixedString() && cast_type != CastType::accurate));
 
@@ -684,7 +683,6 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 from_type->getName(), to_type->getName());
     }
 
-    /// Same rule as in `createWrapper`: a `FixedString` source is a text source here too.
     const bool parse_text_returning_null_on_error = requested_result_is_nullable
         && (which.isString() || (which.isFixedString() && cast_type != CastType::accurate));
 
