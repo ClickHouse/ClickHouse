@@ -54,16 +54,19 @@ void checkArgumentTypesForSetBinaryOperator(
     }
 }
 
-ASTPtr makePresenceMask(ASTPtr values)
+ASTPtr makePresenceArray(ASTPtr values)
 {
     auto lambda = makeASTFunction(
         "lambda",
         makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
         makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")));
 
-    return makeASTFunction(
-        "groupBitOrForEach",
-        makeASTFunction("arrayMap", std::move(lambda), std::move(values)));
+    return makeASTFunction("arrayMap", std::move(lambda), std::move(values));
+}
+
+ASTPtr makePresenceMask(ASTPtr values)
+{
+    return makeASTFunction("groupBitOrForEach", makePresenceArray(std::move(values)));
 }
 
 }
