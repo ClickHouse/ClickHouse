@@ -10,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <base/hex.h>
 
 #include <optional>
@@ -119,6 +120,32 @@ void checkPathComponents(ZnodeString what, const String & str)
 
         remaining.remove_prefix(slash_pos + 1);
     }
+}
+
+/// Returns the position right after the path component containing the last canonical UUID (36 characters)
+/// in the path, or npos if there is none. The UUID does not have to be a whole component: the `{uuid}`
+/// macro may be surrounded by other text in the same component, as in "/foo/pika{uuid}chu/bar".
+size_t findEndOfComponentWithLastUUID(const String & path)
+{
+    static constexpr size_t uuid_text_size = 36;
+    if (path.size() < uuid_text_size)
+        return String::npos;
+
+    for (size_t begin = path.size() - uuid_text_size; ; --begin)
+    {
+        UUID uuid;
+        if (tryParseUUID({reinterpret_cast<const UInt8 *>(path.data() + begin), uuid_text_size}, uuid))
+        {
+            size_t end = begin + uuid_text_size;
+            while (end < path.size() && path[end] != '/')
+                ++end;
+            return end;
+        }
+
+        if (begin == 0)
+            break;
+    }
+    return String::npos;
 }
 
 }
@@ -253,8 +280,39 @@ TableZnodeInfo TableZnodeInfo::resolve(
             i += 1;
         res.path_prefix_for_drop = res.path.substr(0, i);
     }
+    else
+    {
+        /// A table may live under a UUID-named znode without the {uuid} macro in its metadata: converting
+        /// a table of an `Ordinary` database to a replicated engine mints a UUID for the {uuid} macro and
+        /// stores the fully expanded path as a literal, because the metadata of such a table has no place
+        /// for the UUID itself. That literal is the only record of the UUID, so the owned prefix is
+        /// recovered from the path: it ends with the path component containing the last UUID, which may be
+        /// surrounded by other text as in "/foo/pika{uuid}chu/bar" (the same rule as above). The recovery
+        /// cannot be limited to tables with a Nil UUID: after `RENAME TABLE` from `Ordinary` into `Atomic`
+        /// the table gets a fresh UUID of its own while the literal path keeps the minted one. (A UUID
+        /// the user wrote by hand may be picked up as well; harmless, as only emptied znodes are removed.)
+        if (const size_t i = findEndOfComponentWithLastUUID(res.path); i != String::npos)
+            res.path_prefix_for_drop = res.path.substr(0, i);
+    }
 
     return res;
+}
+
+void TableZnodeInfo::checkPrefixForDropRecoverableFromPath() const
+{
+    const size_t recovered_end = findEndOfComponentWithLastUUID(path);
+    const std::string_view recovered_prefix = recovered_end == String::npos ? std::string_view(path) : std::string_view(path).substr(0, recovered_end);
+    if (recovered_prefix == path_prefix_for_drop)
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "The ZooKeeper path {} of the converted table has another UUID-shaped path component after the one expanded "
+        "from the {{uuid}} macro. A table of an Ordinary database stores this path literally, without the macro, "
+        "so on a later load it could not tell which znode it owns and would keep {} in ZooKeeper after DROP TABLE. "
+        "Change the default_replica_path template or the macro that expands to a UUID (such as {{shard}}), "
+        "or move the table to an Atomic database before converting it",
+        quoteString(full_path), quoteString(path_prefix_for_drop));
 }
 
 void TableZnodeInfo::dropAncestorZnodesIfNeeded(const zkutil::ZooKeeperPtr & zookeeper) const
