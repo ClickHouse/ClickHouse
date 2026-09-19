@@ -10,4 +10,23 @@
 
     <query tag="optimized">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
     <query tag="baseline">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
+
+    <!-- With aggregate functions in the projection, the optimization restricts all
+         aggregation threads to a shared set of `n` kept keys, so the hash tables stay
+         tiny and the values of the kept keys stay exact (the ClickBench Q17 shape). -->
+
+    <query tag="optimized_agg">SELECT number % 100000000 AS k, count() FROM numbers_mt(200000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
+    <query tag="baseline_agg">SELECT number % 100000000 AS k, count() FROM numbers_mt(200000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
+
+    <!-- Under default settings the `GROUP BY` top-K heap applies to the same shape. The planner
+         leaves fixed-width keys to the kept-keys cutoff (faster there) and `String`-like keys to
+         the heap, so the first pair compares the cutoff against the heap and the second pair
+         must stay neutral (the cutoff steps aside). The `String`-key shape is also covered by
+         `topk_aggregation` on `hits_100m_single` (`GROUP BY URL LIMIT 10`). -->
+
+    <query tag="optimized_agg_vs_top_k">SELECT number % 100000000 AS k, count() FROM numbers_mt(200000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1, query_plan_max_limit_for_top_k_optimization = 1000</query>
+    <query tag="baseline_agg_top_k">SELECT number % 100000000 AS k, count() FROM numbers_mt(200000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0, query_plan_max_limit_for_top_k_optimization = 1000</query>
+
+    <query tag="string_key_top_k_with_cutoff_enabled">SELECT lower(toString(number % 10000000)) AS k, count() FROM numbers_mt(50000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1, query_plan_max_limit_for_top_k_optimization = 1000</query>
+    <query tag="string_key_top_k">SELECT lower(toString(number % 10000000)) AS k, count() FROM numbers_mt(50000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0, query_plan_max_limit_for_top_k_optimization = 1000</query>
 </test>
