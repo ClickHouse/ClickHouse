@@ -51,7 +51,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدعم ClickHouse عدة خوارزميات JOIN توازن بين السرعة واستهلاك الذاكرة:
 
 * **Parallel Hash JOIN (default):** سريع للجداول الموجودة على الجانب الأيمن ذات الحجم الصغير إلى المتوسط والتي تتسع في الذاكرة.
-* **Direct JOIN:** مثالي عند استخدام القواميس (أو محركات الجداول الأخرى ذات خصائص key-value) مع `INNER` أو `LEFT ANY JOIN` — وهو أسرع أسلوب لعمليات lookup المباشرة، لأنه يلغي الحاجة إلى إنشاء hash table.
+* **Direct JOIN:** مثالي عند استخدام القواميس (أو محركات الجداول الأخرى ذات خصائص key-value) مع `INNER` أو `LEFT ANY JOIN`  — وهو أسرع أسلوب لعمليات lookup المباشرة، لأنه يلغي الحاجة إلى إنشاء hash table.
 * **Full Sorting Merge JOIN:** فعّال عندما يكون كلا الجدولين مرتَّبين حسب join key.
 * **Partial Merge JOIN:** يقلّل استهلاك الذاكرة إلى الحد الأدنى، لكنه أبطأ — وهو الأنسب لربط الجداول الكبيرة عند محدودية الذاكرة.
 * **Grace Hash JOIN:** مرن وقابل لضبط الذاكرة، ومناسب لمجموعات البيانات الكبيرة مع إمكانية ضبط خصائص الأداء.
@@ -62,7 +62,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   يختلف دعم كل خوارزمية لأنواع JOIN. ويمكن العثور على قائمة كاملة بأنواع JOIN المدعومة لكل خوارزمية [هنا](/ar/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 </Note>
 
-يمكنك ترك ClickHouse يختار أفضل خوارزمية عبر ضبط `join_algorithm = 'auto'` (وهو الإعداد الافتراضي)، أو التحكّم بها صراحةً وفقًا لـ workload لديك. وإذا كنت بحاجة إلى اختيار خوارزمية JOIN لتحسين الأداء أو تقليل overhead الذاكرة، فنوصي بهذا [الدليل](/ar/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+يمكنك ترك ClickHouse يختار أفضل خوارزمية عبر ضبط `join_algorithm = 'auto'`، أو التحكّم بها صراحةً وفقًا لـ workload لديك. القيمة الافتراضية هي `direct,parallel_hash,hash`، لذلك يستخدم ClickHouse عملية direct join عندما يكون الجانب الأيمن قاموسًا أو محرك key-value، وإلا فإنه يعود إلى parallel hash ثم hash. وإذا كنت بحاجة إلى اختيار خوارزمية JOIN لتحسين الأداء أو تقليل overhead الذاكرة، فنوصي بهذا [الدليل](/ar/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 
 لتحقيق أفضل أداء:
 

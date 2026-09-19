@@ -1,0 +1,10 @@
+<clickhouse>
+    <user_directories replace="replace">
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <replicated>
+            <zookeeper_path>/clickhouse/access</zookeeper_path>
+        </replicated>
+    </user_directories>
+</clickhouse>

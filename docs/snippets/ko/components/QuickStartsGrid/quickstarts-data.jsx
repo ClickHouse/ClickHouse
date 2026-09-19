@@ -53,15 +53,15 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "첫 번째 Cloud 서비스를 만들고 예시 데이터 불러오기",
-    "description": "ClickHouse Cloud 서비스를 만들고 SQL 콘솔을 살펴본 뒤 예시 데이터셋을 로드하여 몇 분 만에 실제 데이터에 쿼리를 실행할 수 있습니다.",
-    "href": "/ko/get-started/quickstarts/create-your-first-service-on-cloud",
+    "title": "ClickHouse Cloud 빠른 시작",
+    "description": "ClickHouse Cloud 빠른 시작 가이드",
     "useCases": [
       "all"
     ],
     "products": [
       "cloud"
-    ]
+    ],
+    "href": "/ko/get-started/setup/cloud"
   },
   {
     "id": "creating-tables",
@@ -114,7 +114,7 @@ export const quickStartsData = [
   {
     "id": "tutorial",
     "title": "고급 튜토리얼",
-    "description": "뉴욕시 택시 예제 데이터셋을 사용해 ClickHouse에서 데이터를 수집하고 쿼리하는 방법을 알아봅니다.",
+    "description": "New York City 택시 예시 데이터셋을 사용해 ClickHouse에서 데이터를 수집하고 쿼리하는 방법을 알아봅니다.",
     "href": "/ko/get-started/quickstarts/tutorial",
     "useCases": [
       "real-time-analytics",
@@ -127,8 +127,8 @@ export const quickStartsData = [
   },
   {
     "id": "working-with-the-map-type",
-    "title": "ClickHouse에서 맵(Map) 타입 사용하기",
-    "description": "OTel 리소스 속성을 예시로, ClickHouse에서 동적 키-값 데이터를 저장, 쿼리, 집계하는 데 맵(Map) 타입을 사용하는 방법을 알아봅니다.",
+    "title": "ClickHouse에서 맵 타입 사용하기",
+    "description": "OTel 리소스 속성을 예시로, ClickHouse에서 동적 키-값 데이터를 저장, 쿼리, 집계하는 데 맵 타입을 사용하는 방법을 알아봅니다.",
     "href": "/ko/get-started/quickstarts/working-with-the-map-type",
     "useCases": [
       "observability"

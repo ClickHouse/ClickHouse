@@ -10,7 +10,7 @@
 
 -- Write 16 tiny files. Each is far below 2 * max_download_buffer_size, i.e. "object_too_small",
 -- so it takes the prefetch path.
-INSERT INTO FUNCTION s3(s3_conn, filename='04000_prefetch_{_partition_id}.tsv', format='TSV')
+INSERT INTO FUNCTION s3(s3_conn, filename='04000_prefetch_{_partition_id}.tsv', format='TSV', partition_strategy='wildcard')
 PARTITION BY (a % 16)
 SELECT number AS a, toString(number) AS b
 FROM numbers(16000)

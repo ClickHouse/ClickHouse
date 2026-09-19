@@ -42,9 +42,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### إنشاء حساب خدمة في Google Cloud
-
+  <Step title="إنشاء حساب خدمة في Google Cloud" id="create-gcs-account">
     1. في Google Cloud Console، انتقل إلى IAM &amp; Admin → Service Accounts
 
     <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
@@ -82,9 +80,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
   </Step>
 
-  <Step>
-    ### منح حساب الخدمة إذن الوصول إلى حاوية التخزين
-
+  <Step title="منح حساب الخدمة إذن الوصول إلى حاوية التخزين" id="grant-bucket-access-to-service-account">
     يمكنك منح الإذن إمّا على مستوى المشروع أو على مستوى حاوية تخزين فردية.
 
     #### الخيار 1: منح الإذن إلى حاويات تخزين محددة (موصى به)
@@ -117,9 +113,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Warning>
   </Step>
 
-  <Step>
-    ### أنشئ مفاتيح HMAC لحساب الخدمة
-
+  <Step title="أنشئ مفاتيح HMAC لحساب الخدمة" id="generate-hmac-keys-for-service-account">
     انتقل إلى `Cloud Storage` → `Settings` → `Interoperability`:
 
     <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />

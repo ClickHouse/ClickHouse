@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-UInt128 SerializationDynamicElement::getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_)
+UInt128 SerializationDynamicElement::getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_)
 {
     SipHash hash;
     hash.update("DynamicElement");
@@ -31,14 +31,15 @@ UInt128 SerializationDynamicElement::getHash(const SerializationPtr & nested_, c
     hash.update(nested_subcolumn_.size());
     hash.update(nested_subcolumn_);
     hash.update(is_null_map_subcolumn_);
+    hash.update(nullable_added_by_extraction_);
     return hash.get128();
 }
 
-SerializationPtr SerializationDynamicElement::create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_)
+SerializationPtr SerializationDynamicElement::create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_)
 {
     if (!nested_->supportsPooling() || !shared_variant_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_));
-    return ISerialization::pooled(getHash(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_), [&] { return new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_); });
+        return std::shared_ptr<ISerialization>(new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_, nullable_added_by_extraction_));
+    return ISerialization::pooled(getHash(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_, nullable_added_by_extraction_), [&] { return new SerializationDynamicElement(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_, nullable_added_by_extraction_); });
 }
 
 struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::DeserializeBinaryBulkState
@@ -47,9 +48,6 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     SerializationPtr variant_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant{};
-    ColumnPtr shared_variant;
-    size_t shared_variant_size = 0;
-
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -123,7 +121,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
                 dynamic_element_name, *global_discr, variant_type.getVariants().size());
         else
             dynamic_element_state->variant_serialization = SerializationVariantElement::create(
-                nested_serialization, dynamic_element_name, *global_discr, variant_type.getVariants().size());
+                nested_serialization, dynamic_element_name, *global_discr, variant_type.getVariants().size(), nullable_added_by_extraction);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = false;
         settings.path.pop_back();
@@ -134,11 +132,15 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         auto shared_variant_global_discr = variant_type.tryGetVariantDiscriminator(ColumnDynamic::getSharedVariantTypeName());
         chassert(shared_variant_global_discr.has_value());
         settings.path.push_back(Substream::DynamicData);
+        /// The shared variant is always read into a Nullable column of the shared variant type
+        /// (see below), while shared_variant_serialization is a plain String serialization, so the
+        /// Nullable is always added here and must always be removed - never forward the flag.
         dynamic_element_state->variant_serialization = SerializationVariantElement::create(
             shared_variant_serialization,
             ColumnDynamic::getSharedVariantTypeName(),
             *shared_variant_global_discr,
-            variant_type.getVariants().size());
+            variant_type.getVariants().size(),
+            /*nullable_added_by_extraction_=*/true);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = true;
         settings.path.pop_back();
@@ -153,8 +155,7 @@ void SerializationDynamicElement::serializeBinaryBulkWithMultipleStreams(const I
 }
 
 void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & result_column,
-    size_t rows_offset,
+    IColumn & result_column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -164,8 +165,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         if (is_null_map_subcolumn)
         {
-            auto mutable_column = result_column->assumeMutable();
-            auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+            auto & data = assert_cast<ColumnUInt8 &>(result_column).getData();
             data.resize_fill(data.size() + limit, 1);
         }
 
@@ -180,32 +180,25 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            result_column, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
+            result_column, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
     }
     /// Otherwise, read the shared variant column and extract requested type from it.
     else
     {
         settings.path.push_back(Substream::DynamicData);
-        /// Initialize shared_variant column if needed.
-        if (result_column->empty() || !dynamic_element_state->shared_variant)
-        {
-            dynamic_element_state->shared_variant = makeNullable(ColumnDynamic::getSharedVariantDataType()->createColumn());
-            dynamic_element_state->shared_variant_size = 0;
-        }
-
+        /// Deserialize the shared variant for the current range into a fresh column.
+        auto shared_variant_column = ColumnNullable::create(ColumnDynamic::getSharedVariantDataType()->createColumn(), ColumnUInt8::create());
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            dynamic_element_state->shared_variant, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
-        size_t prev_shared_variant_size = dynamic_element_state->shared_variant_size;
-        dynamic_element_state->shared_variant_size = dynamic_element_state->shared_variant->size();
+            *shared_variant_column, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.
         auto variant_type = DataTypeFactory::instance().get(dynamic_element_name);
         auto result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type);
-        MutableColumnPtr variant_column = nested_subcolumn.empty() || is_null_map_subcolumn ? result_column->assumeMutable() : result_type->createColumn();
+        MutableColumnPtr variant_column = nested_subcolumn.empty() || is_null_map_subcolumn ? result_column.getPtr() : result_type->createColumn();
         variant_column->reserve(variant_column->size() + limit);
-        MutableColumnPtr non_nullable_variant_column = variant_column->assumeMutable();
+        IColumn * non_nullable_variant_column = variant_column.get();
         NullMap * null_map = nullptr;
         bool is_low_cardinality_nullable = isColumnLowCardinalityNullable(*variant_column);
         /// Resulting subolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
@@ -213,7 +206,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         if (isColumnNullable(*variant_column))
         {
             auto & nullable_variant_column = assert_cast<ColumnNullable &>(*variant_column);
-            non_nullable_variant_column = nullable_variant_column.getNestedColumnPtr()->assumeMutable();
+            non_nullable_variant_column = &nullable_variant_column.getNestedColumn();
             null_map = &nullable_variant_column.getNullMapData();
         }
         else if (is_null_map_subcolumn)
@@ -223,11 +216,11 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
 
         auto variant_serialization = variant_type->getDefaultSerialization();
 
-        const auto & nullable_shared_variant = assert_cast<const ColumnNullable &>(*dynamic_element_state->shared_variant);
+        const auto & nullable_shared_variant = assert_cast<const ColumnNullable &>(*shared_variant_column);
         const auto & shared_null_map = nullable_shared_variant.getNullMapData();
         const auto & shared_variant = assert_cast<const ColumnString &>(nullable_shared_variant.getNestedColumn());
         const FormatSettings format_settings;
-        for (size_t i = prev_shared_variant_size; i != shared_variant.size(); ++i)
+        for (size_t i = 0; i != shared_variant.size(); ++i)
         {
             if (!shared_null_map[i])
             {
@@ -283,7 +276,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         if (!nested_subcolumn.empty() && !is_null_map_subcolumn)
         {
             auto subcolumn = result_type->getSubcolumn(nested_subcolumn, variant_column->getPtr());
-            result_column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            result_column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }
 }
@@ -291,6 +284,25 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
 size_t SerializationDynamicElement::allocatedBytes() const
 {
     return sizeof(*this) + dynamic_element_name.capacity() + nested_subcolumn.capacity();
+}
+
+MutableColumnPtr SerializationDynamicElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// The null map subcolumn is a UInt8 column read through SerializationVariantElementNullMap;
+    /// nested_serialization serializes the requested type, which is not what is read here.
+    if (is_null_map_subcolumn)
+        return column;
+
+    /// Same level ownership as in SerializationVariantElement, which this delegates to at read time.
+    if (isColumnNullable(*column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        return ColumnNullable::create(
+            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
+            nullable.getNullMapColumnPtr()->cloneEmpty());
+    }
+
+    return nested_serialization->wrapColumnForDeserialization(std::move(column));
 }
 
 }

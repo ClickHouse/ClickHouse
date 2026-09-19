@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -32,6 +33,7 @@
 #include <fmt/ranges.h>
 #include <optional>
 #include <string_view>
+#include <variant>
 
 namespace DB
 {
@@ -55,7 +57,7 @@ namespace QueryPlanFormat
 
     String trimColumnIdentifier(std::string_view name)
     {
-        if (name.find(TABLE_PREFIX) == std::string_view::npos)
+        if (!name.contains(TABLE_PREFIX))
             return String(name);
 
         String result;
@@ -78,49 +80,43 @@ namespace QueryPlanFormat
         return result;
     }
 
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step)
     {
         const auto & input_headers = step.getInputHeaders();
         if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
-            return;
+            return {};
 
-        out << prefix << "Output:\n";
-
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        auto side_group = [](MetricGroupKey key, const Block & input_header) -> MetricGroup
         {
-            out << prefix << "  Left:  Empty\n";
-            out << prefix << "  Right: Empty\n";
-            return;
-        }
+            std::vector<String> columns;
+            columns.reserve(input_header.columns());
+            for (const auto & column : input_header)
+                columns.push_back(trimColumnIdentifier(column.name));
 
-        const auto & output = *step.getOutputHeader();
-        const auto & left_input = *input_headers[0];
-        const auto & right_input = *input_headers[1];
+            String joined = columns.empty() ? String("Empty") : fmt::format("{}", fmt::join(columns, ", "));
 
-        std::vector<String> left_columns;
-        std::vector<String> right_columns;
+            MetricGroup group;
+            group.key = key;
+            group.metrics.emplace_back(MetricKey::Unnamed, std::move(joined));
+            return group;
+        };
 
-        for (const auto & col : output)
+        std::vector<MetricGroup> groups;
+        groups.emplace_back(side_group(MetricGroupKey::InputLeft, *input_headers[0]));
+        groups.emplace_back(side_group(MetricGroupKey::InputRight, *input_headers[1]));
+        return groups;
+    }
+
+    void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix)
+    {
+        for (const auto & group : collectJoinInputColumns(step))
         {
-            if (left_input.has(col.name))
-                left_columns.push_back(trimColumnIdentifier(col.name));
-            else if (right_input.has(col.name))
-                right_columns.push_back(trimColumnIdentifier(col.name));
+            out << prefix << toString(group.key) << ": ";
+            for (const auto & metric : group.metrics)
+                if (const auto * text = std::get_if<String>(&metric.value))
+                    out << *text;
+            out << '\n';
         }
-
-        out << prefix << "  Left:  ";
-        if (left_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(left_columns, ", "));
-        out << "\n";
-
-        out << prefix << "  Right: ";
-        if (right_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(right_columns, ", "));
-        out << "\n";
     }
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
@@ -201,6 +197,16 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
+            /// A masked secret constant must render as `[HIDDEN]`, never as the value held in its
+            /// column (kept only so the query can still execute). `is_masked_secret` is the reliable
+            /// signal; the name check is a fallback for a masked constant whose name is its `[HIDDEN...]`
+            /// placeholder but which was reached without the flag (e.g. an aliased column keeps its own
+            /// name, so the flag is what catches it there).
+            if (node->is_masked_secret)
+                return "[HIDDEN]";
+            if (node->result_name.contains("[HIDDEN"))
+                return node->result_name;
+
             if (!node->column)
                 return node->result_name;
 
@@ -311,6 +317,12 @@ namespace QueryPlanFormat
         int parent_precedence)
     {
         using ActionType = ActionsDAG::ActionType;
+
+        /// A masked secret carrier (a folded constant, which may be a FUNCTION node with a constant
+        /// column, not only a COLUMN node) must render as `[HIDDEN]` regardless of its node type,
+        /// before we dispatch into formatting its value or its child expression.
+        if (node->is_masked_secret)
+            return "[HIDDEN]";
 
         switch (node->type)
         {

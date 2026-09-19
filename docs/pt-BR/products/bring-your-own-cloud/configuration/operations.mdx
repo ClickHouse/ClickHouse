@@ -34,10 +34,10 @@ Exemplos de serviços da Cloud que são atualizados incluem:
 * **Monitoring Stack**: Componentes do Prometheus, Grafana, AlertManager e Thanos
 
 <div id="k8s-upgrade-process">
-  ## Processo de atualização do cluster Kubernetes
+  ## Processo de atualização do cluster do Kubernetes
 </div>
 
-O cluster Kubernetes (EKS na AWS, GKE no GCP) que hospeda seus serviços do ClickHouse requer atualizações periódicas para manter a segurança, a compatibilidade e o acesso a novos recursos. O ClickHouse Cloud gerencia todas as atualizações do cluster Kubernetes para sua implantação BYOC, garantindo que seu cluster permaneça atualizado com as versões compatíveis.
+O cluster do Kubernetes (EKS na AWS, GKE no GCP, AKS no Azure) que hospeda seus serviços do ClickHouse requer atualizações periódicas para manter a segurança, a compatibilidade e o acesso a novos recursos. O ClickHouse Cloud gerencia todas as atualizações do cluster do Kubernetes para sua implantação BYOC, garantindo que seu cluster permaneça atualizado com as versões compatíveis.
 
 <div id="cluster-upgrade-types">
   ### Tipos de atualização do cluster
@@ -65,4 +65,4 @@ Os upgrades do cluster Kubernetes são agendados em conjunto com você, por meio
   ### Suporte a versões
 </div>
 
-O ClickHouse Cloud mantém os clusters do Kubernetes dentro das faixas de versões compatíveis definidas pelo seu provedor de serviços em nuvem (AWS EKS ou Google GKE). Garantimos que seu cluster permaneça compatível com os requisitos do provedor e, ao mesmo tempo, atualizado com correções de segurança e novos recursos.
+O ClickHouse Cloud mantém os clusters do Kubernetes dentro das faixas de versões compatíveis definidas pelo seu provedor de serviços em nuvem (AWS EKS, Google GKE ou Azure AKS). Garantimos que seu cluster permaneça compatível com os requisitos do provedor e, ao mesmo tempo, atualizado com correções de segurança e novos recursos.

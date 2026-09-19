@@ -9,10 +9,12 @@ set max_rows_to_read = '30M';
 drop table if exists t;
 
 create table t (x UInt64, s String) engine = MergeTree order by x SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+-- Read-backoff test, not a perf test: only the first third of the rows build a long string,
+-- so the linear estimated-time projection false-positives this `INSERT` (`TOO_SLOW`).
 INSERT INTO t SELECT
     number,
     if(number < (8129 * 1024), arrayStringConcat(arrayMap(x -> toString(x), range(number % 128)), ' '), '')
-FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0, max_memory_usage='10Gi';
+FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0, max_memory_usage='10Gi', max_estimated_execution_time=0;
 
 -- optimize table t final;
 

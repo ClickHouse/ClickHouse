@@ -1,0 +1,43 @@
+req_int	required int
+opt_int	optional int
+opt_list	optional array
+opt_map	optional map
+opt_struct	optional record
+req_list	required array
+req_map	required map
+req_struct	required record
+list_opt_elem	required array
+map_opt_val	required map
+list_opt_struct_elem	required array
+struct_opt_list_field	required record
+map_opt_struct_val	required map
+list_opt_elem.element	optional int
+map_opt_val.value	optional int
+opt_struct.sy	optional long
+list_opt_struct_elem.element	optional record
+struct_opt_list_field.inner	optional array
+map_opt_struct_val.value	optional record
+field_ids	1,2,3,4,5,6,7,8,9,20,23,26,29
+id	list_opt_elem	9
+id	list_opt_struct_elem	23
+id	list_opt_struct_elem.element.ex	25
+id	map_opt_struct_val	29
+id	map_opt_struct_val.value.vx	32
+id	map_opt_val	20
+id	opt_int	2
+id	opt_list	3
+id	opt_map	4
+id	opt_struct	5
+id	opt_struct.sx	13
+id	opt_struct.sy	14
+id	req_int	1
+id	req_list	6
+id	req_map	7
+id	req_struct	8
+id	req_struct.rx	18
+id	struct_opt_list_field	26
+id	struct_opt_list_field.inner	27
+1	2	[10,20]	{'k':5}	(7,8)	[99]	{'r':1}	(3)	[NULL,4]	{'z':NULL}	[(41)]	([51,52])	{'m':(61)}
+1
+[10,20]
+0

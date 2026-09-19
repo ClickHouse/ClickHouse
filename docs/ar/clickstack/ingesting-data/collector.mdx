@@ -555,7 +555,7 @@ service:
   ### استخدم عمليات الإدراج غير المتزامنة
 </div>
 
-عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل لدى المجمّع منخفضًا، ومع ذلك يظلون يتوقعون وصول البيانات إلى ClickHouse بأقل زمن وصول ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ batch processor. وقد يسبب ذلك مشكلات، وهنا تصبح عمليات الإدراج غير المتزامنة ضرورية. ونادرًا ما تظهر هذه المشكلة إذا كنت ترسل البيانات إلى ClickStack collector الذي يعمل كبوابة Gateway، إذ يخفف هذا الإشكال من خلال عمله كمجمّع — راجع [أدوار المجمّع](#collector-roles).
+عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل لدى المجمّع منخفضًا، ومع ذلك يظلون يتوقعون وصول البيانات إلى ClickHouse بأقل زمن وصول ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ batch معالج. وقد يسبب ذلك مشكلات، وهنا تصبح عمليات الإدراج غير المتزامنة ضرورية. ونادرًا ما تظهر هذه المشكلة إذا كنت ترسل البيانات إلى ClickStack مجمّع الذي يعمل كبوابة، إذ يخفف هذا الإشكال من خلال عمله كمجمّع — راجع [أدوار المجمّع](#collector-roles).
 
 إذا تعذر ضمان دفعات كبيرة، يمكنك إسناد التجميع إلى ClickHouse باستخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). ففي عمليات الإدراج غير المتزامنة، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى تخزين قاعدة البيانات بشكل غير متزامن.
 
@@ -565,15 +565,15 @@ service:
 
 لتمكين عمليات الإدراج غير المتزامنة للمجمّع، أضف `async_insert=1` إلى connection string. ونوصي باستخدام `wait_for_async_insert=1` (وهو الإعداد الافتراضي) للحصول على ضمانات التسليم — راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
 
-تُدرج البيانات من async insert بمجرد تفريغ المخزن المؤقت في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings#async_insert_max_data_size) Milliseconds منذ أول INSERT query. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه الإعدادات للتحكم في زمن الوصول من طرف إلى طرف في pipeline لديك. وتجد [هنا](/ar/reference/settings/session-settings#async_insert) إعدادات إضافية يمكن استخدامها لضبط تفريغ المخزن المؤقت. وبوجه عام، تكون القيم الافتراضية مناسبة.
+تُدرج البيانات من async insert بمجرد تفريغ المخزن المؤقت في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) Milliseconds منذ أول INSERT query. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه الإعدادات للتحكم في زمن الوصول من طرف إلى طرف في pipeline لديك. وتجد [هنا](/ar/reference/settings/session-settings/async-insert#async_insert) إعدادات إضافية يمكن استخدامها لضبط تفريغ المخزن المؤقت. وبوجه عام، تكون القيم الافتراضية مناسبة.
 
 <Info>
   **ضع في اعتبارك عمليات الإدراج غير المتزامنة التكيفية**
 
-  في الحالات التي يُستخدم فيها عدد قليل من agent، مع معدل نقل منخفض ولكن متطلبات صارمة لزمن الوصول من طرف إلى طرف، قد تكون [عمليات الإدراج غير المتزامنة التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن عمومًا، لا تكون مناسبة لحالات استخدام Observability ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
+  في الحالات التي يُستخدم فيها عدد قليل من الوكلاء، مع معدل نقل منخفض ولكن متطلبات صارمة لزمن الوصول من طرف إلى طرف، قد تكون [عمليات الإدراج غير المتزامنة التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن عمومًا، لا تكون مناسبة لحالات استخدام Observability ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
 </Info>
 
-أخيرًا، فإن سلوك deduplication السابق المرتبط بعمليات الإدراج المتزامنة في ClickHouse لا يكون مفعّلًا افتراضيًا عند استخدام عمليات الإدراج غير المتزامنة. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings#async_insert_deduplicate).
+أخيرًا، فإن سلوك deduplication السابق المرتبط بعمليات الإدراج المتزامنة في ClickHouse لا يكون مفعّلًا افتراضيًا عند استخدام عمليات الإدراج غير المتزامنة. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings/async-insert#async_insert_deduplicate).
 
 يمكن العثور على التفاصيل الكاملة حول تهيئة هذه الميزة في [صفحة التوثيق](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، أو في [منشور المدونة](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) المتعمق.
 
@@ -581,11 +581,11 @@ service:
   ## التوسّع
 </div>
 
-يعمل ClickStack OTel collector كمثيل gateway — راجع [أدوار المجمّع](#collector-roles). وتوفّر هذه المثيلات خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وهي تستقبل الأحداث من التطبيقات (أو من collectors أخرى بدور agent) عبر OTLP endpoint واحد. وعادةً ما يُنشر عدد من مثيلات collector، مع استخدام موازن تحميل جاهز لتوزيع الحمل بينها.
+يعمل ClickStack OTel مجمّع كمثيل بوابة — راجع [أدوار المجمّع](#collector-roles). وتوفّر هذه المثيلات خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وهي تستقبل الأحداث من التطبيقات (أو من مجمّعات أخرى بدور وكيل) عبر OTLP endpoint واحد. وعادةً ما يُنشر عدد من مثيلات مجمّع، مع استخدام موازن تحميل جاهز لتوزيع الحمل بينها.
 
 <Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="التوسّع باستخدام البوابات" size="lg" />
 
-الهدف من هذه المعمارية هو تخفيف عبء المعالجة كثيفة الاستهلاك عن agents، مما يقلّل استخدامهم للموارد. ويمكن لبوابات ClickStack هذه تنفيذ مهام التحويل التي كان سيتعيّن على agents تنفيذها لولا ذلك. إضافةً إلى ذلك، من خلال تجميع الأحداث من عدد كبير من agents، يمكن للبوابات ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح إدراجًا بكفاءة. ويمكن توسيع gateway collectors هذه بسهولة مع إضافة المزيد من agents ومصادر SDK وزيادة throughput للأحداث.
+الهدف من هذه المعمارية هو تخفيف عبء المعالجة كثيفة الاستهلاك عن الوكلاء، مما يقلّل استخدامهم للموارد. ويمكن لبوابات ClickStack هذه تنفيذ مهام التحويل التي كان سيتعيّن على الوكلاء تنفيذها لولا ذلك. إضافةً إلى ذلك، من خلال تجميع الأحداث من عدد كبير من الوكلاء، يمكن للبوابات ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح إدراجًا بكفاءة. ويمكن توسيع مجمّعات البوابة هذه بسهولة مع إضافة المزيد من الوكلاء ومصادر SDK وزيادة throughput للأحداث.
 
 <div id="adding-kafka">
   ### إضافة Kafka
@@ -601,12 +601,12 @@ service:
 
 <Image img="/images/use-cases/observability/observability-8.webp" alt="إضافة Kafka" size="lg" />
 
-في هذه الحالة، يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). وتستهلك مثيلات gateway الرسائل بدورها باستخدام [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). نوصي بالرجوع إلى وثائق Confluent وOTel لمزيد من التفاصيل.
+في هذه الحالة, يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). وتستهلك مثيلات بوابة الرسائل بدورها باستخدام [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). نوصي بالرجوع إلى وثائق Confluent وOTel لمزيد من التفاصيل.
 
 <Info>
-  **تهيئة OTel collector**
+  **تهيئة OTel مجمّع**
 
-  يمكن تهيئة توزيعة ClickStack OpenTelemetry collector مع Kafka باستخدام [تهيئة collector مخصّصة](#extending-collector-config).
+  يمكن تهيئة توزيعة ClickStack OpenTelemetry مجمّع مع Kafka باستخدام [تهيئة مجمّع مخصّصة](#extending-collector-config).
 </Info>
 
 <div id="estimating-resources">
@@ -626,9 +626,9 @@ service:
 | 10k/second   | 1 CPU, 1GiB                        |
 
 <div id="schema-choice">
-  ## اختيار المخطط: Map مقابل JSON
+  ## اختيار المخطط: Map أم JSON
 </div>
 
-ينشئ مُجمِّع ClickStack جداول تخزّن السمات في أعمدة من النوع `Map(LowCardinality(String), String)` افتراضيًا. وهذا هو المخطط الموصى به لأعباء عمل observability. كما يتوفر مخطط من النوع `JSON` بحالة Beta للتقييم في أعباء العمل التي تحتوي على مجموعة صغيرة ومستقرة من مفاتيح السمات.
+ينشئ ClickStack مجمّع جداول تخزّن السمات في أعمدة `Map(LowCardinality(String), String)` بشكل افتراضي. وهذا هو المخطط المُوصى به لأحمال عمل observability. كما يتوفر مخطط من النوع `JSON` في إصدار بيتا للتقييم على أحمال العمل التي تتضمن مجموعة صغيرة ومستقرة من مفاتيح السمات.
 
-للاطّلاع على المقارنة الكاملة، ومعرفة متى يكون كلٌّ منهما مناسبًا، ومتغيرات البيئة المطلوبة لتمكين المخطط من النوع JSON، ودليل الترحيل، راجع [Map vs JSON type](/ar/clickstack/ingesting-data/schema/map-vs-json).
+للاطلاع على المقارنة الكاملة، ومعرفة الحالات المناسبة لكل خيار، ومتغيرات البيئة المطلوبة لتمكين مخطط النوع `JSON`، وخطوات الترحيل التفصيلية، راجع [Map vs JSON type](/ar/clickstack/ingesting-data/schema/map-vs-json).

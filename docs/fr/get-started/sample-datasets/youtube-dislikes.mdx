@@ -26,9 +26,7 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
 </div>
 
 <Steps>
-  <Step>
-    ### Exploration des données
-
+  <Step title="Exploration des données" id="data-exploration">
     Voyons à quoi ressemblent les données. La fonction de table `s3cluster` renvoie une table ; nous pouvons donc `DESCRIBE` le résultat :
 
     ```sql
@@ -67,9 +65,7 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
     ```
   </Step>
 
-  <Step>
-    ### Créer la table
-
+  <Step title="Créer la table" id="create-the-table">
     À partir du schéma inféré, nous avons simplifié les types de données et ajouté une clé primaire.
     Définissez la table suivante :
 
@@ -103,9 +99,7 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
     ```
   </Step>
 
-  <Step>
-    ### Insérer des données
-
+  <Step title="Insérer des données" id="insert-data">
     La commande suivante ingère en flux les enregistrements des fichiers S3 dans la table `youtube`.
 
     <Warning>
@@ -150,9 +144,7 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
     * Nous avons utilisé `ifNull` pour éviter d’avoir des valeurs `NULL` dans notre table. Si une valeur entrante est `NULL`, la fonction `ifNull` la remplace par une chaîne vide
   </Step>
 
-  <Step>
-    ### Compter le nombre de lignes
-
+  <Step title="Compter le nombre de lignes" id="count-row-numbers">
     Ouvrez un nouvel onglet dans la SQL Console de ClickHouse Cloud (ou une nouvelle fenêtre `clickhouse-client`) et regardez le total augmenter.
     L’insertion de 4,56 milliards de lignes prendra un certain temps, en fonction des ressources de votre serveur. (Sans aucun ajustement des paramètres, cela prend environ 4,5 heures.)
 
@@ -168,9 +160,7 @@ Voici les étapes à suivre pour créer une table dans ClickHouse Cloud et y ins
     ```
   </Step>
 
-  <Step>
-    ### Explorer les données
-
+  <Step title="Explorer les données" id="explore-the-data">
     Une fois les données insérées, comptez le nombre de « Je n’aime pas » sur vos vidéos ou chaînes préférées. Voyons combien de vidéos ClickHouse a mises en ligne :
 
     ```sql

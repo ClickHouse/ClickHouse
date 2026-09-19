@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-모든 ClickPipes 타입은 [ClickHouse Cloud OpenAPI](/ko/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)를 사용해 프로그래밍 방식으로 생성, 업데이트, 삭제할 수 있습니다. 이 페이지에서는 인증과 사용 가능한 ClickPipes 엔드포인트를 설명하고, 각 ClickPipe 타입별 `curl` 요청 예시를 제공합니다.
+모든 ClickPipes 타입은 [ClickHouse Cloud OpenAPI](/ko/products/cloud/api-reference/clickpipes/list-clickpipes)를 사용해 프로그래밍 방식으로 생성, 업데이트, 삭제할 수 있습니다. 이 페이지에서는 인증과 사용 가능한 ClickPipes 엔드포인트를 설명하고, 각 ClickPipe 타입별 `curl` 요청 예시를 제공합니다.
 
 <div id="authentication">
   ## 인증
@@ -57,7 +57,7 @@ CDC ClickPipes(Postgres, MySQL, MongoDB)의 경우 공유 CDC infrastructure 스
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | CDC ClickPipes 스케일링 조회 |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | CDC ClickPipes 스케일링 수정 |
 
-각 엔드포인트의 전체 요청 및 응답 스키마는 [Swagger UI](/ko/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)에서 확인하십시오.
+각 엔드포인트의 전체 요청 및 응답 스키마는 [API 참고](/ko/products/cloud/api-reference/clickpipes/list-clickpipes)에서 확인하십시오.
 
 <div id="examples">
   ## 예시
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## ClickPipes 생성
 </div>
 
-`POST /clickpipes` 요청 본문은 소스 유형에 따라 달라집니다. 아래 예시에서는 지원되는 각 ClickPipe 타입의 구조를 보여줍니다. 권위 있는 JSON 스키마는 [Swagger UI](/ko/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)를 참조하십시오.
+`POST /clickpipes` 요청 본문은 소스 유형에 따라 달라집니다. 아래 예시에서는 지원되는 각 ClickPipe 타입의 구조를 보여줍니다. 권위 있는 JSON 스키마는 [API 참고](/ko/products/cloud/api-reference/clickpipes/list-clickpipes)를 참조하십시오.
 
 <div id="create-kafka">
   ### Kafka

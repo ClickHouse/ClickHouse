@@ -51,17 +51,13 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### المتطلبات الأساسية
-
+  <Step title="المتطلبات الأساسية" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * عنقود Kubernetes (يُوصى بالإصدار v1.20+)
     * `kubectl` مُعَدّ للتفاعل مع عنقودك
   </Step>
 
-  <Step>
-    ### أضف مستودع Helm الخاص بـ ClickStack
-
+  <Step title="أضف مستودع Helm الخاص بـ ClickStack" id="add-the-clickstack-helm-repository">
     أضف مستودع Helm الخاص بـ ClickStack:
 
     ```shell
@@ -70,9 +66,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### ثبّت المشغِّلات
-
+  <Step title="ثبّت المشغِّلات" id="install-the-operators">
     ثبّت مخطط Helm الخاص بالمشغِّل أولًا. سيؤدي ذلك إلى تسجيل تعريفات الموارد المخصّصة (CRDs) التي يتطلبها المخطط الرئيسي:
 
     ```shell
@@ -86,9 +80,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### تثبيت ClickStack
-
+  <Step title="تثبيت ClickStack" id="installing-clickstack">
     بمجرد أن تعمل المشغّلات، ثبّت حزمة Helm الرئيسية:
 
     ```shell
@@ -96,9 +88,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### تحقّق من التثبيت
-
+  <Step title="تحقّق من التثبيت" id="verify-the-installation">
     تحقّق من التثبيت:
 
     ```shell
@@ -108,9 +98,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     عندما تصبح جميع وحدات التشغيل جاهزة، تابع.
   </Step>
 
-  <Step>
-    ### إعادة توجيه المنافذ
-
+  <Step title="إعادة توجيه المنافذ" id="forward-ports">
     تتيح إعادة توجيه المنافذ الوصول إلى HyperDX وإعداده. أمّا المستخدمون الذين ينشرون في بيئة الإنتاج، فينبغي لهم بدلًا من ذلك إتاحة الخدمة عبر مورد دخول Ingress أو موازن حمل، لضمان الوصول الشبكي المناسب، وإنهاء TLS، وقابلية التوسع. تُعد إعادة توجيه المنافذ الأنسب للتطوير المحلي أو للمهام الإدارية لمرة واحدة، وليست مناسبة للبيئات طويلة الأمد أو عالية التوافر.
 
     ```shell
@@ -126,9 +114,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     </Tip>
   </Step>
 
-  <Step>
-    ### انتقل إلى واجهة المستخدم
-
+  <Step title="انتقل إلى واجهة المستخدم" id="navigate-to-the-ui">
     زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
 
     أنشئ مستخدمًا، وأدخل اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
@@ -144,9 +130,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     </Info>
   </Step>
 
-  <Step>
-    ### تخصيص القيم (اختياري)
-
+  <Step title="تخصيص القيم (اختياري)" id="customizing-values">
     يمكنك تخصيص الإعدادات باستخدام خيارات `--set`. على سبيل المثال:
 
     ```shell
@@ -188,9 +172,7 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### استخدام الأسرار (اختياري)
-
+  <Step title="استخدام الأسرار (اختياري)" id="using-secrets">
     يستخدم مخطط الإصدار v2.x سرًا موحدًا (`clickstack-secret`) يُعبَّأ من `hyperdx.secrets` في `values` لديك. تمر جميع متغيرات البيئة الحساسة — بما في ذلك كلمات مرور ClickHouse وMongoDB ومفتاح API الخاص بـ HyperDX — عبر هذا السر الواحد.
 
     لتجاوز قيم السر:

@@ -15,11 +15,11 @@ doc_type: 'reference'
 
 ClickHouse Cloud의 컨트롤 플레인은 고객 데이터를 읽지 않고 BYOC 배포를 운영합니다. VPC 외부로 데이터를 전송하는 구성 요소는 운영 메타데이터만 전달합니다.
 
-| 구성 요소           | VPC 외부로 나가는 항목                                        |
-| --------------- | ----------------------------------------------------- |
-| State exporter  | ClickHouse Cloud가 소유한 `SQS` 큐로 서비스 상태(헬스, 상태)를 전송합니다. |
-| Billing scraper | ClickHouse Cloud가 소유한 S3 버킷으로 CPU 및 메모리 메트릭을 전송합니다.   |
-| AlertManager    | 클러스터 상태 알림을 ClickHouse Cloud로 전송합니다.                  |
+| 구성 요소           | VPC 외부로 나가는 항목                                                                        |
+| --------------- | ------------------------------------------------------------------------------------- |
+| State exporter  | ClickHouse Cloud가 소유한 `SQS` 큐로 서비스 및 Backup 상태(헬스, 상태 — Backup 내용이 아닌 운영 이벤트)를 전송합니다. |
+| Billing scraper | ClickHouse Cloud가 소유한 객체 스토리지 버킷으로 CPU 및 메모리 메트릭을 전송합니다.                              |
+| AlertManager    | 클러스터 상태 알림을 ClickHouse Cloud로 전송합니다.                                                  |
 
 쿼리 트래픽, 테이블 내용, 스키마는 이러한 경로를 통해 절대 전달되지 않습니다. 로그와 메트릭은 BYOC VPC 내부에 유지됩니다.
 

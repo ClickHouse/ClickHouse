@@ -31,37 +31,6 @@ static arrow::Status statusFromCurrentException(arrow::StatusCode code, std::str
     return arrow::Status(code, std::move(message), std::make_shared<ExceptionStatusDetail>(std::current_exception()));
 }
 
-ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
-{
-}
-
-arrow::Status ArrowBufferedOutputStream::Close()
-{
-    is_open = false;
-    return arrow::Status::OK();
-}
-
-arrow::Result<int64_t> ArrowBufferedOutputStream::Tell() const
-{
-    return arrow::Result<int64_t>(total_length);
-}
-
-arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length)
-{
-    try
-    {
-        out.write(reinterpret_cast<const char *>(data), length);
-        total_length += length;
-        return arrow::Status::OK();
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while writing to arrow stream: {}", message);
-        return statusFromCurrentException(arrow::StatusCode::IOError, message);
-    }
-}
-
 RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_)
     : in{in_}, seekable_in{dynamic_cast<SeekableReadBuffer &>(in_)}, file_size{file_size_}, is_open{true}, avoid_buffering(avoid_buffering_)
 {

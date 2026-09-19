@@ -71,7 +71,7 @@ def wait_part_and_get_compression_codec(node, table, part_name, retries=40):
 def test_recompression_simple(started_cluster):
     name = generate_random_name()
     node1.query(
-        f"CREATE TABLE {name} (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(10)) SETTINGS merge_with_recompression_ttl_timeout = 0"
+        f"CREATE TABLE {name} (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(10)) SETTINGS merge_with_recompression_ttl_timeout = 0, default_compression_codec = 'LZ4'"
     )
     node1.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")
 
@@ -109,7 +109,7 @@ def test_recompression_multiple_ttls(started_cluster):
         f"CREATE TABLE {name} (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() \
     TTL d + INTERVAL 5 SECOND RECOMPRESS CODEC(ZSTD(10)), \
     d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(11)), \
-    d + INTERVAL 15 SECOND RECOMPRESS CODEC(ZSTD(12)) SETTINGS merge_with_recompression_ttl_timeout = 0"
+    d + INTERVAL 15 SECOND RECOMPRESS CODEC(ZSTD(12)) SETTINGS merge_with_recompression_ttl_timeout = 0, default_compression_codec = 'LZ4'"
     )
 
     node2.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")
@@ -171,7 +171,7 @@ def test_recompression_replicated(started_cluster):
         node.query(
             f"CREATE TABLE {name} (d DateTime, key UInt64, data String) \
         ENGINE ReplicatedMergeTree('/test/{name}', '{i + 1}') ORDER BY tuple() \
-        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0"
+        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0, default_compression_codec = 'LZ4'"
         )
 
     node1.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")

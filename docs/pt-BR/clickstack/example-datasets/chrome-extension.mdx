@@ -41,18 +41,14 @@ Para mais contexto sobre reprodução de sessão e como ele se encaixa no ClickS
 </div>
 
 <Steps>
-  <Step>
-    ### Clone o repositório da extensão
-
+  <Step title="Clone o repositório da extensão" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### Instale a extensão
-
+  <Step title="Instale a extensão" id="install-extension">
     1. Abra o Chrome e acesse `chrome://extensions`.
     2. Ative o **Modo do desenvolvedor** (canto superior direito).
     3. Clique em **Carregar sem compactação**.
@@ -61,9 +57,7 @@ Para mais contexto sobre reprodução de sessão e como ele se encaixa no ClickS
     A extensão aparecerá na barra de ferramentas como **HyperDX Browser Extension**.
   </Step>
 
-  <Step>
-    ### Inicie o ClickStack
-
+  <Step title="Inicie o ClickStack" id="start-clickstack">
     Se você já tem um endpoint de ingestão do ClickStack ou do HyperDX, pule para [Configure a extensão](#configure-extension).
 
     Para uma implantação local do ClickStack, inicie o OpenTelemetry Collector. Substitua `{{CLICKHOUSE_ENDPOINT}}` e `{{CLICKHOUSE_PASSWORD}}` pelos detalhes de conexão do ClickHouse:
@@ -87,24 +81,20 @@ Para mais contexto sobre reprodução de sessão e como ele se encaixa no ClickS
     Para uma implantação local completa com ClickHouse e a UI do HyperDX, consulte [Getting started with ClickStack](/pt-BR/clickstack/getting-started/oss).
   </Step>
 
-  <Step>
-    ### Obtenha sua API key
-
-    Em uma implantação local do ClickStack, talvez não seja necessário usar uma API key — deixe o campo vazio na extensão ao enviar telemetria para um coletor auto-hospedado em `http://localhost:4318`.
+  <Step title="Obtenha sua API key" id="get-api-key">
+    Em uma implantação local do ClickStack, talvez não seja necessário usar uma API key — deixe o campo vazio na extensão ao enviar telemetria para um coletor self-hosted em `http://localhost:4318`.
 
     Para ingestão no ClickStack Cloud ou no HyperDX Cloud, abra o HyperDX, vá até **Team Settings → API Keys** e copie sua **API key de ingestão**.
   </Step>
 
-  <Step>
-    ### Configure a extensão
-
+  <Step title="Configure a extensão" id="configure-extension">
     Clique no ícone **HyperDX Browser Extension** na barra de ferramentas do Chrome e preencha as configurações:
 
     | Field                            | Exemplo de ClickStack local           | Observações                                                                                      |
     | -------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
     | **Enable HyperDX Monitoring**    | Ativado                               | Controle principal da injeção                                                                    |
     | **Service Name**                 | `my-frontend-app`                     | Obrigatório — identifica o serviço no ClickStack                                                 |
-    | **API Key**                      | *(vazio)*                             | Obrigatória para ingestão na Cloud; opcional em algumas configurações auto-hospedadas            |
+    | **API Key**                      | *(vazio)*                             | Obrigatória para ingestão na Cloud; opcional em algumas configurações self-hosted            |
     | **Collector URL**                | `http://localhost:4318`               | Endpoint OTLP HTTP; o padrão na Cloud é `https://in-otel.hyperdx.io`                             |
     | **Environment**                  | `development`                         | Opcional — define o atributo de resource `deployment.environment`                                |
     | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | Opcional — padrões regex de JavaScript separados por vírgula para propagação de headers de trace |
@@ -119,17 +109,13 @@ Para mais contexto sobre reprodução de sessão e como ele se encaixa no ClickS
     A captura de tela acima mostra uma configuração local típica: monitoramento ativado, nome do serviço definido, coletor apontando para `http://localhost:4318` e propagação de trace limitada a URLs de API e localhost.
   </Step>
 
-  <Step>
-    ### Navegue em um site e gere uma sessão
-
+  <Step title="Navegue em um site e gere uma sessão" id="browse-site">
     Abra qualquer site ou aplicativo local no Chrome — por exemplo, [http://localhost:3000](http://localhost:3000) para um servidor de desenvolvimento de frontend.
 
     Interaja com a página normalmente: clique em links, envie formulários, gere erros e navegue entre visualizações. A extensão injeta o SDK do navegador automaticamente a cada carregamento de página quando a configuração é válida.
   </Step>
 
-  <Step>
-    ### Veja a reprodução da sua sessão
-
+  <Step title="Veja a reprodução da sua sessão" id="view-session-replay">
     Volte ao HyperDX em [http://localhost:8080](http://localhost:8080) e acesse **Client Sessions** na barra lateral esquerda.
 
     Você deverá ver sua sessão listada com a duração e a contagem de eventos. Clique no botão ▶️ para reproduzi-la.

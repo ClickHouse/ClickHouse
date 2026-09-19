@@ -39,17 +39,31 @@ function check_span()
         extra_condition=""
     fi
 
-    ret=$(${CLICKHOUSE_CLIENT} -q "
-        SYSTEM FLUSH LOGS opentelemetry_span_log;
+    # A span is enqueued into the async opentelemetry_span_log only when its holder is
+    # destroyed, and the TCPHandler holder is destroyed after the client already has its
+    # answer, so a single flush+count can legitimately read a short count. Retry while the
+    # count is below the expectation; a non-numeric result (client or flush error) breaks
+    # out immediately, and the sleep budget is shared by the whole test so a genuinely
+    # broken assertion cannot multiply the added wall time by the number of call sites.
+    for _ in {1..30}; do
+        ret=$(${CLICKHOUSE_CLIENT} -q "
+            SYSTEM FLUSH LOGS opentelemetry_span_log;
 
-        SELECT count()
-        FROM system.opentelemetry_span_log
-        WHERE finish_date >= yesterday()
-        AND   lower(hex(trace_id)) =    '${2}'
-        AND   operation_name       like '${3}'
-        ${extra_condition};")
+            SELECT count()
+            FROM system.opentelemetry_span_log
+            WHERE finish_date >= yesterday()
+            AND   lower(hex(trace_id)) =    '${2}'
+            AND   operation_name       like '${3}'
+            ${extra_condition};")
 
-    if [ $ret = $1 ]; then
+        [[ "$ret" =~ ^[0-9]+$ ]] || break
+        [[ "$ret" -ge "$1" ]] && break
+        [[ "${span_poll_sleeps_left:-0}" -gt 0 ]] || break
+        span_poll_sleeps_left=$((span_poll_sleeps_left - 1))
+        sleep 1
+    done
+
+    if [ "$ret" = "$1" ]; then
         echo 1
     else
         echo "[operation_name like '${3}' ${extra_condition}]=$ret, expected: ${1}"
@@ -79,6 +93,9 @@ cluster_name=$($CLICKHOUSE_CLIENT -q "select if(engine = 'Replicated', name, 'te
 #
 # Only format_version 4 enables the tracing
 #
+# Total number of 1-second sleeps check_span may spend waiting for spans to be enqueued.
+span_poll_sleeps_left=15
+
 for ddl_version in 3 4; do
     # Echo a separator so that the reference file is more clear for reading
     echo "===ddl_format_version ${ddl_version}===="

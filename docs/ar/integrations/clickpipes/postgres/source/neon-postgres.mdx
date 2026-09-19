@@ -59,7 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي الـ publication المسمى `clickpipes` على مجموعة أحداث التغيير الناتجة من الجداول المحددة، وسيُستخدم لاحقًا لإدخال دفق النسخ المتماثل.
+يحدّد الـ publication المسمى `clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ كل جدول متماثلًا، إذ إن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="enable-logical-replication">
   ## تمكين النسخ المتماثل المنطقي
@@ -86,7 +86,7 @@ SHOW max_replication_slots; -- should be 10
   ## إدراج عناوين IP في قائمة السماح (لخطة Neon Enterprise)
 </div>
 
-إذا كانت لديك خطة Neon Enterprise، فيمكنك إدراج [ClickPipes IPs](/ar/integrations/clickpipes/home#list-of-static-ips) في قائمة السماح لتمكين النسخ المتماثل من ClickPipes إلى مثيل Neon Postgres الخاص بك.
+إذا كانت لديك خطة Neon Enterprise، فيمكنك إدراج [ClickPipes IPs](/ar/integrations/clickpipes/networking/static-ips) في قائمة السماح لتمكين النسخ المتماثل من ClickPipes إلى مثيل Neon Postgres الخاص بك.
 للقيام بذلك، انقر على علامة التبويب **Settings** ثم انتقل إلى قسم **IP Allow**.
 
 <Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="شاشة السماح لعناوين IP" border />

@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', '自動インストルメンテーション']
 ---
 
-import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -82,9 +82,7 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### HelmでOdigosをデプロイする
-
+  <Step title="HelmでOdigosをデプロイする" id="deploy-odigos">
     Odigos Enterprise にはオンプレミス用のライセンス トークンが必要です。シェルでこれをエクスポートします:
 
     ```bash
@@ -114,9 +112,7 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
     ```
   </Step>
 
-  <Step>
-    #### Odigos UI でソースを追加する
-
+  <Step title="Odigos UI でソースを追加する" id="add-sources">
     1. Odigos UI のサービスをポートフォワードします:
 
     ```bash
@@ -129,9 +125,7 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
     5. SOURCES 列で、ワークロードが正常にインストルメントされていることを確認します。
   </Step>
 
-  <Step>
-    #### Odigos UI で ClickStack を宛先として追加する
-
+  <Step title="Odigos UI で ClickStack を宛先として追加する" id="add-destination-ui">
     ClickStack にテレメトリーを送信するには、Odigos で **OTLP HTTP** 宛先を追加します。具体的な設定内容は、ClickStack のデプロイ方法によって異なります。Open Source ClickStack では OpenTelemetry collector が同梱されており、インジェスト key は HyperDX UI で自動的に生成されます。Managed ClickStack では、独自の standalone ClickStack collector を実行し、コンテナーの起動時に認証トークンを自分で設定します。
 
     <Tip>
@@ -193,12 +187,10 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
     </Tabs>
   </Step>
 
-  <Step>
-    #### ClickStack でテレメトリーを確認する
-
+  <Step title="ClickStack でテレメトリーを確認する" id="verify-telemetry">
     1. ClickStack UI (HyperDX) を開きます。
        * **Open Source ClickStack**: たとえば、all-in-one イメージでは `http://<host>:8080` です。
-       * **Managed ClickStack**: [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、**Launch ClickStack** をクリックします。詳しくは [ClickStack UI に移動する](/ja/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) を参照してください。
+       * **Managed ClickStack**: [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、**Launch ClickStack** をクリックします。
     2. **Logs**、**Metrics**、**Traces** を確認し、インストルメントしたサービスからのデータがあることを確認します。
     3. `odigos.version` でトレースを絞り込み、エンドツーエンドでエクスポートされていることを検証します。
 

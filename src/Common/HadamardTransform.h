@@ -11,9 +11,12 @@
 #include <numbers>
 #include <string_view>
 #include <type_traits>
-
 #if defined(__aarch64__)
 #include <arm_neon.h>
+#endif
+
+#if defined(__AVX2__)
+#include <immintrin.h>
 #endif
 
 /// Shared (randomized) Hadamard transform kernels: a portable scalar fast Walsh-Hadamard transform, an exact Kronecker
@@ -21,9 +24,11 @@
 /// embedding dimensions such as 384/768/1536/3072 and 2560), and NEON variants for float32 on AArch64. The scalar and
 /// NEON kernels perform exactly the same butterflies in the same stage order, so they are bit-for-bit identical.
 ///
-/// Order 9 has no +-1 Hadamard matrix (those exist only for orders 1, 2, and multiples of 4), so for the 2^k * 9
-/// family (e.g. 1152 = 128 * 9) an exact Kronecker transform H_{2^k} (x) C_9 is also provided, where C_9 is a real
-/// orthogonal Discrete Hartley Transform matrix applied with float multiplies. See kroneckerFactorFor / kronecker*.
+/// Odd orders (and even orders that are not a multiple of 4) have no +-1 Hadamard matrix -- those exist only for orders
+/// 1, 2, and multiples of 4 -- so for a length 2^k * m whose odd part m has no +-1 Hadamard matrix (e.g. m = 7 for
+/// 3584 = 512 * 7, m = 9 for 1152 = 128 * 9) an exact Kronecker transform H_{2^k} (x) C_m is provided instead, where
+/// C_m is a real orthogonal Discrete Hartley Transform matrix applied with float multiplies. Any odd order up to
+/// max_hartley_block is supported this way. See kroneckerFactorFor / kronecker*.
 ///
 /// Used by the `randomHadamardTransform` SQL function and by the structured random projection that backs the quantized
 /// vector search codecs (`Common/VectorQuantizer.cpp`).
@@ -84,6 +89,11 @@ void fwhtScalar(T * a, size_t m)
 /// The largest dense Hadamard block order supported below (must be a multiple of 4 for the NEON path).
 inline constexpr size_t max_hadamard_block = 64;
 
+/// The largest dense Hartley (DHT) small-factor order supported below. The dense O(m^2) per-block
+/// matvec and the fixed-size block scratch buffers (sized to max_hadamard_block) both bound m by this,
+/// which comfortably covers every realistic embedding dimension's odd part (e.g. 7, 9, 11, 13, 25).
+inline constexpr size_t max_hartley_block = max_hadamard_block;
+
 /// A dimension d = 2^k * m can be transformed exactly (no zero-padding) as the Kronecker product
 /// H_{2^k} (x) B_m, where B_m is a real orthogonal m x m matrix and 2^k = blocks. The small factor
 /// B_m is one of two kinds:
@@ -91,10 +101,12 @@ inline constexpr size_t max_hadamard_block = 64;
 ///    exist only for orders that are multiples of 4; we support m in {12, 20}, which covers common
 ///    embedding dimensions (384, 768, 1536, 3072 = 2^k * 12; 2560 = 2^7 * 20).
 ///  - Hartley: a real orthogonal Discrete Hartley Transform matrix, applied with float multiplies,
-///    used for orders that have no +-1 Hadamard matrix. We support m = 9, covering the 2^k * 9
-///    family (e.g. 1152 = 128 * 9, 2304 = 256 * 9).
-/// kroneckerFactorFor returns m, the number of blocks 2^k, and the kind, or {0, 0, None} when d is
-/// not of a supported form (then the caller falls back to zero-padding to a power of two).
+///    used for any other odd factor m (1 < m <= max_hartley_block) that has no +-1 Hadamard matrix.
+///    This covers the remaining embedding families such as 2^k * 7 (e.g. 3584 = 512 * 7), 2^k * 9
+///    (e.g. 1152 = 128 * 9), 2^k * 11, 2^k * 13, and so on.
+/// kroneckerFactorFor returns m, the number of blocks 2^k, and the kind. It returns {0, 0, None} for a
+/// power of two (transformed directly by the FWHT with no small factor) and also when the odd part
+/// exceeds max_hartley_block (then the length cannot be transformed exactly).
 enum class SmallFactorKind
 {
     None,
@@ -111,14 +123,25 @@ struct KroneckerFactor
 
 inline KroneckerFactor kroneckerFactorFor(size_t length)
 {
-    /// Orders with a +-1 Hadamard matrix (Paley type I): fast sign-flip small factor.
+    if (length == 0)
+        return {};
+
+    /// Orders with a +-1 Hadamard matrix (Paley type I): the fast sign-flip small factor. 12 = 4 * 3
+    /// and 20 = 4 * 5 cover the common odd parts 3 and 5 (e.g. 384/768/1536/3072 and 1280/2560) with
+    /// no float multiplies. These two orders are also the only small factors the vector-search codec
+    /// uses, so this list must stay stable (see Common/VectorQuantizer.cpp).
     for (size_t m : {static_cast<size_t>(12), static_cast<size_t>(20)})
         if (length % m == 0 && std::has_single_bit(length / m))
             return {m, length / m, SmallFactorKind::Hadamard};
 
-    /// Order 9 has no +-1 Hadamard matrix, so use a dense real orthogonal DHT matrix instead.
-    if (length % 9 == 0 && std::has_single_bit(length / 9))
-        return {static_cast<size_t>(9), length / 9, SmallFactorKind::Hartley};
+    /// Split length = blocks * m with blocks the largest power-of-two divisor and m the odd part. Any
+    /// odd m > 1 up to max_hartley_block uses a dense real orthogonal DHT matrix of order m (orders
+    /// without a +-1 Hadamard matrix). m == 1 means a pure power of two: no small factor, handled by
+    /// the FWHT directly.
+    const size_t blocks = size_t(1) << std::countr_zero(length);
+    const size_t m = length / blocks;
+    if (m > 1 && m <= max_hartley_block)
+        return {m, blocks, SmallFactorKind::Hartley};
 
     return {};
 }
@@ -226,7 +249,7 @@ void kroneckerScalar(Compute * a, size_t blocks, size_t m, const HmMasks<Compute
 /// A dense real orthogonal m x m matrix (a Discrete Hartley Transform), stored row-major and
 /// UNnormalized so that C^T C = m * I -- i.e. applying it scales a vector's norm by sqrt(m), exactly
 /// like the unnormalized +-1 Hadamard block above. Used for orders that have no +-1 Hadamard matrix
-/// (m = 9). The caller caches the result per order m.
+/// (any odd m in [3, max_hartley_block], e.g. 7 or 9). The caller caches the result per order m.
 template <typename Compute>
 struct HartleyMatrix
 {
@@ -257,7 +280,7 @@ void buildHartleyMatrix(HartleyMatrix<Compute> & out, size_t m)
 template <typename Compute>
 void applyHartleyScalar(Compute * block, size_t m, const Compute * coef)
 {
-    Compute z[max_hadamard_block];
+    Compute z[max_hartley_block];
     for (size_t i = 0; i < m; ++i)
     {
         Compute acc = 0;
@@ -398,13 +421,16 @@ inline void kroneckerNeon(float * a, size_t blocks, size_t m, const HmMasks<floa
     fwhtBlocksNeon(a, blocks, m);
 }
 
+#endif
+
 enum class FwhtKernel
 {
     Scalar,
     Neon,
+    Avx2,
 };
 
-/// Read the kernel choice once from CLICKHOUSE_RHT_KERNEL (default: NEON on AArch64).
+/// Read the kernel choice once from CLICKHOUSE_RHT_KERNEL (default: NEON on AArch64, AVX2 on x86 with AVX2 support).
 inline FwhtKernel selectKernel()
 {
     static const FwhtKernel kernel = []
@@ -413,14 +439,105 @@ inline FwhtKernel selectKernel()
         {
             if (std::string_view(env) == "scalar")
                 return FwhtKernel::Scalar;
+#if defined(__aarch64__)
             if (std::string_view(env) == "neon")
                 return FwhtKernel::Neon;
+#endif
+#if defined(__AVX2__)
+            if (std::string_view(env) == "avx2")
+                return FwhtKernel::Avx2;
+#endif
         }
+#if defined(__aarch64__)
         return FwhtKernel::Neon;
+#elif defined(__AVX2__)
+        return FwhtKernel::Avx2;
+#else
+        return FwhtKernel::Scalar;
+#endif
     }();
     return kernel;
 }
 
+#if defined(__AVX2__)
+
+inline __m256 eightPointWHTAvx2(__m256 v)
+{
+    // h = 1
+    __m256 swap1 = _mm256_permute_ps(v, 0xB1);
+    __m256 v1 = _mm256_blend_ps(_mm256_add_ps(v, swap1), _mm256_sub_ps(swap1, v), 0XAA);
+
+    // h = 2
+    __m256 swap2 = _mm256_permute_ps(v1, 0x4E);
+    __m256 v2 = _mm256_blend_ps(_mm256_add_ps(v1, swap2), _mm256_sub_ps(swap2, v1), 0xCC);
+
+    // h = 4
+    __m256 swap4 = _mm256_permute2f128_ps(v2, v2, 0x01);
+    return _mm256_blend_ps(_mm256_add_ps(v2, swap4), _mm256_sub_ps(swap4, v2), 0xF0);
+}
+
+inline void fwhtAvx2(float * a, size_t m)
+{
+    // use half of the total 16 vector registers
+    constexpr size_t vectors_per_block = 8;
+    // 256 bits (8 floats) per vector registers. 64 floats in total.
+    constexpr size_t block = vectors_per_block * 8;
+
+    if (m < block)
+    {
+        fwhtScalar(a, m);
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // Stage 1: Batch load data over h = 1, 2, 4
+    // instruction-level: 8 x 256-bit _mm256_loadu_ps instructions.
+    // Physical Level: 256 bytes over 4 cachelines (64 bytes each).
+    // -------------------------------------------------------------
+    for (size_t i = 0; i < m; i += block)
+    {
+        __m256 v[vectors_per_block];
+        for (size_t t = 0; t < vectors_per_block; ++t)
+            v[t] = eightPointWHTAvx2(_mm256_loadu_ps(a + i + 8 * t));
+
+        // ------------------------------------------------------------
+        // Stage 2: Inter-vector butterflies (h = 8, 16, 32)
+        // ------------------------------------------------------------
+        for (size_t hv = 1; hv < vectors_per_block; hv <<= 1)
+            for (size_t base = 0; base < vectors_per_block; base += (hv << 1))
+                for (size_t t = 0; t < hv; ++t)
+                {
+                    const __m256 x = v[base + t];
+                    const __m256 y = v[base + t + hv];
+                    v[base + t] = _mm256_add_ps(x, y);
+                    v[base + t + hv] = _mm256_sub_ps(x, y);
+                }
+
+        // -------------------------------------------------------------------
+        // Stage 3: Batch store back to memory (256 bytes flused to L1 Cahce)
+        // -------------------------------------------------------------------
+        for (size_t t = 0; t < vectors_per_block; ++t)
+            _mm256_storeu_ps(a + i + 8 * t, v[t]);
+    }
+
+    // -------------------------------------------------------------------
+    // High Stages (h = 64, 128, ... m/2)
+    // Performance optimization: Manually 2x unrolling (j += 16)
+    // -------------------------------------------------------------------
+    for (size_t h = block; h < m; h <<= 1)
+        for (size_t i = 0; i < m; i += (h << 1))
+            for (size_t j = i; j < i + h; j += 16)
+            {
+                const __m256 x0 = _mm256_loadu_ps(a + j);
+                const __m256 x1 = _mm256_loadu_ps(a + j + 8);
+                const __m256 y0 = _mm256_loadu_ps(a + j + h);
+                const __m256 y1 = _mm256_loadu_ps(a + j + h + 8);
+                _mm256_storeu_ps(a + j, _mm256_add_ps(x0, y0));
+                _mm256_storeu_ps(a + j + 8, _mm256_add_ps(x1, y1));
+                _mm256_storeu_ps(a + j + h, _mm256_sub_ps(x0, y0));
+                _mm256_storeu_ps(a + j + h + 8, _mm256_sub_ps(x1, y1));
+            }
+}
 #endif
 
 }

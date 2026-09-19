@@ -35,11 +35,11 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
     for node in (node1, node2):
         node.query(
             f"""
-            CREATE TABLE local_table(id UInt32, d DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/max_rows_read_leaf', '{node.name}') PARTITION BY toYYYYMM(d) ORDER BY d;
+            CREATE TABLE local_table(id UInt32, d DateTime, v UInt8 DEFAULT 1) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/max_rows_read_leaf', '{node.name}') PARTITION BY toYYYYMM(d) ORDER BY d;
 
-            CREATE TABLE distributed_table(id UInt32, d DateTime) ENGINE = Distributed(two_shards, default, local_table);
+            CREATE TABLE distributed_table(id UInt32, d DateTime, v UInt8 DEFAULT 1) ENGINE = Distributed(two_shards, default, local_table);
 
-            CREATE OR REPLACE VIEW test_view AS select id from distributed_table;
+            CREATE OR REPLACE VIEW test_view AS select id, v from distributed_table;
             """
         )
 
@@ -70,8 +70,21 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
         node2.query(
             "INSERT INTO local_table (id) select * from system.numbers limit 10"
         )
+        # Disable optimize_trivial_view_pushdown_to_distributed: with the optimization
+        # active, count() is pushed to shards where it is computed from part metadata
+        # without reading rows, so max_rows_to_read_leaf legitimately does not fire.
         node2.query(
-            "SELECT count() from test_view SETTINGS max_rows_to_read_leaf=200, prefer_localhost_replica=0"
+            "SELECT count() from test_view SETTINGS max_rows_to_read_leaf=200, prefer_localhost_replica=0, optimize_trivial_view_pushdown_to_distributed=0"
+        )
+
+    with pytest.raises(
+        QueryRuntimeException, match="controlled by 'max_rows_to_read_leaf'"
+    ):
+        # Verify that max_rows_to_read_leaf is enforced when the trivial view pushdown
+        # optimization is active. sum(v) forces actual row reads on each shard (unlike
+        # count(), it cannot be computed from part metadata), so the limit fires correctly.
+        node2.query(
+            "SELECT sum(v) from test_view SETTINGS max_rows_to_read_leaf=200, prefer_localhost_replica=0"
         )
 
     for node in (node1, node2):

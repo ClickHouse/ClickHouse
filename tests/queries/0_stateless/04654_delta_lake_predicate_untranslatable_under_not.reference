@@ -1,0 +1,55 @@
+-- wrong before the fix: the untranslatable child was dropped and the NOT inverted
+NOT (c0 NOT BETWEEN c0 AND 100): ok
+NOT (c0 > 100 OR c0 < 0): ok
+NOT (c0 < c0): ok
+NOT (c0 >= c0 AND c0 < 100): ok
+-- wrong before the fix: the conjunction was truncated, so a narrower predicate was pushed
+NOT (c0 >= 100 AND c0 < c0): ok
+NOT (c0 < c0 AND c0 >= 100): ok
+NOT (c0 >= 100 AND c0 < c0) AND c0 >= 0: ok
+NOT (c0 < 100 AND c0 < c0): ok
+-- wrong before the fix for any operand type, not just plain integers
+NOT (toNullable(c0) < toNullable(c0)): ok
+NOT (toString(c0) < toString(c0) AND c0 >= 100): ok
+NOT ([c0] = [c0] AND c0 >= 100): ok
+-- the Unknown predicate name must not be derived from the filter, which may hold non-UTF-8 bytes
+NOT (c0 < c0 AND non-utf8 literal): ok
+-- unchanged: predicates that already translated fully
+c0 >= 100: ok
+NOT (c0 < 100): ok
+NOT (c0 > 100): ok
+NOT (c0 > 100 AND c0 > 100): ok
+NOT (c0 >= 100 AND c0 >= 100): ok
+NOT (NOT (c0 >= 100)): ok
+c0 >= 100::Int16: ok
+NOT (c0 >= 100::Int16): ok
+NOT (c0 >= 100::Int64): ok
+-- unchanged: dropping an untranslatable child stays correct in monotone position
+c0 < c0: ok
+c0 >= c0: ok
+c0 > 200 OR c0 < 0: ok
+c0 >= 100 AND c0 < c0: ok
+c0 >= 100 AND (c0 > 1 OR c0 < 0): ok
+c0 >= 100 AND c0 != 105: ok
+c0 < 50 AND NOT (c0 >= 100 AND c0 < c0): ok
+NOT (NOT (c0 < c0)): ok
+c0 NOT BETWEEN c0 AND 100: ok
+-- file pruning must be preserved: these skip one of the two files
+c0 >= 100: ok
+NOT (c0 < 100): ok
+NOT (c0 >= 100 AND c0 >= 100): ok
+NOT (NOT (c0 >= 100)): ok
+c0 >= 100 AND c0 < c0: ok
+c0 >= 100 AND (c0 > 1 OR c0 < 0): ok
+c0 >= 100 AND c0 != 105: ok
+c0 >= 100::Int16: ok
+NOT (c0 >= 100::Int16): ok
+-- and these legitimately read both files
+NOT (c0 < c0): ok
+NOT (c0 > 100): ok
+c0 < c0: ok
+NOT (c0 >= 100 AND c0 < c0): ok
+-- a visitor exception is the same class: it must not skip files either
+failpoint NOT (c0 >= 100): ok
+-- but delta_lake_throw_on_engine_predicate_error still reports it
+1

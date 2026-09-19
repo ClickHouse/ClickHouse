@@ -1,3 +1,4 @@
+#include <ranges>
 #include <algorithm>
 #include <exception>
 #include <optional>
@@ -196,15 +197,17 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    /// Re-issue ListBlobs per page through the client wrapper (which strips the endpoint prefix); the SDK's
+    /// MoveToNextPage refetches pages 2..N directly and would leave the raw Azure prefix on their blob names.
+    while (true)
     {
+        auto blob_list_response = client_ptr->ListBlobs(options);
+
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        const auto & blobs_list = blob_list_response.Blobs;
-
-        for (const auto & blob : blobs_list)
+        for (const auto & blob : blob_list_response.Blobs)
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
@@ -221,6 +224,11 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys && children.size() >= max_keys)
             break;
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            break;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
     }
 }
 
@@ -334,7 +342,8 @@ void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
     bool if_exists,
-    BlobStorageLogWriterPtr blob_storage_log)
+    BlobStorageLogWriterPtr blob_storage_log,
+    StoredObjects * successful_objects)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
     if (client_ptr->IsClientForDisk())
@@ -398,12 +407,20 @@ void AzureObjectStorage::removeObjectImpl(
                     elapsed,
                     error_code,
                     error_message);
+
+            if (successful_objects)
+                successful_objects->emplace_back(object);
+
             return;
         }
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
+
+    if (successful_objects)
+        successful_objects->emplace_back(object);
+
     auto elapsed = watch.elapsedMicroseconds();
 
     if (blob_storage_log)
@@ -427,7 +444,8 @@ void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 void AzureObjectStorage::removeObjectsBatchIfExists(
     const StoredObjects & objects,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    BlobStorageLogWriterPtr blob_storage_log)
+    BlobStorageLogWriterPtr blob_storage_log,
+    StoredObjects * successful_objects)
 {
     /// https://github.com/Azure/azure-sdk-for-python/issues/22821#issuecomment-1024753986
     static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
@@ -464,11 +482,33 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
-        client_ptr->SubmitBatch(requests);
-
         ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
         if (is_disk)
             ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+
+        try
+        {
+            client_ptr->SubmitBatch(requests);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            /// A batch-level failure skips the per-object response loop below, so record one Delete attempt
+            /// per object before rethrowing. Preserve the real HTTP status (as the per-object path below
+            /// does) so these failures stay queryable by error_code.
+            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
+            for (const auto & object : object_batch)
+                add_log_entry(object, elapsed, static_cast<Int32>(e.StatusCode), e.Message);
+            throw;
+        }
+        catch (...)
+        {
+            /// Non-Azure failure (e.g. a credential AuthenticationException) carries no HTTP status.
+            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
+            const auto batch_error = getCurrentExceptionMessage(false);
+            for (const auto & object : object_batch)
+                add_log_entry(object, elapsed, -1, batch_error);
+            throw;
+        }
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;
@@ -478,12 +518,18 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             {
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
+
+                if (successful_objects)
+                    successful_objects->emplace_back(object);
             }
             catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
                     add_log_entry(object, avg_elapsed_us);
+
+                    if (successful_objects)
+                        successful_objects->emplace_back(object);
                 }
                 else
                 {
@@ -502,7 +548,9 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
     }
 }
 
-void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;
@@ -513,43 +561,54 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         for (const auto & object : objects)
-            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
+            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log, successful_objects);
         return;
     }
 
-    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
+    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log, successful_objects);
 }
 
 static void setAzureBlobTag(
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    const Strings & blob_names,
+    const StoredObjects & objects,
     const String & tag_key,
-    const String & tag_value)
+    const String & tag_value,
+    StoredObjects * successful_objects)
 {
     auto log = getLogger("setAzureBlobTag");
-    for (const auto & blob_name : blob_names)
+    for (const StoredObject & object : objects)
     {
+        const String & blob_name = object.remote_path;
+
         auto blob_client = client_ptr->GetBlobClient(blob_name);
         auto get_response = blob_client.GetTags();
         auto & tags = get_response.Value;
         const auto tag_iter = tags.find(tag_key);
+
         if (tag_iter != tags.end() && tag_iter->second == tag_value)
         {
             LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
-            continue;
+        }
+        else
+        {
+            tags[tag_key] = tag_value;
+            blob_client.SetTags(tags);
+            LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
         }
 
-        tags[tag_key] = tag_value;
-        blob_client.SetTags(tags);
-        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+        if (successful_objects)
+            successful_objects->emplace_back(object);
     }
 }
 
-void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+void AzureObjectStorage::tagObjects( /// NOLINT
+    const StoredObjects & objects,
+    const std::string & tag_key,
+    const std::string & tag_value,
+    StoredObjects * successful_objects)
 {
     auto client_ptr = client.get();
-    Strings blob_names = collectRemotePaths(objects);
-    setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
+    setAzureBlobTag(client_ptr, objects, tag_key, tag_value, successful_objects);
 }
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
@@ -610,7 +669,6 @@ void AzureObjectStorage::copyObject( /// NOLINT
         client_ptr,
         connection_params.getContainer(),
         object_from.remote_path,
-        0,
         object_metadata.size_bytes,
         connection_params.getContainer(),
         object_to.remote_path,

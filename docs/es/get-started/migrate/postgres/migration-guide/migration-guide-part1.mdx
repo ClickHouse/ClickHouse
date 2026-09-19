@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> ClickHouse trasladará al servidor PostgreSQL cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e `IN`. Así, las cargas incrementales pueden realizarse de forma más eficiente al asegurarse de que exista un índice en las columnas usadas para identificar el conjunto de cambios.
+> ClickHouse trasladará al servidor PostgreSQL las cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e IN. Por tanto, las cargas incrementales pueden hacerse más eficientes asegurándose de que exista un índice en las columnas utilizadas para identificar el conjunto de cambios.
 
-> Un posible método para detectar operaciones `UPDATE` al usar replicación de consultas consiste en utilizar la [columna del sistema `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (identificadores de transacción) como marca de agua; un cambio en esta columna indica que hubo una modificación y, por tanto, puede aplicarse a la tabla de destino. Los usuarios que empleen este enfoque deben tener en cuenta que los valores de `XMIN` pueden volver a empezar desde el principio y que las comparaciones requieren un escaneo completo de la tabla, lo que complica el seguimiento de cambios.
+> Un posible método para detectar operaciones UPDATE al usar la replicación de consultas consiste en utilizar la [columna del sistema `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (identificadores de transacción) como marca de agua: un cambio en esta columna indica una modificación y, por tanto, puede aplicarse a la tabla de destino. Los usuarios que empleen este enfoque deben tener en cuenta que los valores de `XMIN` pueden volver al inicio y que las comparaciones requieren un escaneo completo de la tabla, lo que complica el seguimiento de los cambios.
 
-[Haz clic aquí para la Parte 2](/es/get-started/migrate/postgres/migration-guide/migration-guide-part2)
+[Haga clic aquí para la Parte 2](/es/get-started/migrate/postgres/migration-guide/migration-guide-part2)

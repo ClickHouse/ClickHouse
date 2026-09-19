@@ -30,7 +30,7 @@ Se puede acceder al dashboard avanzado desde:
 * Panel lateral izquierdo
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Dashboard avanzado" />
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Acceso al dashboard avanzado nativo
@@ -45,12 +45,12 @@ Se puede acceder al dashboard avanzado nativo navegando hasta:
 Esto abrirá el dashboard avanzado nativo en una nueva pestaña. Deberás
 autenticarte para acceder al dashboard.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Dashboard avanzado" />
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
 
 Cada visualización tiene una consulta SQL asociada que la genera. Puedes
 editar esta consulta haciendo clic en el icono del lápiz.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="Dashboard avanzado" />
+<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="dashboard avanzado" />
 
 <div id="out-of-box-visualizations">
   ## Visualizaciones preconfiguradas
@@ -135,14 +135,14 @@ durante la ingestión, lo que se traduce en escrituras en disco más eficientes 
 operaciones de merge.
 
 Las métricas clave para detectar inserciones subóptimas son **Inserted Rows/sec** y
-**Max Parts for Partition**
+**máx. de partes por partición**
 
 <Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Inserciones sin lotes" />
 
-El ejemplo anterior muestra dos picos en **Inserted Rows/sec** y **Max Parts for Partition**
+El ejemplo anterior muestra dos picos en **Inserted Rows/sec** y **máx. de partes por partición**
 entre las 13 h y las 14 h. Esto indica que se están ingiriendo datos a una velocidad razonable.
 
-Luego vemos otro gran pico en **Max Parts for Partition** después de las 16 h, pero un valor de
+Luego vemos otro gran pico en **máx. de partes por partición** después de las 16 h, pero un valor de
 **Inserted Rows/sec** muy bajo. Se están creando muchas partes con
 muy pocos datos, lo que indica que el tamaño de las partes es
 subóptimo.
@@ -179,7 +179,7 @@ es **Selected Rows per second**. Un pico repentino en el número de filas selecc
 indicar tanto un aumento general del volumen total de consultas como consultas que
 seleccionan una gran cantidad de filas para ejecutarse.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="Consulta intensiva en recursos" />
+<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="consulta con uso intensivo de recursos" />
 
 Usando el timestamp como filtro, puedes encontrar las consultas ejecutadas en el momento
 del pico en la tabla `system.query_log`.

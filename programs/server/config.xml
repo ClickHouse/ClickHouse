@@ -933,6 +933,14 @@
     <!-- Default database. -->
     <default_database>default</default_database>
 
+    <!-- The user to authenticate as when a client connects without specifying a user name
+         (e.g. an HTTP request without the 'user' parameter, or a native protocol Hello packet
+         with an empty user name). Set to an empty value to reject such connections.
+         Never applied to interserver connections.
+         Can be overridden per endpoint in the <protocols> section with the same tag.
+    -->
+    <!-- <default_session_user>default</default_session_user> -->
+
     <!-- Server time zone could be set here.
 
          Time zone is used when converting between String and DateTime types,
@@ -1075,7 +1083,7 @@
     </http_forbid_headers> -->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
-         By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
+         The path to the file with substitutions is specified in the 'include_from' element. There is no default path.
          Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
       -->
 
@@ -1248,6 +1256,10 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
+
+        <!-- Create `system.user_query_log`, which shows every user their own query log records
+             without requiring access to the query log table. -->
+        <enable_user_query_log>true</enable_user_query_log>
 
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
@@ -1640,21 +1652,27 @@
      If not specified they will be stored locally. -->
     <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
 
-    <!-- Uncomment if you want data to be compressed 30-100% better.
+    <!-- By default the codec is chosen by part size: LZ4 below 100 MB and ZSTD(3) at or above it.
+         The size is the one known before the data is written (0 for a freshly inserted part, the source
+         parts' size for a merge or a mutation), the same estimate min_part_size below is matched against.
+         Uncomment if you want to compress large parts even better than the ZSTD(3) default.
          Don't do that if you just started using ClickHouse.
          Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
       -->
     <!--
     <compression>
-        <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
+        <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, the size-aware
+             built-in default is used: LZ4 below 100 MB and ZSTD(3) at or above it. - ->
         <case>
 
             <!- - Conditions. All must be satisfied. Some conditions may be omitted. - ->
             <min_part_size>10000000000</min_part_size>        <!- - Min part size in bytes. - ->
             <min_part_size_ratio>0.01</min_part_size_ratio>   <!- - Min size of part relative to whole table size. - ->
 
-            <!- - What compression method to use. - ->
+            <!- - What compression method to use. Use a level above the ZSTD(3) default so this case
+                 actually improves compression for large parts. - ->
             <method>zstd</method>
+            <level>10</level>
         </case>
     </compression>
     -->
@@ -2046,7 +2064,7 @@
     -->
 
     <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
-    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
+    <!-- <shutdown_wait_unfinished>120</shutdown_wait_unfinished> -->
 
     <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
     <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->

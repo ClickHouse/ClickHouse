@@ -46,11 +46,11 @@
     {
       "group": "Integration development",
       "pages": [
+        "resources/develop-contribute/integrations/index",
         "resources/develop-contribute/integrations/building-integrations",
         "resources/develop-contribute/integrations/testing-your-integration",
         "resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "resources/develop-contribute/integrations/index"
+      ]
     },
     {
       "group": "Roadmap",

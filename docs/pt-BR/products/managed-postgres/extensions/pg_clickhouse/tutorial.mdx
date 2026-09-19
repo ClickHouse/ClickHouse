@@ -14,6 +14,12 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 Este tutorial segue o [tutorial do ClickHouse], mas executa todas as consultas via
 pg&#95;clickhouse.
 
+Escolha como deseja configurar o `pg_clickhouse`:
+
+* [Pelo Console](#from-console) se você estiver usando o ClickHouse Managed Postgres.
+* [Pelo PSQL](#from-psql) se estiver instalando e configurando a extensão
+  por conta própria.
+
 <div id="start-clickhouse">
   ## Inicie o ClickHouse
 </div>
@@ -164,6 +170,43 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
+<div id="from-console">
+  ## Pelo console
+</div>
+
+Se você usa o ClickHouse Managed Postgres, pode configurar o
+`pg_clickhouse` e conectar-se a um serviço ClickHouse pelo console do ClickHouse Cloud.
+Abra seu serviço Managed Postgres, selecione **Settings** e localize a seção
+**ClickHouse integration**. Clique em **Enable pg&#95;clickhouse**.
+
+No formulário de configuração, informe um nome para o servidor externo. Selecione o
+serviço ClickHouse, o banco de dados e o usuário a serem usados na conexão. Informe a
+senha do ClickHouse e selecione o banco de dados Postgres e o schema de destino para o qual as
+tabelas do ClickHouse deverão ser importadas. Clique em **Connect** para criar o servidor externo
+e importar o schema.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulário de configuração do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud" size="lg" border />
+
+Quando a configuração for concluída, o console exibirá uma confirmação, e o servidor externo
+aparecerá na lista de servidores.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuração concluída do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Lista de servidores externos mostrando a conexão pg_clickhouse de táxis" size="lg" border />
+
+Agora você pode abrir o **SQL console** do Postgres e consultar as tabelas importadas:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+Para acompanhar os exemplos de táxi deste tutorial, selecione o banco de dados `taxi` no ClickHouse
+e importe-o para um schema de destino chamado `taxi`.
+
+<div id="from-psql">
+  ## A partir do PSQL
+</div>
+
 <div id="install-pg_clickhouse">
   ### Instale o pg_clickhouse
 </div>
@@ -193,8 +236,7 @@ E crie pg&#95;clickhouse:
 CREATE EXTENSION pg_clickhouse;
 ```
 
-Crie um servidor externo usando o nome do host, a porta e o banco de dados da sua
-instância do ClickHouse.
+Crie um servidor externo usando o nome do host, a porta e o banco de dados no ClickHouse.
 
 ```sql
 CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
@@ -202,6 +244,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 ```
 
 Aqui, optamos por usar o driver binário, que usa o protocolo binário do ClickHouse. Você também pode usar o driver &quot;http&quot;, que usa a interface HTTP.
+
+<Note>
+  Se você estiver usando o console do ClickHouse Cloud para executar SQL, conceda ao usuário administrador do console acesso ao servidor externo:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
 
 Em seguida, mapeie um usuário do PostgreSQL para um usuário do ClickHouse. A forma mais simples de fazer isso
 é mapear o usuário atual do PostgreSQL para um usuário remoto no
@@ -214,8 +264,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER taxi_srv
 
 Você também pode especificar a opção `password`.
 
-Agora, adicione a tabela de táxi; basta importar todas as tabelas do banco de dados remoto
-ClickHouse para um schema do Postgres:
+Agora, adicione a tabela de táxi; basta importar todas as tabelas do banco de dados remoto no ClickHouse para um schema do Postgres:
 
 ```sql
 CREATE SCHEMA taxi;
@@ -502,7 +551,7 @@ coluna `LocationID` no arquivo é mapeada para as colunas `pickup_nyct2010_gid` 
    dicionário com base no arquivo CSV no S3:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -513,66 +562,67 @@ coluna `LocationID` no arquivo é mapeada para as colunas `pickup_nyct2010_gid` 
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  Definir `LIFETIME` como 0 desativa as atualizações automáticas para evitar
-  tráfego desnecessário no nosso bucket do S3. Em outros casos, talvez você o configure
-  de outra forma. Para mais detalhes, consulte [Atualização de dados de dicionário usando LIFETIME](/pt-BR/reference/statements/create/dictionary/lifetime).
-</Note>
+   <Note>
+     Definir `LIFETIME` como 0 desativa as atualizações automáticas para evitar
+     tráfego desnecessário no nosso bucket do S3. Em outros casos, talvez você o configure
+     de outra forma. Para mais detalhes, consulte [Atualização de dados de dicionário usando
+     LIFETIME](/pt-BR/reference/statements/create/dictionary/lifetime).
+   </Note>
 
-2. Agora importe-o:
+   2. Agora importe-o:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. Confirme se podemos consultá-la:
+   3. Confirme se podemos consultá-la:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. Excelente. Agora use a função `dictGet` para recuperar o
-   nome de um distrito em uma consulta. A consulta a seguir soma o número de corridas de táxi
-   por distrito que terminam no aeroporto LaGuardia ou no JFK:
+   4. Excelente. Agora use a função `dictGet` para recuperar o
+      nome de um distrito em uma consulta. A consulta a seguir soma o número de corridas de táxi
+      por distrito que terminam no aeroporto LaGuardia ou no JFK:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-Esta consulta soma o número de corridas de táxi por borough que terminam em
-um dos aeroportos, LaGuardia ou JFK. Observe que há várias corridas em que o
-bairro de origem é desconhecido.
+   Esta consulta soma o número de corridas de táxi por borough que terminam em
+   um dos aeroportos, LaGuardia ou JFK. Observe que há várias corridas em que o
+   bairro de origem é desconhecido.
 
 <div id="perform-a-join">
   ## Faça um JOIN
@@ -608,32 +658,32 @@ tabela `trips`.
    Time: 48.449 ms
    ```
 
-<Note>
-  Observe que a saída da consulta `JOIN` acima é a mesma da consulta
-  `dictGet` acima (exceto porque os valores `Unknown` não estão
-  incluídos). Nos bastidores, o ClickHouse está, na verdade, chamando a função
-  `dictGet` para o dicionário `taxi_zone_dictionary`, mas a sintaxe `JOIN` é
-  mais familiar para desenvolvedores SQL.
-</Note>
+   <Note>
+     Observe que a saída da consulta `JOIN` acima é a mesma da consulta
+     `dictGet` acima (exceto porque os valores `Unknown` não estão
+     incluídos). Nos bastidores, o ClickHouse está, na verdade, chamando a função
+     `dictGet` para o dicionário `taxi_zone_dictionary`, mas a sintaxe `JOIN` é
+     mais familiar para desenvolvedores SQL.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. Esta consulta retorna as linhas das 1000 viagens com o maior valor
    de gorjeta e, em seguida, faz um inner join entre cada linha e o dicionário:
@@ -653,7 +703,7 @@ tabela `trips`.
   deve recuperar apenas as colunas de que realmente precisa.
 </Note>
 
-[ClickHouse tutorial]: /get-started/quickstarts/tutorial "Tutorial avançado do ClickHouse"
+[tutorial do ClickHouse]: /get-started/quickstarts/tutorial "Tutorial avançado do ClickHouse"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "Aplicativos cliente do PostgreSQL: psql"
 
@@ -669,4 +719,4 @@ tabela `trips`.
 
 [Postgres image]: https://hub.docker.com/_/postgres "Imagem OCI do Postgres no Docker Hub"
 
-[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentação do ClickHouse: Atualização de dados de dicionário usando LIFETIME"
+[Atualização de dados de dicionário usando LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentação do ClickHouse: Atualização de dados de dicionário usando LIFETIME"

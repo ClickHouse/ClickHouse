@@ -1,0 +1,11 @@
+part type	Wide
+both columns in reader header	1
+prefetch limit permits prefetching	1
+missing subcolumn first	199	0	0
+sibling first	199	0	0
+sibling between	199	0	0
+prefetch off	199	0
+many granules	199	0
+wrapped element types	199	0	0
+compact part type	Compact
+compact control	199	0

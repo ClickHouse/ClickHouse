@@ -22,9 +22,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Коллектор ClickStack можно развернуть либо как **контейнер Docker** (см. [Setting up your OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)), либо как **релиз Helm** в Kubernetes через upstream Helm-чарт OpenTelemetry с образом коллектора ClickStack (см. [Deploying the collector](/ru/clickstack/ingesting-data/collector#configuring-the-collector)). **Убедитесь, что вы сохранили его конечную точку OTLP** и `OTLP_AUTH_TOKEN`, который задали при развертывании.
 
 <Steps>
-  <Step>
-    ## Подготовьте всё необходимое
-
+  <Step title="Подготовьте всё необходимое" id="gather-prerequisites">
     Вам понадобятся:
 
     * **Аккаунт AWS** с одной или несколькими группами журналов CloudWatch, а также учётные данные с указанными ниже разрешениями IAM.
@@ -33,9 +31,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Значение `OTLP_AUTH_TOKEN`, которое вы задали для своего коллектора ClickStack. Если вы не включали его защиту, можете удалить заголовок `authorization` из приведённой ниже конфигурации.
   </Step>
 
-  <Step>
-    ## Настройка учетных данных AWS
-
+  <Step title="Настройка учетных данных AWS" id="configure-aws">
     Приёмник использует учетные данные AWS из стандартных переменных среды. Экспортируйте их на хосте, где будет запускаться collector.
 
     **Для пользователей AWS SSO:**
@@ -83,9 +79,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    ## Настройте приёмник CloudWatch
-
+  <Step title="Настройте приёмник CloudWatch" id="configure-receiver">
     Экспортируйте конечную точку коллектора ClickStack и токен аутентификации, затем создайте `otel-collector-config.yaml`.
 
     <Info>
@@ -220,9 +214,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    ## Запустите коллектор-приёмник
-
+  <Step title="Запустите коллектор-приёмник" id="start-collector">
     Создайте `docker-compose.yaml` рядом с `otel-collector-config.yaml`. Запись `extra_hosts` позволяет контейнеру подключаться к коллектору ClickStack, работающему на том же хосте, через `host.docker.internal`; длинная форма `bind mount` явно завершится ошибкой, если файл конфигурации отсутствует, вместо того чтобы молча создать пустой каталог:
 
     ```shell
@@ -262,9 +254,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    ## Проверьте в интерфейсе ClickStack
-
+  <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Запуск ClickStack" border />
@@ -296,9 +286,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Убедитесь, что `OTLP_AUTH_TOKEN` совпадает со значением, заданным в вашем коллекторе ClickStack.
   </Step>
 
-  <Step>
-    ## Импортируйте панель мониторинга CloudWatch (необязательно)
-
+  <Step title="Импортируйте панель мониторинга CloudWatch (необязательно)" id="import-dashboard">
     Для загрузки доступен преднастроенный дашборд с объемом журналов, распределением по уровням серьезности и распределением ошибок.
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Скачать `cloudwatch-logs-dashboard.json`</TrackedLink>, затем в интерфейсе ClickStack перейдите в **Панели мониторинга** и нажмите **Импортировать**.
@@ -310,9 +298,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Диалог завершения импорта" />
   </Step>
 
-  <Step>
-    ## Дополнительные материалы
-
+  <Step title="Дополнительные материалы" id="further-reading">
     * [Справочник по интеграции AWS CloudWatch Logs](/ru/clickstack/integration-examples/cloudwatch) для демо-набора данных, подробного устранения неполадок и вариантов тонкой настройки.
     * [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью TLS на конечной точке OTLP и пользователей для ингестии с минимально необходимыми привилегиями.
     * [Обработка, фильтрация и обогащение](/ru/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) событий в коллекторе.

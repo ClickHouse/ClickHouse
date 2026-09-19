@@ -3,41 +3,73 @@ title: GCS 身份验证与存储桶
 ---
 
 <Accordion title="创建 GCS 存储桶和 HMAC 密钥">
-  ### ch_bucket_us_east1
+  ### ch&#95;bucket&#95;us&#95;east1
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="在 US East 1 创建 GCS 存储桶" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="在 US East 1 创建 GCS 存储桶" />
+    </Frame>
+  </div>
 
-  ### ch_bucket_us_east4
+  ### ch&#95;bucket&#95;us&#95;east4
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="在 US East 4 创建 GCS 存储桶" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="在 US East 4 创建 GCS 存储桶" />
+    </Frame>
+  </div>
 
   ### 生成访问密钥
 
-  ### 创建服务账号 HMAC 密钥和密钥内容
+  ### 创建服务账号 HMAC 密钥和密钥值
 
   打开 **Cloud Storage &gt; Settings &gt; Interoperability**，选择现有的 **Access key**，或选择 **CREATE A KEY FOR A SERVICE ACCOUNT**。本指南介绍的是为新的服务账号创建新密钥的流程。
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="在 GCS 中生成服务账号 HMAC 密钥" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="在 GCS 中生成服务账号 HMAC 密钥" />
+    </Frame>
+  </div>
 
   ### 添加新的服务账号
 
-  如果该项目还没有现有服务账号，请选择 **CREATE NEW ACCOUNT**。
+  如果该项目中还没有服务账号，请选择 **CREATE NEW ACCOUNT**。
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="在 GCS 中添加新的服务账号" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="在 GCS 中添加新的服务账号" />
+    </Frame>
+  </div>
 
-  创建服务账号共分三步。第一步，为该账号填写有意义的名称、ID 和描述。
+  创建服务账号共分三步，第一步是为该账号填写一个有意义的名称、ID 和描述。
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="在 GCS 中定义新的服务账号名称和 ID" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="在 GCS 中定义新服务账号的名称和 ID" />
+    </Frame>
+  </div>
 
   在 Interoperability 设置对话框中，推荐使用 IAM role **Storage Object Admin**；请在第二步选择该角色。
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="在 GCS 中选择 IAM role Storage Object Admin" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="在 GCS 中选择 IAM role Storage Object Admin" />
+    </Frame>
+  </div>
 
-  第三步为可选项，本指南中不会用到。你可以根据自身策略决定是否向用户授予这些特权。
+  第三步是可选的，本指南中不会用到。你可以根据自己的策略允许用户拥有这些特权。
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="在 GCS 中为新服务账号配置其他设置" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="在 GCS 中为新服务账号配置其他设置" />
+    </Frame>
+  </div>
 
-  系统会显示服务账号的 HMAC 密钥。请保存这些信息，因为稍后会在 ClickHouse 配置中使用。
+  系统会显示服务账号的 HMAC 密钥。请保存这些信息，稍后会在 ClickHouse 配置中使用。
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="获取为 GCS 生成的 HMAC 密钥" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="获取为 GCS 生成的 HMAC 密钥" />
+    </Frame>
+  </div>
 </Accordion>
