@@ -7,6 +7,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
@@ -184,6 +185,9 @@ void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
         auto key_columns = getColumnsByIndices(key_sample_block, chunk, key_column_indices);
         ColumnPtr mask_col = set->execute(key_columns, false);
         const auto & mask = assert_cast<const ColumnUInt8 *>(mask_col.get())->getData();
+
+        if (memoryIsByte(mask.data(), 0, mask.size(), 1))
+            return;
 
         stat.result_rows -= chunk.getNumRows();
 
