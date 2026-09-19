@@ -187,54 +187,39 @@ public:
     {
         ResultType current = 0;
         size_t j = 0;
-        /// A constant haystack is not bounded by the row, so one row can carry the whole key list: flush
-        /// the budget between chunks of the search and not only at its end (CancellationBudget.h:20-21).
-        size_t flushed = 0;
-        while (true)
+        for (; j < array_size; ++j)
         {
-            const size_t chunk_end
-                = budget ? std::min(j + CancellationBudget::units_per_instruction_charge, array_size) : array_size;
-
-            for (; j < chunk_end; ++j)
-            {
-                if constexpr (Case == 2) /// Right arg is Nullable
-                    if (hasNull(null_map_item, row_index))
-                        continue;
-
-                if constexpr (Case == 3) /// Left arg is an array of Nullables
-                    if (hasNull(null_map_data, current_offset + j))
-                        continue;
-
-                if constexpr (Case == 4) /// Both args are nullable
-                {
-                    const bool right_is_null = hasNull(null_map_data, current_offset + j);
-                    const bool left_is_null = hasNull(null_map_item, row_index);
-
-                    if (right_is_null != left_is_null)
-                        continue;
-
-                    if (!right_is_null && !compare(data, target, current_offset + j, row_index))
-                        continue;
-                }
-                else if (!compare(data, target, current_offset + j, row_index))
+            if constexpr (Case == 2) /// Right arg is Nullable
+                if (hasNull(null_map_item, row_index))
                     continue;
 
-                ConcreteAction::apply(current, j);
+            if constexpr (Case == 3) /// Left arg is an array of Nullables
+                if (hasNull(null_map_data, current_offset + j))
+                    continue;
 
-                if constexpr (!ConcreteAction::resume_execution)
-                    break;
+            if constexpr (Case == 4) /// Both args are nullable
+            {
+                const bool right_is_null = hasNull(null_map_data, current_offset + j);
+                const bool left_is_null = hasNull(null_map_item, row_index);
+
+                if (right_is_null != left_is_null)
+                    continue;
+
+                if (!right_is_null && !compare(data, target, current_offset + j, row_index))
+                    continue;
             }
+            else if (!compare(data, target, current_offset + j, row_index))
+                continue;
 
-            if (j < chunk_end || j == array_size)
-                break; /// Matched and broke out of the search, or the whole array is scanned.
+            ConcreteAction::apply(current, j);
 
-            budget->chargeUnits(j - flushed);
-            flushed = j;
+            if constexpr (!ConcreteAction::resume_execution)
+                break;
         }
         /// `chargeUnits` checks the deadline as soon as one call exceeds its whole budget, so charge the
         /// comparisons performed rather than `array_size`.
         if (budget)
-            budget->chargeUnits(j - flushed + 1);
+            budget->chargeUnits(j + 1);
         return current;
     }
 
@@ -445,61 +430,45 @@ private:
 
             ResultType current = 0;
             size_t j = 0;
-            /// A constant haystack is not bounded by the row, so one row can carry the whole key list: flush
-            /// the budget between chunks of the search and not only at its end (CancellationBudget.h:20-21).
-            size_t flushed = 0;
 
-            while (true)
+            for (; j < array_size; ++j)
             {
-                const ArrayOffset chunk_end = const_haystack
-                    ? std::min<ArrayOffset>(j + CancellationBudget::units_per_instruction_charge, array_size)
-                    : array_size;
+                const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
+                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
 
-                for (; j < chunk_end; ++j)
+                if constexpr (IsConst)
                 {
-                    const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
-                    const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
-
-                    if constexpr (IsConst)
-                    {
-                        if constexpr (HasNullMapData)
-                            if ((*data_map)[current_offset + j])
-                                continue;
-
-                        if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
-                            continue;
-                    }
-                    else if constexpr (HasNullMapData)
-                    {
+                    if constexpr (HasNullMapData)
                         if ((*data_map)[current_offset + j])
-                        {
-                            if constexpr (!HasNullMapItem)
-                                continue;
+                            continue;
 
-                            if (!(*item_map)[i])
-                                continue;
-                        }
-                        else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
+                        continue;
+                }
+                else if constexpr (HasNullMapData)
+                {
+                    if ((*data_map)[current_offset + j])
+                    {
+                        if constexpr (!HasNullMapItem)
+                            continue;
+
+                        if (!(*item_map)[i])
                             continue;
                     }
                     else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
-
-                    ConcreteAction::apply(current, j);
-
-                    if constexpr (!ConcreteAction::resume_execution)
-                        break;
                 }
+                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    continue;
 
-                if (j < chunk_end || j == array_size)
-                    break; /// Matched and broke out of the search, or the whole array is scanned.
+                ConcreteAction::apply(current, j);
 
-                const_haystack->budget.chargeUnits(j - flushed);
-                flushed = j;
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
             }
 
             if (const_haystack)
-                const_haystack->budget.chargeUnits(j - flushed + 1);
+                const_haystack->budget.chargeUnits(j + 1);
 
             return current;
         };

@@ -16,3 +16,11 @@ SELECT number, has(map('1', 'x', '3', 'y'), toString(number)) FROM numbers(4) OR
 
 -- an onlyNull needle: the result size comes from the needle and not from the haystack's single offset
 SELECT number, has(map('a', 1), NULL) FROM numbers(3) ORDER BY number;
+
+-- a 5000-key constant map: a key at the start, around 4096, at the end, and absent keys
+SELECT number, has(mapFromArrays(range(5000), range(5000)), number)
+FROM (SELECT arrayJoin([0, 4095, 4096, 4097, 4999, 5000, 123456]) AS number) ORDER BY number;
+
+-- the same for String keys
+SELECT number, has(mapFromArrays(arrayMap(x -> toString(x), range(5000)), range(5000)), toString(number))
+FROM (SELECT arrayJoin([0, 4095, 4096, 4097, 4999, 5000]) AS number) ORDER BY number;
