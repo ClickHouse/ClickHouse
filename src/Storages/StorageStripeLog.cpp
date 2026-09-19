@@ -1,5 +1,6 @@
 #include <sys/types.h>
 
+#include <algorithm>
 #include <optional>
 
 #include <Common/Exception.h>
@@ -26,8 +27,12 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addMissingDefaults.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageLogSettings.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -65,6 +70,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int INCORRECT_INDEX;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
 }
@@ -72,6 +78,72 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char stripe_log_sink_write_fallpoint[];
+}
+
+static bool isValidHistoricalBlock(const IndexOfBlockForNativeFormat & block, const NamesAndTypesList & current_columns)
+{
+    if (block.num_columns != block.columns.size() || block.num_columns > current_columns.size())
+        return false;
+
+    auto current_column = current_columns.begin();
+    for (const auto & column : block.columns)
+    {
+        if (current_column == current_columns.end()
+            || column.name != current_column->name
+            || column.type != current_column->type->getName())
+            return false;
+
+        ++current_column;
+    }
+
+    return true;
+}
+
+static IndexForNativeFormat extractIndexForColumnsOrKeepAll(
+    const IndexForNativeFormat & index,
+    const NameSet & required_columns,
+    const NamesAndTypesList & current_columns,
+    bool & read_blocks_individually)
+{
+    IndexForNativeFormat res;
+    res.blocks.reserve(index.blocks.size());
+    read_blocks_individually = false;
+
+    for (const auto & block : index.blocks)
+    {
+        if (block.num_columns != block.columns.size())
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains an invalid number of columns");
+
+        IndexOfBlockForNativeFormat selected_block;
+        selected_block.columns.reserve(required_columns.size());
+
+        for (const auto & column : block.columns)
+        {
+            if (required_columns.contains(column.name))
+                selected_block.columns.emplace_back(column);
+        }
+
+        if (selected_block.columns.size() > required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains duplicate columns");
+
+        if (selected_block.columns.size() < required_columns.size())
+        {
+            /// A missing requested column is valid only for an older append-only schema.
+            if (!isValidHistoricalBlock(block, current_columns))
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains a block with an invalid schema");
+
+            read_blocks_individually = true;
+            res.blocks.emplace_back(block);
+        }
+        else
+        {
+            selected_block.num_columns = selected_block.columns.size();
+            selected_block.num_rows = block.num_rows;
+            res.blocks.emplace_back(std::move(selected_block));
+        }
+    }
+
+    return res;
 }
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
@@ -97,7 +169,10 @@ public:
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
-        size_t file_size_)
+        size_t file_size_,
+        StorageMetadataPtr metadata_snapshot_,
+        ContextPtr context_,
+        bool read_blocks_individually_)
         : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -106,7 +181,11 @@ public:
         , indices(indices_)
         , index_begin(index_begin_)
         , index_end(index_end_)
+        , next_index(index_begin_)
         , file_size(file_size_)
+        , metadata_snapshot(std::move(metadata_snapshot_))
+        , context(std::move(context_))
+        , read_blocks_individually(read_blocks_individually_)
     {
     }
 
@@ -135,7 +214,11 @@ private:
     std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    IndexForNativeFormat::Blocks::const_iterator next_index;
     size_t file_size;
+    const StorageMetadataPtr metadata_snapshot;
+    const ContextPtr context;
+    const bool read_blocks_individually;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -144,6 +227,16 @@ private:
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeReader> block_in;
+
+    void readNextBlock()
+    {
+        if (next_index == index_end)
+            return;
+
+        auto block_end = next_index;
+        ++block_end;
+        block_in.emplace(*data_in, 0, next_index, block_end);
+    }
 
     void start()
     {
@@ -163,7 +256,10 @@ private:
             /// but we must not read beyond the snapshotted range that the index covers.
             data_in->setReadUntilPosition(file_size);
 
-            block_in.emplace(*data_in, 0, index_begin, index_end);
+            if (read_blocks_individually)
+                readNextBlock();
+            else
+                block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
 
@@ -172,7 +268,11 @@ private:
         start();
 
         if (!block_in)
+        {
+            data_in.reset();
+            indices.reset();
             return;
+        }
 
         Block res = block_in->read();
 
@@ -183,6 +283,34 @@ private:
             data_in.reset();
             indices.reset();
             return;
+        }
+
+        if (read_blocks_individually)
+        {
+            ++next_index;
+            block_in.reset();
+            readNextBlock();
+        }
+
+        if (read_blocks_individually)
+        {
+            bool has_missing_columns = std::any_of(physical_columns.begin(), physical_columns.end(), [&](const auto & column)
+            {
+                return !res.has(column.name);
+            });
+
+            if (has_missing_columns)
+            {
+                auto actions_dag = addMissingDefaults(
+                    res,
+                    physical_columns,
+                    metadata_snapshot->getColumns(),
+                    context);
+                auto actions = std::make_shared<ExpressionActions>(
+                    std::move(actions_dag),
+                    ExpressionActionsSettings(context->getSettingsRef()));
+                actions->execute(res);
+            }
         }
 
         for (const auto & col : physical_columns)
@@ -369,6 +497,33 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
+void StorageStripeLog::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::Type::ADD_COLUMN && (command.first || !command.after_column.empty()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER TABLE ... ADD COLUMN with FIRST or AFTER is not supported by storage {}",
+                getName());
+
+        if (command.type != AlterCommand::Type::ADD_COLUMN && !command.isCommentAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+    }
+}
+
+
+std::optional<NameAndTypePair> StorageStripeLog::getColumnForRowCount(const StorageSnapshotPtr & storage_snapshot) const
+{
+    const auto & all_physical = storage_snapshot->metadata->getColumns().getAllPhysical();
+    if (all_physical.empty())
+        return {};
+
+    return all_physical.front();
+}
+
+
 static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
@@ -421,8 +576,13 @@ Pipe StorageStripeLog::read(
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
     /// Filter out virtual columns - they are not stored on disk and not in the index.
-    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
-    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
+    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(
+        column_names, storage_snapshot, getColumnForRowCount(storage_snapshot));
+    const NameSet required_columns{physical_column_names.begin(), physical_column_names.end()};
+    const auto current_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
+    bool read_blocks_individually = false;
+    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(extractIndexForColumnsOrKeepAll(
+        indices, required_columns, current_columns, read_blocks_individually));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
@@ -444,7 +604,13 @@ Pipe StorageStripeLog::read(
             physical_columns, virtual_columns,
             std::static_pointer_cast<const StorageStripeLog>(shared_from_this()),
             read_settings,
-            indices_for_selected_columns, begin, end, data_file_size));
+            indices_for_selected_columns,
+            begin,
+            end,
+            data_file_size,
+            storage_snapshot->metadata,
+            local_context,
+            read_blocks_individually));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -833,7 +999,8 @@ For each table ClickHouse writes the files:
 - `data.bin` — Data file.
 - `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
-The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
+The `StripeLog` engine supports append-only `ALTER TABLE ... ADD COLUMN`. Existing data blocks are read with default values for the new column.
+The engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
 ## Reading the data {#table_engines-stripelog-reading-the-data}
 

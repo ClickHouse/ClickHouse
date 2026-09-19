@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <Columns/ColumnsNumber.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
@@ -197,11 +198,15 @@ Names filterVirtualColumns(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const VirtualsKind & kind_to_filter,
-    const VirtualsMaterializationPlace & place_to_filter);
+    const VirtualsMaterializationPlace & place_to_filter,
+    const std::optional<NameAndTypePair> & column_to_read_if_empty = std::nullopt);
 
 /// Splits requested column names into physical and virtual.
 /// Returns {physical_names, virtual_names}. Always includes at least one physical column.
-std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const std::optional<NameAndTypePair> & column_to_read_if_empty = std::nullopt);
 
 }
 
