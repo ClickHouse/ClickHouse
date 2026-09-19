@@ -18,6 +18,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
@@ -95,7 +96,7 @@ namespace
                 "{} of data file '{}'; ignoring the declared bounds for this column",
                 path_to_manifest_file,
                 field_id,
-                parsed_entry.file_path_key.serialize());
+                parsed_entry.file_path_key);
             return std::nullopt;
         }
 
@@ -558,7 +559,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                         "for column id {} of data file '{}'; skipping min/max pruning for this column",
                         path_to_manifest_file,
                         column_id,
-                        parsed_entry->file_path_key.serialize());
+                        parsed_entry->file_path_key);
                     continue;
                 }
 
@@ -586,7 +587,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                         "{} of data file '{}'; skipping min/max pruning for this column",
                         path_to_manifest_file,
                         column_id,
-                        parsed_entry->file_path_key.serialize());
+                        parsed_entry->file_path_key);
                     continue;
                 }
 
