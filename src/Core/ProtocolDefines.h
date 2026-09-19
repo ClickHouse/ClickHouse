@@ -121,7 +121,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `ORDER BY ... WITH FILL` can be shipped in full.
 /// Version 19 writes a per-step serialization version next to every step, so a step can change its
 /// own bytes without moving this global version (see the constant below).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
+/// Version 20 writes version 1 of the `Window` step, which carries the window frame exclusion.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -168,6 +169,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `Window`, which carries the window frame
+/// exclusion. A frame with an exclusion computes a different result, so a peer below this version is
+/// refused at plan time rather than sent a frame it would read as having no exclusion.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_EXCLUSION = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

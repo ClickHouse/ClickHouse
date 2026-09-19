@@ -409,6 +409,14 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         }
     }
 
+    const bool is_peer_exclusion = window_description.frame.exclusion == WindowFrame::Exclusion::Group
+        || window_description.frame.exclusion == WindowFrame::Exclusion::Ties;
+    const auto hasCollationInOrderBy = [&]
+    {
+        return std::ranges::any_of(window_description.order_by,
+            [](const auto & column_description) { return column_description.collator != nullptr; });
+    };
+
     for (const auto & workspace : workspaces)
     {
         if (workspace.window_function_impl)
@@ -418,8 +426,42 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'",
                     workspace.aggregate_function->getName());
             }
-        }
 
+            if (window_description.frame.exclusion != WindowFrame::Exclusion::NoOthers
+                && workspace.window_function_impl->readsFrameRows())
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Window frame exclusion is not supported for function '{}'",
+                    workspace.aggregate_function->getName());
+            }
+        }
+        else if (window_description.frame.exclusion != WindowFrame::Exclusion::NoOthers
+            && is_peer_exclusion && hasCollationInOrderBy())
+        {
+            /// GROUP and TIES are defined in terms of the ordering peers of the current row, and
+            /// peers are decided by comparing the ORDER BY values. That comparison does not consult
+            /// a collator, here or anywhere else in this transform, so with one in the window order
+            /// it would disagree with the order the rows are in and take the wrong rows out of the
+            /// frame. Refuse rather than answer wrongly; the peer comparison is master's, and
+            /// changing it changes `rank`, `RANGE` frames and `GROUPS` frames along with this.
+            /// Only the aggregates read the frame, so a window carrying nothing but `rank` or
+            /// `row_number` is unaffected and is left alone.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Window frame exclusion of the ordering peers is not supported with a COLLATE in the window ORDER BY");
+        }
+        else if (window_description.frame.exclusion != WindowFrame::Exclusion::NoOthers
+            && workspace.aggregate_function->allocatesMemoryInArena())
+        {
+            /// The hole moves with the current row, so the state is rebuilt for every row of the
+            /// partition. Destroying a state does not give back what it took from the arena, which
+            /// is only released when the partition ends, so a function that allocates there would
+            /// hold one state per row of the partition at once. Refuse rather than run out of
+            /// memory on a large partition; the states of the other functions are of a fixed size,
+            /// and they are what the rebuild was written for.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Window frame exclusion is not supported for function '{}', which allocates memory in an arena",
+                workspace.aggregate_function->getName());
+        }
     }
 }
 
@@ -812,6 +854,17 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
             break;
     }
 
+    return areOrderByPeers(x, y);
+}
+
+/// Whether two rows compare equal on the ORDER BY key. Unlike `arePeers` this does not depend on
+/// the frame type: the frame exclusion is defined in terms of the ordering peers of the current
+/// row, and a ROWS frame has them too.
+bool WindowTransform::areOrderByPeers(const RowNumber & x, const RowNumber & y) const
+{
+    if (x == y)
+        return true;
+
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -1199,6 +1252,36 @@ void WindowTransform::advanceFrameEnd()
 }
 
 // Update the aggregation states after the frame has changed.
+/// The first ordering peer of the current row, not looking further back than the frame start.
+/// Rows of the peer group that fall before the frame are not in the frame anyway.
+RowNumber WindowTransform::peerGroupStartWithinFrame() const
+{
+    RowNumber result = current_row;
+    while (result > frame_start)
+    {
+        RowNumber previous = result;
+        retreatRowNumber(previous);
+        if (!areOrderByPeers(previous, current_row))
+            break;
+        result = previous;
+    }
+    return result;
+}
+
+/// Past the last ordering peer of the current row, not looking further ahead than the frame end.
+/// The rows up to the frame end have been read, so this never needs data that has not arrived.
+RowNumber WindowTransform::peerGroupEndWithinFrame() const
+{
+    RowNumber result = current_row;
+    while (result < frame_end)
+    {
+        if (!areOrderByPeers(result, current_row))
+            break;
+        advanceRowNumber(result);
+    }
+    return result;
+}
+
 void WindowTransform::updateAggregationState()
 {
     // Assert that the frame boundaries are known, have proper order wrt each
@@ -1235,6 +1318,81 @@ void WindowTransform::updateAggregationState()
         rows_to_add_end = frame_end;
     }
 
+    // The rows to aggregate over, as a list of ranges. Without a frame exclusion there is only
+    // ever one of them, and the incremental update above applies.
+    std::array<std::pair<RowNumber, RowNumber>, 3> ranges;
+    size_t range_count = 0;
+    const auto add_range = [&](const RowNumber & begin, const RowNumber & end)
+    {
+        if (begin < end)
+            ranges[range_count++] = {begin, end};
+    };
+
+    if (window_description.frame.exclusion == WindowFrame::Exclusion::NoOthers)
+    {
+        add_range(rows_to_add_start, rows_to_add_end);
+    }
+    else
+    {
+        RowNumber excluded_start = current_row;
+        RowNumber excluded_end = current_row;
+        advanceRowNumber(excluded_end);
+
+        if (window_description.frame.exclusion != WindowFrame::Exclusion::CurrentRow)
+        {
+            // The ordering peers of the current row, clamped to the frame: the rows of the peer
+            // group that fall outside it are not in the frame to begin with.
+            excluded_start = std::max(frame_start, peerGroupStartWithinFrame());
+            excluded_end = peerGroupEndWithinFrame();
+        }
+
+        excluded_start = std::max(excluded_start, frame_start);
+        excluded_end = std::min(excluded_end, frame_end);
+
+        RowNumber after_current = current_row;
+        advanceRowNumber(after_current);
+
+        // Clamping can leave nothing to take out - the current row is not in the frame to begin
+        // with, or the peer group falls outside it. TIES keeps the current row, so a range holding
+        // only that row takes nothing out either.
+        const bool excludes_nothing = !(excluded_start < excluded_end)
+            || (window_description.frame.exclusion == WindowFrame::Exclusion::Ties
+                && excluded_start == current_row && excluded_end == after_current);
+
+        if (excludes_nothing)
+        {
+            // The frame is the one the query would have without the clause, so the state carries
+            // over from the previous row as it does for any other frame, and a frame whose start
+            // does not move stays linear. The one thing that cannot be carried over is a state
+            // built with a hole in it.
+            if (prev_row_excluded_rows)
+            {
+                reset_aggregation = true;
+                rows_to_add_start = frame_start;
+                rows_to_add_end = frame_end;
+            }
+
+            add_range(rows_to_add_start, rows_to_add_end);
+            prev_row_excluded_rows = false;
+        }
+        else
+        {
+            // The excluded rows move with the current row, so nothing can be carried over from the
+            // previous one: the state is rebuilt from the frame minus the hole at every row.
+            reset_aggregation = true;
+
+            add_range(frame_start, std::min(excluded_start, frame_end));
+            if (window_description.frame.exclusion == WindowFrame::Exclusion::Ties)
+            {
+                // TIES drops the peers but keeps the current row.
+                if (frame_start <= current_row && current_row < frame_end)
+                    add_range(current_row, after_current);
+            }
+            add_range(std::max(excluded_end, frame_start), frame_end);
+            prev_row_excluded_rows = true;
+        }
+    }
+
     for (auto & ws : workspaces)
     {
         if (ws.window_function_impl)
@@ -1252,15 +1410,19 @@ void WindowTransform::updateAggregationState()
             a->create(buf);
         }
 
+        for (size_t range_index = 0; range_index < range_count; ++range_index)
+        {
+        const auto & [range_begin, range_end] = ranges[range_index];
+
         // To achieve better performance, we will have to loop over blocks and
         // rows manually, instead of using advanceRowNumber().
         // For this purpose, the past-the-end block can be different than the
         // block of the past-the-end row (it's usually the next block).
-        const auto past_the_end_block = rows_to_add_end.row == 0
-            ? rows_to_add_end.block
-            : rows_to_add_end.block + 1;
+        const auto past_the_end_block = range_end.row == 0
+            ? range_end.block
+            : range_end.block + 1;
 
-        for (auto block_number = rows_to_add_start.block;
+        for (auto block_number = range_begin.block;
              block_number < past_the_end_block;
              ++block_number)
         {
@@ -1278,10 +1440,10 @@ void WindowTransform::updateAggregationState()
 
             // First and last blocks may be processed partially, and other blocks
             // are processed in full.
-            const auto first_row = block_number == rows_to_add_start.block
-                ? rows_to_add_start.row : 0;
-            const auto past_the_end_row = block_number == rows_to_add_end.block
-                ? rows_to_add_end.row : block.rows;
+            const auto first_row = block_number == range_begin.block
+                ? range_begin.row : 0;
+            const auto past_the_end_row = block_number == range_end.block
+                ? range_end.row : block.rows;
 
             // We should add an addBatch analog that can accept a starting offset.
             // For now, add the values one by one.
@@ -1289,6 +1451,7 @@ void WindowTransform::updateAggregationState()
             // Removing arena.get() from the loop makes it faster somehow...
             auto * arena_ptr = arena.get();
             a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+        }
         }
     }
 }
@@ -1301,7 +1464,10 @@ void WindowTransform::writeOutCurrentRow()
     // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
     // row of the partition, so there's no previous row in this partition (and thus no previous frame)
     // to compare against.
-    const bool frame_unchanged = current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
+    // A frame exclusion takes a hole out of the frame around the current row, so two rows with the
+    // same frame boundaries still have different results and the shortcut below does not apply.
+    const bool frame_unchanged = window_description.frame.exclusion == WindowFrame::Exclusion::NoOthers
+        && current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
 
     const auto & block = blockAt(current_row);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
@@ -1573,6 +1739,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         frame_end = partition_start;
         prev_frame_start = partition_start;
         prev_frame_end = partition_start;
+        prev_row_excluded_rows = false;
         chassert(current_row == partition_start);
         current_row_number = 1;
         peer_group_start = partition_start;
@@ -1996,6 +2163,8 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
 
     private:
         const Float64 decay_length;
+
+    bool readsFrameRows() const override { return true; }
 };
 
 struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFunction
@@ -2071,6 +2240,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFun
 
     private:
         const Float64 decay_length;
+
+    bool readsFrameRows() const override { return true; }
 };
 
 struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
@@ -2156,6 +2327,8 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
 
     private:
         const Float64 decay_length;
+
+    bool readsFrameRows() const override { return true; }
 };
 
 struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunction<ExponentialTimeDecayedAvgState>
@@ -2270,6 +2443,8 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
 
     private:
         const Float64 decay_length;
+
+    bool readsFrameRows() const override { return true; }
 };
 
 struct WindowFunctionRowNumber final : public StatelessWindowFunction
@@ -2466,7 +2641,11 @@ public:
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         auto default_window_frame = getDefaultFrame();
-        if (transform->window_description.frame != default_window_frame)
+        /// This function does not read the rows of the frame, so an exclusion leaves it alone and
+        /// must not make the frame count as a different one.
+        WindowFrame frame = transform->window_description.frame;
+        frame.exclusion = WindowFrame::Exclusion::NoOthers;
+        if (frame != default_window_frame)
         {
             LOG_ERROR(
                 getLogger("WindowFunctionPercentRank"),
@@ -2580,7 +2759,10 @@ public:
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         auto default_window_frame = getDefaultFrame();
-        if (transform->window_description.frame != default_window_frame)
+        /// See the note in percent_rank: an exclusion does not reach this function either.
+        WindowFrame frame = transform->window_description.frame;
+        frame.exclusion = WindowFrame::Exclusion::NoOthers;
+        if (frame != default_window_frame)
         {
             LOG_ERROR(
                 getLogger("WindowFunctionCumeDist"),
@@ -2852,6 +3034,12 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
                 target_row.row);
         }
     }
+
+    /// The row at the offset is taken when it lies between the frame bounds, so a row that an
+    /// exclusion takes out of the frame would still be read. Only `lagInFrame`/`leadInFrame` reach
+    /// this: `lag`/`lead` are refused an explicit frame by name in `resolveFunction.cpp`, so a frame
+    /// with an exclusion never gets as far as them.
+    bool readsFrameRows() const override { return true; }
 };
 
 template <bool is_lead>
@@ -2928,6 +3116,8 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
                target_row.row);
         }
     }
+
+    bool readsFrameRows() const override { return true; }
 };
 
 struct NonNegativeDerivativeState
@@ -3265,12 +3455,14 @@ Alias: `percentRank` (case-sensitive)
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+An `EXCLUDE` on that frame is accepted and leaves the result alone: the function is read off the ranks and the
+size of the partition, not off the rows of the frame.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
@@ -3332,12 +3524,14 @@ Computes the cumulative distribution of a value within a group of values, i.e., 
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+An `EXCLUDE` on that frame is accepted and leaves the result alone: the function is read off the ranks and the
+size of the partition, not off the rows of the frame.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
@@ -3474,9 +3668,9 @@ Divides the ordered rows within a partition into a specified number of buckets (
 ```sql
 ntile (buckets)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The argument `buckets` must be a constant positive integer.
@@ -3541,6 +3735,9 @@ Here there are seven rows and four buckets, so the first three buckets contain t
                 name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
+
 
 **Syntax**
 
@@ -3612,6 +3809,9 @@ SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_h
                 name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
+
 
 <Warning>
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
@@ -3697,6 +3897,7 @@ ORDER BY date DESC
 Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
 This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
 
+
 **Syntax**
 
 ```sql
@@ -3771,6 +3972,8 @@ ORDER BY date DESC
                 name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
 
 <Warning>
 `leadInFrame` behavior differs from the standard SQL `lead` window function.
@@ -3881,9 +4084,7 @@ FROM file('nobel_laureates_data.csv');
 ```sql title="Query"
 SELECT
     fullName,
-    lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
-      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) AS year,
+    lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC) AS year,
     category,
     motivation
 FROM nobel_prize_laureates
@@ -3909,6 +4110,7 @@ LIMIT 9
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
@@ -4005,6 +4207,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedMax_syntax = "exponentialTimeDecayedMax(x)(value, timeunit)";
     FunctionDocumentation::Arguments exponentialTimeDecayedMax_arguments = {
@@ -4101,6 +4304,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the cumulative exponential decay over a time series at the index `t` in time.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedCount_syntax = "exponentialTimeDecayedCount(x)(t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedCount_arguments = {
@@ -4196,6 +4400,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
+This function walks the rows of the frame itself, so a frame that carries an `EXCLUDE` is rejected with `NOT_IMPLEMENTED` rather than answered as though the excluded rows were still in it.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedAvg_arguments = {

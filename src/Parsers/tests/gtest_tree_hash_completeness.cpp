@@ -490,6 +490,18 @@ TEST(TreeHashCompleteness, JSONRejectsInternalAndHiddenExecutionState)
         json.replace(pos, key.size(), R"("frame_end_preceding":true)");
         expectJSONRejected(json);
     }
+
+    {
+        /// A window that takes the default frame has no frame fields at all, so an exclusion
+        /// smuggled into one would be a frame field the formatter could never print back.
+        String json = serializeASTToJSON(*parse("SELECT sum(n) OVER (ORDER BY n) FROM t"));
+        EXPECT_EQ(json.find("\"frame_exclusion\""), String::npos);
+        const String key = R"("type":"WindowDefinition",)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.insert(pos + key.size(), R"("frame_exclusion":"Ties",)");
+        expectJSONRejected(json);
+    }
 }
 
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)

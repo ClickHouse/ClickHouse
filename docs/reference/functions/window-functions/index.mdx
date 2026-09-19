@@ -23,7 +23,8 @@ The table below shows which features are currently supported:
 | `RANGE` frame                                                                       | ✅         | Used by default when a frame is not specified explicitly (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                           |
 | `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                               | ❌         | Specify the number of seconds instead (`RANGE` works with any numeric type).                                                                                                                                                                                                                                                                                                              |
 | `GROUPS` frame                                                                      | ✅         | Frame boundaries count whole peer groups (rows equal on the `ORDER BY` key); `N PRECEDING` and `N FOLLOWING` count `N` peer groups before and after the current row's peer group. |
-| Calculating aggregate functions over a frame (`sum(value) OVER (ORDER BY time)`)    | ✅         | All aggregate functions are supported.                                                                                                                                                                                                                                                                                                                                                    |
+| Calculating aggregate functions over a frame (`sum(value) OVER (ORDER BY time)`)    | ✅         | All aggregate functions are supported. Over a frame that carries an `EXCLUDE`, the ones that allocate in an arena are not (see the next row).                                                                                                                                                                                                                                                                                  |
+| Frame exclusion (`EXCLUDE CURRENT ROW`, `EXCLUDE GROUP`, `EXCLUDE TIES`, `EXCLUDE NO OTHERS`) | ✅         | Supported for aggregate functions. Rejected with `NOT_IMPLEMENTED` for the ones that allocate in an arena, such as `groupArray`, because the state is rebuilt for every row while the arena is only released when the partition ends, and for the window functions that walk the frame themselves: `nth_value`, `lagInFrame`/`leadInFrame` and the `exponentialTimeDecayed*` family. `EXCLUDE GROUP` and `EXCLUDE TIES` are also rejected when the window `ORDER BY` carries a `COLLATE` and something on that window reads the frame, because peers are decided without consulting the collator; `rank` and `row_number` do not read the frame and are left alone. Where the exclusion does take rows out, it takes them out per row, so a frame whose start does not move costs one pass over the frame per row; where it takes nothing out, the frame costs what it would without the clause. |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                              | ✅         |                                                                                                                                                                                                                                                                                                                                                                                           |
 | `percent_rank()`/`percentRank()`                                                    | ✅         | Efficiently computes the relative standing of a value within a partition. It replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                      |
 | `cume_dist()`                                                                       | ✅         | Computes the cumulative distribution of a value within a group of values. Returns the percentage of rows with values less than or equal to the current row's value.                                                                                                                                                                                                                       |
@@ -35,18 +36,19 @@ The table below shows which features are currently supported:
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group [frame_exclusion]]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group [frame_exclusion]]
 ])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS`, `RANGE`, or `GROUPS` - defines bounds of a frame, aggregate_function is calculated within a frame. `ROWS` counts physical rows, `RANGE` counts `ORDER BY` values, and `GROUPS` counts peer groups (rows equal on the `ORDER BY` key).
+- `EXCLUDE CURRENT ROW`, `EXCLUDE GROUP`, `EXCLUDE TIES` or `EXCLUDE NO OTHERS` - takes rows back out of the frame, after its bounds have been applied. `CURRENT ROW` drops the current row, `GROUP` drops the current row together with its peers (the rows equal to it on the `ORDER BY` key), `TIES` drops those peers but keeps the current row, and `NO OTHERS`, the default, drops nothing.
 - `WINDOW` - allows multiple expressions to use the same window definition.
 
 ```text

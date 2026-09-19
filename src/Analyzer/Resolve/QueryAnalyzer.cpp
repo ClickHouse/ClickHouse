@@ -717,6 +717,25 @@ ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodeP
             buffer << frame_end_offset_projection_name;
             buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
         }
+
+        /// Two windows that differ only by the exclusion are different windows, and this name is what
+        /// tells them apart: without it they share a projection name and one of them answers with the
+        /// result of the other. `NO OTHERS` is left unprinted so that the name of a window without an
+        /// exclusion is the name it has always had.
+        switch (window_frame.exclusion)
+        {
+            case WindowFrame::Exclusion::NoOthers:
+                break;
+            case WindowFrame::Exclusion::CurrentRow:
+                buffer << " EXCLUDE CURRENT ROW";
+                break;
+            case WindowFrame::Exclusion::Group:
+                buffer << " EXCLUDE GROUP";
+                break;
+            case WindowFrame::Exclusion::Ties:
+                buffer << " EXCLUDE TIES";
+                break;
+        }
     }
 
     return buffer.str();
