@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import random
+import re
 import socket
 import struct
 import threading
@@ -1984,6 +1985,174 @@ def test_copy_options(started_cluster):
     assert int(cur.fetchone()[0]) == 2
 
     cur.execute("DROP TABLE copy_options;")
+    setup.close()
+
+
+def test_copy_option_defaults_are_pinned(started_cluster):
+    # The option list of a `COPY` is accepted only when it asks for the shape this protocol
+    # transfers anyway, which is checked against the defaults of the formats. The session must not
+    # be able to move those defaults underneath the check: `SET format_csv_delimiter = ';'` followed
+    # by a `COPY ... WITH (FORMAT csv, DELIMITER ',')` used to be accepted and then served with `;`,
+    # which is exactly the silent shape mismatch the option list is there to prevent.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_pinned;")
+    cur.execute(
+        "CREATE TABLE copy_pinned (a String, b Nullable(String)) ENGINE = Memory;"
+    )
+
+    # A session delimiter of `;` does not reach a `COPY` that asked for the default one.
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_csv_delimiter = ';'")
+        session.copy_expert(
+            "COPY copy_pinned (a, b) FROM STDIN WITH (FORMAT csv, DELIMITER ',')",
+            StringIO("x,y\n"),
+        )
+    cur.execute("SELECT a, b FROM copy_pinned;")
+    assert cur.fetchall() == [("x", "y")]
+
+    out = StringIO()
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_csv_delimiter = ';'")
+        session.copy_expert(
+            "COPY copy_pinned TO STDOUT WITH (FORMAT csv, DELIMITER ',')", out
+        )
+    assert out.getvalue() == '"x","y"\n'
+
+    # And neither does a session representation of NULL. These go through the psycopg2 helpers,
+    # which spell the PostgreSQL defaults out in the option list on every call.
+    cur.execute("TRUNCATE TABLE copy_pinned;")
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_tsv_null_representation = 'NULL'")
+        session.copy_from(StringIO("x\t\\N\n"), "copy_pinned", columns=("a", "b"))
+    cur.execute("SELECT a, isNull(b) FROM copy_pinned;")
+    assert cur.fetchall() == [("x", 1)]
+
+    out = StringIO()
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_tsv_null_representation = 'NULL'")
+        session.copy_to(file=out, table="copy_pinned")
+    assert out.getvalue() == "x\t\\N\n"
+
+    cur.execute("DROP TABLE copy_pinned;")
+    setup.close()
+
+
+def test_copy_option_errors_reach_the_client(started_cluster):
+    # An option this protocol cannot serve is reported with the message that says why. These used to
+    # be swallowed: `processCopyQuery` caught everything the `COPY` parser raised and handed the
+    # query to the generic SQL parser, so the client got a plain syntax error instead.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_errors;")
+    cur.execute("CREATE TABLE copy_errors (s String) ENGINE = Memory;")
+
+    unsupported = [
+        # A delimiter the format does not write.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, DELIMITER ';')",
+            "only supported with the default delimiter",
+        ),
+        # A representation of NULL the format does not write.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, NULL 'NULL')",
+            "only supported with the value",
+        ),
+        # The binary format has neither a field separator nor a textual NULL.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, DELIMITER '\t')",
+            "DELIMITER of the postgresql copy command is not supported with the binary format",
+        ),
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, NULL 'x')",
+            "NULL of the postgresql copy command is not supported with the binary format",
+        ),
+        # There is no header in the binary format.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, HEADER true)",
+            "HEADER of the postgresql copy command is not supported with the binary format",
+        ),
+        # A quote character the format does not write, and `QUOTE` outside of the csv format.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, QUOTE '|')",
+            "QUOTE of the postgresql copy command is only supported with the value",
+        ),
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT tsv, QUOTE '\"')",
+            "QUOTE of the postgresql copy command applies to the csv format only",
+        ),
+        # An option with no version this protocol can serve.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, ENCODING 'latin1')",
+            "ENCODING of the postgresql copy command is not supported",
+        ),
+        # A format this protocol does not have.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT parquet)",
+            "Unknown format from postgresql copy command",
+        ),
+    ]
+
+    for query, message in unsupported:
+        with connect() as c, pytest.raises(Exception, match=re.escape(message)):
+            c.cursor().copy_expert(query, StringIO("a\n"))
+
+    # The failed commands stored nothing, and the session is still usable afterwards.
+    cur.execute("SELECT count() FROM copy_errors;")
+    assert int(cur.fetchone()[0]) == 0
+
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv)", StringIO("a\n")
+        )
+    cur.execute("SELECT s FROM copy_errors;")
+    assert cur.fetchall() == [("a",)]
+
+    cur.execute("DROP TABLE copy_errors;")
     setup.close()
 
 
