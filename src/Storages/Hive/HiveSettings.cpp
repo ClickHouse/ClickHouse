@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/Hive/HiveSettings.h>
 
@@ -31,7 +32,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HIVE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HiveSettings, HiveSetting)
+struct HiveSettingsImpl : public SettingsWithRecordedOrigin<HiveSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HiveSettings, HiveSetting)
 
 HiveSettings::HiveSettings() : impl(std::make_unique<HiveSettingsImpl>())
 {

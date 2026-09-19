@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -33,7 +34,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FILELOG_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
+struct FileLogSettingsImpl : public SettingsWithRecordedOrigin<FileLogSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
 
 FileLogSettings::FileLogSettings() : impl(std::make_unique<FileLogSettingsImpl>())
 {

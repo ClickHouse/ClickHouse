@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -23,7 +24,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_queue_size, 1000, "Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged.", 0) \
 
 DECLARE_SETTINGS_TRAITS(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QUERY_RUNNER_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QueryRunnerSettings, QueryRunnerSetting)
+struct QueryRunnerSettingsImpl : public SettingsWithRecordedOrigin<QueryRunnerSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QueryRunnerSettings, QueryRunnerSetting)
 
 QueryRunnerSettings::QueryRunnerSettings() : impl(std::make_unique<QueryRunnerSettingsImpl>())
 {

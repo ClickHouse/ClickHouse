@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -20,7 +21,10 @@ namespace ErrorCodes
     DECLARE(UInt64, bulk_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, "Size of block for bulk insert, if it's smaller than query setting min_insert_block_size_rows then it will be overridden by min_insert_block_size_rows", 0) \
 
 DECLARE_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, ROCKSDB_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, RocksDBSettings, RocksDBSetting)
+struct RocksDBSettingsImpl : public SettingsWithRecordedOrigin<RocksDBSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, RocksDBSettings, RocksDBSetting)
 
 
 RocksDBSettings::RocksDBSettings() : impl(std::make_unique<RocksDBSettingsImpl>())

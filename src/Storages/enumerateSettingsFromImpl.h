@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/SettingDescription.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/maskEngineSettingValue.h>
 
 namespace DB
@@ -9,14 +10,13 @@ namespace DB
 /// Reads every setting of a `BaseSettings` instance into the common form both settings tables use.
 ///
 /// The instance decides what is reported: a default-constructed one describes an engine, the one a
-/// storage holds describes a table. `origin` is only as precise as the instance allows: the source an
-/// instance built on `SettingsWithRecordedOrigin` recorded, and otherwise `Other` for a changed setting,
-/// because a plain instance cannot tell a config section from a named collection. A storage refines what
-/// is left, since only the storage knows where the rest of its values came from.
-template <typename SettingsImplType>
-SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
+/// storage holds describes a table. `origin` is the source the instance recorded, and otherwise `Other` for
+/// a changed setting: the instance cannot tell the rest apart, so a storage refines it, since only the
+/// storage knows where the rest of its values came from.
+template <typename TTraits>
+SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<TTraits> & impl)
 {
-    const auto & settings_to_aliases = SettingsImplType::Traits::settingsToAliases();
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
 
     SettingDescriptions result;
     for (const auto & setting : impl.all())
@@ -40,10 +40,9 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
 
         /// Only for a changed setting, since an unchanged one is the default's. A recorded value that merely equals
         /// the default is still changed, and keeps its source.
-        if constexpr (requires { impl.recordedOrigin(described.name); })
-            if (described.origin == SettingOrigin::Other)
-                if (const auto recorded = impl.recordedOrigin(described.name); recorded != SettingOrigin::Default)
-                    described.origin = recorded;
+        if (described.origin == SettingOrigin::Other)
+            if (const auto recorded = impl.recordedOrigin(described.name); recorded != SettingOrigin::Default)
+                described.origin = recorded;
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));

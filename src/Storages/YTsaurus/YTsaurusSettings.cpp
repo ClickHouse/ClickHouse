@@ -1,3 +1,4 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -29,7 +30,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
+struct YTsaurusSettingsImpl : public SettingsWithRecordedOrigin<YTsaurusSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
 
 YTsaurusSettings::YTsaurusSettings() : impl(std::make_unique<YTsaurusSettingsImpl>())
 {
