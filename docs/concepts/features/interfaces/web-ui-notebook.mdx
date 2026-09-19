@@ -1,0 +1,71 @@
+---
+description: 'Documentation for the notebook mode of the built-in Web SQL UI (`/play`), which turns a tab into a sequence of query and text cells'
+sidebarTitle: 'Web UI Notebook Mode'
+slug: /interfaces/web-ui-notebook
+title: 'Web UI Notebook Mode'
+doc_type: 'reference'
+sidebar: false
+---
+
+The built-in Web SQL UI (`play.html`, served at the [`/play`](/concepts/features/interfaces/http) path of any ClickHouse HTTP port) can turn a tab into a notebook: an ordered sequence of cells, each either a query with its own result or a block of Markdown text. This is the same shape of document as Jupyter, Observable, Hex or Deepnote, and it is meant for the same purpose — keeping a chain of queries, and the reasoning between them, in one page.
+
+Notebook mode is per tab. One tab can be a notebook while another stays a plain single-query editor, and each tab remembers its own notebook across reloads.
+
+## Adding cells {#adding-cells}
+
+A tab starts with exactly one query cell and looks exactly like the plain editor: no headers, no cell chrome, no visible notebook. Once a query has produced a result, a large `[+]` button appears under it, deliberately muted so it does not compete with the result. Clicking it expands into the two kinds of cell that can be added:
+
+- **Query** — a new query cell. It takes the editor immediately, so you can start typing.
+- **Text** — a new Markdown cell, which opens in editing mode.
+
+Adding the second cell is what activates notebook mode for that tab.
+
+## Cell headers {#cell-headers}
+
+From two cells on, every cell gets a header showing its position and its kind, as `1. Query` or `2. Text`. Query cells also carry a status dot while a run is in flight, and a red one if it failed; a finished cell is not marked at all, since its result is right below it.
+
+The header's actions appear when the cell is hovered or focused:
+
+| Action | Meaning |
+|---|---|
+| `▶` | Run this cell (query cells only) |
+| `✎` | Edit this cell: take the editor, or switch a text cell back to its source |
+| `＋` | Insert a new cell before this one; the same Query/Text choice appears inline |
+| `↑` / `↓` | Move the cell up or down |
+| `✕` | Delete the cell |
+
+A tab always keeps at least one query cell, because that is where the shared editor lives, so `✕` is disabled on the last remaining query cell.
+
+## Query cells {#query-cells}
+
+There is only ever one query editor on the page — the full editor with syntax highlighting, autocompletion and query-parameter inputs. In notebook mode it is docked into whichever query cell is active, and it is shown only while it has the focus: as soon as focus leaves it, that cell collapses too, so a notebook you are reading shows no open text areas at all. Clicking a collapsed query gives it the editor back (moving the editor there if it belonged to another cell). Focus moving inside the editor — to a query-parameter input, or to a completion candidate — does not collapse it.
+
+A collapsed query cell shows its query on a single line: syntax highlighted, with runs of whitespace (including indentation and line breaks) reduced to one space, and with the tail faded out on the right when it does not fit. It has no background of its own, so a collapsed cell reads as text on the page rather than as another input box.
+
+The `Run` button, the progress line and the copy/download actions move out of the page header and dock under the query being edited, between it and its result — where the run they describe belongs, and where it is obvious how to run that cell. They belong to the editor, so they appear and disappear with it as the cell is focused and left.
+
+Results are shown more compactly in notebook mode: a smaller font, with the cell padding scaled to match, and a table of at most a quarter of the viewport height. Drag the bottom edge of a result to give it more or less room, exactly as the query editor is resized; a text cell's Markdown editor has the same handle. The table itself is the scroll container — vertically and horizontally — so its thin scrollbars sit at its own edges, a long or wide result neither pushes the rest of the notebook down the page nor widens it, and the column headers stay pinned to the top of the table while you scroll. Because the header is then at the very top of the table, a column's type hangs just below it, over the first rows, instead of above it as it does on a page-scrolled table.
+
+Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the query in the editor, that is, the active cell. One query runs at a time per tab; starting a run in another cell of the same tab, or pressing `Stop`, ends the previous one.
+
+The `Logs` and `Metrics` views and the resource meters in the progress line belong to the cell whose result they describe: each cell keeps its own selection and its own meters, and the shared toggles show what the active cell produced. Switching cells brings that cell's own logs, metrics and meters back. While a query is running, the row stays with the cell it is running in — moving the editor to another cell to write the next query neither blanks the live progress nor retargets those toggles at the other cell's result.
+
+Column color coding, pinned columns and the [result shape](/concepts/features/interfaces/web-ui-result-shaping) — the sort, the filters and the page — belong to a cell too: they are chosen on a result, so they follow that result. Sorting or filtering a cell's result re-runs that cell, taking the editor first if it was in another one. A cell whose `Run all` produced several tables shares one choice across them, and every cell keeps its own; the shared link and the browser history carry the active cell's choice, while the others travel with their own cell.
+
+## Text cells {#text-cells}
+
+A text cell holds Markdown. While you are editing it, the text area shows the source with its markers highlighted — headings, emphasis, code spans, links, list bullets and block quotes are colored, but not rendered away — so what you edit is always the source. The text area grows with its content.
+
+Leaving the text area (clicking elsewhere, `Escape`, or `Ctrl/Cmd+Enter`) finishes editing and replaces it with the rendered Markdown. Clicking the rendered text switches back to editing.
+
+Text cells are set in the same monospace face as queries, in both states, so the notebook reads as one document and the font does not jump when a cell switches between its source and the rendered result.
+
+Headings, emphasis, inline and fenced code, links and images, autolinked URLs, ordered and unordered lists, block quotes, horizontal rules and pipe tables are supported. Raw HTML in a text cell is escaped rather than rendered, and link and image URLs are restricted to `http`, `https`, `mailto` and relative targets — an ordinary relative link such as `[guide](guide.md)` or `![pic](images/pic.png)` works, while a scheme like `javascript:` or `data:`, and a protocol-relative `//host/...` (which is another origin, not a relative target), is left as plain text.
+
+## Persistence {#persistence}
+
+A tab's whole notebook — every cell, its content, and the small result snapshots — is stored in IndexedDB alongside the rest of the workspace and restored on reload, with the same best-effort behavior and the same result-size limits described in [Web SQL UI](/concepts/features/interfaces/web-sql).
+
+The URL and the browser history follow the ACTIVE cell: the `#`-fragment carries that cell's query, and back and forward move between the cells (and tabs) you visited. Sharing the URL of a notebook shares the active cell's query, not the whole notebook.
+
+Duplicating a tab duplicates the whole notebook, without the results.

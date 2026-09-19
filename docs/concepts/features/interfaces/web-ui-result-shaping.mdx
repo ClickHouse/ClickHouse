@@ -103,11 +103,11 @@ Download re-runs the producing query with the same shape, so the exported file h
 
 ## Persistence {#persistence}
 
-The shape is remembered in the page URL (`sort_columns`, `filters`, `page` and `page_size`), in the browser history, and in the per-tab result snapshot, so reloading the page, sharing the link, or navigating back and forward preserves it. Because the shape decides the rows and not only their presentation, a shared link that auto-runs its query (`run=1`) re-runs it with the same shape, and so reproduces the result itself. Only an active shape is stored — an unshaped result adds nothing to the URL or history state — to keep them compact.
+The shape is remembered in the page URL (`sort_columns`, `filters`, `page` and `page_size`), in the browser history, and in the result snapshot of the cell it belongs to, so reloading the page, sharing the link, or navigating back and forward preserves it. Because the shape decides the rows and not only their presentation, a shared link that auto-runs its query (`run=1`) re-runs it with the same shape, and so reproduces the result itself. Only an active shape is stored — an unshaped result adds nothing to the URL or history state — to keep them compact.
 
 A restored result keeps its shape bound to the context that produced it, as described above: the snapshot records the database, the connection and the parameter values its rows were produced with, so re-running the statement after changing any of those drops the shape rather than applying it to a different result.
 
-Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the shape is kept per query tab, so sorting or filtering a result in one tab does not re-run another tab's result.
+Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the shape belongs to the result it shapes: to the query tab, and within a tab that is a [notebook](/concepts/features/interfaces/web-ui-notebook) to the individual cell. Sorting or filtering one result therefore neither changes nor re-runs another tab's or another cell's result — shaping a cell's result re-runs that cell.
 
 ## Limitations {#limitations}
 
