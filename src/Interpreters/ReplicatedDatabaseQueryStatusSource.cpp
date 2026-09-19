@@ -19,10 +19,12 @@ namespace ErrorCodes
 {
 extern const int TIMEOUT_EXCEEDED;
 extern const int LOGICAL_ERROR;
+extern const int FAULT_INJECTED;
 }
 namespace FailPoints
 {
 extern const char replicated_database_status_finished_node_missing[];
+extern const char replicated_database_status_finished_node_fallback_get_fault[];
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
@@ -51,7 +53,32 @@ ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]
 #ifdef DEBUG_OR_SANITIZER_BUILD
     fs::path status_path = fs::path(node_path) / "finished" / host_id;
     bool node_exists = true;
-    ExecutionStatus status = getExecutionStatus(status_path, &node_exists);
+    ExecutionStatus status(-1, "Cannot obtain error message");
+    if (finished_node_data_available)
+    {
+        /// generate() already listed finished/<host_id> together with its payload atomically, so read the
+        /// status from that snapshot instead of a separate get that could race the cleaner. Absence from the
+        /// snapshot means the node is gone; a present payload is deserialized atomically (a corrupt one keeps
+        /// the sentinel).
+        auto it = finished_node_data.find(host_id);
+        node_exists = it != finished_node_data.end();
+        if (node_exists)
+            status.tryDeserializeText(it->second);
+    }
+    else
+    {
+        /// The atomic list-with-data snapshot is not available (feature flags absent, or synchronous
+        /// settings waited on synced/), so fall back to the per-host get.
+        /// The failpoint lets a test assert the atomic path was actually taken: when it is enabled a normal
+        /// finished/ DDL must still succeed (never reaching this fallback), while a synchronous-settings DDL
+        /// or a Keeper without the feature flags must hit this and fail with the injected error.
+        fiu_do_on(FailPoints::replicated_database_status_finished_node_fallback_get_fault,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected fault in the per-host finished-node get fallback for {}", status_path.string());
+        });
+        status = getExecutionStatus(status_path, &node_exists);
+    }
     /// Simulate the absent-node read (tryGet false -> node_exists false and the getExecutionStatus sentinel).
     fiu_do_on(FailPoints::replicated_database_status_finished_node_missing,
     {
@@ -111,6 +138,20 @@ Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
     }
 
     return {String(fs::path(node_path) / node_to_wait), String(fs::path(node_path) / "active")};
+}
+
+bool ReplicatedDatabaseQueryStatusSource::wantsFinishedNodeData() const
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// checkStatus consumes the cached payload only in debug/sanitizer builds, so keep the atomic list-with-data
+    /// request confined to those builds too: a release build issues no with_data listing and keeps the plain path.
+    /// checkStatus reads the cached payload as a serialized finished/<host_id> ExecutionStatus. That is only valid
+    /// when we actually wait on finished/. Under synchronous settings getNodesToWait() waits on synced/, whose
+    /// nodes have an empty payload, so keep the plain listing and let checkStatus do the per-host finished/ get.
+    return !context->getSettingsRef()[Setting::database_replicated_enforce_synchronous_settings];
+#else
+    return false;
+#endif
 }
 
 Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()
