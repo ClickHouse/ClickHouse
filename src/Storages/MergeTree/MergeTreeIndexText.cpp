@@ -1673,6 +1673,9 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
+    if (!keepsToken(token))
+        return;
+
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it{};
 

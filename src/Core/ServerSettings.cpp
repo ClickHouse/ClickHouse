@@ -509,6 +509,17 @@ The maximum number of threads to use for building vector indexes.
 A value of `0` means all cores.
 </Note>
 )", 0) \
+    DECLARE(UInt64, max_build_text_index_thread_pool_size, 16, R"(
+The maximum number of threads to use for building text indexes during merges and mutations.
+
+The pool is shared by all concurrently building text indexes, and the per-table setting
+[`text_index_build_threads`](/operations/settings/merge-tree-settings#text_index_build_threads)
+is clamped to this value.
+
+<Note>
+A value of `0` means all cores.
+</Note>
+)", 0) \
     \
     /* Database Catalog */ \
     DECLARE(UInt64, database_atomic_delay_before_drop_table_sec, 8 * 60, R"(

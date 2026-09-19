@@ -1,0 +1,47 @@
+<test>
+    <!-- A merge that may drop rows rebuilds the text index from the merged rows instead of merging
+         the source indexes, so this measures the index builder itself rather than the segment merge
+         that text_index_merge.xml covers. The tables carry no non-default settings, so the same
+         rebuild is measured on both compared servers. -->
+
+    <create_query>
+        CREATE TABLE t_text_index_rebuild
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha')
+        )
+        ENGINE = ReplacingMergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_rebuild_vocabulary
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha')
+        )
+        ENGINE = ReplacingMergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_text_index_rebuild</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_rebuild_vocabulary</fill_query>
+
+    <!-- Three tokens per row, one of them unique: the cost sits in the posting lists. -->
+    <fill_query>INSERT INTO t_text_index_rebuild SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(0, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_rebuild SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(100000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_rebuild SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(200000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_rebuild SELECT number, concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(300000, 100000)</fill_query>
+
+    <!-- 15 tokens per row out of a vocabulary of 2048: the cost sits in the dictionary. -->
+    <fill_query>INSERT INTO t_text_index_rebuild_vocabulary SELECT number AS id, arrayStringConcat(arrayMap(x -> toString(cityHash64(id, x) % 2048), range(15)), ' ') FROM numbers(0, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_rebuild_vocabulary SELECT number AS id, arrayStringConcat(arrayMap(x -> toString(cityHash64(id, x) % 2048), range(15)), ' ') FROM numbers(100000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_rebuild_vocabulary SELECT number AS id, arrayStringConcat(arrayMap(x -> toString(cityHash64(id, x) % 2048), range(15)), ' ') FROM numbers(200000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_rebuild_vocabulary SELECT number AS id, arrayStringConcat(arrayMap(x -> toString(cityHash64(id, x) % 2048), range(15)), ' ') FROM numbers(300000, 100000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_text_index_rebuild DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1'</query>
+    <query>OPTIMIZE TABLE t_text_index_rebuild_vocabulary DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_rebuild</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_rebuild_vocabulary</drop_query>
+</test>

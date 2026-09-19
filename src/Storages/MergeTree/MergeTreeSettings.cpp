@@ -724,6 +724,35 @@ Maximum number of processed tokens accumulated by a text index builder before fl
     DECLARE(NonZeroUInt64, text_index_max_memory_usage_before_flush, "1Gi", R"(
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
+    DECLARE(NonZeroUInt64, text_index_build_threads, 1, R"(
+Number of builders that construct a text index when a merge or a mutation rebuilds it from the merged
+rows. `1` keeps the single-threaded builder. Inserts are not affected.
+
+Above `1` each builder keeps only the tokens whose hash selects it, so the builders partition the
+vocabulary and each writes its own temporary segment. The segments are combined exactly as the
+threshold flushes of a single builder already are, and the resulting index is byte-identical to the
+one a single builder produces.
+
+The value is clamped to the server setting `max_build_text_index_thread_pool_size`, and the
+per-builder flush budgets (`text_index_max_processed_tokens_before_flush`,
+`text_index_max_memory_usage_before_flush`) are divided by the number of builders.
+
+<Note>
+Raising this setting trades CPU for wall-clock time, and whether it pays off depends on the tokenizer:
+every builder walks all the buffered rows, so tokenization is repeated by each of them, while the
+dictionary and the posting lists are split between them.
+
+Measured on a 2.5 million row `ReplacingMergeTree` with a 40,000 word vocabulary on 8 CPUs:
+
+- `splitByNonAlpha`: `4` builders make the merge 33% faster for 18% more CPU, `2` builders 18% faster
+  for 12% more CPU, and `8` builders are no faster than `4` while costing twice the extra CPU.
+- `splitByRegexp`: `4` builders make the same merge 5 times slower and use 19 times the CPU
+  (`2` builders: 2.4 times slower, 4.4 times the CPU). Its cost grows roughly with the square of the
+  builder count, not linearly, because the builders share one tokenizer instance.
+
+Benchmark a raised value on your own data and tokenizer before using it.
+</Note>
+)", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.

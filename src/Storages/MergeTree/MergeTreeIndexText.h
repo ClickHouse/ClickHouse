@@ -531,6 +531,26 @@ struct MergeTreeIndexTextGranuleBuilder
     /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
     /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
+
+    /// Builders of one part walk the same rows but keep disjoint token shards.
+    size_t token_shard = 0;
+    size_t num_token_shards = 1;
+
+    /// FNV-1a, not PackedStringRefHash: a shard picked by the map's own hash holds only keys
+    /// congruent modulo num_token_shards, which biases that map's bucket selection.
+    bool keepsToken(std::string_view token) const
+    {
+        if (num_token_shards == 1)
+            return true;
+
+        UInt64 hash = 14695981039346656037ULL;
+        for (char c : token)
+        {
+            hash ^= static_cast<unsigned char>(c);
+            hash *= 1099511628211ULL;
+        }
+        return hash % num_token_shards == token_shard;
+    }
 };
 
 class MergeTreeIndexTextPreprocessor;
@@ -555,6 +575,11 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
+    void setTokenShard(size_t shard, size_t num_shards)
+    {
+        granule_builder.token_shard = shard;
+        granule_builder.num_token_shards = num_shards;
+    }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
 private:

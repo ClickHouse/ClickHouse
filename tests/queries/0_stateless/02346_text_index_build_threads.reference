@@ -1,0 +1,46 @@
+Same index for any number of builders
+5	1
+Token search matches the same rows without an index
+0	259	259	1
+399	250	250	1
+42	218	218	1
+absent	0	0	1
+marker	12000	12000	1
+Phrase search over positions built by several builders
+2	1
+alpha beta	9000	9000	1
+beta beta beta	3000	3000	1
+gamma beta alpha	3000	3000	1
+zeta eta	0	0	1
+A builder that keeps no token writes no segment
+2	1
+2	1
+0
+2000
+Several flushes per builder
+2	1
+12000
+Arrays, maps, a token filter and a posting list codec
+2	1
+2	1
+2	1
+2	1
+2	1
+12000
+12000
+0
+12000
+0
+12000
+Other merges that rebuild the index, and a mutation
+2	1
+2	1
+8000
+9600
+399	128	128	128	1
+42	109	109	109	1
+marker	6000	6000	6000	1
+rows	6000	6000	6000	1
+A plain MergeTree merge does not rebuild the index
+2	1
+12000

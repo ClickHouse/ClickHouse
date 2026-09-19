@@ -12,8 +12,10 @@
 #include <Core/SortCursor.h>
 #include <Columns/ColumnString.h>
 #include <Processors/ISimpleTransform.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <span>
+#include <vector>
 
 namespace DB
 {
@@ -48,14 +50,34 @@ public:
     bool hasIndex(const String & index_name) const { return index_position_by_name.contains(index_name); }
 
 private:
-    /// Resets current index granule and flush a segment
+    /// Resets current index granule of one builder and flushes its segment
     /// of the text index to the temporary storage.
-    void writeTemporarySegment(size_t i);
+    void writeTemporarySegment(size_t builder_idx, size_t i);
+
+    /// Builds the buffered blocks with all builders in parallel, then flushes the builders that are
+    /// over their share of the thresholds. Only the calling thread writes files or decides flushes.
+    void flushPendingBlocks();
+
+    /// One set of index builders, one per index. There is a single builder set unless
+    /// text_index_build_threads is above 1.
+    struct Builders
+    {
+        MergeTreeIndexAggregators aggregators;
+        /// Estimated memory retained by each index builder of this set.
+        std::vector<size_t> estimated_allocated_bytes;
+    };
+
+    /// A block waiting to be built, with the absolute number of its first row.
+    struct PendingBlock
+    {
+        Block block;
+        size_t start_row;
+    };
 
     String index_file_prefix;
     std::vector<MergeTreeIndexPtr> indexes;
     std::unordered_map<String, size_t> index_position_by_name;
-    MergeTreeIndexAggregators aggregators;
+    std::vector<Builders> builders;
     MutableDataPartStoragePtr temporary_storage;
     MergeTreeWriterSettings writer_settings;
     CompressionCodecPtr default_codec;
@@ -65,10 +87,16 @@ private:
     size_t num_processed_rows = 0;
     /// Number of flushed segments for each index.
     std::vector<size_t> segment_numbers;
-    /// Estimated memory retained by each index builder.
-    std::vector<size_t> estimated_allocated_bytes;
+    /// Flush thresholds, already divided among the builders.
     size_t max_processed_tokens;
     size_t max_allocated_bytes;
+    /// Number of builders per index, clamped to the size of the build pool.
+    size_t build_threads = 1;
+    /// The global build pool, null unless build_threads is above 1.
+    ThreadPool * build_pool = nullptr;
+    /// Blocks buffered until there is one per builder. Postings are keyed by absolute row number, so
+    /// a builder may take non-contiguous blocks as long as it takes them in row order.
+    std::vector<PendingBlock> pending_blocks;
 };
 
 /// Task that merges text indexes from data parts,

@@ -1734,6 +1734,7 @@ public:
     size_t getPrefetchThreadpoolSize() const;
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
+    ThreadPool & getBuildTextIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
     ThreadPool & getBackgroundQueryPool() const;
 

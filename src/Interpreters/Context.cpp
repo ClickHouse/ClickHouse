@@ -270,6 +270,9 @@ namespace CurrentMetrics
     extern const Metric BuildVectorSimilarityIndexThreads;
     extern const Metric BuildVectorSimilarityIndexThreadsActive;
     extern const Metric BuildVectorSimilarityIndexThreadsScheduled;
+    extern const Metric BuildTextIndexThreads;
+    extern const Metric BuildTextIndexThreadsActive;
+    extern const Metric BuildTextIndexThreadsScheduled;
     extern const Metric AttachedTable;
     extern const Metric AttachedView;
     extern const Metric AttachedDictionary;
@@ -425,6 +428,7 @@ namespace ServerSetting
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_build_text_index_thread_pool_size;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
@@ -639,6 +643,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag iceberg_catalog_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
+    mutable OnceFlag build_text_index_threadpool_initialized;
+    mutable std::unique_ptr<ThreadPool> build_text_index_threadpool; /// Threadpool for text index creation during merges.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable bool index_uncompressed_cache_enabled TSA_GUARDED_BY(mutex) = false;      /// Whether index_uncompressed_cache should be used.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
@@ -5651,6 +5657,24 @@ ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
                 pool_size);
         });
     return *shared->build_vector_similarity_index_threadpool;
+}
+
+ThreadPool & Context::getBuildTextIndexThreadPool() const
+{
+    callOnce(
+        shared->build_text_index_threadpool_initialized,
+        [&]
+        {
+            size_t pool_size = shared->server_settings[ServerSetting::max_build_text_index_thread_pool_size] > 0
+                ? shared->server_settings[ServerSetting::max_build_text_index_thread_pool_size]
+                : getNumberOfCPUCoresToUse();
+            shared->build_text_index_threadpool = std::make_unique<ThreadPool>(
+                CurrentMetrics::BuildTextIndexThreads,
+                CurrentMetrics::BuildTextIndexThreadsActive,
+                CurrentMetrics::BuildTextIndexThreadsScheduled,
+                pool_size);
+        });
+    return *shared->build_text_index_threadpool;
 }
 
 BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePool() const
