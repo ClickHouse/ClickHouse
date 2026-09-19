@@ -2054,8 +2054,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
                 /// Correlated subquery plans use these outer columns while the action chain is
                 /// executed. Keep them in the stage output so ActionsChain::finalize propagates
-                /// them to the source and the query plan header. They are removed from the
-                /// lightweight-update result header below, which contains only updated columns.
+                /// them to the source and the query plan header. The lightweight-update path
+                /// projects them out before writing the patch, using the updated header below.
                 for (const auto & correlated_subquery : update_correlated_subtrees.subqueries)
                     for (const auto & identifier : correlated_subquery.correlated_column_identifiers)
                         stage.output_columns.insert(identifier);

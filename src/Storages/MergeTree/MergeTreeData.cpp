@@ -105,6 +105,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
@@ -13406,6 +13407,18 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute lightweight update with uninitialized pipeline");
 
     pipeline_builder.resize(1);
+
+    /// Correlated subqueries need their outer columns while the mutation action chain is executed,
+    /// but those columns must not become part of the patch write set.
+    NamesAndTypesList columns_to_write;
+    for (const auto & column : interpreter.getUpdatedHeader())
+        columns_to_write.emplace_back(column.name, column.type);
+
+    pipeline_builder.addSimpleTransform([columns_to_write](const SharedHeader & header)
+    {
+        return std::make_shared<ExtractColumnsTransform>(header, columns_to_write);
+    });
+
     pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
         pipeline_builder.getSharedHeader(),
         query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
