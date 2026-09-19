@@ -86,8 +86,10 @@ protected:
         if (!entries_fetched)
         {
             access = getContext()->getAccess();
-            /// A user with the global SHOW COLUMNS privilege may see all entries
-            /// without per-table checks, mirroring system.columns.
+            /// The global SHOW COLUMNS privilege is only a fallback for entries whose table
+            /// cannot be resolved any more: unlike `system.columns`, which exposes schema only,
+            /// this table is an operational surface, so a partial revoke on a single table or
+            /// column must still hide its entries even from a globally granted user.
             has_global_show_columns = access->isGranted(AccessType::SHOW_COLUMNS);
 
             auto columns_cache = getContext()->getColumnsCache();
@@ -127,23 +129,27 @@ protected:
                 table_name = table->getStorageID().table_name;
             }
 
-            /// Access control: do not expose tables/columns the user is not allowed to see,
-            /// mirroring system.columns. Otherwise a user with access to this system table but
+            /// Access control: do not expose tables/columns the user is not allowed to see.
+            /// Otherwise a user with access to this system table but
             /// without SHOW TABLES / SHOW COLUMNS on another database could learn its table
             /// name, UUID, part names, column names, row ranges, and cached sizes once the
             /// cache is warmed.
-            if (!has_global_show_columns)
+            if (!database || !table)
             {
                 /// For unresolved or dropped UUIDs we cannot evaluate per-table access, so
-                /// fail closed: only the global SHOW COLUMNS privilege (checked above) grants
-                /// visibility of those entries.
-                if (!database || !table
-                    || !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name)
-                    || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, meta.column_name))
+                /// fail closed: only the global SHOW COLUMNS privilege grants visibility of
+                /// those entries.
+                if (!has_global_show_columns)
                 {
                     ++current_index;
                     continue;
                 }
+            }
+            else if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_name)
+                || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, meta.column_name))
+            {
+                ++current_index;
+                continue;
             }
 
             col_database->insert(database_name);
