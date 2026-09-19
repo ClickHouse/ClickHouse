@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -1177,7 +1178,13 @@ void MergeTreeData::checkProperties(
 
     {
         const auto new_virtuals_sample_block = new_metadata.virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
-        const auto old_virtuals_sample_block = old_metadata.virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto old_virtuals_sample_block = old_metadata.virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
+
+        if (old_metadata.hasPartitionKey() && !new_metadata.hasPartitionKey()
+            && old_virtuals_sample_block.has(PartitionValueColumn::name)
+            && !new_virtuals_sample_block.has(PartitionValueColumn::name))
+            old_virtuals_sample_block.erase(PartitionValueColumn::name);
+
         if (!blocksHaveEqualStructure(new_virtuals_sample_block, old_virtuals_sample_block))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Virtual columns were lost during alter. New: {}, Old: {}",
@@ -1489,6 +1496,12 @@ void MergeTreeData::setProperties(
         allow_nullable_key,
         local_context);
 
+    if (new_metadata.partition_key.expression_list_ast->children.empty())
+    {
+        minmax_idx_date_column_pos = -1;
+        minmax_idx_time_column_pos = -1;
+    }
+
     {
         /// Publish the new metadata and clear the cache of effective sorting keys atomically.
         std::lock_guard lock(patch_parts_sorting_keys_mutex);
@@ -1593,6 +1606,9 @@ MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & 
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
 {
+    minmax_idx_date_column_pos = -1;
+    minmax_idx_time_column_pos = -1;
+
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
@@ -5162,6 +5178,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             AlterCommand::MODIFY_PROJECTION,
             AlterCommand::MODIFY_ORDER_BY,
             AlterCommand::MODIFY_SAMPLE_BY,
+            AlterCommand::DROP_PARTITION_KEY,
         };
 
         for (const auto & cmd : commands)
@@ -5790,6 +5807,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
+        }
+        if (command.type == AlterCommand::DROP_PARTITION_KEY && !is_custom_partitioned)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "ALTER DROP PARTITION KEY is not supported for default-partitioned tables created with the old syntax");
         }
         if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
         {

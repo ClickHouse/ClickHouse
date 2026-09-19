@@ -2329,12 +2329,19 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
 
     String calculated_partition_id;
+    bool check_partition_id = false;
     if (info.isPatch())
+    {
         calculated_partition_id = getPartitionIdForPatch(partition);
-    else
+        check_partition_id = true;
+    }
+    else if (metadata_snaphost->hasPartitionKey())
+    {
         calculated_partition_id = partition.getID(metadata_snaphost->getPartitionKey().sample_block);
+        check_partition_id = true;
+    }
 
-    if (calculated_partition_id != info.getPartitionId())
+    if (check_partition_id && calculated_partition_id != info.getPartitionId())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
             "calculated partition ID: {} differs from partition ID in part name: {}",
             getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());

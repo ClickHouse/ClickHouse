@@ -382,10 +382,6 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
-    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
-    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
-    if (parsed_local_partition_key != parsed_zk_partition_key)
-        handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
 bool ReplicatedMergeTreeTableMetadata::checkEquals(
@@ -400,6 +396,14 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
 {
     bool is_equal = true;
     checkImmutableFieldsEquals(from_zk, columns, virtuals, table_name_for_error_message, context, check_index_granularity);
+
+    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
+    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
+    if (parsed_local_partition_key != parsed_zk_partition_key)
+    {
+        handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key, strict_check, logger);
+        is_equal = false;
+    }
 
     String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, virtuals, context, false).definition_ast);
     if (sampling_expression != parsed_zk_sampling_expression)
@@ -471,6 +475,14 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
 
     Diff diff;
 
+    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
+    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
+    if (parsed_local_partition_key != parsed_zk_partition_key)
+    {
+        diff.partition_key_changed = true;
+        diff.new_partition_key = from_zk.partition_key;
+    }
+
     if (sorting_key != from_zk.sorting_key)
     {
         diff.sorting_key_changed = true;
@@ -514,6 +526,18 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
     new_metadata.columns = new_columns;
+    new_metadata.virtuals = virtuals;
+
+    if (partition_key_changed)
+    {
+        if (new_partition_key.empty())
+            new_metadata.partition_key = KeyDescription::buildEmptyKey();
+        else
+            new_metadata.partition_key = KeyDescription::parse(new_partition_key, new_metadata.columns, new_metadata.virtuals, context, false);
+
+        if (!new_metadata.partition_key.definition_ast)
+            new_metadata.virtuals.remove(PartitionValueColumn::name);
+    }
 
     if (!empty())
     {
@@ -538,13 +562,13 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         {
             auto order_by_ast = parse_key_expr(new_sorting_key);
 
-            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, virtuals, context);
+            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, new_metadata.virtuals, context);
 
             if (new_metadata.primary_key.definition_ast == nullptr)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                new_metadata.primary_key = KeyDescription::getKeyFromAST(old_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
+                new_metadata.primary_key = KeyDescription::getKeyFromAST(old_metadata.sorting_key.definition_ast, new_metadata.columns, new_metadata.virtuals, context);
             }
         }
 
@@ -553,7 +577,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             if (!new_sampling_expression.empty())
             {
                 auto sample_by_ast = parse_key_expr(new_sampling_expression);
-                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, virtuals, context);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, new_metadata.virtuals, context);
             }
             else /// SAMPLE BY was removed
             {
@@ -594,27 +618,29 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
+    auto old_partition_key_sample_block = old_metadata.partition_key.sample_block;
     if (new_metadata.partition_key.definition_ast != nullptr)
     {
-        auto old_partition_key_sample_block = new_metadata.partition_key.sample_block;
-        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, new_metadata.virtuals, context);
+    }
 
-        /// If partition key expression structure changed we must rebuild minmax_count_projection,
-        /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
-        /// and the aggregation engine hits a type mismatch. See #100175.
-        if (new_metadata.minmax_count_projection
-            && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
-        {
-            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
-            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key_ast.get());
-            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
-        }
+    /// If partition key expression structure changed we must rebuild minmax_count_projection,
+    /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
+    /// and the aggregation engine hits a type mismatch. See #100175.
+    /// An unpartitioned MergeTree still has this implicit projection, so rebuild it for the empty
+    /// partition key instead of dropping the projection.
+    if (new_metadata.minmax_count_projection
+        && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
+    {
+        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key_ast.get());
+        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
     }
 
     if (!sorting_key_changed) /// otherwise already updated
-        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, new_metadata.virtuals, context);
 
     /// Primary key is special, it exists even if not defined
     if (new_metadata.primary_key.definition_ast != nullptr)
@@ -622,16 +648,16 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         /// An explicitly defined primary key cannot express per-column directions (`DESC`), so it
         /// inherits them from the sorting key, which is already recalculated above.
         new_metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            new_metadata.primary_key.definition_ast, new_metadata.sorting_key, new_metadata.columns, virtuals, context);
+            new_metadata.primary_key.definition_ast, new_metadata.sorting_key, new_metadata.columns, new_metadata.virtuals, context);
     }
     else
     {
-        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, new_metadata.virtuals, context);
         new_metadata.primary_key.definition_ast = nullptr;
     }
 
     if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
-        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, new_metadata.virtuals, context);
 
     if (!skip_indices_changed) /// otherwise already updated
     {

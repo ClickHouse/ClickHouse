@@ -926,6 +926,10 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                      ;
         partition->format(ostr, settings, state, frame);
     }
+    else if (type == ASTAlterCommand::DROP_PARTITION_KEY)
+    {
+        ostr << "DROP PARTITION KEY";
+    }
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
         ostr << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
