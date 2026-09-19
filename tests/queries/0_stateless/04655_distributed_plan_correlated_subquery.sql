@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- make_distributed_plan auto-disables correlated_subqueries_use_in_memory_buffer (issue #109476):
 -- the in-memory buffer for a decorrelated subquery is process-local and its steps are not
 -- serializable, so a multi-stage distributed plan used to fail with SUPPORT_IS_DISABLED
