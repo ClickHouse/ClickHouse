@@ -6245,10 +6245,8 @@ bool atomIsNullForNullArgument(const KeyCondition::RPNElement & element)
 /// NULL. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
 /// the algebra describes them exactly. A set-membership atom that compares a NULL as an ordinary
 /// element - `nullIn`, `has` and their siblings - answers definitely too, and is excluded for the
-/// same reason even though it shares an RPN function with `in`, but only over a bare key: a
-/// monotonic wrapper is not applied to the NULL stand-in bound, so the algebra cannot describe what
-/// the wrapper does to a NULL row. Only `can_be_false` is affected; `can_be_true`, and with it every
-/// pruning decision, is left alone.
+/// same reason even though it shares an RPN function with `in`, but only over a bare key. Only
+/// `can_be_false` is affected; `can_be_true`, and with it every pruning decision, is left alone.
 bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
 {
     for (const auto & element : rpn)
