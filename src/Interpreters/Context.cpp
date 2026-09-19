@@ -7648,8 +7648,10 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
 
-        /// Respect compatibility setting from the default profile, and from the global context rather than
-        /// this one - see `getMergeTreeSettings`.
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        ///
+        /// From the global context, not from this one - see `getMergeTreeSettings`.
         mt_settings.applyCompatibilitySetting(getGlobalContext()->getSettingsRef()[Setting::compatibility]);
 
         mt_settings.loadFromConfig("merge_tree", config);
