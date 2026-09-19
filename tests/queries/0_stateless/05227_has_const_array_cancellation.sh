@@ -42,30 +42,49 @@ echo "active parts: $($CLICKHOUSE_CLIENT -q "
 NEEDLES="arrayMap(x -> toString(x), range(1000000, 1050000))"
 
 # $1 = use_skip_indexes_on_data_read (1 = evaluated while reading, 0 = evaluated during planning; the two
-# routes resolve the query differently, so both are checked), $2 = label, $3 = extra settings appended to the
-# SETTINGS clause verbatim, leading comma included
-deadline() {
-    local qid="${CLICKHOUSE_DATABASE}_deadline_$1"
+# routes resolve the query differently, so both are checked), $2 = extra settings appended to the SETTINGS
+# clause verbatim, leading comma included, $3 = the deadline in seconds, and also the attempt's id so that the
+# probe below cannot read an earlier attempt's row. Reports through $deadline_outcome and $burned_in_scan.
+deadline_attempt() {
+    local qid="${CLICKHOUSE_DATABASE}_deadline_$1_$3"
     if timeout 60 $CLICKHOUSE_CLIENT --query_id "$qid" --query "
             SELECT count() FROM t_set_idx WHERE has($NEEDLES, uid)
             SETTINGS use_skip_indexes = 1,               -- the defect is in skip index condition evaluation
                      use_skip_indexes_on_data_read = $1,
                      optimize_rewrite_has_to_in = 0,     -- keep the linear has(), do not rewrite it to a Set
-                     max_execution_time = 3, timeout_overflow_mode = 'break'$3" 2>&1 \
+                     max_execution_time = $3, timeout_overflow_mode = 'break'$2" 2>&1 \
         | grep -q "elapsed time limit reached in function has"
     then
-        echo "$2: stopped in function has"
+        deadline_outcome="stopped in function has"
     else
-        echo "$2: NOT stopped"
+        deadline_outcome="NOT stopped"
     fi
 
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     # The time has to have been burned in skip index filtering rather than in the data path, otherwise the
     # test would keep passing while covering something else entirely.
-    echo "$2 spent over 1s filtering marks: $($CLICKHOUSE_CLIENT -q "
+    burned_in_scan=$($CLICKHOUSE_CLIENT -q "
         SELECT max(ProfileEvents['FilteringMarksWithSecondaryKeysMicroseconds']) > 1000000
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '$qid' AND type != 'QueryStart'")"
+        WHERE current_database = currentDatabase() AND query_id = '$qid' AND type != 'QueryStart'")
+}
+
+# The deadline is what stops the query, so the scan only gets whatever is left of the deadline once the phases
+# ahead of it have taken their share, and that share is whatever the runner charges for them: the guard above
+# is really the predicate "the work before the scan fitted in 2 of the 3 seconds". So an attempt the guard
+# rejects is discarded and retried with a deadline large enough to dwarf that cost. Only the window is
+# retried, never the oracle: a deadline that fails to stop the query is reported from the first attempt.
+# $1 = use_skip_indexes_on_data_read, $2 = label, $3 = extra settings
+deadline() {
+    local seconds
+    for seconds in 3 12; do
+        deadline_attempt "$1" "$3" "$seconds"
+        [ "$deadline_outcome" = "NOT stopped" ] && break
+        [ "$burned_in_scan" = "1" ] && break
+    done
+
+    echo "$2: $deadline_outcome"
+    echo "$2 spent over 1s filtering marks: $burned_in_scan"
 }
 
 # Bulk filtering evaluates a whole part in one condition call, so this scenario needs the periodic checkpoint
