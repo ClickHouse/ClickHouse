@@ -309,7 +309,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
     }
 }
 
-bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
+bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, size_t /* num_rows */, size_t /* worker_id */, bool check_limits)
 {
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.

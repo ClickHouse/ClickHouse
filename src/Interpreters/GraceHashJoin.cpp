@@ -347,13 +347,13 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
+bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, size_t worker_id, bool /*check_limits*/)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
-    addBlockToJoinImpl(std::move(materialized));
+    addBlockToJoinImpl(std::move(materialized), worker_id);
     return true;
 }
 
@@ -818,7 +818,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
             num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block));
+            addBlockToJoinImpl(std::move(block), /* worker_id = */ 0);
         }
         hash_join->onBuildPhaseFinish();
 
@@ -849,7 +849,7 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
-void GraceHashJoin::addBlockToJoinImpl(Block block)
+void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -904,7 +904,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         bool block_added = false;
         if (!pre_threshold_overflow)
         {
-            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
             block_added = true;
             size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
@@ -956,7 +956,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
 
         if (current_block.rows() > 0)
-            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
     }
 }
 

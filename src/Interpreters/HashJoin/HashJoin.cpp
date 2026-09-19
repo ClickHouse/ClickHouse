@@ -912,7 +912,7 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, size_t /* worker_id */, bool check_limits)
 {
     /// `materializeColumnsFromRightBlock` dereferences `data`, so the identical check in the
     /// overload below is reached too late to guard it.
