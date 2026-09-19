@@ -98,6 +98,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = false,
+        .reader_settings = settings,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
@@ -256,15 +257,14 @@ void MergeTreeReaderTextIndex::readGranule()
 
     auto sparse_index_stream = makeTextIndexStream(substreams[0]);
     auto dictionary_stream = makeTextIndexStream(substreams[1]);
-    small_postings_stream = makeTextIndexStream(substreams[2]);
 
     sparse_index_stream->seekToStart();
     resetCursors();
 
+    /// The postings streams are opened per token once the analysis has resolved the tokens, see `getPostingsStream`.
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = small_postings_stream.get();
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
@@ -359,13 +359,10 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     const auto & analyzer = granule->getAnalyzer();
     const auto & token_infos = analyzer.getAllTokenInfos();
 
-    auto data_part = getDataPart();
-    auto substream = index.index->getSubstreams()[2];
-
     for (const auto & [token, token_info] : token_infos)
     {
         if (analyzer.isTokenNeeded(token) && !analyzer.hasReadPostings(token))
-            large_postings_streams.emplace(token, makeTextIndexStream(substream));
+            large_postings_streams.emplace(token, makePostingsStream(*token_info));
     }
 }
 
@@ -377,14 +374,7 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     auto * postings_cache = condition_text->postingsCache().get();
     const auto & index_id_for_cache = granule->getIndexIdForCaches();
 
-    auto stream_it = large_postings_streams.find(token);
-    if (stream_it != large_postings_streams.end())
-        return std::make_shared<PostingListCursor>(*stream_it->second, token_info, postings_cache, index_id_for_cache);
-
-    if (!small_postings_stream)
-        small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
-
-    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info, postings_cache, index_id_for_cache);
+    return std::make_shared<PostingListCursor>(getPostingsStream(token, token_info), token_info, postings_cache, index_id_for_cache);
 }
 
 void MergeTreeReaderTextIndex::initializePositionsStream()
@@ -569,6 +559,31 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexSt
         index.index->getFileName() + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));
+}
+
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
+{
+    auto data_part = getDataPart();
+    const auto substream = index.index->getSubstreams()[2];
+
+    return makePostingsInputStream(
+        data_part->getDataPartStoragePtr(),
+        index.index->getFileName() + substream.suffix,
+        substream.extension,
+        settings,
+        estimateLargestPostingListSegmentBytes(token_info));
+}
+
+MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
+{
+    if (auto it = large_postings_streams.find(token); it != large_postings_streams.end())
+        return *it->second;
+
+    auto [it, inserted] = other_postings_streams.try_emplace(token);
+    if (inserted)
+        it->second = makePostingsStream(token_info);
+
+    return *it->second;
 }
 
 std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t mark) const
@@ -869,25 +884,15 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
     const auto blocks_to_read = token_info.getBlocksToRead(full_range);
 
     PostingList result;
+    auto & postings_stream = getPostingsStream(token, token_info);
+
     for (const auto & block_idx : blocks_to_read)
     {
-        MergeTreeReaderStream * postings_stream = nullptr;
-        if (auto stream_it = large_postings_streams.find(token); stream_it != large_postings_streams.end())
-        {
-            postings_stream = stream_it->second.get();
-        }
-        else
-        {
-            if (!small_postings_stream)
-                small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
-            postings_stream = small_postings_stream.get();
-        }
-
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
         if (inserted)
         {
             it->second = MergeTreeIndexGranuleText::readPostingsBlock(
-                *postings_stream,
+                postings_stream,
                 *deserialization_state,
                 token_info,
                 block_idx,

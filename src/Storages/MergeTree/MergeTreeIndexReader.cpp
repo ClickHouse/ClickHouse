@@ -103,6 +103,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
+        if (!MergeTreeIndexSubstream::isOpenedByIndexReader(substream.type))
+            continue;
+
         auto full_stream_name = index_name + substream.suffix;
         auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
 
@@ -154,6 +157,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .index = *index,
             .readable_ranges = readable_ranges,
             .skip_postings_deserialization = false,
+            .reader_settings = settings,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);

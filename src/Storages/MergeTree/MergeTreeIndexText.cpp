@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <base/arithmeticOverflow.h>
@@ -547,12 +548,19 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
 
-    auto * index_stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    auto * dictionary_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
-    auto * postings_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+    const auto get_stream = [&](MergeTreeIndexSubstream::Type type) -> MergeTreeIndexReaderStream *
+    {
+        auto it = streams.find(type);
+        return it == streams.end() ? nullptr : it->second;
+    };
 
-    if (!index_stream || !dictionary_stream || !postings_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
+    /// The postings are read through a stream that `analyzePostings` opens itself once the tokens are known,
+    /// with a buffer sized to the lists it reads; a postings stream passed in `streams` is not used.
+    auto * index_stream = get_stream(MergeTreeIndexSubstream::Type::Regular);
+    auto * dictionary_stream = get_stream(MergeTreeIndexSubstream::Type::TextIndexDictionary);
+
+    if (!index_stream || !dictionary_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with the index and dictionary streams. One of the streams is missing");
 
     if (index_id_for_caches.empty())
     {
@@ -591,7 +599,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
     if (!state.skip_postings_deserialization)
-        analyzePostings(postings_serialization, *postings_stream, state);
+        analyzePostings(postings_serialization, state);
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
     analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part_info.getRowCount());
@@ -873,6 +881,25 @@ std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTree
     return condition_text.headerCache()->getOrSet(header_hash, load_header);
 }
 
+namespace
+{
+
+MergeTreeIndexSubstream getPostingsSubstream(const IMergeTreeIndex & index)
+{
+    const auto substreams = index.getSubstreams();
+    auto it = std::ranges::find_if(substreams, [](const auto & substream)
+    {
+        return substream.type == MergeTreeIndexSubstream::Type::TextIndexPostings;
+    });
+
+    if (it == substreams.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' has no postings substream");
+
+    return *it;
+}
+
+}
+
 PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     MergeTreeIndexReaderStream & stream,
     MergeTreeIndexDeserializationState & state,
@@ -897,7 +924,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     return std::get<PostingListPtr>(cell->value);
 }
 
-void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
+void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexDeserializationState & state)
 {
     if (analyzer->alwaysFalse())
         return;
@@ -914,11 +941,27 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
             tokens_to_read.emplace_back(token, token_info);
     }
 
+    if (tokens_to_read.empty())
+        return;
+
     /// Sort tokens by cardinality to read the most rare ones first.
     std::ranges::sort(tokens_to_read, [](const auto & lhs, const auto & rhs)
     {
         return lhs.second->cardinality < rhs.second->cardinality;
     });
+
+    /// Each list is a single segment read whole after a seek, so the buffer of the stream fits the largest of them.
+    size_t largest_segment_bytes = 0;
+    for (const auto & [token, token_info] : tokens_to_read)
+        largest_segment_bytes = std::max(largest_segment_bytes, estimateLargestPostingListSegmentBytes(*token_info));
+
+    const auto postings_substream = getPostingsSubstream(state.index);
+    auto stream = makePostingsInputStream(
+        state.part_info.getDataPartStorage(),
+        state.index.getFileName() + postings_substream.suffix,
+        postings_substream.extension,
+        state.reader_settings,
+        largest_segment_bytes);
 
     for (const auto & [token, token_info] : tokens_to_read)
     {
@@ -926,7 +969,7 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
         /// discarded by the analyzer after reading postings for previous tokens.
         if (analyzer->isTokenNeeded(token))
         {
-            auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
+            auto block = readPostingsBlock(*stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
             analyzer->addPostings(token, *block);
         }
 
