@@ -43,17 +43,23 @@ COMMON="prefer_localhost_replica = 0, distributed_connections_pool_size = 1, ena
 
 HOLDER_PID=""
 
-function running() {
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '${1}'"
+# A query is in system.processes from the moment it is registered, which is before its
+# RemoteQueryExecutor takes a connection out of the pool, so the holder being listed does not mean the
+# pool is full yet. Its secondary query exists only once a connection was taken and the query was sent
+# on it, which makes that the occupancy itself.
+function holding() {
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM system.processes
+        WHERE initial_query_id = '${1}' AND NOT is_initial_query"
 }
 
 # Bounded by wall clock rather than by a number of attempts: one poll spawns a client, which is the
 # dominant cost here and takes seconds under a sanitizer, so an attempt count bounds no amount of
 # time. A condition that can no longer hold has to be reported, well inside the test budget.
-function wait_running() {
+function wait_holding() {
     local id=$1 deadline=$((SECONDS + $2))
     while (( SECONDS < deadline )); do
-        [[ $(running "${id}") == 1 ]] && return 0
+        [[ $(holding "${id}") != 0 ]] && return 0
         sleep 0.05
     done
     return 1
@@ -72,15 +78,15 @@ function hold_pool() {
     HOLDER_PID=$!
 
     # The victim starts once the holder owns the connection: only the holder can make the pool full.
-    wait_running "${holder}" 60 || echo "the holder never started, so the pool was never full"
+    wait_holding "${holder}" 60 || echo "the holder never took the connection, so the pool was never full"
 }
 
 # The holder is killed only after the victim has finished, so the pool was full for the whole of the
-# victim's attempt. It still running here is what says so: a holder that had released early would
-# have handed the connection over instead.
+# victim's attempt. It still holding here is what says so: a holder that had released early, or that
+# had lost the connection to the victim and queued behind it, would not be.
 function release_pool() {
     local holder="${PREFIX}_${1}_holder"
-    [[ $(running "${holder}") != 0 ]] || echo "the holder released early, so the pool was not full throughout"
+    [[ $(holding "${holder}") != 0 ]] || echo "the holder was not holding the connection, so the pool was not full throughout"
     ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${holder}' ASYNC" > /dev/null
     wait "${HOLDER_PID}" 2>/dev/null || true
 }
