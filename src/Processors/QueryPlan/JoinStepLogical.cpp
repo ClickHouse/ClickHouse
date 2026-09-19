@@ -1089,6 +1089,19 @@ static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
     }
 }
 
+static std::optional<IEJoinOperandRange> getIEJoinOperandRange(
+    const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
+{
+    auto it = column_stats.find(operand.getColumnName());
+    if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+        return {};
+    auto min_value = statisticsFieldToFloat64(*it->second.min_value);
+    auto max_value = statisticsFieldToFloat64(*it->second.max_value);
+    if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
+        return {};
+    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
+}
+
 /// The fraction of row pairs satisfying the condition, estimated from per-column min/max
 /// statistics under a uniformity assumption, or std::nullopt when the statistics do not cover
 /// the operands.
@@ -1105,21 +1118,8 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
-    auto get_range = [](const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
-        -> std::optional<IEJoinOperandRange>
-    {
-        auto it = column_stats.find(operand.getColumnName());
-        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
-            return {};
-        auto min_value = statisticsFieldToFloat64(*it->second.min_value);
-        auto max_value = statisticsFieldToFloat64(*it->second.max_value);
-        if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
-            return {};
-        return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
-    };
-
-    auto left_range = get_range(planning_context.left_column_stats, lhs);
-    auto right_range = get_range(planning_context.right_column_stats, rhs);
+    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs);
+    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs);
     if (!left_range || !right_range)
         return {};
 
@@ -1140,27 +1140,47 @@ static bool isLessFamily(JoinConditionOperator op)
     return op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals;
 }
 
-/// Joint selectivity of a pair of key conditions. Independence is assumed for unrelated
-/// conditions. For two conditions reading the same column on one side independence is grossly
-/// wrong, and sharp Frechet bounds are used instead: with opposite directions
-/// (`lo < x AND x < hi`, the band shape) failing both requires the reversed band `hi <= x <= lo`,
-/// which is empty for a genuine band, so P(A and B) = P(A) + P(B) - 1; with the same direction
-/// one condition mostly implies the other, so P(A and B) = min(P(A), P(B)).
+/// Joint selectivity of a pair of key conditions. Unrelated conditions are treated as
+/// independent: P(A) * P(B). Two conditions on the same column `x` are not independent:
+/// - same direction (`x < lo AND x < hi`): one mostly implies the other, so min(P(A), P(B));
+/// - opposite directions (`lo < x AND x < hi`): if `lo <= hi` on every row, no row pair fails
+///   both conditions, so exactly P(A) + P(B) - 1.
+/// When `lo` and `hi` are unrelated columns the last formula counts the pairs failing both
+/// conditions twice and can reach 0 for a pair that passes plenty. Statistics cannot prove
+/// `lo <= hi`, but they refute it when the marginals sum to at most 1 or when the min or max
+/// of `lo` exceeds that of `hi`; a refuted pair is scored as independent.
 static Float64 estimateIEJoinKeyPairSelectivity(
     const IEJoinKeyCandidate & first, Float64 first_selectivity,
-    const IEJoinKeyCandidate & second, Float64 second_selectivity)
+    const IEJoinKeyCandidate & second, Float64 second_selectivity,
+    const JoinPlanningContext & planning_context)
 {
     const auto & [first_op, first_lhs, first_rhs] = first;
     const auto & [second_op, second_lhs, second_rhs] = second;
 
-    bool same_column_on_one_side = first_lhs.getColumnName() == second_lhs.getColumnName()
-        || first_rhs.getColumnName() == second_rhs.getColumnName();
-    if (same_column_on_one_side)
-    {
-        if (isLessFamily(first_op) != isLessFamily(second_op))
-            return std::max(0.0, first_selectivity + second_selectivity - 1.0);
+    bool same_left = first_lhs.getColumnName() == second_lhs.getColumnName();
+    bool same_right = first_rhs.getColumnName() == second_rhs.getColumnName();
+    if (!same_left && !same_right)
+        return first_selectivity * second_selectivity;
+
+    /// Candidates are oriented `left op right`, so the directions compare whichever side the shared column is on.
+    if (isLessFamily(first_op) == isLessFamily(second_op))
         return std::min(first_selectivity, second_selectivity);
-    }
+
+    /// The ends of the band are the operands opposite the shared column: `x < r` makes `r` the
+    /// upper end, `l < x` makes `l` the lower end.
+    const auto & ends_stats = same_left ? planning_context.right_column_stats : planning_context.left_column_stats;
+    const auto & first_end = same_left ? first_rhs : first_lhs;
+    const auto & second_end = same_left ? second_rhs : second_lhs;
+    bool first_is_upper = same_left == isLessFamily(first_op);
+    auto lo_range = getIEJoinOperandRange(ends_stats, first_is_upper ? second_end : first_end);
+    auto hi_range = getIEJoinOperandRange(ends_stats, first_is_upper ? first_end : second_end);
+    bool ends_ordered = lo_range && hi_range && lo_range->min <= hi_range->min && lo_range->max <= hi_range->max;
+
+    /// Rounding in the marginals can leave a sum of exactly 1 slightly above it.
+    static constexpr Float64 rounding_tolerance = 1e-12;
+    Float64 band_selectivity = first_selectivity + second_selectivity - 1.0;
+    if (ends_ordered && band_selectivity > rounding_tolerance)
+        return band_selectivity;
     return first_selectivity * second_selectivity;
 }
 
@@ -1209,7 +1229,7 @@ static std::optional<std::pair<size_t, size_t>> chooseIEJoinKeyConditions(
             for (size_t j = i + 1; j < candidates.size(); ++j)
             {
                 Float64 pair_selectivity
-                    = estimateIEJoinKeyPairSelectivity(candidates[i], selectivities[i], candidates[j], selectivities[j]);
+                    = estimateIEJoinKeyPairSelectivity(candidates[i], selectivities[i], candidates[j], selectivities[j], planning_context);
                 if (pair_selectivity < best_selectivity)
                 {
                     best = {i, j};
