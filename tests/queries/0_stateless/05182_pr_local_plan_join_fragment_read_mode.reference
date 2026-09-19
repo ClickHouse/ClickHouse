@@ -1,0 +1,11 @@
+the condition prunes the local read of a joining fragment without ordering it
+Read type: Default
+Prewhere filter column:  tenant = 2
+Read type: Default
+and answers correctly
+2500
+2
+6
+10
+14
+18

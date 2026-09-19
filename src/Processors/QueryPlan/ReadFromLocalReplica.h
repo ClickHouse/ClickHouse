@@ -29,6 +29,22 @@ public:
 
     void addFilter(FilterDAGInfo filter);
 
+    /// Take the snapshot of what this fragment fixes on its own - what the replicas will fix too -
+    /// before a condition from outside is pushed in, and hold each of its reads to that. One snapshot
+    /// per read: a fragment can hold several coordinated reads, and they do not fix the same columns.
+    void restrictFixedColumnsToOwnFilters();
+
+    /// Whether the rewrite that splices a condition into the replicas' query refuses this fragment
+    /// whatever the settings say, leaving them with the query as it was.
+    ///
+    /// `ReadFromRemote::addFilters` wants a single-table query: it returns on a query tree that is not
+    /// a `QueryNode` - a `UNION ALL` fragment - and on a join tree holding more than one table
+    /// expression. `PredicateRewriteVisitorData::rewriteSubquery` then refuses a `LIMIT BY`, a
+    /// `WITH FILL`, and a window function in the `SELECT` list. Each of those is a step here, and none
+    /// of them is a step the optimizer invents: a `LimitByStep` in the fragment means the shipped query
+    /// has `LIMIT BY`, so this answers for the shipped query rather than guessing about it.
+    bool remoteRewriteRefusesThisShape() const;
+
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
