@@ -396,6 +396,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
 #       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
 #       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
+# `StorageKeeperMap` + a `05024_keeper_map_parenthesized_metadata*` table + `Failed to activate table because of
+#       invalid metadata in ZooKeeper` is the same class: that test rewrites its own `metadata` znode into shapes a
+#       server must refuse and reverts them at the end of the file, but stress worker 1 (`--database=test_1`) runs
+#       with `memory_tracker_fault_probability`, so an injected `Code: 241` can stop the file before the `DROP`s at
+#       its end run, leaving the tables it created behind with an unreadable znode. The upgrade restart re-attaches
+#       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
+#       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
+#       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -615,6 +623,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
+    | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
