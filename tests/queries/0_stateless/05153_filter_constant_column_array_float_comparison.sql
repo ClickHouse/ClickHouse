@@ -1,7 +1,11 @@
 DROP TABLE IF EXISTS array_float_comparison;
 
-SELECT [toInt64(9007199254740993)] = [toFloat64(9007199254740992)]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tuple([toInt64(9007199254740993)]) = tuple([toFloat64(9007199254740992)]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- `Array(Int64)` has no least supertype with `Array(Float64)`, so the arrays are compared element-wise with the
+-- accurate scalar comparison: an `Int64` that is not exactly representable as a `Float64` is not equal to the
+-- rounded `Float64`. That accuracy is what makes the constant substitution below sound - a passing row has
+-- exactly one possible stored value.
+SELECT [toInt64(9007199254740993)] = [toFloat64(9007199254740992)];
+SELECT tuple([toInt64(9007199254740993)]) = tuple([toFloat64(9007199254740992)]);
 
 CREATE TABLE array_float_comparison (a Array(Int32), t Tuple(Array(Int32))) ENGINE = Memory;
 INSERT INTO array_float_comparison VALUES
