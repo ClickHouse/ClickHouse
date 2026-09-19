@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -98,7 +99,8 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
-        NameSet columns_shadowing_map_subcolumns_);
+        NameSet columns_shadowing_map_subcolumns_,
+        JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -220,6 +222,8 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// Argument types of the JSON index functions of this index, by position in `header`.
+    JSONIndexArgumentTypes json_argument_types;
     std::optional<String> normalized_index_column_name;
     NameSet columns_shadowing_map_subcolumns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
