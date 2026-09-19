@@ -13,7 +13,9 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class CubeStep : public ITransformingStep
 {
 public:
-    CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
+    /// `key_positions_`: index in `params_.keys` of each `GROUP BY` element as written; empty if no key repeats.
+    CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_,
+             std::vector<size_t> key_positions_ = {});
 
     String getName() const override { return "Cube"; }
 
@@ -32,6 +34,7 @@ private:
 
     size_t keys_size;
     Aggregator::Params params;
+    std::vector<size_t> key_positions;
     bool final;
     bool use_nulls;
 };
