@@ -10,6 +10,8 @@ doc_type: 'reference'
 In ClickHouse version `24.3`, the analyzer was enabled by default.
 You can read more details about how it works [here](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
+Since version `26.9` the analyzer is mandatory: the `enable_analyzer` setting is obsolete, an attempt to set it to `0` is rejected, and the query analysis that ClickHouse used before `24.3` is no longer supported. The incompatibilities listed below describe how that older analysis differed, so that a query written for it can be updated; to observe its behaviour, run the query against a ClickHouse version older than `26.9`.
+
 ## Known incompatibilities {#known-incompatibilities}
 
 Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour. Please read the following changes to determine how to rewrite your queries for the analyzer.
@@ -153,19 +155,20 @@ During projection names computation, aliases are not substituted.
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
+```
 
+Before `24.3` the second column was named after the substituted alias:
+
+```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
+```
 
-SELECT
-    1 + 1 AS x,
-    x + 1
-SETTINGS enable_analyzer = 1
-FORMAT PrettyCompact
+The analyzer keeps the alias in the name:
 
+```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
@@ -184,7 +187,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 ### Heterogeneous clusters {#heterogeneous-clusters}
 
-The analyzer significantly changes the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `enable_analyzer` setting values.
+The analyzer significantly changes the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers that do not agree on whether the analyzer is used - which, for a cluster of servers older than `26.9`, means servers with different `enable_analyzer` setting values.
 
 ### Mutations are interpreted by previous analyzer {#mutations-are-interpreted-by-previous-analyzer}
 
@@ -214,14 +217,13 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. Run the query with the analyzer enabled by adding these settings.
+2. Run the query with the analyzer, adding the compatibility setting that restores the identifier resolution of the older analysis where the query relies on it.
 ```sql
 SETTINGS
-    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. Refactor and verify the query results to ensure they match the output generated when the analyzer is disabled.   
+3. Refactor and verify the query results to ensure they match the output the query produced before the migration.   
 
 Please refer to the most frequent incompatibilities encountered during internal testing.
 

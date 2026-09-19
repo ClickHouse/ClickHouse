@@ -120,6 +120,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -217,6 +218,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -373,10 +375,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
+            auto serialize_settings = getSerializationSettings();
+            serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
-                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
+                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, std::move(serialize_settings));
 
             if (settings.compress_per_column_in_compact_parts)
             {
