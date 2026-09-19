@@ -306,8 +306,6 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
-        /// Actualize thread group info
-        CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
@@ -374,6 +372,9 @@ ProcessList::EntryPtr ProcessList::insert(
             settings,
             watch_start_nanoseconds,
             is_internal);
+
+        /// Actualize thread group info
+        CurrentThread::attachQueryForLog(query);
 
         auto process_it = processes.emplace(
             processes.end(),

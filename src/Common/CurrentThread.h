@@ -25,6 +25,8 @@ namespace DB
 {
 
 class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 struct Progress;
 class InternalTextLogsQueue;
 
@@ -77,7 +79,7 @@ public:
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 
-    static void attachQueryForLog(const String & query_);
+    static void attachQueryForLog(const QueryStatusPtr & query_status);
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
