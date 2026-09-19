@@ -32,7 +32,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     size_t file_size_,
     MergeTreeMarksLoaderPtr marks_loader_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_)
+    clockid_t clock_type_,
+    std::optional<size_t> initial_right_mark_)
     : profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , all_mark_ranges(all_mark_ranges_)
@@ -40,6 +41,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , uncompressed_cache(uncompressed_cache_)
+    , initial_right_mark(initial_right_mark_)
     , settings(settings_)
     , marks_count(marks_count_)
     , file_size(file_size_)
@@ -149,6 +151,12 @@ void MergeTreeReaderStream::init()
     }
 
     initialized = true;
+
+    if (initial_right_mark)
+    {
+        adjustRightMark(*initial_right_mark);
+        seekToStart();
+    }
 }
 
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)

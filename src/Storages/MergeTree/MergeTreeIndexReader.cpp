@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
@@ -23,9 +22,6 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     UncompressedCache * uncompressed_cache,
     MergeTreeReaderSettings settings)
 {
-    auto context = data_part_info->getContext();
-    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
     const auto & index_granularity_info = data_part_info->getIndexGranularityInfo();
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         data_part_info,
@@ -35,11 +31,9 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         index_granularity_info,
         settings.save_marks_in_cache,
         settings.read_settings,
-        load_marks_threadpool,
+        /*load_marks_threadpool=*/ nullptr,
         /*num_columns_in_mark=*/ 1,
         settings.use_streaming_marks_compression);
-
-    marks_loader->startAsyncLoad();
 
     /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
     /// comes from checksums, and a stream with no checksums entry is sized via the storage.
@@ -66,7 +60,8 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         data_file_size,
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
-        CLOCK_MONOTONIC_COARSE);
+        CLOCK_MONOTONIC_COARSE,
+        getLastMark(all_mark_ranges));
 }
 
 MergeTreeIndexReader::MergeTreeIndexReader(
@@ -99,16 +94,15 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     const auto & checksums = data_part_info->getChecksums();
     auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
-    auto last_mark = getLastMark(all_mark_ranges);
 
     for (const auto & substream : index_format.substreams)
     {
         auto full_stream_name = index_name + substream.suffix;
         auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
 
-        /// If the stream doesn't exist (neither original nor hashed name), use the full name
-        /// and let it fail later when trying to open the file. This preserves the original error
-        /// behavior and compatibility - the error message will indicate the missing file path.
+        /// If the stream doesn't exist (neither original nor hashed name), use the full name and let
+        /// it fail when the stream is first read and its file is opened - the error message then
+        /// indicates the missing file path.
         auto stream_name = stream_name_opt.value_or(full_stream_name);
 
         auto stream = makeIndexReaderStream(
@@ -120,9 +114,6 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             mark_cache,
             uncompressed_cache,
             patchSettings(settings, substream.type));
-
-        stream->adjustRightMark(last_mark);
-        stream->seekToStart();
 
         streams[substream.type] = stream.get();
         stream_holders.emplace_back(std::move(stream));
