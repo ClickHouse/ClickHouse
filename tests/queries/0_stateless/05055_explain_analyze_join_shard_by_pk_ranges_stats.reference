@@ -1,0 +1,8 @@
+sharding applies
+1
+ground truth: unique right keys
+200
+hash, max_threads = 2
+200.00
+parallel_hash, max_threads = 16
+200.00

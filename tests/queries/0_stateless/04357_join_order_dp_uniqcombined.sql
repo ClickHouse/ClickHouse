@@ -8,6 +8,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 -- R1: Small dimension table (Demo size: 10)
 CREATE TABLE R1 (
@@ -151,5 +152,3 @@ SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', enable_parallel_re
 
 SELECT 1 FROM (SELECT 1 c0) t0 LEFT JOIN (SELECT 1 c0) t1 ON t0.c0 = t1.c0
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize,greedy', enable_parallel_replicas=0;
-
-
