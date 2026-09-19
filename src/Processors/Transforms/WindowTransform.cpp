@@ -610,9 +610,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
             chassert(offset <= 0);
 
             chassert(offset >= -INT64_MAX);
-            if (moved_row_number.row >= -static_cast<UInt64>(offset))
+            if (moved_row_number.row >= common::negateIgnoreOverflow(static_cast<UInt64>(offset)))
             {
-                moved_row_number.row -= -static_cast<UInt64>(offset);
+                moved_row_number.row -= common::negateIgnoreOverflow(static_cast<UInt64>(offset));
                 offset = 0;
                 break;
             }

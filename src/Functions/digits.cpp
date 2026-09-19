@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -202,7 +203,7 @@ public:
                         T num = data[i];
                         UInt64 magnitude = 0;
                         if constexpr (std::is_signed_v<T>)
-                            magnitude = num < 0 ? -static_cast<UInt64>(num) : static_cast<UInt64>(num);
+                            magnitude = num < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(num)) : static_cast<UInt64>(num);
                         else
                             magnitude = static_cast<UInt64>(num);
                         Int64 offset = getClampedInt64(*offset_column, i);

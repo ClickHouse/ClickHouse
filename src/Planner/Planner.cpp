@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Planner.h>
 #include <Columns/IColumn.h>
@@ -478,7 +479,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
 
         chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
-        const UInt64 magnitude = -static_cast<UInt64>(int_value);
+        const UInt64 magnitude = common::negateIgnoreOverflow(static_cast<UInt64>(int_value));
         return {magnitude, 0, true};
     }
 

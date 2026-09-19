@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -267,7 +268,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 }
                 else if (index < 0)
                 {
-                    const UInt64 offset_from_end = -static_cast<UInt64>(index);
+                    const UInt64 offset_from_end = common::negateIgnoreOverflow(static_cast<UInt64>(index));
                     const size_t size = end - begin;
 
                     /// An index pointing before the array start selects an empty range, the same as

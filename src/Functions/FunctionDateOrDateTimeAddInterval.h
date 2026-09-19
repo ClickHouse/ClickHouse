@@ -1,4 +1,5 @@
 #pragma once
+#include <base/arithmeticOverflow.h>
 #include <type_traits>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
@@ -742,7 +743,7 @@ struct SubtractIntervalImpl : public Transform
     {
         /// Negate in the UInt64 domain: plain -delta is signed-overflow UB for delta == INT64_MIN.
         /// The two's-complement result is identical for every other value.
-        return Transform::executeForTime(t, static_cast<Int64>(-static_cast<UInt64>(delta)), time_zone, utc_time_zone, scale);
+        return Transform::executeForTime(t, static_cast<Int64>(common::negateIgnoreOverflow(static_cast<UInt64>(delta))), time_zone, utc_time_zone, scale);
     }
 };
 

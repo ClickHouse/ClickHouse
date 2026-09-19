@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -417,7 +418,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -static_cast<UInt64>(size);
+            UInt64 abs_size = common::negateIgnoreOverflow(static_cast<UInt64>(size));
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);

@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -244,7 +245,7 @@ public:
                 }
                 else
                 {
-                    UInt64 offset = -static_cast<UInt64>(start);
+                    UInt64 offset = common::negateIgnoreOverflow(static_cast<UInt64>(start));
                     size_t offset_byte = offset / word_size;
                     size_t offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
                     if (offset_bit)

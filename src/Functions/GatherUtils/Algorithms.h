@@ -343,7 +343,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
             else
-                slice = src.getSliceFromRight(-static_cast<UInt64>(offset));
+                slice = src.getSliceFromRight(common::negateIgnoreOverflow(static_cast<UInt64>(offset)));
 
             writeSlice(slice, sink);
         }
