@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test for wrong results with make_distributed_plan = 1 (follow-up to issue #107946):
 -- reading a Merge table over a view that joins a big table with a small (broadcast-able) table
 -- returned every row once per join bucket. The second run of the distributed plan transforms on
