@@ -427,6 +427,10 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
+    /// `Time` and `Time64` share the accurate temporal path: widening an exact `Time` value to
+    /// `Time64(0)` must not change what `accurateCast` accepts.
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -472,7 +476,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType>)
+            if constexpr (IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
             {
                 if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {
@@ -705,6 +709,31 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                     return true;
                 }
+            }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
+                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
+            {
+                if (cast_type == CastType::accurate)
+                {
+                    AccurateConvertStrategyAdditions additions;
+                    additions.scale = scale;
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+                }
+                else if (cast_type == CastType::accurateOrNull)
+                {
+                    AccurateOrNullConvertStrategyAdditions additions;
+                    additions.scale = scale;
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+                }
+                else
+                {
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                }
+
+                return true;
             }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
             {
@@ -2819,6 +2848,12 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
+    /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
+    /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
+    /// member list, which cannot name `Nothing`, so they need that path rather than the one below.
+    if (isNothing(from_type) && (isVariant(to_type) || isDynamic(to_type)))
+        return createNothingWrapper(to_type.get());
+
     /// Conversion from/to Variant/Dynamic data type is processed in a special way.
     /// We don't need to remove LowCardinality/Nullable.
     if (isDynamic(to_type) || isDynamic(from_type))
@@ -3352,6 +3387,34 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
+/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. A float source is refused for an
+/// integer or `Decimal` destination, because `fptosi` / `fptoui` have no defined result outside the
+/// destination range. A `Bool` destination stays allowed, it is compiled through `nativeBoolCast`.
+static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
+{
+    return castBothTypes(from, to, [](const auto & left, const auto & right)
+    {
+        using LeftDataType = std::decay_t<decltype(left)>;
+        using RightDataType = std::decay_t<decltype(right)>;
+
+        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+        {
+            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+            {
+                if constexpr (is_floating_point<typename LeftDataType::FieldType>
+                    && !is_floating_point<typename RightDataType::FieldType>)
+                    return isBool(right.getPtr());
+                return true;
+            }
+            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                return !is_floating_point<typename LeftDataType::FieldType>;
+            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                return true;
+        }
+        return false;
+    });
+}
+
 bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type)
 {
     if (types.empty())
@@ -3360,25 +3423,7 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
     if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
         return false;
 
-    return castBothTypes(
-        types[0].get(),
-        result_type.get(),
-        [](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-            {
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                    return true;
-                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                    return true;
-                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                    return true;
-            }
-            return false;
-        });
+    return isCompilableNumericConversion(types[0].get(), result_type.get());
 }
 
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type)
@@ -3475,26 +3520,18 @@ bool FunctionCast::isCompilable() const
 
     const auto & input_type = argument_types[0];
     const auto & result_type = getResultType();
+
+    /// Converting a NULL to a non-Nullable type raises CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+    /// and a compiled expression produces a value with no way to raise.
+    if (isNullableOrLowCardinalityNullable(input_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
     auto denull_input_type = removeNullable(input_type);
     auto denull_result_type = removeNullable(result_type);
     if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
         return false;
 
-    return castBothTypes(denull_input_type.get(), denull_result_type.get(), [](const auto & left, const auto & right)
-    {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-        {
-            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return true;
-            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-        }
-        return false;
-    });
+    return isCompilableNumericConversion(denull_input_type.get(), denull_result_type.get());
 }
 
 llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const
