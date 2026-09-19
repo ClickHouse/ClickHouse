@@ -1676,7 +1676,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(RefreshableViewRefreshSuccess, "How many times refreshable materialized views refreshed", ValueType::Number) \
     M(RefreshableViewRefreshFailed, "How many times refreshable materialized views failed to refresh", ValueType::Number) \
-    M(RefreshableViewStatePersistFailed, "How many times a refreshable materialized view failed to persist its refresh schedule state, so the refresh result was not published and will be retried", ValueType::Number) \
+    M(RefreshableViewStatePersistFailed, "How many times a refreshable materialized view failed to persist its refresh schedule state, so the schedule-state transition was not applied and will be retried", ValueType::Number) \
     M(RefreshableViewSyncReplicaSuccess, "How many times a SELECT from refreshable materialized view did an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \

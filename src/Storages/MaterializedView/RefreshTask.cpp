@@ -372,6 +372,11 @@ void RefreshTask::startup()
             "Could not read the persisted refresh state '{}'. Refreshing now could stampede, so the "
             "view is stopped; SYSTEM START VIEW resumes it.", local_state_path);
     }
+    else if (!local_state_path.empty())
+    {
+        /// Best-effort: a failed write here leaves the same state as no persistence at all.
+        saveLocalCoordinationState(context, coordination.root_znode.toString());
+    }
 
     auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());

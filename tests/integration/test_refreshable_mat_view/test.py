@@ -527,8 +527,8 @@ def test_query_retry(fn3_setup_tables):
 def create_daily_rmv(instance, name):
     """A view that refreshes once now and then not again for a day.
 
-    No EMPTY: an EMPTY view re-runs the constructor's "pretend we just refreshed" branch on every
-    restart, so it never stampedes and cannot show the bug.
+    No EMPTY: the stored metadata does not keep the EMPTY flag, and an EMPTY view has no completed
+    refresh anyway, while last_success_time is what these tests compare across a restart.
     """
     instance.query(f"DROP TABLE IF EXISTS {name}")
     instance.query(
