@@ -165,6 +165,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+    bool prefer_use_projection;
+    String preferred_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
     /// projection). Sets larger than this are treated as non-matching. Zero disables content-hash
