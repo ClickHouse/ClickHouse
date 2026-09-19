@@ -76,10 +76,16 @@ public:
       *
       * time_of_merge - the time when the merge was assigned.
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
+      *
+      * data_settings - the MergeTree settings snapshot the merge must run with, frozen by the caller when it
+      * priced the merge's up-front memory reservation (see CompactionStatistics::estimateNeededMemoryForMerge):
+      * MergeTask uses it instead of re-reading the live settings, so a concurrent ALTER ... MODIFY SETTING
+      * cannot change the merge's writer decisions after the admission gate accepted it at the old price.
       */
     MergeTaskPtr mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
         StorageMetadataPtr metadata_snapshot,
+        MergeTreeSettingsPtr data_settings,
         MergeListEntry * merge_entry,
         std::unique_ptr<MergeListElement> projection_merge_list_element,
         TableLockHolder & table_lock_holder,

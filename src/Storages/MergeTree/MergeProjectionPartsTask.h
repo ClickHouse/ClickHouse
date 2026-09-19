@@ -14,6 +14,12 @@ namespace DB
 class MergeProjectionPartsTask : public MergeProjectionsIndexesTask
 {
 public:
+    /// The read-back stage merges at most this many temporary projection parts at once, so it can hold
+    /// up to this many reader-buffer sets in memory simultaneously (used by
+    /// CompactionStatistics::estimateNeededMemoryForMerge to size the projection rebuild reservation).
+    /// TODO(nikitamikhaylov): make this constant a setting
+    static constexpr size_t max_parts_to_merge_in_one_level = 10;
+
     MergeProjectionPartsTask(
         String name_,
         MergeTreeData::MutableDataPartsVector && parts_,
@@ -26,6 +32,7 @@ public:
         time_t time_of_merge_,
         MergeTreeData::MutableDataPartPtr new_data_part_,
         ReservationSharedPtr space_reservation_,
+        MergeTreeSettingsPtr base_data_settings_,
         MergeListElement * parent_merge_list_element_ = nullptr)
         : name(std::move(name_))
         , projection(projection_)
@@ -37,6 +44,7 @@ public:
         , time_of_merge(time_of_merge_)
         , new_data_part(new_data_part_)
         , space_reservation(space_reservation_)
+        , base_data_settings(std::move(base_data_settings_))
         , parent_merge_list_element(parent_merge_list_element_)
         , log(getLogger("MergeProjectionPartsTask"))
         {
@@ -70,6 +78,8 @@ private:
 
     MergeTreeData::MutableDataPartPtr new_data_part;
     ReservationSharedPtr space_reservation;
+    /// The table-level MergeTree settings snapshot the parent merge was priced and started with.
+    MergeTreeSettingsPtr base_data_settings;
     MergeListElement * parent_merge_list_element;
 
     LoggerPtr log;
@@ -77,9 +87,6 @@ private:
     std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
     size_t current_level = 0;
     size_t next_level = 1;
-
-    /// TODO(nikitamikhaylov): make this constant a setting
-    static constexpr size_t max_parts_to_merge_in_one_level = 10;
 };
 
 using MergeProjectionPartsTaskPtr = std::unique_ptr<MergeProjectionPartsTask>;
