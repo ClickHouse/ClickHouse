@@ -12,6 +12,8 @@ cluster = ClickHouseCluster(__file__)
 # edit that file, so they pin `database_disk` to a local disk at a known path, and opt out of
 # with_remote_database_disk, which some builds enable by default and which would put the file in
 # object storage instead.
+# Every DROP here says SYNC: the assertions count state files across the whole disk, and a plain
+# DROP returns before the background job has removed the dropped table's directory.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/database_disk.xml"],
@@ -59,7 +61,7 @@ def profile_event(name):
     )
 
 
-def wait_for_refresh_info(name, column, predicate):
+def wait_for_refresh_info(name, column, predicate, retry_count=120, sleep_time=0.5):
     """Poll one system.view_refreshes column until `predicate` holds, then assert that it does.
 
     query_with_retry returns its last result even when the callback never passed, so the assert is
@@ -68,7 +70,8 @@ def wait_for_refresh_info(name, column, predicate):
     value = node.query_with_retry(
         f"SELECT {column} FROM system.view_refreshes WHERE view = '{name}'",
         check_callback=lambda x: predicate(x.strip()),
-        retry_count=120,
+        retry_count=retry_count,
+        sleep_time=sleep_time,
     ).strip()
     assert predicate(value), f"{name}.{column} is {value!r}"
     return value
@@ -99,7 +102,7 @@ def create_daily_rmv(name):
     No EMPTY: the stored metadata does not keep the EMPTY flag, and an EMPTY view has no completed
     refresh anyway, while last_success_time is what these tests compare across a restart.
     """
-    node.query(f"DROP TABLE IF EXISTS {name}")
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
     node.query(
         f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt64) "
         f"ENGINE = MergeTree ORDER BY tuple() AS SELECT now() a, number b FROM numbers(2)"
@@ -130,7 +133,7 @@ def test_refresh_state_is_written_to_the_database_disk():
         ]
         assert outside == []
     finally:
-        node.query(f"DROP TABLE IF EXISTS {name}")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_empty_view_keeps_its_schedule_across_restart():
@@ -141,7 +144,7 @@ def test_empty_view_keeps_its_schedule_across_restart():
     the CREATE.
     """
     name = "rmv_empty"
-    node.query(f"DROP TABLE IF EXISTS {name}")
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
     node.query(
         f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt64) "
         f"ENGINE = MergeTree ORDER BY tuple() EMPTY "
@@ -169,7 +172,7 @@ def test_empty_view_keeps_its_schedule_across_restart():
         assert len(before) == 1
         assert "last_completed_timeslot: 0\n" not in before[0]
     finally:
-        node.query(f"DROP TABLE IF EXISTS {name}")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize(
@@ -217,7 +220,7 @@ def test_unusable_persisted_refresh_state_stops_the_view(payload):
         node.start_clickhouse()
         wait_for_refresh_info(name, "last_success_time", lambda x: x not in ("", "\\N"))
     finally:
-        node.query(f"DROP TABLE IF EXISTS {name}")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_refresh_is_not_published_when_the_state_cannot_be_persisted():
@@ -262,7 +265,77 @@ def test_refresh_is_not_published_when_the_state_cannot_be_persisted():
         assert state.startswith("format version: 1\n")
         assert "last_success_time: 0\n" not in state
     finally:
-        node.query(f"DROP TABLE IF EXISTS {name}")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_finished_refresh_is_not_published_when_the_state_cannot_be_persisted():
+    """Blocking the write while a refresh is in flight covers the transition that publishes it.
+
+    The test above blocks the write first, so the transition that starts a refresh fails and the
+    refresh never runs. Only this order reaches the transition that records a finished one, which is
+    what publishes last_completed_timeslot and the incremental cursor, and which is therefore the
+    only arm that can show the data landing while the schedule stays unpublished.
+    """
+    name = "rmv_finish_persist_fails"
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    node.query(
+        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt8) "
+        f"ENGINE = MergeTree ORDER BY tuple() "
+        f"AS SELECT now() a, sleep(1) b FROM numbers(8) "
+        f"SETTINGS max_block_size = 1, max_threads = 1"
+    )
+    try:
+        before = wait_for_refresh_info(
+            name, "last_success_time", lambda x: x not in ("", "\\N")
+        )
+        # now() is one value per refresh, and a non-APPEND refresh replaces the whole table, so this
+        # moves if and only if the exchange happened.
+        data_before = node.query(f"SELECT max(a) FROM {name}").strip()
+        state_files = find_refresh_state_files(DB_DISK_PATH)
+        assert len(state_files) == 1
+        blocker = state_files[0] + ".tmp"
+        failures_before = profile_event("RefreshableViewStatePersistFailed")
+
+        node.query(f"SYSTEM REFRESH VIEW {name}")
+        wait_for_refresh_info(
+            name, "status", lambda x: x == "Running", retry_count=300, sleep_time=0.1
+        )
+        try:
+            node.exec_in_container(["bash", "-c", f"mkdir {blocker}"], user="root")
+            # A refresh that finished before the blocker landed would have published already and
+            # would leave this arm uncovered, so require that it is still running.
+            assert refresh_info(name, "status") == "Running"
+
+            failures = node.query_with_retry(
+                "SELECT sum(value) FROM system.events "
+                "WHERE event = 'RefreshableViewStatePersistFailed'",
+                check_callback=lambda x: int(x.strip()) > failures_before,
+                retry_count=120,
+            ).strip()
+            assert int(failures) > failures_before
+
+            # The split this arm exists for: the refresh ran to completion and its data is live,
+            # while the schedule it would advance was not published.
+            data_blocked = node.query(f"SELECT max(a) FROM {name}").strip()
+            assert data_blocked != data_before
+            assert refresh_info(name, "last_success_time") == before
+            # Past one 5 s retry, so a transition that publishes late still reddens this.
+            time.sleep(7)
+            assert node.query(f"SELECT max(a) FROM {name}").strip() == data_blocked
+            assert refresh_info(name, "last_success_time") == before
+        finally:
+            node.exec_in_container(["bash", "-c", f"rmdir {blocker}"], user="root")
+
+        # Converges once the write can succeed, and only once: a retry storm would keep moving it,
+        # and a lost result would refresh the data again rather than publish the one already there.
+        after = wait_for_refresh_info(
+            name, "last_success_time", lambda x: x not in ("", "\\N", before)
+        )
+        assert node.query(f"SELECT max(a) FROM {name}").strip() == data_blocked
+        time.sleep(7)
+        assert refresh_info(name, "last_success_time") == after
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_refresh_running_is_not_believed_after_a_crash():
@@ -270,22 +343,28 @@ def test_refresh_running_is_not_believed_after_a_crash():
 
     Without that, the view starts up believing a refresh it cannot observe is in flight, and the
     reconciliation path that then cleans up ignores whether its own write succeeded.
+
+    The kill has to land while the refresh is still running, or the file holds refresh_running: 0
+    and neither implementation enters that path; the status assert before the kill enforces it.
     """
     name = "rmv_crash"
-    node.query(f"DROP TABLE IF EXISTS {name}")
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
     node.query(
         f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt8) "
         f"ENGINE = MergeTree ORDER BY tuple() EMPTY "
-        f"AS SELECT now() a, sleep(1) b FROM numbers(10) SETTINGS max_block_size = 1"
+        f"AS SELECT now() a, sleep(1) b FROM numbers(10) "
+        f"SETTINGS max_block_size = 1, max_threads = 1"
     )
     try:
         wait_for_refresh_info(name, "status", lambda x: x == "Scheduled")
+        leftover_warning = "znode says this replica is running refresh, but it isn't"
+        # Counted before the refresh starts, not just before the kill: the warning comes from a
+        # scheduling pass that needs a startup-loaded refresh_running, so nothing can emit it in
+        # between, and scanning every rotated log is the slowest step in the window.
+        warnings_before = count_in_server_logs(leftover_warning)
         node.query(f"SYSTEM REFRESH VIEW {name}")
-        node.query_with_retry(
-            f"SELECT status FROM system.view_refreshes WHERE view = '{name}'",
-            check_callback=lambda x: x.strip() == "Running",
-            retry_count=300,
-            sleep_time=0.1,
+        wait_for_refresh_info(
+            name, "status", lambda x: x == "Running", retry_count=300, sleep_time=0.1
         )
 
         # The precondition the loader handles, made observable: without this the test would pass
@@ -295,12 +374,11 @@ def test_refresh_running_is_not_believed_after_a_crash():
         persisted = read_state_file(state_files[0])
         assert "refresh_running: 1\n" in persisted, persisted
 
-        leftover_warning = "znode says this replica is running refresh, but it isn't"
-        warnings_before = count_in_server_logs(leftover_warning)
+        assert refresh_info(name, "status") == "Running"
         node.stop_clickhouse(kill=True)
         node.start_clickhouse()
 
         wait_for_refresh_info(name, "status", lambda x: x == "Scheduled")
         assert count_in_server_logs(leftover_warning) == warnings_before
     finally:
-        node.query(f"DROP TABLE IF EXISTS {name}")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
