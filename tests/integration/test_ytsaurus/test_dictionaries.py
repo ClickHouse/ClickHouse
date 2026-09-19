@@ -12,7 +12,10 @@ if is_arm():
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/display_secrets.xml"],
+    main_configs=[
+        "configs/display_secrets.xml",
+        "configs/fake_yt_proxy_http_handlers.xml",
+    ],
     user_configs=["configs/allow_experimental_ytsaurus.xml"],
     with_ytsaurus=True,
     stay_alive=True,
@@ -127,9 +130,21 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table, replicated_table
             schema={"id": "uint64", "value": "int32"},
         )
 
-    instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
-    )
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '2'
+                lookup_max_rows_per_query '1'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
     if dynamic_table:
         assert (
             instance.query(
@@ -170,9 +185,19 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
         dynamic=dynamic_table,
     )
 
-    instance.query(
-        f"CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32) PRIMARY KEY id1, id2 SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
-    )
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32)
+        PRIMARY KEY id1, id2
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+            )
+        )
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
     if dynamic_table:
         assert (
             instance.query(
@@ -188,6 +213,44 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
         instance.query_and_get_error(
             "SELECT dictGet('yt_dict', 'value', (2, 2))"
         ) == "40\n"
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
+def test_yt_dictionary_cache_complex_key_chunked(started_cluster):
+    """Chunked complex-key selective load: `lookup_max_rows_per_query = 1` splits the load into one lookup request per key."""
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+    yt.create_table(
+        path,
+        '{"id1":1, "id2":1, "value":20}{"id1":2, "id2":2, "value":40}{"id1":3, "id2":3, "value":30}',
+        sorted_columns=("id1", "id2"),
+        schema={"id1": "uint64", "id2": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32)
+        PRIMARY KEY id1, id2
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_max_rows_per_query '1'
+            )
+        )
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', (number + 1, number + 1)) FROM numbers(3)"
+        )
+        == "20\n40\n30\n"
+    )
+    assert instance.query("SELECT dictGet('yt_dict', 'value', (2, 2))") == "40\n"
 
     instance.query("DROP DICTIONARY yt_dict")
     yt.remove_table(path)
@@ -270,16 +333,14 @@ def test_yt_range_hashed(started_cluster, primary_key_value, layout, dict_key):
         dynamic=False,
     )
 
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE DICTIONARY yt_dict(id UInt64, id2 UInt64, range_start Date, range_end Date, value Int32) 
         PRIMARY KEY {primary_key_value} 
         SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}' check_table_schema 0))
         LAYOUT({layout}(range_lookup_strategy 'max'))
         LIFETIME(MIN 0 MAX 1000)
         RANGE(MIN range_start MAX range_end)
-        """
-    )
+        """)
     assert (
         instance.query(
             f"SELECT dictGet('yt_dict', 'value', {dict_key}, toDate('1970-01-02'))"
@@ -349,8 +410,7 @@ def test_yt_dictionary_with_query(started_cluster):
         schema={"id": "uint64", "value": "string"},
         dynamic=True,
     )
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE DICTIONARY yt_dict(id UInt64, len Int32)
         PRIMARY KEY id SOURCE(YTSAURUS(
         http_proxy_urls '{yt_uri_helper.uri}'
@@ -360,8 +420,7 @@ def test_yt_dictionary_with_query(started_cluster):
         ytsaurus_columns_description 'id, length(value) as len'
         ))
         LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
-        """
-    )
+        """)
     assert (
         instance.query("SELECT dictGet('yt_dict', 'len', number + 1) FROM numbers(3)")
         == "4\n3\n2\n"
@@ -383,22 +442,18 @@ def test_yt_dictionary_with_named_collection(started_cluster):
         schema={"id": "uint64", "value": "string"},
         dynamic=True,
     )
-    instance.query(
-        f"""
+    instance.query(f"""
         CREATE NAMED COLLECTION ytsaurus_nc AS
             http_proxy_urls = '{yt_uri_helper.uri}',
             cypress_path = '{path}',
             oauth_token = '{yt_uri_helper.token}',
             check_table_schema = 0,
             ytsaurus_columns_description = 'id, length(value) as len'
-        """
-    )
+        """)
 
-    instance.query(
-        """
+    instance.query("""
         CREATE DICTIONARY yt_dict(id UInt64, len Int32) PRIMARY KEY id SOURCE(YTSAURUS(NAME ytsaurus_nc)) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
-        """
-    )
+        """)
     assert (
         instance.query("SELECT dictGet('yt_dict', 'len', number + 1) FROM numbers(3)")
         == "4\n3\n2\n"
@@ -408,4 +463,261 @@ def test_yt_dictionary_with_named_collection(started_cluster):
 
     instance.query("DROP DICTIONARY yt_dict")
     instance.query("DROP NAMED COLLECTION ytsaurus_nc")
+    yt.remove_table(path)
+
+
+def test_yt_lookups_throttler(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}{"id":4, "value": 40}',
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '1'
+                lookup_max_rows_per_query '1'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    instance.query("SYSTEM FLUSH LOGS")
+    old_value = int(instance.query("""
+        SELECT value FROM system.events where name = 'YTsaurusLookupThrottled'
+        """))
+    assert (
+        instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(4)")
+        == "20\n40\n30\n40\n"
+    )
+
+    new_value = int(instance.query("""
+        SELECT value FROM system.events where name = 'YTsaurusLookupThrottled'
+        """))
+    assert old_value < new_value
+    instance.query("DROP DICTIONARY yt_dict")
+
+    yt.remove_table(path)
+
+
+def test_yt_lookups_throttler_complex_key(started_cluster):
+    """Regression test: the throttler is also applied to the complex-key selective load (`loadKeys`)."""
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id1":1, "id2":1, "value":20}{"id1":2, "id2":2, "value":40}{"id1":3, "id2":3, "value":30}',
+        sorted_columns=("id1", "id2"),
+        schema={"id1": "uint64", "id2": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32)
+        PRIMARY KEY id1, id2
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '1'
+                lookup_max_rows_per_query '1'
+                )
+            )
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+
+    old_value = int(instance.query("""
+        SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'
+        """))
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', (number + 1, number + 1)) FROM numbers(3)"
+        )
+        == "20\n40\n30\n"
+    )
+    new_value = int(instance.query("""
+        SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'
+        """))
+    assert old_value < new_value
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
+def lookup_requests_count():
+    """Number of `lookup_rows` HTTP attempts issued so far, taken from the `YTsaurusClient` trace log."""
+    instance.query("SYSTEM FLUSH LOGS")
+    return int(
+        instance.query(
+            """
+        SELECT count() FROM system.text_log
+        WHERE logger_name = 'YTsaurusClient' AND message LIKE '%query type lookup_rows%'
+        """
+        )
+    )
+
+
+def throttled_events_count():
+    return int(
+        instance.query(
+            "SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'"
+        )
+    )
+
+
+def test_yt_lookups_throttler_proxy_failover(started_cluster):
+    """Regression test: the throttler is consumed per real `lookup_rows` HTTP attempt, not per logical lookup.
+
+    A permanently dead first proxy cannot exercise this path: the node type `get` that precedes every selective
+    load already fails over to the healthy proxy and moves `recently_used_url_index` there, so the lookup itself
+    never retries. Instead, the ClickHouse HTTP port acts as a fake proxy (`configs/fake_yt_proxy_http_handlers.xml`):
+    it answers `get`, so it stays the preferred proxy, but rejects `lookup_rows` with a non-retriable `404`, so the
+    failing attempt returns instantly and the client retries the same logical lookup against the real proxy.
+
+    `lookup_max_rows_per_query = 0` keeps the whole miss set in ONE logical lookup, so the only way to consume a
+    second token within the one-second refill period of a `1` requests-per-second throttler is the retry attempt.
+    With the old per-logical-lookup throttling that single lookup paid one token and never blocked, so
+    `YTsaurusLookupThrottled` stayed flat; with per-attempt throttling the retry blocks exactly once.
+    """
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}',
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    # `use_lock` and `check_table_schema` are disabled because both issue further un-throttled requests before the
+    # lookup, and those would fail over to the real proxy first (the fake proxy serves only the node type `get`).
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls 'http://localhost:8123|{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                use_lock '0'
+                check_table_schema '0'
+                lookup_throttler_max_requests_per_second '1'
+                lookup_max_rows_per_query '0'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    old_requests = lookup_requests_count()
+    old_throttled = throttled_events_count()
+    assert (
+        instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3)")
+        == "20\n40\n30\n"
+    )
+    # One logical lookup, two HTTP attempts: the rejected one against the fake proxy and the retry against the real one.
+    assert lookup_requests_count() - old_requests == 2
+    # Only the retry attempt could have been blocked, and it must have been: it paid the second token.
+    assert throttled_events_count() - old_throttled == 1
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
+def test_yt_lookups_default_chunk_size_is_unlimited(started_cluster):
+    """The default of `lookup_max_rows_per_query` is `0`: one `lookup_rows` request per selective load.
+
+    The miss set is deliberately larger than the previous default of `1024`, which the PR had once introduced as a
+    new batching policy for `CacheDictionary` loads. Under that default the load would be split into two requests,
+    which is observable in two ways: the `YTsaurusClient` trace log would record two `lookup_rows` attempts, and with a
+    `1` requests-per-second throttler the second request would block, so `YTsaurusLookupThrottled` would grow.
+    Under the unlimited default exactly one request is issued and nothing blocks.
+    """
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+    keys_count = 1100
+
+    yt.create_table(
+        path,
+        "".join(f'{{"id":{i},"value":{i * 10}}}' for i in range(1, keys_count + 1)),
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '1'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 2048))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+
+    old_requests = lookup_requests_count()
+    old_throttled = throttled_events_count()
+    assert instance.query(
+        f"SELECT sum(dictGet('yt_dict', 'value', number + 1)) FROM numbers({keys_count})"
+    ) == f"{10 * keys_count * (keys_count + 1) // 2}\n"
+    assert lookup_requests_count() - old_requests == 1
+    assert throttled_events_count() - old_throttled == 0
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
+def test_yt_lookups_unlimited_chunk_size(started_cluster):
+    """Regression test: `lookup_max_rows_per_query = 0` means unlimited (one chunk)."""
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}{"id":4, "value": 40}',
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '0'
+                lookup_max_rows_per_query '0'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    assert (
+        instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(4)")
+        == "20\n40\n30\n40\n"
+    )
+    assert instance.query("SELECT dictGet('yt_dict', 'value', 3)") == "30\n"
+    instance.query("DROP DICTIONARY yt_dict")
     yt.remove_table(path)
