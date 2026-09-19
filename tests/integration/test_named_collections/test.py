@@ -10,6 +10,12 @@ import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import (
+    get_database_disk_name,
+    move_file,
+    read_metadata,
+    write_metadata,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -72,6 +78,17 @@ def cluster():
             ],
             user_configs=[
                 "configs/users.d/users_no_default_access.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_databases_with_collections",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/named_collections_for_databases.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users.xml",
             ],
             stay_alive=True,
         )
@@ -1099,3 +1116,311 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
+
+
+DATABASE_COLLECTIONS_CONFIG = (
+    "/etc/clickhouse-server/config.d/named_collections_for_databases.xml"
+)
+
+# Every database whose definition file the tests below plant by hand. Listed by name because the
+# disk interface removes one path at a time and expands no glob.
+PLANTED_DATABASES = (
+    "db_extra_strict",
+    "db_extra_bogus",
+    "db_extra_badargs",
+    "db_extra_s3",
+    "db_extra_remote",
+    "db_extra_remote_secure",
+    "db_extra_mysql",
+    "db_extra_postgres",
+)
+
+
+@pytest.fixture
+def node_with_database_collections(cluster):
+    node = cluster.instances["node_databases_with_collections"]
+    yield node
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"[ -f {DATABASE_COLLECTIONS_CONFIG}.bak ] "
+            f"&& mv {DATABASE_COLLECTIONS_CONFIG}.bak {DATABASE_COLLECTIONS_CONFIG} || true",
+        ],
+        user="root",
+    )
+    for planted in PLANTED_DATABASES:
+        remove_database_metadata(node, planted)
+    # A SQL-created collection outlives hiding the config file, so a test that leaves one behind
+    # makes every later arm find the collection it needs missing.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/lib/clickhouse/named_collections/*.sql"],
+        user="root",
+        nothrow=True,
+    )
+    node.restart_clickhouse()
+    for name in ("db_over_s3", "db_over_remote_secure", "db_over_mysql"):
+        node.query(f"DROP DATABASE IF EXISTS {name}")
+    node.query("DROP TABLE IF EXISTS default.table_over_s3 SYNC")
+
+
+def hide_database_collections(node):
+    node.exec_in_container(
+        ["bash", "-c", f"mv {DATABASE_COLLECTIONS_CONFIG} {DATABASE_COLLECTIONS_CONFIG}.bak"],
+        user="root",
+    )
+
+
+def restore_database_collections(node):
+    node.exec_in_container(
+        ["bash", "-c", f"mv {DATABASE_COLLECTIONS_CONFIG}.bak {DATABASE_COLLECTIONS_CONFIG}"],
+        user="root",
+    )
+
+
+# A database definition file. Reached through clickhouse-disks rather than the container
+# filesystem, because under the "db disk" config the database disk is remote and nothing below
+# /var/lib/clickhouse/metadata exists.
+def database_metadata_path(name):
+    return f"metadata/{name}.sql"
+
+
+def write_database_metadata(node, name, statement):
+    write_metadata(node, database_metadata_path(name), statement)
+
+
+def read_database_metadata(node, name):
+    return read_metadata(node, database_metadata_path(name))
+
+
+def remove_database_metadata(node, name):
+    db_disk_name = get_database_disk_name(node)
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml "
+            f"--disk {db_disk_name} --save-logs "
+            f"--query 'remove {database_metadata_path(name)}'",
+        ],
+        nothrow=True,
+    )
+
+
+def test_startup_skips_database_with_missing_collection(node_with_database_collections):
+    node = node_with_database_collections
+
+    node.query("CREATE DATABASE db_over_s3 ENGINE = S3(db_collection_s3)")
+    node.query(
+        "CREATE DATABASE db_over_remote_secure ENGINE = RemoteSecure(db_collection_remote)"
+    )
+    assert "2" == node.query(
+        "SELECT count() FROM system.databases WHERE name IN ('db_over_s3', 'db_over_remote_secure')"
+    ).strip()
+
+    node.stop_clickhouse()
+    hide_database_collections(node)
+    node.start_clickhouse()
+
+    assert "1" == node.query("SELECT 1").strip()
+    assert "0" == node.query(
+        "SELECT count() FROM system.databases WHERE name IN ('db_over_s3', 'db_over_remote_secure')"
+    ).strip()
+    assert node.contains_in_log("Skipping database db_over_s3")
+    assert node.contains_in_log("Skipping database db_over_remote_secure")
+
+    for name, engine in (
+        ("db_over_s3", "S3(db_collection_s3)"),
+        ("db_over_remote_secure", "RemoteSecure(db_collection_remote)"),
+    ):
+        assert engine in read_database_metadata(node, name)
+
+    node.stop_clickhouse()
+    restore_database_collections(node)
+    node.start_clickhouse()
+
+    assert "2" == node.query(
+        "SELECT count() FROM system.databases WHERE name IN ('db_over_s3', 'db_over_remote_secure')"
+    ).strip()
+
+
+def test_startup_skipped_database_recovers_from_sql(node_with_database_collections):
+    node = node_with_database_collections
+
+    node.query("CREATE DATABASE db_over_s3 ENGINE = S3(db_collection_s3)")
+
+    node.stop_clickhouse()
+    hide_database_collections(node)
+    node.start_clickhouse()
+
+    assert "0" == node.query(
+        "SELECT count() FROM system.databases WHERE name = 'db_over_s3'"
+    ).strip()
+
+    # A skipped database is recoverable with plain SQL, which is what the running server allows
+    # and a server that refused to start does not.
+    with pytest.raises(QueryRuntimeException) as e:
+        node.query("ATTACH DATABASE db_over_s3")
+    assert "NAMED_COLLECTION_DOESNT_EXIST" in str(e.value)
+
+    node.query(
+        "CREATE NAMED COLLECTION db_collection_s3 AS "
+        "url = 'http://localhost:11111/test/', access_key_id = 'key', secret_access_key = 'secret'"
+    )
+    # Recovery needs no restart, which is what the skip message promises. The restart path is
+    # covered by test_startup_skips_database_with_missing_collection.
+    node.query("ATTACH DATABASE db_over_s3")
+
+    assert "1" == node.query(
+        "SELECT count() FROM system.databases WHERE name = 'db_over_s3'"
+    ).strip()
+    node.query("DROP NAMED COLLECTION db_collection_s3")
+
+
+def test_startup_keeps_serving_table_with_missing_collection(node_with_database_collections):
+    node = node_with_database_collections
+
+    node.query(
+        "CREATE TABLE default.table_over_s3 (a UInt32) "
+        "ENGINE = S3(db_collection_s3, format = 'CSV')"
+    )
+
+    node.stop_clickhouse()
+    hide_database_collections(node)
+    node.start_clickhouse()
+
+    # Pins the behaviour databases are aligned to: a table's missing collection was never fatal.
+    assert "1" == node.query("SELECT 1").strip()
+
+
+@pytest.mark.parametrize(
+    "engine",
+    [
+        "Replicated('/clickhouse/db_extra_strict', 'shard1', 'replica1') "
+        "SETTINGS collection_name = 'db_collection_missing'",
+        "MaterializedPostgreSQL(db_collection_missing)",
+    ],
+)
+def test_startup_still_fails_for_database_owning_local_metadata(
+    node_with_database_collections, engine
+):
+    node = node_with_database_collections
+
+    write_database_metadata(
+        node,
+        "db_extra_strict",
+        f"ATTACH DATABASE db_extra_strict\nUUID '{uuid.uuid4()}'\nENGINE = {engine}",
+    )
+
+    node.stop_clickhouse()
+    node.start_clickhouse(expected_to_fail=True)
+    assert node.contains_in_log("Caught exception while loading metadata: Code: 669")
+    assert not node.contains_in_log("Skipping database db_extra_strict")
+
+    remove_database_metadata(node, "db_extra_strict")
+    node.start_clickhouse()
+
+
+def test_startup_still_fails_for_unrelated_metadata_error(node_with_database_collections):
+    node = node_with_database_collections
+
+    write_database_metadata(
+        node, "db_extra_bogus", "ATTACH DATABASE db_extra_bogus\nENGINE = NoSuchEngine"
+    )
+
+    node.stop_clickhouse()
+    node.start_clickhouse(expected_to_fail=True)
+    assert node.contains_in_log(
+        "Caught exception while loading metadata: Code: 336"
+    )
+
+    remove_database_metadata(node, "db_extra_bogus")
+    node.start_clickhouse()
+
+
+def test_startup_still_fails_for_non_669_error_from_skippable_engine(
+    node_with_database_collections,
+):
+    node = node_with_database_collections
+
+    # An engine that IS skippable failing with an error that is NOT a missing collection: only the
+    # error code decides here, so this is the arm the code check answers for.
+    write_database_metadata(
+        node,
+        "db_extra_badargs",
+        "ATTACH DATABASE db_extra_badargs\n"
+        "ENGINE = S3('http://localhost:11111/test/', 'key', 'secret', 'extra')",
+    )
+
+    node.stop_clickhouse()
+    node.start_clickhouse(expected_to_fail=True)
+    assert node.contains_in_log("Caught exception while loading metadata: Code: 42")
+    assert not node.contains_in_log("Skipping database db_extra_badargs")
+
+    remove_database_metadata(node, "db_extra_badargs")
+    node.start_clickhouse()
+
+
+@pytest.mark.parametrize(
+    "db_name,engine",
+    [
+        ("db_extra_s3", "S3(db_collection_absent)"),
+        ("db_extra_remote", "Remote(db_collection_absent)"),
+        ("db_extra_remote_secure", "RemoteSecure(db_collection_absent)"),
+        ("db_extra_mysql", "MySQL(db_collection_absent)"),
+        ("db_extra_postgres", "PostgreSQL(db_collection_absent)"),
+    ],
+)
+def test_startup_skips_each_skippable_engine(
+    node_with_database_collections, db_name, engine
+):
+    node = node_with_database_collections
+
+    # The collection is never defined anywhere, so every engine name in the skip list gets its own
+    # arm. None of these reach a connection attempt: the collection lookup precedes it.
+    write_database_metadata(
+        node, db_name, f"ATTACH DATABASE {db_name}\nENGINE = {engine}"
+    )
+
+    node.restart_clickhouse()
+
+    assert "1" == node.query("SELECT 1").strip()
+    assert "0" == node.query(
+        f"SELECT count() FROM system.databases WHERE name = '{db_name}'"
+    ).strip()
+    assert node.contains_in_log(f"Skipping database {db_name}")
+    assert engine in read_database_metadata(node, db_name)
+
+
+def test_startup_still_fails_when_default_database_misses_its_collection(
+    node_with_database_collections,
+):
+    node = node_with_database_collections
+
+    node.stop_clickhouse()
+    # Moved, not copied, so the restore below is byte-exact. A ".orig" extension is not
+    # loaded as a database: only ".sql" entries are.
+    move_file(node, database_metadata_path("default"), "metadata/default.sql.orig")
+    # A SQL-created collection would survive hiding the config file and make the server boot.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/lib/clickhouse/named_collections/*.sql"],
+        user="root",
+        nothrow=True,
+    )
+    try:
+        write_database_metadata(
+            node, "default", "ATTACH DATABASE default\nENGINE = S3(db_collection_s3)"
+        )
+        hide_database_collections(node)
+
+        node.start_clickhouse(expected_to_fail=True)
+        # Two assertions: with the default-database check removed, `default` would be skipped and
+        # startup would still fail one line later on the "default database must exist" assertion,
+        # so "the server does not start" alone does not tell the two builds apart.
+        assert node.contains_in_log("Caught exception while loading metadata: Code: 669")
+        assert not node.contains_in_log("Skipping database default")
+    finally:
+        remove_database_metadata(node, "default")
+        move_file(node, "metadata/default.sql.orig", database_metadata_path("default"))
+        restore_database_collections(node)
+        node.start_clickhouse()
