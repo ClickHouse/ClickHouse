@@ -1,0 +1,8 @@
+tuple alias with CUBE	4
+tuple alias with ROLLUP	4
+tuple function with CUBE	4
+tuple function with ROLLUP	4
+tuple key with scalar and CUBE	10
+tuple key with scalar and ROLLUP	7
+GROUP BY ALL with tuple and CUBE	4
+GROUP BY ALL with tuple and ROLLUP	4
