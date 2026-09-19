@@ -1248,14 +1248,18 @@ void AlterCommand::apply(
 
         MergeTreeSettings effective_settings;
         bool any_mt_setting = false;
+        SettingsChanges builtin_changes;
         for (const auto & change : settings_from_storage)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+                builtin_changes.push_back(change);
                 any_mt_setting = true;
             }
         }
+        /// Only the implicit-index settings below are read here, and this runs before the statement is
+        /// known to be allowed, so the `disk` setting is left unresolved rather than creating the disk.
+        effective_settings.applyChangesLeavingDiskUnresolved(builtin_changes);
         if (any_mt_setting)
         {
             metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];

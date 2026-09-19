@@ -2,11 +2,11 @@
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test1/');
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='/var/lib/clickhouse/disks/02963_test1/');
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='/var/lib/clickhouse/disks/02963_test2/'); -- { serverError BAD_ARGUMENTS }
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
@@ -26,7 +26,7 @@ settings disk='s3_disk_02963';
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='s3_disk_02963', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
+settings disk=disk(name='s3_disk_02963', type = object_storage, object_storage_type = local_blob_storage, path='/var/lib/clickhouse/disks/02963_test2/'); -- { serverError BAD_ARGUMENTS }
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()

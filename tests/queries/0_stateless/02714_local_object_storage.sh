@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT "${settings[@]}" -nm -q "
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(
         type = 'local_blob_storage',
-        path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/');
+        path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/');
 
     INSERT INTO test SELECT 1, 'test';
     SELECT * FROM test;
@@ -39,7 +39,7 @@ $CLICKHOUSE_CLIENT "${settings[@]}" -nm -q "
         type = 'cache',
         max_size = '10Mi',
         path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/',
-        disk = disk(type='local_blob_storage', path='${server_path}/disks/${CLICKHOUSE_TEST_UNIQUE_NAME}/'));
+        disk = disk(type='local_blob_storage', path='${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/'));
 
     INSERT INTO test SELECT 1, 'test';
     SELECT * FROM test;

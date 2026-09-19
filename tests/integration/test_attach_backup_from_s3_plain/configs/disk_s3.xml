@@ -1,5 +1,8 @@
 <?xml version="1.0"?>
 <clickhouse>
+    <!-- The test attaches a table with the disk written out in the query, which names a directory of
+         the local filesystem, so that directory has to be allowed for disks defined in SQL. -->
+    <custom_local_disks_base_directory>/local_plain/</custom_local_disks_base_directory>
     <storage_configuration>
         <disks>
             <backup_disk_s3_plain>
