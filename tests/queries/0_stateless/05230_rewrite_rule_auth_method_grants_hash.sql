@@ -7,7 +7,6 @@
 -- on every `IDENTIFIED` clause that only shares the authentication method.
 
 DROP USER IF EXISTS user_05230;
-CREATE DATABASE IF NOT EXISTS db_05230;
 
 CREATE RULE rule_05230_grants AS (CREATE USER user_05230 IDENTIFIED WITH no_password GRANTS (SELECT ON db_05230.t)) REJECT WITH 'blocked_05230';
 SET query_rules = 'rule_05230_grants';
@@ -43,5 +42,4 @@ DROP USER user_05230;
 SET query_rules = '';
 DROP RULE rule_05230_usage;
 
-DROP DATABASE db_05230;
 SELECT count() FROM system.users WHERE name = 'user_05230';
