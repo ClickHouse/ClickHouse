@@ -76,7 +76,8 @@ SET
         FROM t_correlated_update_source AS s
         WHERE s.id = t_correlated_update_target.id
           AND s.region = t_correlated_update_target.region
-    );
+    )
+WHERE 1;
 
 SELECT id, region, company_name, score FROM t_correlated_update_target ORDER BY region, id;
 
