@@ -72,20 +72,20 @@ def test_create() -> None:
     def do_checks() -> None:
         common_select_part = "select count() from system.scheduler where path ilike"
 
-        assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
+        assert node.query(f"{common_select_part} '%/admin/%' and type='request_queue'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
+        assert node.query(f"{common_select_part} '%/production/%' and type='request_queue'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
             == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/development/%' and type='fifo'") == "1\n"
+        assert node.query(f"{common_select_part} '%/development/%' and type='request_queue'") == "1\n"
 
         assert (
             node.query(
@@ -223,6 +223,26 @@ def test_max_waiting_queries_reached() -> None:
     assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
+def test_max_waiting_queries_updated() -> None:
+    # Regression for #101901: CREATE OR REPLACE WORKLOAD must propagate a max_waiting_queries change
+    # to the queue's limit. Before query-aware scheduling the queue kept its initial limit, so a
+    # raised limit was silently ignored and queries were still rejected against the old value.
+    node.query(
+        """
+        create resource query (query);
+        create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
+        create or replace workload all settings max_concurrent_queries=1, max_waiting_queries=3;
+        """
+    )
+
+    pool_all = QueryPool(6, "all")
+
+    pool_all.start()
+    ensure_total_concurrency(1)
+    ensure_workload_concurrency("all", 1)
+    pool_all.stop()
+    # The raised limit (3) is enforced, not the initial 1 — proving the update reached the queue.
+    assert "Workload limit `max_waiting_queries` has been reached: 3 of 3" in pool_all.last_error
 def test_admission_timeout_query_slot() -> None:
     # One query slot, unlimited waiting queue: a second query must WAIT for the slot (not be
     # rejected). With workload_admission_timeout_ms set it must fail after ~the timeout instead of
