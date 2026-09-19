@@ -92,6 +92,11 @@ struct LazyOutput
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
 
+    /// Set when the join compressed its stored right-side blocks (`enable_join_in_memory_compression`).
+    /// In that case a stored `StoredBlock` must be decompressed (via `HashJoin::getDecompressedColumns`) before reading.
+    const HashJoin * join = nullptr;
+    bool have_compressed = false;
+
     ColumnAccessIndexes output_access_indexes;
     bool has_row_store = false;
     bool has_columns = false;
@@ -171,6 +176,7 @@ public:
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
+        , decompress_resolver(join)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -227,6 +233,9 @@ public:
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
 
+        lazy_output.join = &join;
+        lazy_output.have_compressed = join.haveCompressed();
+
         const auto & access_indexes = join.getJoinedData()->column_access_indexes;
         /// Positions of the columnar (non-row-store) output columns in `StoredBlock::columns`.
         std::vector<size_t> columnar_positions;
@@ -266,9 +275,12 @@ public:
         /// requested positions (this query's `right_indexes`) under the index mutex, so StorageJoin queries
         /// selecting different right-column subsets each get their columns built rather than reusing a
         /// table scoped to some other query's columns.
+        /// Skip it when blocks were compressed: those emit through the cold `buildOutputFromBlocks` path
+        /// (see LazyOutput::buildOutput), which decompresses each block on demand, so a pre-resolved table
+        /// of raw pointers into the compressed (ColumnCompressed) columns would be both unused and unreadable.
         if constexpr (lazy)
         {
-            if (!is_join_get && !is_asof_join)
+            if (!is_join_get && !is_asof_join && !lazy_output.have_compressed)
             {
                 size_t columnar_columns_count = 0;
                 if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Initialized)
@@ -346,6 +358,13 @@ public:
 
     size_t matched_left_rows = 0;
 
+    /// Per-batch deduplication of decompressed stored blocks for the non-lazy path (`ANY` strictness,
+    /// `joinGet`), which materializes rows one by one via `appendFromBlock`: each distinct compressed
+    /// block is decompressed at most once and held here while this output batch is being built, with
+    /// the working set released early when it grows past the resolver's budget (the lazy path gets
+    /// the same guarantees from its own per-batch `DecompressResolver` instances).
+    DecompressResolver decompress_resolver;
+
     void reserve(bool need_replicate)
     {
         /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
@@ -370,6 +389,11 @@ private:
 
     void checkColumns(const StoredBlock & to_check)
     {
+        /// When stored blocks are compressed, `to_check` holds ColumnCompressed placeholders whose type
+        /// differs from the destination columns; the consistency check is decompression-unaware, so skip it.
+        if (lazy_output.have_compressed)
+            return;
+
         auto check = [&](size_t dst_idx, const IColumn * column_from_block)
         {
             const auto * dest_column = columns[dst_idx].get();

@@ -128,6 +128,12 @@ public:
     /// the subquery.
     void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
+
+    /// The minimum query plan serialization version that serializes this plan without dropping any
+    /// version-gated step setting. Callers on a task path without version negotiation (e.g. the
+    /// stateless-worker path) can pin to a low baseline version and raise it to this value only for
+    /// fragments that actually carry a newer-versioned setting.
+    UInt64 getRequiredSerializationVersion() const;
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
@@ -138,6 +144,15 @@ public:
 
     /// Check if already serialized
     bool isSerialized() const;
+
+    /// Serialize the plan for a receiver that supports query plan serialization up to `receiver_version`.
+    /// Reuses the cached serialization (see `ensureSerialized`) when it is compatible with the receiver,
+    /// and otherwise re-serializes on the fly at the receiver's version. This is what keeps the
+    /// pre-serialized parallel-replicas path version-correct in a mixed-version (rolling-upgrade) cluster:
+    /// the same cached plan is sent to connections with different negotiated versions, and a peer that
+    /// only understands an older version must get a stream at that version (with newer settings omitted)
+    /// instead of the cached newer-versioned stream, which it would reject.
+    void serializeForReceiver(WriteBuffer & out, size_t receiver_version) const;
 
     void resolveStorages(const ContextPtr & context);
 
@@ -241,7 +256,10 @@ public:
 private:
     struct SerializationFlags
     {
-        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        /// Query-plan serialization version of the stream. On serialize it is the negotiated version
+        /// (min of this server's and the receiver's supported version); on deserialize it is set from the
+        /// leading version field. Settings whose names a receiver of this version does not know are omitted
+        /// when writing them (see writeChangedBinary), and steps read it through ctx.version.
         UInt64 version = 0;
         bool skip_data = false;
         /// See `serializeForDistributedTask`.
@@ -269,6 +287,9 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+    /// The plan serialization version `serialized_plan` above was actually written at, used by
+    /// `serializeForReceiver` to decide whether the cache can be reused for a given receiver.
+    mutable UInt64 serialized_version = 0;
 
     enum class DistributedPlanDecision
     {

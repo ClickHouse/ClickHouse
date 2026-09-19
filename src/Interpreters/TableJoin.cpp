@@ -61,6 +61,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
+    extern const SettingsBool enable_join_in_memory_compression;
     extern const SettingsUInt64 default_max_bytes_in_join;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
@@ -214,6 +215,7 @@ TableJoin::TableJoin(
     , join_use_nulls(settings[Setting::join_use_nulls])
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
+    , enable_join_in_memory_compression(settings[Setting::enable_join_in_memory_compression])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
     , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
     , join_algorithms(settings[Setting::join_algorithm])
@@ -248,6 +250,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , join_use_nulls(join_use_nulls_)
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
+    , enable_join_in_memory_compression(settings.enable_join_in_memory_compression)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , max_joined_block_bytes(settings.max_joined_block_size_bytes)
     , joined_block_split_single_row(settings.joined_block_split_single_row)
@@ -269,7 +272,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
-    , max_memory_usage(settings.max_bytes_in_join)
+    , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , enable_analyzer(true)

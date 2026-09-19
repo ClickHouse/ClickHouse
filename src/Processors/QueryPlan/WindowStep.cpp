@@ -321,6 +321,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
+UInt64 WindowStep::getRequiredSerializationVersion() const
+{
+    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP;
+}
+
 void WindowStep::serialize(Serialization & ctx) const
 {
     /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
