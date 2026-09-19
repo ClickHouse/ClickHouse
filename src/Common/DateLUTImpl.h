@@ -435,6 +435,7 @@ private:
         return lut[toLUTIndex(v)];
     }
 
+public:
     /// Round `value` down to a multiple of `divisor` (towards negative infinity).
     /// Integer division truncates towards zero, so for negative values we shift the result one step down.
     /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
@@ -452,6 +453,7 @@ private:
         return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
     }
 
+private:
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
     /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
     /// outside any valid date range this sum can step just past the type boundary even though both operands

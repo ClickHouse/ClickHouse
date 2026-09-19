@@ -1821,16 +1821,12 @@ struct TimeSlotImpl
 
     static DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        if (likely(t.whole >= 0))
-            return {t.whole / 1800 * 1800, 0};
-        return {(t.whole + 1 - 1800) / 1800 * 1800, 0};
+        return {DateLUTImpl::roundDownToMultiple(t.whole, 1800), 0};
     }
 
     static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
     {
-        if (likely(t.whole >= 0))
-            return {t.whole / 1800 * 1800, 0};
-        return {(t.whole + 1 - 1800) / 1800 * 1800, 0};
+        return {DateLUTImpl::roundDownToMultiple(t.whole, 1800), 0};
     }
 
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)
