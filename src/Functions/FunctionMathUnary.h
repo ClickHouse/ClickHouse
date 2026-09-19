@@ -62,6 +62,15 @@ private:
         return Impl::always_returns_float64 ? std::make_shared<DataTypeFloat64>() : nullptr;
     }
 
+    /// Impls whose kernel reads `src` after it has already written `dst` cannot run in place.
+    static constexpr bool impl_reads_src_after_writing_dst = []
+    {
+        if constexpr (requires { Impl::reads_src_after_writing_dst; })
+            return Impl::reads_src_after_writing_dst;
+        else
+            return false;
+    }();
+
     template <typename T, typename ReturnType>
     static void executeInIterations(const T * src_data, ReturnType * dst_data, size_t size)
     {
@@ -138,10 +147,21 @@ private:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
-            dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+        if constexpr (impl_reads_src_after_writing_dst)
+        {
+            PODArray<ReturnType> converted(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                converted[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
 
-        executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
+            executeInIterations(converted.data(), dst_data.data(), input_rows_count);
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+
+            executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
+        }
 
         return dst;
     }
@@ -190,5 +210,59 @@ struct UnaryFunctionVectorized
         *dst = Function(static_cast<Float64>(*src));
     }
 };
+
+
+/// Whole-column vectorized unary math impl over a `void (const double *, size_t, double *)` kernel.
+/// Always returns Float64, matching the historical behavior of these functions.
+/// `ReadsSrcAfterWritingDst` must be set for kernels that re-read `src` after writing `dst`
+/// (e.g. the `libm` fallback in `FastTrig`); it makes the callers keep the source in a buffer
+/// separate from the destination instead of running the kernel in place.
+template <typename Name, void (*Kernel)(const double *, size_t, double *), bool ReadsSrcAfterWritingDst = false>
+struct VectorizedFloat64Impl
+{
+    static constexpr auto name = Name::name;
+    static constexpr auto rows_per_iteration = 0;
+    static constexpr bool always_returns_float64 = true;
+    static constexpr bool reads_src_after_writing_dst = ReadsSrcAfterWritingDst;
+
+    /// No `__restrict`: in-place-capable kernels are called with `src == dst` on the Decimal path.
+    template <typename T>
+    static void execute(const T * src, size_t size, Float64 * dst)
+    {
+        if constexpr (std::is_same_v<T, Float64>)
+        {
+            Kernel(src, size, dst);
+        }
+        else if constexpr (ReadsSrcAfterWritingDst)
+        {
+            /// Integer inputs already arrive as Float64, so this only runs for Float32/BFloat16 columns.
+            /// The kernel re-reads `src` after writing `dst`, so the promoted values must live in a
+            /// buffer separate from `dst`.
+            PODArray<Float64> promoted(size);
+            for (size_t i = 0; i < size; ++i)
+                promoted[i] = static_cast<Float64>(src[i]);
+            Kernel(promoted.data(), size, dst);
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = static_cast<Float64>(src[i]);
+            Kernel(dst, size, dst);
+        }
+    }
+};
+
+#if USE_FASTOPS
+
+/// log_b(x) = ln(x) / ln(b). `NFastOps::Log` handles all special values (0 -> -inf,
+/// negatives -> NaN, +inf -> +inf), which the finite scale factor preserves.
+inline void fastNaturalLogScaled(const double * src, size_t size, double * dst, double inv_ln_base)
+{
+    NFastOps::Log<true>(src, size, dst);
+    for (size_t i = 0; i < size; ++i)
+        dst[i] *= inv_ln_base;
+}
+
+#endif
 
 }
