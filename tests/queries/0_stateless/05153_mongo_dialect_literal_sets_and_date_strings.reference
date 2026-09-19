@@ -1,0 +1,11 @@
+-- a literal array and a literal document are values
+[1,2,3]	{"a":1,"b":{"c":"d"}}	$a
+-- a set difference is a set
+[1]
+-- a date read in the time zone the operator names
+1767225600	1767243600	1767243600
+-- a field of the date operator that answers a value of its own
+Code: 48. The 'onError' field of '$dateFromString' is not supported
+-- an Extended JSON number outside the range of its wrapper
+Code: 36. The value 2147483648 of '$numberInt' is out of range
+Code: 36. The value -2147483649 of '$numberInt' is out of range

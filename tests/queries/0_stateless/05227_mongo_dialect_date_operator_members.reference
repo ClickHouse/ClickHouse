@@ -1,0 +1,16 @@
+-- a day truncated in UTC starts on the 9th, in New York on the 9th at 05:00 UTC
+1709942400	1709960400
+-- a week starts on Sunday unless told otherwise: the 3rd, or Monday the 4th
+2024-03-03	2024-03-04	2024-03-03
+-- a day added in New York is 23 hours long that night
+1710113400	1710109800	1710030600
+-- a difference in days counts the midnights of the time zone: one in UTC, none in New York
+1	0
+-- a difference in weeks counts the starts of a week: Sunday the 10th is one, Monday the 11th is not yet
+1	0	-1
+-- what cannot be honoured is refused
+Code: 48. Only a 'binSize' of 1 is supported in '$dateTrunc'
+Code: 48. A week of '$dateTrunc' can start on Sunday or on Monday only, a 'startOfWeek' of 'wednesday' is not supported
+Code: 36. The 'startOfWeek' of '$dateDiff' must be a string
+Code: 48. The 'onNull' field of '$dateAdd' is not supported
+Code: 48. The 'collation' field of '$dateTrunc' is not supported

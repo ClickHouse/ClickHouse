@@ -372,6 +372,13 @@ endif()
 add_object_library(clickhouse_backups Backups)
 
 add_object_library(clickhouse_core Core)
+# The Mongo wire protocol depends on libbson/bsoncxx (mongo-cxx-driver) for BSON and on the
+# Mongo query dialect (src/Parsers/Mongo), which in turn needs rapidjson.
+if (TARGET ch_contrib::mongocxx AND TARGET ch_contrib::rapidjson)
+    add_object_library(clickhouse_core_mongo Core/Mongo)
+    add_object_library(clickhouse_core_mongo_wire Core/Mongo/Wire)
+    add_object_library(clickhouse_core_mongo_handlers Core/Mongo/Handlers)
+endif()
 list (APPEND dbms_sources Common/ExceptionExt.cpp)
 
 add_object_library(clickhouse_core_mysql Core/MySQL)

@@ -1,0 +1,12 @@
+-- the values an update operator cannot write
+Code: 48. The value of '$inc' must be a scalar, an array, or an Extended JSON wrapper of them
+Code: 48. The value of '$min' must be a scalar, an array, or an Extended JSON wrapper of them
+Code: 48. Cannot assign the empty document to the field 'name': a document is stored as one column per field, so an empty one names no column
+Code: 36. A field name of the update operator '$set' must not be empty
+Code: 36. A field name of an assigned document must not be empty
+-- the regular expression options an operator cannot combine
+Code: 36. The 'options' of '$regexMatch' cannot be set next to a regular expression that carries options of its own
+Code: 36. The 'options' of '$regexMatch' must be a string
+Code: 36. Unsupported regular expression option 'z'
+-- the server is still healthy
+1	alpha	1
