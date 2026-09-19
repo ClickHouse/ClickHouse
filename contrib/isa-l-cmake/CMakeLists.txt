@@ -189,12 +189,4 @@ target_include_directories(_isal
         PUBLIC ${ISAL_SOURCE_DIR}/crc
         PUBLIC ${ISAL_SOURCE_DIR}/erasure_code)
 
-# Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
-# Otherwise nasm compiler would fail to proceed due to unrecognition of "-fno-sanitize=undefined"
-if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
-    get_target_property(target_options _isal COMPILE_OPTIONS)
-    list(REMOVE_ITEM target_options "-fno-sanitize=undefined")
-    set_property(TARGET _isal PROPERTY COMPILE_OPTIONS ${target_options})
-endif()
-
 add_library(ch_contrib::isal ALIAS _isal)
