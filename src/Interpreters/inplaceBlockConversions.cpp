@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -233,6 +234,17 @@ std::optional<ActionsDAG> createExpressions(
     auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
     ActionsDAG dag(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
+
+    /// Same as in `createExpressionsAnalyzer`: the actions are executed as a standalone
+    /// `ExpressionActions` over a block, so no `CreatingSet` step ever builds the deferred set of a
+    /// column default containing an `IN` over a table, and `FunctionIn` would report "Not-ready Set is
+    /// passed". Unlike the analyzer path, the set registered here already carries its own plan, so it
+    /// only has to be filled. This path is reachable only for a query another server sent with the
+    /// old query analysis, which is no longer selectable by a user since v26.9.
+    for (const auto & subquery : expression_analyzer.getPreparedSets()->getSubqueries())
+        if (!subquery->get())
+            subquery->buildSetInplace(context, /*allow_interactive_cancel=*/ false);
+
     return ActionsDAG::merge(std::move(dag), std::move(actions));
 }
 
@@ -265,6 +277,13 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
+
+    /// The actions are executed as a standalone `ExpressionActions` over a block, with no query plan
+    /// to carry a `CreatingSet` step, so a column default containing `IN <table>` has to have its set
+    /// filled here. This must come after the actions are built: planning a set subquery renames the
+    /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
+    /// look the set up by, so building first would make the lookup miss.
+    buildPreparedSetsInplace(planner_context, execution_context);
 
     NamesWithAliases result_columns;
     for (size_t i = 0; i < expression->getChildren().size(); ++i)
