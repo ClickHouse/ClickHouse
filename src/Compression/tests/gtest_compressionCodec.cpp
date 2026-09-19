@@ -1239,16 +1239,26 @@ INSTANTIATE_TEST_SUITE_P(DoubleDeltaUnalignedTranscode,
 );
 
 
+/// The corner points fed to the generator below are negative, so over an unsigned `ValueType` every
+/// addition of this recurrence wraps around - which is the sequence the test is built to exercise.
+/// All three additions live in one annotated function, both because `no_sanitize` does not reach a
+/// lambda body and because a helper per addition would still leave the accumulators unsigned.
+template <typename DeltaType>
+NO_SANITIZE_UNSIGNED_OVERFLOW auto wrappedDoubleDeltaStep(DeltaType dd, Int64 & prev, Int64 & prev_delta)
+{
+    const auto curr = dd + prev + prev_delta;
+    prev = curr;
+    prev_delta = dd + prev_delta;
+    return curr;
+}
+
 template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
     auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
-        const auto curr = dd + prev + prev_delta;
-        prev = curr;
-        prev_delta = dd + prev_delta;
-        return curr;
+        return wrappedDoubleDeltaStep(dd, prev, prev_delta);
     };
 
     auto ret = generateSeq<ValueType>(G(SameValueGenerator(42)), 0, 3);
