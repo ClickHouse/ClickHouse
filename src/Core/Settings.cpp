@@ -1489,7 +1489,7 @@ Possible values:
 - `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
-Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
+Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas, provided the target table is also a replicated MergeTree. To enable it:
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
 )", 0) \
