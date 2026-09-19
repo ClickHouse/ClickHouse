@@ -88,6 +88,7 @@ struct DecimalOpHelpers
     static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
     {
         VectorWithMemoryTracking<UInt8> result;
+        result.reserve(number.size());
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
