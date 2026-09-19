@@ -32,7 +32,9 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <optional>
+#include <stack>
 #include <string_view>
+#include <unordered_set>
 #include <variant>
 
 namespace DB
@@ -142,44 +144,6 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
-    static PrettyColumnName formatFilterPretty(
-        const ActionsDAG & dag,
-        const String & column_name,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
-    {
-        const auto * root = dag.tryFindInOutputs(column_name);
-        if (!root)
-            return PrettyColumnName(trimColumnIdentifier(column_name));
-
-        auto atoms = ActionsDAG::extractConjunctionAtoms(root);
-
-        std::vector<String> user_parts;
-        std::vector<String> rf_parts;
-        for (const auto * atom : atoms)
-        {
-            if (atom->type == ActionsDAG::ActionType::FUNCTION
-                && atom->function_base
-                && atom->function_base->getName() == "__applyFilter")
-                rf_parts.push_back(formatNodePretty(atom, pretty_names, runtime_filter_names, subquery_set_names, 4));
-            else
-                user_parts.push_back(formatNodePretty(atom, pretty_names, runtime_filter_names, subquery_set_names, 4));
-        }
-
-        String expression;
-        if (!user_parts.empty())
-            expression = fmt::format(" {}", fmt::join(user_parts, " AND "));
-        if (expression.empty() && rf_parts.empty())
-            expression = fmt::format(" {}", trimColumnIdentifier(column_name));
-
-        String annotation;
-        if (!rf_parts.empty())
-            annotation = fmt::format("Runtime filters: {}", fmt::join(rf_parts, " AND "));
-
-        return {std::move(expression), std::move(annotation)};
-    }
-
     namespace
     {
         struct OperatorInfo
@@ -238,6 +202,126 @@ namespace QueryPlanFormat
             /// (`BuildRuntimeFilterStep::getFilterName`). Its VALUE is the volatile per-plan-build
             /// rendezvous key, which must never surface in EXPLAIN — so key on the result name.
             return node->children[0]->result_name;
+        }
+
+        /// Rendering a DAG as a tree prints a subtree once per path that reaches it, so the text can be
+        /// exponential in expression depth while the DAG stays small. Hence a cap per expression.
+        constexpr size_t MAX_EXPRESSION_LENGTH = 8192;
+        constexpr std::string_view TRUNCATED_MARKER = "...";
+
+        /// One budget for the whole of one expression: a per-call allowance would leave the total
+        /// exponential, since every sibling would start over.
+        struct LengthBudget
+        {
+            size_t remaining = MAX_EXPRESSION_LENGTH;
+
+            bool exhausted() const { return remaining == 0; }
+            void charge(size_t size) { remaining -= std::min(size, remaining); }
+
+            /// Clips to what is left, so one oversized leaf cannot carry the expression past the cap.
+            String take(String text)
+            {
+                if (text.size() > remaining)
+                {
+                    text.resize(remaining);
+                    text += TRUNCATED_MARKER;
+                    remaining = 0;
+                    return text;
+                }
+                remaining -= text.size();
+                return text;
+            }
+        };
+
+        /// The atoms of a conjunction fall into two classes, the user condition and the runtime filters,
+        /// each printed as its own line with a budget of its own, so the quota is per class as well. The
+        /// quota exceeds the atoms one budget can render, so on its own it never drops a printable atom.
+        constexpr size_t MAX_CONJUNCTION_ATOMS_PER_CLASS = MAX_EXPRESSION_LENGTH / 2;
+
+        bool isRuntimeFilterAtom(const ActionsDAG::Node * node)
+        {
+            return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+                && node->function_base->getName() == "__applyFilter";
+        }
+
+        struct ConjunctionAtoms
+        {
+            ActionsDAG::NodeRawConstPtrs user_atoms;
+            ActionsDAG::NodeRawConstPtrs runtime_filter_atoms;
+            bool user_truncated = false;
+            bool runtime_filter_truncated = false;
+        };
+
+        /// Splits a conjunction into its atoms, at most `max_atoms` per class. Duplicates are kept, so
+        /// the atoms shown stay the ones the optimizer sees.
+        ConjunctionAtoms extractConjunctionAtomsBounded(const ActionsDAG::Node * predicate, size_t max_atoms)
+        {
+            /// The quotas alone cannot stop the walk: a conjunction holding only one class never fills
+            /// the other. Bound the visits as well, at what filling both quotas would take.
+            const size_t max_visits = 2 * max_atoms;
+            size_t visits = 0;
+
+            ConjunctionAtoms result;
+
+            std::stack<const ActionsDAG::Node *> stack;
+            stack.push(predicate);
+
+            while (!stack.empty())
+            {
+                if (result.user_atoms.size() >= max_atoms && result.runtime_filter_atoms.size() >= max_atoms)
+                    break;
+
+                if (visits >= max_visits)
+                    break;
+
+                ++visits;
+                const auto * node = stack.top();
+                stack.pop();
+                if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+                    && node->function_base->getName() == "and")
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+
+                    continue;
+                }
+
+                const bool is_runtime_filter = isRuntimeFilterAtom(node);
+                auto & atoms = is_runtime_filter ? result.runtime_filter_atoms : result.user_atoms;
+                bool & truncated = is_runtime_filter ? result.runtime_filter_truncated : result.user_truncated;
+
+                if (atoms.size() >= max_atoms)
+                    truncated = true;
+                else
+                    atoms.push_back(node);
+            }
+
+            /// Whatever is left on the stack belongs to one class or the other, and that alone decides
+            /// which line is marked partial. Presence is all this asks, so one visit per node answers it.
+            std::unordered_set<const ActionsDAG::Node *> seen;
+            while (!stack.empty())
+            {
+                const auto * node = stack.top();
+                stack.pop();
+                if (!seen.insert(node).second)
+                    continue;
+
+                if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+                    && node->function_base->getName() == "and")
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+
+                    continue;
+                }
+
+                if (isRuntimeFilterAtom(node))
+                    result.runtime_filter_truncated = true;
+                else
+                    result.user_truncated = true;
+            }
+
+            return result;
         }
 
         String formatSetPretty(
@@ -309,37 +393,50 @@ namespace QueryPlanFormat
         }
     }
 
-    String formatNodePretty(
+    static String formatNodePrettyImpl(
         const ActionsDAG::Node * node,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
         const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
         std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
-        int parent_precedence)
+        int parent_precedence,
+        LengthBudget & budget)
     {
         using ActionType = ActionsDAG::ActionType;
+
+        /// Stopping the descent is what bounds the expression, however many parents reach a subtree.
+        if (budget.exhausted())
+            return String(TRUNCATED_MARKER);
+
+        auto charge = [&budget](size_t size) { budget.charge(size); };
+        auto emit = [&budget](String text) -> String { return budget.take(std::move(text)); };
+        auto recurse = [&](const ActionsDAG::Node * child, int precedence)
+        {
+            return formatNodePrettyImpl(child, pretty_names, runtime_filter_names, subquery_set_names, precedence, budget);
+        };
 
         /// A masked secret carrier (a folded constant, which may be a FUNCTION node with a constant
         /// column, not only a COLUMN node) must render as `[HIDDEN]` regardless of its node type,
         /// before we dispatch into formatting its value or its child expression.
         if (node->is_masked_secret)
-            return "[HIDDEN]";
+            return emit("[HIDDEN]");
 
         switch (node->type)
         {
             case ActionType::INPUT:
             {
                 if (auto it = pretty_names.find(node->result_name); it != pretty_names.end())
-                    return it->second.expression;
-                return trimColumnIdentifier(node->result_name);
+                    return emit(it->second.expression);
+                return emit(trimColumnIdentifier(node->result_name));
             }
 
             case ActionType::COLUMN:
-                return formatConstant(node);
+                return emit(formatConstant(node));
             case ActionType::ALIAS:
-                return formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, parent_precedence);
+                return recurse(node->children.front(), parent_precedence);
 
             case ActionType::ARRAY_JOIN:
-                return "arrayJoin(" + formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names) + ")";
+                charge(std::string_view("arrayJoin()").size());
+                return "arrayJoin(" + recurse(node->children.front(), 0) + ")";
 
             case ActionType::FUNCTION:
             {
@@ -361,25 +458,28 @@ namespace QueryPlanFormat
                         const auto & build_column = it->second.build_column_name;
                         const auto & build_table = it->second.build_table_name;
                         if (build_table.empty())
-                            return fmt::format("{}({}, {})", pretty_filter_name, probe_column, build_column);
-                        return fmt::format("{}({}, {} from {})", pretty_filter_name, probe_column, build_column, build_table);
+                            return emit(fmt::format("{}({}, {})", pretty_filter_name, probe_column, build_column));
+                        return emit(fmt::format("{}({}, {} from {})", pretty_filter_name, probe_column, build_column, build_table));
                     }
-                    return fmt::format("{}({})", filter_id, probe_column);
+                    return emit(fmt::format("{}({})", filter_id, probe_column));
                 }
 
                 if ((func_name == "_CAST" || func_name == "CAST") && node->children.size() == 2)
                 {
-                    auto inner = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names);
                     Field type_field;
                     node->children[1]->column->get(0, type_field);
-                    return "CAST(" + inner + " AS " + type_field.safeGet<String>() + ")";
+                    auto type_name = type_field.safeGet<String>();
+                    charge(std::string_view("CAST( AS )").size() + type_name.size());
+                    auto inner = recurse(node->children[0], 0);
+                    return "CAST(" + inner + " AS " + type_name + ")";
                 }
 
                 auto op_info = getOperatorInfo(func_name);
 
                 if (func_name == "not" && node->children.size() == 1)
                 {
-                    String result = "NOT " + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
+                    charge(std::string_view("NOT ").size());
+                    String result = "NOT " + recurse(node->children[0], op_info->precedence);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
@@ -387,17 +487,24 @@ namespace QueryPlanFormat
 
                 if (func_name == "negate" && node->children.size() == 1)
                 {
-                    String result = "-" + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
+                    charge(1);
+                    String result = "-" + recurse(node->children[0], op_info->precedence);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
                 }
 
                 if (func_name == "isNull" && node->children.size() == 1)
-                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence) + " IS NULL";
+                {
+                    charge(std::string_view(" IS NULL").size());
+                    return recurse(node->children[0], op_info->precedence) + " IS NULL";
+                }
 
                 if (func_name == "isNotNull" && node->children.size() == 1)
-                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence) + " IS NOT NULL";
+                {
+                    charge(std::string_view(" IS NOT NULL").size());
+                    return recurse(node->children[0], op_info->precedence) + " IS NOT NULL";
+                }
 
                 if ((func_name == "and" || func_name == "or") && node->children.size() >= 2)
                 {
@@ -405,7 +512,11 @@ namespace QueryPlanFormat
                     std::vector<String> parts;
                     parts.reserve(node->children.size());
                     for (const auto * child : node->children)
-                        parts.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence));
+                    {
+                        if (!parts.empty())
+                            charge(separator.size());
+                        parts.push_back(recurse(child, op_info->precedence));
+                    }
 
                     String result = fmt::format("{}", fmt::join(parts, separator));
                     if (op_info->precedence < parent_precedence)
@@ -415,23 +526,26 @@ namespace QueryPlanFormat
 
                 if (func_name == "arrayElement" && node->children.size() == 2)
                 {
-                    auto arr = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
-                    auto idx = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names);
+                    charge(2);
+                    auto arr = recurse(node->children[0], op_info->precedence);
+                    auto idx = recurse(node->children[1], 0);
                     return arr + "[" + idx + "]";
                 }
 
                 if (func_name == "tupleElement" && node->children.size() == 2)
                 {
-                    auto tup = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
-                    auto elem = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names);
+                    charge(1);
+                    auto tup = recurse(node->children[0], op_info->precedence);
+                    auto elem = recurse(node->children[1], 0);
                     return tup + "." + elem;
                 }
 
                 if (op_info && (op_info->symbol == "IN" || op_info->symbol == "NOT IN")
                     && node->children.size() == 2)
                 {
-                    auto lhs = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
+                    auto lhs = recurse(node->children[0], op_info->precedence);
                     auto rhs = formatSetPretty(node->children[1], subquery_set_names);
+                    charge(op_info->symbol.size() + 2 + rhs.size());
                     String result = fmt::format("{} {} {}", lhs, op_info->symbol, rhs);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
@@ -440,26 +554,44 @@ namespace QueryPlanFormat
 
                 if (op_info && !op_info->symbol.empty() && node->children.size() == 2)
                 {
-                    String result = fmt::format("{} {} {}",
-                        formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence),
-                        op_info->symbol,
-                        formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence));
+                    charge(op_info->symbol.size() + 2);
+                    auto lhs = recurse(node->children[0], op_info->precedence);
+                    auto rhs = recurse(node->children[1], op_info->precedence);
+                    String result = fmt::format("{} {} {}", lhs, op_info->symbol, rhs);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
                 }
 
+                charge(func_name.size() + 2);
                 std::vector<String> args;
                 args.reserve(node->children.size());
                 for (const auto * child : node->children)
-                    args.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names));
+                {
+                    if (!args.empty())
+                        charge(2);
+                    args.push_back(recurse(child, 0));
+                }
 
                 return func_name + "(" + fmt::format("{}", fmt::join(args, ", ")) + ")";
             }
 
             default:
-                return node->result_name;
+                return emit(node->result_name);
         }
+    }
+
+    String formatNodePretty(
+        const ActionsDAG::Node * node,
+        const std::unordered_map<String, PrettyColumnName> & pretty_names,
+        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        int parent_precedence)
+    {
+        LengthBudget budget;
+        auto result = formatNodePrettyImpl(node, pretty_names, runtime_filter_names, subquery_set_names, parent_precedence, budget);
+        clipToMaxLength(result);
+        return result;
     }
 
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names)
@@ -467,6 +599,98 @@ namespace QueryPlanFormat
         if (auto it = pretty_names.find(column_name); it != pretty_names.end())
             return it->second.expression;
         return trimColumnIdentifier(column_name);
+    }
+
+    bool appendBounded(String & target, std::string_view text)
+    {
+        if (target.size() >= MAX_EXPRESSION_LENGTH)
+            return false;
+
+        if (target.size() + text.size() > MAX_EXPRESSION_LENGTH)
+        {
+            target.append(text, 0, MAX_EXPRESSION_LENGTH - target.size());
+            target += TRUNCATED_MARKER;
+            return false;
+        }
+
+        target += text;
+        return true;
+    }
+
+    /// Every subtree collapsed after the budget ran out still contributes a marker of its own, so the
+    /// text can end up slightly above the cap. Clip to make the limit exact.
+    void clipToMaxLength(String & text)
+    {
+        if (text.size() > MAX_EXPRESSION_LENGTH)
+        {
+            text.resize(MAX_EXPRESSION_LENGTH);
+            text += TRUNCATED_MARKER;
+        }
+    }
+
+    static PrettyColumnName formatFilterPretty(
+        const ActionsDAG & dag,
+        const String & column_name,
+        const std::unordered_map<String, PrettyColumnName> & pretty_names,
+        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+    {
+        const auto * root = dag.tryFindInOutputs(column_name);
+        if (!root)
+            return PrettyColumnName(trimColumnIdentifier(column_name));
+
+        /// The split cannot be budgeted: it runs before anything is rendered, and allocates one atom per
+        /// path on its own. Each class gets a quota, or the class the walk reaches last would be erased.
+        auto split = extractConjunctionAtomsBounded(root, MAX_CONJUNCTION_ATOMS_PER_CLASS);
+
+        const auto render = [&](const ActionsDAG::NodeRawConstPtrs & atoms, bool dropped_atoms)
+        {
+            LengthBudget budget;
+            std::vector<String> parts;
+            bool truncated = dropped_atoms;
+            for (const auto * atom : atoms)
+            {
+                if (budget.exhausted())
+                {
+                    truncated = true;
+                    break;
+                }
+                if (!parts.empty())
+                    budget.charge(std::string_view(" AND ").size());
+                parts.push_back(
+                    formatNodePrettyImpl(atom, pretty_names, runtime_filter_names, subquery_set_names, 4, budget));
+            }
+            return std::pair{std::move(parts), truncated};
+        };
+
+        auto [user_parts, user_truncated] = render(split.user_atoms, split.user_truncated);
+        auto [rf_parts, rf_truncated] = render(split.runtime_filter_atoms, split.runtime_filter_truncated);
+
+        String expression;
+        bool expression_truncated = user_truncated;
+        if (!user_parts.empty())
+            expression = fmt::format(" {}", fmt::join(user_parts, " AND "));
+        /// An empty condition is not printed at all, so a marker with nothing before it would read as
+        /// "no condition" rather than "more to come": name the filter column to attach the marker to.
+        if (expression.empty() && (rf_parts.empty() || expression_truncated))
+            expression = fmt::format(" {}", trimColumnIdentifier(column_name));
+        if (expression_truncated)
+            expression += fmt::format(" {}", TRUNCATED_MARKER);
+
+        /// Marked even when nothing nameable is left, so an annotation cut short does not read as absent.
+        String annotation;
+        if (!rf_parts.empty() || rf_truncated)
+        {
+            annotation = fmt::format("Runtime filters:{}{}",
+                rf_parts.empty() ? "" : " ", fmt::join(rf_parts, " AND "));
+            if (rf_truncated)
+                annotation += fmt::format(" {}", TRUNCATED_MARKER);
+        }
+
+        clipToMaxLength(expression);
+        clipToMaxLength(annotation);
+
+        return {std::move(expression), std::move(annotation)};
     }
 
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings)
@@ -495,25 +719,31 @@ namespace QueryPlanFormat
             if (!aggregate_parameters.empty())
                 pretty += ')';
 
+            /// Each argument is bounded on its own, so k of them concatenate to k times the cap.
             pretty += '(';
             bool first = true;
             for (const auto & arg : agg.argument_names)
             {
-                if (!first)
-                    pretty += ", ";
+                if (!first && !appendBounded(pretty, ", "))
+                    break;
                 first = false;
                 if (auto it = pretty_names.find(arg); it != pretty_names.end())
-                    pretty += it->second.expression;
-                else
-                    pretty += trimColumnIdentifier(arg);
+                {
+                    if (!appendBounded(pretty, it->second.expression))
+                        break;
+                }
+                else if (!appendBounded(pretty, trimColumnIdentifier(arg)))
+                    break;
             }
             pretty += ')';
+            clipToMaxLength(pretty);
             pretty_names.try_emplace(agg.column_name, PrettyColumnName(std::move(pretty)));
         }
     }
 
     static void addWindowFunctionPrettyNames(const WindowDescription & window_description, std::unordered_map<String, PrettyColumnName> & pretty_names)
     {
+        /// Each rendered column name is bounded on its own, so k of them compose to k times the cap.
         String spec = "(";
 
         if (!window_description.partition_by.empty())
@@ -521,27 +751,30 @@ namespace QueryPlanFormat
             spec += "PARTITION BY ";
             for (size_t i = 0; i < window_description.partition_by.size(); ++i)
             {
-                if (i > 0)
-                    spec += ", ";
-                spec += formatColumnPretty(window_description.partition_by[i].column_name, pretty_names);
+                if (i > 0 && !appendBounded(spec, ", "))
+                    break;
+                if (!appendBounded(spec, formatColumnPretty(window_description.partition_by[i].column_name, pretty_names)))
+                    break;
             }
         }
 
         if (!window_description.partition_by.empty() && !window_description.order_by.empty())
-            spec += ' ';
+            appendBounded(spec, " ");
 
         if (!window_description.order_by.empty())
         {
-            spec += "ORDER BY ";
+            appendBounded(spec, "ORDER BY ");
             for (size_t i = 0; i < window_description.order_by.size(); ++i)
             {
-                if (i > 0)
-                    spec += ", ";
+                if (i > 0 && !appendBounded(spec, ", "))
+                    break;
                 const auto & desc = window_description.order_by[i];
-                spec += formatColumnPretty(desc.column_name, pretty_names);
-                spec += desc.direction > 0 ? " ASC" : " DESC";
-                if (desc.with_fill)
-                    spec += " WITH FILL";
+                if (!appendBounded(spec, formatColumnPretty(desc.column_name, pretty_names)))
+                    break;
+                if (!appendBounded(spec, desc.direction > 0 ? " ASC" : " DESC"))
+                    break;
+                if (desc.with_fill && !appendBounded(spec, " WITH FILL"))
+                    break;
             }
         }
 
@@ -564,12 +797,14 @@ namespace QueryPlanFormat
             pretty += '(';
             for (size_t i = 0; i < func.argument_names.size(); ++i)
             {
-                if (i > 0)
-                    pretty += ", ";
-                pretty += formatColumnPretty(func.argument_names[i], pretty_names);
+                if (i > 0 && !appendBounded(pretty, ", "))
+                    break;
+                if (!appendBounded(pretty, formatColumnPretty(func.argument_names[i], pretty_names)))
+                    break;
             }
             pretty += ") OVER ";
             pretty += spec;
+            clipToMaxLength(pretty);
 
             pretty_names[func.column_name] = PrettyColumnName(std::move(pretty));
         }
@@ -600,30 +835,12 @@ namespace QueryPlanFormat
 
     using PerPlanColumnMaps = std::unordered_map<const QueryPlan *, PrettyColumnNameMap>;
 
-    static void buildPrettyNamesForNode(
+    static void buildPrettyNamesForOneNode(
         const QueryPlan::Node * node,
         PrettyColumnNameMap & pretty_names,
         PrettyRuntimeFilterNameMap & runtime_filter_names,
-        PrettySetNameMap & subquery_set_names,
-        PerPlanColumnMaps & per_plan_columns)
+        PrettySetNameMap & subquery_set_names)
     {
-        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
-
-        for (auto * child_plan : node->step->getChildPlans())
-        {
-            if (child_plan && child_plan->getRootNode())
-            {
-                /// A child plan is a separate naming scope. Build its column names into their own map so
-                /// the parent sees the child's output columns as leaves (trimmed identifiers) rather than
-                /// the child's internal expressions; otherwise nested plans compound the rendering, e.g.
-                /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
-                /// so they stay shared across the whole tree.
-                auto & child_columns = per_plan_columns[child_plan];
-                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
-            }
-        }
-
         const auto & step = node->step;
         const auto & step_name = step->getName();
 
@@ -728,6 +945,61 @@ namespace QueryPlanFormat
                         subquery_set_names);
                 }
             }
+        }
+    }
+
+    /// Names children and child plans before the node itself, so every node sees its inputs as
+    /// already-rendered names. Iterative, because plan depth is not bounded by the query text.
+    static void buildPrettyNamesForNode(
+        const QueryPlan::Node * root,
+        PrettyColumnNameMap & root_columns,
+        PrettyRuntimeFilterNameMap & runtime_filter_names,
+        PrettySetNameMap & subquery_set_names,
+        PerPlanColumnMaps & per_plan_columns)
+    {
+        struct Frame
+        {
+            const QueryPlan::Node * node;
+            PrettyColumnNameMap * columns;
+            size_t children_taken = 0;
+            bool child_plans_taken = false;
+        };
+
+        std::vector<Frame> stack;
+        stack.push_back({root, &root_columns});
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back().node;
+            auto * columns = stack.back().columns;
+
+            /// One child per iteration, last to first, matching the order each name is first defined in.
+            if (stack.back().children_taken < node->children.size())
+            {
+                const auto * child = node->children[node->children.size() - 1 - stack.back().children_taken];
+                ++stack.back().children_taken;
+                stack.push_back({child, columns});
+                continue;
+            }
+
+            if (!stack.back().child_plans_taken)
+            {
+                stack.back().child_plans_taken = true;
+                /// A child plan is a separate naming scope. Build its column names into their own map so
+                /// the parent sees the child's output columns as leaves (trimmed identifiers) rather than
+                /// the child's internal expressions; otherwise nested plans compound the rendering, e.g.
+                /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
+                /// so they stay shared across the whole tree.
+                auto child_plans = node->step->getChildPlans();
+                /// Pushed back to front so they come off the stack front to back.
+                for (auto it = child_plans.rbegin(); it != child_plans.rend(); ++it)
+                    if (*it && (*it)->getRootNode())
+                        stack.push_back({(*it)->getRootNode(), &per_plan_columns[*it]});
+                continue;
+            }
+
+            stack.pop_back();
+            buildPrettyNamesForOneNode(node, *columns, runtime_filter_names, subquery_set_names);
         }
     }
 
