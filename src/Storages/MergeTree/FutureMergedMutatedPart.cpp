@@ -42,13 +42,11 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     if (parts_.empty())
         return;
 
-    const auto metadata_snapshot = parts_.front()->storage.getInMemoryMetadataPtr(parts_.front()->storage.getContext(), false);
-    const bool check_partition_value = metadata_snapshot->hasPartitionKey();
     for (const MergeTreeData::DataPartPtr & part : parts_)
     {
         const MergeTreeData::DataPartPtr & first_part = parts_.front();
 
-        if (check_partition_value && part->partition.value != first_part->partition.value)
+        if (part->partition.value != first_part->partition.value)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to merge parts {} and {} that are in different partitions",
                 first_part->name, part->name);
     }

@@ -6981,9 +6981,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 
 void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const
 {
-    if (!getInMemoryMetadataPtr(getContext(), false)->hasPartitionKey())
-        return;
-
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.getPartitionId(), lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
