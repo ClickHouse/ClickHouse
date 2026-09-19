@@ -41,7 +41,8 @@ std::vector<String> listFiles(
 constexpr size_t MAX_REPORTED_LISTING_ENTRIES = 10;
 
 /// `N entries: name (modification time), ...` for an error message that reports absence, or `0 entries`.
-/// Names are relative to `listed_prefix`, and a modification time is shown only where the storage reports one.
+/// A name is the part of the key after `listed_prefix`, or the whole key when there is none, and a modification
+/// time is shown only where the storage reports one.
 String describeListedObjects(const RelativePathsWithMetadata & entries, const String & listed_prefix, size_t max_entries);
 
 /// `name, name, ... and K more`, relative to `listed_prefix`.

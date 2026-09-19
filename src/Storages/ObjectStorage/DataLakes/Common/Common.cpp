@@ -86,7 +86,9 @@ namespace
 
 String relativeToPrefix(const String & key, const String & listed_prefix)
 {
-    return key.starts_with(listed_prefix) ? key.substr(listed_prefix.size()) : key;
+    if (!key.starts_with(listed_prefix) || key.size() == listed_prefix.size())
+        return key;
+    return key.substr(listed_prefix.size());
 }
 
 String joinCapped(const std::vector<String> & names, size_t total)

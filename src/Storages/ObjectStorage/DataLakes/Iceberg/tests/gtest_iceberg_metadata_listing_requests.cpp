@@ -63,11 +63,20 @@ public:
         if (!reveal_path.empty() && list_calls.load() == reveal_on_call)
             std::ofstream(reveal_path, std::ios::binary | std::ios::trunc);
         LocalObjectStorage::listObjects(path, children, max_keys);
+        /// `S3ObjectStorage::listObjects` passes `path` as the `ListObjectsV2` `Prefix` and reports keys
+        /// verbatim, so an object keyed exactly `path` is listed. A local directory cannot hold one.
+        if (report_prefix_as_object)
+        {
+            ObjectMetadata object_metadata;
+            object_metadata.last_modified = Poco::Timestamp::fromEpochTime(1000000000);
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(path, object_metadata));
+        }
     }
 
     mutable std::atomic<size_t> list_calls = 0;
     std::string reveal_path;
     size_t reveal_on_call = 0;
+    bool report_prefix_as_object = false;
 };
 
 }
@@ -138,6 +147,43 @@ TEST(IcebergMetadataListingRequests, ReportsTheListingThatDecidedTheThrow)
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
         const String message = e.message();
         EXPECT_NE(message.find("which held 1 entry: /late-arrival.text"), String::npos) << message;
+    }
+
+    EXPECT_EQ(object_storage->list_calls.load(), 5u);
+}
+
+TEST(IcebergMetadataListingRequests, ReportsAnObjectKeyedExactlyAsThePrefix)
+{
+    ScopedTempDir temporary_directory("ch_gtest_iceberg_metadata_listing_prefix_key");
+    auto table = temporary_directory.path / "default" / "test_table";
+    fs::create_directories(table / "metadata");
+
+    auto object_storage = std::make_shared<CountingLocalObjectStorage>(LocalObjectStorageSettings(
+        "test_iceberg_metadata_listing_prefix_key", temporary_directory.path.string(), /*read_only_=*/false));
+    object_storage->report_prefix_as_object = true;
+
+    DataLakeStorageSettings settings;
+
+    try
+    {
+        Iceberg::getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            table.string(),
+            settings,
+            /*metadata_cache=*/nullptr,
+            getContext().context,
+            &Poco::Logger::get("IcebergMetadataListingRequestsTest"),
+            /*table_uuid=*/std::nullopt,
+            CompressionMethod::None);
+        FAIL() << "Expected FILE_DOESNT_EXIST";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
+        const String message = e.message();
+        const String listed_prefix = (table / "metadata").string();
+        EXPECT_NE(
+            message.find("which held 1 entry: " + listed_prefix + " (2001-09-09T01:46:40Z)"), String::npos) << message;
     }
 
     EXPECT_EQ(object_storage->list_calls.load(), 5u);
