@@ -1,0 +1,9 @@
+direct monotonicity sweep, UTC (whole-hour offset, fast path): must never decrease
+[0,0,0,0,1,2]	1
+direct monotonicity sweep, Asia/Kolkata (+05:30, sub-hour offset, calendar path): must never decrease
+[10,11,12,13,14,15]	1
+partition pruning across the epoch: indexed count must match full-scan count
+4	4	1
+PK range analysis across the epoch: indexed count must match full-scan count
+3	3	1
+1	1	1

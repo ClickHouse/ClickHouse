@@ -1430,8 +1430,15 @@ public:
     /// but harmless, like for the `add*` functions below.
     NO_SANITIZE_UNDEFINED ALWAYS_INLINE Time toRelativeHourNum(Time t) const
     {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 3600;
+        if (offset_is_whole_number_of_hours_during_epoch)
+        {
+            /// Hour boundaries in absolute (UTC) time fall on exact multiples of 3600 seconds
+            /// regardless of which whole number of hours the offset is, so a single floor
+            /// division keeps this continuous (and thus genuinely monotonic) across the Unix
+            /// epoch, instead of switching to a differently-biased formula for `t < 0` as before.
+            /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+            return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD) / 3600 - (DATE_LUT_ADD / 3600);
+        }
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
