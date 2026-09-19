@@ -146,7 +146,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | JWT_IN_INTERSERVER              | 54476   | ClientInfo             | Adds a JWT-presence UInt8 + optional `String jwt` at the tail of ClientInfo. External clients (no JWT) send byte `0x00`. (Spelled `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER` in C++ — note the typo in the constant name.) |
 | QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. Query-plan serialization version `10` prefixes the serialized plan with `VarUInt max_threads` and `Bool concurrency_control`; when either is non-default, initiators use SQL shipping for peers below version `10` so the peer builds its plan from the transmitted query settings. |
 | PARALLEL_BLOCK_MARSHALLING      | 54478   | Block (Column)         | Server may wrap columns in `ColumnBLOB` (compressed inline) for parallel processing. Gated on the query having compression enabled AND `rows > 1`; otherwise the regular column wire format applies. Clients that never enable compression on outgoing Query packets see no wire change. |
-| VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Used for `*Cluster` table functions (`s3Cluster`, etc.). Current value: `8` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index` to the inter-server cluster read-task payload (the `ReadTaskResponse` body, which stays unspecified here — see below). External clients decode and ignore. |
+| VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Used for `*Cluster` table functions (`s3Cluster`, etc.). Current value: `12` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`). The value gates additive fields of the inter-server cluster read-task payload — see [ReadTaskResponse](#readtaskresponse) for the wire layout. Version `7` is reserved for a private-repository feature (Iceberg compaction), `8` adds an optional `read_source_index` to that payload, `9` adds Iceberg identity-partition-column information, `10` adds Iceberg change-data-capture information, `11` adds Iceberg deletion vectors, and `12` adds `ParquetFileBucketInfo::file_num_row_groups` and `ParquetFileBucketInfo::footer_digest`. External clients decode and ignore. |
 | OUT_OF_ORDER_BUCKETS_IN_AGGREGATION | 54480 | BlockInfo              | Adds field 3 (`out_of_order_buckets: Vec<Int32>`) to BlockInfo's field-tagged stream. Decoded as `[VarUInt count][Int32]*count`. External clients don't emit this themselves; the decoder reads any non-empty list the server sends. |
 | COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS | 54481 | Log, ProfileEvents, TableColumns | Server may wrap [`Log`](#log), [`ProfileEvents`](#profileevents), and [`TableColumns`](#tablecolumns) packet bodies in the [compression frame](/reference/interfaces/specs/NativeFormat#compression-frame). At this version all three bodies travel through the same optionally-compressed output path, which becomes a real compression frame only when the query has `compression = true`. Clients that never enable compression on outgoing Query packets see no wire change. |
 | REPLICATED_SERIALIZATION        | 54482   | Block (Column)         | Server may emit columns with kind_stack `0x04 = REPLICATED` — a dictionary-style compact form for repeated values — see [kind_stack and sparse encoding](/reference/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). Below this version the writer expanded such columns before sending. Decoded via index lookup (`elements[indexes[i]]` per row); leaf types plus `Nullable`/`Array`/`Tuple`/`Map`/`Nested`/`LowCardinality` inners supported. |
@@ -463,7 +463,7 @@ Server → Client. The reply to ClientHello on successful authentication.
 | 11 | nonce            | UInt64  | inter-server | INTERSERVER_SECRET_V2 (v54462) | 8-byte LE random nonce. The server's inter-server query-signing scheme uses it. External clients MUST decode it (to keep the stream aligned) and SHOULD ignore the value. |
 | 12 | server_settings  | Setting[] | universal | SERVER_SETTINGS (v54474)        | Server's non-default settings broadcast. Format: zero or more `(String key, VarUInt flags, String value)` triples, terminated by an empty key. Same as the [Query packet's settings list](#setting). |
 | 13 | query_plan_serialization_version | VarUInt | universal | QUERY_PLAN_SERIALIZATION (v54477) | Server's supported query-plan serialization version. External clients decode and ignore. |
-| 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. Current: `8`. The value gates additive fields in the inter-server cluster read-task payload (the otherwise-unspecified `ReadTaskResponse` body); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index`. External clients do not participate in cluster reads — they decode and ignore this field. |
+| 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. Current: `12`. The value gates additive fields in the inter-server cluster read-task payload — see [ReadTaskResponse](#readtaskresponse); version `7` is reserved for a private-repository feature (Iceberg compaction), `8` adds an optional `read_source_index`, `9` adds Iceberg identity-partition-column information, `10` adds Iceberg change-data-capture information, `11` adds Iceberg deletion vectors, and `12` adds `ParquetFileBucketInfo::file_num_row_groups` and `ParquetFileBucketInfo::footer_digest`. External clients do not participate in cluster reads — they decode and ignore this field. |
 
 **Rule** — an element of `password_complexity_rules`:
 
@@ -889,6 +889,42 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 1 | size    | UInt64 (little-endian) | Number of mark-range pairs that follow. Note: little-endian fixed-width, **not** VarUInt. |
 | 2 | ranges  | `size` repetitions of `(UInt64 begin, UInt64 end)`, each little-endian | Half-open `[begin, end)` mark intervals. |
 
+### ReadTaskResponse (packet type 9) {#readtaskresponse}
+
+Inter-server only: the initiator of a `*Cluster` table function (`s3Cluster`, `fileCluster`, `urlCluster`, `icebergCluster`, ...) sends one `ReadTaskResponse` to a worker for every read task the worker asks for with [`ReadTaskRequest`](#packet-type-reference) (server packet `13`). External clients never send or receive it.
+
+The body is versioned by `cluster_function_protocol_version` — the value both sides exchange in [ServerHello](#serverhello) under [VERSIONED_CLUSTER_FUNCTION_PROTOCOL](#feature-table) — and **not** by the TCP protocol revision. The initiator writes the effective version as the first field: the minimum of its own `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION` and the worker's advertised version, so the worker decodes exactly the fields it knows. Current version: `12`.
+
+An empty `path` (a zero-length String) is the end-of-tasks marker: the worker stops asking for more tasks. All other fields are still written for such a response and must be decoded.
+
+| # | Field | Type | Present when | Description |
+|---|-------|------|--------------|-------------|
+| 1 | protocol_version | VarUInt | always | Effective cluster-function protocol version of this body, in `[1, 12]`. A value outside that range is rejected. |
+| 2 | path | String | always | Path of the file/object to read, or empty to signal that no tasks are left. |
+| 3 | schema_transform | [ActionsDAG](#glossary) | `version ≥ 2` | Data-lake schema-evolution transform for this object, serialized as an `ActionsDAG`. An empty DAG (no inputs) means "no transform". |
+| 4 | excluded_rows | ExcludedRows | `version ≥ 5` | Positional deletes / deletion vectors: the rows of this object the worker must skip. Always present from `v5` on, empty when there are none. |
+| 5 | bucket_format | String | `version ≥ 4` | Format name of the row-group bucket assignment that follows (`"Parquet"`), or empty when the worker must read the whole file. |
+| 6 | bucket_info | format-specific | `bucket_format` non-empty | Bucket assignment for a partial read of one file — see [FileBucketInfo](#filebucketinfo). |
+| 7 | has_iceberg_info | VarUInt | `version ≥ 3` | `1` if Iceberg per-object information follows, `0` otherwise. |
+| 8 | iceberg_info | Iceberg-specific | `has_iceberg_info = 1` | Iceberg data-object information, itself gated on `version` (`6` adds file statistics, `9` identity partition columns, `10` change-data-capture information, `11` deletion vectors). |
+| 9 | has_read_source_index | VarUInt | `version ≥ 8` | `1` if a source index follows, `0` otherwise. |
+| 10 | read_source_index | VarUInt | `has_read_source_index = 1` | Index of the wildcard URL shard this path belongs to, so the worker reads that shard rather than treating all shards as failover. |
+
+A task that carries a field the negotiated version cannot express fails closed with `UNKNOWN_PROTOCOL` on the initiator instead of being silently downgraded, because the worker would otherwise read the whole file for every bucket task (duplicating rows) or read only the first URL shard (missing rows). The two exceptions are downgrades that cannot change the result: a bucket covering the whole file is dropped entirely, and the overwrite-guard fields of a read pinned to an immutable generation (a data-lake snapshot) are dropped while the row-group assignment is kept.
+
+#### FileBucketInfo body {#filebucketinfo}
+
+Sent when one file is split into row-group buckets and read by several workers in parallel. Only the `Parquet` layout exists (`bucket_format = "Parquet"`):
+
+| # | Field | Type | Present when | Description |
+|---|-------|------|--------------|-------------|
+| 1 | count | VarUInt | always | Number of row-group indices that follow. |
+| 2 | row_group_ids | `count` × VarUInt | always | Zero-based indices of the row groups this worker must read. Every other row group of the file belongs to another task. |
+| 3 | file_num_row_groups | VarUInt | `version ≥ 12` | Total number of row groups the file had when the assignment was computed. `0` means "unknown" and disables the check below. |
+| 4 | footer_digest | VarUInt | `version ≥ 12` | Digest of the Parquet footer (`FileMetaData`) the assignment was computed from. `0` means "unknown". |
+
+Fields 3 and 4 are a fail-close guard against the file being overwritten between the split decision and the read: the worker parses the footer of the bytes it actually opened and, when they are non-zero, refuses the read with `FILE_CHANGED_DURING_READ` unless both match. A worker below `v12` reads neither field and treats both as `0`.
+
 ## Packet type reference {#packet-type-reference}
 
 ### Client → Server {#client-to-server}
@@ -904,7 +940,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 6    | KeepAlive                 | not specified       | Connection keepalive |
 | 7    | Scalar                    | not specified       | Scalar data block |
 | 8    | IgnoredPartUUIDs          | not specified       | Parts to exclude from query |
-| 9    | ReadTaskResponse          | not specified       | S3 cluster read response |
+| 9    | ReadTaskResponse          | [ReadTaskResponse](#readtaskresponse) | Cluster read-task response (`s3Cluster` and the other `*Cluster` table functions) |
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |

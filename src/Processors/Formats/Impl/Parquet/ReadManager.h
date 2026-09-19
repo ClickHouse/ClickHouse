@@ -40,7 +40,13 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_);
+    /// `omitted_row_groups_are_pruned` says whether the row groups missing from `buckets_to_read_`
+    /// were pruned rather than assigned to another reader (see
+    /// `FileBucketInfo::omitted_row_groups_are_pruned`); it only affects profile-event attribution.
+    void init(
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        const std::optional<std::vector<size_t>> & buckets_to_read_,
+        bool omitted_row_groups_are_pruned = false);
 
     ~ReadManager();
 

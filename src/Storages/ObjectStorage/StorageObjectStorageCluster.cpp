@@ -464,8 +464,15 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
+    /// A data-lake snapshot pins every listed file to immutable metadata: a new version of the data
+    /// is a new file under a new path, never an in-place rewrite of a listed one. Bucketed tasks for
+    /// such files therefore do not need the concurrent-overwrite guard on the worker, and may be
+    /// sent to a worker whose protocol is too old to carry it (see
+    /// `ClusterFunctionReadTaskResponse::serialize`).
+    const bool read_is_generation_pinned = configuration->isDataLakeConfiguration();
+
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context, read_is_generation_pinned](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
@@ -474,7 +481,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
+                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context, read_is_generation_pinned);
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
