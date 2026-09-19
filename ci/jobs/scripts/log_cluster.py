@@ -1,3 +1,4 @@
+import json
 import time
 import traceback
 from dataclasses import dataclass
@@ -10,6 +11,33 @@ from ci.praktika.utils import Utils
 
 # The build profile collect and diff jobs
 BUILD_PROFILE_USER = "ci_build_profiler"
+
+# The reported cause travels on into the job result and the pinned pull request
+# comment, so it is cut to stay readable there.
+MAX_ERROR_LEN = 1000
+
+
+class ReadFailure(Exception):
+    """A read-only query did not produce a result."""
+
+
+class TransientReadFailure(ReadFailure):
+    """Every observed failure was the cluster failing to serve the read."""
+
+
+def _response_error(response):
+    """The failure a response reports, or None when it carries a result.
+
+    A failure raised after the status was sent travels in the body: the JSON
+    formats put it in an `exception` field next to the rows already produced.
+    """
+    try:
+        payload = json.loads(response.text)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and payload.get("exception"):
+        return payload["exception"]
+    return None if response.ok else response.text
 
 
 @dataclass(frozen=True)
@@ -26,6 +54,20 @@ class MetaColumn:
     cast: str = "'{}'"
     literal: str = "'{}'"
     index: str = ""
+
+
+@dataclass(frozen=True)
+class Readiness:
+    """Whether the cluster answered `SELECT 1`, and whether a failure was it
+    failing to answer rather than refusing. Falsy when the probe failed, so
+    `if not is_ready()` keeps its meaning.
+    """
+
+    ready: bool
+    transient: bool = False
+
+    def __bool__(self):
+        return self.ready
 
 
 class LogCluster:
@@ -182,7 +224,7 @@ class LogCluster:
             self.url = "https://" + url.removeprefix("https://")
         if not self.url:
             print("ERROR: failed to retrive url for LogCluster")
-            return False
+            return Readiness(False)
         if self._auth is None:
             passwd = Secret.Config(
                 name=self.PASSWD_SECRET,
@@ -190,7 +232,7 @@ class LogCluster:
             ).get_value()
             if not passwd:
                 print("ERROR: failed to retrive password for LogCluster")
-                return False
+                return Readiness(False)
             self._auth = {
                 "X-ClickHouse-User": self.user,
                 "X-ClickHouse-Key": passwd,
@@ -207,15 +249,15 @@ class LogCluster:
                 timeout=3,
             )
             if not response.ok:
-                print("ERROR: No connection to LogCluster")
-                return False
+                print(f"ERROR: No connection to LogCluster: status {response.status_code}: {response.text[:MAX_ERROR_LEN]}")
+                return Readiness(False, transient=response.status_code >= 500)
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
-                return False
+                return Readiness(False)
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
-            return False
-        return True
+            return Readiness(False, transient=isinstance(ex, requests.exceptions.Timeout))
+        return Readiness(True)
 
     def do_query(self, query, data, db_name="", retries=1, timeout=5):
         # The INSERT transport: the read-only endpoint cannot serve it, and
@@ -305,12 +347,13 @@ class LogCluster:
         return False
 
     def select(self, query, retries=8, timeout=60):
-        """Run a read-only query and return the response body, or None on failure.
+        """Run a read-only query and return the response body.
 
         Unlike do_query (INSERT transport, discards the body), this returns the
-        result text. Retries transient (>=500 and connection) errors with a
-        growing backoff: the shared cluster goes through minutes-long
-        server-wide memory-pressure spikes (Code 241 for every query).
+        result text. Raises ReadFailure with the cluster's own error, and
+        TransientReadFailure when every observed failure was the cluster failing
+        to serve the read; those are retried with a growing backoff, because the
+        shared cluster goes through minutes-long memory-pressure spikes.
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
@@ -319,11 +362,14 @@ class LogCluster:
         # of the settings here is needed to read.
         params = {} if self.readonly else {"send_logs_level": "warning"}
 
-        response = None
+        failure = ""
+        non_transient = False
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
-            if not self.is_ready():
+            readiness = self.is_ready()
+            if not readiness:
+                non_transient = non_transient or not readiness.transient
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -337,24 +383,27 @@ class LogCluster:
                     headers=self._auth,
                     timeout=timeout,
                 )
-                if response.ok:
+                error = _response_error(response)
+                if error is None:
                     return response.text
-                print(
-                    f"WARNING: LogCluster select failed with code {response.status_code}"
-                )
-                if response.status_code >= 500:
+                failure = f"status {response.status_code}: {error[:MAX_ERROR_LEN]}"
+                print(f"WARNING: LogCluster select failed with {failure}")
+                # An error the server reports after committing an ok status is
+                # the same condition as a 5xx: it raised while answering.
+                if response.ok or response.status_code >= 500:
                     time.sleep(5 * (retry + 1))
                     continue
+                non_transient = True
                 break
-            except Exception:
+            except Exception as ex:
+                failure = f"{type(ex).__name__}: {ex}"[:MAX_ERROR_LEN]
+                non_transient = non_transient or not isinstance(ex, requests.exceptions.Timeout)
                 print("WARNING: LogCluster select failed with exception")
                 traceback.print_exc()
                 time.sleep(5 * (retry + 1))
-        if response is not None:
-            print(
-                f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
-            )
-        return None
+        print(f"ERROR: Failed to select from LogCluster, query:\n {query}")
+        failure = failure or "the endpoint never became ready"
+        raise ReadFailure(failure) if non_transient else TransientReadFailure(failure)
 
 
 class LogClusterBuildProfileQueries:

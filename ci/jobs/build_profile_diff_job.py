@@ -69,7 +69,7 @@ import subprocess
 import traceback
 from typing import Dict, List, Optional
 
-from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster
+from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster, TransientReadFailure
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -229,10 +229,7 @@ class Db:
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts. Raises on failure."""
-        response = self._cluster.select(query + " FORMAT JSON")
-        if response is None:
-            raise RuntimeError(f"CI logs cluster query failed: {query}")
-        return json.loads(response)["data"]
+        return json.loads(self._cluster.select(query + " FORMAT JSON"))["data"]
 
 
 def quote(s: str) -> str:
@@ -1492,14 +1489,18 @@ def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], war
     return "\n".join(lines)
 
 
-def update_comment(body: str, only_update: bool = False) -> None:
-    """Post or update the tagged PR comment. A GH hiccup must not fail the check."""
+def update_comment(body: str, only_update: bool = False) -> bool:
+    """Post or update the tagged PR comment; False when it is not in place.
+
+    A GH hiccup must not fail the check, so a failure is a value, not a raise.
+    """
     try:
-        GH.post_updateable_comment(comment_tags_and_bodies={COMMENT_TAG: body}, only_update=only_update)
+        return bool(GH.post_updateable_comment(comment_tags_and_bodies={COMMENT_TAG: body}, only_update=only_update))
     except Exception:
         # The comparison result is still in the job report.
         print("WARNING: failed to post/update the PR comment")
         traceback.print_exc()
+        return False
 
 
 def run_comparison(db, info, args, pr_number: int, pr_sha: str):
@@ -1579,6 +1580,22 @@ def main():
     try:
         db = Db()
         comparison = run_comparison(db, info, args, pr_number, pr_sha)
+    except TransientReadFailure as e:
+        if args.local:
+            raise
+        reason = str(e).replace("\n", " ")
+        posted = update_comment(
+            f"### Build profile diff ({CHECK_NAME})\n\n"
+            f"The comparison did not run: {md_code(reason)}. "
+            f"Commit `{pr_sha}` was not compared with master.\n\n"
+            "See the job log for details."
+        )
+        if not posted:
+            # Without the comment saying so, a skip is a missing comparison.
+            raise
+        # The verdict is the cluster's health, which no digest input captures.
+        Result.create_from(status=Result.Status.SKIPPED, info=f"Comparison skipped: {reason}").complete_job(do_not_cache=True)
+        return
     except Exception as e:
         # The tagged comment is pinned to the pull request, not to a commit, so
         # every exit path has to refresh it: the cluster handle, any of the
