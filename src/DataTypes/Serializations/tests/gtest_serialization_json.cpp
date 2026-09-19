@@ -70,7 +70,8 @@ TEST(SerializationJSON, SubcolumnLookupSkipsUnrelatedTypedPaths)
     {
         serialization->subcolumn_enumerations = 0;
         EXPECT_NE(type->getSubcolumnType(prefix + "a.b"), nullptr);
-        EXPECT_EQ(serialization->subcolumn_enumerations, 1);
+        /// Both `a` and `a.b` can match; only `unrelated` must be skipped.
+        EXPECT_EQ(serialization->subcolumn_enumerations, 2);
 
         serialization->subcolumn_enumerations = 0;
         EXPECT_NE(type->getSubcolumnType(prefix + "dynamic"), nullptr);
