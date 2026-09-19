@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/SettingsTableColumns.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
@@ -35,7 +36,7 @@ static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, c
     MutableColumnPtr engine_column = ColumnString::create();
     for (const auto & [engine_name, creator] : storages)
     {
-        if (!creator.features.enumerate_engine_settings_fn || !creator.features.supports_settings)
+        if (!creator.features.enumerate_engine_settings_fn)
             continue;
         engine_column->insert(engine_name);
     }
@@ -49,6 +50,8 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
     const auto filtered_engines = getFilteredEngines(storages, predicate, context);
+    const bool show_secrets = canDisplaySecrets(context);
+    SettingRowWriter writer(res_columns, columns_mask);
 
     for (size_t engine_index = 0; engine_index < filtered_engines->size(); ++engine_index)
     {
@@ -56,26 +59,12 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
         const auto enumerate = storages.at(engine_name).features.enumerate_engine_settings_fn;
 
         for (const auto & setting : enumerate(context))
-        {
-            /// A setting that answers to more than one name gets a row per name, as
-            /// `system.settings` does, so that looking it up by the name you happen to know finds
-            /// it. The rows carry the same values; `alias_for` tells them apart.
-            auto add_row = [&](std::string_view name, std::string_view alias_for)
-            {
-                size_t src_index = 0;
-                size_t res_index = 0;
-
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(engine_name);
-
-                insertSharedSettingColumns(
-                    res_columns, columns_mask, src_index, res_index, name, setting.value, setting, alias_for);
-            };
-
-            add_row(setting.name, "");
-            for (const auto alias : setting.aliases)
-                add_row(alias, setting.name);
-        }
+            writeSettingRows(
+                writer,
+                setting,
+                isSettingValueMasked(setting, show_secrets),
+                [&](SettingRowWriter & row) { row.put(engine_name); },
+                [](SettingRowWriter &) {});
     }
 }
 

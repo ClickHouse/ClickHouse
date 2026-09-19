@@ -55,49 +55,37 @@ development and the expectations one might have when using them:
     };
 }
 
-void insertSharedSettingColumns(
-    MutableColumns & res_columns,
-    const std::vector<UInt8> & columns_mask,
-    size_t & src_index,
-    size_t & res_index,
-    std::string_view name,
-    std::string_view value,
-    const SettingDescription & setting,
-    std::string_view alias_for)
+bool isSettingValueMasked(const SettingDescription & setting, bool show_secrets)
 {
-    auto wanted = [&] { return columns_mask.empty() || columns_mask[src_index]; };
+    return !show_secrets && !setting.masked_value.empty();
+}
 
-    auto put = [&](const auto & column_value)
-    {
-        if (wanted())
-            res_columns[res_index++]->insert(column_value);
-        ++src_index;
-    };
-
-    put(name);
-    put(value);
-    put(setting.default_value);
-    put(setting.origin != SettingOrigin::Default);
-    put(setting.comment);
-    put(setting.min_value ? Field(*setting.min_value) : Field());
-    put(setting.max_value ? Field(*setting.max_value) : Field());
+void writeSharedSettingColumns(
+    SettingRowWriter & writer, std::string_view name, const SettingDescription & setting, bool is_masked, std::string_view alias_for)
+{
+    writer.put(name);
+    writer.put(is_masked ? setting.masked_value : setting.value);
+    writer.put(setting.default_value);
+    writer.put(setting.origin != SettingOrigin::Default);
+    writer.put(setting.comment);
+    writer.put(setting.min_value ? Field(*setting.min_value) : Field());
+    writer.put(setting.max_value ? Field(*setting.max_value) : Field());
 
     /// Built only when the column is wanted, because it is per-setting work rather than a copy.
-    if (wanted())
+    Array disallowed;
+    if (writer.wants())
     {
-        Array disallowed;
         disallowed.reserve(setting.disallowed_values.size());
         for (const auto & disallowed_value : setting.disallowed_values)
             disallowed.emplace_back(disallowed_value);
-        res_columns[res_index++]->insert(disallowed);
     }
-    ++src_index;
+    writer.put(disallowed);
 
-    put(setting.readonly);
-    put(setting.type);
-    put(setting.tier == SettingsTierType::OBSOLETE);
-    put(setting.tier);
-    put(alias_for);
+    writer.put(setting.readonly);
+    writer.put(setting.type);
+    writer.put(setting.tier == SettingsTierType::OBSOLETE);
+    writer.put(setting.tier);
+    writer.put(alias_for);
 }
 
 }

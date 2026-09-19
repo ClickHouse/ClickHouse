@@ -59,6 +59,9 @@ void StorageFactory::registerStorage(const std::string & name, CreatorFn creator
     if (features.supports_settings && !features.has_builtin_setting_fn)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
+    if (features.enumerate_engine_settings_fn && !features.supports_settings)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' does not support settings but enumerates them", name);
     if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }

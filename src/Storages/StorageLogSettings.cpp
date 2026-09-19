@@ -51,4 +51,28 @@ bool StorageLogSettings::hasBuiltin(std::string_view name)
 {
     return name == "disk" || name == "storage_policy";
 }
+
+SettingDescriptions StorageLogSettings::enumerateEngineSettings(ContextPtr)
+{
+    /// `description` is a literal: `SettingDescription` keeps a view of it.
+    auto describe = [](String name, String default_value, std::string_view description)
+    {
+        SettingDescription described;
+        described.name = std::move(name);
+        described.value = default_value;
+        described.default_value = std::move(default_value);
+        described.type = "String";
+        described.comment = description;
+        described.tier = SettingsTierType::PRODUCTION;
+        return described;
+    };
+
+    return {
+        describe("disk", "default", "Disk the table keeps its data on. Cannot be set together with `storage_policy`."),
+        describe(
+            "storage_policy",
+            "",
+            "Storage policy whose first disk the table keeps its data on. Cannot be set together with `disk`."),
+    };
+}
 }

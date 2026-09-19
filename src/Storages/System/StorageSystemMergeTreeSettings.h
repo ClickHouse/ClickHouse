@@ -23,6 +23,8 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
+    bool supportsColumnsMask() const override { return true; }
+
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 

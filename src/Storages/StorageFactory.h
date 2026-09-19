@@ -8,7 +8,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
-#include <Interpreters/Context_fwd.h>
 #include <Storages/SettingDescription.h>
 #include <unordered_map>
 

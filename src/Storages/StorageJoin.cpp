@@ -184,6 +184,47 @@ SettingDescription describeServerBackedJoinSetting(const Settings & metadata, st
     return described;
 }
 
+/// The values a `Join` holds for its six server-backed settings.
+struct ServerBackedJoinValues
+{
+    bool use_nulls = false;
+    SizeLimits limits;
+    bool overwrite = false;
+    bool any_join_distinct_right_table_keys = false;
+};
+
+/// The one place those six are named: `hasBuiltinSetting`, `getTableSettings` and `enumerateEngineSettings` all read
+/// the list from here, so they cannot disagree about which settings there are.
+SettingDescriptions describeServerBackedJoinSettings(const Settings & metadata, const ServerBackedJoinValues & values)
+{
+    return {
+        describeServerBackedJoinSetting(metadata, "join_use_nulls", SettingFieldBool{values.use_nulls}.toString()),
+        describeServerBackedJoinSetting(metadata, "max_rows_in_join", SettingFieldUInt64{values.limits.max_rows}.toString()),
+        describeServerBackedJoinSetting(metadata, "max_bytes_in_join", SettingFieldUInt64{values.limits.max_bytes}.toString()),
+        describeServerBackedJoinSetting(
+            metadata, "join_overflow_mode", SettingFieldOverflowMode{values.limits.overflow_mode}.toString()),
+        describeServerBackedJoinSetting(metadata, "join_any_take_last_row", SettingFieldBool{values.overwrite}.toString()),
+        describeServerBackedJoinSetting(
+            metadata,
+            "any_join_distinct_right_table_keys",
+            SettingFieldBool{values.any_join_distinct_right_table_keys}.toString()),
+    };
+}
+
+}
+
+bool StorageJoin::hasBuiltinSetting(std::string_view name)
+{
+    static const NameSet names = []
+    {
+        NameSet result;
+        for (const auto & setting : describeServerBackedJoinSettings(Settings{}, {}))
+            result.insert(setting.name);
+        for (const auto & setting : persistenceSettingDefaults())
+            result.insert(setting.name);
+        return result;
+    }();
+    return names.contains(String{name});
 }
 
 SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) const
@@ -192,17 +233,8 @@ SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) cons
     /// `SETTINGS` clause and, for what the clause leaves out, from the server's settings (`args.getContext`, the
     /// global context, not the creating session) - and passes the results to the constructor. Report what the
     /// table holds: a setting the clause leaves out is shown nowhere else, not even by `SHOW CREATE TABLE`.
-    const auto & metadata = query_context->getSettingsRef();
-    SettingDescriptions settings{
-        describeServerBackedJoinSetting(metadata, "join_use_nulls", SettingFieldBool{use_nulls}.toString()),
-        describeServerBackedJoinSetting(metadata, "max_rows_in_join", SettingFieldUInt64{limits.max_rows}.toString()),
-        describeServerBackedJoinSetting(metadata, "max_bytes_in_join", SettingFieldUInt64{limits.max_bytes}.toString()),
-        describeServerBackedJoinSetting(
-            metadata, "join_overflow_mode", SettingFieldOverflowMode{limits.overflow_mode}.toString()),
-        describeServerBackedJoinSetting(metadata, "join_any_take_last_row", SettingFieldBool{overwrite}.toString()),
-        describeServerBackedJoinSetting(
-            metadata, "any_join_distinct_right_table_keys", SettingFieldBool{any_join_distinct_right_table_keys}.toString()),
-    };
+    auto settings = describeServerBackedJoinSettings(
+        query_context->getSettingsRef(), {use_nulls, limits, overwrite, any_join_distinct_right_table_keys});
 
     /// These two have defaults of the engine's own rather than server settings behind them, so unless the
     /// definition states them they are at those defaults.
@@ -217,16 +249,15 @@ SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)
     /// What a table created now would take for each setting its definition leaves out: the server's settings, which
     /// the creator reads from the global context, and the engine's own defaults for `disk` and `persistent`.
     const auto & server = context->getGlobalContext()->getSettingsRef();
-    SettingDescriptions settings{
-        describeServerBackedJoinSetting(server, "join_use_nulls", server[Setting::join_use_nulls].toString()),
-        describeServerBackedJoinSetting(server, "max_rows_in_join", server[Setting::max_rows_in_join].toString()),
-        describeServerBackedJoinSetting(server, "max_bytes_in_join", server[Setting::max_bytes_in_join].toString()),
-        describeServerBackedJoinSetting(server, "join_overflow_mode", server[Setting::join_overflow_mode].toString()),
-        describeServerBackedJoinSetting(
-            server, "join_any_take_last_row", server[Setting::join_any_take_last_row].toString()),
-        describeServerBackedJoinSetting(
-            server, "any_join_distinct_right_table_keys", server[Setting::any_join_distinct_right_table_keys].toString()),
-    };
+    auto settings = describeServerBackedJoinSettings(
+        server,
+        {
+            .use_nulls = server[Setting::join_use_nulls],
+            .limits = SizeLimits(
+                server[Setting::max_rows_in_join], server[Setting::max_bytes_in_join], server[Setting::join_overflow_mode]),
+            .overwrite = server[Setting::join_any_take_last_row],
+            .any_join_distinct_right_table_keys = server[Setting::any_join_distinct_right_table_keys],
+        });
 
     const auto defaults = persistenceSettingDefaults();
     settings.insert(settings.end(), defaults.begin(), defaults.end());
@@ -464,20 +495,6 @@ void StorageJoin::convertRightBlock(Block & block) const
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory)
 {
-    auto has_builtin_fn = [](std::string_view name)
-    {
-        static const std::unordered_set<std::string_view> valid_settings
-            = {"join_use_nulls",
-               "max_rows_in_join",
-               "max_bytes_in_join",
-               "join_overflow_mode",
-               "join_any_take_last_row",
-               "any_join_distinct_right_table_keys",
-               "disk",
-               "persistent"};
-        return valid_settings.contains(name);
-    };
-
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
@@ -619,7 +636,7 @@ void registerStorageJoin(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .has_builtin_setting_fn = has_builtin_fn,
+            .has_builtin_setting_fn = StorageJoin::hasBuiltinSetting,
             .enumerate_engine_settings_fn = StorageJoin::enumerateEngineSettings,
         },
         Documentation{

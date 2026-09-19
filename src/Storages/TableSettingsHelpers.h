@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Interpreters/Context_fwd.h>
 #include <Storages/SettingDescription.h>
 
 #include <optional>

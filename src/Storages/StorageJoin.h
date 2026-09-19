@@ -50,6 +50,9 @@ public:
     /// For `system.engine_settings`: the eight settings with the values a table created now would get.
     static SettingDescriptions enumerateEngineSettings(ContextPtr context);
 
+    /// Whether `name` is one of the eight, for the `SETTINGS` clause of a `CREATE` query.
+    static bool hasBuiltinSetting(std::string_view name);
+
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     /// Only delete is supported.

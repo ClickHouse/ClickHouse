@@ -6,10 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `system.engine_settings` and `system.merge_tree_settings` print `value` unmasked. That is safe only while
-# every secret engine setting has an empty default, and `MergeTree` and `Distributed` - the only engines whose
-# values there come from the server configuration - have no secret settings. Nothing else enforces it, so
-# check it here.
+# `system.engine_settings` and `system.merge_tree_settings` mask a secret `value` as `system.table_settings`
+# does, but print `default` as compiled in. That is safe only while every secret engine setting has an empty
+# default. Nothing else enforces it, so check it here.
 #
 # The list of secret settings, shared by `SHOW CREATE TABLE` and `system.table_settings`, is not readable
 # from SQL, but `query_log` stores a query with those secrets masked. So one query assigns every engine
@@ -52,7 +51,5 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'known secrets are found', hasAll(groupUniqArrayIf(name, secret),
         ['kafka_sasl_password', 'nats_url', 'rabbitmq_address', 'after_processing_move_connection_string']) FROM probed_settings;
     SELECT 'an ordinary setting is not taken for a secret', NOT has(groupUniqArrayIf(name, secret), 'index_granularity') FROM probed_settings;
-    SELECT 'no secret in the engines that read server configuration',
-        countIf(secret AND (engine_name LIKE '%MergeTree' OR engine_name = 'Distributed')) = 0 FROM probed_settings;
-    SELECT 'secrets with a non-empty default or value:';
-    SELECT engine_name, name, value, default FROM probed_settings WHERE secret AND (value != '' OR default != '') ORDER BY ALL;"
+    SELECT 'secrets with a non-empty default:';
+    SELECT engine_name, name, default FROM probed_settings WHERE secret AND default != '' ORDER BY ALL;"

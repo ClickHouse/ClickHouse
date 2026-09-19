@@ -31,11 +31,6 @@ SELECT count() FROM (
         EXCEPT
         SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'));
 
--- An engine that rejects a SETTINGS clause must not advertise settings.
-SELECT count() FROM system.engine_settings AS s
-INNER JOIN (SELECT name FROM system.table_engines WHERE NOT supports_settings) AS e
-ON e.name = s.engine_name;
-
 -- Every setting must render. `storage_catalog_type` used to throw because its default enum value
 -- had no string form, and that one setting made every query against this table fail. Read every
 -- value rather than counting that one row: the data lake engines are absent from some builds, so
@@ -52,12 +47,12 @@ SELECT countDistinct(n) <= 1 FROM (
     SELECT count() AS n FROM system.engine_settings WHERE engine_name LIKE 'Iceberg%' GROUP BY engine_name);
 
 -- Every engine that accepts a SETTINGS clause should be able to say which settings it accepts.
--- These five cannot: they have no settings struct at all, so a table of theirs reports only what its
--- own definition states, from the base implementation. (`Join` keeps no struct either, but it lists
--- its eight and its tables report the values they hold. The object storage engines report only their
--- definition too, but they do have a struct, so they are listed here and their rows carry its
--- metadata.) A name appearing here that is not one of the five means an engine was added without
--- being wired up.
+-- These two cannot: they have no settings struct at all, so a table of theirs reports only what its
+-- own definition states, from the base implementation. (`Join` and the `Log` family keep no struct
+-- either, but they list their settings. The object storage engines report only their definition too,
+-- but they do have a struct, so they are listed here and their rows carry its metadata.) A name
+-- appearing here that is not one of the two means an engine was added without being wired up. An
+-- engine that rejects a `SETTINGS` clause cannot list settings at all: registering it so is refused.
 SELECT name FROM system.table_engines
 WHERE supports_settings AND name NOT IN (SELECT DISTINCT engine_name FROM system.engine_settings)
 ORDER BY name;

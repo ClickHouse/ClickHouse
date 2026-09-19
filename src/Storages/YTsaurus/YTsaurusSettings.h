@@ -4,7 +4,6 @@
 
 #if USE_YTSAURUS
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Interpreters/Context_fwd.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Common/VectorWithMemoryTracking.h>

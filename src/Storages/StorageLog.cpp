@@ -1446,6 +1446,7 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = StorageLogSettings::enumerateEngineSettings,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

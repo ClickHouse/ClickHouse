@@ -6,7 +6,6 @@
 #include <Core/SettingFieldASTFunction.h>
 #include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

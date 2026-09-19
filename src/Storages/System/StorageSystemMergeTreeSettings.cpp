@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/SettingsTableColumns.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
 
 namespace DB
@@ -14,7 +15,8 @@ ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
 }
 
 template <bool replicated>
-void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void SystemMergeTreeSettings<replicated>::fillData(
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     /// The same enumeration `system.engine_settings` reads, so the two tables cannot drift apart -
     /// this one is that one restricted to a single engine family, with the current user's settings
@@ -23,21 +25,11 @@ void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns,
         ? MergeTreeSettings::enumerateReplicatedEngineSettings(context)
         : MergeTreeSettings::enumerateEngineSettings(context);
 
-    /// A row per name the setting answers to, as `system.settings` does.
-    auto add_row = [&](std::string_view name, const SettingDescription & setting, std::string_view alias_for)
-    {
-        /// This table does not override `supportsColumnsMask`, so every column is wanted.
-        size_t src_index = 0;
-        size_t res_index = 0;
-        insertSharedSettingColumns(res_columns, {}, src_index, res_index, name, setting.value, setting, alias_for);
-    };
-
+    const bool show_secrets = canDisplaySecrets(context);
+    SettingRowWriter writer(res_columns, columns_mask);
     for (const auto & setting : settings)
-    {
-        add_row(setting.name, setting, "");
-        for (const auto alias : setting.aliases)
-            add_row(alias, setting, setting.name);
-    }
+        writeSettingRows(
+            writer, setting, isSettingValueMasked(setting, show_secrets), [](SettingRowWriter &) {}, [](SettingRowWriter &) {});
 }
 
 template class SystemMergeTreeSettings<false>;

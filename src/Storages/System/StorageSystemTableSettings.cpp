@@ -144,6 +144,7 @@ protected:
         const bool show_secrets = canDisplaySecrets(context);
 
         size_t rows_count = 0;
+        SettingRowWriter writer(res_columns, column_mask);
 
         auto add_table = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
@@ -156,36 +157,22 @@ protected:
 
             for (const auto & setting : table->getTableSettings(context))
             {
-                const bool is_masked = !show_secrets && !setting.masked_value.empty();
-                const String & value = is_masked ? setting.masked_value : setting.value;
-
-                /// A row per name the setting answers to, as `system.settings` does; `alias_for` tells them apart.
-                auto add_row = [&](std::string_view name, std::string_view alias_for)
-                {
-                    ++rows_count;
-
-                    size_t src_index = 0;
-                    size_t res_index = 0;
-
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(db_name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(tbl_name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(engine_name);
-
-                    insertSharedSettingColumns(
-                        res_columns, column_mask, src_index, res_index, name, value, setting, alias_for);
-
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(static_cast<Int8>(setting.origin));
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(is_masked);
-                };
-
-                add_row(setting.name, "");
-                for (const auto alias : setting.aliases)
-                    add_row(alias, setting.name);
+                const bool is_masked = isSettingValueMasked(setting, show_secrets);
+                rows_count += writeSettingRows(
+                    writer,
+                    setting,
+                    is_masked,
+                    [&](SettingRowWriter & row)
+                    {
+                        row.put(db_name);
+                        row.put(tbl_name);
+                        row.put(engine_name);
+                    },
+                    [&](SettingRowWriter & row)
+                    {
+                        row.put(static_cast<Int8>(setting.origin));
+                        row.put(is_masked);
+                    });
             }
         };
 
