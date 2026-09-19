@@ -66,7 +66,9 @@ void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            /// A table's own `SETTINGS` clause, recorded as the definition. The `ASTSetQuery` overload, which
+            /// dictionaries use, records nothing.
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {

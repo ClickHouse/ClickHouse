@@ -10,7 +10,6 @@
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
 #include <Processors/Sources/YTsaurusSource.h>
@@ -298,10 +297,12 @@ SELECT * FROM yt_saurus;
     });
 }
 
-SettingDescriptions StorageYTsaurus::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageYTsaurus::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// See `SettingOrigin::NamedCollection`.
-    return withOriginFromDefinition(settings.enumerateSettings(), getStorageID(), query_context);
+    /// The settings object records the table's own `SETTINGS` clause, as `YTsaurusSettings::loadFromQuery`
+    /// applies it. A named collection supplies none of a table's settings: `processNamedCollectionResult`
+    /// accepts only connection keys for a table, so there is no `named_collection` source to record.
+    return settings.enumerateSettings();
 }
 
 }
