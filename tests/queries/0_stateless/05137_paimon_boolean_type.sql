@@ -17,22 +17,24 @@ ORDER BY 1, 2;
 
 SELECT '=== filtering by a boolean literal';
 
--- `f_boolean` is also a partition key of this table, so this covers `Bool` as a partition key type
--- for the `PartitionPruner`; the result must not depend on whether pruning is used.
 SELECT countIf(f_boolean_nn), countIf(NOT f_boolean_nn), countIf(f_boolean IS NULL)
-FROM paimonS3(s3_conn, filename = 'paimon_all_types')
-SETTINGS use_paimon_partition_pruning = 0;
+FROM paimonS3(s3_conn, filename = 'paimon_all_types');
 
-SELECT countIf(f_boolean_nn), countIf(NOT f_boolean_nn), countIf(f_boolean IS NULL)
+-- A boolean literal against a plain `Bool` column.
+SELECT count()
 FROM paimonS3(s3_conn, filename = 'paimon_all_types')
-SETTINGS use_paimon_partition_pruning = 1;
+WHERE f_boolean_nn = true;
+
+-- `f_boolean` is a partition key of this table, so a boolean literal compared against it is what
+-- drives `PartitionPruner` through a `Bool` partition key. Pruning only decides which files are
+-- read, so the count must come out the same either way; a pruner that mishandles the `Bool`
+-- literal drops the matching partition and returns a smaller count with pruning on.
+SELECT count()
+FROM paimonS3(s3_conn, filename = 'paimon_all_types')
+WHERE f_boolean = false
+SETTINGS use_paimon_partition_pruning = 0;
 
 SELECT count()
 FROM paimonS3(s3_conn, filename = 'paimon_all_types')
-WHERE f_boolean_nn = true
-SETTINGS use_paimon_partition_pruning = 0;
-
-SELECT count()
-FROM paimonS3(s3_conn, filename = 'paimon_all_types')
-WHERE f_boolean_nn = true
+WHERE f_boolean = false
 SETTINGS use_paimon_partition_pruning = 1;
