@@ -6,7 +6,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
@@ -42,7 +41,7 @@ public:
         bool seekable = false;
     };
 
-    using OutStreamCallback = std::function<void(std::ostream &)>;
+    using OutStreamCallback = std::function<void(WriteBuffer &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
 
@@ -56,20 +55,8 @@ private:
         std::optional<size_t> end;
     };
 
-    struct CallResult
-    {
-        HTTPSessionPtr session;
-        std::istream * response_stream = nullptr;
-
-        CallResult(HTTPSessionPtr && session_, std::istream & response_stream_)
-            : session(session_)
-            , response_stream(&response_stream_)
-        {}
-        CallResult(CallResult &&) = default;
-        CallResult & operator= (CallResult &&) = default;
-
-        std::unique_ptr<ReadBuffer> transformToReadBuffer(size_t buf_size) &&;
-    };
+    /// The body of the response, which keeps the session it reads from alive.
+    using CallResult = std::unique_ptr<HTTPResponseReadBuffer>;
 
     const HTTPConnectionGroupType connection_group;
     const Poco::URI initial_uri;
@@ -121,13 +108,13 @@ private:
 
     void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
 
-    CallResult  callImpl(
+    CallResult callImpl(
         Poco::Net::HTTPResponse & response,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
         bool allow_redirects) const;
 
-    CallResult  callWithRedirects(
+    CallResult callWithRedirects(
         Poco::Net::HTTPResponse & response,
         const String & method_,
         const std::optional<HTTPRange> & range);

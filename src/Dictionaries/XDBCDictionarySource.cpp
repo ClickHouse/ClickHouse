@@ -15,6 +15,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
+#include <IO/Operators.h>
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -221,11 +222,11 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
 {
     bridge_helper->startBridgeSync();
 
-    auto write_body_callback = [required_sample_block, query](std::ostream & os)
+    auto write_body_callback = [required_sample_block, query](WriteBuffer & out)
     {
-        os << "sample_block=" << escapeForFileName(required_sample_block.getNamesAndTypesList().toString());
-        os << "&";
-        os << "query=" << escapeForFileName(query);
+        out << "sample_block=" << escapeForFileName(required_sample_block.getNamesAndTypesList().toString());
+        out << "&";
+        out << "query=" << escapeForFileName(query);
     };
 
     auto buf = BuilderRWBufferFromHTTP(uri)

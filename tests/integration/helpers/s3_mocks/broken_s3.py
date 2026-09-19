@@ -318,6 +318,7 @@ class _ServerRuntime:
                 request_handler.wfile.write(bytes(self.partial_data, "UTF-8"))
 
             time.sleep(1)
+            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -326,9 +327,10 @@ class _ServerRuntime:
     class BrokenPipeAction:
         def inject_error(self, request_handler):
             # partial read
-            self.rfile.read(50)
+            request_handler.rfile.read(50)
 
             time.sleep(1)
+            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -351,6 +353,7 @@ class _ServerRuntime:
             request_handler.log_message("timeout action: sleep")
             time.sleep(10)
             request_handler.log_message("timeout action: close connection")
+            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -469,13 +472,33 @@ def get_random_string(length):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
+    # Speak HTTP/1.1 with keep-alive, like real S3. With the default HTTP/1.0
+    # every response closes the connection, so a client that works at full
+    # speed opens a new connection per request and the resulting connection
+    # storm causes sporadic connect timeouts and resets, which the tests
+    # then observe as extra `S3WriteRequestsErrors` on top of the injected
+    # ones. Keep-alive lets the client reuse connections and keeps the error
+    # counters deterministic. Every response must carry `Content-Length`
+    # (or close the connection deliberately, as the error actions do).
+    protocol_version = "HTTP/1.1"
+
     throttler = _runtime.throttler
+
+    def write_body(self, data):
+        # A response to HEAD carries the headers of the equivalent GET, but never its body.
+        # Writing one leaves unread bytes on a keep-alive connection, and the client then reads
+        # them as the status line of the next response ("Invalid HTTP version string") or blocks
+        # waiting for the rest of it.
+        if self.command == "HEAD":
+            return
+        self.wfile.write(data)
 
     def _ok(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", "2")
         self.end_headers()
-        self.wfile.write(b"OK")
+        self.write_body(b"OK")
 
     def _ping(self):
         self._ok()
@@ -502,8 +525,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         url = f"http://{host}:{port}{self.path}"
         self.log_message("redirect to %s", url)
         self.send_header("Location", url)
+        self.send_header("Content-Length", "10")
         self.end_headers()
-        self.wfile.write(b"Redirected")
+        self.write_body(b"Redirected")
 
     def write_error(self, http_code, data, content_length=None):
         if content_length is None:
@@ -515,7 +539,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(content_length))
         self.end_headers()
         if data:
-            self.wfile.write(bytes(data, "UTF-8"))
+            self.write_body(bytes(data, "UTF-8"))
 
     def _fake_put_ok(self):
         self.log_message("fake put")
@@ -548,7 +572,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(data))
         self.end_headers()
 
-        self.wfile.write(bytes(data, "UTF-8"))
+        self.write_body(bytes(data, "UTF-8"))
 
     def _fake_post_ok(self, path):
         self.read_all_input()
@@ -572,7 +596,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(data))
         self.end_headers()
 
-        self.wfile.write(bytes(data, "UTF-8"))
+        self.write_body(bytes(data, "UTF-8"))
 
     def _mock_settings(self):
         parts = urllib.parse.urlsplit(self.path)
@@ -768,6 +792,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
 class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
+
+    # With keep-alive a thread lives as long as its connection: do not let
+    # idle connections block the server shutdown.
+    daemon_threads = True
+
+    # A client uploading many parts concurrently opens its connections all at
+    # once; the default listen backlog of 5 drops the excess connection
+    # attempts, and they surface as connect timeouts counted on top of the
+    # injected errors.
+    request_queue_size = 128
 
     def set_upstream(self, upstream_host, upstream_port):
         self.upstream_host = upstream_host

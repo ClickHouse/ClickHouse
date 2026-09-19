@@ -11,7 +11,8 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
-#include <Poco/StreamCopier.h>
+#include <IO/HTTP/HTTPClientIO.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -153,19 +154,18 @@ void CloudJWTProvider::exchangeIdPTokenForClickHouseJWT(bool show_messages)
     request_payload_buffer.finalize();
 
     request.setContentLength(request_body.length());
-    session->sendRequest(request) << request_body;
+    auto request_out = sendHTTPRequest(*session, request);
+    writeString(request_body, *request_out);
+    request_out->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-    {
-        std::string error_body;
-        Poco::StreamCopier::copyToString(rs, error_body);
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Error exchanging token: {} {}\nResponse: {}", response.getStatus(), response.getReason(), error_body);
-    }
+    auto rs = receiveHTTPResponse(*session, response);
 
     std::string response_body;
-    Poco::StreamCopier::copyToString(rs, response_body);
+    readStringUntilEOF(response_body, *rs);
+
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Error exchanging token: {} {}\nResponse: {}", response.getStatus(), response.getReason(), response_body);
 
     Poco::JSON::Object::Ptr object = Poco::JSON::Parser().parse(response_body).extract<Poco::JSON::Object::Ptr>();
     clickhouse_jwt = object->getValue<std::string>("token");

@@ -1,0 +1,11 @@
+--- response with Content-Length ---
+100000	4999950000
+--- response with chunked transfer encoding ---
+100000	4999950000
+--- a read buffer smaller than the chunks changes nothing ---
+100000	4999950000
+100000	4999950000
+--- request body that fits into one chunk ---
+chunked	1
+--- request body that spans several chunks ---
+chunked	1

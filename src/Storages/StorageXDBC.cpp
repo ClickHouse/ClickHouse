@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -81,7 +82,7 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
     return bridge_helper->getURLParams(max_block_size);
 }
 
-std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
+std::function<void(WriteBuffer &)> StorageXDBC::getReadPOSTDataCallback(
     const Names & column_names,
     const ColumnsDescription & columns_description,
     const SelectQueryInfo & query_info,
@@ -113,11 +114,11 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         cols.emplace_back(column_data.name, column_data.type);
     }
 
-    auto write_body_callback = [query, cols](std::ostream & os)
+    auto write_body_callback = [query, cols](WriteBuffer & out)
     {
-        os << "sample_block=" << escapeForFileName(cols.toString());
-        os << "&";
-        os << "query=" << escapeForFileName(query);
+        out << "sample_block=" << escapeForFileName(cols.toString());
+        out << "&";
+        out << "query=" << escapeForFileName(query);
     };
 
     return write_body_callback;
