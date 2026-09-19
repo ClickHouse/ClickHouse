@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -80,15 +81,20 @@ IMergeTreeReader::IMergeTreeReader(
     for (const auto & column : getColumns())
     {
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
-
-        if (column.isSubcolumn()
-            && data_part_info_for_read->isCompactPart()
+        if (data_part_info_for_read->isCompactPart()
             && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto it = serializations_of_full_columns.find(column_to_read.getNameInStorage());
+            if (it == serializations_of_full_columns.end())
+            {
+                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                it = serializations_of_full_columns.emplace(
+                    column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage)).first;
+            }
+            serializations.emplace_back(column.isSubcolumn() ? getSerializationInPart(column) : it->second);
         }
+        else
+            serializations.emplace_back(getSerializationInPart(column));
     }
 }
 
@@ -475,6 +481,13 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         if (required_column.isSubcolumn())
             return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
         return serialization;
+    }
+
+    if (containsObjectType(*column_in_part->getTypeInStorage()))
+    {
+        auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
+        if (serialization->supportsPooling())
+            return serialization;
     }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
