@@ -2753,10 +2753,9 @@ public:
     bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
     bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
 
-    /// Not forwarded to the delegate while it is absent, because `system.tables` reads this one for
-    /// every row and a catalog sweep must neither materialize nor fail on a table whose collection is
-    /// missing. No engine a `URL` can dispatch to (`URL`, `File`, `S3`, `AzureBlobStorage`, `HDFS`)
-    /// carries a data lake configuration, so `false` is the delegate's answer too.
+    /// `system.tables` reads this one for every row, so it must neither materialize nor fail while the
+    /// collection is missing. No engine a `URL` dispatches to (`URL`, `File`, `S3`, `AzureBlobStorage`,
+    /// `HDFS`) carries a data lake configuration, so `false` is the delegate's answer too.
     bool isDataLake() const override
     {
         if (auto materialized = tryGetNestedIfMaterialized())
@@ -2926,11 +2925,9 @@ void registerStorageURL(StorageFactory & factory)
             checkStorageSettingNames(args);
 
             /// Only a definition replayed from metadata stored on this server may defer a missing named
-            /// collection to a lazy proxy; one the user supplies now must fail its own DDL. The WHOLE
-            /// construction is deferred, so the retry rebuilds through the eager path.
-            /// A `Replicated` database replaying its own Keeper metadata arrives below
-            /// `LoadingStrictnessLevel::ATTACH` with no short syntax, so only the context tells it apart
-            /// from a user `CREATE` (same predicate as `StorageDistributed`).
+            /// collection to a lazy proxy; one the user supplies now must fail its own DDL. A `Replicated`
+            /// database replays below `LoadingStrictnessLevel::ATTACH` with no short syntax, so only the
+            /// context distinguishes it from a user `CREATE` (same predicate as `StorageDistributed`).
             const bool loading_from_existing_metadata
                 = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax
                 || args.getLocalContext()->isRecoveryFromStoredMetadata();
