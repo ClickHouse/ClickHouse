@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_TOO_LARGE;
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -376,6 +377,15 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
              TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database, materialized_views_in_database);
 }
 
+/// These engines run their ingestion in a background job that only `startup` starts.
+static bool isPushSourceEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> push_source_engines
+        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
+
+    return push_source_engines.contains(engine_name);
+}
+
 void DatabaseOrdinary::loadTableFromMetadata(
     ContextMutablePtr local_context,
     const String & file_path,
@@ -432,25 +442,29 @@ void DatabaseOrdinary::loadTableFromMetadata(
             e.addMessage(
                 "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
                 + " from query " + query.formatForErrorMessage());
+
+            /// A user may drop a named collection, so a definition naming a missing one is a dangling reference, not corrupt metadata.
+            if (e.code() == ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST
+                && mode == LoadingStrictnessLevel::FORCE_ATTACH
+                && !(query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name))
+                && canUseLazyStandIn(query, name, mode))
+            {
+                tryLogCurrentException(
+                    log,
+                    fmt::format(
+                        "Attaching {} without its storage, so reading the table reports this instead of the server refusing to start",
+                        name.getFullName()));
+                loadTableLazy(local_context, name, ast, mode);
+                return;
+            }
+
             throw;
         }
     }
 }
 
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
+bool DatabaseOrdinary::canUseLazyStandIn(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
-}
-
-bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
-{
-    if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
-        return false;
-
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
         || query.isParameterizedView())
         return false;
@@ -488,6 +502,12 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
         return false;
 
     return true;
+}
+
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
+{
+    return database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]
+        && canUseLazyStandIn(query, name, mode);
 }
 
 void DatabaseOrdinary::loadTableLazy(
