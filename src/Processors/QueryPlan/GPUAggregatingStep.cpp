@@ -3,7 +3,7 @@
 #if USE_GPU
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <GPU/GPUAggregation.h>
+#include <GPU/GPUAccumulator.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/GPUAggregatingTransform.h>
@@ -28,9 +28,9 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-std::optional<std::vector<int>> gpuAggregationsOf(const Aggregator::Params & params)
+std::optional<std::vector<GPU::GPUAggregationKind>> gpuAggregationsOf(const Aggregator::Params & params)
 {
-    std::vector<int> aggregations;
+    std::vector<GPU::GPUAggregationKind> aggregations;
     aggregations.reserve(params.aggregates.size());
 
     for (const auto & aggregate : params.aggregates)

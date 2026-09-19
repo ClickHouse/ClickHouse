@@ -3902,6 +3902,18 @@ Possible values:
 
  Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
 
+- gpu_hash
+
+ A hash join computed on a CUDA GPU with cuDF, requiring a build with `-DENABLE_GPU=1`. Experimental.
+
+ Supports only `ALL INNER JOIN` on a single equality of two non-nullable integer columns of the same type (`UInt8` to `UInt64`, `Int8` to `Int64`), with every output column of either side a non-nullable fixed-width numeric type. A float join key is not supported, because cuDF compares float keys with IEEE equality where ClickHouse compares their bytes, which would put `0.0` and `-0.0` in the same key.
+
+ Unlike every other value here, this one is never reached by `default` or by `auto` and is used only when it is listed by name. A join that it cannot execute fails with "none of the algorithms enabled by the `join_algorithm` setting", and so does any join at all in a build without GPU support or on a machine with no usable device - there is deliberately no fallback, so that a query which asked for the device either runs on it or says why it could not.
+
+ The right table's key and payload columns are sent to the device and its hash table is built there. Of a left block only the key column is sent; the matching rows' indices come back and the left block's own columns are indexed in host memory, so the left side - normally the larger one - never crosses the PCIe link. `GPUJoinBuildRows`, `GPUJoinProbeRows`, `GPUJoinMatchedRows` and `GPUJoinMicroseconds` in `system.events` say how much data went over and how long it took.
+
+ The right table lives in device memory, which no memory limit of the server's can see. `max_rows_in_join` and `max_bytes_in_join` are checked against it and are the only bound on its size.
+
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.

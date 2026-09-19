@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/GPUTypes.h>
 #include "config.h"
 
 #if USE_GPU
@@ -13,7 +14,7 @@
 namespace DB
 {
 
-std::optional<std::vector<int>> gpuAggregationsOf(const Aggregator::Params & params);
+std::optional<std::vector<GPU::GPUAggregationKind>> gpuAggregationsOf(const Aggregator::Params & params);
 
 class GPUAggregatingStep : public ITransformingStep
 {

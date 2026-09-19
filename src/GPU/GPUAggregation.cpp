@@ -1,801 +1,583 @@
-#include <GPU/GPUAggregation.h>
+#include <GPU/Utils.h>
 
-#if USE_GPU
+#include <cudf/aggregation.hpp>
+#include <cudf/column/column.hpp>
+#include <cudf/concatenate.hpp>
+#include <cudf/groupby.hpp>
+#include <cudf/reduction.hpp>
+#include <cudf/scalar/scalar.hpp>
+#include <cudf/table/table.hpp>
+#include <cudf/table/table_view.hpp>
+#include <cudf/unary.hpp>
 
-#include <GPU/GPUAggregationCudf.h>
-
-#include <Columns/ColumnVector.h>
-#include <Compression/CompressionInfo.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-#include <Common/typeid_cast.h>
-
-#include <algorithm>
-#include <bit>
-#include <cstring>
-#include <map>
-#include <mutex>
-#include <numeric>
-#include <optional>
-#include <utility>
-
-namespace ProfileEvents
-{
-    extern const Event GPUAggregationRows;
-    extern const Event GPUAggregationBatches;
-    extern const Event GPUAggregationMicroseconds;
-}
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int GPU_ERROR;
-    extern const int LOGICAL_ERROR;
-}
-
-namespace GPU
+namespace DB::GPU
 {
 namespace
 {
-constexpr size_t error_buffer_size = 1024;
-}
 
-namespace
+cudf::data_type resultTypeOf(GPUResultType result_type)
 {
-
-class PinnedBufferPool
-{
-public:
-    static PinnedBufferPool & instance()
+    switch (result_type)
     {
-        static PinnedBufferPool pool;
-        return pool;
+        case GPUResultType::UInt64: return cudf::data_type{cudf::type_id::UINT64};
+        case GPUResultType::Int64: return cudf::data_type{cudf::type_id::INT64};
+        case GPUResultType::Float64: return cudf::data_type{cudf::type_id::FLOAT64};
+        default: throw std::logic_error("unknown result type " + std::to_string(static_cast<int>(result_type)));
     }
+}
 
-    std::pair<char *, size_t> acquire(size_t bytes)
+template <typename Result>
+Result scalarValueAs(const cudf::scalar & value, rmm::cuda_stream_view stream)
+{
+    switch (value.type().id())
     {
+        case cudf::type_id::UINT8:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint8_t> &>(value).value(stream));
+        case cudf::type_id::UINT16:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint16_t> &>(value).value(stream));
+        case cudf::type_id::UINT32:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint32_t> &>(value).value(stream));
+        case cudf::type_id::UINT64:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<uint64_t> &>(value).value(stream));
+        case cudf::type_id::INT8:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int8_t> &>(value).value(stream));
+        case cudf::type_id::INT16:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int16_t> &>(value).value(stream));
+        case cudf::type_id::INT32:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int32_t> &>(value).value(stream));
+        case cudf::type_id::INT64:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<int64_t> &>(value).value(stream));
+        case cudf::type_id::FLOAT32:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<float> &>(value).value(stream));
+        case cudf::type_id::FLOAT64:
+            return static_cast<Result>(static_cast<const cudf::numeric_scalar<double> &>(value).value(stream));
+        default:
+            throw std::logic_error(
+                "the device returned a scalar of cuDF type " + std::to_string(static_cast<int32_t>(value.type().id()))
+                + ", which is not one this path reduces into");
+    }
+}
+
+void writeResult(const cudf::scalar & value, GPUResultType result_type, void * result, rmm::cuda_stream_view stream)
+{
+    if (!value.is_valid(stream))
+        throw std::runtime_error("the device returned nothing for a non-empty batch of values without nulls");
+
+    switch (result_type)
+    {
+        case GPUResultType::UInt64:
         {
-            std::lock_guard lock(mutex);
-            const auto it = free_buffers.lower_bound(bytes);
-            if (it != free_buffers.end())
-            {
-                const std::pair<char *, size_t> taken{it->second, it->first};
-                pooled_bytes -= it->first;
-                free_buffers.erase(it);
-                return taken;
-            }
-        }
-
-        void * fresh = nullptr;
-        char error[error_buffer_size] = {};
-        if (clickhouseGPUAllocPinned(bytes, &fresh, error, sizeof(error)) != 0)
-            throw Exception(
-                ErrorCodes::GPU_ERROR, "Cannot allocate {} bytes of pinned host memory: {}", bytes, error);
-
-        return {static_cast<char *>(fresh), bytes};
-    }
-
-    void release(char * buffer, size_t capacity) noexcept
-    {
-        if (buffer == nullptr)
+            const uint64_t widened = scalarValueAs<uint64_t>(value, stream);
+            std::memcpy(result, &widened, sizeof(widened));
             return;
-
-        {
-            std::lock_guard lock(mutex);
-            if (pooled_bytes + capacity <= max_pooled_bytes)
-            {
-                free_buffers.emplace(capacity, buffer);
-                pooled_bytes += capacity;
-                return;
-            }
         }
-
-        clickhouseGPUFreePinned(buffer);
-    }
-
-private:
-    ~PinnedBufferPool() = default;
-
-    static constexpr size_t max_pooled_bytes = 1024UL * 1024 * 1024;
-
-    std::mutex mutex;
-    std::multimap<size_t, char *> free_buffers TSA_GUARDED_BY(mutex);
-    size_t pooled_bytes TSA_GUARDED_BY(mutex) = 0;
-};
-
-}
-
-PinnedBuffer::~PinnedBuffer()
-{
-    PinnedBufferPool::instance().release(buffer, capacity);
-}
-
-PinnedBuffer::PinnedBuffer(PinnedBuffer && other) noexcept
-    : buffer(other.buffer), capacity(other.capacity), used(other.used)
-{
-    other.buffer = nullptr;
-    other.capacity = 0;
-    other.used = 0;
-}
-
-PinnedBuffer & PinnedBuffer::operator=(PinnedBuffer && other) noexcept
-{
-    if (this != &other)
-    {
-        clickhouseGPUFreePinned(buffer);
-        buffer = other.buffer;
-        capacity = other.capacity;
-        used = other.used;
-        other.buffer = nullptr;
-        other.capacity = 0;
-        other.used = 0;
-    }
-    return *this;
-}
-
-void PinnedBuffer::reserve(size_t bytes)
-{
-    if (bytes <= capacity)
-        return;
-
-    const size_t new_capacity = std::max(bytes, capacity * 2);
-
-    const auto [fresh, fresh_capacity] = PinnedBufferPool::instance().acquire(new_capacity);
-
-    if (used != 0)
-        memcpy(fresh, buffer, used);
-
-    PinnedBufferPool::instance().release(buffer, capacity);
-    buffer = fresh;
-    capacity = fresh_capacity;
-}
-
-void PinnedBuffer::append(const char * data, size_t bytes)
-{
-    if (bytes == 0)
-        return;
-
-    reserve(used + bytes);
-    memcpy(buffer + used, data, bytes);
-    used += bytes;
-}
-
-std::optional<int> elementTypeOf(const IDataType & type)
-{
-    switch (type.getTypeId())
-    {
-        case TypeIndex::UInt8: return CLICKHOUSE_GPU_ELEMENT_UINT8;
-        case TypeIndex::UInt16: return CLICKHOUSE_GPU_ELEMENT_UINT16;
-        case TypeIndex::UInt32: return CLICKHOUSE_GPU_ELEMENT_UINT32;
-        case TypeIndex::UInt64: return CLICKHOUSE_GPU_ELEMENT_UINT64;
-        case TypeIndex::Int8: return CLICKHOUSE_GPU_ELEMENT_INT8;
-        case TypeIndex::Int16: return CLICKHOUSE_GPU_ELEMENT_INT16;
-        case TypeIndex::Int32: return CLICKHOUSE_GPU_ELEMENT_INT32;
-        case TypeIndex::Int64: return CLICKHOUSE_GPU_ELEMENT_INT64;
-        case TypeIndex::Float32: return CLICKHOUSE_GPU_ELEMENT_FLOAT32;
-        case TypeIndex::Float64: return CLICKHOUSE_GPU_ELEMENT_FLOAT64;
-        default: return {};
-    }
-}
-
-size_t elementSizeOf(int element_type)
-{
-    switch (element_type)
-    {
-        case CLICKHOUSE_GPU_ELEMENT_UINT8:
-        case CLICKHOUSE_GPU_ELEMENT_INT8:
-            return 1;
-        case CLICKHOUSE_GPU_ELEMENT_UINT16:
-        case CLICKHOUSE_GPU_ELEMENT_INT16:
-            return 2;
-        case CLICKHOUSE_GPU_ELEMENT_UINT32:
-        case CLICKHOUSE_GPU_ELEMENT_INT32:
-        case CLICKHOUSE_GPU_ELEMENT_FLOAT32:
-            return 4;
-        case CLICKHOUSE_GPU_ELEMENT_UINT64:
-        case CLICKHOUSE_GPU_ELEMENT_INT64:
-        case CLICKHOUSE_GPU_ELEMENT_FLOAT64:
-            return 8;
+        case GPUResultType::Int64:
+        {
+            const int64_t widened = scalarValueAs<int64_t>(value, stream);
+            std::memcpy(result, &widened, sizeof(widened));
+            return;
+        }
+        case GPUResultType::Float64:
+        {
+            const double widened = scalarValueAs<double>(value, stream);
+            std::memcpy(result, &widened, sizeof(widened));
+            return;
+        }
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
+            throw std::logic_error("unknown result type " + std::to_string(static_cast<int>(result_type)));
     }
 }
 
-namespace
-{
-
-std::optional<int> resultTypeFor(int element_type)
-{
-    switch (element_type)
-    {
-        case CLICKHOUSE_GPU_ELEMENT_UINT8:
-        case CLICKHOUSE_GPU_ELEMENT_UINT16:
-        case CLICKHOUSE_GPU_ELEMENT_UINT32:
-        case CLICKHOUSE_GPU_ELEMENT_UINT64:
-            return CLICKHOUSE_GPU_RESULT_UINT64;
-        case CLICKHOUSE_GPU_ELEMENT_INT8:
-        case CLICKHOUSE_GPU_ELEMENT_INT16:
-        case CLICKHOUSE_GPU_ELEMENT_INT32:
-        case CLICKHOUSE_GPU_ELEMENT_INT64:
-            return CLICKHOUSE_GPU_RESULT_INT64;
-        case CLICKHOUSE_GPU_ELEMENT_FLOAT32:
-        case CLICKHOUSE_GPU_ELEMENT_FLOAT64:
-            return CLICKHOUSE_GPU_RESULT_FLOAT64;
-        default:
-            return {};
-    }
-}
-
-std::optional<int> resultTypeOf(const IDataType & type)
-{
-    switch (type.getTypeId())
-    {
-        case TypeIndex::UInt64: return CLICKHOUSE_GPU_RESULT_UINT64;
-        case TypeIndex::Int64: return CLICKHOUSE_GPU_RESULT_INT64;
-        case TypeIndex::Float64: return CLICKHOUSE_GPU_RESULT_FLOAT64;
-        default: return {};
-    }
-}
-
-String aggregationName(int aggregation)
+std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggregationKind aggregation)
 {
     switch (aggregation)
     {
-        case CLICKHOUSE_GPU_AGGREGATION_SUM: return "sum";
-        case CLICKHOUSE_GPU_AGGREGATION_MIN: return "min";
-        case CLICKHOUSE_GPU_AGGREGATION_MAX: return "max";
-        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU aggregation {}", aggregation);
-    }
-}
-}
-
-std::optional<int> aggregationOf(const String & aggregate_function_name)
-{
-    if (aggregate_function_name == "sum")
-        return CLICKHOUSE_GPU_AGGREGATION_SUM;
-    if (aggregate_function_name == "min")
-        return CLICKHOUSE_GPU_AGGREGATION_MIN;
-    if (aggregate_function_name == "max")
-        return CLICKHOUSE_GPU_AGGREGATION_MAX;
-
-    return {};
-}
-
-std::optional<int> codecOf(UInt8 method_byte)
-{
-    switch (method_byte)
-    {
-        case static_cast<UInt8>(CompressionMethodByte::LZ4): return CLICKHOUSE_GPU_CODEC_LZ4;
-        case static_cast<UInt8>(CompressionMethodByte::ZSTD): return CLICKHOUSE_GPU_CODEC_ZSTD;
-        default: return {};
+        case GPUAggregationKind::Sum: return cudf::make_sum_aggregation<cudf::reduce_aggregation>();
+        case GPUAggregationKind::Min: return cudf::make_min_aggregation<cudf::reduce_aggregation>();
+        case GPUAggregationKind::Max: return cudf::make_max_aggregation<cudf::reduce_aggregation>();
+        default: throw std::logic_error("unknown aggregation " + std::to_string(static_cast<int>(aggregation)));
     }
 }
 
-const String & deviceProbeError()
+cudf::data_type reduceOutputTypeOf(GPUElementType element_type, GPUResultType result_type, GPUAggregationKind aggregation)
 {
-    static const String error = []
+    if (aggregation == GPUAggregationKind::Sum)
+        return resultTypeOf(result_type);
+
+    return elementLayoutOf(element_type).type;
+}
+
+void reduceDeviceValues(
+    const void * device_values,
+    GPUElementType element_type,
+    GPUResultType result_type,
+    GPUAggregationKind aggregation,
+    size_t num_rows,
+    void * result,
+    rmm::cuda_stream_view stream)
+{
+    const ElementLayout element = elementLayoutOf(element_type);
+    const cudf::column_view column(
+        element.type, static_cast<cudf::size_type>(num_rows), device_values, nullptr, 0);
+
+    const std::unique_ptr<cudf::reduce_aggregation> reduction = reduceAggregationFor(aggregation);
+    const std::unique_ptr<cudf::scalar> value
+        = cudf::reduce(column, *reduction, reduceOutputTypeOf(element_type, result_type, aggregation), stream);
+
+    writeResult(*value, result_type, result, stream);
+}
+
+cudf::data_type groupByTargetTypeFor(cudf::data_type source, GPUAggregationKind aggregation)
+{
+    if (aggregation != GPUAggregationKind::Sum)
+        return source;
+
+    switch (source.id())
     {
-        char message[error_buffer_size] = {};
-        if (clickhouseGPUProbeDevice(message, sizeof(message)) == 0)
-            return String{};
-        return String{message};
-    }();
-
-    return error;
-}
-
-bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result_type, int aggregation)
-{
-    const auto element_type = elementTypeOf(argument_type);
-    if (!element_type)
-        return false;
-
-    if (aggregation == CLICKHOUSE_GPU_AGGREGATION_SUM)
-    {
-        const auto result = resultTypeOf(result_type);
-        return result && result == resultTypeFor(*element_type);
-    }
-
-    return elementTypeOf(result_type) == element_type;
-}
-
-namespace
-{
-int aggregationOrThrow(int aggregation)
-{
-    aggregationName(aggregation);
-    return aggregation;
-}
-
-int elementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type, int aggregation)
-{
-    if (canReduceOnDevice(argument_type, result_type, aggregation))
-        return *elementTypeOf(argument_type);
-
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cannot reduce a column of {} into {} by `{}` on a GPU",
-        argument_type.getName(),
-        result_type.getName(),
-        aggregationName(aggregation));
-}
-
-int resultTypeOrThrow(int element_type)
-{
-    if (const auto result_type = resultTypeFor(element_type))
-        return *result_type;
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
-}
-}
-
-GPUAccumulator::GPUAccumulator(
-    const IDataType & argument_type,
-    const IDataType & result_type_,
-    int aggregation_,
-    size_t batch_bytes_,
-    std::optional<int> codec_)
-    : element_type(elementTypeOrThrow(argument_type, result_type_, aggregationOrThrow(aggregation_)))
-    , result_type(resultTypeOrThrow(element_type))
-    , aggregation(aggregation_)
-    , element_size(elementSizeOf(element_type))
-    , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
-    , codec(codec_)
-{
-    if (!codec)
-        staged.reserve(batch_bytes);
-}
-
-void GPUAccumulator::flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes)
-{
-    if (staged_values_bytes == 0)
-        return;
-
-    if (staged_values_bytes + incoming_bytes > batch_bytes
-        || staged_values_bytes / element_size + incoming_rows > max_batch_rows)
-        reduceBatchOnDevice();
-}
-
-void GPUAccumulator::add(const IColumn & column)
-{
-    if (!block_offsets.empty())
-        throw Exception(ErrorCodes::GPU_ERROR, "A batch of compressed blocks cannot also take plain values");
-
-    const std::string_view raw = column.getRawData();
-    if (raw.size() != column.size() * element_size)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Column {} of {} rows holds {} bytes of values, expected {}",
-            column.getName(),
-            column.size(),
-            raw.size(),
-            column.size() * element_size);
-
-    flushIfBatchWouldOverflow(column.size(), raw.size());
-
-    staged.append(raw.data(), raw.size());
-    staged_values_bytes += raw.size();
-
-    if (staged_values_bytes >= batch_bytes)
-        reduceBatchOnDevice();
-}
-
-void GPUAccumulator::addBlock(const char * payload, size_t compressed_bytes, size_t decompressed_bytes)
-{
-    if (!codec)
-        throw Exception(ErrorCodes::GPU_ERROR, "A compressed block needs a codec the device can expand");
-
-    if (staged_values_bytes != 0 && block_offsets.empty())
-        throw Exception(ErrorCodes::GPU_ERROR, "A batch of plain values cannot also take compressed blocks");
-
-    flushIfBatchWouldOverflow(decompressed_bytes / element_size, decompressed_bytes);
-
-    block_offsets.push_back(staged.size());
-    block_compressed_sizes.push_back(compressed_bytes);
-    block_decompressed_sizes.push_back(decompressed_bytes);
-    staged.append(payload, compressed_bytes);
-    staged_values_bytes += decompressed_bytes;
-}
-
-void GPUAccumulator::reduceBatchOnDevice()
-{
-    if (staged_values_bytes == 0)
-        return;
-
-    const size_t num_rows = staged_values_bytes / element_size;
-
-    UInt64 batch_result = 0;
-    char error[error_buffer_size] = {};
-
-    Stopwatch watch;
-    const int status = block_offsets.empty()
-        ? clickhouseGPUReduce(
-              element_type, result_type, aggregation, staged.data(), num_rows, &batch_result, error, sizeof(error))
-        : clickhouseGPUReduceCompressed(
-              *codec,
-              element_type,
-              result_type,
-              aggregation,
-              staged.data(),
-              block_offsets.data(),
-              block_compressed_sizes.data(),
-              block_decompressed_sizes.data(),
-              block_offsets.size(),
-              num_rows,
-              &batch_result,
-              error,
-              sizeof(error));
-    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-
-    if (status != 0)
-        throw Exception(
-            ErrorCodes::GPU_ERROR,
-            "Cannot reduce {} values by `{}` on the device: {}",
-            num_rows,
-            aggregationName(aggregation),
-            error);
-
-    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
-
-    staged.clear();
-    block_offsets.clear();
-    block_compressed_sizes.clear();
-    block_decompressed_sizes.clear();
-    staged_values_bytes = 0;
-
-    combine(batch_result);
-}
-
-void GPUAccumulator::combine(UInt64 batch_result)
-{
-    if (aggregation == CLICKHOUSE_GPU_AGGREGATION_SUM)
-    {
-        if (result_type == CLICKHOUSE_GPU_RESULT_FLOAT64)
-            float_result += std::bit_cast<Float64>(batch_result);
-        else
-            integer_result += batch_result;
-
-        has_result = true;
-        return;
-    }
-
-    const bool take_smaller = aggregation == CLICKHOUSE_GPU_AGGREGATION_MIN;
-
-    switch (result_type)
-    {
-        case CLICKHOUSE_GPU_RESULT_UINT64:
-        {
-            integer_result = !has_result
-                ? batch_result
-                : (take_smaller ? std::min(integer_result, batch_result) : std::max(integer_result, batch_result));
-            break;
-        }
-        case CLICKHOUSE_GPU_RESULT_INT64:
-        {
-            const Int64 running = static_cast<Int64>(integer_result);
-            const Int64 value = static_cast<Int64>(batch_result);
-            integer_result = static_cast<UInt64>(
-                !has_result ? value : (take_smaller ? std::min(running, value) : std::max(running, value)));
-            break;
-        }
+        case cudf::type_id::UINT8:
+        case cudf::type_id::UINT16:
+        case cudf::type_id::UINT32:
+        case cudf::type_id::UINT64:
+        case cudf::type_id::INT8:
+        case cudf::type_id::INT16:
+        case cudf::type_id::INT32:
+        case cudf::type_id::INT64:
+            return cudf::data_type{cudf::type_id::INT64};
+        case cudf::type_id::FLOAT32:
+            return cudf::data_type{cudf::type_id::FLOAT32};
+        case cudf::type_id::FLOAT64:
+            return cudf::data_type{cudf::type_id::FLOAT64};
         default:
-        {
-            const Float64 value = std::bit_cast<Float64>(batch_result);
-            float_result = !has_result ? value : (take_smaller ? std::min(float_result, value) : std::max(float_result, value));
-            break;
-        }
+            throw std::logic_error(
+                "cuDF type " + std::to_string(static_cast<int32_t>(source.id())) + " is not one this path groups by or reduces");
     }
-
-    has_result = true;
 }
 
-Field GPUAccumulator::finalize()
+cudf::data_type groupByDeviceTypeOf(GPUElementType element_type, GPUResultType result_type, GPUAggregationKind aggregation)
 {
-    reduceBatchOnDevice();
+    if (aggregation != GPUAggregationKind::Sum)
+        return elementLayoutOf(element_type).type;
 
     switch (result_type)
     {
-        case CLICKHOUSE_GPU_RESULT_UINT64:
-            return Field(integer_result);
-        case CLICKHOUSE_GPU_RESULT_INT64:
-            return Field(static_cast<Int64>(integer_result));
+        case GPUResultType::UInt64:
+        case GPUResultType::Int64:
+            return cudf::data_type{cudf::type_id::INT64};
+        case GPUResultType::Float64:
+            return cudf::data_type{cudf::type_id::FLOAT64};
         default:
-            return Field(float_result);
+            throw std::logic_error("unknown result type " + std::to_string(static_cast<int>(result_type)));
     }
 }
 
-bool canGroupByReduceOnDevice(
-    const DataTypes & key_types,
-    const DataTypes & argument_types,
-    const DataTypes & result_types,
-    const std::vector<int> & aggregations)
+std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationKind aggregation)
 {
-    if (key_types.empty() || argument_types.empty() || argument_types.size() != result_types.size()
-        || argument_types.size() != aggregations.size())
-        return false;
-
-    for (const auto & key_type : key_types)
+    switch (aggregation)
     {
-        const auto key_element_type = elementTypeOf(*key_type);
-        if (!key_element_type)
-            return false;
-
-        if (*key_element_type == CLICKHOUSE_GPU_ELEMENT_FLOAT32 || *key_element_type == CLICKHOUSE_GPU_ELEMENT_FLOAT64)
-            return false;
+        case GPUAggregationKind::Sum: return cudf::make_sum_aggregation<cudf::groupby_aggregation>();
+        case GPUAggregationKind::Min: return cudf::make_min_aggregation<cudf::groupby_aggregation>();
+        case GPUAggregationKind::Max: return cudf::make_max_aggregation<cudf::groupby_aggregation>();
+        default: throw std::logic_error("unknown aggregation " + std::to_string(static_cast<int>(aggregation)));
     }
+}
 
-    for (size_t i = 0; i < argument_types.size(); ++i)
+struct GroupByValue
+{
+    ElementLayout element;
+
+    GPUAggregationKind aggregation;
+    cudf::data_type device_type;
+    size_t device_type_size;
+};
+
+std::unique_ptr<cudf::table> groupByAggregate(
+    const cudf::table_view & keys,
+    const std::vector<cudf::column_view> & values,
+    const std::vector<GroupByValue> & value_descriptions,
+    rmm::cuda_stream_view stream)
+{
+    std::vector<cudf::groupby::aggregation_request> requests;
+    requests.reserve(values.size());
+
+    for (size_t i = 0; i < values.size(); ++i)
     {
-        if (!canReduceOnDevice(*argument_types[i], *result_types[i], aggregations[i]))
-            return false;
+        const GroupByValue & description = value_descriptions[i];
+
+        if (groupByTargetTypeFor(values[i].type(), description.aggregation) != description.device_type)
+            throw std::logic_error(
+                "a groupby over a value column of cuDF type " + std::to_string(static_cast<int32_t>(values[i].type().id()))
+                + " leaves a group in type "
+                + std::to_string(
+                    static_cast<int32_t>(groupByTargetTypeFor(values[i].type(), description.aggregation).id()))
+                + ", not in the expected " + std::to_string(static_cast<int32_t>(description.device_type.id())));
+
+        cudf::groupby::aggregation_request request;
+        request.values = values[i];
+        request.aggregations.push_back(groupByAggregationFor(description.aggregation));
+        requests.push_back(std::move(request));
     }
 
-    return true;
-}
+    cudf::groupby::groupby grouper(keys, cudf::null_policy::EXCLUDE);
 
-namespace
-{
-template <typename T>
-void * resizeAndGetValueBytes(IColumn & column, size_t num_rows)
-{
-    auto * vector = typeid_cast<ColumnVector<T> *>(&column);
-    if (!vector)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot copy groups of {}-byte values out of the device into a column of {}",
-            sizeof(T),
-            column.getName());
+    auto [group_keys, results] = grouper.aggregate(requests, stream);
 
-    auto & data = vector->getData();
-    if (!data.empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot copy groups into a column of {} that already holds {} rows", column.getName(), data.size());
+    std::vector<std::unique_ptr<cudf::column>> columns = group_keys->release();
 
-    data.resize(num_rows);
-    return data.data();
-}
-}
-
-void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
-{
-    switch (element_type)
+    for (size_t i = 0; i < results.size(); ++i)
     {
-        case CLICKHOUSE_GPU_ELEMENT_UINT8: return resizeAndGetValueBytes<UInt8>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_UINT16: return resizeAndGetValueBytes<UInt16>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_UINT32: return resizeAndGetValueBytes<UInt32>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_UINT64: return resizeAndGetValueBytes<UInt64>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_INT8: return resizeAndGetValueBytes<Int8>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_INT16: return resizeAndGetValueBytes<Int16>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_INT32: return resizeAndGetValueBytes<Int32>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_INT64: return resizeAndGetValueBytes<Int64>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_FLOAT32: return resizeAndGetValueBytes<Float32>(column, num_rows);
-        case CLICKHOUSE_GPU_ELEMENT_FLOAT64: return resizeAndGetValueBytes<Float64>(column, num_rows);
-        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
+        if (results[i].results.size() != 1)
+            throw std::logic_error(
+                "the device returned " + std::to_string(results[i].results.size()) + " results for one requested aggregation");
+
+        std::unique_ptr<cudf::column> & aggregated = results[i].results.front();
+
+        if (aggregated->type() != value_descriptions[i].device_type)
+            throw std::logic_error(
+                "the device returned a column of cuDF type " + std::to_string(static_cast<int32_t>(aggregated->type().id()))
+                + ", expected " + std::to_string(static_cast<int32_t>(value_descriptions[i].device_type.id())));
+
+        checkNoNulls(aggregated->view(), "a column of partial results");
+        columns.push_back(std::move(aggregated));
     }
+
+    return std::make_unique<cudf::table>(std::move(columns));
 }
 
-namespace
+struct GroupByState
 {
-void * resizeForResultType(IColumn & column, size_t num_rows, int result_type)
+    std::vector<ElementLayout> keys;
+
+    std::vector<GroupByValue> values;
+    std::unique_ptr<cudf::table> partial;
+
+    bool finalized = false;
+};
+
+}
+}
+
+namespace DB::GPU
 {
-    switch (result_type)
+
+int reduceOnGPU(
+    GPUElementType element_type,
+    GPUResultType result_type,
+    GPUAggregationKind aggregation,
+    const GPUBuffer * values,
+    size_t num_rows,
+    void * result,
+    char * error,
+    size_t error_size)
+{
+    try
     {
-        case CLICKHOUSE_GPU_RESULT_UINT64: return resizeAndGetValueBytes<UInt64>(column, num_rows);
-        case CLICKHOUSE_GPU_RESULT_INT64: return resizeAndGetValueBytes<Int64>(column, num_rows);
-        case CLICKHOUSE_GPU_RESULT_FLOAT64: return resizeAndGetValueBytes<Float64>(column, num_rows);
-        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU result type {}", result_type);
+        if (values == nullptr)
+            throw std::logic_error("nothing to reduce");
+
+        checkRowCountFitsCudf(num_rows, "a batch");
+
+        const auto & buffer = *reinterpret_cast<const GPUBufferState *>(values);
+        if (buffer.used_bytes != num_rows * buffer.element.size)
+            throw std::logic_error(
+                "the buffer holds " + std::to_string(buffer.used_bytes) + " bytes for " + std::to_string(num_rows) + " rows");
+
+        reduceDeviceValues(buffer.values.data(), element_type, result_type, aggregation, num_rows, result, stream_of(buffer));
+        return 0;
     }
-}
-
-std::vector<int> keyElementTypesOrThrow(const DataTypes & key_types)
-{
-    std::vector<int> element_types;
-    element_types.reserve(key_types.size());
-
-    for (const auto & key_type : key_types)
+    catch (const std::exception & e)
     {
-        const auto element_type = elementTypeOf(*key_type);
-        if (!element_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot group by a column of {} on a GPU", key_type->getName());
-
-        element_types.push_back(*element_type);
+        return handleException(error, error_size, e.what());
     }
-
-    return element_types;
-}
-
-std::vector<int> valueElementTypesOrThrow(
-    const DataTypes & argument_types, const DataTypes & result_types, const std::vector<int> & aggregations)
-{
-    std::vector<int> element_types;
-    element_types.reserve(argument_types.size());
-
-    for (size_t i = 0; i < argument_types.size(); ++i)
-        element_types.push_back(elementTypeOrThrow(*argument_types[i], *result_types[i], aggregationOrThrow(aggregations[i])));
-
-    return element_types;
-}
-
-std::vector<int> resultTypesOrThrow(const std::vector<int> & element_types)
-{
-    std::vector<int> result_types;
-    result_types.reserve(element_types.size());
-
-    for (const int element_type : element_types)
-        result_types.push_back(resultTypeOrThrow(element_type));
-
-    return result_types;
-}
-
-std::vector<size_t> elementSizesOf(const std::vector<int> & element_types)
-{
-    std::vector<size_t> sizes;
-    sizes.reserve(element_types.size());
-
-    for (const int element_type : element_types)
-        sizes.push_back(elementSizeOf(element_type));
-
-    return sizes;
-}
-
-size_t rowBytesOf(const std::vector<size_t> & key_element_sizes, const std::vector<size_t> & value_element_sizes)
-{
-    return std::accumulate(key_element_sizes.begin(), key_element_sizes.end(), size_t{0})
-        + std::accumulate(value_element_sizes.begin(), value_element_sizes.end(), size_t{0});
-}
-}
-
-GroupByGPUAccumulator::GroupByGPUAccumulator(
-    const DataTypes & key_types,
-    const DataTypes & argument_types,
-    const DataTypes & result_types,
-    const std::vector<int> & aggregations,
-    size_t batch_bytes)
-    : key_element_types(keyElementTypesOrThrow(key_types))
-    , value_element_types(valueElementTypesOrThrow(argument_types, result_types, aggregations))
-    , value_result_types(resultTypesOrThrow(value_element_types))
-    , value_aggregations(aggregations)
-    , key_element_sizes(elementSizesOf(key_element_types))
-    , value_element_sizes(elementSizesOf(value_element_types))
-    , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_sizes, value_element_sizes), size_t{1}, max_batch_rows))
-    , staged_keys(key_element_types.size())
-    , staged_values(value_element_types.size())
-{
-    char error[error_buffer_size] = {};
-    const int status = clickhouseGPUGroupByCreate(
-        key_element_types.data(),
-        key_element_types.size(),
-        value_element_types.data(),
-        value_result_types.data(),
-        value_aggregations.data(),
-        value_element_types.size(),
-        &handle,
-        error,
-        sizeof(error));
-
-    if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot group by {} keys on the device: {}", key_element_types.size(), error);
-
-    for (size_t i = 0; i < staged_keys.size(); ++i)
-        staged_keys[i].reserve(batch_rows * key_element_sizes[i]);
-    for (size_t i = 0; i < staged_values.size(); ++i)
-        staged_values[i].reserve(batch_rows * value_element_sizes[i]);
-}
-
-GroupByGPUAccumulator::~GroupByGPUAccumulator()
-{
-    clickhouseGPUGroupByDestroy(handle);
-}
-
-void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & value_columns)
-{
-    const size_t num_rows = key_columns.front()->size();
-    if (num_rows == 0)
-        return;
-
-    if (staged_rows + num_rows > max_batch_rows)
-        sendBatchToDevice();
-
-    for (size_t i = 0; i < key_columns.size(); ++i)
+    catch (...)
     {
-        const std::string_view raw = key_columns[i]->getRawData();
-        staged_keys[i].append(raw.data(), raw.size());
+        return handleException(error, error_size, "unknown exception");
     }
+}
 
-    for (size_t i = 0; i < value_columns.size(); ++i)
+int createGPUGroupBy(
+    const GPUElementType * key_element_types,
+    size_t num_keys,
+    const GPUElementType * value_element_types,
+    const GPUResultType * value_result_types,
+    const GPUAggregationKind * value_aggregations,
+    size_t num_values,
+    GPUGroupBy ** handle,
+    char * error,
+    size_t error_size)
+{
+    try
     {
-        const std::string_view raw = value_columns[i]->getRawData();
-        staged_values[i].append(raw.data(), raw.size());
+        if (handle == nullptr)
+            throw std::logic_error("nowhere to put the handle");
+
+        *handle = nullptr;
+
+        if (num_keys == 0)
+            throw std::logic_error("a keyed aggregation with no keys");
+        if (num_values == 0)
+            throw std::logic_error("a keyed aggregation with nothing to aggregate");
+
+        auto state = std::make_unique<GroupByState>();
+
+        state->keys.reserve(num_keys);
+        for (size_t i = 0; i < num_keys; ++i)
+            state->keys.push_back(elementLayoutOf(key_element_types[i]));
+
+        state->values.reserve(num_values);
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            const cudf::data_type device_type
+                = groupByDeviceTypeOf(value_element_types[i], value_result_types[i], value_aggregations[i]);
+
+            state->values.push_back({
+                .element = elementLayoutOf(value_element_types[i]),
+                .aggregation = value_aggregations[i],
+                .device_type = device_type,
+                .device_type_size = cudf::size_of(device_type),
+            });
+        }
+
+        setUpDeviceMemoryResourceOnce();
+
+        *handle = reinterpret_cast<GPUGroupBy *>(state.release());
+        return 0;
+    }
+    catch (const std::exception & e)
+    {
+        return handleException(error, error_size, e.what());
+    }
+    catch (...)
+    {
+        return handleException(error, error_size, "unknown exception");
+    }
+}
+
+int addBatchToGPUGroupBy(
+    GPUGroupBy * handle,
+    const void * const * key_host_data,
+    const void * const * value_host_data,
+    size_t num_rows,
+    char * error,
+    size_t error_size)
+{
+    try
+    {
+        if (handle == nullptr)
+            throw std::logic_error("no handle");
+
+        GroupByState & state = *reinterpret_cast<GroupByState *>(handle);
+
+        if (state.finalized)
+            throw std::logic_error("a batch added after the partial result was finalized");
+
+        if (num_rows == 0)
+            throw std::logic_error("nothing to group");
+
+        if (num_rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
+            throw std::logic_error("a batch of " + std::to_string(num_rows) + " rows is too large for cuDF");
+
+        const auto batch_rows = static_cast<cudf::size_type>(num_rows);
+        const rmm::cuda_stream_view stream = cudf::get_default_stream();
+
+        std::vector<rmm::device_buffer> key_buffers;
+        std::vector<cudf::column_view> key_views;
+        key_buffers.reserve(state.keys.size());
+        key_views.reserve(state.keys.size());
+
+        for (size_t i = 0; i < state.keys.size(); ++i)
+        {
+            key_buffers.emplace_back(key_host_data[i], num_rows * state.keys[i].size, stream);
+            key_views.emplace_back(state.keys[i].type, batch_rows, key_buffers.back().data(), nullptr, 0);
+        }
+
+        std::vector<rmm::device_buffer> value_buffers;
+        std::vector<std::unique_ptr<cudf::column>> widened_values;
+        std::vector<cudf::column_view> value_views;
+        value_buffers.reserve(state.values.size());
+        value_views.reserve(state.values.size());
+
+        for (const GroupByValue & value : state.values)
+        {
+            const size_t i = value_views.size();
+
+            value_buffers.emplace_back(value_host_data[i], num_rows * value.element.size, stream);
+
+            const cudf::column_view uploaded(
+                value.element.type, batch_rows, value_buffers.back().data(), nullptr, 0);
+
+            if (groupByTargetTypeFor(uploaded.type(), value.aggregation) == value.device_type)
+            {
+                value_views.push_back(uploaded);
+                continue;
+            }
+
+            widened_values.push_back(cudf::cast(uploaded, value.device_type, stream));
+            value_views.push_back(widened_values.back()->view());
+        }
+
+        std::unique_ptr<cudf::table> batch
+            = groupByAggregate(cudf::table_view(key_views), value_views, state.values, stream);
+
+        if (!state.partial)
+        {
+            state.partial = std::move(batch);
+            return 0;
+        }
+
+        const std::vector<cudf::table_view> to_concatenate{state.partial->view(), batch->view()};
+        const std::unique_ptr<cudf::table> concatenated = cudf::concatenate(to_concatenate, stream);
+
+        std::vector<cudf::size_type> key_indices(state.keys.size());
+        for (size_t i = 0; i < state.keys.size(); ++i)
+            key_indices[i] = static_cast<cudf::size_type>(i);
+
+        std::vector<cudf::column_view> partial_value_views;
+        partial_value_views.reserve(state.values.size());
+        for (size_t i = 0; i < state.values.size(); ++i)
+            partial_value_views.push_back(concatenated->view().column(static_cast<cudf::size_type>(state.keys.size() + i)));
+
+        state.partial = groupByAggregate(concatenated->select(key_indices), partial_value_views, state.values, stream);
+        return 0;
+    }
+    catch (const std::exception & e)
+    {
+        return handleException(error, error_size, e.what());
+    }
+    catch (...)
+    {
+        return handleException(error, error_size, "unknown exception");
+    }
+}
+
+int finalizeGPUGroupBy(GPUGroupBy * handle, size_t * num_groups, char * error, size_t error_size)
+{
+    if (handle == nullptr)
+        return handleException(error, error_size, "no handle");
+
+    if (num_groups == nullptr)
+        return handleException(error, error_size, "nowhere to put the number of groups");
+
+    GroupByState & state = *reinterpret_cast<GroupByState *>(handle);
+
+    state.finalized = true;
+
+    *num_groups = state.partial ? static_cast<size_t>(state.partial->num_rows()) : 0;
+    return 0;
+}
+
+int copyGPUGroupsOut(
+    GPUGroupBy * handle,
+    void * const * key_host_data,
+    void * const * value_host_data,
+    char * error,
+    size_t error_size)
+{
+    try
+    {
+        if (handle == nullptr)
+            throw std::logic_error("no handle");
+
+        GroupByState & state = *reinterpret_cast<GroupByState *>(handle);
+
+        if (!state.finalized)
+            throw std::logic_error("the groups were copied out before the partial result was finalized");
+
+        if (!state.partial)
+            return 0;
+
+        const rmm::cuda_stream_view stream = cudf::get_default_stream();
+        const cudf::table_view groups = state.partial->view();
+        const auto num_groups = static_cast<size_t>(groups.num_rows());
+
+        const auto copyColumnOut = [&](const cudf::column_view & column, void * destination, size_t element_size, const std::string & what)
+        {
+            checkNoNulls(column, what);
+
+            if (column.offset() != 0)
+                throw std::logic_error("the device returned " + what + " as a slice at offset " + std::to_string(column.offset()));
+
+            if (const cudaError_t status = cudaMemcpyAsync(
+                    destination, column.head<void>(), num_groups * element_size, cudaMemcpyDeviceToHost, stream.value());
+                status != cudaSuccess)
+                throw std::runtime_error("cannot copy " + what + " back: " + cudaGetErrorString(status));
+        };
+
+        for (size_t i = 0; i < state.keys.size(); ++i)
+            copyColumnOut(
+                groups.column(static_cast<cudf::size_type>(i)), key_host_data[i], state.keys[i].size, "a column of group keys");
+
+        for (size_t i = 0; i < state.values.size(); ++i)
+            copyColumnOut(
+                groups.column(static_cast<cudf::size_type>(state.keys.size() + i)),
+                value_host_data[i],
+                state.values[i].device_type_size,
+                "a column of aggregated values");
+
+        stream.synchronize();
+        return 0;
+    }
+    catch (const std::exception & e)
+    {
+        return handleException(error, error_size, e.what());
+    }
+    catch (...)
+    {
+        return handleException(error, error_size, "unknown exception");
+    }
+}
+
+void destroyGPUGroupBy(GPUGroupBy * handle)
+{
+    delete reinterpret_cast<GroupByState *>(handle);
+}
+
+
+int probeGPUDevice(char * error, size_t error_size)
+{
+    int count = 0;
+    if (const cudaError_t status = cudaGetDeviceCount(&count); status != cudaSuccess)
+    {
+        writeError(error, error_size, std::string("cudaGetDeviceCount: ") + cudaGetErrorString(status));
+        return 1;
     }
 
-    staged_rows += num_rows;
+    if (count == 0)
+    {
+        writeError(error, error_size, "there is no CUDA device");
+        return 1;
+    }
 
-    if (staged_rows >= batch_rows)
-        sendBatchToDevice();
+    if (const cudaError_t status = cudaFree(nullptr); status != cudaSuccess)
+    {
+        writeError(error, error_size, std::string("cannot initialize a CUDA context: ") + cudaGetErrorString(status));
+        return 1;
+    }
+
+    return 0;
 }
 
-void GroupByGPUAccumulator::sendBatchToDevice()
+int allocatePinnedHostMemory(size_t bytes, void ** host_ptr, char * error, size_t error_size)
 {
-    if (staged_rows == 0)
-        return;
+    *host_ptr = nullptr;
 
-    std::vector<const void *> key_data(staged_keys.size());
-    for (size_t i = 0; i < staged_keys.size(); ++i)
-        key_data[i] = staged_keys[i].data();
+    if (bytes == 0)
+        return 0;
 
-    std::vector<const void *> value_data(staged_values.size());
-    for (size_t i = 0; i < staged_values.size(); ++i)
-        value_data[i] = staged_values[i].data();
+    const cudaError_t status = cudaHostAlloc(host_ptr, bytes, cudaHostAllocDefault);
+    if (status != cudaSuccess)
+    {
+        *host_ptr = nullptr;
+        writeError(error, error_size, cudaGetErrorString(status));
+        return 1;
+    }
 
-    char error[error_buffer_size] = {};
-
-    Stopwatch watch;
-    const int status
-        = clickhouseGPUGroupByAddBatch(handle, key_data.data(), value_data.data(), staged_rows, error, sizeof(error));
-    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-
-    if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot group {} rows on the device: {}", staged_rows, error);
-
-    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, staged_rows);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
-
-    for (auto & staged : staged_keys)
-        staged.clear();
-    for (auto & staged : staged_values)
-        staged.clear();
-
-    staged_rows = 0;
+    return 0;
 }
 
-size_t GroupByGPUAccumulator::finalize()
+void freePinnedHostMemory(void * host_ptr)
 {
-    sendBatchToDevice();
-
-    size_t groups = 0;
-    char error[error_buffer_size] = {};
-
-    Stopwatch watch;
-    const int status = clickhouseGPUGroupByFinalize(handle, &groups, error, sizeof(error));
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-
-    if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot finalize a grouped aggregation on the device: {}", error);
-
-    num_groups = groups;
-    return groups;
+    if (host_ptr != nullptr)
+        cudaFreeHost(host_ptr);
 }
 
-void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableColumns & value_columns)
-{
-    std::vector<void *> key_data(key_columns.size());
-    for (size_t i = 0; i < key_columns.size(); ++i)
-        key_data[i] = resizeForElementType(*key_columns[i], *num_groups, key_element_types[i]);
-
-    std::vector<void *> value_data(value_columns.size());
-    for (size_t i = 0; i < value_columns.size(); ++i)
-        value_data[i] = value_aggregations[i] == CLICKHOUSE_GPU_AGGREGATION_SUM
-            ? resizeForResultType(*value_columns[i], *num_groups, value_result_types[i])
-            : resizeForElementType(*value_columns[i], *num_groups, value_element_types[i]);
-
-    if (*num_groups == 0)
-        return;
-
-    char error[error_buffer_size] = {};
-
-    Stopwatch watch;
-    const int status = clickhouseGPUGroupByCopyOut(handle, key_data.data(), value_data.data(), error, sizeof(error));
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-
-    if (status != 0)
-        throw Exception(ErrorCodes::GPU_ERROR, "Cannot copy {} groups back from the device: {}", *num_groups, error);
 }
-}
-}
-
-#endif

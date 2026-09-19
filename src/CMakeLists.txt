@@ -114,6 +114,14 @@ add_subdirectory (Formats)
 
 if (ENABLE_GPU)
     add_subdirectory (GPU)
+
+    add_headers_and_sources(dbms GPU)
+    list (REMOVE_ITEM dbms_sources
+        GPU/Utils.cpp
+        GPU/GPUAggregation.cpp
+        GPU/GPUUploadPipe.cpp
+        GPU/GPUHashJoin.cpp
+    )
 endif ()
 
 if (ENABLE_EXAMPLES)
@@ -570,7 +578,7 @@ add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 
 if (ENABLE_GPU)
-    target_link_libraries (dbms PRIVATE clickhouse_gpu)
+    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf)
 endif ()
 target_link_libraries (dbms PRIVATE ch_contrib::sql_console_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)

@@ -15,7 +15,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
-#include <GPU/GPUAggregation.h>
+#include <GPU/GPUAccumulator.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -74,7 +74,7 @@ constexpr size_t max_rows_per_part = (1UL << 31) - 1;
 struct ReducedAggregates
 {
     Names arguments;
-    std::vector<int> aggregations;
+    std::vector<GPU::GPUAggregationKind> aggregations;
 };
 
 std::optional<ReducedAggregates> collectReducedAggregates(const GPUAggregatingStep & aggregating)
@@ -178,7 +178,7 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToReduce>> matchRe
     const GPUAggregatingStep & aggregating,
     const ReadFromMergeTree & reading,
     const std::unordered_map<String, String> & read_names,
-    const std::vector<int> & aggregations)
+    const std::vector<GPU::GPUAggregationKind> & aggregations)
 {
     const Block & read_header = *reading.getOutputHeader();
     const StorageMetadataPtr metadata = reading.getStorageMetadata();
@@ -186,12 +186,12 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToReduce>> matchRe
 
     const auto & aggregates = aggregating.getParams().aggregates;
 
-    std::unordered_map<String, int> aggregation_by_read_name;
+    std::unordered_map<String, GPU::GPUAggregationKind> aggregation_by_read_name;
 
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
         const auto & aggregate = aggregates[i];
-        const int aggregation = aggregations[i];
+        const GPU::GPUAggregationKind aggregation = aggregations[i];
 
         const auto read_name = read_names.find(aggregate.argument_names.front());
         if (read_name == read_names.end())

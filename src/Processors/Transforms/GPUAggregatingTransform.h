@@ -4,7 +4,7 @@
 
 #if USE_GPU
 
-#include <GPU/GPUAggregation.h>
+#include <GPU/GPUAccumulator.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/IAccumulatingTransform.h>
 

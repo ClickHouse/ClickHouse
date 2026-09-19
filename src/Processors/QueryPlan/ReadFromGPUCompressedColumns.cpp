@@ -4,7 +4,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <GPU/GPUAggregation.h>
+#include <GPU/GPUAccumulator.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>

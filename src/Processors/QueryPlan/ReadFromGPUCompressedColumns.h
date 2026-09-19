@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/GPUTypes.h>
 #include "config.h"
 
 #if USE_GPU
@@ -18,7 +19,7 @@ public:
     {
         NameAndTypePair column;
         DataTypePtr result_type;
-        int aggregation;
+        GPU::GPUAggregationKind aggregation;
     };
 
     ReadFromGPUCompressedColumns(
