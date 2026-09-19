@@ -1,0 +1,66 @@
+2
+2
+3
+3
+3
+3
+2
+2
+the index is still used when the whole range fits the result type
+40
+40
+1
+a DateTime64 argument saturates and stays monotonic
+1
+1
+a Date result keeps the index up to its own 2149-06-06 limit, not the narrower DateTime one
+17
+17
+17
+17
+a widened result holds the whole Date32 domain and stays monotonic
+3
+3
+3
+3
+3
+3
+3
+3
+a week rounding just after the epoch reaches back before it and wraps as well
+2149-06-04
+4
+4
+4
+4
+6
+6
+the window follows the rounding, not a fixed cutoff: a year or month rounding of a late-2149 day still fits Date
+24
+24
+1
+1
+1
+1970-01-25
+24
+24
+1
+1
+1
+a Nullable(Date32) key is guarded as well
+2
+2
+3
+3
+2
+2
+3
+3
+a day rounding west of UTC runs out of DateTime a day earlier than in UTC
+2106-02-07 00:00:00	1969-12-31 17:31:44
+1
+1
+1
+1
+1
+1
