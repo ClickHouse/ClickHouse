@@ -67,6 +67,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -3066,6 +3067,11 @@ void ReadFromMergeTree::buildIndexes(
         if (index_helper->isInert())
             continue;
 
+        /// Granules hold what the index expression produced under the server baseline, and only a
+        /// KeyCondition disarms itself there, so a deviating session must not reach any index family.
+        if (!getKeySubexpressionsWithSessionDependentValues(*index.expression, query_context).empty())
+            continue;
+
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
@@ -3956,8 +3962,19 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
-    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    if (prefix_size > sorting_key.column_names.size())
         return false;
+
+    /// The parts are sorted by the key as the storage computes it (server baseline), while the ORDER BY
+    /// that matched the key by name is computed in the query session. For a key column whose value
+    /// follows a session setting the query sets differently (see getKeySubexpressionsWithSessionDependentValues)
+    /// the two orders differ, so an in-order read would return mis-ordered rows and violate the virtual
+    /// row boundary announced to the merge. Fall back to a sort for a prefix that reaches such a column.
+    const auto session_dependent = getKeySubexpressionsWithSessionDependentValues(*sorting_key.expression, context);
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (session_dependent.contains(sorting_key.column_names[i]))
+            return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
     /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,

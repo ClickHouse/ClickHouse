@@ -1,0 +1,26 @@
+-- baseline session: the key is used and the result is right
+608009741498580991
+1	0	1	0
+608009741498580991
+608009741498580991
+608009741498580991
+608009741498580991
+1
+1
+-0.0005440464655689257
+80.00712511716989
+-- deviating session: element 1 is now the longitude, so the other row matches and the key must not be used
+610315033787760639
+0	1	0	1
+610315033787760639
+610315033787760639
+610315033787760639
+610315033787760639
+0
+9.99283287168418
+69.99002414925245
+-- deviating session for geoToH3: the arguments are exchanged, the result type is not
+1
+-- a metadata-changing ALTER under the deviating session does not exchange the stored geoToH3 key either
+1
+3

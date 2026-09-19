@@ -553,6 +553,9 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             if (!new_sampling_expression.empty())
             {
                 auto sample_by_ast = parse_key_expr(new_sampling_expression);
+                /// Keep the sampling key in the caller's context (its runtime filter is re-analyzed in the
+                /// query context). Set explicitly for the case a SAMPLE BY is added to a table that had none.
+                new_metadata.sampling_key.canonicalize_key_types = false;
                 new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, virtuals, context);
             }
             else /// SAMPLE BY was removed
