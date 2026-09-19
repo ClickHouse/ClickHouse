@@ -706,12 +706,6 @@ Chunk StorageURLSource::generate()
                 reader->cancel();
             break;
         }
-        catch (...)
-        {
-            /// A cancellation in one ParallelReadBuffer worker must not suppress an unrelated
-            /// parse or decompression error from another worker.
-            throw;
-        }
 
         if (pulled)
         {
