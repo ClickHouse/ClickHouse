@@ -11,8 +11,8 @@ SELECT
     lagInFrame(number, 1, NULL) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),
     leadInFrame(number, 1, NULL) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 FROM numbers(2);
-Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) \N 1 \N 1
-Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) 0 \N 0 \N
+Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)	\N	1	\N	1
+Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)	0	\N	0	\N
 -- Calls without an explicit default must not access a third argument.
 SELECT lag(number) OVER (ORDER BY number)
 FROM numbers(2);
@@ -35,14 +35,14 @@ SELECT
     toTypeName(leadInFrame(number, 1, CAST(NULL, 'Nullable(UInt64)')) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)),
     leadInFrame(number, 1, CAST(NULL, 'Nullable(UInt64)')) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 FROM numbers(1);
-Nullable(UInt64) \N
+Nullable(UInt64)	\N
 -- A non-null default can widen the result type too.
 SELECT
     toTypeName(leadInFrame(toUInt8(number), 1, toInt16(-1)) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)),
     leadInFrame(toUInt8(number), 1, toInt16(-1)) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 FROM numbers(2);
-Int16 1
-Int16 -1
+Int16	1
+Int16	-1
 -- Force value and default access across WindowTransformBlock boundaries.
 SET max_block_size = 1;
 SELECT
