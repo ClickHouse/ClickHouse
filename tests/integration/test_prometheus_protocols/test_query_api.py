@@ -224,6 +224,7 @@ def test_error_while_parsing():
     response = get_response_to_http_api_query(
         node.ip_address, 9093, "/api/v1/query", "((", 150,
     )
+    assert response.status_code == 400, response.text
     error_message = extract_error_from_http_api_response(response)
     assert "while parsing PromQL query" in error_message
 
@@ -235,6 +236,8 @@ def test_error_before_first_block():
         node.ip_address, 9093, "/api/v1/query",
         "topk(+Inf, last_over_time(foo[10]))[50:10]", 150,
     )
+    assert response.status_code == 422, response.text
+    assert response.json()["errorType"] == "execution", response.text
     error_message = extract_error_from_http_api_response(response)
     assert "k of aggregation operator is too large" in error_message
 
