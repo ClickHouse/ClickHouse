@@ -23,7 +23,6 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/UniqBatch.h>
 #include <AggregateFunctions/UniqCombinedBiasData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
@@ -157,20 +156,6 @@ public:
         const auto value = Traits::value(*columns[0], row_num);
         const auto key = Traits::hash(value);
         this->data(place).set.insert(key);
-    }
-
-    void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
-    {
-        addBatchUniq<&Data::Set::insert>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
-            [&](size_t row) { return Traits::hash(Traits::value(*columns[0], row)); },
-            [&](AggregateDataPtr place) { return &this->data(place).set; });
-    }
-
-    void addBatchWithNonNullPlaces(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
-    {
-        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void addBatchSinglePlace( /// NOLINT

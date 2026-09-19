@@ -35,9 +35,9 @@ Like [`multiSearchAllPositions`](#multiSearchAllPositions) but ignores case.
         "Case insensitive multi-search",
         "SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])",
         R"(
-┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
-│ [1,6]                                                            │
-└──────────────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯['c', 'h'])─┐
+│ [1,6]                    │
+└──────────────────────────┘
         )"
     }
     };

@@ -234,7 +234,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
             )
     return out
 
@@ -729,7 +729,6 @@ class ClickHouseCluster:
         self.minio_bucket_db_disk = "root-db-disk"
         self.minio_s3_port = 9000
         self.minio_port = 9001
-        self.hms_catalog_port = 9083
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
@@ -747,6 +746,7 @@ class ClickHouseCluster:
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
+        self._hms_catalog_port = None
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1086,6 +1086,13 @@ class ClickHouseCluster:
             return self._glue_catalog_port
         self._glue_catalog_port = self.port_pool.get_port()
         return self._glue_catalog_port
+
+    @property
+    def hms_catalog_port(self):
+        if self._hms_catalog_port:
+            return self._hms_catalog_port
+        self._hms_catalog_port = self.port_pool.get_port()
+        return self._hms_catalog_port
 
     @property
     def redis_port(self):
@@ -1866,6 +1873,7 @@ class ClickHouseCluster:
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
+        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
         env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
             docker_compose_yml_dir, "hms_core_site_minio1.xml"
         )
@@ -2145,6 +2153,7 @@ class ClickHouseCluster:
         with_letsencrypt_pebble=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
+        use_old_analyzer=None,
         use_distributed_plan=None,
         hostname=None,
         env_variables=None,
@@ -2221,12 +2230,9 @@ class ClickHouseCluster:
         self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
-        # (affect only WITH_COVERAGE=1 build).
-        # %c enables continuous mode: counters are memory-mapped into the file,
-        # so the profile survives SIGKILL / `docker kill` intact instead of being
-        # lost or half-written by an exit-time dump interrupted by the kill.
+        # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%c%4m.profraw"
+            "/debug/it-%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -2279,6 +2285,7 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
+            use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -2733,11 +2740,6 @@ class ClickHouseCluster:
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
-            if detach:
-                # A detached exec is left running, so docker reports `ExitCode: None` for it; a
-                # value here would only mean it happened to finish first, which was not waited for.
-                return exec_id if get_exec_id else output
-
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
             if exit_code:
                 container_info = self.docker_client.api.inspect_container(container_id)
@@ -2757,8 +2759,10 @@ class ClickHouseCluster:
                     logging.debug(message)
                 else:
                     raise Exception(message)
-            assert not get_exec_id
-            return output.decode()
+            if not detach:
+                assert not get_exec_id
+                return output.decode()
+            return exec_id if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -4076,12 +4080,6 @@ class ClickHouseCluster:
                 self.nats_ssl_context.load_verify_locations(
                     p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
                 )
-                # A broker started with `--tlsverify` demands a client certificate, including from
-                # the availability probe in `wait_nats_is_available`. One started without ignores it.
-                self.nats_ssl_context.load_cert_chain(
-                    p.join(self.nats_cert_dir, "client", "client-cert.pem"),
-                    p.join(self.nats_cert_dir, "client", "client-key.pem"),
-                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
@@ -4453,9 +4451,9 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance and not ignore_sanitizer:
+            if not sanitizer_assert_instance:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r", errors="replace") as f:
+                with open(self.docker_logs_path, "r") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -4955,6 +4953,7 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
+        use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
         clickhouse_path_dir,
@@ -5080,6 +5079,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
+        self.use_old_analyzer = use_old_analyzer
         self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
 
@@ -6153,7 +6153,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
             deadline = start_time + timeout
@@ -6166,7 +6166,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
@@ -6356,21 +6356,30 @@ class ClickHouseInstance:
                     "0_common_min_cpu_busy_time.xml", self.config_d_dir
                 )
 
+        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
             os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
         )
 
-        # If specific version was used there can be no such setting,
-        # so do this only if it was explicitly requested.
+        # If specific version was used there can be no
+        # enable_analyzer setting, so do this only if it was
+        # explicitly requested.
+        if self.tag:
+            use_old_analyzer = False
         if self.tag != "latest":
             use_distributed_plan = False
         # Prefer specified in the test option:
+        if self.use_old_analyzer is not None:
+            use_old_analyzer = self.use_old_analyzer
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
+
+        if use_old_analyzer:
+            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if use_distributed_plan:
             write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)

@@ -3,7 +3,7 @@
 
 -- Test that the table primary key and partition key cannot be compressed by a lossy codec like SZ3.
 
-SET enable_sz3_codec = 1;
+SET allow_experimental_codecs = 1;
 
 SELECT 'CREATE, rejected';
 

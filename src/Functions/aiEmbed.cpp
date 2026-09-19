@@ -9,8 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
 
-#include <base/scope_guard.h>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -30,6 +28,8 @@
 
 namespace ProfileEvents
 {
+    extern const Event AIInputTokens;
+    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -156,17 +156,8 @@ public:
             inputs.push_back(value);
         }
 
-        /// One text per row here, so the text counts are the row counts. Increment upon destruction,
-        /// to avoid underreporting on error.
-        FunctionBaseAI::EmbeddingResult embedding_result;
-        SCOPE_EXIT({
-            ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
-            ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
-        });
-
-        FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
-            timeouts, embedding_result);
+        auto embedding_result = FunctionBaseAI::embedTexts(
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -197,6 +188,11 @@ public:
         /// fill final empties (pre-filtered tail rows and any trailing skipped inputs)
         for (; cursor < input_rows_count; ++cursor)
             offsets_vec.push_back(current_offset);
+
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
 
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }

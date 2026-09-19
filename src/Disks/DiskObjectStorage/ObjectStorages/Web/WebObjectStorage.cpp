@@ -266,9 +266,7 @@ void WebObjectStorage::removeObjectIfExists(const StoredObject &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects &,
-    StoredObjects *)
+void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
 {
     throwNotAllowed();
 }
