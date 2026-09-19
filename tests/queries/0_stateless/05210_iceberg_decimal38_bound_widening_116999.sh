@@ -76,6 +76,54 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
     SYSTEM FLUSH LOGS query_log;"
 report IcebergMinMaxIndexPrunedFiles high_zero
 
+echo '--- B0 a bound the writer rounded past the precision of the type still prunes ---'
+# Spark and Amazon Athena round the bound to the integral part, so a file whose extreme value is
+# `0.99` carries `1.0` - `10^38` unscaled, one unit outside what `Decimal(38, 38)` holds. ClickHouse
+# writes the exact unscaled value instead, so the rounded form is patched into the manifests here.
+# The bound is an uncompressed 16-byte big-endian `fixed`, and both forms need all 16 bytes, so the
+# substitution keeps every length in the Avro container intact.
+python3 - "${ROOT}/high/metadata" <<'PATCH_MANIFESTS'
+import pathlib
+import sys
+
+def big_endian(value):
+    return (value % (1 << 128)).to_bytes(16, 'big')
+
+exact, rounded = 99 * 10 ** 36, 10 ** 38
+substitutions = [(big_endian(exact), big_endian(rounded)), (big_endian(-exact), big_endian(-rounded))]
+
+patched = 0
+for path in pathlib.Path(sys.argv[1]).rglob('*.avro'):
+    manifest = path.read_bytes()
+    replaced = manifest
+    for old, new in substitutions:
+        replaced = replaced.replace(old, new)
+    if replaced != manifest:
+        path.write_bytes(replaced)
+        patched += 1
+
+if patched != 2:
+    raise SystemExit(f'patched {patched} manifests, expected one per data file')
+PATCH_MANIFESTS
+
+# A table function reads the patched manifests afresh; the `high` table above still holds the ones
+# it wrote. Every bound is now `±1.0`, so one data file declares `[0, 1)` and the other `(-1, 0]`.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+    SELECT count() FROM icebergLocal('${ROOT}/high/');
+    SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('0.99', 38);
+    SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('-0.99', 38);"
+
+echo '--- B1 the saturated bounds prune the file that cannot hold the probe ---'
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+    SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('0.5', 38)
+        SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_rounded_pos';
+    SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('-0.5', 38)
+        SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_rounded_neg';
+    SELECT count() FROM icebergLocal('${ROOT}/high/') WHERE d = toDecimal128('0.0', 38)
+        SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_rounded_zero';
+    SYSTEM FLUSH LOGS query_log;"
+report IcebergMinMaxIndexPrunedFiles rounded_pos rounded_neg rounded_zero
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS high SYNC;
     DROP TABLE IF EXISTS low SYNC;"

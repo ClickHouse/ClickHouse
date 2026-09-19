@@ -144,30 +144,32 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
 
     if (compensate_rounding && scale)
     {
+        /// Every value in the file fits the precision of the type it is read as, so the largest
+        /// magnitude that precision allows is on the outer side of all of them: it stands in for a
+        /// widened bound that leaves the type, and it is the tightest bound that does. Dropping the
+        /// bound instead would cost min/max pruning for the whole column.
+        const NativeType limit
+            = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>) - NativeType(1);
+
         NativeType scaler = lower_bound ? -10 : 10;
         for (UInt32 i = 1; i < scale; ++i)
             scaler *= 10;
 
+        /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly 0.7
+        /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
         NativeType widened_value;
         if (common::addOverflow(unscaled_value, scaler, widened_value))
-        {
-            /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly
-            /// 0.7 needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`. A bound only has to
-            /// stay on the outer side of every value in the file, and the largest magnitude the
-            /// precision of the type allows is outside all of them, so it stands in for the widened
-            /// bound. Dropping the bound instead would cost min/max pruning for the whole column,
-            /// and `Decimal(38, 38)` is the one width where a bound the column can hold gets here.
-            ///
-            /// A bound is stored as raw bytes that are never checked against a precision, so it can
-            /// also be a magnitude the column cannot hold. Nothing then vouches for the values in
-            /// the file, so there is no stand-in for such a bound and it is not usable.
-            const NativeType limit
-                = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>) - NativeType(1);
-            if (unscaled_value > limit || unscaled_value < -limit)
-                return std::nullopt;
-
             widened_value = lower_bound ? -limit : limit;
-        }
+
+        /// A bound is stored as raw bytes that are never checked against a precision, so the
+        /// rounding the Iceberg writers apply can put it one unit outside the type: a file whose
+        /// extreme value is `0.99` carries `1.0` (`10^38` unscaled) at scale 38. Saturating such a
+        /// bound keeps it outside every value in the file, where rejecting it loses the column's
+        /// pruning. Saturation is monotonic, so it cannot invert a pair that was not inverted.
+        if (widened_value > limit)
+            widened_value = limit;
+        else if (widened_value < -limit)
+            widened_value = -limit;
 
         unscaled_value = widened_value;
     }
