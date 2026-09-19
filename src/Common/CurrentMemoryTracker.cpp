@@ -157,7 +157,7 @@ MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
     /// is counted twice until the next correction, which errs on the safe side (the tracked
     /// amount stays an upper bound), while the opposite order could leave the corrected
     /// amount below the actual usage after `freeGlobal`.
-    MemoryTracker::global_speculative_reservations.fetch_add(size, std::memory_order_relaxed);
+    MemoryTracker::global_speculative_reservations.fetch_add(size, std::memory_order_seq_cst);
 
     /// Credit the reservation to the query before the overcommit decision inside `allocImpl`:
     /// a real allocation enters the query tracker's `amount` before the total tracker ranks
@@ -181,7 +181,7 @@ MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
     {
         if (process_tracker)
             process_tracker->subSpeculativeReservation(size);
-        MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
+        MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_seq_cst);
         throw;
     }
 
@@ -200,7 +200,7 @@ void CurrentMemoryTracker::freeGlobal(Int64 size, MemoryTracker * credited_query
 
     /// Lower the reservations counter last, so an interleaved external correction can only
     /// overcount.
-    MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
+    MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_seq_cst);
 }
 
 void CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(UInt64 value)

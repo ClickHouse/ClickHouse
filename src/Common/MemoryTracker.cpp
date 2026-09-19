@@ -760,6 +760,29 @@ void MemoryTracker::reset()
 
 std::atomic<Int64> MemoryTracker::global_speculative_reservations = 0;
 
+/// The amount of speculative reservations to add back to an externally measured value.
+///
+/// The counter is raised before the charge and lowered after the release
+/// (`CurrentMemoryTracker::allocGlobal` / `freeGlobal`), so it leads the charges on the way
+/// up and lags them on the way down. Reading it once around the load of the corrected
+/// counter is therefore not enough: a release that lands between the two loads is already
+/// gone from the counter while its subtraction is already in the measured-away value,
+/// and a correction computed from that pair would erase it a second time.
+///
+/// Reading the counter on both sides of the load and taking the maximum covers every
+/// reservation that was live at any point of the window, which is a superset of the
+/// reservations that are charged in the counter being corrected and will still be released
+/// afterwards. The residual imprecision is a reservation counted twice until the next
+/// correction - the safe direction for an upper bound.
+template <typename LoadCurrent>
+static Int64 speculativeReservationsAround(LoadCurrent && load_current, Int64 & current)
+{
+    Int64 reservations_before = MemoryTracker::global_speculative_reservations.load(std::memory_order_seq_cst);
+    current = load_current();
+    Int64 reservations_after = MemoryTracker::global_speculative_reservations.load(std::memory_order_seq_cst);
+    return std::max(reservations_before, reservations_after);
+}
+
 void MemoryTracker::updateRSS(Int64 rss_)
 {
     /// Live speculative reservations are not backed by allocations, so they are not part
@@ -767,9 +790,11 @@ void MemoryTracker::updateRSS(Int64 rss_)
     /// Applied as a relative delta for the same reason as in `updateAllocated`: an
     /// absolute store would erase a reservation charged concurrently with this correction,
     /// while its paired `freeGlobal` would still subtract it.
-    Int64 current_rss = total_memory_tracker.rss.load(std::memory_order_relaxed);
-    Int64 target_rss = rss_ + global_speculative_reservations.load(std::memory_order_relaxed);
-    total_memory_tracker.rss.fetch_add(target_rss - current_rss, std::memory_order_relaxed);
+    Int64 current_rss = 0;
+    Int64 reservations = speculativeReservationsAround(
+        [] { return total_memory_tracker.rss.load(std::memory_order_seq_cst); }, current_rss);
+    Int64 target_rss = rss_ + reservations;
+    total_memory_tracker.rss.fetch_add(target_rss - current_rss, std::memory_order_seq_cst);
 }
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
@@ -786,8 +811,10 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
     /// server-wide counter below the real usage. With a delta, a concurrent charge is
     /// never lost - at worst a reservation is counted twice until the next correction,
     /// which is the safe direction for an upper bound.
-    Int64 current_amount = total_memory_tracker.amount.load(std::memory_order_relaxed);
-    Int64 target_amount = allocated_ + global_speculative_reservations.load(std::memory_order_relaxed);
+    Int64 current_amount = 0;
+    Int64 reservations = speculativeReservationsAround(
+        [] { return total_memory_tracker.amount.load(std::memory_order_seq_cst); }, current_amount);
+    Int64 target_amount = allocated_ + reservations;
 
     if (log_change)
         LOG_INFO(
@@ -797,7 +824,7 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
             ReadableSize(target_amount));
 
     Int64 correction = target_amount - current_amount;
-    Int64 new_amount = total_memory_tracker.amount.fetch_add(correction, std::memory_order_relaxed) + correction;
+    Int64 new_amount = total_memory_tracker.amount.fetch_add(correction, std::memory_order_seq_cst) + correction;
 
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
