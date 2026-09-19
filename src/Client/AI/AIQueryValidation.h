@@ -31,6 +31,13 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access 
 /// inside it. A session with `readonly = 1` rejects the whole query because of it.
 bool changesSettingsForAIAgent(const IAST & ast);
 
+/// Whether the statement changes `format_display_secrets_in_show_and_select` - a `SET` statement
+/// of it, a SETTINGS clause carrying it, or a reset of it to its default. The confirmed query tool
+/// refuses such a query: the client pins the setting off for every query it runs on behalf of the
+/// agent, because the result is summarized back to the model, and a statement of the query itself
+/// is the one thing that can undo the pin before the next statement of the same query runs.
+bool changesSecretDisplayForAIAgent(const IAST & ast);
+
 /// Whether the statement only reads: exactly the statement types a session with `readonly = 1`
 /// accepts. This is a weaker property than `validateReadOnlyQueryForAIAgent`, which additionally
 /// rejects what a read-only statement can still do outside of the server's tables: write a local

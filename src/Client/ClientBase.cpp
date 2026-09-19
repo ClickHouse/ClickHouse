@@ -4568,22 +4568,53 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// definition too: the confirmation is about running the query, not about publishing its
     /// secrets. Rendering the real definition stays an ordinary query the user types themselves.
     ///
-    /// Only a session that really does display secrets pays for this, and the effective value says
-    /// so - not the value of the client, which `apply_settings_from_server = 0` makes unreliable.
-    /// That is also why the value restored afterwards is the enabled one: the branch is only taken
-    /// when the session has it enabled, whether the client knew that or not. (A confirmed query
-    /// that changes this setting itself has its change undone here, like the dialect below; that is
-    /// a setting the user can set again, and not a leak.)
+    /// The pin is installed for every confirmed query, not only for a session whose effective value
+    /// displays secrets: `checkAIQuery` refuses a query that changes the setting itself, and what is
+    /// left - a `SET profile` or a `SET compatibility` inside the confirmed query - changes the
+    /// session on the server without reaching the client context, so the explicitly pinned value
+    /// keeps travelling with every statement and wins over it. Where the pin cannot be installed at
+    /// all - `readonly = 1`, or a server that predates the setting - a session that may display
+    /// secrets makes the tool refuse instead, exactly like the read-only tool above.
     bool restore_display_secrets = false;
-    if (!readonly && can_change_settings && serverSupportsSetting("format_display_secrets_in_show_and_select")
-        && sessionMayDisplaySecrets())
+    bool display_secrets_was_set_by_client = false;
+    Field display_secrets_to_restore;
+    if (!readonly)
     {
-        restore_display_secrets = true;
-        client_context->setSetting("format_display_secrets_in_show_and_select", false);
+        if (!can_change_settings || !serverSupportsSetting("format_display_secrets_in_show_and_select"))
+        {
+            if (sessionMayDisplaySecrets())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The session displays the secrets of a table definition and the assistant cannot turn that off for "
+                    "the query it is shown the result of ({}). Ask the user to run this query themselves.",
+                    can_change_settings ? "the server does not support the `format_display_secrets_in_show_and_select` "
+                                          "setting"
+                                        : "`readonly = 1` does not allow changing settings");
+        }
+        else
+        {
+            const Settings & current = client_context->getSettingsRef();
+            display_secrets_was_set_by_client = current.isChanged("format_display_secrets_in_show_and_select");
+            if (display_secrets_was_set_by_client)
+                display_secrets_to_restore = current.get("format_display_secrets_in_show_and_select");
+            restore_display_secrets = true;
+            client_context->setSetting("format_display_secrets_in_show_and_select", false);
+        }
     }
     SCOPE_EXIT_SAFE({
-        if (restore_display_secrets)
-            client_context->setSetting("format_display_secrets_in_show_and_select", true);
+        if (!restore_display_secrets)
+            return;
+        if (display_secrets_was_set_by_client)
+            client_context->setSetting("format_display_secrets_in_show_and_select", display_secrets_to_restore);
+        else
+        {
+            /// The client did not hold the setting at all before the query - give it back exactly
+            /// that, instead of pinning the value of the mask: an override left behind would apply
+            /// to the queries the user types themselves and hide the secrets they asked to see.
+            Settings settings_without_pin = client_context->getSettingsRef();
+            settings_without_pin.setDefaultValue("format_display_secrets_in_show_and_select");
+            client_context->setSettings(settings_without_pin);
+        }
     });
 
     /// Put the query into the history of the line editor, like a query the user typed: it was
@@ -4691,8 +4722,15 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
     /// Whether the session would accept every statement of the query.
     bool accepted_by_session = true;
 
+    /// Whether a statement of the query turns the display of secrets on (or resets it to the
+    /// default of the server, which may display them).
+    bool changes_secret_display = false;
+
     const std::optional<String> syntax_error = parseAIQueryStatements(query, [&](const IAST & ast)
     {
+        if (changesSecretDisplayForAIAgent(ast))
+            changes_secret_display = true;
+
         if (readonly == 1)
         {
             /// Nothing but reads, and not a single setting change - neither a `SET` statement nor
@@ -4716,6 +4754,23 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
     if (syntax_error)
     {
         decision.refusal = "The query has a syntax error and was not run: " + *syntax_error;
+        return decision;
+    }
+
+    /// The client pins `format_display_secrets_in_show_and_select = 0` for every query it runs on
+    /// behalf of the agent, because the result of a confirmed query is summarized back to the model
+    /// through `QueryContextBuffer` as well. The pin is a value of the client context, and a `SET`
+    /// of the query is applied to that same context once the statement has run - so a query made of
+    /// `SET format_display_secrets_in_show_and_select = 1; SHOW CREATE TABLE ...` would run its
+    /// second statement unmasked. It is refused instead: a user who wants to see the real definition
+    /// types the query themselves, where it is not forwarded to the provider by the assistant.
+    if (changes_secret_display)
+    {
+        decision.refusal =
+            "The query changes the `format_display_secrets_in_show_and_select` setting, and the assistant runs every "
+            "query with the display of secrets turned off, because it is shown the result. It was not run and the user "
+            "was not asked. Remove the setting change; if the user wants to see the credentials of a table definition, "
+            "tell them to run the query themselves.";
         return decision;
     }
 

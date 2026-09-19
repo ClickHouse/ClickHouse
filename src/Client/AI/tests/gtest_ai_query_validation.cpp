@@ -63,6 +63,30 @@ bool changesSettings(const String & query)
     return changesSettingsForAIAgent(*parse(query));
 }
 
+bool changesSecretDisplay(const String & query)
+{
+    return changesSecretDisplayForAIAgent(*parse(query));
+}
+
+}
+
+TEST(AIQueryValidation, DetectsChangesOfTheSecretDisplay)
+{
+    /// Every carrier of the setting, because each one is a different place in the AST: a `SET`
+    /// statement, a SETTINGS clause of a query, and a reset to the default of the server.
+    EXPECT_TRUE(changesSecretDisplay("SET format_display_secrets_in_show_and_select = 1"));
+    EXPECT_TRUE(changesSecretDisplay("SET format_display_secrets_in_show_and_select = 0"));
+    EXPECT_TRUE(changesSecretDisplay("SELECT 1 SETTINGS format_display_secrets_in_show_and_select = 1"));
+    EXPECT_TRUE(changesSecretDisplay("SELECT 1 SETTINGS format_display_secrets_in_show_and_select = DEFAULT"));
+    EXPECT_TRUE(changesSecretDisplay(
+        "SELECT * FROM (SELECT 1 SETTINGS format_display_secrets_in_show_and_select = 1)"));
+
+    EXPECT_FALSE(changesSecretDisplay("SELECT 1"));
+    EXPECT_FALSE(changesSecretDisplay("SET max_execution_time = 1"));
+    EXPECT_FALSE(changesSecretDisplay("SHOW CREATE TABLE default.events"));
+    /// A profile can carry the setting, but the client keeps its own explicit value for the
+    /// queries it sends, so it does not have to refuse the statement over it.
+    EXPECT_FALSE(changesSecretDisplay("SET profile = 'p'"));
 }
 
 TEST(AIQueryValidation, AllowsReadOnlyStatements)

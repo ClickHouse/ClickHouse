@@ -366,6 +366,27 @@ bool isSchemaExplorationStatement(const IAST & ast)
 
 }
 
+bool changesSecretDisplayForAIAgent(const IAST & ast)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+    {
+        for (const auto & change : set_query->changes)
+            if (change.name == "format_display_secrets_in_show_and_select")
+                return true;
+        /// `SETTINGS format_display_secrets_in_show_and_select = DEFAULT` lands here instead, and
+        /// the default of the server is what the masking has to override in the first place.
+        for (const auto & name : set_query->default_settings)
+            if (name == "format_display_secrets_in_show_and_select")
+                return true;
+    }
+
+    for (const auto & child : ast.children)
+        if (changesSecretDisplayForAIAgent(*child))
+            return true;
+
+    return false;
+}
+
 bool changesSettingsForAIAgent(const IAST & ast)
 {
     if (ast.as<ASTSetQuery>())
