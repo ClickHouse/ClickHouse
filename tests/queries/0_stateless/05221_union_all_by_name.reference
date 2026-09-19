@@ -1,6 +1,9 @@
 basic alignment
 1	one	\N
 \N	two	3
+pipe UNION ALL BY NAME
+1	one	\N
+\N	two	3
 first-seen order with multiple operands
 1	left	\N	\N
 2	\N	middle	\N

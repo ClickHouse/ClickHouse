@@ -7,7 +7,17 @@ FROM
     SELECT 1 AS a, 'one' AS b
     UNION ALL BY NAME
     SELECT 'two' AS b, 3 AS c
-);
+)
+ORDER BY isNull(a), a;
+
+SELECT 'pipe UNION ALL BY NAME';
+SELECT *
+FROM
+(
+    SELECT 1 AS a, 'one' AS b
+    |> UNION ALL BY NAME (SELECT 'two' AS b, 3 AS c)
+)
+ORDER BY isNull(a), a;
 
 SELECT 'first-seen order with multiple operands';
 SELECT *
