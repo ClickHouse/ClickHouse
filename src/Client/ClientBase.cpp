@@ -158,7 +158,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_trino_dialect;
+    extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
@@ -695,7 +695,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         else if (dialect == Dialect::polyglot)
             parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
         else if (dialect == Dialect::trino)
-            parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::allow_experimental_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::enable_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
