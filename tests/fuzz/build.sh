@@ -3,6 +3,7 @@
 # copy fuzzer options and dictionaries
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/
+cp $SRC/tests/fuzz/dictionaries/*.dict $OUT/
 
 # prepare corpus dirs
 mkdir -p $BIN/tests/fuzz/lexer_fuzzer.in/
