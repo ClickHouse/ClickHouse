@@ -165,24 +165,49 @@ _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.BUZZHOUSE,
 )
 
-# A PR that changes the stress or fuzzer machinery itself must run these jobs
-# whatever its size. Deliberately not the jobs' digest `include_paths`: those
-# include `tests/queries/0_stateless/` and `tests/config`, which almost every
-# small PR touches.
-_STRESS_AND_FUZZER_PATHS = (
-    "ci/jobs/stress_job.py",
-    "ci/jobs/ast_fuzzer_job.py",
-    "ci/jobs/buzzhouse_job.py",
-    "ci/jobs/scripts/stress/",
-    "ci/jobs/scripts/fuzzer/",
-    "ci/docker/stress-test",
-    "ci/docker/fuzzer",
-    "tests/docker_scripts/stress_runner.sh",
-    "tests/docker_scripts/stress_tests.lib",
+# Digest inputs of the skippable jobs that must not switch the skip off: almost
+# every PR touches them, so exempting them would make the rule never fire. The
+# narrow `tests/config/...` files the fuzzer jobs name one by one are not in this
+# list and do keep their exemption.
+_COMMON_TEST_PATHS = (
+    "tests/queries/0_stateless/",
+    "tests/config",
+    "tests/*.txt",
+)
+
+# Machinery of these jobs that is not a digest input of theirs, but still decides
+# what they do or whether they run at all.
+_EXTRA_STRESS_AND_FUZZER_PATHS = (
+    # The fuzzers themselves live in the server code.
     "src/Client/BuzzHouse/",
     "src/Common/QueryFuzzer",
+    # This rule, and the pre-hook computing the line count it reads.
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    "ci/jobs/scripts/workflow_hooks/store_data.py",
 )
+
+
+def _stress_and_fuzzer_paths():
+    """Paths whose change makes a PR run the stress tests and fuzzers whatever its
+    size. Derived from the digest `include_paths` of the very jobs this rule can
+    skip, so an input added to one of them keeps its exemption here without a
+    second edit, minus `_COMMON_TEST_PATHS` and plus
+    `_EXTRA_STRESS_AND_FUZZER_PATHS`.
+    """
+    paths = set(_EXTRA_STRESS_AND_FUZZER_PATHS)
+    for job in (
+        *JobConfigs.stress_test_jobs,
+        *JobConfigs.ast_fuzzer_jobs,
+        *JobConfigs.buzz_fuzzer_jobs,
+    ):
+        for path in job.digest_config.include_paths:
+            path = path.removeprefix("./")
+            if path not in _COMMON_TEST_PATHS:
+                paths.add(path)
+    return tuple(sorted(paths))
+
+
+_STRESS_AND_FUZZER_PATHS = _stress_and_fuzzer_paths()
 
 # A submodule bump is two lines in the diff and an arbitrary amount of new
 # third-party code in the binary, so a line count says nothing about its size.
@@ -196,7 +221,7 @@ def _is_stress_or_fuzzer_job(job_name):
 def _has_stress_or_fuzzer_changes(changed_files):
     for f in changed_files:
         p = f.removeprefix(".").removeprefix("/")
-        if any(p.startswith(path) for path in _STRESS_AND_FUZZER_PATHS):
+        if p.startswith(_STRESS_AND_FUZZER_PATHS):
             return True
     return False
 
