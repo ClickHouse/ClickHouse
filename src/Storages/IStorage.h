@@ -632,8 +632,13 @@ public:
         ContextPtr /*context*/);
 
     /// Executes update query. More lightweight than mutation.
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context)
+    {
+        return updateLightweight(commands, context, {});
+    }
+
     virtual QueryPipeline updateLightweight(
-        const MutationCommands & commands, ContextPtr context, LightweightUpdateSettings settings = {});
+        const MutationCommands & commands, ContextPtr context, LightweightUpdateSettings settings);
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
