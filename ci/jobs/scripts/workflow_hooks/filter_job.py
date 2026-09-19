@@ -149,6 +149,13 @@ def _has_coverage_pipeline_changes(changed_files):
 # PR.
 SMALL_PR_CHANGED_LINES = 100
 
+# Only the main PR workflow skips these jobs. `BackportPR` is a `pull_request`
+# workflow using this same hook, and a backport has to be validated in full
+# whatever its size: it lands in a release branch, which `ClickGap` (which fuzzes
+# every commit merged to master) never fuzzes afterwards.
+# Must match the workflow name in ci.workflows.pull_request.
+SMALL_PR_WORKFLOW = "PR"
+
 # The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
 # symbols, i.e. they are designed for exactly the small PRs this rule skips the
 # untargeted fuzzers on, so they keep running.
@@ -209,8 +216,9 @@ def _has_submodule_changes(changed_files):
 def _is_small_pr(info):
     """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
     code. False when the count is unknown (the pre-hook failed to fetch it), so an
-    API hiccup runs the jobs instead of skipping them."""
-    if info.pr_number <= 0:
+    API hiccup runs the jobs instead of skipping them, and false outside the main
+    PR workflow - see `SMALL_PR_WORKFLOW`."""
+    if info.pr_number <= 0 or info.workflow_name != SMALL_PR_WORKFLOW:
         return False
     product_changed_lines = info.get_kv_data("product_changed_lines")
     if not isinstance(product_changed_lines, int):
