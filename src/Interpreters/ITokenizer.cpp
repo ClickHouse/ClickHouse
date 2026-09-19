@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <limits>
 
+#include <stringzilla/stringzilla.h>
+
 #if defined(__SSE2__)
 #  include <emmintrin.h>
 #  if defined(__SSE4_2__)
@@ -201,7 +203,7 @@ namespace
 {
 
 /// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
-/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
+/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`, `AsciiCJKTokenizerV2`).
 ///
 /// In order to avoid filter updates with incomplete tokens, the first token is
 /// ignored unless the substring is a prefix, and the last token is ignored unless
@@ -782,8 +784,33 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
 }
 
-bool AsciiCJKTokenizer::nextInString(
-    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+namespace
+{
+
+/// The byte length of the UTF-8 codepoint at `data`, by its lead byte.
+struct LeadByteCodepointLength
+{
+    static size_t get(const char * data, const char * /*end*/) { return UTF8::seqLength(static_cast<UInt8>(*data)); }
+};
+
+/// The byte length of the UTF-8 codepoint at `data`, decoded by StringZilla. Invalid UTF-8 is measured by its lead byte,
+/// so that `asciiCJK_v2` produces the same tokens as `asciiCJK`.
+struct StringZillaCodepointLength
+{
+    static size_t get(const char * data, const char * end)
+    {
+        sz_rune_t rune;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+        const sz_rune_length_t rune_length = sz_rune_decode(data, end, &rune);
+#pragma clang diagnostic pop
+        return rune_length != sz_rune_invalid_k ? rune_length : UTF8::seqLength(static_cast<UInt8>(*data));
+    }
+};
+
+template <typename CodepointLength>
+bool asciiCJKNextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length)
 {
     token_length = 0;
     while (pos < length)
@@ -869,7 +896,7 @@ bool AsciiCJKTokenizer::nextInString(
 
         /// 3. Unicode character handling
 
-        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+        size_t char_len = CodepointLength::get(data + pos, data + length);
 
         /// Truncated UTF-8 sequence at end of buffer
         if (pos + char_len > length)
@@ -888,7 +915,8 @@ bool AsciiCJKTokenizer::nextInString(
     return false;
 }
 
-bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+template <typename CodepointLength>
+bool asciiCJKNextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token)
 {
     token.clear();
     size_t token_start = 0;
@@ -1018,7 +1046,7 @@ bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_
         }
 
         /// Unicode character
-        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+        size_t char_len = CodepointLength::get(data + pos, data + length);
 
         /// Truncated UTF-8 sequence at end of buffer
         if (pos + char_len > length)
@@ -1037,6 +1065,30 @@ bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_
     return false;
 }
 
+}
+
+bool AsciiCJKTokenizer::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    return asciiCJKNextInString<LeadByteCodepointLength>(data, length, pos, token_start, token_length);
+}
+
+bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+{
+    return asciiCJKNextInStringLike<LeadByteCodepointLength>(data, length, pos, token);
+}
+
+bool AsciiCJKTokenizerV2::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    return asciiCJKNextInString<StringZillaCodepointLength>(data, length, pos, token_start, token_length);
+}
+
+bool AsciiCJKTokenizerV2::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+{
+    return asciiCJKNextInStringLike<StringZillaCodepointLength>(data, length, pos, token);
+}
+
 void AsciiCJKTokenizer::substringToBloomFilter(
     const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
@@ -1044,6 +1096,18 @@ void AsciiCJKTokenizer::substringToBloomFilter(
 }
 
 void AsciiCJKTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+}
+
+void AsciiCJKTokenizerV2::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void AsciiCJKTokenizerV2::substringToTokens(
     const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);

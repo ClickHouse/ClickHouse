@@ -1,0 +1,44 @@
+-- Index creation
+-- Search functions return the same rows with and without the index
+hasToken	[2]
+hasToken	[2]
+hasAnyTokens	[1]
+hasAnyTokens	[1]
+hasAllTokens	[4]
+hasAllTokens	[4]
+hasAllTokens	[5]
+hasAllTokens	[5]
+hasPhrase	[6]
+hasPhrase	[6]
+equals	[6]
+equals	[6]
+like	[1]
+like	[1]
+like	[7]
+like	[7]
+like	[9]
+like	[9]
+like	[3]
+like	[3]
+notLike	[1,2,3,4,5,7,8,9,10]
+notLike	[1,2,3,4,5,7,8,9,10]
+ilike	[2]
+ilike	[2]
+startsWith	[5]
+startsWith	[5]
+endsWith	[5]
+endsWith	[5]
+match	[8]
+match	[8]
+multiSearchAny	[4,10]
+multiSearchAny	[4,10]
+-- The index skips granules
+Granules: 10/10
+Name: idx
+Granules: 1/10
+Granules: 10/10
+Name: idx
+Granules: 1/10
+Granules: 10/10
+Name: idx
+Granules: 0/10

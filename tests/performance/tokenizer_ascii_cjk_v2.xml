@@ -1,0 +1,43 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>tokenizer</name>
+            <values>
+                <value>asciiCJK</value>
+                <value>asciiCJK_v2</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>text</name>
+            <values>
+                <value>ascii</value>
+                <value>cjk</value>
+                <value>mixed</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE tokenizer_text (ascii String, cjk String, mixed String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE tokenizer_index_asciiCJK (text String, INDEX idx text TYPE text(tokenizer = asciiCJK)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE tokenizer_index_asciiCJK_v2 (text String, INDEX idx text TYPE text(tokenizer = asciiCJK_v2)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>
+        INSERT INTO tokenizer_text
+        WITH
+            ['the', 'quick', 'brown', 'fox', 'ClickHouse', 'user_id', '3.14', 'don''t', 'e-mail', 'café', 'naïve', 'Москва'] AS ascii_words,
+            ['中', '文', '分', '词', '数', '据', '库', '，', '。', 'テキスト', 'ひ', '한국어'] AS cjk_words
+        SELECT
+            arrayStringConcat(arrayMap(x -> ascii_words[rand(number * 60 + x) % 12 + 1], range(40)), ' '),
+            arrayStringConcat(arrayMap(x -> cjk_words[rand(number * 60 + x) % 12 + 1], range(80)), ''),
+            arrayStringConcat(arrayMap(x -> if(x % 2 = 0, ascii_words, cjk_words)[rand(number * 60 + x) % 12 + 1], range(60)), ' ')
+        FROM numbers(100000)
+    </fill_query>
+
+    <query>SELECT count() FROM tokenizer_text WHERE NOT ignore(tokens({text}, '{tokenizer}'))</query>
+    <query>SELECT count() FROM tokenizer_text WHERE NOT ignore(tokensForLikePattern(concat('%', {text}, '%'), '{tokenizer}'))</query>
+    <query>INSERT INTO tokenizer_index_{tokenizer} SELECT mixed FROM tokenizer_text</query>
+
+    <drop_query>DROP TABLE IF EXISTS tokenizer_text</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tokenizer_index_asciiCJK</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tokenizer_index_asciiCJK_v2</drop_query>
+</test>

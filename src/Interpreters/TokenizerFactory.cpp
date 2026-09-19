@@ -340,6 +340,14 @@ static void registerTokenizers(TokenizerFactory & factory)
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
 
+    auto ascii_cjk_v2_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, AsciiCJKTokenizerV2::getExternalName());
+        return std::make_unique<AsciiCJKTokenizerV2>();
+    };
+
+    factory.registerTokenizer(AsciiCJKTokenizerV2::getName(), ITokenizer::Type::AsciiCJK_v2, ascii_cjk_v2_creator);
+
 #if USE_JIEBA
     auto chinese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
