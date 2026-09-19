@@ -130,3 +130,45 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
     FORMAT Null"
 echo "one statement reading the table on several replicas is served"
+
+# A client may send the statement itself as a secondary query, which carries no initial query id. The
+# plan's fragments belong to it all the same, so they must share its slot rather than take one each.
+for locally in 1 0; do
+    table="t_dp_secondary_$locally"
+    ${CLICKHOUSE_CLIENT} --multiline --query "
+    DROP TABLE IF EXISTS $table;
+
+    CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+
+    SYSTEM STOP MERGES $table;
+    INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    "
+
+    query_id="05232_dp_secondary_${locally}_$CLICKHOUSE_DATABASE"
+    ${CLICKHOUSE_CLIENT} --query_kind secondary_query --query_id "$query_id" --query "
+        SELECT count() FROM $table WHERE k < 150000
+        SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = $locally,
+            enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
+            distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 2,
+            use_query_condition_cache = 0
+        FORMAT Null"
+    CODE=$?
+    [ "$CODE" -ne "0" ] && echo "Expected the secondary query to be served but got error code: $CODE" && exit 1
+
+    # Being served says nothing on its own: a plan that collapsed to a single task would be served too.
+    # The fragments are found through the id of the statement they belong to, which is that statement's
+    # own id here, so this also asserts they no longer report an empty one.
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    fragments=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT countIf(ProfileEvents['SelectedParts'] > 0)
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+          AND initial_query_id = '$query_id' AND query_id != '$query_id'
+        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
+    [ "$fragments" -lt 2 ] && echo "fewer than two fragments of the secondary query read the table" && exit 1
+
+    echo "client-sent secondary query, execute locally = $locally: served through several fragments"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
+done

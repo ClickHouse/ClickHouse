@@ -4,3 +4,5 @@ distributed_plan_execute_locally = 0
 dispatched plan: the slot outlives the fragment that took it, so an unrelated reader is refused
 parallel replicas
 one statement reading the table on several replicas is served
+client-sent secondary query, execute locally = 1: served through several fragments
+client-sent secondary query, execute locally = 0: served through several fragments
