@@ -95,6 +95,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
@@ -1055,6 +1057,11 @@ size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandl
         LOG_ERROR(log, "There were {} messages with an error", skipped);
 
     return skipped;
+}
+
+bool isMemoryLimitError(int code)
+{
+    return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY;
 }
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name)
