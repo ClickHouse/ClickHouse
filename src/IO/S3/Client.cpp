@@ -25,6 +25,7 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
+#include <Poco/URI.h>
 
 #include <IO/Expect404ResponseScope.h>
 #include <IO/S3/Requests.h>
@@ -696,21 +697,20 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
 
     bool found_new_endpoint = false;
-    // if we found correct endpoint after 301 responses, update the cache for future requests
-    SCOPE_EXIT(
-        if (found_new_endpoint)
-        {
-            auto uri_override = request.getURIOverride();
-            chassert(uri_override.has_value());
-            updateURIForBucket(bucket, std::move(*uri_override));
-        }
-    );
 
     for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
     {
         auto result = request_fn(request);
         if (result.IsSuccess())
+        {
+            if (found_new_endpoint)
+            {
+                auto uri_override = request.getURIOverride();
+                chassert(uri_override.has_value());
+                updateURIForBucket(bucket, std::move(*uri_override));
+            }
             return result;
+        }
 
         CurrentThread::checkIfNotCancelled();
 
@@ -734,7 +734,17 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         /// In that case, we need to update the region and try again
         bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
         if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
+        {
+            if (found_new_endpoint
+                && error.GetResponseCode() != Aws::Http::HttpResponseCode::REQUEST_NOT_MADE
+                && error.GetResponseCode() != Aws::Http::HttpResponseCode::NO_RESPONSE)
+            {
+                auto uri_override = request.getURIOverride();
+                chassert(uri_override.has_value());
+                updateURIForBucket(bucket, std::move(*uri_override));
+            }
             return result;
+        }
 
         // maybe we detect a correct region
         if (!detect_region || is_illegal_constraint_exception)
@@ -752,8 +762,10 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (Poco::URI(initial_endpoint).getHost() == "s3.amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
+
+        checkURIForBucket(bucket, *new_uri);
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
@@ -1056,15 +1068,7 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    S3::URI result(uri.GetURIString());
-
-    /// The endpoint is taken from an attacker-controllable 301 response (Location header or
-    /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
-    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
-    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
-    client_configuration.remote_host_filter.checkURL(result.uri);
-
-    return result;
+    return S3::URI(uri.GetURIString());
 }
 
 // Do a list request because head requests don't have body in response
@@ -1076,16 +1080,36 @@ std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::str
     auto result = ListObjectsV2(req);
     if (result.IsSuccess())
         return std::nullopt;
+
     return result.GetError();
 }
 
 std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
 {
-    std::lock_guard lock(cache->uri_cache_mutex);
-    if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
-        return it->second;
+    std::optional<S3::URI> result;
+    {
+        std::lock_guard lock(cache->uri_cache_mutex);
+        if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
+            result = it->second;
+    }
 
-    return std::nullopt;
+    if (result)
+        checkURIForBucket(bucket, *result);
+
+    return result;
+}
+
+void Client::checkURIForBucket(const std::string & bucket, const S3::URI & uri) const
+{
+    Poco::URI request_uri = uri.uri;
+    if (uri.is_virtual_hosted_style)
+    {
+        Poco::URI endpoint_uri(uri.endpoint);
+        endpoint_uri.setHost(bucket + "." + endpoint_uri.getHost());
+        request_uri.setAuthority(endpoint_uri.getAuthority());
+    }
+
+    client_configuration.remote_host_filter.checkURL(request_uri);
 }
 
 void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const
