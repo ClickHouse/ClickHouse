@@ -164,7 +164,7 @@ curl --user default:<password> --get \
   --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
 ```
 
-The expression is returned serialized from the parsed query, with the whitespace normalized, the comments removed, the redundant parentheses dropped, and the durations converted to numbers of seconds: `sum by (job) (http_requests_total{code="200"}) / 2`. This endpoint doesn't evaluate the expression, so it doesn't need the `database` and `table` parameters.
+The expression is returned serialized from the parsed query, with the whitespace normalized, the comments removed, the redundant parentheses dropped, and the durations printed in the units the parser accepts: `sum by (job) (http_requests_total{code="200"}) / 2`. A duration keeps its units rather than becoming a number of seconds, so `rate(x[5m])` comes back as `rate(x[5m])`, and one that is not a whole number of a single unit is spelled with each unit it needs, so `rate(x[90s])` comes back as `rate(x[1m30s])`. This endpoint doesn't evaluate the expression, so it doesn't need the `database` and `table` parameters.
 
 See the [supported PromQL features](/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) for the function and aggregation operator list used by the HTTP API, the `promql` dialect, and the table functions.
 
