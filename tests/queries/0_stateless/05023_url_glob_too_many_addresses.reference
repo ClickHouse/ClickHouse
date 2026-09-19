@@ -1,0 +1,19 @@
+Table function 'url'
+too many result addresses: 2001, while at most 1000 are allowed
+'glob_expansion_max_elements' setting
+Table function 'url'
+too many result addresses: 10000, while at most 1000 are allowed
+'glob_expansion_max_elements' setting
+Table function 'remote'
+too many result addresses: 2000, while at most 1000 are allowed
+'table_function_remote_max_addresses' setting
+Table engine 'URL'
+too many result addresses: 2001, while at most 1000 are allowed
+Table function 'urlCluster'
+too many result addresses: 2001, while at most 1000 are allowed
+0
+Table function 'url'
+too many result addresses: 2000, while at most 1000 are allowed
+'glob_expansion_max_elements' setting
+Table engine 'URL'
+too many result addresses: 2000, while at most 1000 are allowed
