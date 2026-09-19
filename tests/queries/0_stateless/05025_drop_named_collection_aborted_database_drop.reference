@@ -1,0 +1,6 @@
+--- the database survives a failed DROP DATABASE ---
+FAULT_INJECTED
+1
+--- and it still holds the collection ---
+--- the collection is released once the database is really dropped ---
+0

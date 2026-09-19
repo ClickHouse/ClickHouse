@@ -1,0 +1,10 @@
+--- a table detached under a new name still holds the collection ---
+1
+--- the same when the whole database is renamed before the detach ---
+1
+--- and when the renamed database is detached altogether ---
+1
+--- a detached database that keeps table metadata on its own disk still holds it ---
+1
+--- a failed CREATE TABLE in the renamed database does not hold it ---
+0

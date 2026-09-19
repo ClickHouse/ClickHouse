@@ -806,10 +806,10 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, String * used_named_collection_name)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id, used_named_collection_name))
     {
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
@@ -911,6 +911,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
         .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
     },

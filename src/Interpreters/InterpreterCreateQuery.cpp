@@ -12,6 +12,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/stripQuerySettings.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -168,9 +169,11 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
+    extern const char create_table_pause_before_commit[];
     extern const char atomic_populate_fail_before_subscription[];
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
+    extern const char attach_database_fail_after_load[];
     extern const char atomic_populate_pause_before_source_guard[];
 }
 
@@ -421,6 +424,24 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
+    /// A database engine that takes a named collection registers the dependency of this database on the
+    /// collection while `DatabaseFactory` resolves the engine arguments - before the database is attached,
+    /// and before anything that can still fail. Such an entry must not outlive a failed create: it is keyed
+    /// by the database name only, and `DROP NAMED COLLECTION` would take a database created under that name
+    /// later (with another engine, or another collection) for a user of the collection, refusing the drop
+    /// while no metadata references the collection any more. The database-level `DDLGuard` acquired above
+    /// is held until this function returns, so no other create of this name is in flight, and, as the
+    /// database does not exist, every live entry under the name belongs to this or an earlier failed create.
+    /// A failed `ATTACH DATABASE` of a detached database is covered as well: `DETACH DATABASE` recorded
+    /// the entries of the database and of its tables in the detached list, which nothing here touches,
+    /// and those entries keep refusing the drop while the metadata can be attached back (a database
+    /// cannot be detached permanently, so every database with metadata is attached at the server start).
+    bool created = false;
+    SCOPE_EXIT({
+        if (!created)
+            NamedCollectionFactory::instance().removeDependencies(StorageID::createDatabaseOnly(database_name));
+    });
+
     DatabasePtr database = DatabaseFactory::instance().get(
         create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
 
@@ -478,6 +499,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
+
+        if (create.attach)
+        {
+            fiu_do_on(FailPoints::attach_database_fail_after_load,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to attach the database after its tables were loaded");
+            });
+        }
     }
     catch (...)
     {
@@ -492,6 +521,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw;
     }
 
+    created = true;
     return {};
 }
 
@@ -2681,6 +2711,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
     }
+
+    /// Between the construction of the storage above and the commit below the table is not in the
+    /// catalog yet, while its side effects (e.g. the named collection dependencies registered when
+    /// the engine arguments were resolved) are already visible; the `DDLGuard` held by this query is
+    /// what makes the window invisible to the queries that synchronize on it. The pause lets tests
+    /// keep a create in this window. Internal creates (e.g. of the system log tables) are exempt:
+    /// they may run at any moment and would consume the failpoint behind the test's back.
+    if (!internal)
+        FailPointInjection::pauseFailPoint(FailPoints::create_table_pause_before_commit);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

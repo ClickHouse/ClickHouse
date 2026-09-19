@@ -6,6 +6,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -170,7 +172,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
-    const StorageID * dependent_table_id)
+    const StorageID * dependent_table_id,
+    String * used_named_collection_name)
 {
     if (asts.empty())
         return nullptr;
@@ -184,7 +187,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     context->checkAccess(AccessType::NAMED_COLLECTION, *collection_name);
 
     NamedCollectionPtr collection;
-    if (throw_unknown_collection)
+    if (dependent_table_id)
+        collection = NamedCollectionFactory::instance().getAndAddDependency(*collection_name, throw_unknown_collection, *dependent_table_id);
+    else if (throw_unknown_collection)
         collection = NamedCollectionFactory::instance().get(*collection_name);
     else
         collection = NamedCollectionFactory::instance().tryGet(*collection_name);
@@ -192,12 +197,13 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (!collection)
         return nullptr;
 
+    if (used_named_collection_name)
+        *used_named_collection_name = *collection_name;
+
     auto collection_copy = collection->duplicate();
 
     if (asts.size() == 1)
     {
-        if (dependent_table_id)
-            NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
         return collection_copy;
     }
 
@@ -233,10 +239,72 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
-    if (dependent_table_id)
-        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
-
     return collection_copy;
+}
+
+std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_name, const ASTs & asts)
+{
+    /// Only engines that resolve their arguments through named collections can reference one by an
+    /// identifier as the first argument; for other engines an identifier means something else (a
+    /// cluster name for `Distributed`, a database name for `Buffer`, ...), and a collection that
+    /// happens to have the same name must not be considered used by the table.
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(engine_name);
+    if (it == storages.end() || !it->second.features.supports_named_collections)
+        return std::nullopt;
+
+    /// For most of these engines, whether a collection with that name currently exists is
+    /// deliberately not checked: the identifier can only reference a named collection, so the signal
+    /// is stable across restarts, and a dependency on a collection that is missing right now protects
+    /// the table when the collection is created (or recreated after an unchecked drop) later. A
+    /// dependency on a collection that never appears is harmless.
+    auto collection_name = getCollectionName(asts);
+    if (!collection_name)
+        return std::nullopt;
+
+    if (it->second.features.named_collection_argument_is_ambiguous)
+    {
+        /// For `Remote` the same identifier is also a valid positional argument (a cluster name), so
+        /// the flag alone does not prove that the table uses a collection. Replicate the decision the
+        /// engine's own argument parsing would make on the same AST — which is exactly what a
+        /// non-lazy load of the same metadata does.
+        ///
+        /// `SETTINGS` are not positional arguments: `parseRemoteFunctionArguments` collects them
+        /// separately before it looks at the argument shape, so they are skipped here as well.
+        ASTs positional_args;
+        for (const auto & ast : asts)
+        {
+            if (!ast->as<ASTSetQuery>())
+                positional_args.push_back(ast);
+        }
+
+        /// A `key = value` second argument occurs only in the named-collection form: no positional
+        /// signature of `Remote` accepts one there, so the engine reports a missing collection
+        /// instead of reparsing the arguments positionally (`throw_unknown_collection` in
+        /// `parseRemoteFunctionArguments`). The shape alone proves the reference, and the dependency
+        /// is registered without looking at the collection namespace, exactly like for the engines
+        /// whose first identifier is never ambiguous - so a collection that is missing at load time
+        /// (say, after a drop with `check_named_collection_dependencies = 0`) is protected when it is
+        /// recreated later.
+        const auto * second_arg = positional_args.size() >= 2 ? positional_args[1]->as<ASTFunction>() : nullptr;
+        if (!second_arg || second_arg->name != "equals")
+        {
+            /// Anything else is a positional argument list (`Remote(cluster, system, one)`), which
+            /// never references a collection.
+            if (positional_args.size() >= 2)
+                return std::nullopt;
+
+            /// A single identifier (`Remote(x)`) is a collection reference exactly when a collection
+            /// with that name exists at this moment, and a cluster name otherwise: the meaning of the
+            /// stored definition itself depends on the namespace here, and the engine resolves it the
+            /// same way at the same moment.
+            NamedCollectionFactory::instance().loadIfNot();
+            if (!NamedCollectionFactory::instance().exists(*collection_name))
+                return std::nullopt;
+        }
+    }
+
+    return collection_name;
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(

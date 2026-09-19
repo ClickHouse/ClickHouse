@@ -1,0 +1,5 @@
+--- a failed CREATE TABLE ... UUID leaves a stale dependency, the UUID is reused, the table is renamed ---
+--- the renamed table does not keep the collection of the failed create alive ---
+0
+--- but it does keep its own collection alive ---
+0
