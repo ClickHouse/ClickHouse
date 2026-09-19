@@ -50,8 +50,7 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
     const auto filtered_engines = getFilteredEngines(storages, predicate, context);
-    const bool show_secrets = canDisplaySecrets(context);
-    SettingRowWriter writer(res_columns, columns_mask);
+    SettingRowWriter writer(res_columns, columns_mask, canDisplaySecrets(context));
 
     for (size_t engine_index = 0; engine_index < filtered_engines->size(); ++engine_index)
     {
@@ -60,11 +59,7 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 
         for (const auto & setting : enumerate(context))
             writeSettingRows(
-                writer,
-                setting,
-                isSettingValueMasked(setting, show_secrets),
-                [&](SettingRowWriter & row) { row.put(engine_name); },
-                [](SettingRowWriter &) {});
+                writer, setting, [&](SettingRowWriter & row) { row.put(engine_name); }, [](SettingRowWriter &) {});
     }
 }
 

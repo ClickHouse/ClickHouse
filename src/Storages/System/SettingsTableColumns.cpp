@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/SettingsTierType.h>
+#include <base/EnumReflection.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,6 +12,14 @@
 
 namespace DB
 {
+
+DataTypePtr settingOriginEnum()
+{
+    DataTypeEnum8::Values values;
+    for (const auto origin : magic_enum::enum_values<SettingOrigin>())
+        values.emplace_back(toString(origin), static_cast<Int8>(origin));
+    return std::make_shared<DataTypeEnum8>(std::move(values));
+}
 
 ColumnsDescription sharedSettingColumns()
 {
@@ -24,6 +33,12 @@ ColumnsDescription sharedSettingColumns()
         {"changed", std::make_shared<DataTypeUInt8>(),
             "1 if something other than the compiled default set this value. Not the same as `value` differing from "
             "`default`: assigning a setting the value it already had still counts."},
+        {"source", settingOriginEnum(),
+            "Where the value came from: the engine's compiled-in `default`, a server `config` section, an older "
+            "release's default the `compatibility` setting rolled back to, a `named_collection` the table was built "
+            "from, the table's own `SETTINGS` clause (`definition`), metadata shared between replicas "
+            "(`shared_metadata`), a value the engine adjusts as it runs (`runtime`), or `other` where the engine "
+            "does not say. Which of them can appear depends on the engine."},
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
             "Minimum value the current user's settings constraints allow, or NULL if none is set. "
@@ -55,18 +70,14 @@ development and the expectations one might have when using them:
     };
 }
 
-bool isSettingValueMasked(const SettingDescription & setting, bool show_secrets)
-{
-    return !show_secrets && !setting.masked_value.empty();
-}
-
 void writeSharedSettingColumns(
-    SettingRowWriter & writer, std::string_view name, const SettingDescription & setting, bool is_masked, std::string_view alias_for)
+    SettingRowWriter & writer, std::string_view name, const SettingDescription & setting, std::string_view alias_for)
 {
     writer.put(name);
-    writer.put(is_masked ? setting.masked_value : setting.value);
+    writer.put(writer.masks(setting) ? setting.masked_value : setting.value);
     writer.put(setting.default_value);
     writer.put(setting.origin != SettingOrigin::Default);
+    writer.put(static_cast<Int8>(setting.origin));
     writer.put(setting.comment);
     writer.put(setting.min_value);
     writer.put(setting.max_value);

@@ -20,6 +20,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/System/DatabaseTablesCursor.h>
+#include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -37,18 +38,6 @@ namespace Setting
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
-namespace
-{
-
-DataTypePtr originEnum()
-{
-    DataTypeEnum8::Values values;
-    for (const auto origin : magic_enum::enum_values<SettingOrigin>())
-        values.emplace_back(toString(origin), static_cast<Int8>(origin));
-    return std::make_shared<DataTypeEnum8>(std::move(values));
-}
-
-}
 
 StorageSystemTableSettings::StorageSystemTableSettings(const StorageID & table_id_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -72,24 +61,6 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
     for (const auto & column : sharedSettingColumns())
         description.add(column);
 
-    description.add({"source", originEnum(),
-        "Where the value came from. "
-        "`default` - the engine's compiled-in default. "
-        "`config` - a server config section, such as `<merge_tree>` or `<distributed>`. "
-        "`compatibility` - rolled back to an older release's default by the `compatibility` setting. "
-        "`named_collection` - a named collection the table was built from, for the settings it supplied rather than "
-        "those the engine arguments overrode. "
-        "`definition` - the table's own `SETTINGS` clause, whether stated in `CREATE` or written there by a later `ALTER`; "
-        "the two cannot be told apart, because `ALTER ... MODIFY SETTING` rewrites the stored `CREATE` query and both "
-        "are recorded as the definition. "
-        "`shared_metadata` - table metadata shared between replicas, such as Keeper for `S3Queue` and `AzureQueue`, "
-        "which is what the table uses even when its own `CREATE` query says otherwise. "
-        "`runtime` - adjusted by the engine as it runs and never written back to its settings. Reserved: no engine "
-        "reports it yet. "
-        "`other` - something assigned the setting, but the engine does not say what. "
-        "Which of these an engine can report depends on the engine: only `MergeTree` family tables report "
-        "`compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and `File`, `URL` and the "
-        "plain object storage engines report only `definition`."});
     description.add({"is_masked", std::make_shared<DataTypeUInt8>(),
         "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
         "user may not see it. Grant `displaySecretsInShowAndSelect` and enable "
@@ -117,7 +88,7 @@ public:
         bool with_temporary_tables_,
         ExpressionActionsPtr table_filter_,
         ExpressionActionsPtr engine_filter_,
-        TablesFilter tables_filter_,
+        TablesFilter catalog_name_hint_,
         ContextPtr context_)
         : ISource(header)
         , column_mask(std::move(columns_mask_))
@@ -126,7 +97,7 @@ public:
         , with_temporary_tables(with_temporary_tables_)
         , table_filter(std::move(table_filter_))
         , engine_filter(std::move(engine_filter_))
-        , tables_filter(std::move(tables_filter_))
+        , catalog_name_hint(std::move(catalog_name_hint_))
         , context(Context::createCopy(context_))
     {
     }
@@ -141,47 +112,10 @@ protected:
         const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
+        size_t rows_count = 0;
         /// Whether this user may see the real value of a secret setting - decided as `SHOW CREATE TABLE`
         /// decides it, so the two surfaces cannot disagree.
-        const bool show_secrets = canDisplaySecrets(context);
-
-        size_t rows_count = 0;
-        SettingRowWriter writer(res_columns, column_mask);
-
-        auto add_table = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
-        {
-            /// An alias must not expose the metadata of a target the user cannot see.
-            if (const auto * alias = table->as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
-                return;
-
-            const String engine_name = table->getName();
-
-            /// The engine is known only once the table is, so a predicate on it is applied here - still before the
-            /// settings are read, which is the expensive part.
-            if (engine_filter && !engineFilterKeeps(db_name, tbl_name, engine_name))
-                return;
-
-            for (const auto & setting : table->getTableSettings(context))
-            {
-                const bool is_masked = isSettingValueMasked(setting, show_secrets);
-                rows_count += writeSettingRows(
-                    writer,
-                    setting,
-                    is_masked,
-                    [&](SettingRowWriter & row)
-                    {
-                        row.put(db_name);
-                        row.put(tbl_name);
-                        row.put(engine_name);
-                    },
-                    [&](SettingRowWriter & row)
-                    {
-                        row.put(static_cast<Int8>(setting.origin));
-                        row.put(is_masked);
-                    });
-            }
-        };
+        SettingRowWriter writer(res_columns, column_mask, canDisplaySecrets(context));
 
         /// Phase 1: catalog databases
         while (rows_count < max_block_size)
@@ -203,7 +137,7 @@ protected:
                 /// rows into an error.
                 databases_cursor.setTablesIterator(
                     database->isDatalakeCatalog()
-                        ? database->getTablesIteratorWithHint(context, allowed, /* skip_not_loaded */ false, tables_filter)
+                        ? database->getTablesIteratorWithHint(context, allowed, /* skip_not_loaded */ false, catalog_name_hint)
                         : database->getTablesIterator(context, allowed));
             }
 
@@ -216,30 +150,8 @@ protected:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it.table();
-                /// A data lake table the hinted iterator could not resolve: ask for it directly, which throws the
-                /// catalog's error, or returns nothing for a table that is gone. Otherwise a table the catalog refuses
-                /// to describe would silently lose its rows. The error gets the context the plain iterator gives it.
-                if (!table && databases_cursor.getDatabase()->isDatalakeCatalog()
-                    && context->getSettingsRef()[Setting::database_datalake_require_metadata_access])
-                {
-                    try
-                    {
-                        table = databases_cursor.getDatabase()->tryGetTable(table_name, context);
-                    }
-                    catch (Exception & e)
-                    {
-                        e.addMessage(
-                            "while fetching table metadata for existing table '{}'. If you want this error to be ignored, "
-                            "use database_datalake_require_metadata_access=0",
-                            table_name);
-                        throw;
-                    }
-                }
-                if (!table)
-                    continue;
-
-                add_table(database_name, table_name, table);
+                if (const auto table = resolveTable(tables_it.table(), table_name))
+                    rows_count += emitTable(writer, database_name, table_name, table);
             }
         }
 
@@ -261,7 +173,7 @@ protected:
             }
 
             for (; rows_count < max_block_size && external_tables_it != external_tables.end(); ++external_tables_it)
-                add_table("", external_tables_it->first, external_tables_it->second);
+                rows_count += emitTable(writer, "", external_tables_it->first, external_tables_it->second);
         }
 
         if (rows_count == 0)
@@ -271,6 +183,61 @@ protected:
     }
 
 private:
+    /// The storage to report, or nothing where there is none to report. A data lake table the hinted iterator could
+    /// not resolve comes back null: ask the catalog for it directly, which throws its error, or returns nothing for a
+    /// table that is gone. Otherwise a table the catalog refuses to describe would silently lose its rows. The error
+    /// gets the context the plain iterator gives it.
+    StoragePtr resolveTable(StoragePtr table, const String & table_name) const
+    {
+        if (table || !databases_cursor.getDatabase()->isDatalakeCatalog()
+            || !context->getSettingsRef()[Setting::database_datalake_require_metadata_access])
+            return table;
+
+        try
+        {
+            return databases_cursor.getDatabase()->tryGetTable(table_name, context);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "while fetching table metadata for existing table '{}'. If you want this error to be ignored, "
+                "use database_datalake_require_metadata_access=0",
+                table_name);
+            throw;
+        }
+    }
+
+    /// Writes one table's settings, a row per setting and per alias of one. Returns how many rows that was - none
+    /// for a table the query turns out not to want, which is decided here because it takes the engine.
+    size_t emitTable(SettingRowWriter & writer, const String & db_name, const String & tbl_name, const StoragePtr & table) const
+    {
+        /// An alias must not expose the metadata of a target the user cannot see.
+        if (const auto * alias = table->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+            return 0;
+
+        const String engine_name = table->getName();
+
+        /// The engine is known only once the table is, so a predicate on it is applied here - still before the
+        /// settings are read, which is the expensive part.
+        if (engine_filter && !engineFilterKeeps(db_name, tbl_name, engine_name))
+            return 0;
+
+        size_t rows = 0;
+        for (const auto & setting : table->getTableSettings(context))
+            rows += writeSettingRows(
+                writer,
+                setting,
+                [&](SettingRowWriter & row)
+                {
+                    row.put(db_name);
+                    row.put(tbl_name);
+                    row.put(engine_name);
+                },
+                [&](SettingRowWriter & row) { row.put(row.masks(setting)); });
+        return rows;
+    }
+
     /// Whether the query's predicate on `engine` - which may involve `database` and `table` too - keeps this table.
     bool engineFilterKeeps(const String & db_name, const String & tbl_name, const String & engine_name) const
     {
@@ -292,16 +259,15 @@ private:
         return block.rows() > 0;
     }
 
-    /// Drops from the session's temporary tables, which no database lists, every one the query's `table`
-    /// predicate excludes, so their settings are never read. Only that predicate: one on `database` alone
-    /// builds no `table_filter` and is answered once by `with_temporary_tables`, before this is called.
-    void keepTablesAllowedByFilter(Tables & tables) const
+    /// Which of `table_names`, all of database `database_name`, the query's `table` predicate keeps. The names go
+    /// through the filter in one block, so a table's settings are never read to be discarded afterwards.
+    NameSet tableNamesAllowedByFilter(const String & database_name, const Strings & table_names) const
     {
         auto database_column = ColumnString::create();
         auto table_column = ColumnString::create();
-        for (const auto & [table_name, storage] : tables)
+        for (const auto & table_name : table_names)
         {
-            database_column->insertDefault();
+            database_column->insert(database_name);
             table_column->insert(table_name);
         }
 
@@ -316,7 +282,20 @@ private:
         NameSet allowed;
         for (size_t i = 0; i < surviving->size(); ++i)
             allowed.insert(String{surviving->getDataAt(i)});
+        return allowed;
+    }
 
+    /// Drops from the session's temporary tables, which no database lists, every one the query's `table`
+    /// predicate excludes. Only that predicate: one on `database` alone builds no `table_filter` and is answered
+    /// once by `with_temporary_tables`, before this is called.
+    void keepTablesAllowedByFilter(Tables & tables) const
+    {
+        Strings names;
+        names.reserve(tables.size());
+        for (const auto & [table_name, storage] : tables)
+            names.push_back(table_name);
+
+        const auto allowed = tableNamesAllowedByFilter(/* database_name */ "", names);
         std::erase_if(tables, [&allowed](const auto & entry) { return !allowed.contains(entry.first); });
     }
 
@@ -335,30 +314,15 @@ private:
         /// `WHERE table = '...'` can match only the table it names, so there is nothing to list, and listing a
         /// `PostgreSQL` database fetches the structure of every table in it. The rest of the filter is applied to the
         /// rows afterwards.
-        if (tables_filter.kind == TablesFilter::Kind::Equals && !databases_cursor.getDatabase()->isDatalakeCatalog())
-            return [name = tables_filter.pattern](const String & table_name) { return table_name == name; };
+        if (catalog_name_hint.kind == TablesFilter::Kind::Equals && !databases_cursor.getDatabase()->isDatalakeCatalog())
+            return [name = catalog_name_hint.pattern](const String & table_name) { return table_name == name; };
 
-        auto database_column = ColumnString::create();
-        auto table_column = ColumnString::create();
+        Strings names;
         for (const auto & table_details : databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(
-                 context, /* filter_by_table_name */ {}, /* skip_not_loaded */ false, tables_filter))
-        {
-            database_column->insert(database_name);
-            table_column->insert(table_details.name);
-        }
+                 context, /* filter_by_table_name */ {}, /* skip_not_loaded */ false, catalog_name_hint))
+            names.push_back(table_details.name);
 
-        Block block
-        {
-            ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"),
-            ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "table"),
-        };
-        VirtualColumnUtils::filterBlockWithExpression(table_filter, block);
-
-        const auto & surviving = block.getByName("table").column;
-        auto allowed = std::make_shared<NameSet>();
-        for (size_t i = 0; i < surviving->size(); ++i)
-            allowed->insert(String{surviving->getDataAt(i)});
-
+        auto allowed = std::make_shared<NameSet>(tableNamesAllowedByFilter(database_name, names));
         return [allowed](const String & name) { return allowed->contains(name); };
     }
 
@@ -368,7 +332,7 @@ private:
     bool with_temporary_tables;
     ExpressionActionsPtr table_filter;
     ExpressionActionsPtr engine_filter;
-    TablesFilter tables_filter;
+    TablesFilter catalog_name_hint;
     ContextPtr context;
     Tables external_tables;
     Tables::const_iterator external_tables_it;
@@ -408,10 +372,9 @@ private:
     std::shared_ptr<StorageSystemTableSettings> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    ExpressionActionsPtr virtual_columns_filter;
     ExpressionActionsPtr table_filter;
     ExpressionActionsPtr engine_filter;
-    TablesFilter tables_filter;
+    TablesFilter catalog_name_hint;
 };
 
 void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -421,23 +384,16 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     if (!filter_actions_dag)
         return;
 
-    /// Two of them: one to skip a database without opening it, and one to skip tables within a
-    /// database. They are split separately because the first is applied to a block that has no
-    /// `table` column, and an expression referring to one could not be evaluated there.
-    Block databases_block
-    {
-        { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
-    };
-    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &databases_block, context))
-        virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    /// A predicate that reads `table` narrows a database's tables; one on `database` alone is applied to the
+    /// database list itself, in `initializePipeline`.
 
     Block tables_block
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
     };
-    /// Only a predicate that reads `table` can narrow a database's tables. One on `database` alone is already
-    /// applied above, and listing a data lake catalog's names just to keep all of them costs a full catalog walk.
+    /// Only a predicate that reads `table` can narrow a database's tables: listing a data lake catalog's names just
+    /// to keep all of them costs a full catalog walk.
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context);
         dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "table"; }))
         table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
@@ -456,7 +412,7 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     /// A namespace-pushdown hint for catalogs that can restrict what they list server-side. The
     /// table name lives in the `table` column here - `name` is the setting's name - so that is the
     /// column the hint has to be read from.
-    tables_filter = extractTableNameFilter(filter_actions_dag->getOutputs().at(0), "table");
+    catalog_name_hint = extractTableNameFilter(filter_actions_dag->getOutputs().at(0), "table");
 }
 
 void StorageSystemTableSettings::readImpl(
@@ -485,49 +441,30 @@ void StorageSystemTableSettings::readImpl(
 
 void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    MutableColumnPtr column = ColumnString::create();
+    const auto & filter_dag = getFilterActionsDAG();
+    const ActionsDAG::Node * predicate = filter_dag ? filter_dag->getOutputs().at(0) : nullptr;
 
-    /// The same database selection as `system.tables` and `system.columns`, rather than the
-    /// unconditional exclusion that `system.constraints`, `system.projections` and
-    /// `system.data_skipping_indices` use. Those skip an external database because a table in one
-    /// has no ClickHouse constraints, projections or skipping indices to report - there is genuinely
-    /// nothing there. Settings are not like that: `StorageMySQL` and the data lake storages both
+    /// The same databases `system.tables` selects, through the same helper, rather than the unconditional exclusion
+    /// that `system.constraints`, `system.projections` and `system.data_skipping_indices` use. Those skip an external
+    /// database because a table in one has no ClickHouse constraints, projections or skipping indices to report -
+    /// there is genuinely nothing there. Settings are not like that: `StorageMySQL` and the data lake storages both
     /// answer `getTableSettings`, so excluding them would hide rows this table exists to show.
-    const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
-        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
-        .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
-    for (const auto & [database_name, database] : databases)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue;
-        column->insert(database_name);
-    }
-
-    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, block);
-
-    ColumnPtr & filtered_databases = block.getByPosition(0).column;
+    auto filtered_databases = detail::getFilteredDatabases(predicate, context);
 
     /// The session's temporary tables are not in any database, and report an empty `database`. Ask the same
-    /// filter whether that value survives, so a query about one database does not read their settings.
-    bool with_temporary_tables = true;
-    if (virtual_columns_filter)
+    /// predicate whether that value survives, so a query about one database does not read their settings.
+    auto temporary_database_column = ColumnString::create();
+    temporary_database_column->insertDefault();
+    Block temporary_block
     {
-        auto temporary_database_column = ColumnString::create();
-        temporary_database_column->insertDefault();
-        Block temporary_block
-        {
-            ColumnWithTypeAndName(std::move(temporary_database_column), std::make_shared<DataTypeString>(), "database"),
-        };
-        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, temporary_block);
-        with_temporary_tables = temporary_block.getByPosition(0).column->size() > 0;
-    }
+        ColumnWithTypeAndName(std::move(temporary_database_column), std::make_shared<DataTypeString>(), "database"),
+    };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, temporary_block, context);
+    const bool with_temporary_tables = temporary_block.rows() > 0;
 
     pipeline.init(Pipe(std::make_shared<TableSettingsSource>(
         std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases),
-        with_temporary_tables, table_filter, engine_filter, tables_filter, context)));
+        with_temporary_tables, table_filter, engine_filter, catalog_name_hint, context)));
 }
 
 }

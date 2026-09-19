@@ -25,11 +25,9 @@ void SystemMergeTreeSettings<replicated>::fillData(
         ? MergeTreeSettings::enumerateReplicatedEngineSettings(context)
         : MergeTreeSettings::enumerateEngineSettings(context);
 
-    const bool show_secrets = canDisplaySecrets(context);
-    SettingRowWriter writer(res_columns, columns_mask);
+    SettingRowWriter writer(res_columns, columns_mask, canDisplaySecrets(context));
     for (const auto & setting : settings)
-        writeSettingRows(
-            writer, setting, isSettingValueMasked(setting, show_secrets), [](SettingRowWriter &) {}, [](SettingRowWriter &) {});
+        writeSettingRows(writer, setting, [](SettingRowWriter &) {}, [](SettingRowWriter &) {});
 }
 
 template class SystemMergeTreeSettings<false>;

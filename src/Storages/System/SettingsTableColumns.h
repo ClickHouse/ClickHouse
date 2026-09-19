@@ -13,23 +13,30 @@
 namespace DB
 {
 
-/// The thirteen columns `system.engine_settings`, `system.merge_tree_settings` and
+/// The fourteen columns `system.engine_settings`, `system.merge_tree_settings` and
 /// `system.table_settings` all carry, declared and written in one place so the three cannot drift:
-/// `name`, `value`, `default`, `changed`, `description`, `min`, `max`, `disallowed_values`,
+/// `name`, `value`, `default`, `changed`, `source`, `description`, `min`, `max`, `disallowed_values`,
 /// `readonly`, `type`, `is_obsolete`, `tier`, `alias_for`.
 ///
 /// The descriptions say what is true of a *setting*, not of a *table*, because the same text has to
 /// read correctly in a table describing one engine family and in one describing every engine.
 ColumnsDescription sharedSettingColumns();
 
+/// The type of the `source` column: every value `SettingOrigin` declares.
+DataTypePtr settingOriginEnum();
+
 /// Writes the rows of a settings table one column at a time, skipping the columns the query does not read.
 class SettingRowWriter
 {
 public:
-    SettingRowWriter(MutableColumns & res_columns_, const std::vector<UInt8> & columns_mask_)
-        : res_columns(res_columns_), columns_mask(columns_mask_)
+    /// `show_secrets` is whether this reader sees the real value of a setting that holds one.
+    SettingRowWriter(MutableColumns & res_columns_, const std::vector<UInt8> & columns_mask_, bool show_secrets_)
+        : res_columns(res_columns_), columns_mask(columns_mask_), show_secrets(show_secrets_)
     {
     }
+
+    /// Whether this setting's value is reported as a placeholder rather than as it is.
+    bool masks(const SettingDescription & setting) const { return !show_secrets && !setting.masked_value.empty(); }
 
     /// Whether the query reads the next column - for a value that is work to build.
     bool wants() const { return columns_mask[src_index]; }
@@ -62,34 +69,27 @@ public:
 private:
     MutableColumns & res_columns;
     const std::vector<UInt8> & columns_mask;
+    const bool show_secrets;
     size_t src_index = 0;
     size_t res_index = 0;
 };
 
-/// Whether a reader sees `masked_value` in place of the value: the setting holds a secret, and the reader may not
-/// see secrets - as `SHOW CREATE TABLE` decides.
-bool isSettingValueMasked(const SettingDescription & setting, bool show_secrets);
-
-/// Writes the thirteen shared columns of one row.
+/// Writes the fourteen shared columns of one row.
 void writeSharedSettingColumns(
-    SettingRowWriter & writer, std::string_view name, const SettingDescription & setting, bool is_masked, std::string_view alias_for);
+    SettingRowWriter & writer, std::string_view name, const SettingDescription & setting, std::string_view alias_for);
 
 /// Writes a setting's own row and a row per alias, as `system.settings` does, so that looking a setting up by the
 /// name you happen to know finds it; `alias_for` tells the rows apart. `write_leading` writes the table's own columns
 /// before the shared ones, `write_trailing` those after them. Returns the number of rows written.
 template <typename WriteLeading, typename WriteTrailing>
 size_t writeSettingRows(
-    SettingRowWriter & writer,
-    const SettingDescription & setting,
-    bool is_masked,
-    WriteLeading && write_leading,
-    WriteTrailing && write_trailing)
+    SettingRowWriter & writer, const SettingDescription & setting, WriteLeading && write_leading, WriteTrailing && write_trailing)
 {
     auto write_row = [&](std::string_view name, std::string_view alias_for)
     {
         writer.startRow();
         write_leading(writer);
-        writeSharedSettingColumns(writer, name, setting, is_masked, alias_for);
+        writeSharedSettingColumns(writer, name, setting, alias_for);
         write_trailing(writer);
         writer.finishRow();
     };

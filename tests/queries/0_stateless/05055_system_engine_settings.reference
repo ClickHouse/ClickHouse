@@ -3,6 +3,7 @@ name	String
 value	String
 default	String
 changed	UInt8
+source	Enum8(\'default\' = 0, \'config\' = 1, \'compatibility\' = 2, \'named_collection\' = 3, \'definition\' = 4, \'shared_metadata\' = 5, \'runtime\' = 6, \'other\' = 7)
 description	String
 min	Nullable(String)
 max	Nullable(String)
