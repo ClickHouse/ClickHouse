@@ -14,6 +14,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Utils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
@@ -202,31 +203,6 @@ static bool haveCompatibleConstantValues(const Field & actual, const Field & exp
         default:
             return actual == expected;
     }
-}
-
-/// Whether a value of this type is converted to a `Field` that no longer tells which type the
-/// value actually has. A `Variant` flattens a row to the `Field` of its active alternative
-/// (`ColumnVariant::operator []`) and `DataTypeVariant::equals` allows several aggregate-state
-/// alternatives that are compatible by state representation; `Dynamic` and `JSON` similarly store
-/// values of types that are not fixed by the column type. Two values on different alternatives can
-/// then produce equal `Field`s although the alternative itself is a part of the value and is
-/// observable (e.g. by `variantType`), so the aggregate-state relaxation must not apply inside them.
-///
-/// Only these three types are checked, not `IDataType::hasDynamicSubcolumns`: the latter is also
-/// true for a plain `Map`, which merely exposes the `m.keys` and `m.values` virtual subcolumns while
-/// the type of every value it holds is still fixed by the declared `Map(K, V)`.
-static bool typeCanHideTheValueType(const IDataType & type)
-{
-    if (isVariant(type) || isDynamic(type) || isObject(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        result = result || typeCanHideTheValueType(child);
-    });
-
-    return result;
 }
 
 template <typename ReturnType>

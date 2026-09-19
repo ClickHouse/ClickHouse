@@ -2865,19 +2865,16 @@ static bool tryPrepareSetColumnsForIndex(
 ///     describes at the type level what the constant actually holds, so the caller narrows both to
 ///     the alternatives the constant column occupies before calling here; a bare `Dynamic` reaching
 ///     this check is declined.
-/// `only_permuting_casts` restricts the rule to the casts that make the set element stand for a
-/// *different* value than the one `has` compares at runtime - the by-name mappings, which make the
-/// transformed set miss a matching row. Everything else it rejects is about the set being an exact
-/// image of the predicate rather than an over-approximation of it, which a relaxed atom does not
-/// need: it only reports `can_be_true`, and for that an over-approximation is sound.
 static bool areTypesCompatibleForHasSetIndex(
     const DataTypePtr & set_element_type,
     const DataTypePtr & key_column_type,
-    bool within_container = false,
-    bool only_permuting_casts = false)
+    bool within_container = false)
 {
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
+
+    if (typeCanHideTheValueType(*key_type))
+        return false;
 
     if (isNothing(set_type))
         return true;
@@ -2922,7 +2919,7 @@ static bool areTypesCompatibleForHasSetIndex(
     {
         for (const auto & alternative : set_variant_type->getVariants())
         {
-            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container, only_permuting_casts))
+            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container))
                 return false;
         }
         return true;
@@ -2953,7 +2950,7 @@ static bool areTypesCompatibleForHasSetIndex(
 
         for (size_t i = 0; i < set_elements.size(); ++i)
         {
-            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true, only_permuting_casts))
+            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true))
                 return false;
         }
         return true;
@@ -2963,27 +2960,15 @@ static bool areTypesCompatibleForHasSetIndex(
     const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
     if (set_array_type && key_array_type)
         return areTypesCompatibleForHasSetIndex(
-            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true, only_permuting_casts);
+            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true);
 
     const auto * set_map_type = typeid_cast<const DataTypeMap *>(set_type.get());
     const auto * key_map_type = typeid_cast<const DataTypeMap *>(key_type.get());
     if (set_map_type && key_map_type)
         return areTypesCompatibleForHasSetIndex(
-                   set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true, only_permuting_casts)
+                   set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true)
             && areTypesCompatibleForHasSetIndex(
-                   set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true, only_permuting_casts);
-
-    /** A pair the rule does not describe is accepted for a relaxed atom only when the key side is a
-      * `Dynamic`, which carries the element's value as it is, so the transformed set still
-      * over-approximates what `has` compares at runtime.
-      *
-      * Anything else is declined even for a relaxed atom: relaxing permits false positives in
-      * `can_be_true`, not turning a comparison that raises at runtime - `has([toIPv4('1.2.3.4')], x)`
-      * over a `UInt32` column reports `Cannot compare DB::IPv4 with unsigned long` once a granule
-      * reaches the filter - into an empty result.
-      */
-    if (only_permuting_casts && WhichDataType(key_type).isDynamic())
-        return true;
+                   set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true);
 
     return false;
 }
@@ -2993,8 +2978,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
     size_t key_args_count,
     const DataTypes & key_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    bool only_permuting_casts = false)
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
 {
     while (set_types.size() < key_args_count)
     {
@@ -3037,7 +3021,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
         /// per-index comparison happens between the children of two `Tuple` `Field`s - with the plain
         /// `Field::operator==`, not the accurate one.
         if (!areTypesCompatibleForHasSetIndex(
-                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1, only_permuting_casts))
+                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1))
             return false;
     }
 
@@ -3305,18 +3289,13 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     if (element_type_is_from_column && contains_float(checked_element_type))
         return false;
 
-    /// A relaxed atom is checked too, for the casts that permute the value: relaxing an atom only
-    /// allows `can_be_false`, while the positive direction still trusts `can_be_true`, which is sound
-    /// only when the transformed set over-approximates what `has` compares at runtime. A `CAST`
-    /// between named tuples matches their fields by name while `has` compares them positionally, so
-    /// such a set names a key value that no matching row holds and prunes the granule holding it.
+    /// A relaxed atom is checked by the same rule. Relaxing permits false positives in `can_be_true`, so
+    /// an over-approximating set is sound and an under-approximating one is not; it does not permit
+    /// turning a comparison that raises at runtime (`has([toIPv4('1.2.3.4')], x)` over a `UInt32` key
+    /// reports `Cannot compare DB::IPv4 with unsigned long` once a granule reaches the filter) into an
+    /// empty result.
     if (!areSetAndKeyTypesCompatibleForHas(
-            {checked_element_type},
-            key_args_count,
-            data_types,
-            set_transforming_dags,
-            indexes_mapping,
-            /*only_permuting_casts=*/ out.relaxed))
+            {checked_element_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
         return false;
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
