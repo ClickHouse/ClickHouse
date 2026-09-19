@@ -170,9 +170,9 @@ TEST(DataTypesCache, InvalidatedOnClientTimezoneChangeWithoutQueryScope)
     const auto original_timezone = context->getSettingsRef().get("session_timezone");
     SCOPE_EXIT(context->setSetting("session_timezone", original_timezone));
 
-    for (const auto * timezone : {"UTC", "Asia/Tokyo", "Europe/Amsterdam", ""})
+    for (const auto * timezone_name : {"UTC", "Asia/Tokyo", "Europe/Amsterdam", ""})
     {
-        context->setSetting("session_timezone", String(timezone));
+        context->setSetting("session_timezone", String(timezone_name));
         EXPECT_EQ(cachedDateTimeTimezone(), DateLUT::instance().getTimeZone());
         auto serialization = getDataTypesCache().getSerialization("JSON(d DateTime)");
         EXPECT_EQ(serialization, DataTypeFactory::instance().get("JSON(d DateTime)")->getDefaultSerialization());
