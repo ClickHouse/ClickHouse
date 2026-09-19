@@ -15,13 +15,19 @@ Row 1:
 value: carriage␍return
 Row 1:
 ──────
-value: null␀and␁mixed␛text
+value: null␀and␁mixedtext
 Row 1:
 ──────
 value: delete␡char
 Row 1:
 ──────
 value: normal text
+Row 1:
+──────
+value: [31mred[0m
+Row 1:
+──────
+escname: 1
 Row 1:
 ──────
 value: literal\0backslash

@@ -859,6 +859,18 @@ Write column index and offset index (i.e. statistics about each data page, which
 
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the `Vertical` and `Pretty*` output formats."}]}]}/>
+
+If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
+
+A line feed is an exception in the `Pretty*` formats: it is never replaced there, because it either becomes a new line of the table cell (see [`output_format_pretty_multiline_fields`](/reference/settings/formats/output-format#output_format_pretty_multiline_fields)), or is deliberately emitted as is so that multi-line values stay easy to copy-paste. The `Vertical` format prints one field per line, so there a line feed is replaced with ␊ like any other control character.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1136,14 +1148,6 @@ If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "If true escape ' with '', otherwise quoted with \\'"}]}]}/>
 
 If true escape ' with '', otherwise quoted with \\'
-
-## output_format_vertical_display_control_characters {#output_format_vertical_display_control_characters}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the Vertical output format."}]}]}/>
-
-If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the values and column names of the Vertical output format are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

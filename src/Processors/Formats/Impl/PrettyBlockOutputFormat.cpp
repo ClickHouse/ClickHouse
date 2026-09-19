@@ -985,7 +985,9 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test FORMAT PrettyC
 ```
 
 ```response title="Response"
-PRETTY_CONTROL_PICTURES_RESPONSE_PLACEHOLDER
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and ␉ character │
+└──────────────────────────────────────┘
 ```
 
 `ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
@@ -1000,7 +1002,9 @@ SETTINGS output_format_pretty_display_control_characters = 0
 ```
 
 ```response title="Response"
-PRETTY_RAW_CONTROL_CHARACTERS_RESPONSE_PLACEHOLDER
+┌─Escaping_test─────────────────────────┐
+│ String with 'quotes' and 	 character │
+└───────────────────────────────────────┘
 ```
 
 To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 

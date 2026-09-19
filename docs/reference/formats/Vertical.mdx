@@ -47,12 +47,14 @@ Row 1:
 test: string with 'quotes' and ␉ with some special ␊ characters
 ```
 
-To print control characters verbatim instead, disable [`output_format_vertical_display_control_characters`](/reference/settings/formats#output_format_vertical_display_control_characters):
+`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
+
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/reference/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test
 FORMAT Vertical
-SETTINGS output_format_vertical_display_control_characters = 0
+SETTINGS output_format_pretty_display_control_characters = 0
 ```
 
 ```response
