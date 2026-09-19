@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -15,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static ASTPtr getCompressionCodecDeltaLZ4()
@@ -87,6 +89,20 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
         return part.getDataPartStorage().getDiskName();
 
     throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Unexpected const virtual column: {}", column_name);
+}
+
+Field getFieldForConstVirtualColumnOfBorrowedPart(const String & column_name, const MergeTreePartInfo & part_info)
+{
+    /// A part that is read without its table has no metadata beyond its own name, so the persistent
+    /// virtual columns that are not stored in the part are materialized from the part name alone.
+    if (column_name == RowExistsColumn::name)
+        return 1ULL;
+
+    if (column_name == BlockNumberColumn::name)
+        return part_info.min_block;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Virtual column {} cannot be filled for a part that is read without its table", column_name);
 }
 
 }
