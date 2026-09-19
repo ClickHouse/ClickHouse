@@ -1,4 +1,6 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -28,6 +30,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"active",                                      std::make_shared<DataTypeUInt8>(),  "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(), "The number of rows."},
+        {"files",                                       std::make_shared<DataTypeUInt64>(), "The number of files in the data part."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(), "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(), "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -93,13 +96,21 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 }
 
 void StorageSystemProjectionParts::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPartState;
     MergeTreeData::DataPartStateVector all_parts_state;
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+    QueryStatusPtr query_status = context->getProcessListElement();
+
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
+
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
         chassert(parent_part);
@@ -129,6 +140,8 @@ void StorageSystemProjectionParts::processNextStorage(
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->checksums.files.size());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
