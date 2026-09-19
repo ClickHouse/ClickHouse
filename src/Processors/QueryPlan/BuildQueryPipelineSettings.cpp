@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Core/Settings.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Common/MemoryTrackerUtils.h>
 
@@ -44,6 +45,15 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     block_marshalling_callback = from->getBlockMarshallingCallback();
 
     query_result_previews = QueryResultPreviewsSettings::fromSettings(settings);
+    /// Previews are initiator-only: the initiator drops every `PreviewData` packet of a remote query
+    /// (see `RemoteQueryExecutor::processPacket`), so a shard would snapshot and serialize its
+    /// intermediate state for nothing. The initiator already resets the preview settings of the
+    /// forwarded query (`ClusterProxy::stripInitiatorOnlySettings`), but the inter-server `Settings`
+    /// packet carries only *changed* settings, so a shard-side profile default of
+    /// `query_result_previews = 1` would still turn them back on. Close that hole here, where the
+    /// effective settings of the query are known.
+    if (from->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        query_result_previews.enabled = false;
 }
 
 }
