@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace
@@ -156,17 +155,10 @@ void StorageSystemParts::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
-    QueryStatusPtr query_status = context->getProcessListElement();
-
-    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
+    all_parts = info.getParts(all_parts_state, has_state_column);
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
-
-        slowDownSystemPartsEnumeration(info.table);
-
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
@@ -371,7 +363,7 @@ void StorageSystemParts::processNextStorage(
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version};
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
         };
 
         auto current_version_info = part->version->getInfo();

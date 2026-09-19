@@ -299,7 +299,6 @@ public:
 
     bool empty() const { return size() == 0; }
     size_t size() const;
-    size_t lowerBound(std::string_view token) const;
     size_t upperBound(std::string_view token) const;
 
     std::string_view getToken(size_t idx) const;

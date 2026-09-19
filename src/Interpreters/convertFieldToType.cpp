@@ -11,8 +11,6 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -24,8 +22,6 @@
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
-
-#include <Functions/DateTimeTransforms.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -47,7 +43,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 
@@ -231,45 +226,6 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
-/// Rescales a `Decimal64` `Field` holding a `DateTime64` or `Time64` value to the scale of `to_type`
-/// (`DateTime64(a)` -> `DateTime64(b)`, `Time64(a)` -> `Time64(b)`).
-///
-/// Reducing the scale drops sub-tick digits, so under `strict` a value whose fractional part does not
-/// survive the rescaling is rejected (Null) instead of being truncated, honoring the Decimal -> Decimal
-/// contract in convertFieldToType.h: `Time64(0) IN (CAST('00:00:00.5', 'Time64(1)'))` must not match.
-template <typename T, typename ToDataType>
-Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool strict)
-{
-    const auto & from_type = src.safeGet<Decimal64>();
-
-    const auto scale_from = from_type.getScale();
-    const auto scale_to = to_type.getScale();
-    const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
-                                                             : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
-
-    if (scale_multiplier_diff == 1) /// Already in needed type.
-        return src;
-
-    Int64 value = from_type.getValue().value;
-
-    if (scale_from > scale_to)
-    {
-        if (strict && value % scale_multiplier_diff.value != 0)
-            return {};
-        value /= scale_multiplier_diff;
-    }
-    else if (scale_from < scale_to)
-    {
-        Int64 result = 0;
-        if (common::mulOverflow(value, scale_multiplier_diff.value, result))
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
-                src.getTypeName(), to_type.getName(), value, scale_multiplier_diff.value);
-        value = result;
-    }
-
-    return DecimalField<T>(DecimalUtils::decimalFromComponentsWithMultiplier<T>(value, 0, 1), scale_to);
-}
-
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_type_hint && from_type_hint->equals(type))
@@ -284,73 +240,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         which_from_type = WhichDataType(*from_type_hint);
     }
-
-    const auto time64_to_seconds = [&]
-    {
-        const auto & time64 = src.safeGet<Decimal64>();
-        const auto scale_multiplier = static_cast<const DataTypeTime64 &>(*from_type_hint).getScaleMultiplier();
-        Int64 seconds = time64.getValue().value / scale_multiplier;
-        if (time64.getValue().value < 0 && time64.getValue().value % scale_multiplier)
-            --seconds;
-        return seconds;
-    };
-
-    /// Whether a `Time64` source value has no fractional part, i.e. whether flooring it to whole
-    /// seconds loses information.
-    const auto time64_has_whole_seconds = [&]
-    {
-        const auto & time64 = src.safeGet<Decimal64>();
-        const auto scale_multiplier = static_cast<const DataTypeTime64 &>(*from_type_hint).getScaleMultiplier();
-        return time64.getValue().value % scale_multiplier == 0;
-    };
-
-    /// A `Time` value is a signed count of seconds, so it can arrive either as `Int64` or as `UInt64`
-    /// depending on how the literal was produced.
-    const auto time_to_seconds = [&]() -> Int64
-    {
-        if (src.getType() == Field::Types::Int64)
-            return src.safeGet<Int64>();
-        return static_cast<Int64>(src.safeGet<UInt64>());
-    };
-
-    /// Under `strict`, mirror the accurate-cast validity checks of `Transformer` (DateTimeTransforms.h)
-    /// for `Time` / `Time64` sources: a value that the lossy conversion below would truncate or wrap is
-    /// not exactly representable in the target type and therefore cannot equal any stored value - the
-    /// branches return Null instead, so strict `IN` semantics stay exact.
-    const auto seconds_representable_as_date = [](Int64 seconds)
-    {
-        return seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL) && seconds % DATE_SECONDS_PER_DAY == 0;
-    };
-    const auto seconds_representable_as_date32 = [](Int64 seconds)
-    {
-        return seconds >= static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM) * DATE_SECONDS_PER_DAY
-            && seconds <= MAX_DATE32_TIMESTAMP && seconds % DATE_SECONDS_PER_DAY == 0;
-    };
-    const auto seconds_representable_as_datetime = [](Int64 seconds)
-    {
-        return seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
-    };
-
-    /// `Time` and `Time64` are timezone-unaware, so the whole-second value is interpreted in UTC, the
-    /// same way as the column path (`ToDateTransformFromTime64` / `ToDate32TransformFromTime64`).
-    /// Route through `ToDateImpl` so that a `VALUES` constant and the runtime conversion of the same
-    /// value agree under every `date_time_overflow_behavior`.
-    const auto seconds_to_date = [&](Int64 seconds) -> Field
-    {
-        const auto & utc = DateLUT::instance("UTC");
-        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-            return static_cast<UInt64>(ToDateImpl<FormatSettings::DateTimeOverflowBehavior::Throw>::execute(seconds, utc));
-        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            return static_cast<UInt64>(ToDateImpl<FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(seconds, utc));
-        return static_cast<UInt64>(ToDateImpl<FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(seconds, utc));
-    };
-
-    /// `ToDate32Impl` is not parameterized by the overflow behavior - `Date32` covers the whole
-    /// representable day-number range - so the column path applies no range handling either.
-    const auto seconds_to_date32 = [&](Int64 seconds) -> Field
-    {
-        return static_cast<Int64>(ToDate32Impl::execute(seconds, DateLUT::instance("UTC")));
-    };
 
     /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
@@ -398,95 +287,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDate() && which_from_type.isTime())
     {
-        const Int64 seconds = time_to_seconds();
-        if (strict && !seconds_representable_as_date(seconds))
-            return {};
-        return seconds_to_date(seconds);
+        return static_cast<UInt16>(static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
     if (which_type.isDate32() && which_from_type.isTime())
     {
-        const Int64 seconds = time_to_seconds();
-        if (strict && !seconds_representable_as_date32(seconds))
-            return {};
-        return seconds_to_date32(seconds);
-    }
-    if (which_type.isDate() && which_from_type.isTime64())
-    {
-        const Int64 seconds = time64_to_seconds();
-        if (strict && !(time64_has_whole_seconds() && seconds_representable_as_date(seconds)))
-            return {};
-        return seconds_to_date(seconds);
-    }
-    if (which_type.isDate32() && which_from_type.isTime64())
-    {
-        const Int64 seconds = time64_to_seconds();
-        if (strict && !(time64_has_whole_seconds() && seconds_representable_as_date32(seconds)))
-            return {};
-        return seconds_to_date32(seconds);
-    }
-    if (which_type.isDateTime() && which_from_type.isTime())
-    {
-        /// Scale-zero sibling of the `Time64` case below. Without it a `Time` constant is the one
-        /// `Time` / `Time64` -> whole-second combination with no `Field` path, so `DateTime IN
-        /// (CAST(... AS Time))` reports `TYPE_MISMATCH` while every sibling conversion works.
-        const Int64 seconds = time_to_seconds();
-        if (strict && !seconds_representable_as_datetime(seconds))
-            return {};
-        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
-            return static_cast<UInt64>(static_cast<UInt32>(seconds));
-
-        if (seconds < 0 || seconds >= MAX_DATETIME_TIMESTAMP)
-        {
-            if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                return seconds < 0 ? UInt64(0) : static_cast<UInt64>(std::numeric_limits<UInt32>::max());
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", seconds);
-        }
-        return static_cast<UInt64>(seconds);
-    }
-    if (which_type.isDateTime() && which_from_type.isTime64())
-    {
-        /// Mirror `ToDateTimeImpl::execute(Int64)` - the column path used by `CAST` and
-        /// `INSERT SELECT` - exactly, so that a `VALUES` constant and the runtime conversion of the
-        /// same value agree. In particular, with the default `ignore` behavior a negative
-        /// time-of-day wraps into the end of the `DateTime` range rather than being clamped to the
-        /// epoch.
-        const Int64 seconds = time64_to_seconds();
-        if (strict && !(time64_has_whole_seconds() && seconds_representable_as_datetime(seconds)))
-            return {};
-        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
-            return static_cast<UInt64>(static_cast<UInt32>(seconds));
-
-        if (seconds < 0 || seconds >= MAX_DATETIME_TIMESTAMP)
-        {
-            if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                return seconds < 0 ? UInt64(0) : static_cast<UInt64>(std::numeric_limits<UInt32>::max());
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", seconds);
-        }
-        return static_cast<UInt64>(seconds);
-    }
-    if (which_type.isTime() && which_from_type.isTime64())
-    {
-        /// Mirror `TransformTime64<ToTimeTransform64Signed<Int64, Int32, ...>>`: floor the
-        /// sub-second part towards negative infinity (already done by `time64_to_seconds`), then
-        /// clamp to the `Time` range - which `ToTimeTransform64Signed` does for every behavior
-        /// except `throw`.
-        const Int64 seconds = time64_to_seconds();
-        if (strict
-            && !(time64_has_whole_seconds() && seconds >= -static_cast<Int64>(MAX_TIME_TIMESTAMP)
-                 && seconds <= static_cast<Int64>(MAX_TIME_TIMESTAMP)))
-            return {};
-        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
-            && (seconds < -MAX_TIME_TIMESTAMP || seconds > MAX_TIME_TIMESTAMP))
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", seconds);
-
-        return static_cast<Int64>(std::clamp(seconds, -static_cast<Int64>(MAX_TIME_TIMESTAMP), static_cast<Int64>(MAX_TIME_TIMESTAMP)));
-    }
-    if (which_type.isDateTime64() && which_from_type.isTime64())
-    {
-        /// `Time64` and `DateTime64` use the same decimal representation. Drop the type hint so the
-        /// regular decimal rescaling below (`rescaleDecimal64Field`) preserves the fractional
-        /// component; under `strict` it rejects values that do not survive a scale reduction.
-        return convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
+        return static_cast<Int32>(
+            static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
     if (which_type.isTime() && which_from_type.isDate())
     {
@@ -624,10 +430,68 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
-            return rescaleDecimal64Field<DateTime64>(src, static_cast<const DataTypeDateTime64 &>(type), strict);
+        {
+            const auto & from_type = src.safeGet<Decimal64>();
+            const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
+
+            const auto scale_from = from_type.getScale();
+            const auto scale_to = to_type.getScale();
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
+                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result = 0;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
+            return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
+        }
 
         if (which_type.isTime64() && src.getType() == Field::Types::Decimal64)
-            return rescaleDecimal64Field<Time64>(src, static_cast<const DataTypeTime64 &>(type), strict);
+        {
+            const auto & from_type = src.safeGet<Decimal64>();
+            const auto & to_type = static_cast<const DataTypeTime64 &>(type);
+
+            const auto scale_from = from_type.getScale();
+            const auto scale_to = to_type.getScale();
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
+                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result = 0;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
+            return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
+        }
 
         /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
         /// range-check so out-of-range integers don't get silently truncated

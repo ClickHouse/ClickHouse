@@ -45,22 +45,6 @@ SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_05212_map_keys_ci;
 
--- The LIKE variants use the same case-sensitive Map subcolumn resolution on MergeTree.
-DROP TABLE IF EXISTS t_05212_map_like_ci;
-CREATE TABLE t_05212_map_like_ci (id UInt64, m Map(String, String), `M.keys` Array(String), `M.values` Array(String))
-ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_05212_map_like_ci VALUES (1, map('key', 'one'), ['other'], ['four']);
-
-SELECT 'mergetree mapContainsKeyLike rewritten', count() > 0
-FROM (EXPLAIN actions = 1 SELECT id FROM t_05212_map_like_ci WHERE mapContainsKeyLike(m, 'other%'))
-WHERE explain LIKE '%m.keys%';
-
-SELECT 'mergetree mapContainsValueLike rewritten', count() > 0
-FROM (EXPLAIN actions = 1 SELECT id FROM t_05212_map_like_ci WHERE mapContainsValueLike(m, 'four%'))
-WHERE explain LIKE '%m.values%';
-
-DROP TABLE t_05212_map_like_ci;
-
 -- A case-insensitive file reader resolves m.keys to the physical `M.keys` column. The pass never rewrites
 -- Map functions for such readers, so the results must not change with the optimization enabled.
 INSERT INTO FUNCTION file(currentDatabase() || '_05212_map_has_keys_ci.orc', ORC, 'm Map(String, UInt64), `M.keys` Array(String)')

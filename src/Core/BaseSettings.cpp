@@ -28,7 +28,7 @@ void BaseSettingsHelpers::writeString(std::string_view str, WriteBuffer & out)
 String BaseSettingsHelpers::readString(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
+    readStringBinary(str, in);
     return str;
 }
 
