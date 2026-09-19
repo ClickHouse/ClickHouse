@@ -24,6 +24,9 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- Several streams, so that the sharding produces more than one layer.
 SET max_threads=4, max_block_size=128;
 SET use_query_condition_cache=0;
+-- The `distributed plan` CI job turns this on for every query, and on this branch the replicas
+-- plan is then never adopted, so the preconditions asserted at the end do not hold.
+SET serialize_query_plan=0;
 
 -- The sharding under test. It only applies to reads in order, so pin `optimize_read_in_order`
 -- against the settings randomizer.
