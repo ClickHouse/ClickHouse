@@ -371,6 +371,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    REGULAR(distributed_plan_read_empty_snapshot_on_deserialize) \
     PAUSEABLE(keeper_changelog_read_plan_resolved) \
     PAUSEABLE(keeper_changelog_removed_from_disk_set) \
     PAUSEABLE(keeper_changelog_readahead_fill_wedge) \

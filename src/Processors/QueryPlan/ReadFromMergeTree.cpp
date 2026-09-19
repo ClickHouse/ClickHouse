@@ -76,6 +76,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -381,6 +382,13 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_TABLE;
+}
+
+namespace FailPoints
+{
+    /// Simulates a replica whose local parts snapshot became empty (parts merged away or dropped)
+    /// between the coordinator planning a distributed read and this replica deserializing it.
+    extern const char distributed_plan_read_empty_snapshot_on_deserialize[];
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -5032,6 +5040,21 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             }
             result.parts_with_ranges = std::move(bucket_parts);
         }
+        else
+        {
+            /// FINAL resolves each lane's marks lazily in `spreadMarkRangesAmongStreamsFinal`, which runs
+            /// after the empty-`parts_with_ranges` short-circuits, so validate divergence eagerly here.
+            std::unordered_set<String> local_part_names;
+            local_part_names.reserve(result.parts_with_ranges.size());
+            for (const auto & part : result.parts_with_ranges)
+                local_part_names.insert(part.data_part->info.getPartNameV1());
+            for (const auto & bucket : distributed_read_task_buckets)
+                for (const auto & part_desc : bucket.marks)
+                    if (!local_part_names.contains(part_desc.info.getPartNameV1()))
+                        throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                            "Distributed read: part {} selected by the coordinator is not available on this replica "
+                            "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
+        }
 
         /// Cannot cache PREWHERE results when ranges are pinned per bucket.
         reader_settings.use_query_condition_cache = false;
@@ -6925,8 +6948,15 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
+    RangesInDataPartsPtr parts_for_read = snapshot_data.parts;
+    /// Test hook: pretend this replica's snapshot lost its parts after the coordinator planned the read.
+    fiu_do_on(FailPoints::distributed_plan_read_empty_snapshot_on_deserialize,
+    {
+        parts_for_read = std::make_shared<const RangesInDataParts>();
+    });
+
     auto step = executor.readFromParts(
-        snapshot_data.parts,
+        parts_for_read,
         snapshot_data.mutations_snapshot,
         column_names,
         storage_snapshot,
@@ -6941,7 +6971,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// replica number from client_info. This path is only reached for a plan that will actually be
         /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
-        /*extension*/ nullptr);
+        /*extension*/ nullptr,
+        /// Unconditional: a read shipped in a distributed fragment always needs a step even on an empty
+        /// snapshot, and it is not always bucketed (the distributed axis can be an exchange above it).
+        /*build_empty_step_for_distributed_read*/ true);
 
     if (distributed_read_bucket_count)
     {
