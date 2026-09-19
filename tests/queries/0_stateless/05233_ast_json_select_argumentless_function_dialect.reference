@@ -1,0 +1,19 @@
+for key 'where' has no 'arguments' list
+for key 'group_by' has no 'arguments' list
+for key 'where' has no 'arguments' list
+for key 'tables' has no 'arguments' list
+for key 'interpolate' has no 'arguments' list
+for key 'lambda' has no 'arguments' list
+for key 'parameters' has no 'arguments' list
+SELECT count()
+FROM numbers(3)
+GROUP BY number
+ORDER BY number ASC WITH FILL
+INTERPOLATE (`number` AS plus(number, 1))
+SELECT * APPLY lambda(tuple(x), plus(x, 1)) APPLY quantile(0.5)
+FROM
+(
+    SELECT 1 AS a
+    FROM system.one
+)
+1

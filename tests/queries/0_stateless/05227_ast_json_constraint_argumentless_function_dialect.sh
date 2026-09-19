@@ -43,12 +43,9 @@ ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE tc" | grep -om1 'CONSTRAINT cc C
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE tc"
 
 # The rejection walks `IAST::children`, and `ASTColumnsApplyTransformer` owns its `lambda` outside that
-# vector, so a function nested there is not screened - harmlessly, because the consumers walk `children`
-# too, and the matcher is never expanded in a constraint.
-${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
-    "$(payload "CREATE TABLE tc (a UInt8, CONSTRAINT cc CHECK COLUMNS(''a'') APPLY (x -> x > 0)) ENGINE = MergeTree ORDER BY a" "$ARGS_X_0")"
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE tc" | grep -om1 'x -> greater()'
-${CLICKHOUSE_CLIENT} --query "DROP TABLE tc"
+# vector, so the walk cannot reach a function nested there. That slot carries its own screen, because a
+# lambda body restored into a SELECT and reached through `EXPLAIN AST optimize = 1` is a crash (05233).
+send "$(payload "CREATE TABLE tc (a UInt8, CONSTRAINT cc CHECK COLUMNS(''a'') APPLY (x -> x > 0)) ENGINE = MergeTree ORDER BY a" "$ARGS_X_0")"
 
 # The server survived every rejection.
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
