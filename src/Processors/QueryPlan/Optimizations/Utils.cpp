@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -124,6 +125,41 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
+namespace
+{
+
+/// True when the function does not read the value stored under a null map. This is the predicate
+/// `dagReadsUnspecifiedValueUnderNull` applies to every function of the DAG.
+bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
+{
+    /// `allNodeFunctions` carries a predicate to a lambda's wrapper but not into its body.
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return !dagReadsUnspecifiedValueUnderNull(expression->getAcionsDAG());
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return !dagReadsUnspecifiedValueUnderNull(capture->getAcionsDAG());
+
+    if (function.getName() != "assumeNotNull")
+        return true;
+
+    /// `LowCardinality(Nullable(T))` keeps every NULL at the dictionary entry holding the type default,
+    /// so there the value is the same one a constant fold produces; only plain `Nullable(T)` can differ.
+    const auto & argument_types = function.getArgumentTypes();
+    return argument_types.empty() || !argument_types.front()->isNullable();
+}
+
+}
+
+bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag)
+{
+    /// `assumeNotNull` returns the value stored under the null map, and for a NULL that value is
+    /// unspecified: a constant fold leaves the nested type default there, while a per-row evaluation
+    /// leaves whatever the computation produced.
+    for (const auto & node : dag.getNodes())
+        if (!allNodeFunctions(node, valueUnderNullMapIsNotRead))
+            return true;
+    return false;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
@@ -152,6 +188,12 @@ FilterResult filterResultForNotMatchedRows(
     /// rows and silently converts `ANY OUTER JOIN` to `INNER`/`SEMI`/`ANTI`, dropping rows that
     /// would have survived. Bail out to `UNKNOWN` so the JOIN is left unchanged.
     if (dagContainsNonDeterministicFunction(filter_dag))
+        return FilterResult::UNKNOWN;
+
+    /// The dry run below models this side's inputs as constants, so a subexpression that is per-row at
+    /// runtime becomes constant and takes `IFunction`'s constant-NULL short circuit, which never computes
+    /// the value under the null map that `assumeNotNull` goes on to return.
+    if (dagReadsUnspecifiedValueUnderNull(filter_dag))
         return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
