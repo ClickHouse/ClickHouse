@@ -663,6 +663,29 @@ a local file on a disk rather than to ClickHouse Keeper.
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
 Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
+
+Also lowered automatically when merging that many parts of this table would not fit in memory, see
+`merge_memory_estimate_per_source_part_column`.
+)", 0) \
+    DECLARE(UInt64, merge_memory_estimate_per_source_part_column, 4096, R"(
+Estimated memory, in bytes, that a merge needs per (source part, column) regardless of how much data the
+parts hold, used to lower `max_parts_to_merge_at_once` so that one merge takes at most a sixteenth of the
+server's memory limit (`max_server_memory_usage`).
+
+A merge keeps one block from every source part alive at the same time, and every column of every one of
+those blocks costs at least a minimum allocation even when the block holds a handful of rows. For a table
+with thousands of columns - `system.metric_log` has over two thousand - merging the default 100 parts at
+once takes hundreds of megabytes before a single row is read. On a server with little memory the merge
+then fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay where they were, and the next selection
+round picks the same parts again, so the table stops compacting altogether.
+
+A merge that runs through the vertical algorithm (see `enable_vertical_merge_algorithm`) holds only the
+key columns of every source part at once and gathers the other columns one at a time, so it is priced by
+its key columns alone and keeps its full width on a small server. Whether a merge will be vertical is
+predicted from the table definition and the rows and bytes of the candidate parts the same way the merge
+decides it; where the prediction is unsure it prices the merge as a horizontal one.
+
+Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
@@ -1271,6 +1294,19 @@ for a single column, and one write buffer is allocated per stream.
 Possible values:
 - 0 - disabled
 - 1 - always enabled
+)", 0) \
+    DECLARE(Float, max_memory_ratio_to_activate_adaptive_write_buffer, 1.f / 32, R"(
+Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
+fraction of the server's memory limit (`max_server_memory_usage`), regardless of
+`min_columns_to_activate_adaptive_write_buffer`.
+
+A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
+buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
+before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
+server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
+`MEMORY_LIMIT_EXCEEDED`.
+
+Set to `0` to disable this trigger and select adaptive write buffers by column count only.
 )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Initial size of an adaptive write buffer

@@ -236,8 +236,8 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     return part.general_ttl_info->has_any_non_finished_ttls;
 }
 
-TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_, max_parts_to_merge_at_once_)
 {
 }
 
@@ -278,8 +278,8 @@ bool TTLColumnDeleteMergeSelector::canConsiderPart(const PartProperties & part) 
     return part.general_ttl_info->has_any_non_finished_column_ttls;
 }
 
-TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_, max_parts_to_merge_at_once_)
 {
 }
 
