@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # index condition is one ExpressionActions run over every value the index stored for the part.
 #
 # `timeout_overflow_mode = 'break'` is what makes the first oracle exact instead of a timing threshold:
-# in break mode `QueryStatus::checkTimeLimit()` returns false rather than throwing and the skip index
+# in break mode `QueryStatus::checkTimeLimit` returns false rather than throwing and the skip index
 # path discards that bool, so the only code that can raise an error here is a checkpoint inside the
 # function, and its message names the function.
 #
