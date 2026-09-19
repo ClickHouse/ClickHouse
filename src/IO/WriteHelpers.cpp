@@ -138,7 +138,9 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         && !isCaseInsensitiveEqual(s, "values")
         /// A bare `not` is read as the prefix operator: `SELECT NOT `not`` formatted as `SELECT NOT not`
         /// does not parse back (the only keyword of `system.keywords` with this problem as of 2026-09).
-        && !isCaseInsensitiveEqual(s, "not"))
+        && !isCaseInsensitiveEqual(s, "not")
+        /// `INSERT INTO function SELECT ...` is read as `INSERT INTO FUNCTION`.
+        && !isCaseInsensitiveEqual(s, "function"))
     {
         writeString(s, buf);
     }
