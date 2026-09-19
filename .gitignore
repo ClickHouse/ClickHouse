@@ -204,3 +204,7 @@ tests/casa_del_dolor/_instances*
 ci/praktika/json_test.html
 ci/praktika/json_test.html.gz
 ci/praktika/json.html.gz
+
+# nvcomp is not redistributed here, it is unpacked into place - see
+# contrib/nvcomp-cmake/CMakeLists.txt
+/contrib/nvcomp
