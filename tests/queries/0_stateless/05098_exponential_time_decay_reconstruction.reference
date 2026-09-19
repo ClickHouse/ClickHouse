@@ -1,0 +1,5 @@
+1.000045
+1
+AggregateFunction(exponentialTimeDecayingFloat64(10), Float64, Float64)
+AggregateFunction(exponentialTimeDecayedCount(10), Float64)
+AggregateFunction(exponentialTimeDecayedAvg(10), Float64, Float64)

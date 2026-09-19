@@ -206,11 +206,24 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 Field DataTypeTuple::getDefault() const
 {
+    if (const auto * custom_name = getCustomName())
+        if (auto custom_default = custom_name->getDefault())
+            return *custom_default;
+
     return Tuple(std::from_range_t{}, elems | std::views::transform([](const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
 {
+    if (const auto * custom_name = getCustomName())
+    {
+        if (auto custom_default = custom_name->getDefault())
+        {
+            column.insert(*custom_default);
+            return;
+        }
+    }
+
     if (elems.empty())
     {
         column.insertDefault();
@@ -237,6 +250,15 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
         return false;
 
     const DataTypeTuple & rhs_tuple = static_cast<const DataTypeTuple &>(rhs);
+
+    const auto * custom_name = getCustomName();
+    const auto * rhs_custom_name = rhs_tuple.getCustomName();
+    if ((custom_name && custom_name->useCustomNameForTypeIdentity())
+        || (rhs_custom_name && rhs_custom_name->useCustomNameForTypeIdentity()))
+    {
+        if (!custom_name || !rhs_custom_name || custom_name->getName() != rhs_custom_name->getName())
+            return false;
+    }
 
     size_t size = elems.size();
     if (size != rhs_tuple.elems.size())

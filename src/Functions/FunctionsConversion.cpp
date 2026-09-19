@@ -1,6 +1,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -406,8 +407,24 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
 {
     try
     {
+        auto wrapper = prepareUnpackDictionaries(getArgumentTypes()[0], getResultType());
+        if (containsExponentialTimeDecayingFloat64(getResultType()))
+        {
+            wrapper = [nested = std::move(wrapper)](
+                          ColumnsWithTypeAndName & arguments,
+                          const DataTypePtr & result_type,
+                          const ColumnNullable * nullable,
+                          size_t input_rows_count)
+            {
+                auto result = nested(arguments, result_type, nullable, input_rows_count);
+                validateExponentialTimeDecayingFloat64Column(
+                    *result, result_type, "conversion to ExponentialTimeDecayingFloat64");
+                return result;
+            };
+        }
+
         return std::make_unique<ExecutableFunctionCast>(
-            prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
+            std::move(wrapper), cast_name, diagnostic);
     }
     catch (Exception & e)
     {

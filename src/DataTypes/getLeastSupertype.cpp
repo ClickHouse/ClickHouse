@@ -285,20 +285,50 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
     bool initialized = false;
 
     bool have_nullable = false;
+    bool have_plain_tuple = false;
+    DataTypePtr semantic_tuple_type;
 
     for (const auto & type : types)
     {
-        const IDataType * unwrapped_type = type.get();
+        DataTypePtr unwrapped_type_ptr = type;
+        const IDataType * unwrapped_type = unwrapped_type_ptr.get();
 
         // Unwrap Nullable if present
         if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
         {
             have_nullable = true;
-            unwrapped_type = nullable_type->getNestedType().get();
+            unwrapped_type_ptr = nullable_type->getNestedType();
+            unwrapped_type = unwrapped_type_ptr.get();
         }
 
         if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
         {
+            const auto * custom_name = type_tuple->getCustomName();
+            const bool uses_custom_type_identity
+                = custom_name && custom_name->useCustomNameForTypeIdentity();
+
+            if (uses_custom_type_identity)
+            {
+                if (have_plain_tuple
+                    || (semantic_tuple_type && !semantic_tuple_type->equals(*unwrapped_type_ptr)))
+                    return throwOrReturn<on_error>(
+                        types,
+                        "because Tuples have incompatible custom type identities",
+                        ErrorCodes::NO_COMMON_TYPE);
+
+                semantic_tuple_type = unwrapped_type_ptr;
+            }
+            else
+            {
+                if (semantic_tuple_type)
+                    return throwOrReturn<on_error>(
+                        types,
+                        "because Tuples have incompatible custom type identities",
+                        ErrorCodes::NO_COMMON_TYPE);
+
+                have_plain_tuple = true;
+            }
+
             const auto & current_elements = type_tuple->getElements();
             if (!initialized)
             {
@@ -351,7 +381,9 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
     }
 
     DataTypePtr result_type;
-    if (element_names.empty())
+    if (semantic_tuple_type)
+        result_type = semantic_tuple_type;
+    else if (element_names.empty())
         result_type = std::make_shared<DataTypeTuple>(commont_element_types);
     else
         result_type = std::make_shared<DataTypeTuple>(commont_element_types, element_names);

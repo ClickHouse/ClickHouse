@@ -1,0 +1,37 @@
+#pragma once
+
+#include <AggregateFunctions/IAggregateFunction.h>
+
+
+namespace DB
+{
+
+struct Settings;
+
+void assertExperimentalTimeDecayAggregateFunctionEnabled(const String & name, const Settings * settings);
+
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
+    const String & name,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const Settings * settings);
+
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
+    const String & name,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const Settings * settings);
+
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
+    const String & name,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const Settings * settings);
+
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
+    const String & name,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const Settings * settings);
+
+}
