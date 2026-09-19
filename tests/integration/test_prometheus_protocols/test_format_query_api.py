@@ -86,8 +86,13 @@ def format_query(query):
         ),
         # A duration that is not a whole number of one unit is spelled with each unit it needs.
         ("rate(foo[90s])", "rate(foo[1m30s])"),
-        # Numeric literals are canonicalized.
+        # A scalar written with time units keeps them too, instead of becoming a number of seconds.
+        ("rate(foo[5m]) / 1m", "rate(foo[5m]) / 1m"),
+        ("3h20m10s5ms", "3h20m10s5ms"),
+        # Numeric literals are canonicalized, and a hexadecimal one is not a duration even when its
+        # digits contain the letter of a time unit.
         ("100 * 0x1F", "100 * 31"),
+        ("0x3d", "61"),
         # @ timestamps are parsed with millisecond precision, like in Prometheus.
         ("foo @ 1.23456789", "foo @ 1.234"),
         ("foo @ 1609746183 offset 5m", "foo @ 1609746183 offset 5m"),
