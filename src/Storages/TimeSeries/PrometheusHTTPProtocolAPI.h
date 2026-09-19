@@ -17,7 +17,7 @@ class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
-/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata
+/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/status/tsdb
 class PrometheusHTTPProtocolAPI : public WithMutableContext
 {
 public:
@@ -76,6 +76,12 @@ public:
         const Strings & match_params,
         const String & start_param,
         const String & end_param,
+        UInt64 limit,
+        QueryFinishCallback query_finish_callback = {});
+
+    /// Get TSDB cardinality statistics (/api/v1/status/tsdb), with each statistics category capped by `limit`.
+    void getTSDBStats(
+        WriteBuffer & response,
         UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 

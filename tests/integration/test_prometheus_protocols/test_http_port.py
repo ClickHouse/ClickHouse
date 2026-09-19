@@ -153,6 +153,20 @@ def test_main_http_prefixed_metadata_api():
     }
 
 
+def test_main_http_prefixed_tsdb_api():
+    timestamp = 1_700_001_225.0
+    metric_name = "main_http_prefixed_tsdb_target"
+
+    send_to_clickhouse([({"__name__": metric_name}, {timestamp: 14.0})])
+
+    url = f"http://{node.ip_address}:{MAIN_HTTP_PORT}/prometheus/api/v1/status/tsdb"
+    response = get_response_to_http_api(url)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["headStats"]["numSeries"] > 0
+
+
 def test_main_http_prefixed_label_values_api():
     timestamp = 1_700_001_275.0
     metric_name = "main_http_prefixed_label_values_target"
