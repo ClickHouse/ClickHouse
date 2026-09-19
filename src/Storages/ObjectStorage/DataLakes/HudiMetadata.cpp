@@ -98,8 +98,15 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorag
 
 Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
 {
+    std::lock_guard lock(data_files_mutex);
     if (data_files.empty())
         data_files = getDataFilesImpl();
+    return data_files;
+}
+
+Strings HudiMetadata::getDataFilesIfListed() const
+{
+    std::lock_guard lock(data_files_mutex);
     return data_files;
 }
 
