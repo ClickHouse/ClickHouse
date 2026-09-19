@@ -717,6 +717,10 @@ The limit applies to the memory the cache retains: an entry is charged the alloc
 which can exceed the logical size of the rows in it, plus a small per-entry overhead. `system.columns_cache`
 reports the same quantity per entry, and `CurrentMetrics.ColumnsCacheBytes` its total.
 
+`system.server_settings` reports this setting as configured. The limit actually in effect can be lower while the
+rest of the server is short of memory, see `columns_cache_free_memory_ratio`; that value is published separately
+as `CurrentMetrics.ColumnsCacheSizeLimit`.
+
 :::note
 A value of `0` means disabled.
 
@@ -740,6 +744,9 @@ The memory of the cache counts against the same limit as the queries do, so the 
 while the rest of the server uses more than `max_server_memory_usage * (1 - columns_cache_free_memory_ratio) - columns_cache_size`,
 and raised back towards `columns_cache_size` once that usage subsides. An allocation that would exceed the limit also evicts
 from the cache before a query is stopped for it. Analogous to `page_cache_free_memory_ratio`.
+
+The limit in effect is reported by `CurrentMetrics.ColumnsCacheSizeLimit`, while `system.server_settings` keeps reporting
+the configured `columns_cache_size`.
 )", 0) \
     DECLARE(UInt64, columns_cache_history_window_ms, 1000, R"(
 The columns cache takes the peak memory usage of the rest of the server over this many milliseconds (and the same window
@@ -3683,7 +3690,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
+            {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},

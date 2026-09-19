@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -10,6 +11,11 @@
 #include <Core/Defines.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ColumnsCacheSizeLimit;
+}
 
 namespace ProfileEvents
 {
@@ -83,6 +89,8 @@ ColumnsCache::ColumnsCache(
     shards.reserve(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
         shards.push_back(std::make_unique<Shard>(*this, cache_policy, size_in_bytes_metric, count_metric, shard_max_size, shard_max_count, size_ratio));
+
+    CurrentMetrics::set(CurrentMetrics::ColumnsCacheSizeLimit, max_size_in_bytes);
 }
 
 ColumnsCache::~ColumnsCache() = default;
@@ -283,12 +291,12 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
         for (size_t i = 0; i < keys.size(); ++i)
         {
             const auto & entry = *to_store[i];
-            auto & stripes = part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity];
-            if (stripes.size() <= keys[i].stripe)
-                stripes.resize(keys[i].stripe + 1);
-            stripes[keys[i].stripe] = true;
+            part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity].insert(keys[i].stripe);
         }
     }
+
+    if (on_entries_staged_for_test)
+        on_entries_staged_for_test();
 
     for (size_t i = 0; i < keys.size(); ++i)
         shardOf(keys[i]).set(keys[i], to_store[i]);
@@ -312,12 +320,7 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
             for (size_t i = 0; i < keys.size(); ++i)
             {
                 const auto & entry = *to_store[i];
-                auto part_it = part_index.find(PartIdentifier{entry.table_uuid, entry.part_name});
-                if (part_it == part_index.end())
-                    continue;
-                auto column_it = part_it->second.find(keys[i].column_identity);
-                if (column_it != part_it->second.end() && keys[i].stripe < column_it->second.size())
-                    column_it->second[keys[i].stripe] = false;
+                forgetStripe(PartIdentifier{entry.table_uuid, entry.part_name}, keys[i].column_identity, keys[i].stripe);
             }
         }
     }
@@ -356,17 +359,27 @@ void ColumnsCache::Shard::onEntryRemoval(size_t weight_loss, const MappedPtr & m
     /// Runs under the mutex of the shard; `index_mutex` is taken second, see `part_index`.
     std::lock_guard lock(parent.index_mutex);
 
-    auto part_it = parent.part_index.find(PartIdentifier{mapped->table_uuid, mapped->part_name});
-    if (part_it == parent.part_index.end())
+    parent.forgetStripe(PartIdentifier{mapped->table_uuid, mapped->part_name}, mapped->key.column_identity, mapped->key.stripe);
+}
+
+void ColumnsCache::forgetStripe(const PartIdentifier & part, const UInt128 & column_identity, size_t stripe)
+{
+    auto part_it = part_index.find(part);
+    if (part_it == part_index.end())
         return;
 
-    auto column_it = part_it->second.find(mapped->key.column_identity);
+    auto column_it = part_it->second.find(column_identity);
     if (column_it == part_it->second.end())
         return;
 
-    auto & stripes = column_it->second;
-    if (mapped->key.stripe < stripes.size())
-        stripes[mapped->key.stripe] = false;
+    column_it->second.erase(stripe);
+
+    /// An empty bucket holds no information, only memory: erase it, so that the index of a part
+    /// whose entries were all evicted costs nothing until the part is read again.
+    if (column_it->second.empty())
+        part_it->second.erase(column_it);
+    if (part_it->second.empty())
+        part_index.erase(part_it);
 }
 
 void ColumnsCache::removeFromShards(const std::vector<Key> & keys)
@@ -393,13 +406,19 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
         {
             global_generation = nextGeneration();
             table_generations.clear();
-            return;
+        }
+        else
+        {
+            /// Advance the table's invalidation generation before clearing entries, so a
+            /// deferred write from a reader that captured an older generation is rejected
+            /// and cannot repopulate the cache with stale data after this invalidation.
+            table_generations[table_uuid] = nextGeneration();
         }
 
-        /// Advance the table's invalidation generation before clearing entries, so a
-        /// deferred write from a reader that captured an older generation is rejected
-        /// and cannot repopulate the cache with stale data after this invalidation.
-        table_generations[table_uuid] = nextGeneration();
+        /// The index of the table is cleaned up in both cases: a cache that has just been
+        /// disabled by a config reload has already evicted its entries, but the reload and
+        /// this call can interleave, and an index bucket left behind would retain memory
+        /// nothing accounts for.
 
         for (auto it = part_index.begin(); it != part_index.end();)
         {
@@ -410,9 +429,8 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
             }
 
             for (const auto & [column_identity, stripes] : it->second)
-                for (size_t stripe = 0; stripe < stripes.size(); ++stripe)
-                    if (stripes[stripe])
-                        keys_to_remove.push_back(Key{column_identity, stripe});
+                for (size_t stripe : stripes)
+                    keys_to_remove.push_back(Key{column_identity, stripe});
 
             it = part_index.erase(it);
         }
@@ -433,14 +451,19 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
             return;
 
         for (const auto & [column_identity, stripes] : part_it->second)
-            for (size_t stripe = 0; stripe < stripes.size(); ++stripe)
-                if (stripes[stripe])
-                    keys_to_remove.push_back(Key{column_identity, stripe});
+            for (size_t stripe : stripes)
+                keys_to_remove.push_back(Key{column_identity, stripe});
 
         part_index.erase(part_it);
     }
 
     removeFromShards(keys_to_remove);
+}
+
+bool ColumnsCache::containsPart(const UUID & table_uuid, const String & part_name) const
+{
+    std::lock_guard lock(index_mutex);
+    return part_index.contains(PartIdentifier{table_uuid, part_name});
 }
 
 void ColumnsCache::clearAll()
@@ -471,11 +494,17 @@ void ColumnsCache::setShardsMaxSize(size_t total_max_size_in_bytes)
         shard->setMaxSizeInBytes(shard_max_size);
 }
 
+void ColumnsCache::setEffectiveMaxSize(size_t max_size_in_bytes)
+{
+    effective_max_size_in_bytes.store(max_size_in_bytes, std::memory_order_relaxed);
+    CurrentMetrics::set(CurrentMetrics::ColumnsCacheSizeLimit, max_size_in_bytes);
+    setShardsMaxSize(max_size_in_bytes);
+}
+
 void ColumnsCache::setConfiguredMaxSizeInBytes(size_t max_size_in_bytes)
 {
     configured_max_size_in_bytes.store(max_size_in_bytes, std::memory_order_relaxed);
-    effective_max_size_in_bytes.store(max_size_in_bytes, std::memory_order_relaxed);
-    setShardsMaxSize(max_size_in_bytes);
+    setEffectiveMaxSize(max_size_in_bytes);
 }
 
 void ColumnsCache::setAutoResizeSettings(double free_memory_ratio_, Int64 history_window_ms_)
@@ -524,10 +553,7 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     if (memory_limit == 0)
     {
         if (effective_max_size_in_bytes.load(std::memory_order_relaxed) != configured_max_size)
-        {
-            effective_max_size_in_bytes.store(configured_max_size, std::memory_order_relaxed);
-            setShardsMaxSize(configured_max_size);
-        }
+            setEffectiveMaxSize(configured_max_size);
         return true;
     }
 
@@ -568,8 +594,7 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
             formatReadableSizeWithBinarySuffix(configured_max_size), formatReadableSizeWithBinarySuffix(memory_usage),
             formatReadableSizeWithBinarySuffix(usage_excluding_cache), formatReadableSizeWithBinarySuffix(peak),
             formatReadableSizeWithBinarySuffix(memory_limit));
-        effective_max_size_in_bytes.store(target_size, std::memory_order_relaxed);
-        setShardsMaxSize(target_size);
+        setEffectiveMaxSize(target_size);
     }
 
     const size_t new_cache_size = sizeInBytes();

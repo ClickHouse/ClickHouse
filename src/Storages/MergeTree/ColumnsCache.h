@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 #include <Common/CacheBase.h>
@@ -229,6 +231,10 @@ public:
     /// Part names are not reused within a table, so a later part cannot find these entries either.
     void removePart(const UUID & table_uuid, const String & part_name);
 
+    /// Whether the cache holds any entry of the part. One lookup in the index, so that the cleanup
+    /// of outdated parts can ask before it decides to clear the caches of a part.
+    bool containsPart(const UUID & table_uuid, const String & part_name) const;
+
     /// Remove all cached entries for a specific table.
     /// Should be called on column metadata changes such as `RENAME COLUMN` that
     /// affect existing cache entries without rewriting parts. Cache keys identify
@@ -268,7 +274,12 @@ public:
     bool autoResize(Int64 memory_usage, size_t memory_limit) override;
 
     /// The size in effect, see `autoResize`; the configured size while the server has memory to spare.
+    /// Also published as the `ColumnsCacheSizeLimit` metric.
     size_t maxSizeInBytes() const { return effective_max_size_in_bytes.load(std::memory_order_relaxed); }
+
+    /// The size as configured by `columns_cache_size`: what `system.server_settings` reports, so
+    /// that a configuration surface does not fluctuate with the memory pressure of the moment.
+    size_t configuredMaxSizeInBytes() const { return configured_max_size_in_bytes.load(std::memory_order_relaxed); }
     size_t sizeInBytes() const;
     size_t count() const;
 
@@ -287,6 +298,13 @@ public:
     /// Get metadata for all cache entries for introspection (system.columns_cache table).
     /// Returns lightweight metadata without holding shared_ptrs to column data.
     std::vector<EntryMetadata> getAllEntriesMetadata();
+
+    /// Test seam: `setMany` calls this after its entries have passed the generation check and have
+    /// been recorded in the index, and before they are inserted into the shards. That is the window
+    /// in which an invalidation makes the write stale without the first check being able to see it,
+    /// and the recheck after the insertion is the only thing that takes the entries back out. Not
+    /// set outside the tests, where checking one empty `std::function` per `setMany` is all it costs.
+    std::function<void()> on_entries_staged_for_test;
 
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
@@ -323,14 +341,21 @@ private:
         size_t operator()(const PartIdentifier & id) const;
     };
 
-    /// The stripes of a column of a part that are in the cache: a bit per stripe.
-    using CachedStripes = std::vector<bool>;
+    /// The stripes of a column of a part that are in the cache. The set is sparse on purpose:
+    /// a bitmap would be sized by the highest stripe ever cached, so a single cached tail
+    /// granule of a large part would keep a large allocation resident for as long as the part
+    /// exists, outside the `columns_cache_size` bound. Here the memory is proportional to the
+    /// entries the cache actually holds, and the buckets of a column and of a part are erased
+    /// as soon as they become empty, see `forgetStripe`. What one resident stripe costs here - a
+    /// hash set node - is an order of magnitude below the `COLUMNS_CACHE_OVERHEAD` every entry is
+    /// already charged by `ColumnsCacheWeightFunction`, so the bound stays conservative.
+    using CachedStripes = std::unordered_set<size_t>;
     using PartIndex = std::unordered_map<UInt128, CachedStripes, UInt128TrivialHash>;
 
     /// Which entries the cache holds, by part: what `removePart` and `removeTable` have to
     /// find quickly, and what the shards cannot answer without a scan of all their entries.
-    /// A bit is set by `setMany` before the entry is inserted into its shard and reset by
-    /// `onEntryRemoval` when the entry is evicted. Guarded by `index_mutex`.
+    /// A stripe is recorded by `setMany` before the entry is inserted into its shard and
+    /// forgotten by `onEntryRemoval` when the entry is evicted. Guarded by `index_mutex`.
     ///
     /// Lock order: a shard's mutex is taken first and `index_mutex` second, because the
     /// eviction callback runs under the former and takes the latter. So nothing here ever
@@ -397,8 +422,17 @@ private:
 
     void setShardsMaxSize(size_t total_max_size_in_bytes);
 
+    /// Put a new size limit in effect: the shards, the value `maxSizeInBytes` returns and the
+    /// `ColumnsCacheSizeLimit` metric always move together.
+    void setEffectiveMaxSize(size_t max_size_in_bytes);
+
     /// Remove the given entries from the shards. Must be called without `index_mutex`.
     void removeFromShards(const std::vector<Key> & keys);
+
+    /// Forget one entry of a part in `part_index`, erasing the buckets of the column and of the
+    /// part when they hold nothing any more, so that the index retains no memory for what the
+    /// cache no longer holds. Must be called with `index_mutex` held.
+    void forgetStripe(const PartIdentifier & part, const UInt128 & column_identity, size_t stripe);
 
     /// The entry to store for a stripe given what the cache holds for it: the new entry itself,
     /// the union of the two when they overlap or touch, or nothing when the new entry adds no

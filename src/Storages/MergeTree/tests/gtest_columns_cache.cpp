@@ -285,6 +285,89 @@ TEST(ColumnsCache, RemoveTableInvalidatesEntriesAndInFlightWrites)
     EXPECT_GT(cache.setMany({makeEntry(other, 1, 8, 16)}, other_generation), 0u);
 }
 
+TEST(ColumnsCache, InvalidationLandingMidInsertRemovesTheStaleWrite)
+{
+    /// The invalidation tests above all invalidate before `setMany` runs, so the write is rejected
+    /// by the first generation check under `index_mutex` and they say nothing about the recheck
+    /// after the insertion. Here the invalidation lands in exactly the window that recheck exists
+    /// for: the entries have passed the first check and are recorded in the index, and are not in
+    /// the shards yet.
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    size_t staged = 0;
+    cache.on_entries_staged_for_test = [&]
+    {
+        ++staged;
+        cache.removeTable(c.table_uuid);
+    };
+
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8), makeEntry(c, 1, 8, 16)}, generation), 0u);
+    EXPECT_EQ(staged, 1u);
+    cache.on_entries_staged_for_test = nullptr;
+
+    /// Neither entry stays resident, and nothing of the part is left in the index.
+    EXPECT_EQ(countPresent(cache, c, 0, 2), 0u);
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, "part_1"));
+
+    /// A reader that starts after the invalidation writes normally again.
+    const auto new_generation = cache.getInvalidationGeneration(c.table_uuid);
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 8)}, new_generation), 0u);
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 1u);
+}
+
+TEST(ColumnsCache, ClearAllLandingMidInsertRemovesTheStaleWrite)
+{
+    /// The same window, invalidated by `SYSTEM DROP COLUMNS CACHE` instead of a metadata change:
+    /// `clearAll` clears the shards before these entries reach them, so only the recheck can.
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    cache.on_entries_staged_for_test = [&] { cache.clearAll(); };
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    cache.on_entries_staged_for_test = nullptr;
+
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 0u);
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, "part_1"));
+}
+
+TEST(ColumnsCache, IndexIsErasedForAPartWhoseEntriesAreAllGone)
+{
+    /// The index of a part must not retain memory for entries the cache no longer holds: a bitmap
+    /// sized by the highest stripe ever cached would keep a large allocation resident after a
+    /// single cached tail granule of a large part was evicted.
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    /// One entry of a very high stripe, as a read of the tail of a large part writes.
+    EXPECT_GT(cache.setMany({makeEntry(c, 1000000, 8000000, 8000008)}, generation), 0u);
+    EXPECT_TRUE(cache.containsPart(c.table_uuid, "part_1"));
+
+    cache.removePart(c.table_uuid, "part_1");
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, "part_1"));
+
+    /// The same through ordinary eviction rather than an explicit removal: a cache that holds one
+    /// entry at a time, filled with entries of ever higher stripes.
+    auto small = makeCache(ColumnsCache::numberOfShards(8192) * 8192);
+    TestColumn tail(UUIDHelpers::generateV4(), "part_2", "col");
+    const auto tail_generation = small.getInvalidationGeneration(tail.table_uuid);
+    for (size_t i = 0; i < 64; ++i)
+    {
+        const size_t stripe = 1000000 + i * 1000;
+        small.setMany({makeEntry(tail, stripe, stripe * 8, stripe * 8 + 8)}, tail_generation);
+    }
+    /// Whatever is resident is in the index, and the index of the part goes away with it.
+    EXPECT_EQ(small.containsPart(tail.table_uuid, "part_2"), small.count() > 0);
+    small.removePart(tail.table_uuid, "part_2");
+    EXPECT_EQ(small.count(), 0u);
+    EXPECT_FALSE(small.containsPart(tail.table_uuid, "part_2"));
+}
+
 TEST(ColumnsCache, EntriesAreNotVisibleAcrossSchemaIdentities)
 {
     auto cache = makeCache();
