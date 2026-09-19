@@ -28,6 +28,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/likePatternToRegexp.h>
@@ -2529,6 +2530,82 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
+/// Whether the constant is numerically zero, and therefore reaches a float key column as `+0.0` or `-0.0`.
+/// Returns `std::nullopt` for a constant that cannot be compared against zero here, such as a `String`.
+static std::optional<bool> isNumericallyZeroConstant(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Bool:
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Float64:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return accurateEquals(field, Field(UInt64(0)));
+        default:
+            return {};
+    }
+}
+
+/// Whether a value of this type holds a float anywhere, including inside a container.
+static bool typeContainsFloat(const DataTypePtr & type_with_wrappers)
+{
+    const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
+
+    if (isFloat(type))
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::any_of(tuple_type->getElements(), typeContainsFloat);
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsFloat(array_type->getNestedType());
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return typeContainsFloat(map_type->getNestedType());
+
+    return false;
+}
+
+/// Whether the constant may reach a float element of the key input as a zero, `+0.0` or `-0.0`.
+/// `Tuple` is walked element by element, being the only container a sorting key can carry. Any other
+/// float carrier, and a constant whose shape does not match the type, are conservatively treated as
+/// holding a zero, so that the caller declines the rewrite and the granules are scanned.
+static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & type_with_wrappers)
+{
+    const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
+
+    if (isFloat(type))
+        return isNumericallyZeroConstant(field).value_or(true);
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return true;
+
+        const auto & elements = tuple_type->getElements();
+        const auto & values = field.safeGet<Tuple>();
+        if (values.size() != elements.size())
+            return true;
+
+        for (size_t i = 0; i < values.size(); ++i)
+            if (constantMayHoldFloatZero(values[i], elements[i]))
+                return true;
+
+        return false;
+    }
+
+    return typeContainsFloat(type);
+}
+
+
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2606,6 +2683,52 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// fall back so the caller scans the granules.
     if (transformed_value.isNaN())
         return false;
+
+    /// IEEE equality does not distinguish `-0.0` from `+0.0`, but a key transform can: `toString(-0.0)` is
+    /// `'-0'`, and `reinterpretAsUInt64(-0.0)` is not zero. An equality on the transformed key then covers
+    /// only one of the two zeros, while the original predicate matches both, so the granules holding the
+    /// other zero would be skipped (and, for `notEquals`, counted without being filtered).
+    ///
+    /// The ambiguity exists only when the constant itself is a zero: an equality against any other constant
+    /// matches a single float value, which the transformed key identifies just as well as before. This is
+    /// not only about exactness - a relaxed atom is also not allowed to prune a granule that the original
+    /// predicate matches - so the bailout does not depend on the transform being injective.
+    const DataTypePtr key_input_type = removeNullable(removeLowCardinality(dag.input_type));
+    const std::optional<bool> constant_is_zero = isNumericallyZeroConstant(out_value);
+
+    if (isFloat(key_input_type) && constant_is_zero.value_or(true))
+    {
+        auto zeros_column = key_input_type->createColumn();
+        zeros_column->insert(Float64(0.0));
+        zeros_column->insert(Float64(-0.0));
+
+        ColumnPtr transformed_zeros_column;
+        DataTypePtr transformed_zeros_type;
+        if (!applyDeterministicDagToColumn(
+                std::move(zeros_column), key_input_type, expr_name, dag, transformed_zeros_column, transformed_zeros_type))
+            return false;
+
+        const Field positive_zero = (*transformed_zeros_column)[0];
+        const Field negative_zero = (*transformed_zeros_column)[1];
+
+        /// For a constant whose value cannot be compared against zero here - a `String`, for example, which
+        /// the transform converts to a float itself - fall back to checking the transformed image. That
+        /// over-approximates the ambiguity (it also fires for a non-zero constant whose image collides with
+        /// a zero image under a non-injective transform), but it is never unsafe.
+        const bool constant_can_be_a_zero
+            = constant_is_zero.value_or(transformed_value == positive_zero || transformed_value == negative_zero);
+
+        if (positive_zero != negative_zero && constant_can_be_a_zero)
+            return false;
+    }
+    else if (constantMayHoldFloatZero(out_value, key_input_type))
+    {
+        /// The zero sits inside a container, such as `k Tuple(Float64, Float64)` with `ORDER BY toString(k)`
+        /// and `WHERE k = (0.0, 1.0)`: the predicate also matches `(-0.0, 1.0)`, which the transformed key
+        /// tells apart. Whether the transform distinguishes the signs would have to be probed over every
+        /// combination of signs of the zero elements, so the index simply does not answer this predicate.
+        return false;
+    }
 
     out_value = transformed_value;
     out_type = transformed_const_type;
