@@ -1528,13 +1528,13 @@ namespace
 {
 
 ExpressionActionsPtr getCombinedIndicesExpression(
-    const KeyDescription & key,
+    const ASTPtr & key_expression_list,
     const MergeTreeIndices & indices,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
     ContextPtr context)
 {
-    ASTPtr combined_expr_list = key.expression_list_ast->clone();
+    ASTPtr combined_expr_list = key_expression_list ? key_expression_list->clone() : make_intrusive<ASTExpressionList>();
 
     for (const auto & index : indices)
         for (const auto & index_expr : index->index.expression_list_ast->children)
@@ -1582,13 +1582,19 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey().expression_list_ast, indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 ExpressionActionsPtr
 MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey().expression_list_ast, indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+}
+
+ExpressionActionsPtr
+MergeTreeData::getSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
+{
+    return getCombinedIndicesExpression(nullptr, indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)

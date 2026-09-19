@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/TTLResortUtils.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/Statistics.h>
@@ -2783,18 +2784,76 @@ private:
 
         auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
 
-        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        auto add_expression_transform = [&](ActionsDAG expression_dag)
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
-                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+                expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(expression_dag));
 
             builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
+                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(expression_dag))));
 
             builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
-        }
+        };
+
+        auto add_primary_key_and_skip_indices_expression = [&]()
+        {
+            if (!ctx->metadata_snapshot->hasPrimaryKey() && !ctx->metadata_snapshot->hasSecondaryIndices())
+                return;
+
+            add_expression_transform(
+                ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone());
+        };
+
+        /// Materialize only the primary-key expression columns (no skip indices). The `GROUP BY` TTL
+        /// aggregation groups by sort-key columns, so they must be present before the TTL step; the
+        /// skip-index expression columns must NOT be materialized before it, because the aggregation
+        /// can drop them (a zero-row column) or they would hold pre-`SET` values.
+        auto add_primary_key_expression = [&]()
+        {
+            if (!ctx->metadata_snapshot->hasPrimaryKey())
+                return;
+
+            add_expression_transform(
+                ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, /*indices=*/ {})->getActionsDAG().clone());
+        };
+
+        /// Recompute only the skip-index expression columns (not the primary key). Used after the
+        /// TTL step (and re-sort), which already (re)computed the primary-key columns; re-adding the
+        /// primary key here would conflict with the columns already in the stream.
+        auto add_skip_indices_expression = [&]()
+        {
+            if (skip_indices.empty())
+                return;
+
+            add_expression_transform(
+                ctx->data->getSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone());
+        };
+
+        /// The re-sort below reorders the post-TTL stream, so any skip-index expression column
+        /// materialized before the TTL step would be written against the wrong rows: its values are
+        /// computed from the pre-aggregation (and pre-`SET`) rows, and the aggregation can even drop
+        /// them entirely (leaving a zero-row column that breaks the TTL transform). When the re-sort
+        /// runs, materialize only the primary-key expression before the step (the aggregation groups
+        /// by sort-key columns and needs them present) and compute the skip-index expressions after
+        /// the re-sort, exactly as the merge path does. In every other case the primary key and the
+        /// skip indices are materialized together, before the step.
+        const bool group_by_ttl_runs
+            = ctx->execute_ttl_type == ExecuteTTLType::NORMAL && ctx->metadata_snapshot->hasAnyGroupByTTL();
+        /// `MATERIALIZE TTL` does not apply a not-yet-expired `GROUP BY` TTL, so the repair is
+        /// restricted to the targets that can actually be rewritten in this part.
+        const auto firing_set_targets = group_by_ttl_runs
+            /// One source part, so a missing entry is visible as a missing entry here.
+            ? getFiringGroupByTTLSetTargets(
+                  ctx->metadata_snapshot, ctx->source_part->ttl_infos, ctx->time_of_mutation, /*force_ttl=*/ false)
+            : NameSet{};
+        const bool resort_after_group_by_ttl
+            = group_by_ttl_runs && groupByTTLAssignsSortKeyColumn(ctx->metadata_snapshot, firing_set_targets);
+
+        if (resort_after_group_by_ttl)
+            add_primary_key_expression();
+        else
+            add_primary_key_and_skip_indices_expression();
 
         PreparedSets::Subqueries subqueries;
 
@@ -2811,6 +2870,18 @@ private:
                 true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
+
+            if (resort_after_group_by_ttl)
+            {
+                /// The `SET` rewrote a sort-key column, leaving the stream unordered and the
+                /// primary-key columns stale; re-sort and recompute them so the rebuilt primary index
+                /// matches the written row order. Then compute the skip-index expressions from the
+                /// re-sorted stream. Mirrors the merge path in MergeTask (recalculate sorting key +
+                /// re-sort, then skip-index expressions).
+                resortPipelineAfterTTLGroupBySet(
+                    *builder, ctx->metadata_snapshot, ctx->new_data_part->getColumns(), ctx->context, *ctx->data->getSettings());
+                add_skip_indices_expression();
+            }
         }
 
         if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)

@@ -1478,6 +1478,8 @@ public:
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
     ExpressionActionsPtr
     getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    /// Expression for the given skip indices only, for a stream that already carries the key columns.
+    ExpressionActionsPtr getSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
     struct PartCompressionCodec
     {

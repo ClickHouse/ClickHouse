@@ -1,0 +1,51 @@
+f64 data	1	2100-01-01 10:00:00	5
+f64 data	41302	2100-06-10 10:00:00	41302
+f64 data	96827	2100-06-09 10:00:00	96827
+f64 sorted	1
+str data	aaa	2100-06-10 10:00:00	aaa
+str data	zzz	2100-06-09 10:00:00	zzz
+str sorted	1
+lc data	aaa	2100-06-10 10:00:00
+lc data	zzz	2100-06-09 10:00:00
+lc sorted	1
+sub data	100	2100-06-10 10:00:00
+sub data	900	2100-06-09 10:00:00
+sub sorted	1
+expr key parts	1
+expr key rows	40
+expr key sorted	1
+expr key pruning	1
+expr key next merge rows	41
+expr key live parts	1
+expr key live rows	6
+expr key live sorted	1
+mut data	41302	2100-06-10 10:00:00	41302
+mut data	96827	2100-06-09 10:00:00	96827
+mut sorted	1
+mut sub data	100	2100-06-10 10:00:00
+mut sub data	900	2100-06-09 10:00:00
+mut sub sorted	1
+computed idx present	3
+computed idx matches	1
+block number idx data	41302	2100-06-10 10:00:00	41302
+block number idx data	96827	2100-06-09 10:00:00	96827
+block number idx sorted	1
+mut expr key parts	1
+mut expr key rows	40
+mut expr key sorted	1
+mixed infos data	1	2106-01-01 00:00:00	5
+mixed infos data	41302	2100-06-10 10:00:00	41302
+mixed infos data	96827	2100-06-09 10:00:00	96827
+mixed infos sorted	1
+multi ttl rows	100
+single ttl rows	100
+multi ttl not repaired	1
+single ttl repaired	1
+not firing rows	55	5	1760
+not firing not repaired	1
+mut not firing rows	1000
+mut not firing not repaired	1
+nonkey data	3	2000-06-10 10:00:00	200
+nonkey data	5	2000-06-09 10:00:00	100
+nonkey sorted	1
+nonkey not repaired	1
