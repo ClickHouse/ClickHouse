@@ -59,3 +59,33 @@ SELECT id FROM t_has_any_enum_bf WHERE hasAny(s, CAST(['a'], 'Array(Enum8(\'a\' 
 SELECT id FROM t_has_any_enum_bf WHERE hasAll(f, CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))')) ORDER BY id SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_has_any_enum_bf;
+
+-- The name of the enum value can be wider than the indexed `FixedString(N)`. It cannot match, and
+-- the index has to decline instead of throwing `TOO_LARGE_STRING_SIZE` while it is prepared.
+DROP TABLE IF EXISTS t_has_wide_enum_bf;
+
+CREATE TABLE t_has_wide_enum_bf
+(
+    id UInt64,
+    f FixedString(1),
+    fa Array(FixedString(1)),
+    INDEX idx_f f TYPE bloom_filter GRANULARITY 1,
+    INDEX idx_fa fa TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_has_wide_enum_bf VALUES (1, 'a', ['a']), (2, 'b', ['b']);
+
+SELECT id FROM t_has_wide_enum_bf WHERE has(CAST(['ab'], 'Array(Enum8(\'ab\' = 1))'), f) ORDER BY id;
+SELECT id FROM t_has_wide_enum_bf WHERE hasAny(fa, CAST(['ab'], 'Array(Enum8(\'ab\' = 1))')) ORDER BY id;
+SELECT id FROM t_has_wide_enum_bf WHERE hasAll(fa, CAST(['ab'], 'Array(Enum8(\'ab\' = 1))')) ORDER BY id;
+
+-- The same without the index: the results must agree.
+SELECT id FROM t_has_wide_enum_bf WHERE has(CAST(['ab'], 'Array(Enum8(\'ab\' = 1))'), f) ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM t_has_wide_enum_bf WHERE hasAny(fa, CAST(['ab'], 'Array(Enum8(\'ab\' = 1))')) ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM t_has_wide_enum_bf WHERE hasAll(fa, CAST(['ab'], 'Array(Enum8(\'ab\' = 1))')) ORDER BY id SETTINGS use_skip_indexes = 0;
+
+-- A name that fits still uses the index.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_wide_enum_bf WHERE has(CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'), f)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE t_has_wide_enum_bf;

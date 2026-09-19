@@ -904,21 +904,23 @@ static ColumnPtr createColumnFromConstantArray(
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
-        /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
-        /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
-        /// index and let the function evaluate normally instead.
-        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
-            && f.safeGet<String>().size() > fixed_string_type->getN())
-        {
-            return nullptr;
-        }
-
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
             : convertFieldToType(f, *actual_type, element_type.get());
         if (converted.isNull())
             return nullptr;
+
+        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast, and an
+        /// `Enum` element is converted to its name, which can be wider than the indexed
+        /// `FixedString(N)` - the name is not truncated to it. Such a value cannot match a narrower
+        /// `FixedString` scalar, but `ColumnFixedString::insert` would throw `TOO_LARGE_STRING_SIZE`
+        /// while preparing the index. Decline the index and let the function evaluate normally
+        /// instead. The `coerce` branch rejects an over-wide value on its own.
+        if (fixed_string_type && converted.getType() == Field::Types::String
+            && converted.safeGet<String>().size() > fixed_string_type->getN())
+        {
+            return nullptr;
+        }
 
         mutable_column->insert(converted);
     }
