@@ -1,0 +1,2 @@
+optimize_trivial_view_pushdown_to_distributed = 0: 2 
+optimize_trivial_view_pushdown_to_distributed = 1: 2 

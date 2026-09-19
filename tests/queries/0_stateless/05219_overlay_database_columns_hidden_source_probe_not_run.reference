@@ -1,0 +1,11 @@
+Sanity: the metadata probe of the Merge table over the unavailable source fails on direct access
+ALL_CONNECTION_TRIES_FAILED
+Facade-only SHOW grant: listing the columns through the facade yields no rows and no connection error
+0
+Facade-only SHOW grant: the size columns through the facade yield no rows and no connection error
+0
+Facade-only SHOW grant: the serialization hint column through the facade yields no rows and no connection error
+0
+Dual SHOW grants: the connection error is visible through the facade, the same as on direct access
+ALL_CONNECTION_TRIES_FAILED
+ALL_CONNECTION_TRIES_FAILED

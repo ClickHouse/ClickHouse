@@ -5,10 +5,12 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -73,7 +75,32 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     if (!ast_create || !ast_create->storage)
         return {};
 
-    String engine_full = format({ctx, *ast_create->storage});
+    const ASTStorage * storage_to_format = ast_create->storage;
+
+    /// The definition of a read-only `Overlay` facade names every source database, so it must not
+    /// be formatted for a user who is not granted `SHOW DATABASES` on all of them — the facade must
+    /// not widen the visibility of the source database names. Unlike `SHOW CREATE DATABASE`, which
+    /// asks for one named database and reports a denial, this is a scan of every visible database,
+    /// so a denial would make the whole scan fail. The source names are dropped instead, leaving
+    /// the bare `Overlay` engine, which the `engine` column of this table already shows anyway.
+    ASTPtr redacted_storage;
+    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(database.get()); facade && !facade->areSourceDatabaseNamesVisible(ctx))
+    {
+        redacted_storage = ast_create->storage->clone();
+        auto & storage_ast = redacted_storage->as<ASTStorage &>();
+        if (storage_ast.engine && storage_ast.engine->arguments)
+        {
+            auto & engine = *storage_ast.engine;
+            auto & children = engine.children;
+            children.erase(std::remove(children.begin(), children.end(), engine.arguments), children.end());
+            engine.arguments.reset();
+            /// Formats as `Overlay` rather than `Overlay()`, which is not a valid definition.
+            engine.setNoEmptyArgs(true);
+        }
+        storage_to_format = &storage_ast;
+    }
+
+    String engine_full = format({ctx, *storage_to_format});
     static const char * const extra_head = " ENGINE = ";
 
     if (startsWith(engine_full, extra_head))

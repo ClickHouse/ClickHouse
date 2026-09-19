@@ -1,0 +1,10 @@
+Facade-only SHOW grant: EXISTS through the facade answers 0, not the connection error
+0
+0
+0
+Facade-only SHOW grant: DESCRIBE and SHOW CREATE are denied, not the connection error
+ACCESS_DENIED
+ACCESS_DENIED
+Dual SHOW grants: the source connection error is visible, the same as on direct access
+POSTGRESQL_CONNECTION_FAILURE
+POSTGRESQL_CONNECTION_FAILURE

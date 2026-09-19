@@ -1,0 +1,8 @@
+Facade-only grant: a hidden source dictionary is reported as a missing dictionary, not as denied
+OK: masked as a missing dictionary
+Facade-only grant: a hidden source table is reported the same way
+OK: masked as a missing dictionary
+Facade-only grant: a missing name is reported the same way
+OK: masked as a missing dictionary
+Dual grants: the dictionary definition is shown through the facade
+1

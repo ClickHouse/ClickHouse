@@ -1,0 +1,6 @@
+granted on the facade alone, the source metadata stays hidden
+ACCESS_DENIED 
+ACCESS_DENIED 
+with the source-side grant the analysis works again
+
+and reading the granted column works: 0

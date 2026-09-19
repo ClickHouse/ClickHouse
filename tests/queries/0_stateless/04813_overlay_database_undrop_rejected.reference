@@ -1,0 +1,8 @@
+-- UNDROP of an existing source table through the facade: rejected, not TABLE_ALREADY_EXISTS
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- UNDROP of a missing source table through the facade: the same error (no existence oracle)
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- UNDROP of a genuinely dropped source table through the facade: still the same error
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- UNDROP in the underlying database keeps working
+2

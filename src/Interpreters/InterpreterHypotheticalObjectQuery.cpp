@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -221,11 +222,22 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
+    const StorageID written_id(context->resolveDatabase(query.getDatabase()), query.getTable());
+
     /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks;
     /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
     if (is_projection)
-        context->checkAccess(
-            AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
+        context->checkAccess(AccessType::ALTER_ADD_PROJECTION, written_id);
+
+    /// Through a read-only `Overlay` facade the lookup below loads the underlying source table, so
+    /// the source-side grant must be proven first (fail-closed, the denial names only the facade):
+    /// otherwise a caller holding the facade-side grant alone would observe the hidden source's own
+    /// startup / metadata / remote error. Projections require `ALTER ADD PROJECTION` on the source
+    /// too (the facade must not widen access); indexes require the source table to be visible, the
+    /// same precheck as the other table lookups. A read-only facade resolves to a nil UUID, so the
+    /// query is rejected by the UUID gate below anyway, after the lookup.
+    DatabaseOverlay::checkSourceTableAccessIfFacade(
+        written_id, context, is_projection ? AccessType::ALTER_ADD_PROJECTION : AccessType::SHOW_TABLES);
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);

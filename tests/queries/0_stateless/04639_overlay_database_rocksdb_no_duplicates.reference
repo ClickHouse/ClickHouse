@@ -1,0 +1,6 @@
+The source table is listed under its own database (sanity, as the default user)
+1
+No rows are listed under the facade database name
+0
+A user granted only on the facade sees no rows for the source table at all
+0

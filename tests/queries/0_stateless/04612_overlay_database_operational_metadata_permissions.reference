@@ -1,0 +1,13 @@
+Sanity: default user sees the facade rows in system.parts and system.mutations
+1
+1
+Facade-only SHOW grant: system.parts exposes no facade row
+0
+Facade-only SHOW grant: system.parts_columns exposes no facade row
+0
+Facade-only SHOW grant: system.mutations exposes no facade row
+0
+Dual SHOW grants: the facade rows are visible
+1
+1
+1

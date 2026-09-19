@@ -79,12 +79,10 @@ RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyF
         }
 
         std::copy(combine_with_filter->policies.begin(), combine_with_filter->policies.end(), std::back_inserter(new_filter->policies));
-        filter = new_filter;
+        return new_filter;
     }
-    else if (!filter)
-    {
-        filter = combine_with_filter;
-    }
+    if (!filter)
+        return combine_with_filter;
 
     return filter;
 }

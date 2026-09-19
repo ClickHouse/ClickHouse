@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_RDKAFKA
@@ -267,6 +268,12 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto handle_table = [&](DatabaseTablesIteratorPtr & it, auto & kafka_table)
     {
         if (!show_tables_granted && !access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
+            return;
+
+        /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+        /// on the underlying source table: the facade must not widen metadata visibility.
+        /// This runs regardless of the facade-side per-database grant shortcut.
+        if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, it->databaseName(), it->name(), it->table()))
             return;
         add_rows(it, kafka_table);
     };

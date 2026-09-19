@@ -1,0 +1,15 @@
+views and dictionaries on the facade are rejected
+Run CREATE VIEW TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE VIEW TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE VIEW TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE VIEW TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE VIEW TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE VIEW TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE DICTIONARY TABLE_IS_PERMANENTLY_READ_ONLY 
+Run CREATE DICTIONARY TABLE_IS_PERMANENTLY_READ_ONLY 
+nothing was created in the source: 0
+CREATE TABLE is still delegated, and a materialized view in an ordinary database may write TO the facade
+db_src_default	mv
+db_src_default	t
+db_src_default	t2
+1	a

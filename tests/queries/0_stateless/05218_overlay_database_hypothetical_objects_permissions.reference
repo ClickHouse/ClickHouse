@@ -1,0 +1,17 @@
+ALTER ADD PROJECTION on the Overlay database alone is not enough for a hypothetical projection through the facade
+ACCESS_DENIED
+source named: 0
+Dropping a hypothetical projection through the facade needs the source-side grant too
+ACCESS_DENIED
+source named: 0
+A user without any grant on the source cannot create a hypothetical index through the facade
+ACCESS_DENIED
+source named: 0
+With grants on both sides the access checks pass; the facade has no table UUID, so the object is unsupported there
+NOT_IMPLEMENTED
+source named: 0
+NOT_IMPLEMENTED
+source named: 0
+The same statements work on the underlying source table itself
+1
+1
