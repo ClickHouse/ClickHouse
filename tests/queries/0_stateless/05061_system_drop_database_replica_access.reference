@@ -1,0 +1,11 @@
+-- no privileges: both forms are denied
+denied
+denied
+-- privilege only on a database that is not the Replicated one: still denied
+denied
+-- privilege on the Replicated database: allowed, unrelated databases do not matter
+allowed
+-- SYSTEM DROP REPLICA targets every database, so it is still denied
+denied
+-- global privilege: allowed
+allowed
