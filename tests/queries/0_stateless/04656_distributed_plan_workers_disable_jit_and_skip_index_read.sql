@@ -19,6 +19,9 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0;
 
 SET use_skip_indexes_on_data_read = 1, compile_expressions = 1, min_count_to_compile_expression = 0;
+-- A server-side fuzzed re-run repeats the statement under the same session settings, so it would
+-- carry the marker below and, being later, would win the lookup.
+SET ast_fuzzer_runs = 0;
 
 SELECT 'join with a skip-index filter and a JIT-eligible expression matches single-node';
 SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.v = s.id
