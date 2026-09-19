@@ -33,19 +33,34 @@ The install itself is unchanged. See [onboarding](/products/bring-your-own-cloud
 
 Creating a service takes two commands. `prepare` creates everything on your side; `instances create` submits the create to ClickHouse Cloud through your connector endpoint. ClickHouse Cloud renders the service definition and sends the create to the executor over its outbound channel. The executor applies it to your cluster and reports back.
 
-Both commands need AWS credentials that can create S3 buckets and an IAM role. On a VM, run both as root on the connector host. On Kubernetes, run both from a workstation:
+Only `prepare` needs AWS credentials: it creates the S3 buckets and the IAM role. `instances create` needs the connector's configuration and credentials, and reaches the executor's local API only for `--wait`. On a VM, run both as root on the connector host. On Kubernetes, run both from a workstation with a kube context for the managed cluster:
 
-- `prepare` needs a kube context for the managed cluster and a copy of the connector configuration (`--config`). It also needs a `kubectl port-forward` to the executor's local API and `--output-dir` pointing at a writable directory. Extract the configuration from the `clicklink-connector-executor` ConfigMap as shown under [platform updates](/products/bring-your-own-cloud/connector/platform-updates#approve-a-platform-update). `prepare` checks the service name against the executor and refuses to run when it cannot reach it.
-- `instances create` reads the connector's configuration and credentials from the connector namespace when this host holds no copy (`--connector-namespace`, default `clicklink`), and announces each read. Only `instances create` and `platform approve` have this fallback.
+- `prepare` needs a copy of the connector configuration (`--config`), a `kubectl port-forward` to the executor's local API, and `--output-dir` pointing at a writable directory. It checks the service name against the executor and refuses to run when it cannot reach it.
+- `instances create` reads the credential files the configuration names from the `clicklink-hmac` and `clicklink-mtls` Secrets when this host lacks them, and announces each read. Add `--connector-namespace` when the connector namespace is not `clicklink`. Only `instances create` and `platform approve` have this fallback.
 
 <Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
 
 <Steps>
 <Step title="Prepare the service" id="prepare">
 
+<Tabs>
+<Tab title="Kubernetes" id="prepare-kubernetes">
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+  -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+clicklink clctl executor prepare --config clicklink-config.yaml --output-dir ./clicklink-access
+```
+
+Keep the output directory: it holds the create body and the name record that `instances create` and any retry read.
+</Tab>
+<Tab title="Linux VM" id="prepare-vm">
 ```bash
 sudo clicklink clctl executor prepare --config /etc/clicklink/config.yaml
 ```
+</Tab>
+</Tabs>
 
 The command runs four steps in order and stops at the first failure:
 
@@ -63,12 +78,26 @@ Pass `--context <name>` when your kubeconfig holds several contexts; the context
 
 <Step title="Submit the create" id="create">
 
+<Tabs>
+<Tab title="Kubernetes" id="create-kubernetes">
+```bash
+clicklink clctl instances create \
+  --from-prepare ./clicklink-access/_prepare/<name>.create.json \
+  --config clicklink-config.yaml \
+  --wait
+```
+
+Leave the port-forward from `prepare` open: `--wait` polls the executor through it.
+</Tab>
+<Tab title="Linux VM" id="create-vm">
 ```bash
 sudo clicklink clctl instances create \
   --from-prepare /etc/clicklink/access/executor/_prepare/<name>.create.json \
   --config /etc/clicklink/config.yaml \
   --wait
 ```
+</Tab>
+</Tabs>
 
 The command posts the prepared body to your connector endpoint with the connector's own credentials. It prints `created <spoken-name> (state provisioning)` and a `watch:` hint. `<spoken-name>` is the name ClickHouse Cloud assigned (for example `amberaws-kq-42`), not the service name you prepared. The `watch:` hint and every `clctl` command use your service name.
 
