@@ -645,6 +645,9 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
         {
             case QueryTreeNodeType::TABLE:
             {
+                /// A materialized CTE keeps its body as a child; the tables it reads are references too.
+                if (const auto & table_node = node_to_process->as<TableNode &>(); table_node.isMaterializedCTE())
+                    nodes_to_process.push_back(table_node.getMaterializedCTESubquery());
                 result.push_back(std::move(node_to_process));
                 break;
             }

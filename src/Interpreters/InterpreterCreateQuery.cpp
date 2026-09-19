@@ -1,5 +1,6 @@
 #include <array>
 #include <memory>
+#include <unordered_set>
 
 #include <filesystem>
 
@@ -50,6 +51,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -1137,10 +1139,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// This ensures unqualified table/view references resolve in the MV's database, not the session's database.
         ContextPtr select_context = getContext();
         bool is_refreshable_mv = create.is_materialized_view && create.refresh_strategy;
-        if (is_refreshable_mv)
+        if (create.is_materialized_view)
         {
             auto mv_context = Context::createCopy(getContext());
-            mv_context->setCurrentDatabase(create.getDatabase());
+            if (is_refreshable_mv)
+                mv_context->setCurrentDatabase(create.getDatabase());
+            mv_context->setSetting("enable_global_with_statement", Field{true});
             select_context = mv_context;
         }
 
@@ -1319,6 +1323,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
+                context->setSetting("enable_global_with_statement", Field{true});
 
                 /// For refreshable materialized views, use the MV's database as context.
                 /// This ensures unqualified references resolve in the MV's database, not session's database.
@@ -2046,9 +2051,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
-        // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        const bool is_fresh_definition = isFreshTableDefinition(mode, create.attach_short_syntax);
+
+        /// Before the visitors and before the query is enqueued or forwarded, so an accepted definition is valid on
+        /// every replica; a replayed entry of an older initiator is not fresh and keeps the legacy expansion below.
+        if (create.is_materialized_view && is_fresh_definition)
+            SelectQueryDescription::checkSettingsAllowedInMatView(*create.select, getContext());
+
+        // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
+        // A loaded or replayed materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
+        std::unordered_set<const IAST *> kept_cte_references;
+        if (create.is_materialized_view && !is_fresh_definition
+            && SelectQueryDescription::fixesGlobalWithSetting(*create.select))
+            ApplyWithSubqueryVisitor::visit(*create.select);
+        else
+            kept_cte_references = ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.setKeptCTEReferences(std::move(kept_cte_references));
         visitor.visit(*create.select);
     }
 
@@ -3200,9 +3219,16 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
+        ContextMutablePtr insert_context = getContext();
+        if (create.is_materialized_view)
+        {
+            /// A materialized view's queries always run with the setting pinned, so its `POPULATE` insert must too.
+            insert_context = Context::createCopy(getContext());
+            insert_context->setSetting("enable_global_with_statement", Field{true});
+        }
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
+            insert_context,
             getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
             /* no_squash */ false,
             /* no_destination */ false,
@@ -3501,6 +3527,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// capture below is fresh - taken under the lock, after in-flight inserts have drained. The population
     /// read still uses the pinned snapshot (it takes priority over both the cache and a fresh capture).
     auto populate_context = Context::createCopy(context);
+    populate_context->setSetting("enable_global_with_statement", Field{true});
     populate_context->setSetting("enable_shared_storage_snapshot_in_query", false);
 
     /// The pinned snapshot lives only in this server's contexts (`populate_context` and its query context,

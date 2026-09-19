@@ -1322,6 +1322,8 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
     select_context->setSetting("parallelize_output_from_storages", Field{false});
+    /// The registered source table is a CREATE-time decision; nested CTE references must bind the same way on every insert.
+    select_context->setSetting("enable_global_with_statement", Field{true});
 
     auto insert_context = Context::createCopy(select_context);
     insert_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());

@@ -2,6 +2,8 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
+#include <unordered_set>
+
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
@@ -33,6 +35,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -455,6 +458,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             modify_query = command_ast->select->as<ASTSelectWithUnionQuery>();
     }
 
+    /// Before the query is forwarded (ON CLUSTER, Replicated database), so an accepted command is valid on every
+    /// replica; a replayed command of an older initiator is not rejected here and keeps the legacy expansion below.
+    if (modify_query)
+        SelectQueryDescription::checkSettingsAllowedInMatView(*modify_query, getContext());
+
     BlockIO res;
     const auto & settings = getContext()->getSettingsRef();
 
@@ -540,14 +548,20 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
+    std::unordered_set<const IAST *> kept_cte_references;
     if (modify_query)
     {
-        // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*modify_query);
+        // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
+        // Only a replayed command can still fix `enable_global_with_statement` here: it keeps the legacy full expansion.
+        if (SelectQueryDescription::fixesGlobalWithSetting(*modify_query))
+            ApplyWithSubqueryVisitor::visit(*modify_query);
+        else
+            kept_cte_references = ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*modify_query);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    visitor.setKeptCTEReferences(std::move(kept_cte_references));
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 

@@ -2,9 +2,16 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -12,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
+extern const int NOT_IMPLEMENTED;
 }
 
 SelectQueryDescription::SelectQueryDescription(const SelectQueryDescription & other)
@@ -43,12 +51,50 @@ SelectQueryDescription & SelectQueryDescription::SelectQueryDescription::operato
 namespace
 {
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPtr context, bool add_default_db = true)
+/// CTE name -> declarations from the outermost to the innermost visible WITH list.
+using VisibleCTEs = std::unordered_map<String, std::vector<const ASTWithElement *>>;
+
+VisibleCTEs withVisibleCTEs(const ASTSelectQuery & query, VisibleCTEs visible)
 {
-    if (add_default_db)
+    if (query.with())
+        for (const auto & child : query.with()->children)
+            if (const auto * with_element = child->as<ASTWithElement>())
+                visible[with_element->name].push_back(with_element);
+    return visible;
+}
+
+const ASTSelectWithUnionQuery & getCTEBody(const ASTWithElement & with_element)
+{
+    return with_element.subquery->children.at(0)->as<const ASTSelectWithUnionQuery &>();
+}
+
+/// The innermost CTE an unqualified first table expression refers to, if any. The returned `visible`
+/// no longer contains that declaration: inside its body the name means the enclosing declaration or a table.
+const ASTWithElement * followReferencedCTE(const ASTSelectQuery & query, VisibleCTEs & visible)
+{
+    auto db_and_table = getDatabaseAndTable(query, 0);
+    if (!db_and_table || !db_and_table->database.empty())
+        return nullptr;
+
+    auto it = visible.find(db_and_table->table);
+    if (it == visible.end())
+        return nullptr;
+
+    const ASTWithElement * with_element = it->second.back();
+    it->second.pop_back();
+    if (it->second.empty())
+        visible.erase(it);
+    return with_element;
+}
+
+StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const VisibleCTEs & enclosing)
+{
+    auto visible = withVisibleCTEs(query, enclosing);
+
+    if (const auto * cte = followReferencedCTE(query, visible))
     {
-        AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
-        visitor.visit(query);
+        auto & cte_query = getCTEBody(*cte).list_of_selects->children.at(0)->as<ASTSelectQuery &>();
+        return extractDependentTableFromSelectQuery(cte_query, visible);
     }
 
     if (auto db_and_table = getDatabaseAndTable(query, 0))
@@ -66,13 +112,13 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, false);
+        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), visible);
     }
     return StorageID::createEmpty();
 }
 
 
-void checkAllowedQueries(const ASTSelectWithUnionQuery & select)
+void checkAllowedQueries(const ASTSelectWithUnionQuery & select, const VisibleCTEs & enclosing)
 {
     for (const auto & children : select.list_of_selects->children)
     {
@@ -84,17 +130,51 @@ void checkAllowedQueries(const ASTSelectWithUnionQuery & select)
         if (query->prewhere() || query->final() || query->sampleSize())
             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.");
 
+        auto visible = withVisibleCTEs(*query, enclosing);
+        if (const auto * cte = followReferencedCTE(*query, visible))
+        {
+            checkAllowedQueries(getCTEBody(*cte), visible);
+            continue;
+        }
+
         ASTPtr subquery = extractTableExpression(*query, 0);
         if (!subquery)
             return;
 
         if (const auto * ast_select_with_union = subquery->as<ASTSelectWithUnionQuery>())
         {
-            checkAllowedQueries(*ast_select_with_union);
+            checkAllowedQueries(*ast_select_with_union, visible);
         }
     }
 }
 
+}
+
+bool SelectQueryDescription::fixesGlobalWithSetting(const IAST & select)
+{
+    if (const auto * set_query = select.as<ASTSetQuery>())
+    {
+        for (const auto & change : set_query->changes)
+            if (change.name == "enable_global_with_statement")
+                return true;
+        for (const auto & reset_name : set_query->default_settings)
+            if (reset_name == "enable_global_with_statement")
+                return true;
+    }
+    for (const auto & child : select.children)
+        if (child && fixesGlobalWithSetting(*child))
+            return true;
+    return false;
+}
+
+void SelectQueryDescription::checkSettingsAllowedInMatView(const IAST & select, const ContextPtr & context)
+{
+    auto txn = context->getZooKeeperMetadataTransaction();
+    const bool is_initial_query = !txn || txn->isInitialQuery();
+    if (is_initial_query && fixesGlobalWithSetting(select))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `enable_global_with_statement` is not supported in a materialized view definition: "
+            "the query of a materialized view is always analyzed and executed with it enabled.");
 }
 
 SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, bool refreshable, ContextPtr context)
@@ -110,11 +190,19 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     if (refreshable)
         return result;
 
-    checkAllowedQueries(query);
+    /// Runs first: an arm that is not a `SELECT` is rejected here, before the cast below.
+    checkAllowedQueries(query, {});
+
     /// We trigger only for the first found table
     ASTSelectQuery & new_inner_query = query.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
-    /// Extracting first found table ID
-    result.select_table_id = extractDependentTableFromSelectQuery(new_inner_query, context);
+
+    /// Qualify the stored first SELECT as before, keeping references to MATERIALIZED CTEs unqualified.
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
+    visitor.setKeptCTEReferences(ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(query));
+    visitor.visit(new_inner_query);
+
+    /// Extracting first found table ID, looking through CTE references
+    result.select_table_id = extractDependentTableFromSelectQuery(new_inner_query, {});
     result.inner_query = new_inner_query.clone();
 
     return result;
