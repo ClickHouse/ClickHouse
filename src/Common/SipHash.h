@@ -17,7 +17,7 @@
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <array>
 #include <bit>
