@@ -1431,6 +1431,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         for (auto & ws : workspaces)
         {
             block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
+            block.argument_cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castArgumentColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -2693,6 +2694,7 @@ template <bool is_lead, bool full_partition_default_frame>
 struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
+    FunctionBasePtr argument_func_cast = nullptr;
 
     WindowFunctionLagLeadImpl(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
@@ -2727,51 +2729,43 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
                 name, argument_types.size());
         }
 
-        if (argument_types[0]->equals(*argument_types[2]))
-            return;
-
-        const auto supertype = tryGetLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-        if (!supertype)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "There is no supertype for the argument type '{}' and the default value type '{}'",
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-        }
-        if (!argument_types[0]->equals(*supertype))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
-                supertype->getName(),
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-        }
-
-        auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
-        {
-            return createInternalCast({from, {}}, to, CastType::accurate, {}, nullptr);
-        };
-
-        func_cast = get_cast_func();
-
+        const auto & result_type = getResultType();
+        if (!argument_types[0]->equals(*result_type))
+            argument_func_cast = createInternalCast({argument_types[0], {}}, result_type, CastType::accurate, {}, nullptr);
+        if (!argument_types[2]->equals(*result_type))
+            func_cast = createInternalCast({argument_types[2], {}}, result_type, CastType::accurate, {}, nullptr);
     }
 
-    ColumnPtr castColumn(const Columns & columns, const VectorWithMemoryTracking<size_t> & idx) override
+    ColumnPtr castColumnImpl(
+        const Columns & columns,
+        size_t column_index,
+        const DataTypePtr & from_type,
+        const FunctionBasePtr & cast_func) const
     {
-        if (!func_cast)
+        if (!cast_func)
             return nullptr;
 
         ColumnsWithTypeAndName arguments
         {
-            { columns[idx[2]], argument_types[2], "" },
+            { columns[column_index], from_type, "" },
             {
-                DataTypeString().createColumnConst(columns[idx[2]]->size(), argument_types[0]->getName()),
+                DataTypeString().createColumnConst(columns[column_index]->size(), getResultType()->getName()),
                 std::make_shared<DataTypeString>(),
                 ""
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
+        return cast_func->execute(arguments, getResultType(), columns[column_index]->size(), /* dry_run = */ false);
+    }
+
+    ColumnPtr castColumn(const Columns & columns, const VectorWithMemoryTracking<size_t> & idx) override
+    {
+        return castColumnImpl(columns, idx[2], argument_types[2], func_cast);
+    }
+
+    ColumnPtr castArgumentColumn(const Columns & columns, const VectorWithMemoryTracking<size_t> & idx) override
+    {
+        return castColumnImpl(columns, idx[0], argument_types[0], argument_func_cast);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2780,6 +2774,19 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         {
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Function {} takes at least one argument", name_);
+        }
+
+        if (argument_types_.size() == 3)
+        {
+            const auto supertype = tryGetLeastSupertype(DataTypes{argument_types_[0], argument_types_[2]});
+            if (!supertype)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "There is no supertype for the argument type '{}' and the default value type '{}'",
+                    argument_types_[0]->getName(),
+                    argument_types_[2]->getName());
+            }
+            return supertype;
         }
 
         return argument_types_[0];
@@ -2847,9 +2854,11 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
-                    workspace.argument_column_indices[0]],
-                target_row.row);
+            const auto & target_block = transform->blockAt(target_row);
+            const IColumn & argument_column = target_block.argument_cast_columns[function_index]
+                ? *target_block.argument_cast_columns[function_index].get()
+                : *target_block.input_columns[workspace.argument_column_indices[0]].get();
+            to.insertFrom(argument_column, target_row.row);
         }
     }
 };
