@@ -1528,6 +1528,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"compress_per_substream_in_compact_parts", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

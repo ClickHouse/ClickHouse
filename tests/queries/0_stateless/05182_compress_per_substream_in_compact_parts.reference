@@ -1,0 +1,6 @@
+selective_read sum(length(t.small)) OK
+selective_read sum(arr.size0) OK
+adaptive_block OK
+size_near_packed OK
+every_boundary_costs_size OK
+subcolumn_values OK
