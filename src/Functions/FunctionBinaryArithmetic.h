@@ -19,6 +19,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -1271,7 +1272,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    /// A column of aggregate states made by hand must carry the state version of its declared type
+    /// (e.g. `AggregateFunction(1, uniq, UInt64)`): the version affects how the states are serialized
+    /// on a later round trip through an arena (`groupArray`, sorting) - a fresh column would use the
+    /// function's default version instead and the result would not match its type.
+    static std::optional<size_t> getAggregateStateVersion(const DataTypePtr & result_type)
+    {
+        return assert_cast<const DataTypeAggregateFunction &>(*result_type).getVersionIfExplicit();
+    }
+
+    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName new_arguments = arguments;
         if (WhichDataType(new_arguments[1].type).isAggregateFunction())
@@ -1290,10 +1300,10 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function);
+        auto column_to = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
         column_to->reserve(size);
 
-        auto column_from = ColumnAggregateFunction::create(function);
+        auto column_from = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
         column_from->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -1340,7 +1350,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             }
             else
             {
-                auto column_temp = ColumnAggregateFunction::create(function);
+                auto column_temp = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
                 column_temp->reserve(size);
                 for (size_t i = 0; i < size; ++i)
                     column_temp->insertFrom(vec_from[i]);
@@ -1359,7 +1369,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     }
 
     /// Merge two aggregation states together.
-    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         const IColumn & lhs_column = *arguments[0].column;
         const IColumn & rhs_column = *arguments[1].column;
@@ -1376,7 +1386,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
         size_t size = (lhs_is_const && rhs_is_const) ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function);
+        auto column_to = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
         column_to->reserve(size);
 
         for (size_t i = 0; i < size; ++i)

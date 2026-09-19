@@ -177,6 +177,11 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     if (lhs_state->function->getName() != rhs_state->function->getName())
         return false;
 
+    /// Different versions of the same state (e.g. `AggregateFunction(uniq, ...)` and `AggregateFunction(1, uniq, ...)`)
+    /// are serialized differently, so a column cannot pass from one type to the other as it is.
+    if (lhs_state->getVersion() != rhs_state->getVersion())
+        return false;
+
     if (lhs_state->parameters.size() != rhs_state->parameters.size())
         return false;
 

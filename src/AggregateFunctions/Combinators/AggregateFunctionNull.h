@@ -302,6 +302,11 @@ public:
         return nested_function->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_function);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
 #if USE_EMBEDDED_COMPILER

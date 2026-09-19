@@ -60,6 +60,7 @@ public:
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;
+    DataTypePtr getStateType() const override;
 
     size_t sizeOfData() const override { return total_state_size; }
     size_t alignOfData() const override { return max_state_align; }
