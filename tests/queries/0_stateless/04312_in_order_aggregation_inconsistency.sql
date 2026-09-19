@@ -1,7 +1,11 @@
--- Inconsistency: hash-based grouping keys rows by their raw value bytes, while sort/in-order
--- grouping keys them by `compareAt`. For floats these disagree: `+0.0`/`-0.0` and distinct
--- `NaN` payloads have different bytes but compare equal, so in-order operators (`compareAt`) put such keys
--- in one group while hash operators keep them separate.
+-- Hash-based grouping keys rows by their raw value bytes, while grouping taken from the sort order
+-- keys them by `compareAt`. For floats these disagree: `+0.0`/`-0.0` and distinct `NaN` payloads have
+-- different bytes but compare equal, so an in-order operator puts such keys in one group while a hash
+-- operator keeps them separate.
+--
+-- `DISTINCT` and `LIMIT BY` no longer take their groups from comparison for a float key, so they
+-- answer 2 whichever plan runs. `optimize_aggregation_in_order` still does: it would have to decline
+-- the optimization altogether, because the merge of its per-stream results compares the keys as well.
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (f Float64) ENGINE = MergeTree ORDER BY f;
