@@ -977,3 +977,16 @@ spec:
         key: password
         name: default-password
 ```
+
+## Periodic resync {#periodic-resync}
+
+Besides reacting to Kubernetes events, the operator re-reconciles every cluster on a fixed interval. This keeps status conditions fresh for state that no watch can observe — ClickHouse replica health, Keeper quorum — and retries remediation such as stuck-pod cleanup.
+
+The interval is controlled by the operator's `RESYNC_PERIOD` environment variable (default `30s`). It applies to `KeeperCluster` resources, where `0` disables the periodic resync. `ClickHouseCluster` resources poll ClickHouse `system.warnings` every 30 seconds, which already re-triggers reconciliation, so `RESYNC_PERIOD` currently has no effect on them.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```
