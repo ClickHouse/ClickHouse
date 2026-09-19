@@ -8,6 +8,8 @@
 namespace DB
 {
 
+struct QueryPlanOptimizationSettings;
+
 /// Per-query context the optimizer runs in: the cluster size, the cost model configuration
 /// and the query settings the rules honor. Field defaults match the settings' defaults. Set once
 /// before optimization starts; only the sort settings are captured later, while the memo is
@@ -27,5 +29,10 @@ struct OptimizerContext
     /// SortingEnforcer builds a new sort so it matches the rest of the query's pipeline.
     std::optional<SortingStep::Settings> sort_settings;
 };
+
+/// The plan's sort limits and spill thresholds, in the form a `SortingStep` takes them. Every value
+/// `SortingStep::Settings(const Settings &)` reads must be mapped here, or a sort added during
+/// optimization silently gets the field's default instead of the query's value.
+SortingStep::Settings makeSortSettings(const QueryPlanOptimizationSettings & optimization_settings);
 
 }
