@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
 #include <base/types.h>
@@ -317,7 +318,13 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDateTime64 &>(column);
-                    col.getData().push_back(static_cast<Int64>(value));
+                    /// The state keeps the tick as Float64, and a tick near Int64's bounds rounds outside them,
+                    /// where narrowing back is undefined; saturate instead. Date, Date32 and DateTime ticks are
+                    /// exactly representable in Float64, so those arms need no check.
+                    Int64 converted = canConvertTo<Int64>(value)
+                        ? static_cast<Int64>(value)
+                        : (value < 0 ? std::numeric_limits<Int64>::lowest() : std::numeric_limits<Int64>::max());
+                    col.getData().push_back(converted);
                 };
             default:
                 return [](IColumn & column, Float64 value)
