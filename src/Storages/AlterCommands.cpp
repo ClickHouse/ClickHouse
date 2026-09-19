@@ -1852,21 +1852,16 @@ void AlterCommands::apply(
     }
 
     /// If partition key expression is changed, we also need to rebuild minmax_count_projection.
+    /// An unpartitioned MergeTree still has this implicit projection, so rebuild it for the empty
+    /// partition key instead of dropping the projection.
     if (metadata_copy.minmax_count_projection
         && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
     {
-        if (metadata_copy.partition_key.definition_ast == nullptr)
-        {
-            metadata_copy.minmax_count_projection.reset();
-        }
-        else
-        {
-            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
-            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key.get());
-            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
-        }
+        auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
+        auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key.get());
+        metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
     }
 
     // /// And in sample key expression

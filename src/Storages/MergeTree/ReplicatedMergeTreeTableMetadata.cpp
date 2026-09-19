@@ -618,7 +618,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
-    auto old_partition_key_sample_block = new_metadata.partition_key.sample_block;
+    auto old_partition_key_sample_block = old_metadata.partition_key.sample_block;
     if (new_metadata.partition_key.definition_ast != nullptr)
     {
         new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, new_metadata.virtuals, context);
@@ -627,21 +627,16 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// If partition key expression structure changed we must rebuild minmax_count_projection,
     /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
     /// and the aggregation engine hits a type mismatch. See #100175.
+    /// An unpartitioned MergeTree still has this implicit projection, so rebuild it for the empty
+    /// partition key instead of dropping the projection.
     if (new_metadata.minmax_count_projection
         && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
     {
-        if (!new_metadata.partition_key.definition_ast)
-        {
-            new_metadata.minmax_count_projection.reset();
-        }
-        else
-        {
-            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
-            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key_ast.get());
-            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
-        }
+        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key_ast.get());
+        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
     }
 
     if (!sorting_key_changed) /// otherwise already updated
