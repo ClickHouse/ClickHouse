@@ -90,6 +90,21 @@ HOST_OOM_DMESG_PATTERNS = (
 # too, and `oom_reaper` is kept because the surviving lines are read rather than classified.
 OOM_DMESG_MARKERS = ("oom-kill:", "Out of memory:", "oom_reaper:")
 
+# Kernel records of a process dying on a fault rather than on a memory kill. A support container
+# that aborts mid-run leaves nothing else behind: Docker drops its port mapping, so the harness
+# sees only `Connection refused` from every later test the same session-scoped cluster serves, and
+# the container's own log is overwritten by the next cluster started in that directory. `traps:`
+# is x86's prefix for every fault report it renders (general protection fault, invalid opcode,
+# divide error), `segfault at` is the page-fault one, and `potentially unexpected fatal signal`
+# is arm64's. `show_signal:` carries printk's rate-limit line, which says how many of these the
+# kernel dropped - an absence below it is not evidence of none.
+PROCESS_CRASH_DMESG_MARKERS = (
+    "traps:",
+    "segfault at",
+    "potentially unexpected fatal signal",
+    "show_signal:",
+)
+
 # The cgroup leaves `docker_in_docker.sh` creates, and what a kill in each one means. The paths
 # are unqualified because the script only runs under `--cgroupns=private`.
 DIND_CGROUP_ROOT = "/sys/fs/cgroup"
@@ -592,6 +607,32 @@ def print_oom_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
         print(f"No kernel memory kill in dmesg{partial}")
 
 
+def print_process_crash_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
+    """Print the kernel's process-fault lines, whoever faulted.
+
+    A crashed support container is otherwise undiagnosable from a report: see
+    `PROCESS_CRASH_DMESG_MARKERS` for what the harness is left with instead. Printed rather
+    than turned into a result row, and unfiltered by who crashed, because a fault here is not
+    a verdict on anything: some tests kill a server on purpose, and the kernel names the
+    process but not the container, so no row could be attributed to the run's outcome.
+
+    The caveats carry the same two unsoundness directions as in `print_oom_lines`, for the same
+    reason - `caveat` rides the faults so one cannot be taken for this run's, `partial` rides
+    their absence, which a record short of the run cannot establish.
+    """
+    if not dmesg:
+        print("WARNING: no dmesg available, so a process crash can neither be shown nor ruled out")
+        return
+    if crash_lines := [
+        l for l in dmesg.splitlines() if any(m in l for m in PROCESS_CRASH_DMESG_MARKERS)
+    ]:
+        print(f"Process crashes in dmesg{caveat}:")
+        for line in crash_lines:
+            print(f"  {line}")
+    else:
+        print(f"No process crash in dmesg{partial}")
+
+
 def print_timeout_diagnostics(
     env, follow_proc=None, dmesg_cleared=False, cgroup_root=DIND_CGROUP_ROOT
 ) -> None:
@@ -623,6 +664,11 @@ def print_timeout_diagnostics(
         caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
         partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
     )
+    print_process_crash_lines(
+        follow_dmesg + snapshot,
+        caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+        partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
+    )
 
 
 ncpu = Utils.cpu_count()
@@ -635,6 +681,16 @@ TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
 ]
+
+# Emitted by `ClickHouseInstance.describe_lost_network_interface` in
+# `tests/integration/helpers/cluster.py`, and only after the harness has confirmed both
+# halves of the state it names: docker removed a running container's network interface (a
+# `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
+# for the rest of the module through no fault of its own. Unlike the substrings below it
+# already carries its own proof, which is why the FAIL path trusts it without further
+# context. Must stay in step with the constant of the same name in the harness - pinned by
+# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
+LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
 
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
@@ -649,6 +705,7 @@ INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "toomanyrequests",
     "pull access denied",
     "Got exception pulling images:",  # docker pull failure during cluster.start()
+    LOST_NETWORK_INTERFACE_ERROR,
 ]
 
 # compose options that consume the token after them, so the subcommand is not the
@@ -783,6 +840,12 @@ def _is_infrastructure_error(result: Result) -> bool:
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
     if result.status == Result.Status.FAIL:
+        # The harness only emits this after checking the container from both sides, so the
+        # evidence the docker-context requirement below stands in for is already in hand.
+        # It has to be honoured here: the state surfaces mid-module as an ordinary failing
+        # query, which carries no docker argv at all.
+        if LOST_NETWORK_INTERFACE_ERROR in result.info:
+            return True
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
@@ -1480,7 +1543,6 @@ def main():
     args = parse_args()
     job_params = args.options.split(",") if args.options else []
     job_params = [to.strip() for to in job_params]
-    use_old_analyzer = False
     use_distributed_plan = False
     use_database_disk = False
     is_flaky_check = False
@@ -1535,8 +1597,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         elif any(build in to for build in ("amd_", "arm_")):
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
-        elif to == "old analyzer":
-            use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
         elif to == "db disk":
@@ -1829,7 +1889,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
-        "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
@@ -2316,6 +2375,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
         ):
             print_oom_lines(
+                dmesg.decode(errors="replace"),
+                caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+                partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,
+            )
+            print_process_crash_lines(
                 dmesg.decode(errors="replace"),
                 caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
                 partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,

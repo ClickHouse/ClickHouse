@@ -146,7 +146,7 @@ This is especially useful when the same CTE is referenced multiple times in a qu
 
 <Note>
 Materialized CTEs are an **experimental** feature.
-They require the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) and the setting `enable_materialized_cte` to be enabled.
+They require the setting `enable_materialized_cte` to be enabled.
 If the setting is disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 </Note>
 
@@ -256,7 +256,6 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 ### Restrictions {#materialized-cte-restrictions}
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled. If it is disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
-- **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`).
 - **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
@@ -268,7 +267,7 @@ Common scalar expressions can be referenced in any place in the query.
 <Note>
 If a common scalar expression references something other than a constant literal, the expression may lead to the presence of [free variables](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
 ClickHouse resolves any identifier in the closest scope possible, meaning that free variables can reference unexpected entities in case of name clashes or may lead to a correlated subquery.
-It is recommended to define CSE as a [lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (possible only with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled) binding all the used identifiers to achieve a more predictable behavior of expression identifiers resolution.
+It is recommended to define CSE as a [lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda) binding all the used identifiers to achieve a more predictable behavior of expression identifiers resolution.
 </Note>
 
 ### Syntax {#common-scalar-expressions-syntax}
@@ -410,8 +409,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-Recursive CTEs rely on the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
-Starting from version `24.8` the analyzer has been fully promoted to production, and the setting `allow_experimental_analyzer` has been renamed to `enable_analyzer`.
+Recursive CTEs rely on the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) introduced in version **`24.3`**, which is the default since that version and mandatory since **`26.9`**. On an older version that still has the analyzer disabled on the instance, the role or the profile, a recursive CTE raises a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception; enable the `enable_analyzer` setting there, or upgrade.
 </Note>
 
 The general form of a recursive `WITH` query is always a non-recursive term, then `UNION ALL`, then a recursive term, where only the recursive term can contain a reference to the query's own output. Recursive CTE query is executed as follows:
