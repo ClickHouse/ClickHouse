@@ -537,6 +537,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
             return {};
     }
 
+    /// The argument is invisible while an expression written outside of this lambda is resolved through it.
+    if (scope.hidden_expression_arguments.contains(it->first))
+        return {};
+
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
