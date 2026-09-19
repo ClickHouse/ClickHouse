@@ -1,7 +1,8 @@
 -- LIMIT still shrinks the block size with arrayJoin, only the source-side limit stays off (#82279)
 DROP TABLE IF EXISTS t_aj_limit;
 CREATE TABLE t_aj_limit (k UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
-INSERT INTO t_aj_limit SELECT number, [number] FROM numbers(200000);
+-- the 5000 bound below needs an un-shrunk read above it, and marks = rows / index_granularity
+INSERT INTO t_aj_limit SELECT number, [number] FROM numbers(20000);
 
 SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 FORMAT Null SETTINGS max_threads = 8, log_comment = '05182_limit';
 
