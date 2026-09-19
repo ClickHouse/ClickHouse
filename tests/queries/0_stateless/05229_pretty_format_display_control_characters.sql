@@ -21,6 +21,9 @@ SELECT 'tab\there' AS value FORMAT PrettySpace;
 -- into account when the columns are padded to the same width.
 SELECT 1 AS `tab\there` FORMAT PrettyCompact;
 SELECT 1 AS `nul\0name`, 2 AS ok FORMAT PrettyCompact;
+-- A line feed in a column name is replaced as well, unlike one in a value: the header and the
+-- footer are a single line, so it would only deform the table.
+SELECT 1 AS `line\nbreak`, 2 AS ok FORMAT PrettyCompact;
 
 -- A line feed is never replaced: it becomes a new line of the table cell...
 SELECT 'line\nbreak' AS value FORMAT PrettyCompact;

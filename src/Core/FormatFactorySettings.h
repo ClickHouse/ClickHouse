@@ -1458,7 +1458,7 @@ If enabled and if output is a terminal, highlight trailing spaces with a gray co
     DECLARE(Bool, output_format_pretty_display_control_characters, true, R"(
 If enabled, non-printable control characters (NUL, SOH, tab, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␉, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
 
-`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines, which is how it is meant to be read and copy-pasted.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines, which is how it is meant to be read and copy-pasted. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
 )", 0) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.

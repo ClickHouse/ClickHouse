@@ -32,7 +32,11 @@ String highlightTrailingSpaces(String source);
 /// `highlightTrailingSpaces` does. It has to happen in one pass here, because the trailing
 /// whitespace must be detected on the pre-replacement bytes: after the replacement, trailing tabs
 /// and newlines are Control Pictures that the highlighter would not recognize.
-String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace = false);
+/// With `replace_line_feeds`, the line feed is replaced as well. The column names use it: a name is
+/// rendered on a single line by construction - padded to a fixed width by `Vertical`, and put into
+/// the one-line header and footer by the `Pretty*` formats - so there a line feed only deforms the
+/// output instead of breaking the line in a meaningful way.
+String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace = false, bool replace_line_feeds = false);
 
 /// Streaming counterpart of `replaceControlCharactersWithPictures`: a `WriteBuffer` that forwards
 /// everything written to it to the underlying buffer, replacing non-printable control characters

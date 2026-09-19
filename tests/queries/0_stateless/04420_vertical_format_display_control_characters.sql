@@ -27,5 +27,7 @@ SELECT 'tab\tand\nnewline' AS value FORMAT Vertical SETTINGS output_format_prett
 -- Control characters in column names are displayed as well, and their Control Pictures are taken into
 -- account when the names are padded to the same width.
 SELECT 1 AS `tab\there` FORMAT Vertical;
+-- A line feed in a column name is replaced as well, unlike one in a value: a name is padded to a
+-- fixed width on a single line, so it would only deform the output.
 SELECT 1 AS `line\nbreak`, 2 AS ok FORMAT Vertical;
 SELECT 1 AS `tab\there` FORMAT Vertical SETTINGS output_format_pretty_display_control_characters = 0;

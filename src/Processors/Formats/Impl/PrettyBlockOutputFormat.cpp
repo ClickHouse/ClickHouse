@@ -183,7 +183,8 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// the header is a single line, so a line feed in a name is replaced as well.
             String elem_name = elem.name;
             if (format_settings.pretty.display_control_characters)
-                elem_name = replaceControlCharactersWithPictures(std::move(elem_name));
+                elem_name = replaceControlCharactersWithPictures(
+                    std::move(elem_name), /*highlight_trailing_whitespace=*/ false, /*replace_line_feeds=*/ true);
 
             auto [name, width] = truncateName(elem_name,
                 format_settings.pretty.max_column_name_width_cut_to
@@ -996,7 +997,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test FORMAT PrettyC
 └──────────────────────────────────────┘
 ```
 
-`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a line feed keeps breaking the line - inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a line feed keeps breaking the line - inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
 
 To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 

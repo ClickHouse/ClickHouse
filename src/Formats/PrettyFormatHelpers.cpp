@@ -149,12 +149,17 @@ size_t trailingWhitespaceStart(const String & source)
 }
 
 
-String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace)
+String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace, bool replace_line_feeds)
 {
+    const auto is_replaced = [replace_line_feeds](unsigned char byte)
+    {
+        return isControlCharacter(byte) || (replace_line_feeds && byte == '\n');
+    };
+
     bool has_control_characters = false;
     for (char c : source)
     {
-        if (isControlCharacter(static_cast<unsigned char>(c)))
+        if (is_replaced(static_cast<unsigned char>(c)))
         {
             has_control_characters = true;
             break;
@@ -182,7 +187,7 @@ String replaceControlCharactersWithPictures(String source, bool highlight_traili
         }
 
         const auto byte = static_cast<unsigned char>(source[i]);
-        if (isControlCharacter(byte))
+        if (is_replaced(byte))
         {
             const auto picture = controlCharacterPicture(byte);
             result.append(picture.data(), picture.size());

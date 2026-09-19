@@ -42,7 +42,8 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
         /// Control Picture takes one visible position while the raw control character takes none.
         String name = sample.getByPosition(i).name;
         if (format_settings.pretty.display_control_characters)
-            name = replaceControlCharactersWithPictures(std::move(name));
+            name = replaceControlCharactersWithPictures(
+                std::move(name), /*highlight_trailing_whitespace=*/ false, /*replace_line_feeds=*/ true);
 
         auto [name_cut, width] = truncateName(name,
           format_settings.pretty.max_column_name_width_cut_to,
@@ -291,7 +292,7 @@ test: string with 'quotes' and ␉ with some special
  characters
 ```
 
-`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
 
 To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 
