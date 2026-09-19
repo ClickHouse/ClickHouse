@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 namespace
@@ -37,7 +36,7 @@ namespace
         T result{};
         if (common::mulOverflow(int_value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
         {
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot convert {} to {}: Overflow, the number is too big",
                             int_value, getTypeName<T>());
         }
@@ -59,7 +58,7 @@ namespace
         if ((scaled_value >= static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
             (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
         {
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot convert {} to {}: Overflow, the number is too big",
                             float_value, getTypeName<T>());
         }
@@ -147,7 +146,7 @@ namespace
         if (common::mulOverflow(intervals, unit_multiplier, result.value)
             || common::mulOverflow(result.value, scale_multiplier, result.value))
         {
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot convert {} {}s to {}: Overflow, the number is too big",
                             intervals, interval_kind.toString(), getTypeName<T>());
         }
@@ -204,7 +203,7 @@ namespace
                 UInt64 uint_value = field.safeGet<UInt64>();
                 if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 {
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Cannot convert {} to {}: Overflow, the number is too big",
                                     uint_value, getTypeName<T>());
                 }

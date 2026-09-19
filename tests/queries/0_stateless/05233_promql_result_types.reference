@@ -1,0 +1,134 @@
+-- Scalar and string results
+timestamp	DateTime64(3, \'UTC\')					
+value	Float64					
+timestamp	DateTime64(3, \'UTC\')					
+value	String					
+-- Float32 values are widened to Float64 exactly
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:17:10.000	0.30000001192092896
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000	0.09000000715255752
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000	0.30000001192092896
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000	0.6000000163912773
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.10000000149011612),('1970-01-01 00:16:55.000',0.20000000298023224),('1970-01-01 00:17:10.000',0.30000001192092896)]
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.10000000149011612),('1970-01-01 00:16:55.000',0.20000000298023224),('1970-01-01 00:17:10.000',0.30000001192092896)]
+-- DateTime and UInt32 timestamps are returned as DateTime64(3)
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:17:10.000	0.30000001192092896
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.10000000149011612),('1970-01-01 00:16:55.000',0.20000000298023224),('1970-01-01 00:17:10.000',0.30000001192092896)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000	0.004166666883975267
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3)	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:17:10.000	0.3
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.1),('1970-01-01 00:16:55.000',0.2),('1970-01-01 00:17:10.000',0.3)]
+-- Sub-second evaluation times and offsets work with DateTime and UInt32 timestamps
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:17:10.500	0.30000001192092896
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.10000000149011612),('1970-01-01 00:16:55.000',0.20000000298023224)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:17:10.000	0.20000000298023224
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.500',0.10000000149011612),('1970-01-01 00:16:55.500',0.20000000298023224),('1970-01-01 00:17:10.500',0.30000001192092896)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3)	Float64
+[('job','j')]	1970-01-01 00:17:10.500	0.004166666666666666
+-- DateTime64(1) timestamps are returned as DateTime64(3), sub-second evaluation times and offsets keep the tenths of a second
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.1),('1970-01-01 00:16:55.500',0.2),('1970-01-01 00:17:10.000',0.3)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:16:55.500	0.2
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.500',0.1),('1970-01-01 00:16:56.000',0.2),('1970-01-01 00:17:10.500',0.3)]
+-- Offsets keep the scale of DateTime64(4)
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(4, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.0010',0.10000000149011612),('1970-01-01 00:16:55.0010',0.20000000298023224),('1970-01-01 00:17:10.0010',0.30000001192092896)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(4, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:17:10.0010	0.30000001192092896
+-- DateTime64(9) keeps nanoseconds in the results and in the evaluation time
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(9, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000000001',0.1),('1970-01-01 00:16:55.000000000',0.2),('1970-01-01 00:17:10.000000000',0.3)]
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(9, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.001000001',0.1),('1970-01-01 00:16:55.001000000',0.2),('1970-01-01 00:17:10.001000000',0.3)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(9, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000000000	0.004166666666666666
+timestamp	value
+DateTime64(9, \'UTC\')	Float64
+1970-01-01 00:17:10.250000000	1030.25
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(9, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:55.000000000',0.2),('1970-01-01 00:17:10.000000000',0.3)]
+-- Functions of the evaluation time
+timestamp	value
+DateTime64(3, \'UTC\')	Float64
+1970-01-01 00:17:10.250	1030.25
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[]	1970-01-01 00:17:10.250	17
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[]	[('1970-01-01 00:16:40.000',16),('1970-01-01 00:16:55.000',16),('1970-01-01 00:17:10.000',17)]
+-- Arguments without a time zone: the time zone of the table is used
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(3, \'Asia/Tokyo\')					
+value	Float64					
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(3, \'UTC\')					
+value	Float64					
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3), Float64))					
+-- Arguments with the same time zone: that time zone is used
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(3, \'Asia/Tokyo\')					
+value	Float64					
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(3, \'Asia/Tokyo\')					
+value	Float64					
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3, \'UTC\'), Float64))					
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3, \'Asia/Tokyo\'), Float64))					
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3, \'Asia/Tokyo\'), Float64))					
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3, \'Asia/Tokyo\'), Float64))					
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'Asia/Tokyo\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 09:17:10.000	0.30000001192092896
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',1),('1970-01-01 00:16:55.000',2),('1970-01-01 00:17:10.000',3)]
+-- Arguments with different time zones: the time zone of the table is used
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3, \'UTC\'), Float64))					
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3), Float64))					
