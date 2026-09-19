@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-19T01:21:14.163Z",
+          "updatedAt": "2026-09-19T03:48:59.407Z",
           "fileName": "docs.json",
           "postProcessHash": "06e4dfbf312293c3556f1982a25a1ebe17e82e6dc6dea1eee8ba84b41ac4e9ec"
         },
         "ja": {
-          "updatedAt": "2026-09-19T01:21:13.135Z",
+          "updatedAt": "2026-09-19T03:48:58.512Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-19T01:21:13.673Z",
+          "updatedAt": "2026-09-19T03:48:58.943Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-19T01:21:13.839Z",
+          "updatedAt": "2026-09-19T03:48:59.116Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-19T01:21:13.505Z",
+          "updatedAt": "2026-09-19T03:48:58.798Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-19T01:21:13.334Z",
+          "updatedAt": "2026-09-19T03:48:58.658Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-19T01:21:12.963Z",
+          "updatedAt": "2026-09-19T03:48:58.361Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-19T01:21:14.002Z",
+          "updatedAt": "2026-09-19T03:48:59.267Z",
           "fileName": "docs.json"
         }
       },
@@ -51999,51 +51999,50 @@
     },
     {
       "fileId": "98e16be4fed6a676e3ae681ce947a674a75017503f4b4674e51018aeb787f1ae",
-      "versionId": "f41c7cdcdba8eaad5456704f70310dedbcea7586e3cbdb58a3f6c46893bee7b6",
+      "versionId": "3ca3d9c1d3bfac8555335d148d842d61cb67d43c96478c75624531e2384035c1",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-18T23:24:56.954Z",
-          "fileName": "es/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "43c18ce27f715080b93c6c7c367dd218ddc606549933c016ac0d748e23244d06"
-        },
-        "ja": {
-          "updatedAt": "2026-08-18T23:24:56.955Z",
-          "fileName": "ja/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "90dd0ca4a24d2ef1f729ff3135021ce57239b535c9735db109536f13fc843e46"
-        },
         "ko": {
-          "updatedAt": "2026-08-18T23:24:56.956Z",
+          "updatedAt": "2026-09-19T03:49:02.782Z",
           "fileName": "ko/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "cbb1dd1d73298f812fca5feb81396730835da4144dfa15dabbeb14400da44e1e"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T23:24:56.957Z",
-          "fileName": "pt-BR/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "e153276a7098cd389deae4bf51bc25650ac6300e36da2ef49c4e322b927fa3a4"
+          "postProcessHash": "ec4ff2b79aa53afb5f6e2ea0df30d913cfb0e3ad92feb44f1402163f75d194e2"
         },
         "ru": {
-          "updatedAt": "2026-08-18T23:24:56.958Z",
+          "updatedAt": "2026-09-19T03:49:02.783Z",
           "fileName": "ru/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "bab9c5f1008c1e0a34ac8d908aaf4339c1abab3a15ba0f2ad29ea0d192afc7e7"
+          "postProcessHash": "011a755c643f19aa5018d21308b708e057552b2c7d5b0d93d8913173890396cb"
+        },
+        "es": {
+          "updatedAt": "2026-09-19T03:49:02.784Z",
+          "fileName": "es/reference/formats/Parquet/Parquet.mdx",
+          "postProcessHash": "3ff6fa9f00c204c759933b7d1f9344d9fe0c6b238e73906cfecff2072c458fa9"
         },
         "zh": {
-          "updatedAt": "2026-08-18T23:24:56.958Z",
+          "updatedAt": "2026-09-19T03:49:02.784Z",
           "fileName": "zh/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "34c6605577f2c10d626baa9e32dbe8f6e9cc0ba621f4f1215d2f924da9a30816"
+          "postProcessHash": "2449a381e08272dfe0b954495d61b61f712924fc476a71aea59a7c6c8b56dd09"
         },
         "ar": {
-          "updatedAt": "2026-08-18T23:24:56.959Z",
+          "updatedAt": "2026-09-19T03:49:02.785Z",
           "fileName": "ar/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "4244385292baeb0fbc5933e5a790a8503ae8bfa539bca9c76a1207c3599f4597"
+          "postProcessHash": "c097f51f287156f038f6765d521565b07fd57c581a187f26bd1128d59a23ca26"
+        },
+        "ja": {
+          "updatedAt": "2026-09-19T03:49:02.786Z",
+          "fileName": "ja/reference/formats/Parquet/Parquet.mdx",
+          "postProcessHash": "169a280c785fe41088578783df2257250766fd82886e59422f3f516bcf1bd2df"
         },
         "fr": {
-          "updatedAt": "2026-08-18T23:24:56.960Z",
+          "updatedAt": "2026-09-19T03:49:02.787Z",
           "fileName": "fr/reference/formats/Parquet/Parquet.mdx",
-          "postProcessHash": "e2dd229becf3a2c055952ab4430edc2417a489593468ce116258f1f3c86e0b38"
+          "postProcessHash": "aef49afdf10b8e1090e6daa891db845dcbfb0cdea8217463c57d120b7020cb39"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-19T03:49:02.787Z",
+          "fileName": "pt-BR/reference/formats/Parquet/Parquet.mdx",
+          "postProcessHash": "a705a318c97d1517508bf814d7b4cb3705964f8c6ad93d73a53fc063dd357672"
         }
       },
-      "fileName": "reference/formats/Parquet/Parquet.mdx",
-      "staged": false
+      "fileName": "reference/formats/Parquet/Parquet.mdx"
     },
     {
       "fileId": "d4a5326552fb984f0f89d2f8638d22cd41029d9976cbfa6a57b1acb09fae3f18",
