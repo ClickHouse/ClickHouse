@@ -135,10 +135,8 @@ public:
       */
     std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
-    /** If this node is a cast that only removes `LowCardinality`, return its argument; otherwise std::nullopt.
-      * Such a cast holds the values its argument holds, so an index on the argument answers a predicate
-      * written over the cast, while the cast's own rendered name matches no index column.
-      */
+    /// If this node is a cast that only removes `LowCardinality`, return its argument; otherwise std::nullopt.
+    /// Such a cast holds the values its argument holds, but its rendered name matches no index column.
     std::optional<RPNBuilderTreeNode> getLowCardinalityRemovingCastArgument() const;
 
     /// Get tree context

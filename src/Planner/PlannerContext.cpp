@@ -191,10 +191,7 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node) const
 {
-    /// An initiator holds an Array-typed scalar subquery as a `__getScalar` reference, while every other server
-    /// holds its value: a secondary server constant-folds the reference while re-resolving the shipped query, and
-    /// the AST sent to the next hop carries the value rather than the reference. Hash the value so that all of
-    /// them derive the same name.
+    /// An initiator holds an Array-typed scalar subquery as a `__getScalar` reference, every other server its value.
     QueryTreeNodePtr set_source_value_node;
     if (auto scalar_column = tryGetScalarSubqueryColumn(set_source_node, getQueryContext()))
         set_source_value_node = std::make_shared<ConstantNode>(

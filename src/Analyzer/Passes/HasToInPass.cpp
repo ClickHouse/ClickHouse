@@ -53,10 +53,8 @@ public:
         if (!first_arg_column)
             return;
 
-        /// A secondary server only resolves the shipped query, so it reaches the rewritten `in` only if its
-        /// resolver constant-folds the set source; `resolveFunction` refuses to make a constant out of a column
-        /// this large ("Sanity check: do not convert large columns to constants") and lowers `in` back to `has`
-        /// instead, which leaves the two servers naming the predicate differently.
+        /// The resolver refuses to fold a column this large into a constant, so a secondary server lowers the
+        /// rewritten `in` back to `has` and the two servers name the predicate differently.
         if (ConstantValue::wrapToColumnConst(first_arg_column)->byteSize() >= 1_MiB)
             return;
 
