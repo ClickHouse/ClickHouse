@@ -1,0 +1,78 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Tiny inputs exercise SIMD setup overhead in the small kernel. -->
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, repeat('AB', 4), repeat('BA', 4)),
+            if(number % 2 = 0, repeat('BA', 4), repeat('AB', 4))))
+        FROM numbers(5000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, repeat('AB', 32), repeat('BA', 32)),
+            if(number % 2 = 0, repeat('BA', 32), repeat('AB', 32))))
+        FROM numbers(1000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            repeat('ABCD', 15),
+            if(number % 2 = 0, repeat('ABCD', 50), repeat('DCBA', 50))))
+        FROM numbers(1000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, repeat('XYZ', 66), repeat('ZYX', 66)),
+            if(number % 2 = 0, repeat('ZYX', 66), repeat('XYZ', 66))))
+        FROM numbers(300000) FORMAT Null
+    ]]></query>
+
+    <!-- 65-byte inputs select the scanner immediately after the small-kernel boundary. -->
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, concat(repeat('AB', 32), 'A'), concat(repeat('BA', 32), 'B')),
+            if(number % 2 = 0, concat(repeat('BA', 32), 'B'), concat(repeat('AB', 32), 'A'))))
+        FROM numbers(500000) FORMAT Null
+    ]]></query>
+
+    <!-- 258-byte inputs exercise the 128-byte unrolled scanner loop. -->
+    <query><![CDATA[
+        SELECT sum(jaroSimilarity(
+            if(number % 2 = 0, repeat('XYZ', 86), repeat('ZYX', 86)),
+            if(number % 2 = 0, repeat('ZYX', 86), repeat('XYZ', 86))))
+        FROM numbers(100000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroWinklerSimilarity(
+            if(number % 2 = 0, repeat('AB', 32), repeat('BA', 32)),
+            if(number % 2 = 0, repeat('BA', 32), repeat('AB', 32))))
+        FROM numbers(1000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroWinklerSimilarity(
+            if(number % 2 = 0, repeat('XYZ', 66), repeat('ZYX', 66)),
+            if(number % 2 = 0, repeat('ZYX', 66), repeat('XYZ', 66))))
+        FROM numbers(300000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroWinklerSimilarity(
+            if(number % 2 = 0, repeat('AB', 4), repeat('BA', 4)),
+            if(number % 2 = 0, repeat('BA', 4), repeat('AB', 4))))
+        FROM numbers(5000000) FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(jaroWinklerSimilarity(
+            if(number % 2 = 0, repeat('XYZ', 86), repeat('ZYX', 86)),
+            if(number % 2 = 0, repeat('ZYX', 86), repeat('XYZ', 86))))
+        FROM numbers(100000) FORMAT Null
+    ]]></query>
+</test>
