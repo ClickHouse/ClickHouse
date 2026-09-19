@@ -198,6 +198,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
+    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
+    bool canReadInReverseOrder();
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
