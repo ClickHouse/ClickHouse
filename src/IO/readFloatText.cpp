@@ -97,7 +97,9 @@ bool assertOrParseNaN(ReadBuffer & buf)
 
 
 // credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
-inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
+/// The addition of the magic constant carries between the packed bytes on purpose - that is what
+/// makes this a branchless test of all eight at once.
+NO_SANITIZE_UNSIGNED_OVERFLOW inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
 {
     return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
 }
