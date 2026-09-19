@@ -33,7 +33,7 @@ struct RocksDBSettings
     void applyDefinition(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(RocksDBSettings)
+    SettingDescriptions enumerateSettings() const;
     static void checkCanSet(std::string_view name, const Field & value);
 
 private:

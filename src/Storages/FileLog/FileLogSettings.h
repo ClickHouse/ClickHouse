@@ -61,7 +61,7 @@ struct FileLogSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(FileLogSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<FileLogSettingsImpl> impl;

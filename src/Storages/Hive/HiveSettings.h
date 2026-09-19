@@ -68,7 +68,7 @@ struct HiveSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(HiveSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<HiveSettingsImpl> impl;

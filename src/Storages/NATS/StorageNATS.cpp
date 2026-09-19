@@ -1366,7 +1366,7 @@ void registerStorageNATS(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = NATSSettings::enumerateEngineSettings,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<NATSSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(

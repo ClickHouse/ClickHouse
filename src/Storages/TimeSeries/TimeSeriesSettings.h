@@ -62,7 +62,7 @@ struct TimeSeriesSettings
     void recordDefinition(const SettingsChanges & stated);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(TimeSeriesSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

@@ -42,7 +42,7 @@ struct MemorySettings
     void applyDefinition(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(MemorySettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<MemorySettingsImpl> impl;

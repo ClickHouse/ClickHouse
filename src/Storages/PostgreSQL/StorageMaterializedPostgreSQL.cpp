@@ -813,7 +813,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = MaterializedPostgreSQLSettings::enumerateEngineSettings,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<MaterializedPostgreSQLSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(

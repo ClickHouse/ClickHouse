@@ -188,7 +188,7 @@ struct DataLakeStorageSettings
     bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(DataLakeStorageSettings)
+    SettingDescriptions enumerateSettings() const;
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);

@@ -49,7 +49,7 @@ struct PostgreSQLSettings
     void loadFromQueryContext(const Context & context);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(PostgreSQLSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

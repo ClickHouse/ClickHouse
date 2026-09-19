@@ -50,8 +50,8 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<T
     return result;
 }
 
-/// Defines what `DECLARE_SETTINGS_ENUMERATION` declares. Belongs in the settings struct's .cpp,
-/// the only place its `Impl` type is complete.
+/// Defines `TYPE::enumerateSettings`. Belongs in the settings struct's .cpp, the only place its `Impl` type is
+/// complete.
 #define IMPLEMENT_SETTINGS_ENUMERATION(TYPE) \
     SettingDescriptions TYPE::enumerateSettings() const { return enumerateSettingsFromImpl(*impl); }
 

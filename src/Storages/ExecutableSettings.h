@@ -39,7 +39,7 @@ struct ExecutableSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(ExecutableSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<ExecutableSettingsImpl> impl;

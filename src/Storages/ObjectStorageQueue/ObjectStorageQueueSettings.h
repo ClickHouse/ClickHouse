@@ -81,7 +81,7 @@ struct ObjectStorageQueueSettings
     /// canonical one. `loadFromQuery` rewrites these before applying them, so a stored `CREATE`
     /// query can name a setting in a form the settings struct does not know.
     static std::optional<std::string_view> adjustSettingName(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;

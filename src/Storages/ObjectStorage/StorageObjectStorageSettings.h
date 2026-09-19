@@ -65,7 +65,7 @@ struct StorageObjectStorageSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;

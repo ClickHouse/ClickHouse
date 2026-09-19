@@ -1152,7 +1152,7 @@ void registerStorageHive(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = HiveSettings::enumerateEngineSettings,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<HiveSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(

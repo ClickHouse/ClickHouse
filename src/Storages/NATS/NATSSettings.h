@@ -71,7 +71,7 @@ struct NATSSettings
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(NATSSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     void setAtOffset(size_t offset, const Field & value);

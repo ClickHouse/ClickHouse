@@ -61,7 +61,7 @@ struct RabbitMQSettings
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(RabbitMQSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<RabbitMQSettingsImpl> impl;

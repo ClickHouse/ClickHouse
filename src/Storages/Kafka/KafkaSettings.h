@@ -86,7 +86,7 @@ struct KafkaSettings
     void sanityCheck(ContextPtr global_context) const;
 
     static bool hasBuiltin(std::string_view name);
-    DECLARE_SETTINGS_ENUMERATION(KafkaSettings)
+    SettingDescriptions enumerateSettings() const;
 
 private:
     void setAtOffset(size_t offset, const Field & value);

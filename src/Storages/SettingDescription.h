@@ -83,17 +83,16 @@ struct SettingDescription
 
 using SettingDescriptions = std::vector<SettingDescription>;
 
-/// The two entry points a settings struct exposes to `system.engine_settings` and
-/// `system.table_settings`. Goes in the struct's body, paired with
-/// `IMPLEMENT_SETTINGS_ENUMERATION` in its .cpp, where the settings implementation is complete.
+/// For `system.engine_settings`: the compiled defaults of `TSettings`, which is what an engine without a server-level
+/// settings instance uses. Registered as `.enumerate_engine_settings_fn = enumerateCompiledDefaults<TSettings>`; the
+/// engines that have such an instance - `MergeTree`, `Distributed` - register a function of their own.
 ///
-/// `enumerateEngineSettings` is defined here because it is the same for every engine that has no
-/// server-level settings instance: the compiled defaults are what such an engine uses. The two
-/// that do have one, `MergeTree` and `Distributed`, declare and define their own.
-/// NOLINTBEGIN(bugprone-macro-parentheses): the argument is a type name, which cannot be parenthesized.
-#define DECLARE_SETTINGS_ENUMERATION(TYPE) \
-    static SettingDescriptions enumerateEngineSettings(ContextPtr) { return TYPE{}.enumerateSettings(); } \
-    SettingDescriptions enumerateSettings() const;
-/// NOLINTEND(bugprone-macro-parentheses)
+/// `TSettings::enumerateSettings` describes one instance, for `system.table_settings` as well; every settings struct
+/// declares it and defines it with `IMPLEMENT_SETTINGS_ENUMERATION`.
+template <typename TSettings>
+SettingDescriptions enumerateCompiledDefaults(ContextPtr)
+{
+    return TSettings{}.enumerateSettings();
+}
 
 }

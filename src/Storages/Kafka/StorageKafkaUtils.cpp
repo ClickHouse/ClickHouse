@@ -364,7 +364,7 @@ void registerStorageKafka(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = KafkaSettings::enumerateEngineSettings,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<KafkaSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(
