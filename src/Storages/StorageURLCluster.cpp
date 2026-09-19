@@ -109,7 +109,11 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -133,7 +137,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     if (!endsWith(table_function->name, "Cluster"))
     {
         ASTs & args = expression_list->children;
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
         table_function->name += "Cluster";
     }
 }

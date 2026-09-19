@@ -54,9 +54,27 @@ public:
 
     const String & getClusterName() const { return cluster_name; }
 
+    /// Prepare the `SELECT ... FROM f(...)` query (`f` is a table function) for the other nodes of the cluster: add the
+    /// structure and format arguments so that the nodes do not infer the schema again, and turn a plain table
+    /// function (`url`, `s3`, ...) that `parallel_replicas_for_cluster_engines` converted into this cluster
+    /// storage into its `*Cluster` variant with the cluster name argument, so that the nodes take their read
+    /// tasks from the initiator instead of reading every file on their own. Called by `read` and by the
+    /// distributed `INSERT ... SELECT` in `InterpreterInsertQuery` and `StorageDistributed`, which forward
+    /// the query the same way.
+    ///
+    /// `target_cluster_name` is the cluster whose nodes will run the query, and it becomes the first argument of
+    /// the `*Cluster` variant, so it has to be resolvable there. It is this storage's own cluster when the source
+    /// drives the fan-out (`read`, and `INSERT INTO <replicated table> SELECT`), and the destination's cluster when
+    /// the destination drives it (`INSERT INTO <Distributed table> SELECT` forwards to the shards of the
+    /// `Distributed` table's cluster, which have nothing to do with `cluster_for_parallel_replicas`).
+    virtual void updateQueryToSendIfNeeded(
+        ASTPtr & /*query*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const ContextPtr & /*context*/,
+        const String & /*target_cluster_name*/) {}
+
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
     virtual void updateConfigurationIfNeeded(ContextPtr /* context */) {}
 

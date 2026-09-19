@@ -120,7 +120,8 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
+    /// The nodes that will run the query are the nodes of this storage's own cluster.
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
