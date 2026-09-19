@@ -29,29 +29,29 @@ INSERT INTO bucket_top_k_setting SELECT number % 10000, number FROM numbers(1000
 
 -- A lone `count` uses conversion-stage selection, while an integer `max` uses threshold merging.
 SELECT k, count() AS c FROM bucket_top_k_setting GROUP BY k ORDER BY c DESC LIMIT 3
-    SETTINGS log_comment = '05212_a_count_enabled' FORMAT Null;
+    SETTINGS log_comment = '05212_abtk_a_count_enabled' FORMAT Null;
 SELECT k, max(v) AS m FROM bucket_top_k_setting GROUP BY k ORDER BY m DESC LIMIT 3
-    SETTINGS log_comment = '05212_b_max_enabled' FORMAT Null;
+    SETTINGS log_comment = '05212_abtk_b_max_enabled' FORMAT Null;
 
 SELECT k, count() AS c FROM bucket_top_k_setting GROUP BY k ORDER BY c DESC LIMIT 3
-    SETTINGS log_comment = '05212_c_count_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
+    SETTINGS log_comment = '05212_abtk_c_count_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
 SELECT k, max(v) AS m FROM bucket_top_k_setting GROUP BY k ORDER BY m DESC LIMIT 3
-    SETTINGS log_comment = '05212_d_max_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
+    SETTINGS log_comment = '05212_abtk_d_max_disabled', query_plan_aggregation_bucket_top_k = 0 FORMAT Null;
 
 SELECT k, count() AS c FROM bucket_top_k_setting GROUP BY k ORDER BY c DESC LIMIT 3
-    SETTINGS log_comment = '05212_e_count_global_disabled', query_plan_enable_optimizations = 0 FORMAT Null;
+    SETTINGS log_comment = '05212_abtk_e_count_global_disabled', query_plan_enable_optimizations = 0 FORMAT Null;
 SELECT k, max(v) AS m FROM bucket_top_k_setting GROUP BY k ORDER BY m DESC LIMIT 3
-    SETTINGS log_comment = '05212_f_max_global_disabled', query_plan_enable_optimizations = 0 FORMAT Null;
+    SETTINGS log_comment = '05212_abtk_f_max_global_disabled', query_plan_enable_optimizations = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    replaceOne(log_comment, '05212_', ''),
+    replaceOne(log_comment, '05212_abtk_', ''),
     ProfileEvents['AggregationBucketTopKConversions'] > 0,
     ProfileEvents['AggregationThresholdTopKMerges'] > 0,
     ProfileEvents['AggregationThresholdTopKPrunedCells'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '05212_')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05212\_abtk\_%'
 ORDER BY log_comment;
 
 DROP TABLE bucket_top_k_setting;
