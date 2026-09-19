@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -85,6 +86,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <filesystem>
+#include <functional>
 #include <shared_mutex>
 #include <algorithm>
 #include <unordered_set>
@@ -113,6 +115,7 @@ namespace Setting
     extern const SettingsBool engine_file_allow_create_multiple_files;
     extern const SettingsBool engine_file_empty_if_not_exists;
     extern const SettingsBool engine_file_skip_empty_files;
+    extern const SettingsUInt64 engine_file_split_on_write_by_size_bytes;
     extern const SettingsBool engine_file_truncate_on_insert;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
@@ -139,6 +142,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_FSTAT;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_UNLINK;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -1528,7 +1532,8 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::shared_lock<std::shared_timed_mutex> read_lock_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
@@ -1536,6 +1541,8 @@ StorageFileSource::FilesIterator::FilesIterator(
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
     , archive_member_path(std::move(archive_member_path_))
+    , total_files_count(files_.size())
+    , read_lock(std::move(read_lock_))
 {
     std::optional<ActionsDAG> filter_dag;
     auto & filter_sources = archive_info ? archive_info->paths_to_archives : files;
@@ -1646,13 +1653,10 @@ StorageFileSource::StorageFileSource(
     , need_only_count(need_only_count_)
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
+    /// The storage is locked for reading by `files_iterator`, which holds the shared lock the file
+    /// list was taken under (see `ReadFromFile::createIterator`) for as long as this source exists.
     if (!storage->use_table_fd)
-    {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         storage->readers_counter.fetch_add(1, std::memory_order_release);
-    }
 }
 
 void StorageFileSource::beforeDestroy()
@@ -1664,7 +1668,8 @@ void StorageFileSource::beforeDestroy()
 
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
     {
-        shared_lock.unlock();
+        /// This is the last reader, so the lock shared by all of them through the iterator can go.
+        files_iterator->releaseReadLock();
         auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(getContext())};
 
         if (!exclusive_lock)
@@ -1672,7 +1677,7 @@ void StorageFileSource::beforeDestroy()
         if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
             return;
 
-        for (auto & file_path_ref : storage->paths)
+        for (const auto & file_path_ref : storage->getPathsSnapshot())
         {
             try
             {
@@ -1689,7 +1694,9 @@ void StorageFileSource::beforeDestroy()
                     throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
 
                 fs::rename(fs::path(file_path_ref), file_path);
-                file_path_ref = file_path.string();
+                /// The table keeps reading the file under its new name: the rename happens while the query
+                /// that has read it is still running, and another reader of the same table may follow.
+                storage->renamePath(file_path_ref, file_path.string());
                 storage->was_renamed = true;
             }
             catch (const std::exception & e)
@@ -1946,7 +1953,7 @@ Chunk StorageFileSource::generate()
             if (storage->archive_info)
                 file_num = storage->archive_info->paths_to_archives.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             else
-                file_num = storage->paths.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                file_num = storage->getPathsCount();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
 
             chassert(file_num > 0);
 
@@ -2361,7 +2368,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
     /// The lazy pass reopens every path and uses the physical row positions from the main pass.
     /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
     /// that the second read sees the same data.
-    for (const auto & path : storage->paths)
+    for (const auto & path : storage->getPathsSnapshot())
     {
         struct stat file_stat{};
         if (0 != stat(path.c_str(), &file_stat))
@@ -2373,7 +2380,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The lazy pass rereads the surviving rows by their physical positions, which needs random
     /// access to the raw file; a compression wrapper reads only sequentially.
-    for (const auto & path : storage->paths)
+    for (const auto & path : storage->getPathsSnapshot())
         if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
             return false;
 
@@ -2437,7 +2444,7 @@ void StorageFile::read(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     if (use_table_fd)
-        paths = {""};   /// when use fd, paths are empty
+        setPaths({""});   /// when use fd, paths are empty
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
@@ -2476,15 +2483,29 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
     if (files_iterator)
         return;
 
+    /// The list of the files is taken under the shared lock, and the lock stays with the iterator
+    /// until the sources are done with it: an insert that is split into several files publishes them
+    /// one by one while it holds the exclusive lock, so a snapshot taken without the lock could see
+    /// a prefix of the files of an insert that is complete by the time the sources open them, or
+    /// the files a truncating insert is about to delete.
+    std::shared_lock<std::shared_timed_mutex> read_lock;
+    if (!storage->use_table_fd)
+    {
+        read_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
+        if (!read_lock)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+    }
+
     files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
-        storage->paths,
+        storage->getPathsSnapshot(),
         storage->archive_info,
         predicate,
         storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        std::move(read_lock));
 }
 
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
@@ -2497,7 +2518,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (storage->archive_info)
         files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = storage->paths.size();
+        files_to_read = files_iterator->getTotalFilesCount();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
@@ -2757,9 +2778,107 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
 }
 
 
+/// Returns the name of the next file to write when the data is split by size (see `engine_file_split_on_write_by_size_bytes`).
+/// `sequence_number` is advanced past the returned name. If the generated name is already taken, either the number is
+/// skipped (when `engine_file_allow_create_multiple_files` is enabled) or an exception is thrown.
+static String getNextPathForSplittingBySize(
+    const NumberedFileNames & numbered_paths, size_t & sequence_number, bool truncate_on_insert, bool allow_create_multiple_files)
+{
+    while (true)
+    {
+        String new_path = numbered_paths.getName(sequence_number);
+        ++sequence_number;
+
+        if (truncate_on_insert || !fs::exists(new_path))
+            return new_path;
+
+        if (!allow_create_multiple_files)
+            throw Exception(
+                ErrorCodes::FILE_ALREADY_EXISTS,
+                "File {} already exists, but it is needed to continue writing the data split by size. "
+                "You can enable truncate on insertion with the `engine_file_truncate_on_insert` setting, "
+                "or you can configure ClickHouse to skip the taken names "
+                "by enabling the setting `engine_file_allow_create_multiple_files`",
+                new_path);
+    }
+}
+
+
+/// A truncating insert overwrites the whole dataset of the table. If the previous insert has produced
+/// more files than the current one, the leftovers have to be deleted - otherwise the stale data will be
+/// still visible both for the readers of this table and for the readers of the glob pattern over the directory.
+///
+/// This is the precise variant, for a table that has written these files itself and still remembers them:
+/// exactly they are deleted, even if the previous insert had to skip some of the numbers because the names
+/// were taken by someone else.
+/// `on_removed` is called for every file that is no longer there, right after it is gone, so that the caller
+/// can retire it from the list of the paths of the table one by one. A cleanup that throws in the middle then
+/// leaves the table reading exactly the files that still exist, instead of the ones it has already deleted.
+static void removeStaleSplitFiles(const Strings & stale_paths, const std::function<void(const String &)> & on_removed)
+{
+    for (const auto & stale_path : stale_paths)
+    {
+        /// A file that is already gone is not an error, a file that cannot be deleted is:
+        /// otherwise the truncating insert would succeed with the stale data still visible.
+        std::error_code error;
+        bool removed = fs::remove(stale_path, error);
+        if (error)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Cannot remove the stale file {}: {}", stale_path, error.message());
+        /// The deletion of a file that the table has read until now is worth a trace in the server log.
+        if (removed)
+            LOG_INFO(getLogger("StorageFile"), "Removed the file {} written by a previous insert into the table", stale_path);
+        else
+            LOG_INFO(getLogger("StorageFile"), "The file {} written by a previous insert into the table is already gone", stale_path);
+        on_removed(stale_path);
+    }
+}
+
+
+/// The same for a table that does not know the names of the files of the previous insert - an `INSERT` into
+/// the `file` table function, or a table that was reloaded since then. The files are written with consecutive
+/// numbers starting from `numbered_paths.start_sequence_number`, so the removal stops at the first missing number.
+///
+/// Such numbered names are not attributed to a particular table - the engine keeps no metadata about the files
+/// it has written. The removal is done only when the numbered names are unambiguously overwritten by this insert
+/// anyway: a truncating insert that is split by size claims the whole numbered sequence of the path, while
+/// `engine_file_allow_create_multiple_files` lets an insert step over the names taken by someone else,
+/// and then it is not known which of the files belong to this table - nothing is deleted in that case.
+static void removeStaleSplitFilesByNumber(const NumberedFileNames & numbered_paths, bool allow_create_multiple_files)
+{
+    if (allow_create_multiple_files)
+        return;
+
+    size_t sequence_number = numbered_paths.start_sequence_number;
+    while (true)
+    {
+        String stale_path = numbered_paths.getName(sequence_number);
+        ++sequence_number;
+
+        /// The sequence ends at the first name that does not exist. A failure to delete an existing file
+        /// is an error: otherwise the truncating insert would succeed with the stale data still visible.
+        std::error_code error;
+        bool removed = fs::remove(stale_path, error);
+        if (error)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Cannot remove the stale file {}: {}", stale_path, error.message());
+        if (!removed)
+            break;
+        LOG_INFO(getLogger("StorageFile"), "Removed the stale file {} of a previous insert split by size, overwritten by a truncating insert", stale_path);
+    }
+}
+
+
 class StorageFileSink final : public SinkToStorage, WithContext
 {
 public:
+    /// Called when the current file has reached the size limit configured by `engine_file_split_on_write_by_size_bytes`.
+    /// Returns the name of the next file to write the data into.
+    using GetNextPathCallback = std::function<String()>;
+
+    /// Called after the data of the file returned by `GetNextPathCallback` has been written and the file
+    /// has been closed. Only then the file is registered in the table, so that a concurrent `SELECT` never
+    /// sees the name of a file that the insert could not create.
+    using PublishPathCallback = std::function<void(const String &)>;
+
     StorageFileSink(
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
@@ -2771,7 +2890,10 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        size_t split_on_write_by_size_bytes_ = 0,
+        GetNextPathCallback get_next_path_ = {},
+        PublishPathCallback publish_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2783,7 +2905,11 @@ public:
         , format_name(format_name_)
         , format_settings(format_settings_)
         , flags(flags_)
+        , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
+        , get_next_path(std::move(get_next_path_))
+        , publish_path(std::move(publish_path_))
     {
+        checkSplittingIsPossible();
         initialize();
     }
 
@@ -2799,7 +2925,11 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        size_t split_on_write_by_size_bytes_ = 0,
+        GetNextPathCallback get_next_path_ = {},
+        PublishPathCallback publish_path_ = {},
+        bool path_is_published_ = true)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2811,10 +2941,15 @@ public:
         , format_name(format_name_)
         , format_settings(format_settings_)
         , flags(flags_)
+        , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
+        , get_next_path(std::move(get_next_path_))
+        , publish_path(std::move(publish_path_))
+        , path_is_published(path_is_published_)
         , lock(std::move(lock_))
     {
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        checkSplittingIsPossible();
         initialize();
     }
 
@@ -2824,9 +2959,24 @@ public:
             cancelBuffers();
     }
 
+    void checkSplittingIsPossible() const
+    {
+        if (!split_on_write_by_size_bytes)
+            return;
+
+        if (use_table_fd)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot split the data by size while writing into a file descriptor. "
+                "Set `engine_file_split_on_write_by_size_bytes` to 0 to write into the table {}",
+                table_name_for_log);
+
+        if (!get_next_path)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next file");
+    }
+
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
         if (use_table_fd)
         {
             naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
@@ -2838,7 +2988,8 @@ public:
         }
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
-        bool do_not_write_prefix = naked_buffer->size();
+        bytes_in_file_before_write = naked_buffer->size();
+        bool do_not_write_prefix = bytes_in_file_before_write;
         const auto & settings = getContext()->getSettingsRef();
 
         /// The size is re-checked here, per sink: `StorageFile::write` checks it once at query
@@ -2849,15 +3000,25 @@ public:
                 ErrorCodes::CANNOT_APPEND_TO_FILE,
                 "Data cannot be appended to {} because the {} format doesn't support appends",
                 use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
-        write_buf = wrapWriteBufferWithCompressionMethod(
-            std::move(naked_buffer),
-            compression_method,
-            static_cast<int>(settings[Setting::output_format_compression_level]),
-            static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
-            settings[Setting::snappy_mode]);
 
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-                                                                             *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
+        /// The sink keeps the ownership of the buffer that writes into the file, so that the amount of the
+        /// data written into the file can be checked for splitting. The compressing wrapper, if any, is
+        /// created as a non-owning one on top of it.
+        if (compression_method != CompressionMethod::None)
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                naked_buffer.get(),
+                compression_method,
+                static_cast<int>(settings[Setting::output_format_compression_level]),
+                static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+                settings[Setting::snappy_mode]);
+
+        /// With the parallel formatting, the data is written into the buffer by a background thread,
+        /// and the amount of the written data cannot be checked after every block without a data race.
+        writer = split_on_write_by_size_bytes
+            ? FormatFactory::instance().getOutputFormat(format_name,
+                                                        getWriteBuffer(), metadata_snapshot->getSampleBlock(), getContext(), format_settings)
+            : FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
+                                                                          getWriteBuffer(), metadata_snapshot->getSampleBlock(), getContext(), format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();
@@ -2869,7 +3030,24 @@ public:
     {
         if (isCancelled())
             return;
+
+        /// The previous file is already finished. Start the next one only now, when there is data for it.
+        if (split_on_write_by_size_bytes && !writer)
+        {
+            path = get_next_path();
+            initialize();
+            path_is_published = false;
+        }
+
         writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+
+        /// Continue writing into a new file as soon as the current one became large enough.
+        /// The current block is always written in full, so the file can be larger than the requested size.
+        if (split_on_write_by_size_bytes && bytes_in_file_before_write + naked_buffer->count() >= split_on_write_by_size_bytes)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
     void onFinish() override
@@ -2890,7 +3068,9 @@ private:
         {
             writer->flush();
             writer->finalize();
-            write_buf->finalize();
+            if (write_buf)
+                write_buf->finalize();
+            naked_buffer->finalize();
         }
         catch (...)
         {
@@ -2898,12 +3078,22 @@ private:
             cancelBuffers();
             throw;
         }
+
+        /// The file is complete - only now it becomes a part of the table. If the insert fails while
+        /// writing it, the table keeps reading the files of the previous shards, and not a truncated one.
+        if (!path_is_published)
+        {
+            if (publish_path)
+                publish_path(path);
+            path_is_published = true;
+        }
     }
 
     void releaseBuffers()
     {
         writer.reset();
         write_buf.reset();
+        naked_buffer.reset();
     }
 
     void cancelBuffers() noexcept
@@ -2912,12 +3102,26 @@ private:
             writer->cancel();
         if (write_buf)
             write_buf->cancel();
+        if (naked_buffer)
+            naked_buffer->cancel();
+    }
+
+    /// The buffer the data is formatted into: the compressing wrapper if the data is compressed, the file buffer otherwise.
+    WriteBuffer & getWriteBuffer()
+    {
+        return write_buf ? *write_buf : *naked_buffer;
     }
 
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
 
+    /// The buffer that writes into the file. It is also used to count the number of bytes written to the file.
+    /// It is declared before `write_buf` so that it outlives the compressing wrapper referencing it.
+    std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
+    /// The compressing wrapper around `naked_buffer`; it is empty if the data is written uncompressed.
     std::unique_ptr<WriteBuffer> write_buf;
+    /// The size of the file before this insert - the data can be appended to an already existing file.
+    size_t bytes_in_file_before_write = 0;
     OutputFormatPtr writer;
 
     int table_fd;
@@ -2929,6 +3133,13 @@ private:
     std::optional<FormatSettings> format_settings;
 
     int flags;
+    const size_t split_on_write_by_size_bytes;
+    const GetNextPathCallback get_next_path;
+    const PublishPathCallback publish_path;
+    /// Whether the file that is being written is already a part of the table. The first file of the insert
+    /// usually is - unless the insert had to step aside from a non-empty file into a new one; the next
+    /// files of a split insert never are. A file that is not, is registered only after it has been written.
+    bool path_is_published = true;
     std::unique_lock<std::shared_timed_mutex> lock;
 };
 
@@ -2971,6 +3182,61 @@ public:
         checkCreationIsAllowedResolvingDotDot(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
 
         fs::create_directories(fs::path(filepath).parent_path());
+
+        const auto & settings = context->getSettingsRef();
+        const size_t split_on_write_by_size_bytes = settings[Setting::engine_file_split_on_write_by_size_bytes];
+        const bool truncate_on_insert = settings[Setting::engine_file_truncate_on_insert];
+        const bool allow_create_multiple_files = settings[Setting::engine_file_allow_create_multiple_files];
+
+        /// The files after the first one are numbered: `data.1.tsv`, `data.2.tsv`, ... The number is placed into
+        /// the path pattern rather than into the path of the partition, so that a partition id with a dot in it
+        /// cannot shift it - see `IPartitionStrategy::getNumberedPathsForWrite`.
+        const NumberedFileNames numbered_paths = partition_strategy->getNumberedPathsForWrite(path, partition_id, filepath);
+        size_t sequence_number = numbered_paths.start_sequence_number;
+
+        /// The same handoff to a new file as in `StorageFile::write`: the data of a format that does not support
+        /// appending cannot be added to a non-empty file, and with `engine_file_allow_create_multiple_files`
+        /// the insert steps aside into the first free numbered name instead of failing. An insert split by size
+        /// then continues the numbering from there.
+        std::error_code error_code;
+        if (!truncate_on_insert
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
+            && fs::file_size(filepath, error_code) != 0 && !error_code)
+        {
+            if (!allow_create_multiple_files)
+                throw Exception(
+                    ErrorCodes::CANNOT_APPEND_TO_FILE,
+                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                    " You can enable truncate on insertion with the `engine_file_truncate_on_insert` setting,"
+                    " or you can configure ClickHouse to create a new file "
+                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                    filepath, format_name);
+
+            String new_path;
+            do
+            {
+                new_path = numbered_paths.getName(sequence_number);
+                ++sequence_number;
+            }
+            while (fs::exists(new_path));
+            filepath = new_path;
+        }
+
+        StorageFileSink::GetNextPathCallback get_next_path;
+        if (split_on_write_by_size_bytes)
+        {
+            /// A partitioned sink keeps no list of the files it has written, so there is nothing
+            /// to attribute the numbered names of a previous insert to, and the removal is done only
+            /// for a truncating insert that is split by size and therefore claims the whole sequence.
+            if (truncate_on_insert)
+                removeStaleSplitFilesByNumber(numbered_paths, allow_create_multiple_files);
+
+            get_next_path = [numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files]() mutable -> String
+            {
+                return getNextPathForSplittingBySize(numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files);
+            };
+        }
+
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -2982,7 +3248,9 @@ public:
             format_settings,
             format_name,
             context,
-            flags);
+            flags,
+            split_on_write_by_size_bytes,
+            std::move(get_next_path));
     }
 
 private:
@@ -3051,15 +3319,35 @@ SinkToStoragePtr StorageFile::write(
             flags);
     }
 
+    /// The lock of the whole insert is taken here rather than in the sink, so that the stale-tail cleanup
+    /// below and the update of the list of the paths happen under it as well: a `SELECT` that is already
+    /// reading this table holds the same lock for the duration of its read, and so finishes before the files
+    /// it reads are deleted or overwritten.
+    std::unique_lock write_lock{rwlock, getLockTimeout(context)};
+    if (!write_lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
     String path;
-    if (!paths.empty())
+    /// Whether the file this insert starts with is already a part of the table. A new file is registered
+    /// in it only after it has been written - see `StorageFileSink::PublishPathCallback`.
+    bool first_path_is_published = true;
+    /// When the data is split by size, the files after the first one are named `data.1.Parquet`, `data.2.Parquet`, ...
+    /// The numbering is derived per insert from the name of the file this insert starts with: the next files
+    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
+    /// had to step aside from a non-empty file into a numbered one.
+    NumberedFileNames numbered_paths;
+    size_t sequence_number = 1;
+    Strings current_paths = getPathsSnapshot();
+    if (!current_paths.empty())
     {
         if (is_path_with_globs)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Table '{}' is in readonly mode because of globs in filepath",
                             getStorageID().getNameForLogs());
 
-        path = paths.front();
+        path = current_paths.front();
+        numbered_paths = getNumberedFileNames(path);
+        sequence_number = numbered_paths.start_sequence_number;
         fs::create_directories(fs::path(path).parent_path());
 
         std::error_code error_code;
@@ -3069,17 +3357,17 @@ SinkToStoragePtr StorageFile::write(
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                auto pos = path.find_first_of('.', path.find_last_of('/'));
-                size_t index = paths.size();
+                /// The table has already stepped aside `current_paths.size() - 1` times, so the search starts there.
+                sequence_number = std::max(sequence_number, current_paths.size());
                 String new_path;
                 do
                 {
-                    new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
-                    ++index;
+                    new_path = numbered_paths.getName(sequence_number);
+                    ++sequence_number;
                 }
                 while (fs::exists(new_path));
-                paths.push_back(new_path);
                 path = new_path;
+                first_path_is_published = false;
             }
             else
                 throw Exception(
@@ -3092,10 +3380,67 @@ SinkToStoragePtr StorageFile::write(
         }
     }
 
+    /// The new files are added to the list of paths of the table, so that they are visible for reading.
+    const size_t split_on_write_by_size_bytes = context->getSettingsRef()[Setting::engine_file_split_on_write_by_size_bytes];
+
+    /// A truncating insert overwrites the table: the numbered files of the previous inserts are forgotten,
+    /// and the numbering starts over, overwriting them one by one. It does not matter whether the current
+    /// insert is split by size: a rewrite with `engine_file_split_on_write_by_size_bytes` turned back to 0
+    /// has to drop the numbered tail of the previous split insert as well, otherwise both this table and
+    /// the readers of the glob pattern over the directory keep seeing the stale rows.
+    ///
+    /// A file is dropped from the list of the paths only after it has been deleted, so that a failure to
+    /// delete a file leaves the table reading exactly the files that are still there: neither the whole tail
+    /// when nothing could be removed, nor a file that is already gone when the removal stopped in the middle.
+    if (!use_table_fd && !current_paths.empty() && context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
+    {
+        if (current_paths.size() > 1)
+        {
+            /// These files were written by this table, and are deleted whatever their names are.
+            removeStaleSplitFiles(
+                Strings(current_paths.begin() + 1, current_paths.end()),
+                [this](const String & removed_path) { retirePath(removed_path); });
+            current_paths.resize(1);
+        }
+        else if (split_on_write_by_size_bytes)
+        {
+            /// The table has no numbered tail of its own to delete - it either never had one, or lost it
+            /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
+            removeStaleSplitFilesByNumber(
+                numbered_paths,
+                context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files]);
+        }
+    }
+
+    StorageFileSink::GetNextPathCallback get_next_path;
+    StorageFileSink::PublishPathCallback publish_path;
+    if (split_on_write_by_size_bytes && !use_table_fd && !current_paths.empty())
+    {
+        get_next_path = [numbered_paths, sequence_number,
+                         truncate_on_insert = context->getSettingsRef()[Setting::engine_file_truncate_on_insert].value,
+                         allow_create_multiple_files = context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
+        {
+            return getNextPathForSplittingBySize(numbered_paths, sequence_number, truncate_on_insert, allow_create_multiple_files);
+        };
+    }
+
+    /// The name of a new file - the first one of the insert when the insert had to step aside from a non-empty
+    /// file with `engine_file_allow_create_multiple_files`, or any next one of an insert split by size - becomes
+    /// visible for the readers of this table only after the file has been written: if the insert fails to create
+    /// it - a directory is in the way, no permissions, no space left - the table does not keep a name that
+    /// a `SELECT` would then fail on.
+    if (!first_path_is_published || get_next_path)
+    {
+        publish_path = [storage = std::static_pointer_cast<StorageFile>(shared_from_this())](const String & new_path)
+        {
+            storage->appendPath(new_path);
+        };
+    }
+
     return std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
-        std::unique_lock{rwlock, getLockTimeout(context)},
+        std::move(write_lock),
         table_fd,
         use_table_fd,
         base_path,
@@ -3104,7 +3449,11 @@ SinkToStoragePtr StorageFile::write(
         format_settings,
         format_name,
         context,
-        flags);
+        flags,
+        split_on_write_by_size_bytes,
+        std::move(get_next_path),
+        std::move(publish_path),
+        first_path_is_published);
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -3112,11 +3461,49 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+Strings StorageFile::getPathsSnapshot() const
+{
+    std::lock_guard lock(paths_mutex);
+    return paths;
+}
+
+size_t StorageFile::getPathsCount() const
+{
+    std::lock_guard lock(paths_mutex);
+    return paths.size();
+}
+
+void StorageFile::setPaths(Strings new_paths)
+{
+    std::lock_guard lock(paths_mutex);
+    paths = std::move(new_paths);
+}
+
+void StorageFile::appendPath(const String & path)
+{
+    std::lock_guard lock(paths_mutex);
+    if (std::find(paths.begin(), paths.end(), path) == paths.end())
+        paths.push_back(path);
+}
+
+void StorageFile::retirePath(const String & path)
+{
+    std::lock_guard lock(paths_mutex);
+    std::erase(paths, path);
+}
+
+void StorageFile::renamePath(const String & path, const String & new_path)
+{
+    std::lock_guard lock(paths_mutex);
+    std::replace(paths.begin(), paths.end(), path, new_path);
+}
+
 Strings StorageFile::getDataPaths() const
 {
-    if (paths.empty())
+    Strings result = getPathsSnapshot();
+    if (result.empty())
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
-    return paths;
+    return result;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
@@ -3125,17 +3512,18 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Can't rename table {} bounded to user-defined file (or FD)", getStorageID().getNameForLogs());
 
-    if (paths.size() != 1)
+    Strings current_paths = getPathsSnapshot();
+    if (current_paths.size() != 1)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't rename table {} in readonly mode", getStorageID().getNameForLogs());
 
     std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
-    if (path_new == paths[0])
+    if (path_new == current_paths[0])
         return;
 
     fs::create_directories(fs::path(path_new).parent_path());
-    fs::rename(paths[0], path_new);
+    fs::rename(current_paths[0], path_new);
 
-    paths[0] = std::move(path_new);
+    setPaths({std::move(path_new)});
     renameInMemory(new_table_id);
 }
 
@@ -3155,14 +3543,23 @@ void StorageFile::truncate(
     }
     else
     {
-        for (const auto & path : paths)
-        {
-            if (!fs::exists(path))
-                continue;
+        Strings current_paths = getPathsSnapshot();
+        if (current_paths.empty())
+            return;
 
-            if (0 != ::truncate(path.c_str(), 0))
-                ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
-        }
+        /// The files after the first one were created by the inserts into this table - with
+        /// `engine_file_allow_create_multiple_files` or by splitting the data by size. The truncated table
+        /// is empty, so they are deleted rather than kept empty: otherwise the next insert split by size
+        /// would find its numbered names taken by these leftovers, and the table would go on reading them.
+        /// Each of them is forgotten right after it is gone, so that a failure in the middle leaves the
+        /// table reading exactly the files that still exist.
+        removeStaleSplitFiles(
+            Strings(current_paths.begin() + 1, current_paths.end()),
+            [this](const String & removed_path) { retirePath(removed_path); });
+
+        const auto & path = current_paths.front();
+        if (fs::exists(path) && 0 != ::truncate(path.c_str(), 0))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
     }
 }
 
@@ -3384,6 +3781,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 - [engine_file_empty_if_not_exists](/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
 - [engine_file_truncate_on_insert](/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [engine_file_allow_create_multiple_files](/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_split_on_write_by_size_bytes](/reference/settings/session-settings/engine-file#engine_file_split_on_write_by_size_bytes) - splits the written data into multiple numbered files of approximately the specified size. Disabled by default.
 - [engine_file_skip_empty_files](/reference/settings/session-settings/engine-file#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [storage_file_read_method](/reference/settings/session-settings/storage#storage_file_read_method) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
 )DOCS_MD",

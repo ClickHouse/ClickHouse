@@ -1,6 +1,8 @@
 #pragma once
+#include <functional>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -9,12 +11,54 @@ namespace DB
 
 class IObjectStorage;
 
+/// Checks whether the insert can write into the object with the given key. If the object exists and
+/// `*_create_new_file_on_insert` is enabled, returns the first free key of `numbered_keys` starting from
+/// `sequence_number`, which is advanced past the returned key so that an insert split by size continues
+/// the numbering from it.
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const std::string & key,
-    size_t sequence_number);
+    const NumberedFileNames & numbered_keys,
+    size_t & sequence_number);
+
+/// Returns the key of the next object to write when the data is split by size (see `*_split_on_write_by_size_bytes`).
+/// `sequence_number` is advanced past the returned key. If the generated key is already taken, either the number is
+/// skipped (when `create_new_file_on_insert` is enabled) or an exception is thrown.
+std::string getNextKeyForSplittingBySize(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorageQuerySettings & settings,
+    const NumberedFileNames & numbered_keys,
+    size_t & sequence_number);
+
+/// A truncating insert overwrites the whole dataset of the table. If the previous insert has produced
+/// more objects than the current one, the leftovers have to be deleted - otherwise the stale data will be
+/// still visible both for the readers of this table and for the readers of the glob pattern over the prefix.
+///
+/// This is the precise variant, for a table that has written these objects itself and still remembers them:
+/// exactly they are deleted, even if the previous insert had to skip some of the numbers because the keys
+/// were taken by someone else.
+/// `on_removed` is called for every key that is no longer there, right after it is gone, so that the caller can
+/// retire it from the list of the paths of the table one by one. A cleanup that throws in the middle then leaves
+/// the table reading exactly the objects that still exist, instead of the ones it has already removed.
+/// Every removal is written to `log`: not every object storage logs the objects it deletes itself.
+void removeStaleSplitObjects(
+    IObjectStorage & object_storage,
+    const std::vector<std::string> & stale_keys,
+    const std::function<void(const std::string &)> & on_removed,
+    const LoggerPtr & log);
+
+/// The same for a table that does not know the keys of the objects of the previous insert - an `INSERT` into
+/// a table function, or a table that was reloaded since then. The objects are written with consecutive numbers
+/// starting from `numbered_keys.start_sequence_number`, so the removal stops at the first missing number.
+/// Nothing is removed if `create_new_file_on_insert` is enabled - see the comment in the implementation.
+void removeStaleSplitObjectsByNumber(
+    IObjectStorage & object_storage,
+    const NumberedFileNames & numbered_keys,
+    bool create_new_file_on_insert,
+    const LoggerPtr & log);
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,

@@ -71,8 +71,8 @@ public:
 
     bool supportsPartialPathPrefix() const override { return false; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override { paths = paths_; }
+    const Paths & getPathsUnlocked() const override { return paths; }
+    void setPathsUnlocked(const Paths & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return namespace_prefix; }
     String getDataSourceDescription() const override { return raw_url; }

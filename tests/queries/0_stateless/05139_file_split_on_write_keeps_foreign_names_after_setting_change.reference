@@ -1,0 +1,17 @@
+--- Someone else owns two of the numbered names
+--- A large insert skips the taken names
+1000	0	999
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv
+--- A smaller truncating insert with engine_file_allow_create_multiple_files back at 0
+100	0	99
+--- The files of the previous insert are deleted, the names it did not own are intact
+data.1.tsv
+data.3.tsv
+data.tsv
+foreign 1
+foreign 3
