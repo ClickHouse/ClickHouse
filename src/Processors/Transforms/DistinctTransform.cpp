@@ -36,12 +36,15 @@ DistinctTransform::DistinctTransform(
     const Names & columns_,
     bool allow_abandoning_,
     bool skip_null_keys_,
-    const UInt64 max_bytes_before_pass_through_)
+    const UInt64 max_bytes_before_pass_through_,
+    DistinctSetMemoryTracker::SharedCounter shared_set_bytes_)
     : ISimpleTransform(header_, header_, true)
+    , set_memory(shared_set_bytes_)
     , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
 {
+    chassert(!shared_set_bytes_ || (!allow_abandoning_ && !set_size_limits_.hasLimits() && max_bytes_before_pass_through == 0));
     if (allow_abandoning_)
         abandon_controller.emplace();
 }
@@ -75,6 +78,7 @@ void DistinctTransform::transform(Chunk & chunk)
             column = column->cut(0, 1);
 
         chunk.setColumns(std::move(columns), 1);
+        set_memory.report(chunk, getOutputPort().getHeader(), 0);
         stopReading();
         return;
     }
@@ -112,6 +116,8 @@ void DistinctTransform::transform(Chunk & chunk)
 
     const size_t num_rows = chunk.getNumRows();
     chunk = distinct_set->filter(std::move(chunk));
+
+    set_memory.report(chunk, getOutputPort().getHeader(), distinct_set->getTotalByteCount());
 
     /// Return the current chunk and stop before releasing the set if a size limit or the hint is reached.
     if (distinct_set->isLimitReached() || (limit_hint && distinct_set->getTotalRowCount() >= limit_hint))

@@ -80,7 +80,10 @@ namespace DB::QueryPlanOptimizations
 /// 3. We match partition key actions with the key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
 bool isPartitionKeyFunctionOfKeys(
-    const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names)
+    const ActionsDAG & partition_actions,
+    const ActionsDAG::NodeRawConstPtrs & partition_key_outputs,
+    const ActionsDAG & key_actions,
+    const Names & key_names)
 {
     if (key_actions.hasStatefulFunctions() || key_actions.hasNonDeterministic())
         return false;
@@ -108,19 +111,17 @@ bool isPartitionKeyFunctionOfKeys(
 
     const auto matches = matchTrees(key_dag.getOutputs(), partition_actions);
 
-    /// `partition_actions.getOutputs()` contains both the partition key columns and source columns.
-    /// For example, if `PARTITION BY toYYYYMM(date)`, then `getOutputs() = [toYYYYMM(date), date]`. The `date` column is a source
-    /// column but not a key value, and should be excluded from checks. We need to find the actual partition key output
-    /// nodes to check that they depend only on the allowed set of nodes (`irreducible_nodes`).
-    const auto partition_key_outputs = partition_actions.findInOutputs(partition_key_columns);
-
     return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducible_nodes, matches);
 }
 
 bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
 {
+    const auto & partition_actions = partition_key.expression->getActionsDAG();
+    /// The DAG may output both partition key columns and source columns. For example, with
+    /// `PARTITION BY toYYYYMM(date)`, its outputs can be `[toYYYYMM(date), date]`. Only `toYYYYMM(date)`
+    /// defines the partition key; checking the source column `date` separately would be too strict.
     return isPartitionKeyFunctionOfKeys(
-        partition_key.expression->getActionsDAG(), partition_key.column_names, key_actions, key_names);
+        partition_actions, partition_actions.findInOutputs(partition_key.column_names), key_actions, key_names);
 }
 
 ActionsDAG buildArrayJoinDAG(const ArrayJoinStep & array_join)
