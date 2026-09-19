@@ -134,7 +134,7 @@ DROP TABLE t_map_prewhere;
 
 -- ==========================================
 -- Section 4: PREWHERE with basic serialization (non-bucketed)
--- Optimization still applies, but reads the whole map internally.
+-- The rewrite is not applied, so the whole map is read and the key is extracted from it.
 -- ==========================================
 
 DROP TABLE IF EXISTS t_map_prewhere;
@@ -142,14 +142,15 @@ CREATE TABLE t_map_prewhere (id UInt64, m Map(String, UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS
     map_serialization_version = 'basic',
+    map_serialization_version_for_zero_level_parts = 'basic',
     min_bytes_for_wide_part = 1,
     min_rows_for_wide_part = 1;
 
 INSERT INTO t_map_prewhere SELECT number, map('key1', number, 'key2', number * 10) FROM numbers(100);
 
 SELECT '-- Section 4: PREWHERE with basic serialization';
-SELECT '-- Optimization still rewrites to subcolumn';
-SELECT count() > 0 FROM (
+SELECT '-- No rewrite to subcolumn';
+SELECT count() = 0 FROM (
     EXPLAIN actions = 1
     SELECT id, m FROM t_map_prewhere PREWHERE m['key1'] > 95
 ) WHERE explain LIKE '%m.key_key1%';

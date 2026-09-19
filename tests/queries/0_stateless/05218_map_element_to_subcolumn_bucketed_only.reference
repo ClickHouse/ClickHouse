@@ -1,0 +1,26 @@
+-- bucketed MergeTree: rewritten
+1
+-- basic MergeTree: not rewritten
+1
+-- Memory: not rewritten
+1
+-- results are identical
+8	8
+9	9
+8	8
+9	9
+8	8
+9	9
+-- Merge over a bucketed table: rewritten
+1
+-- MaterializedView over a bucketed target: rewritten
+1
+-- Buffer over a bucketed destination: rewritten
+1
+-- Merge over a bucketed and a basic table: not rewritten
+1
+-- Merge results
+8	8
+8	8
+9	9
+9	9

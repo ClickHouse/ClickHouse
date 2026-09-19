@@ -16,8 +16,13 @@
 1
 1
 1
--- Optimization also works with basic (non-bucketed) serialization
+-- No optimization with basic (non-bucketed) serialization
 1
+-- Correctness: results are the same without the rewrite
+6	6
+7	7
+8	8
+9	9
 -- Correctness: results with optimization
 7	7	70
 8	8	80

@@ -184,6 +184,8 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
 /// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
 /// and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
+/// Works for any serialization: with `basic` the key is extracted from the whole `Map`. Only the
+/// automatic `m['key']` rewrite in `FunctionToSubcolumnsPass` is restricted to bucketed storages.
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
     /// Only subcolumns of the form "key_<serialized_key>" are supported.
@@ -391,6 +393,8 @@ When a data part is written with `with_buckets` serialization:
 
 When a query reads a specific key (`m['key']`), the optimizer rewrites the expression to a key subcolumn (`m.key_<serialized_key>`).
 The serialization layer computes which bucket the requested key belongs to and reads only that single bucket from disk.
+This rewrite happens only for tables using `with_buckets` serialization: with `basic` serialization reading a key subcolumn
+reads the whole `Map` anyway, so the rewrite would bring no benefit for single-key lookups.
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 

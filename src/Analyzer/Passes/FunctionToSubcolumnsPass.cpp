@@ -1074,6 +1074,10 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
 {
+    /// The `m['key']` -> `m.key_<key>` rewrite pays off only for bucketed Maps (see IStorage::hasBucketedMapSerialization).
+    if (isMap(type) && function_name == "arrayElement" && !storage.hasBucketedMapSerialization())
+        return false;
+
     if (storage.supportsOptimizationToSubcolumns())
         return true;
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.

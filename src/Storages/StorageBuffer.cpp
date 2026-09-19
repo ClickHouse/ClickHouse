@@ -1067,6 +1067,15 @@ bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
     return false;
 }
 
+bool StorageBuffer::hasBucketedMapSerialization() const
+{
+    /// The buffer itself is never bucketed, but reading a key subcolumn from it still works:
+    /// the key is extracted from the whole `Map`.
+    if (auto destination = getDestinationTable())
+        return destination->hasBucketedMapSerialization();
+    return false;
+}
+
 bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;

@@ -91,13 +91,6 @@ WHERE + SELECT mapKeys
 ['a','b','c']
 ['a','b','c']
 ['a','b','c']
-Memory engine WHERE + HAVING
-{'a':6,'b':60,'c':600}
-{'a':7,'b':70,'c':700}
-{'a':8,'b':80,'c':800}
-{'a':6,'b':60,'c':600}
-{'a':7,'b':70,'c':700}
-{'a':8,'b':80,'c':800}
 Negative: GROUP BY subcolumn
 6	1
 7	1
