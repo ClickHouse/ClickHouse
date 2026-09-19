@@ -158,6 +158,15 @@ SELECT [1, 2] AS x
 UNION ALL BY NAME
 SELECT 1 AS y; -- { serverError TYPE_MISMATCH }
 
+SELECT formatQueryFromJSON(
+    replace(
+        replace(
+            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+            '"union_mode":"UNION_ALL"',
+            '"union_mode":"UNION_DISTINCT"'),
+        '"is_normalized":false',
+        '"is_normalized":true')) -- { serverError BAD_ARGUMENTS }
+
 SELECT 'recursive CTE';
 WITH RECURSIVE r AS
 (

@@ -67,6 +67,9 @@ UnionNode::UnionNode(
         union_mode == SelectUnionMode::INTERSECT_DEFAULT)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
+    if (column_match_mode == SetOperationColumnMatchMode::Name && union_mode != SelectUnionMode::UNION_ALL)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BY NAME` is supported only with `UNION ALL`");
+
     children[queries_child_index] = std::make_shared<ListNode>();
     children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
