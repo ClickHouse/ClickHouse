@@ -46,6 +46,10 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
+
+    /// This server's id in the Raft cluster (keeper_server.server_id). -1 if not initialized
+    /// from config (e.g. in tools and tests).
+    int getServerID() const { return server_id; }
     bool digestEnabledOnCommit() const;
 
     DiskPtr getLatestLogDisk() const;
@@ -156,6 +160,8 @@ private:
 
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
+
+    int server_id{-1};
 
     std::shared_ptr<DiskSelector> disk_selector;
 

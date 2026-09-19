@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <limits>
 #include <optional>
 
 namespace DB
@@ -60,30 +61,54 @@ public:
 
     enum ZooKeeperLogSerializationVersion
     {
+        /// Versions of the legacy single-request format, sniffed from the buffer length by
+        /// parseRequest. New entries are only written in the REQUEST_BATCH format.
         INITIAL = 0,
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
         WITH_OPTIONAL_TRACING_CONTEXT = 4,
+        /// Format where one log entry contains a batch of keeper requests.
+        REQUEST_BATCH = 5,
     };
 
-    /// lifetime of a parsed request is:
+    /// Batch log entry format. Distinguished from legacy single-request entries by the first
+    /// int64: legacy entries start with a session id, which is never INT64_MIN.
+    static constexpr int64_t BATCH_ENTRY_MARKER = std::numeric_limits<int64_t>::min();
+    static constexpr size_t BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET = sizeof(int64_t) + sizeof(uint32_t);
+
+    /// Serialize the batch into log entry buffers. With use_batched_format the whole batch
+    /// becomes one entry in the batch format; otherwise one entry per request in the legacy
+    /// single-request format (for compatibility with clusters that have older servers).
+    static std::vector<nuraft::ptr<nuraft::buffer>> serializeRequestBatch(const KeeperRequestBatch & batch, bool use_batched_format);
+
+    /// Overwrite the patchable header fields of a batch log entry produced by serializeRequestBatch.
+    static void patchSerializedRequestBatch(nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch);
+
+    /// Parses both a batch entry and a legacy single-request entry (returned as a batch of one).
+    ///
+    /// Lifetime of a parsed batch is:
     /// [preprocess/PreAppendLog -> commit]
     /// [preprocess/PreAppendLog -> rollback]
-    /// on events like commit and rollback we can remove the parsed request to keep the memory usage at minimum
-    /// request cache is also cleaned on session close in case something strange happened
-    ///
-    /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
-    /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly
-    std::shared_ptr<KeeperRequestForSession> parseRequest(
+    /// on events like commit and rollback we can remove the parsed batch from cache to keep the
+    /// memory usage at minimum; the cache is also cleaned on session close in case something
+    /// strange happened.
+    /// final - whether it's the final time we will fetch the batch so we can safely remove it from cache
+    /// serialization_version - which format/fields were parsed from the buffer so we can modify the buffer accordingly
+    /// patched_fields_offset - where the leader-patched fields live: for batch entries it is
+    /// BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET; for legacy entries it is the request end position
+    /// (which of the fields are present there follows from `serialization_version`).
+    KeeperRequestBatchPtr parseRequestBatch(
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version = nullptr,
-        size_t * request_end_position = nullptr);
+        size_t * patched_fields_offset = nullptr);
 
-    static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
-
-    std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex);
+    /// Preprocess all requests of the batch in order. The batch must have first_zxid assigned.
+    /// Returns the digest after the last request, or nullopt if the storage is finalized.
+    /// Idempotent on the leader: if the batch was already preprocessed (in the PreAppendLogLeader
+    /// callback), only stamps batch.log_idx on its transactions.
+    std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool lock_mutex);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -93,9 +118,10 @@ public:
 
     void rollback(uint64_t log_idx, nuraft::buffer & data) override;
 
-    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // Roll back the batch's requests in reverse zxid order.
+    // allow_missing - whether the transactions we want to rollback can be missing from storage
     // (can happen in case of exception during preprocessing)
-    void rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing);
+    void rollbackRequestBatch(const KeeperRequestBatch & batch, bool allow_missing);
 
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
@@ -237,10 +263,25 @@ private:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperRequestForSession>>> parsed_request_cache;
+    static nuraft::ptr<nuraft::buffer> serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session);
+
+    KeeperRequestBatchPtr parseRequestInOldFormat(
+        nuraft::buffer & data,
+        bool final,
+        ZooKeeperLogSerializationVersion * serialization_version,
+        size_t * patched_fields_offset);
+
+    /// Whether a parsed log entry should go through parsed_batch_cache;
+    /// (session_id, xid) are of the entry's first request.
+    bool shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const;
+
+    /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
+    /// Entries of closed sessions are erased on Close commit in case something strange happened.
+    /// TODO: Replace this cache by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestBatchPtr>> parsed_batch_cache;
     uint64_t min_request_size_to_cache{0};
     /// we only need to protect the access to the map itself
-    /// requests can be modified from anywhere without lock because a single request
+    /// batches can be modified from anywhere without lock because a single batch
     /// can be processed only in 1 thread at any point
     std::mutex request_cache_mutex;
 
