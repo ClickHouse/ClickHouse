@@ -277,6 +277,11 @@ class CommandRequest:
             return stdout, stderr
 
         finally:
+            # A pending Timer is a non-daemon thread, so leaving it armed after the process
+            # is gone delays interpreter shutdown by the rest of the timeout. Keep it while
+            # the process still runs: then it is what kills it.
+            if self.timer is not None and self.process.poll() is not None:
+                self.timer.cancel()
             self.stdin_file.close()
             self.stdout_file.close()
             self.stderr_file.close()
