@@ -426,7 +426,7 @@ void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDesc
     }
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns, CancellationBudget * budget)
 {
     if (has(column.name))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -456,7 +456,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     /// Aliases don't have real subcolumns, they should be extracted
     /// using getSubcolumn after expression evaluation.
     if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
-        addSubcolumns(column.name, column.type);
+        addSubcolumns(column.name, column.type, budget);
     columns.get<0>().insert(insert_it, std::move(column));
     invalidateGetCache();
 }
@@ -1123,7 +1123,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     return result;
 }
 
-void ColumnsDescription::addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
+void ColumnsDescription::addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage, CancellationBudget * budget)
 {
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
@@ -1136,7 +1136,7 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
         ///
         /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
         subcolumns.get<0>().insert(std::move(subcolumn));
-    }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
+    }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage), budget);
     invalidateGetCache();
 }
 

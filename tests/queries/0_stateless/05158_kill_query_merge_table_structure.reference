@@ -1,0 +1,21 @@
+0
+cancelled: structure inference stopped inside one column
+1
+break mode: structure inference stopped inside one column
+break mode client status: 159
+break mode failed inside the Merge structure inference
+k	UInt32						0
+c	Array(Map(String, Tuple(\n    a UInt8,\n    b UInt8)))						0
+c.size0	UInt64						1
+c.size1	Array(UInt64)						1
+c.keys	Array(Array(String))						1
+c.keys.size	Array(Array(UInt64))						1
+c.values	Array(Array(Tuple(\n    a UInt8,\n    b UInt8)))						1
+c.values.a	Array(Array(UInt8))						1
+c.values.b	Array(Array(UInt8))						1
+part loading did not reach the enumeration checkpoint
+1
+0
+cancelled: structure inference stopped between source tables
+the cancelled DESCRIBE failed with QUERY_WAS_CANCELLED
+an unreadable source table is indistinguishable from an absent one
