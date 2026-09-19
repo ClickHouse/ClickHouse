@@ -152,8 +152,13 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
-     {"lazy", TextIndexPostingListApplyMode::LAZY}})
+    {{"materialize", TextIndexPostingListApplyMode::Materialize},
+     {"lazy", TextIndexPostingListApplyMode::Lazy}})
+
+IMPLEMENT_SETTING_ENUM(TextIndexPostingsCursorIntersectionAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"bruteforce", TextIndexPostingsCursorIntersectionAlgorithm::BruteForce},
+     {"leapfrog", TextIndexPostingsCursorIntersectionAlgorithm::Leapfrog},
+     {"auto", TextIndexPostingsCursorIntersectionAlgorithm::Auto}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
