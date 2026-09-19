@@ -96,7 +96,9 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 **Syntax**
 
 ```sql
-SELECT ... UNION [ALL | DISTINCT] [BY NAME] SELECT ... [UNION [ALL | DISTINCT] [BY NAME] SELECT ...]
+SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
+
+SELECT ... UNION ALL BY NAME SELECT ... [UNION ALL BY NAME SELECT ...]
 ```
 
 **Part of:** `SELECT`

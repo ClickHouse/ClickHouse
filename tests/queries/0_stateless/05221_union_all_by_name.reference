@@ -1,6 +1,13 @@
 basic alignment
 1	one	\N
 \N	two	3
+first-seen order with multiple operands
+1	left	\N	\N
+2	\N	middle	\N
+\N	right	\N	3
+duplicate rows are preserved
+1
+1
 projection pruning: a
 1
 4
