@@ -92,6 +92,9 @@ INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS 
 "
 
 query_id="05232_pr_$CLICKHOUSE_DATABASE"
+# Once every mark range is assigned the coordinator cancels the replicas that have not connected yet, and one
+# request takes more marks than this table has, so the replica that announces first can be left reading alone.
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
     SELECT count() FROM $table WHERE k < 150000
     SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
@@ -105,24 +108,27 @@ CODE=$?
 # A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
 # replica it later cancels held the slot all the same, and one the limit refuses reports its parts too.
 # Each replica logs one terminal row, on a connection the statement above does not wait for, so a row can
-# be queued after the statement's own flush: read the counts once all three replicas have logged one.
+# be queued after the statement's own flush: read the counts once every replica it read from has logged one.
 TIMELIMIT=$((SECONDS + 30))
 while [ $SECONDS -lt "$TIMELIMIT" ]; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    read -r replicas refused reported <<< "$(${CLICKHOUSE_CLIENT} --query "
-        SELECT uniqExactIf(query_id, exception_code != 202 AND ProfileEvents['SelectedParts'] > 0),
-               countIf(exception_code = 202 AND ProfileEvents['SelectedParts'] > 0),
-               uniqExactIf(query_id, type != 'QueryStart')
+    read -r used replicas refused reported <<< "$(${CLICKHOUSE_CLIENT} --query "
+        SELECT maxIf(ProfileEvents['ParallelReplicasAvailableCount'], is_initial_query),
+               uniqExactIf(query_id, NOT is_initial_query AND exception_code != 202 AND ProfileEvents['SelectedParts'] > 0),
+               countIf(NOT is_initial_query AND exception_code = 202 AND ProfileEvents['SelectedParts'] > 0),
+               uniqExactIf(query_id, NOT is_initial_query AND type != 'QueryStart')
         FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND is_initial_query = 0
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
           AND initial_query_id = '$query_id'
         SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
-    [ "$reported" -ge 3 ] && break
+    [ "$used" -gt 0 ] && [ "$reported" -ge "$used" ] && break
     sleep 0.2
 done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
 [ "$refused" -ne "0" ] && echo "the table's limit refused $refused replicas of the statement" && exit 1
-[ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement took the table's slot: $replicas" && exit 1
+[ "$used" -eq "0" ] && echo "the statement did not read the table through any replica" && exit 1
+# A statement the coordinator served from a single replica has no shared slot to show.
+[ "$used" -ge 2 ] && [ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement took the table's slot: $replicas" && exit 1
 
 # A replica's read carries the default database rather than this test's, which is why the rows above are
 # found through the initiator's id; this anchors that id to a statement this test ran.
