@@ -39,6 +39,7 @@ SELECT 'cache hit observed', sum(ProfileEvents['AsyncInsertCacheHits']) > 0
 FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND database = currentDatabase() AND table = 't_04901_r2'
+  AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_04901_r2')
   AND event_type = 'NewPart' AND error = 0;
 
 DROP TABLE t_04901_r1 SYNC;
@@ -76,6 +77,8 @@ SELECT 'cache hit observed', table, sum(ProfileEvents['AsyncInsertCacheHits']) >
 FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND database = currentDatabase() AND table IN ('t_04901_drop_part', 't_04901_detach_part')
+  AND table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase()
+                     AND name IN ('t_04901_drop_part', 't_04901_detach_part'))
   AND event_type = 'NewPart' AND error = 0
 GROUP BY table ORDER BY table;
 
