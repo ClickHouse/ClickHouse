@@ -1,4 +1,2 @@
 definer top-K markers (expect 0):	0
 invoker top-K markers (expect 2):	2
-definer top-K markers (expect 0):	0
-invoker top-K markers (expect 2):	2
