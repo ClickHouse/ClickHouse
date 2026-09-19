@@ -171,6 +171,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_read_inject_version_token_mismatch[];
+    extern const char file_read_inject_fixed_file_missing[];
 }
 
 using String = std::string;
@@ -1897,6 +1898,23 @@ Chunk StorageFileSource::generate()
                         return {};
                     fixed_file_consumed = true;
                     current_path = *fixed_file_path;
+
+                    /// Armed, this stands in for the file disappearing between the split decision
+                    /// and this read: the path this source was assigned no longer names a file.
+                    fiu_do_on(FailPoints::file_read_inject_fixed_file_missing, { current_path += ".removed"; });
+
+                    /// The file can disappear between the split decision and this read - the split
+                    /// takes no lock spanning the two - and it may never have existed at all, since
+                    /// the split probe does not require it. Honor `engine_file_empty_if_not_exists`
+                    /// exactly as the iterator path below does; there is only one file here, so
+                    /// "skip it" means "produce nothing".
+                    if (!fs::exists(current_path))
+                    {
+                        if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                            return {};
+
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
+                    }
                 }
                 else
                 {
@@ -2746,8 +2764,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         const bool is_uncompressed
             = chooseCompressionMethod(single_file_path, storage->compression_method) == CompressionMethod::None;
 
-        struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
-        if (file_stat.st_size > 0 && is_uncompressed)
+        /// Probe the file for the split decision without throwing. A file that is already gone when
+        /// the path list is built never reaches this point (`listFilesWithRegexpMatching` drops it,
+        /// so the single-path gate above is not satisfied), but one removed after that does, and
+        /// what a missing file means is `engine_file_empty_if_not_exists`' decision, taken on the
+        /// read path (`StorageFileSource::generate`) identically for a split and an unsplit read.
+        /// Throwing `CANNOT_STAT` from this probe would pre-empt it. A failed probe only means
+        /// "do not split".
+        struct stat file_stat{};
+        const bool file_stat_read = 0 == stat(single_file_path.c_str(), &file_stat);
+        if (file_stat_read && file_stat.st_size > 0 && is_uncompressed)
         {
             /// File version observed at split-decision time. Threaded into each per-bucket
             /// source so it can fail-close if the file is rewritten before it reads (see
