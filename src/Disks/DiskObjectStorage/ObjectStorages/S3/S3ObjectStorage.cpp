@@ -37,8 +37,6 @@
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
-#include <ranges>
-
 #include <aws/s3/model/Tag.h>
 #include <aws/s3/model/Tagging.h>
 
@@ -446,14 +444,9 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     const auto [bucket, key] = splitBucketAndKey(object.remote_path);
 
-    /// A `StoredObject` that carries an `ETag` names one generation of the object, not just a key:
-    /// the delete is then pinned to that generation with `If-Match`, so an object that was written
-    /// over after the caller looked at it (a move copies the generation it selected, then deletes)
-    /// is left in place, with `FILE_CHANGED_DURING_READ`, instead of being deleted without the newer
-    /// generation having been seen.
     deleteFileFromS3(client.get(), bucket, key, if_exists,
                       blob_storage_log, object.local_path, object.bytes_size,
-                      ProfileEvents::DiskS3DeleteObjects, object.etag);
+                      ProfileEvents::DiskS3DeleteObjects);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects)
@@ -482,15 +475,6 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
     {
         Strings keys = collectRemotePaths(objects_in_bucket);
 
-        /// The objects that name a generation are deleted pinned to it, see `removeObjectImpl`.
-        Strings etags_to_match;
-        if (std::ranges::any_of(objects_in_bucket, [](const StoredObject & object) { return !object.etag.empty(); }))
-        {
-            etags_to_match.reserve(objects_in_bucket.size());
-            for (const auto & object : objects_in_bucket)
-                etags_to_match.push_back(object.etag);
-        }
-
         auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
         Strings local_paths_for_blob_storage_log;
         VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
@@ -509,8 +493,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                           s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                           blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                           ProfileEvents::DiskS3DeleteObjects,
-                          &successful_keys,
-                          etags_to_match);
+                          &successful_keys);
     }
 }
 
@@ -696,8 +679,6 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*src_bucket=*/src_bucket,
                 /*src_key=*/src_key,
                 /*src_size=*/size,
-                /*src_etag=*/object_from.etag,
-                /*src_version_id=*/"",
                 /*dest_s3_client=*/current_client,
                 /*dest_bucket=*/dest_bucket,
                 /*dest_key=*/dest_key,
@@ -738,7 +719,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
-String S3ObjectStorage::copyObject( // NOLINT
+void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -753,18 +734,11 @@ String S3ObjectStorage::copyObject( // NOLINT
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
-    /// A source that carries an `ETag` names the generation the caller has seen (a queue copies the
-    /// generation it ingested); the copy is pinned to it and transfers that generation or fails with
-    /// `S3_OBJECT_CHANGED_DURING_READ`. The read-and-write fallback reads the source through
-    /// `readObject`, which pins its `GET`s to the same `ETag`. The generation the copy created is
-    /// the one the response to the write names; see `copyObject`.
-    return copyS3File(
+    copyS3File(
         /*src_s3_client=*/current_client,
         /*src_bucket=*/src_bucket,
         /*src_key=*/src_key,
         /*src_size=*/size,
-        /*src_etag=*/object_from.etag,
-        /*src_version_id=*/"",
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/dest_bucket,
         /*dest_key=*/dest_key,
@@ -804,18 +778,21 @@ void S3ObjectStorage::applyNewSettings(
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
+    /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
     auto apply_endpoint_settings = [&]
     {
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         {
-            modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+            if (options.allow_client_change)
+                modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
             modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
         }
     };
 
     auto apply_config_settings = [&]
     {
-        modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+        if (options.allow_client_change)
+            modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
         modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
     };
 
