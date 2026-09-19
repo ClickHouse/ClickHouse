@@ -1,6 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 
-#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -67,7 +67,8 @@ namespace
                     /// The interval functions do not accept Decimal arguments, so the literal must be
                     /// the integer number of units of 10^-scale seconds. The conversion is exact because
                     /// scale >= timestamp_scale.
-                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
+                    Int64 scaled_offset_value = convertDecimals<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal64>>(
+                        offset_value, context.timestamp_scale, scale).value;
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                     std::string_view to_interval_function = to_interval_functions[scale / 3];
