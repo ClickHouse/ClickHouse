@@ -141,11 +141,13 @@ def _has_coverage_pipeline_changes(changed_files):
 
 
 # Stress tests and fuzzers are skipped in a PR that changes fewer than this many
-# lines (additions + deletions) under `src/` - counted by the `store_data.py`
-# pre-hook as `src_changed_lines`. Tests, docs and CI scripts do not count.
-# The `ci-force-all` label (`Labels.CI_FORCE_ALL`) bypasses every filter hook,
-# including this one, so it is the way to run these jobs on a small PR.
-SMALL_PR_SRC_CHANGED_LINES = 100
+# lines (additions + deletions) of product code - counted by the `store_data.py`
+# pre-hook as `product_changed_lines` over `PRODUCT_CODE_PATHS`, the part of the
+# build digest that ends up in the built server. Tests, docs and CI scripts do
+# not count. The `ci-force-all` label (`Labels.CI_FORCE_ALL`) bypasses every
+# filter hook, including this one, so it is the way to run these jobs on a small
+# PR.
+SMALL_PR_CHANGED_LINES = 100
 
 # The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
 # symbols, i.e. they are designed for exactly the small PRs this rule skips the
@@ -175,6 +177,10 @@ _STRESS_AND_FUZZER_PATHS = (
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
 )
 
+# A submodule bump is two lines in the diff and an arbitrary amount of new
+# third-party code in the binary, so a line count says nothing about its size.
+_SUBMODULE_PATHS = ("contrib/", ".gitmodules")
+
 
 def _is_stress_or_fuzzer_job(job_name):
     return job_name.startswith(_STRESS_AND_FUZZER_JOB_PREFIXES) and "targeted" not in job_name
@@ -188,17 +194,29 @@ def _has_stress_or_fuzzer_changes(changed_files):
     return False
 
 
+def _has_submodule_changes(changed_files):
+    """True if the PR bumps a submodule, i.e. pulls in third-party code whose size
+    the diff does not show - see `_SUBMODULE_PATHS`.
+
+    Strips `./` as a whole, unlike the `.`-then-`/` of the helpers above: one of
+    the paths matched here is itself a dotfile (`.gitmodules`)."""
+    for f in changed_files:
+        if f.removeprefix("./").startswith(_SUBMODULE_PATHS):
+            return True
+    return False
+
+
 def _is_small_pr(info):
-    """True if the PR changes fewer than `SMALL_PR_SRC_CHANGED_LINES` lines under
-    `src/`. False when the count is unknown (the pre-hook failed to fetch it), so
-    an API hiccup runs the jobs instead of skipping them."""
+    """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
+    code. False when the count is unknown (the pre-hook failed to fetch it), so an
+    API hiccup runs the jobs instead of skipping them."""
     if info.pr_number <= 0:
         return False
-    src_changed_lines = info.get_kv_data("src_changed_lines")
-    if not isinstance(src_changed_lines, int):
-        print("WARNING: src_changed_lines is not stored - do not skip stress tests and fuzzers")
+    product_changed_lines = info.get_kv_data("product_changed_lines")
+    if not isinstance(product_changed_lines, int):
+        print("WARNING: product_changed_lines is not stored - do not skip stress tests and fuzzers")
         return False
-    return src_changed_lines < SMALL_PR_SRC_CHANGED_LINES
+    return product_changed_lines < SMALL_PR_CHANGED_LINES
 
 
 _info_cache = None
@@ -335,11 +353,12 @@ def should_skip_job(job_name):
     if (
         _is_stress_or_fuzzer_job(job_name)
         and _is_small_pr(_info_cache)
+        and not _has_submodule_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
     ):
         return (
             True,
-            f"Skipped, fewer than {SMALL_PR_SRC_CHANGED_LINES} lines changed under src/ "
+            f"Skipped, fewer than {SMALL_PR_CHANGED_LINES} lines of product code changed "
             f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
         )
 

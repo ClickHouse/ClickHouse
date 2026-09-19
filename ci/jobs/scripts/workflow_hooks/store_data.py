@@ -416,21 +416,36 @@ def parse_settings_history_changes(patch, file_lines):
     return result
 
 
-# Directory whose changed lines decide whether a PR is "small" for the purpose of
-# skipping the stress tests and fuzzers (see `filter_job.py`). Tests, docs and CI
-# scripts do not count: only changes to the server code can introduce the bugs
-# those jobs look for.
-SRC_CHANGED_LINES_DIR = "src/"
+# Paths whose changed lines decide whether a PR is "small" for the purpose of
+# skipping the stress tests and fuzzers (see `filter_job.py`): the product-code
+# part of `build_digest_config.include_paths`, i.e. everything whose change ends
+# up in the built server. Tests, docs and CI scripts do not count: only changes
+# to the server itself can introduce the bugs those jobs look for.
+#
+# `contrib/` and `.gitmodules` are deliberately absent. A submodule bump is two
+# lines in the diff and an arbitrary amount of new code in the binary, so its
+# line count means nothing; `filter_job.py` never treats such a PR as small.
+PRODUCT_CODE_PATHS = (
+    "src/",
+    "base/",
+    "programs/",
+    "rust/",
+    "cmake/",
+    "CMakeLists.txt",
+    "PreLoad.cmake",
+)
 
 
-def get_src_changed_lines(info):
-    """Lines changed (additions + deletions) under `src/` in the PR, per GitHub's
-    per-file `changes` counter from the paginated `pulls/{pr}/files` listing.
+def get_product_changed_lines(info):
+    """Lines changed (additions + deletions) under `PRODUCT_CODE_PATHS` in the PR,
+    per GitHub's per-file `changes` counter from the paginated `pulls/{pr}/files`
+    listing.
 
     Raises on any failure: the caller decides whether a missing count is fatal."""
+    selector = " or ".join(f'startswith("{path}")' for path in PRODUCT_CODE_PATHS)
     out = GH.get_output_with_retries(
         f"gh api repos/{info.repo_name}/pulls/{info.pr_number}/files --paginate "
-        f"--jq '[.[] | select(.filename | startswith(\"{SRC_CHANGED_LINES_DIR}\")) | .changes] | add // 0'",
+        f"--jq '[.[] | select(.filename | {selector}) | .changes] | add // 0'",
         verbose=True,
         strict=True,
     )
@@ -528,13 +543,14 @@ if __name__ == "__main__":
         info.store_kv_data("master_track_commits_sha", commits)
 
     if info.pr_number > 0:
-        # Store how many lines the PR changes under `src/`: `filter_job.py` skips the
-        # stress tests and fuzzers on small PRs. On failure the key stays absent, and
-        # the hook then runs those jobs rather than skipping them on a missing count.
+        # Store how many lines of product code the PR changes: `filter_job.py` skips
+        # the stress tests and fuzzers on small PRs. On failure the key stays absent,
+        # and the hook then runs those jobs rather than skipping them on a missing
+        # count.
         try:
-            info.store_kv_data("src_changed_lines", get_src_changed_lines(info))
+            info.store_kv_data("product_changed_lines", get_product_changed_lines(info))
         except Exception as e:
-            print(f"Failed to count changed lines under {SRC_CHANGED_LINES_DIR}: {e}")
+            print(f"Failed to count changed lines of product code: {e}")
 
     merge_base_commit_sha = ""
     if info.pr_number > 0:
