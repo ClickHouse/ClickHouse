@@ -111,13 +111,15 @@ private:
         const ColumnPtr & column,
         RPNElement & out);
 
+    /// `reversed` means the constant is the function's first argument, as in `has([1, 2], key)`.
     bool traverseTreeEquals(
         const String & function_name,
         const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out,
-        const RPNBuilderTreeNode * parent);
+        const RPNBuilderTreeNode * parent,
+        bool reversed);
 };
 
 class MergeTreeIndexAggregatorBloomFilter final : public IMergeTreeIndexAggregator

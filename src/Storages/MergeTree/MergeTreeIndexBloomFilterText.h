@@ -134,12 +134,14 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
+    /// `reversed` means the constant is the function's first argument, as in `has(['a'], key)`.
     bool traverseTreeEquals(
         const String & function_name,
         const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
-        RPNElement & out);
+        RPNElement & out,
+        bool reversed);
 
     std::optional<size_t> getKeyIndex(const std::string & key_column_name);
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);

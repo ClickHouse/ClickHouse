@@ -559,13 +559,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (rhs_argument.tryGetConstant(const_value, const_type))
         {
-            if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
+            if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent, /*reversed=*/ false))
                 return true;
         }
         else if (lhs_argument.tryGetConstant(const_value, const_type) &&
             (function_name == "equals" || function_name == "has" || function_name == "hasAny"))
         {
-            if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
+            if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent, /*reversed=*/ true))
                 return true;
         }
 
@@ -974,7 +974,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out,
-    const RPNBuilderTreeNode * parent)
+    const RPNBuilderTreeNode * parent,
+    bool reversed)
 {
     auto key_column_name = key_node.getColumnName();
 
@@ -1014,6 +1015,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         {
             if (array_type)
             {
+                /// The index holds one hash per element of the column, never one per whole array.
+                if (reversed)
+                    return false;
+
                 /// We can treat `indexOf` function similar to `has`.
                 /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
                 /// The `parent` in this context is expected to be function `!=` (`notEquals`).
@@ -1029,7 +1034,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
                 }
             }
-            else if (function_name == "has")
+            else if (function_name == "has" && reversed)
             {
                 /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
                 /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
@@ -1117,6 +1122,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
     if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
+        /// The index holds one hash per key or value of the map, never one per whole map.
+        if (reversed)
+            return false;
+
         auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
         if (function_name == "mapContainsValue")
             map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
@@ -1188,7 +1197,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             const DataTypes & subtypes = value_tuple_data_type->getElements();
 
             for (size_t index = 0; index < tuple.size(); ++index)
-                match_with_subtype |= traverseTreeEquals(function_name, key_node_function.getArgumentAt(index), subtypes[index], tuple[index], out, &key_node);
+                match_with_subtype |= traverseTreeEquals(function_name, key_node_function.getArgumentAt(index), subtypes[index], tuple[index], out, &key_node, reversed);
 
             return match_with_subtype;
         }
