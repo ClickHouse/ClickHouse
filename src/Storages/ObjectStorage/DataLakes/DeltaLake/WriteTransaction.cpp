@@ -4,6 +4,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -21,6 +23,7 @@
 
 #include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
+#include <ranges>
 #include <fmt/ranges.h>
 
 #include <arrow/c/abi.h>
@@ -35,6 +38,14 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+    extern const int NETWORK_ERROR;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_lake_commit_response_lost[];
+    extern const char delta_lake_commit_fail_before_log_write[];
 }
 
 namespace DeltaLake
@@ -247,14 +258,48 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
-    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
-        ffi::commit(transaction.release(), engine.get()),
-        "commit"));
-    auto * committed_handle = committed.get();
-    auto version = ffi::committed_transaction_version(&committed_handle);
 
-    LOG_TEST(log, "Commit version: {}", version);
+    fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
+        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
+    });
+
+    commit_outcome_unknown = true;
+    try
+    {
+        using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+        KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+            ffi::commit(transaction.release(), engine.get()),
+            "commit"));
+
+        fiu_do_on(DB::FailPoints::delta_lake_commit_response_lost, {
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a lost commit response enabled");
+        });
+
+        auto * committed_handle = committed.get();
+        auto version = ffi::committed_transaction_version(&committed_handle);
+
+        LOG_TEST(log, "Commit version: {}", version);
+    }
+    catch (...)
+    {
+        /// `file_name` is the URI-encoded `add.path`, not the object key for partitioned tables.
+        LOG_WARNING(
+            log,
+            "DeltaLake commit outcome is unknown, keeping the {} data file(s) written for it under {}: {}",
+            files.size(),
+            path_prefix,
+            fmt::join(
+                files | std::views::transform([](const auto & file) { return DB::unescapeForFileName(file.file_name); }),
+                ", "));
+
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+            "Cannot tell whether the DeltaLake commit succeeded. The data files written for it are kept, "
+            "because deleting them would destroy the rows if the commit did take effect: check the table "
+            "before retrying the INSERT. Original error: {}",
+            DB::getCurrentExceptionMessage(/* with_stacktrace */false));
+    }
+    commit_outcome_unknown = false;
 }
 
 void WriteTransaction::createTable()

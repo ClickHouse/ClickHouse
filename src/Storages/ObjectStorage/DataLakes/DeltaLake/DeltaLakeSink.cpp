@@ -147,6 +147,13 @@ void DeltaLakeSink::onFinish()
     }
     catch (...)
     {
+        if (delta_transaction->isCommitOutcomeUnknown())
+        {
+            /// `cancelBuffers()` and the destructor also unlink whatever is still tracked here.
+            data_files.clear();
+            throw;
+        }
+
         for (const auto & [sink, written_bytes, written_rows] : data_files)
         {
             /// FIXME: this should be just removeObject,
