@@ -166,6 +166,46 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
     clickhouse stop --force
 )
 
+# Kill the mutations that the stress phase left unfinished, before the server is upgraded.
+#
+# Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric
+# string, `throwIf(1)`, a type mismatch, a `DELETE WHERE` on a virtual column - and kill it at the end
+# of the test file. The stress runner regularly stops a test file before its last statement (memory
+# fault injection, the random query and client killer, the global time limit), and `--upgrade-check`
+# implies `--fake-drop`, so the table and its broken mutation survive. The upgraded server then resumes
+# the mutation, retries it for the whole post-upgrade window and logs its error, which the `<Error>`
+# scan at the end of this script reports. Every test of this shape needed its own entry in that scan's
+# allow list, and the list kept growing.
+#
+# A mutation that an interrupted stress run left behind is test garbage, not a backward-compatibility
+# signal, and the allow list had to suppress the mutation error messages wholesale anyway. Leaving the
+# upgraded server nothing to resume retires the whole class at once, and makes the scan stricter: a
+# mutation error after the upgrade becomes an anomaly instead of an expected message to be filtered.
+echo "Kill the mutations left unfinished by the stress phase"
+
+timeout 1m clickhouse-client --query "
+    SELECT database, table, mutation_id, command, parts_to_do, latest_fail_error_code_name, latest_fail_reason
+    FROM system.mutations
+    WHERE NOT is_done
+    ORDER BY database, table, mutation_id
+    FORMAT Vertical" > /test_output/unfinished_mutations.txt ||:
+
+# `KILL MUTATION` throws for a read-only table, and `set -e` would abort the job, so kill the mutations
+# one at a time instead of in a single statement that one such table would stop. Address each of them by
+# a hash of its key: database and table names are arbitrary strings that must not be carried through the
+# shell, while the hash is recomputed server-side. A collision is harmless, it only widens the statement
+# to another unfinished mutation, which is to be killed anyway.
+for mutation_key in $(timeout 1m clickhouse-client --query "SELECT DISTINCT cityHash64(database, table, mutation_id) FROM system.mutations WHERE NOT is_done")
+do
+    timeout 1m clickhouse-client --param_mutation_key="$mutation_key" --query \
+        "KILL MUTATION WHERE NOT is_done AND cityHash64(database, table, mutation_id) = {mutation_key:UInt64}" ||:
+done
+
+timeout 1m clickhouse-client --query "SELECT 'Unfinished mutations left:', count() FROM system.mutations WHERE NOT is_done" ||:
+
+# The report is only interesting when there was something to kill
+[ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
+
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -355,34 +395,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # FIXME Not sure if it's expected, but some tests from stress test may not be finished yet when we restarting server.
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
-# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
-#       stress tests may leave behind intentionally-broken mutations that retry after upgrade.
-#       `CANNOT_PARSE_TEXT` errors come from:
-#       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
-#       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
-#       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
-#       - 01155_old_mutation_parts_to_do: `UPDATE m = m*toInt8(s) WHERE n=3` on String data ('fail')
-#       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
-#       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
-# `Value passed to 'throwIf' function is non-zero` (`FUNCTION_THROW_IF_VALUE_IS_NON_ZERO`, Code: 395) is the same
-#       class of expected test-induced mutation error. It comes from tests that run an intentionally-failing
-#       `ALTER TABLE ... UPDATE <col> = <col> <op> throwIf(1)` async mutation:
-#       - 04341_broken_mutation_part_log_flush: plain `MergeTree`, so the error is emitted by
-#         `MutatePlainMergeTreeTask`, which is NOT covered by the `MutateFromLogEntryTask` exclusion above.
-#       - 02597_column_{update,delete,update_tricky_expression}_and_replication: `ReplicatedMergeTree`, where
-#         `MutateFromLogEntryTask` catches only the first line and the wrapping `MergeTreeBackgroundExecutor`
-#         line leaks.
-#       After the upgrade restart the broken mutation is retried in the background and logged to
-#       `clickhouse-server.upgrade.log`. `throwIf` is a user-level function that only ever raises when a query
-#       explicitly calls it with a truthy argument, so this default message can only ever originate from such a
-#       test query, never from a background or internal assertion - matching it is therefore safe to suppress
-#       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
-#       mutations emit above. Matching the message rather than the task type also covers the wrapping
-#       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
-# `Unexpected const virtual column: _table` (`NO_SUCH_COLUMN_IN_TABLE`, Code: 16) is the same class, from
-#       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
-#       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
-#       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
+# Mutation errors are deliberately absent from this list: the mutations left unfinished by the stress
+#       phase are killed before the upgrade (the `KILL MUTATION` loop above), so the upgraded server has
+#       none to resume and a mutation error here is a real finding. Do not allow-list a new one - when a
+#       test's intentionally broken mutation reaches this scan again, it is that kill step that is wrong.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -404,8 +420,6 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       unrelated to upgrade compatibility. Filtered via regex in the secondary pipe below to require both
 #       the component name AND the specific error code together, so non-pipe TraceCollector errors are not masked.
 # `This engine is deprecated and is not supported in transactions` appears for Ordinary engine tables from old versions.
-# `Prevent converting Nullable type to non-Nullable type inside mutation` is from stricter validation in new versions
-#       applied to old mutations that were created before the validation existed.
 # `e.what() = failed to parse response body` is a transient Azure blob storage batch-parsing error from
 #       `Azure::Storage::Blobs`. Narrowed with the `e.what() = ` prefix to only match caught C++ exceptions of this
 #       type (stable ClickHouse exception formatting), so arbitrary log lines containing the phrase are not masked.
@@ -565,17 +579,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "found in queue and some source parts for it was lost" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
-           -e "Cannot parse string 'Hello' as UInt64" \
-           -e "Cannot parse string 'x' as UInt64" \
-           -e "Cannot parse string 'Hello' as UInt32" \
-           -e "Cannot parse string \'Hello\' as UInt32" \
-           -e "Cannot parse string \\'Hello\\' as UInt32" \
-           -e "Cannot parse string \'a\' as UInt32" \
-           -e "Cannot parse string \'b\' as UInt32" \
-           -e "Cannot parse string 'a' as UInt32" \
-           -e "Cannot parse string 'b' as UInt32" \
-           -e "Cannot parse string 'fail' as Int8" \
-           -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -583,7 +586,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
            -e "Code: 269. DB::Exception: Destination table is myself" \
            -e "Coordination::Exception: Connection loss" \
-           -e "MutateFromLogEntryTask" \
            -e "No connection to ZooKeeper, cannot get shared table ID" \
            -e "Session expired" \
            -e "TOO_MANY_PARTS" \
@@ -604,7 +606,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
            -e "This engine is deprecated and is not supported in transactions" \
-           -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
            -e "Tuple element name 'null' is reserved" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
@@ -625,7 +626,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
-    | grep -av -e "Value passed to 'throwIf' function is non-zero" \
     | grep -av -e "PostgreSQLConnectionPool: Connection error.*192\.0\.2\.1., port 5432 failed" \
     | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .192\.0\.2\.1:5432. failed" \
     | grep -av -e "DatabasePostgreSQL::getTablesIterator.*Connection to .192\.0\.2\.1:5432. failed" \
