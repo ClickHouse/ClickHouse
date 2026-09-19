@@ -416,6 +416,28 @@ def parse_settings_history_changes(patch, file_lines):
     return result
 
 
+# Directory whose changed lines decide whether a PR is "small" for the purpose of
+# skipping the stress tests and fuzzers (see `filter_job.py`). Tests, docs and CI
+# scripts do not count: only changes to the server code can introduce the bugs
+# those jobs look for.
+SRC_CHANGED_LINES_DIR = "src/"
+
+
+def get_src_changed_lines(info):
+    """Lines changed (additions + deletions) under `src/` in the PR, per GitHub's
+    per-file `changes` counter from the paginated `pulls/{pr}/files` listing.
+
+    Raises on any failure: the caller decides whether a missing count is fatal."""
+    out = GH.get_output_with_retries(
+        f"gh api repos/{info.repo_name}/pulls/{info.pr_number}/files --paginate "
+        f"--jq '[.[] | select(.filename | startswith(\"{SRC_CHANGED_LINES_DIR}\")) | .changes] | add // 0'",
+        verbose=True,
+        strict=True,
+    )
+    # `--paginate` with `--jq` prints one line per page.
+    return sum(int(line) for line in out.split())
+
+
 def store_settings_history_changes(info, path=SETTINGS_HISTORY_FILE):
     """Record what the settings-history style check needs: the added setting entries, or
     else why they could not be determined.
@@ -504,6 +526,15 @@ if __name__ == "__main__":
             commits.pop(0)
 
         info.store_kv_data("master_track_commits_sha", commits)
+
+    if info.pr_number > 0:
+        # Store how many lines the PR changes under `src/`: `filter_job.py` skips the
+        # stress tests and fuzzers on small PRs. On failure the key stays absent, and
+        # the hook then runs those jobs rather than skipping them on a missing count.
+        try:
+            info.store_kv_data("src_changed_lines", get_src_changed_lines(info))
+        except Exception as e:
+            print(f"Failed to count changed lines under {SRC_CHANGED_LINES_DIR}: {e}")
 
     merge_base_commit_sha = ""
     if info.pr_number > 0:

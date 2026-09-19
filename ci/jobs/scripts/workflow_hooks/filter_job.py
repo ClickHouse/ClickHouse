@@ -140,6 +140,67 @@ def _has_coverage_pipeline_changes(changed_files):
     return False
 
 
+# Stress tests and fuzzers are skipped in a PR that changes fewer than this many
+# lines (additions + deletions) under `src/` - counted by the `store_data.py`
+# pre-hook as `src_changed_lines`. Tests, docs and CI scripts do not count.
+# The `ci-force-all` label (`Labels.CI_FORCE_ALL`) bypasses every filter hook,
+# including this one, so it is the way to run these jobs on a small PR.
+SMALL_PR_SRC_CHANGED_LINES = 100
+
+# The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
+# symbols, i.e. they are designed for exactly the small PRs this rule skips the
+# untargeted fuzzers on, so they keep running.
+_STRESS_AND_FUZZER_JOB_PREFIXES = (
+    JobNames.STRESS,
+    JobNames.ASTFUZZER,
+    JobNames.BUZZHOUSE,
+)
+
+# A PR that changes the stress or fuzzer machinery itself must run these jobs
+# whatever its size. Deliberately not the jobs' digest `include_paths`: those
+# include `tests/queries/0_stateless/` and `tests/config`, which almost every
+# small PR touches.
+_STRESS_AND_FUZZER_PATHS = (
+    "ci/jobs/stress_job.py",
+    "ci/jobs/ast_fuzzer_job.py",
+    "ci/jobs/buzzhouse_job.py",
+    "ci/jobs/scripts/stress/",
+    "ci/jobs/scripts/fuzzer/",
+    "ci/docker/stress-test",
+    "ci/docker/fuzzer",
+    "tests/docker_scripts/stress_runner.sh",
+    "tests/docker_scripts/stress_tests.lib",
+    "src/Client/BuzzHouse/",
+    "src/Common/QueryFuzzer",
+    "ci/jobs/scripts/workflow_hooks/filter_job.py",
+)
+
+
+def _is_stress_or_fuzzer_job(job_name):
+    return job_name.startswith(_STRESS_AND_FUZZER_JOB_PREFIXES) and "targeted" not in job_name
+
+
+def _has_stress_or_fuzzer_changes(changed_files):
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if any(p.startswith(path) for path in _STRESS_AND_FUZZER_PATHS):
+            return True
+    return False
+
+
+def _is_small_pr(info):
+    """True if the PR changes fewer than `SMALL_PR_SRC_CHANGED_LINES` lines under
+    `src/`. False when the count is unknown (the pre-hook failed to fetch it), so
+    an API hiccup runs the jobs instead of skipping them."""
+    if info.pr_number <= 0:
+        return False
+    src_changed_lines = info.get_kv_data("src_changed_lines")
+    if not isinstance(src_changed_lines, int):
+        print("WARNING: src_changed_lines is not stored - do not skip stress tests and fuzzers")
+        return False
+    return src_changed_lines < SMALL_PR_SRC_CHANGED_LINES
+
+
 _info_cache = None
 _pipeline_note_labels = set()
 
@@ -266,6 +327,21 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
+
+    # Skip the stress tests and fuzzers on small PRs. Each of these jobs takes
+    # 1-3 hours and they rarely catch anything a change of this size introduces;
+    # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
+    # master once more. Bypass: the `ci-force-all` label.
+    if (
+        _is_stress_or_fuzzer_job(job_name)
+        and _is_small_pr(_info_cache)
+        and not _has_stress_or_fuzzer_changes(changed_files)
+    ):
+        return (
+            True,
+            f"Skipped, fewer than {SMALL_PR_SRC_CHANGED_LINES} lines changed under src/ "
+            f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
+        )
 
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
