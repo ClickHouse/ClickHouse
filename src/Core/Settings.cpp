@@ -497,6 +497,9 @@ because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
 
+`skip_unavailable_shards` does not silence this: a replica the initiator had no free connection
+slot for was never contacted, so the shard is not treated as unavailable.
+
 Possible values:
 
 - Positive integer.
