@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int UNEXPECTED_END_OF_FILE;
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -113,7 +114,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         data_capacity = internal_buffer.size();
     }
 
-    size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
@@ -121,6 +121,10 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
+        /// A previous attempt may have reopened the download, so what is left of it is measured per attempt.
+        const size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
+        bool premature_end_of_response = false;
+
         try
         {
             ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, to_read_bytes);
@@ -128,7 +132,16 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             rlock.unlock(bytes_read); // Do not hold resource under bandwidth throttler
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_read);
-            break;
+
+            /// The body of the current response is exhausted. For a read with a right bound that is
+            /// the end of the data only if the response reached the bound: the bound is set locally
+            /// by the caller, and every layer above this buffer takes it as the length of the data,
+            /// so a response that ends before it must not be reported as the end of the file - an
+            /// endpoint or a proxy that caps its responses would silently truncate the file there.
+            if (bytes_read == 0 && read_until_position && offset < read_until_position)
+                premature_end_of_response = true;
+            else
+                break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
@@ -153,6 +166,25 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
             if (i + 1 == max_single_read_retries)
                 throw;
+
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
+            initialized = false;
+            initialize(i + 1);
+        }
+
+        if (premature_end_of_response)
+        {
+            /// Reopen the download at the offset the read has reached, and if the endpoint keeps
+            /// ending its responses before the bound, fail instead of returning truncated data.
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
+            LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
+                offset, read_until_position, path, i + 1, max_single_read_retries);
+
+            if (i + 1 == max_single_read_retries)
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
+                    "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
+                    offset, read_until_position, path);
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
