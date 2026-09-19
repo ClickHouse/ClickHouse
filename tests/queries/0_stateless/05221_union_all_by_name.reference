@@ -1,0 +1,60 @@
+basic alignment
+1	one	\N
+\N	two	3
+first-seen order with multiple operands
+1	left	\N	\N
+2	\N	middle	\N
+\N	right	\N	3
+duplicate rows are preserved
+1
+1
+outer projection: a
+1
+4
+outer projection: b
+2
+3
+derived table aliases
+1
+2
+nested BY NAME under a single-child wrapper
+3
+name then position
+1	one
+2	two
+3	three
+position then name
+1	one
+2	two
+3	three
+missing nullable value
+1	10
+1	\N
+missing LowCardinality Nullable
+hello	\N	Nullable(String)	Nullable(UInt8)
+\N	1	Nullable(String)	Nullable(UInt8)
+missing LowCardinality
+hello	\N	Nullable(String)	Nullable(UInt8)
+\N	1	Nullable(String)	Nullable(UInt8)
+missing Variant
+hello	\N	Variant(String, UInt64)	Nullable(UInt8)
+\N	1	Variant(String, UInt64)	Nullable(UInt8)
+missing Dynamic
+hello	\N	Dynamic	Nullable(UInt8)
+\N	1	Dynamic	Nullable(UInt8)
+AST JSON roundtrip
+SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
+normalized AST JSON roundtrip
+SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
+duplicate output names
+missing non-nullable-capable type
+recursive CTE
+UNION BY NAME with INTERSECT
+1
+2
+EXCEPT with UNION BY NAME
+1
+3
+UNION BY NAME with reordered INTERSECT operands
+1	x
+2	y

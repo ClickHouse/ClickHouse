@@ -2427,10 +2427,38 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
-    Block union_common_header = buildCommonHeaderForUnion(
-        query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
+    Block union_common_header;
+    if (union_node.getColumnMatchMode() == SetOperationColumnMatchMode::Name)
+    {
+        ColumnsWithTypeAndName common_header_columns;
+        for (const auto & projection_column : union_node.computeProjectionColumns(false))
+            common_header_columns.emplace_back(nullptr, projection_column.type, projection_column.name);
+        union_common_header = Block(std::move(common_header_columns));
+    }
+    else
+    {
+        union_common_header = buildCommonHeaderForUnion(
+            query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
+    }
     const auto & query_context = planner_context->getQueryContext();
-    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
+    addConvertingToCommonHeaderActionsIfNeeded(
+        query_plans, union_common_header, query_plans_headers, query_context, union_node.getColumnMatchMode());
+
+    if (!union_node.getProjectionAliasesToOverride().empty())
+    {
+        auto output_header = union_common_header;
+        const auto & aliases = union_node.getProjectionAliasesToOverride();
+        if (aliases.size() != output_header.columns())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Number of aliases does not match number of UNION projection columns. Expected {}, got {}",
+                output_header.columns(), aliases.size());
+
+        for (size_t i = 0; i < aliases.size(); ++i)
+            output_header.getByPosition(i).name = aliases[i];
+
+        addConvertingToCommonHeaderActionsIfNeeded(
+            query_plans, output_header, query_plans_headers, query_context, SetOperationColumnMatchMode::Position);
+    }
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = getMaxThreadsForAvailableMemory(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);

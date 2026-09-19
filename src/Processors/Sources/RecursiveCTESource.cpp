@@ -98,7 +98,7 @@ public:
         if (recursive_cte_union_node_queries_size > 2)
         {
             auto working_union_query = std::make_shared<UnionNode>(recursive_cte_union_node_typed.getMutableContext(),
-                recursive_cte_union_node_typed.getUnionMode());
+                recursive_cte_union_node_typed.getUnionMode(), SetOperationColumnMatchMode::Position);
             auto & working_union_query_subqueries = working_union_query->getQueries().getNodes();
 
             for (size_t i = 1; i < recursive_cte_union_node_queries_size; ++i)

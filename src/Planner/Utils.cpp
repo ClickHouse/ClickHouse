@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <Core/Field.h>
+
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -59,6 +61,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+
+#include <unordered_map>
 
 namespace DB
 {
@@ -155,8 +159,45 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
-    ContextPtr context)
+    ContextPtr context,
+    SetOperationColumnMatchMode column_match_mode)
 {
+    auto make_by_name_actions = [&](const ColumnsWithTypeAndName & source, const ColumnsWithTypeAndName & result)
+    {
+        ActionsDAG actions_dag(source);
+        std::unordered_map<String, const ActionsDAG::Node *> inputs;
+        inputs.reserve(actions_dag.getInputs().size());
+        for (const auto * input : actions_dag.getInputs())
+            inputs.emplace(input->result_name, input);
+
+        ActionsDAG::NodeRawConstPtrs projection;
+        projection.reserve(result.size());
+        for (const auto & result_element : result)
+        {
+            const ActionsDAG::Node * node = nullptr;
+            if (auto it = inputs.find(result_element.name); it != inputs.end())
+                node = it->second;
+            else
+            {
+                node = &actions_dag.addColumn(
+                    result_element.type->createColumnConst(0, Null()), result_element.type, result_element.name);
+                node = &actions_dag.materializeNode(*node);
+            }
+
+            if (!result_element.type->equals(*node->result_type))
+                node = &actions_dag.addCast(*node, result_element.type, result_element.name, context);
+
+            if (node->result_name != result_element.name)
+                node = &actions_dag.addAlias(*node, result_element.name);
+
+            projection.push_back(node);
+        }
+
+        actions_dag.getOutputs().swap(projection);
+        actions_dag.removeUnusedActions(false);
+        return actions_dag;
+    };
+
     size_t queries_size = query_plans.size();
     for (size_t i = 0; i < queries_size; ++i)
     {
@@ -164,14 +205,18 @@ void addConvertingToCommonHeaderActionsIfNeeded(
         if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
             continue;
 
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
-            union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            context,
-            false /*ignore_constant_values*/,
-            false /*add_cast_columns*/,
-            nullptr /*new_names*/);
+        auto actions_dag = column_match_mode == SetOperationColumnMatchMode::Name
+            ? make_by_name_actions(
+                query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
+                union_common_header.getColumnsWithTypeAndName())
+            : ActionsDAG::makeConvertingActions(
+                query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
+                union_common_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position,
+                context,
+                false /*ignore_constant_values*/,
+                false /*add_cast_columns*/,
+                nullptr /*new_names*/);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
