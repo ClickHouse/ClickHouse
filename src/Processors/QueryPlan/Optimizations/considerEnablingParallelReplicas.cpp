@@ -25,6 +25,7 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
+#include <unordered_set>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -232,6 +233,89 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
+std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
+{
+    Stack stack;
+    std::vector<ReadFromMergeTree *> reading_steps;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            if (auto * reading_step = typeid_cast<ReadFromMergeTree *>(frame_node.step.get()))
+                reading_steps.push_back(reading_step);
+        });
+    return reading_steps;
+}
+
+/// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
+/// the same read. The plans are built from the same query and differ only where the replicas step is
+/// substituted, so their reads pair up in traversal order. Without this only the matched read gets an
+/// analysis and the rest scan everything - on TPC-H q03, 1045 marks against 614.
+///
+/// An analysis carries the mark ranges selected for one read's predicates, so handing it to the wrong
+/// read changes which rows are returned. Traversal order alone does not rule that out: when a table is
+/// read more than once - a self-join, or the same table under two aliases - the two reads have the same
+/// storage but different predicates, so a pairing that drifted between the plans would still pass a
+/// storage check. Require instead that every read be of a distinct table, which makes each pair the only
+/// possible one, and transplant nothing otherwise.
+void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
+{
+    auto single_node_reads = collectReadingSteps(single_node_root);
+    auto replicas_reads = collectReadingSteps(replicas_root);
+
+    if (single_node_reads.size() != replicas_reads.size())
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis",
+            single_node_reads.size(),
+            replicas_reads.size());
+        return;
+    }
+
+    std::unordered_set<const MergeTreeData *> distinct_tables;
+    for (const auto * read : single_node_reads)
+        distinct_tables.insert(&read->getMergeTreeData());
+    if (distinct_tables.size() != single_node_reads.size())
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The plan reads some table more than once ({} reads of {} tables), so reads cannot be paired by "
+            "table alone; not transplanting index analysis",
+            single_node_reads.size(),
+            distinct_tables.size());
+        return;
+    }
+
+    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    {
+        if (&single_node_reads[i]->getMergeTreeData() != &replicas_reads[i]->getMergeTreeData())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Read {} is {} in the single-node plan and {} in the replicas plan; not transplanting index analysis",
+                i,
+                single_node_reads[i]->getStorageID().getNameForLogs(),
+                replicas_reads[i]->getStorageID().getNameForLogs());
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    {
+        /// Index analysis is lazy, so a read the single-node plan has not needed yet has no result to
+        /// hand over. Produce it here, the same way the matched read step does: it is one analysis per
+        /// read either way, and this way it is done once and shared instead of being repeated by the
+        /// replicas plan.
+        auto analyzed = single_node_reads[i]->getAnalyzedResult();
+        if (!analyzed)
+            analyzed = single_node_reads[i]->selectRangesToRead();
+        if (analyzed)
+            replicas_reads[i]->setAnalyzedResult(analyzed);
+    }
+}
+
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
 ///
 /// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
@@ -396,7 +480,12 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
+    /// The probe is only costed, so it is built without materializing the subqueries a `GLOBAL IN` /
+    /// `GLOBAL JOIN` rewrite would execute. If replicas win, the plan is rebuilt for real below - the
+    /// deferred one describes the query but its temporary tables are empty.
+    auto built_sets = collectBuiltSets(query_plan);
+    auto probe_build = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*defer_materialization*/ true);
+    auto & plan_with_parallel_replicas = probe_build.plan;
     if (!plan_with_parallel_replicas)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
@@ -520,6 +609,57 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
+                /// Replicas are worth it, so the probe is about to become the plan that runs. If it was
+                /// built with its `GLOBAL IN` / `GLOBAL JOIN` temporary tables left empty, build it again
+                /// and materialize them this time - only now is it known that the rows will be used. If
+                /// that build does not come back, decline rather than execute a plan whose temporary
+                /// tables are empty, which would silently return wrong results.
+                if (probe_build.materialization_deferred)
+                {
+                    auto materialized = optimization_settings.query_plan_with_parallel_replicas_builder(
+                        built_sets, /*defer_materialization*/ false);
+                    /// `materialization_deferred` must be false here - this build was asked to
+                    /// materialize. Check it anyway: a plan that still holds empty temporary tables
+                    /// would run and return wrong results rather than fail, so decline instead.
+                    if (!materialized.plan || materialized.materialization_deferred)
+                    {
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "Could not rebuild the parallel replicas plan with its subqueries materialized "
+                            "(plan built: {}, still deferred: {}). Not enabling parallel replicas reading",
+                            materialized.plan != nullptr,
+                            materialized.materialization_deferred);
+                        return;
+                    }
+                    plan_with_parallel_replicas = std::move(materialized.plan);
+                    final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
+                    if (!final_node_in_replica_plan)
+                        return;
+
+                    /// Everything below - `source_reading_step`, `analysis`, the cost the decision was
+                    /// made on - hangs off the match against the probe, and the probe saw its `GLOBAL IN`
+                    /// / `GLOBAL JOIN` temporary tables empty. Join order is chosen from row counts, so
+                    /// filling them can legitimately reorder the rebuilt plan, and `findReadingStep`
+                    /// descends by position: a reordered join hands back a different read. Re-match and
+                    /// decline unless the rebuilt plan lands on the same node, rather than carry a match
+                    /// that describes a plan that no longer exists.
+                    const auto [rematched_node, rematched_hash] = findCorrespondingNodeInSingleNodePlan(
+                        *final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+                    if (rematched_node != corresponding_node_in_single_replica_plan
+                        || rematched_hash != single_replica_plan_node_hash)
+                    {
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "Materializing the subqueries changed which node the parallel replicas plan matches "
+                            "(hash {} against {}). Not enabling parallel replicas reading",
+                            rematched_hash,
+                            single_replica_plan_node_hash);
+                        return;
+                    }
+                }
+
+                transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode());
+
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
@@ -534,20 +674,24 @@ void considerEnablingParallelReplicas(
                 /// keep its own analysis instead of overwriting it: it is the same parallelized table
                 /// (findReadingStep runs the same descent on the hash-matched JOIN node in both plans, and the
                 /// swap_streams case is already diverted to the throw above), so the existing result is
-                /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
-                /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
-                /// apply a mismatched analysis.
-                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
-                {
-                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
-                }
-                else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
+                /// equivalent.
+                ///
+                /// The table check guards the assignment, so it comes first. Handing a read the ranges
+                /// selected for another table's predicates would execute and return wrong rows, and the read
+                /// with no analysis yet is precisely the one about to be given `analysis`. A different table
+                /// means the two plans diverged at the matched node - which the rebuild above can do, since
+                /// it replaces the replicas plan - so fail loudly rather than read the wrong ranges.
+                if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
+                        "Parallel replicas branch read is for table {} but the single-node plan reads {}",
                         local_replica_plan_reading_step->getStorageID().getNameForLogs(),
                         source_reading_step->getStorageID().getNameForLogs());
+                }
+                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
+                {
+                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
