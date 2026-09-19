@@ -102,12 +102,9 @@ done
 # distributed execution is therefore skipped and the ordinary INSERT SELECT places the rows through the
 # `Distributed` sink. With `= 1` the forwarded INSERT still targets the `Distributed` table, so every shard
 # re-shards its own rows and the distributed execution is kept.
-# `send_logs_level`: skipping the distributed execution is reported with a warning, which would otherwise
-# reach the client's stderr.
 SHARDED_SETTINGS="enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_cluster_engines = 1, distributed_foreground_insert = 1, log_queries = 1,
-    send_logs_level = 'fatal'"
+    parallel_replicas_for_cluster_engines = 1, distributed_foreground_insert = 1, log_queries = 1"
 
 QUERY_ID_SHARDED_2="05219_${CLICKHOUSE_DATABASE}_sharded2"
 QUERY_ID_SHARDED_1="05219_${CLICKHOUSE_DATABASE}_sharded1"

@@ -1439,7 +1439,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
         && hasShardingKeyForReads() && sharding_key_is_deterministic)
     {
-        LOG_WARNING(
+        LOG_INFO(
             log,
             "Parallel distributed INSERT SELECT into {} is not possible: the rows read from {} cannot satisfy "
             "its deterministic sharding key ({}); falling back to the ordinary INSERT SELECT",
