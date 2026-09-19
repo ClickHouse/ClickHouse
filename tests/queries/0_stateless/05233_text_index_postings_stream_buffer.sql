@@ -143,14 +143,16 @@ INSERT INTO t_postings_buffer_large SELECT number, if(cityHash64(number) % 2 = 0
 SELECT count() = (SELECT countIf(cityHash64(number) % 2 = 0) FROM numbers(1000000)) FROM t_postings_buffer_large WHERE hasToken(s, 'common')
 SETTINGS text_index_posting_list_apply_mode = 'lazy', query_plan_optimize_count_from_text_index = 0,
          local_filesystem_read_method = 'pread', use_page_cache_for_local_disks = 0, min_bytes_to_use_direct_io = 0,
-         log_comment = '05230_lazy_large_list';
+         log_comment = '05233_lazy_large_list';
 
 SYSTEM FLUSH LOGS query_log;
 
 -- Under parallel replicas the reads land on the replica rows, so take the largest count over the rows of the
--- query. Besides the posting list, the query reads the index header, one dictionary block and the primary key,
--- one read each; the posting list alone took about twenty with a 16 KiB buffer.
-SELECT max(ProfileEvents['ReadBufferFromFileDescriptorRead']) < 8
+-- query. Besides the posting list, the query reads the index header, a dictionary block, the marks and the
+-- primary key, six reads in all. The posting list itself takes two reads through a buffer capped at the regular
+-- local read buffer size of 128 KiB (`max_read_buffer_size_local_fs`) and fifteen through a 16 KiB one:
+-- 23 reads in total before this change, 8 after.
+SELECT max(ProfileEvents['ReadBufferFromFileDescriptorRead']) < 12
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
@@ -161,7 +163,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
         AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND is_initial_query = 1
-        AND log_comment = '05230_lazy_large_list'
+        AND log_comment = '05233_lazy_large_list'
   );
 
 DROP TABLE t_postings_buffer_large;
