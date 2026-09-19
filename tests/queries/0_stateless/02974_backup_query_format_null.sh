@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS tbl;
-CREATE TABLE tbl (a Int32) ENGINE = MergeTree() ORDER BY tuple();
+CREATE TABLE tbl (a Int32) ENGINE = MergeTree() ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 INSERT INTO tbl VALUES (2), (80), (-12345);
 "
 

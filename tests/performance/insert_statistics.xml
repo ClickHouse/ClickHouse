@@ -16,7 +16,7 @@
 
     <create_query>
         CREATE TABLE t_minmax_stats_uint64(c1 UInt64 STATISTICS(minmax), c2 UInt64 STATISTICS(minmax), c3 UInt64 STATISTICS(minmax), c4 UInt64 STATISTICS(minmax), c5 UInt64 STATISTICS(minmax), c6 UInt64 STATISTICS(minmax), c7 UInt64 STATISTICS(minmax), c8 UInt64 STATISTICS(minmax), c9 UInt64 STATISTICS(minmax), c10 UInt64 STATISTICS(minmax))
-        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, auto_statistics_types = '';
     </create_query>
 
     <create_query>
@@ -26,12 +26,12 @@
 
     <create_query>
         CREATE TABLE t_minmax_stats_float64(c1 Float64 STATISTICS(minmax), c2 Float64 STATISTICS(minmax), c3 Float64 STATISTICS(minmax), c4 Float64 STATISTICS(minmax), c5 Float64 STATISTICS(minmax), c6 Float64 STATISTICS(minmax), c7 Float64 STATISTICS(minmax), c8 Float64 STATISTICS(minmax), c9 Float64 STATISTICS(minmax), c10 Float64 STATISTICS(minmax))
-        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, auto_statistics_types = '';
     </create_query>
 
     <create_query>
         CREATE TABLE t_basic_stats_float64(c1 Float64 STATISTICS(basic), c2 Float64 STATISTICS(basic), c3 Float64 STATISTICS(basic), c4 Float64 STATISTICS(basic), c5 Float64 STATISTICS(basic), c6 Float64 STATISTICS(basic), c7 Float64 STATISTICS(basic), c8 Float64 STATISTICS(basic), c9 Float64 STATISTICS(basic), c10 Float64 STATISTICS(basic))
-        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, auto_statistics_types = '';
     </create_query>
 
     <create_query>
@@ -51,7 +51,7 @@
 
     <create_query>
         CREATE TABLE t_uniq_v2_uint64(c1 UInt64 STATISTICS(uniq_v2))
-        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, auto_statistics_types = '';
     </create_query>
 
     <create_query>
@@ -61,7 +61,7 @@
 
     <create_query>
         CREATE TABLE t_uniq_v2_float64(c1 Float64 STATISTICS(uniq_v2))
-        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, auto_statistics_types = '';
     </create_query>
 
     <fill_query>INSERT INTO t_basic_stats_src SELECT rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand() FROM numbers(1000000)</fill_query>

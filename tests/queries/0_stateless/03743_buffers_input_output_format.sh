@@ -173,7 +173,7 @@ CREATE TABLE buf_json_variant_dynamic
     d  Dynamic
 )
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO buf_json_variant_dynamic VALUES
 (

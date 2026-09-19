@@ -762,6 +762,12 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
     if (range_size <= 1)
         return range_size;
 
+    /// Some nested column types (e.g. Tuple, Object, Array of non-fixed elements) do not implement getDataAt.
+    /// For them, return the upper-bound estimate from the base implementation - the same estimate
+    /// such columns produce when they are not wrapped in Nullable.
+    if (!nested_column->supportsGetDataAt())
+        return IColumn::estimateCardinalityInPermutedRange(permutation, equal_range);
+
     /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     StringHashSet elements;
     bool has_null = false;

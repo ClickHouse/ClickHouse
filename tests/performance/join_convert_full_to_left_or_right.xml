@@ -1,6 +1,6 @@
 <test>
-    <create_query>CREATE TABLE users1 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY ()</create_query>
-    <create_query>CREATE TABLE users2 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY ()</create_query>
+    <create_query>CREATE TABLE users1 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY () SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE users2 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY () SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <!-- The amount of data this query reads has to be a property of the query plan
          and not of whatever the background merge happened to do first.
