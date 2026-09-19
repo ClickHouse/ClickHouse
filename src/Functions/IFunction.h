@@ -58,6 +58,9 @@ public:
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
 
+    /// Returns indexes of arguments that must be `ColumnConst`.
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
 protected:
     friend struct ::FunctionsStressTestThread;
 
@@ -110,10 +113,6 @@ protected:
       * Otherwise, convert all replicated columns to ordinary columns.
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
-
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
