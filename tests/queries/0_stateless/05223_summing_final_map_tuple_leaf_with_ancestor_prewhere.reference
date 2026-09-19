@@ -1,0 +1,29 @@
+--- a value leaf in the output, the tuple in PREWHERE applied after FINAL
+1	[2]
+2	[1,5]
+--- a value leaf in the output, the tuple in PREWHERE applied before FINAL
+1	[2]
+2	[1,5]
+--- the key leaf in the output, the tuple in PREWHERE applied after FINAL
+1	[1]
+2	[1,2]
+--- the tuple in the output, a value leaf in PREWHERE applied after FINAL
+1	([1],[2])
+2	([1,2],[1,5])
+--- a value leaf in the output, the tuple in a row policy
+1	[2]
+2	[1,5]
+--- a value leaf and then the tuple in the output
+1	[2]	([1],[2])
+2	[1,5]	([1,2],[1,5])
+--- the tuple and then a value leaf in the output
+1	([1],[2])	[2]
+2	([1,2],[1,5])	[1,5]
+--- the key leaf and then the tuple in the output
+1	[1]	([1],[2])
+2	[1,2]	([1,2],[1,5])
+--- the tuple comes before its leaf in the header of the reading step
+1
+--- the state after a real merge
+1	2	([1],[2])
+2	2	([1,2],[1,5])
