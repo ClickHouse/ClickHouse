@@ -3,7 +3,7 @@
 -- original bytes, and its picture form (e.g. tab as a picture) is highlighted.
 SET output_format_pretty_color = 1;
 SET output_format_pretty_highlight_trailing_spaces = 1;
-SET output_format_vertical_display_control_characters = 1;
+SET output_format_pretty_display_control_characters = 1;
 
 SELECT
     'plain' AS no_whitespace,

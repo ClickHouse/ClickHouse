@@ -41,7 +41,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
         /// the same treatment as the values: the replacement happens before truncation, because a
         /// Control Picture takes one visible position while the raw control character takes none.
         String name = sample.getByPosition(i).name;
-        if (format_settings.pretty.vertical_display_control_characters)
+        if (format_settings.pretty.display_control_characters)
             name = replaceControlCharactersWithPictures(std::move(name));
 
         auto [name_cut, width] = truncateName(name,
@@ -104,7 +104,7 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         /// Trailing whitespace is highlighted in the same pass: it must be detected on the
         /// pre-replacement bytes, because the replacement turns trailing tabs and newlines into
         /// Control Pictures that `highlightTrailingSpaces` would not recognize.
-        if (format_settings.pretty.vertical_display_control_characters)
+        if (format_settings.pretty.display_control_characters)
             serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value), format_settings.pretty.highlight_trailing_spaces);
 
         /// Highlight groups of thousands.
@@ -112,12 +112,12 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
             serialized_value = highlightDigitGroups(serialized_value);
 
         /// Highlight trailing spaces.
-        if (format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.vertical_display_control_characters)
+        if (format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.display_control_characters)
             serialized_value = highlightTrailingSpaces(serialized_value);
 
         out.write(serialized_value.data(), serialized_value.size());
     }
-    else if (format_settings.pretty.vertical_display_control_characters)
+    else if (format_settings.pretty.display_control_characters)
     {
         /// Make non-printable control characters visible instead of being silently swallowed.
         /// Stream through a decorator so large values are not fully buffered in memory.
@@ -290,12 +290,14 @@ Row 1:
 test: string with 'quotes' and ␉ with some special ␊ characters
 ```
 
-To print control characters verbatim instead, disable [`output_format_vertical_display_control_characters`](/operations/settings/formats#output_format_vertical_display_control_characters):
+`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
+
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test
 FORMAT Vertical
-SETTINGS output_format_vertical_display_control_characters = 0
+SETTINGS output_format_pretty_display_control_characters = 0
 ```
 
 ```response

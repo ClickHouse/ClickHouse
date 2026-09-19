@@ -24,11 +24,17 @@ String highlightTrailingSpaces(String source);
 
 /// Replace non-printable control characters (C0 controls and DEL) with the corresponding
 /// Unicode "Control Pictures" (U+2400..U+2421), so they become visible instead of being swallowed.
+/// `ESC` is deliberately kept intact, so that ANSI escape sequences carried by the data are still
+/// interpreted by the terminal - this is what makes visualizations possible.
 /// With `highlight_trailing_whitespace`, trailing whitespace is also highlighted the same way as
 /// `highlightTrailingSpaces` does. It has to happen in one pass here, because the trailing
 /// whitespace must be detected on the pre-replacement bytes: after the replacement, trailing tabs
 /// and newlines are Control Pictures that the highlighter would not recognize.
-String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace = false);
+/// With `keep_line_feeds`, `\n` is kept intact as well. The `Pretty*` formats use it: there a line
+/// feed is never an invisible character, because it either becomes a new line of the table cell
+/// (`output_format_pretty_multiline_fields`), or is deliberately emitted as is so that multi-line
+/// values stay easy to copy-paste.
+String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace = false, bool keep_line_feeds = false);
 
 /// Streaming counterpart of `replaceControlCharactersWithPictures`: a `WriteBuffer` that forwards
 /// everything written to it to the underlying buffer, replacing non-printable control characters

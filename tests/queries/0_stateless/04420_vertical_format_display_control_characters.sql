@@ -9,6 +9,11 @@ SELECT 'null\0and\x01mixed\x1btext' AS value FORMAT Vertical;
 SELECT 'delete\x7Fchar' AS value FORMAT Vertical;
 SELECT 'normal text' AS value FORMAT Vertical;
 
+-- `ESC` is never replaced, so that the ANSI escape sequences carried by the data keep being
+-- interpreted by the terminal (the mixed value above also keeps its `ESC` byte).
+SELECT '\x1b[31mred\x1b[0m' AS value FORMAT Vertical;
+SELECT 1 AS `esc\x1bname` FORMAT Vertical;
+
 -- A literal backslash sequence in the data stays intact and is not confused with a control character.
 SELECT 'literal\\0backslash' AS value FORMAT Vertical;
 
@@ -16,10 +21,10 @@ SELECT 'literal\\0backslash' AS value FORMAT Vertical;
 SELECT 'snowman ☃ and é' AS value FORMAT Vertical;
 
 -- The setting can be disabled to print raw bytes (the old behavior).
-SELECT 'tab\tand\nnewline' AS value FORMAT Vertical SETTINGS output_format_vertical_display_control_characters = 0;
+SELECT 'tab\tand\nnewline' AS value FORMAT Vertical SETTINGS output_format_pretty_display_control_characters = 0;
 
 -- Control characters in column names are displayed as well, and their Control Pictures are taken into
 -- account when the names are padded to the same width.
 SELECT 1 AS `tab\there` FORMAT Vertical;
 SELECT 1 AS `line\nbreak`, 2 AS ok FORMAT Vertical;
-SELECT 1 AS `tab\there` FORMAT Vertical SETTINGS output_format_vertical_display_control_characters = 0;
+SELECT 1 AS `tab\there` FORMAT Vertical SETTINGS output_format_pretty_display_control_characters = 0;

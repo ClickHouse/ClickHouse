@@ -137,6 +137,13 @@ void PrettyBlockOutputFormat::calculateWidths(
                     serialized_value.resize(max_byte_size);
             }
 
+            /// The widths have to be calculated on the same text that `writeValueWithPadding` prints,
+            /// so the replacement happens here as well: a Control Picture takes one visible position,
+            /// while the raw control character takes none.
+            if (format_settings.pretty.display_control_characters)
+                serialized_value = replaceControlCharactersWithPictures(
+                    std::move(serialized_value), /*highlight_trailing_whitespace=*/ false, /*keep_line_feeds=*/ true);
+
             size_t start_from_offset = 0;
             size_t next_offset = 0;
             while (start_from_offset < serialized_value.size())
@@ -173,7 +180,13 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         /// Also, calculate the widths for the names of columns.
         {
-            auto [name, width] = truncateName(elem.name,
+            /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<TAB>b``), and
+            /// the header is a single line, so a line feed in a name is replaced as well.
+            String elem_name = elem.name;
+            if (format_settings.pretty.display_control_characters)
+                elem_name = replaceControlCharactersWithPictures(std::move(elem_name));
+
+            auto [name, width] = truncateName(elem_name,
                 format_settings.pretty.max_column_name_width_cut_to
                     ? std::max<UInt64>(max_padded_widths[i], format_settings.pretty.max_column_name_width_cut_to)
                     : 0,
@@ -686,8 +699,17 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     {
         serialized_value = String();
         start_from_offset = 0;
-        WriteBufferFromString out_serialize(*serialized_value);
-        serialization.serializeText(column, row_num, out_serialize, format_settings);
+        {
+            WriteBufferFromString out_serialize(*serialized_value);
+            serialization.serializeText(column, row_num, out_serialize, format_settings);
+        }
+
+        /// Make non-printable control characters visible instead of being silently swallowed by the
+        /// terminal. It has to be done before the value is split into lines and padded, the same way
+        /// as in `calculateWidths`, so that the widths calculated there match the printed text.
+        if (format_settings.pretty.display_control_characters)
+            serialized_value = replaceControlCharactersWithPictures(
+                std::move(*serialized_value), /*highlight_trailing_whitespace=*/ false, /*keep_line_feeds=*/ true);
     }
 
     size_t prefix = row_number_width + (style == Style::Space ? 1 : 2);
@@ -956,16 +978,29 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Rows are not escaped in any of the `Pretty` formats. However, when a wide but short table makes a `Pretty` format fall back to the [`Vertical`](/reference/formats/Vertical) format (see [`output_format_pretty_fallback_to_vertical`](/operations/settings/formats#output_format_pretty_fallback_to_vertical)), non-printable control characters are displayed as Unicode "Control Pictures" by default, controlled by [`output_format_vertical_display_control_characters`](/operations/settings/formats#output_format_vertical_display_control_characters). The following example is shown for the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format:
+Rows are not escaped in any of the `Pretty` formats. Instead, non-printable control characters (C0 controls `0x00`-`0x1F` and `DEL` `0x7F`) in the values and in the column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`-`U+2421`) by default, so that they stay visible and do not deform the table. For example, a tab is shown as `␉`:
 
 ```sql title="Query"
-SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test FORMAT PrettyCompact
 ```
 
 ```response title="Response"
-┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and      character │
-└──────────────────────────────────────┘
+PRETTY_CONTROL_PICTURES_RESPONSE_PLACEHOLDER
+```
+
+`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
+
+A line feed is another exception: it is never replaced, because it either becomes a new line of the table cell (see [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields)), or is deliberately emitted as is so that multi-line values stay easy to copy-paste.
+
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+
+```sql title="Query"
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test FORMAT PrettyCompact
+SETTINGS output_format_pretty_display_control_characters = 0
+```
+
+```response title="Response"
+PRETTY_RAW_CONTROL_CHARACTERS_RESPONSE_PLACEHOLDER
 ```
 
 To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 

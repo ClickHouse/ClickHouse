@@ -1455,8 +1455,12 @@ Print a readable number tip on the right side of the table if the block consists
     DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
-    DECLARE(Bool, output_format_vertical_display_control_characters, true, R"(
-If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the values and column names of the Vertical output format are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
+    DECLARE(Bool, output_format_pretty_display_control_characters, true, R"(
+If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
+
+A line feed is an exception in the `Pretty*` formats: it is never replaced there, because it either becomes a new line of the table cell (see [`output_format_pretty_multiline_fields`](#output_format_pretty_multiline_fields)), or is deliberately emitted as is so that multi-line values stay easy to copy-paste. The `Vertical` format prints one field per line, so there a line feed is replaced with ␊ like any other control character.
 )", 0) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.

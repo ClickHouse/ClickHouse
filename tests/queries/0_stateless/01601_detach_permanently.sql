@@ -3,7 +3,7 @@
 SET send_logs_level = 'fatal';
 
 -- The multi-line CREATE statements below are shown in Vertical format; keep raw line breaks for a stable reference.
-SET output_format_vertical_display_control_characters = 0;
+SET output_format_pretty_display_control_characters = 0;
 
 SELECT 'database atomic tests';
 
