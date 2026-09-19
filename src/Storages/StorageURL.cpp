@@ -34,7 +34,9 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -480,17 +482,70 @@ StorageURLSource::StorageURLSource(
         }
         else
         {
+            /// Defer filters that need DEFAULT columns until after AddingDefaultsTransform
+            /// when those columns may be missing from the file. Without a per-file schema,
+            /// table-level hasDefault is the signal that the column may be absent (same as File).
+            FilterDAGInfoPtr deferred_row_level_filter;
+            PrewhereInfoPtr deferred_prewhere_info;
+            FormatFilterInfoPtr reader_format_filter_info = format_filter_info;
+            Block reader_header = block_for_format;
+
+            auto filter_requires_defaulted_column = [&](const NamesAndTypesList & required_columns) -> bool
+            {
+                for (const auto & column : required_columns)
+                {
+                    if (columnOrStorageParentHasDefault(columns_description, column.name))
+                        return true;
+                }
+                return false;
+            };
+
+            bool defer_filters = false;
+            if (format_filter_info && columns_description.hasDefaults())
+            {
+                if (format_filter_info->row_level_filter
+                    && filter_requires_defaulted_column(format_filter_info->row_level_filter->actions.getRequiredColumns()))
+                    defer_filters = true;
+                if (format_filter_info->prewhere_info
+                    && filter_requires_defaulted_column(format_filter_info->prewhere_info->prewhere_actions.getRequiredColumns()))
+                    defer_filters = true;
+            }
+
+            if (defer_filters)
+            {
+                deferred_row_level_filter = format_filter_info->row_level_filter;
+                deferred_prewhere_info = format_filter_info->prewhere_info;
+                reader_format_filter_info = std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    nullptr,
+                    nullptr);
+                reader_format_filter_info->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                reader_format_filter_info->condition_hash = format_filter_info->condition_hash;
+                reader_format_filter_info->rows_to_read = format_filter_info->rows_to_read;
+
+                auto add_filter_inputs = [&](const ActionsDAG & dag)
+                {
+                    appendDeferredFilterInputs(reader_header, dag, columns_description);
+                };
+                if (deferred_row_level_filter)
+                    add_filter_inputs(deferred_row_level_filter->actions);
+                if (deferred_prewhere_info)
+                    add_filter_inputs(deferred_prewhere_info->prewhere_actions);
+            }
+
             // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
             input_format = FormatFactory::instance().getInput(
                 format,
                 *read_buf,
-                block_for_format,
+                reader_header,
                 getContext(),
                 max_block_size,
                 format_settings,
                 parser_shared_resources,
-                format_filter_info,
-                /* is_remote_ fs */ true,
+                reader_format_filter_info,
+                /* is_remote_fs */ true,
                 compression_method,
                 need_only_count);
 
@@ -506,6 +561,49 @@ StorageURLSource::StorageURLSource(
                 builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
+                });
+            }
+
+            if (auto extraction = tryCreateFilterSubcolumnExtractionActions(
+                    builder.getHeader(), deferred_row_level_filter, deferred_prewhere_info, getContext()))
+            {
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, *extraction);
+                });
+            }
+
+            if (deferred_row_level_filter)
+            {
+                auto row_level_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                        header,
+                        row_level_actions,
+                        deferred_row_level_filter->column_name,
+                        deferred_row_level_filter->do_remove_column,
+                        /*on_totals=*/false,
+                        /*rows_filtered=*/nullptr,
+                        /*condition=*/std::nullopt,
+                        /*update_row_numbers_info=*/true);
+                });
+            }
+
+            if (deferred_prewhere_info)
+            {
+                auto prewhere_actions = std::make_shared<ExpressionActions>(deferred_prewhere_info->prewhere_actions.clone());
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                        header,
+                        prewhere_actions,
+                        deferred_prewhere_info->prewhere_column_name,
+                        deferred_prewhere_info->remove_prewhere_column,
+                        /*on_totals=*/false,
+                        /*rows_filtered=*/nullptr,
+                        /*condition=*/std::nullopt,
+                        /*update_row_numbers_info=*/true);
                 });
             }
         }
