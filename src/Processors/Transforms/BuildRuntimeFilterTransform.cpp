@@ -127,8 +127,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
     }
     catch (...)
     {
-        /// A merge on registration reads the filter's exact-value columns, which an interrupted
-        /// insert can leave mid-append.
+        /// An interrupted insert can leave the filter's exact-value columns mid-append.
         built_filter.reset();
         throw;
     }
@@ -136,7 +135,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::transform(std::exception_ptr &)
 {
-    /// This hook runs for an exception arriving from upstream: the build side never saw all its rows.
+    /// Only an upstream exception arrives here; a throw from `transform(Chunk &)` does not.
     built_filter.reset();
 }
 
@@ -145,8 +144,7 @@ void BuildRuntimeFilterTransform::finish()
     /// A deserialized step has no random key and is never executed in practice; nothing to register.
     if (filter_key.empty())
         return;
-    /// A filter missing from the lookup is all-pass on the probe side, so an abandoned build is
-    /// withheld rather than published.
+    /// A filter missing from the lookup is all-pass on the probe side.
     if (!built_filter)
         return;
     if (!query_context)
