@@ -1,0 +1,200 @@
+<?xml version="1.0"?>
+<!-- Example configuration for `clickhouse proxy`.
+
+     The proxy accepts connections over end-user ClickHouse protocols and forwards them to backend
+     servers chosen by a routing table. Start it with:
+
+         clickhouse proxy -C proxy_config.xml
+-->
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <console>1</console>
+    </logger>
+
+    <proxy>
+        <!-- Address the listeners bind to unless they override it. -->
+        <listen_host>0.0.0.0</listen_host>
+
+        <!-- Server name the proxy reports when it answers a hello packet on its own. -->
+        <display_name>ClickHouse proxy</display_name>
+
+        <listeners>
+            <listener>
+                <protocol>http</protocol>
+                <port>8123</port>
+                <!-- Backend used when no routing rule matches. -->
+                <pool>analytics</pool>
+            </listener>
+
+            <listener>
+                <protocol>http</protocol>
+                <port>8443</port>
+                <secure>1</secure>           <!-- Terminate TLS (see the openSSL.server section). -->
+                <pool>analytics</pool>
+            </listener>
+
+            <listener>
+                <protocol>native</protocol>
+                <port>9000</port>
+                <pool>analytics</pool>
+            </listener>
+
+            <listener>
+                <protocol>postgresql</protocol>
+                <port>9005</port>
+                <pool>analytics</pool>
+            </listener>
+
+            <listener>
+                <protocol>mysql</protocol>
+                <port>9004</port>
+                <pool>analytics</pool>
+            </listener>
+
+            <!-- Route TLS by SNI without decrypting anything. -->
+            <listener>
+                <protocol>tls</protocol>
+                <port>9440</port>
+                <pool>analytics</pool>
+            </listener>
+
+            <!-- Terminate SSH and route by the client's public key (see the <ssh> section and the
+                 <authorized_key> rule below). -->
+            <listener>
+                <protocol>ssh</protocol>
+                <port>9022</port>
+                <pool>analytics</pool>
+            </listener>
+
+            <!-- Opaque TCP forwarding, e.g. for gRPC or Arrow Flight. -->
+            <listener>
+                <protocol>stream</protocol>
+                <port>9100</port>
+                <pool>analytics</pool>
+            </listener>
+        </listeners>
+
+        <pools>
+            <pool>
+                <name>analytics</name>
+                <!-- random | round_robin | least_connections | lowest_latency | least_resources -->
+                <load_balancing>least_connections</load_balancing>
+
+                <backend>
+                    <host>backend-1.example.net</host>
+                    <tcp_port>9000</tcp_port>
+                    <http_port>8123</http_port>
+                    <mysql_port>9004</mysql_port>
+                    <postgresql_port>9005</postgresql_port>
+                    <weight>2</weight>
+                    <!-- Optional credentials for polling CPU and memory usage. -->
+                    <monitor_user>monitor</monitor_user>
+                    <monitor_password>secret</monitor_password>
+                </backend>
+                <backend>
+                    <host>backend-2.example.net</host>
+                    <weight>1</weight>
+                </backend>
+            </pool>
+
+            <pool>
+                <name>staging</name>
+                <load_balancing>random</load_balancing>
+                <backend>
+                    <host>staging.example.net</host>
+                </backend>
+            </pool>
+        </pools>
+
+        <!-- Routing rules are checked in order; the first match wins. All specified criteria must
+             match. When no rule matches, the listener's default <pool> is used. -->
+        <rules>
+            <!-- Route by exact database name. -->
+            <rule>
+                <database>staging</database>
+                <pool>staging</pool>
+            </rule>
+
+            <!-- Route users named ch-<tenant> to a per-tenant backend, extracting the tenant with a
+                 regular expression and substituting it into the backend address. -->
+            <rule>
+                <user_regexp>ch-(\w+)</user_regexp>
+                <backend_template>
+                    <host>$1.backends.example.net</host>
+                    <tcp_port>9000</tcp_port>
+                </backend_template>
+            </rule>
+
+            <!-- Send read queries and writes to different pools (HTTP only). -->
+            <rule>
+                <protocol>http</protocol>
+                <query_type>insert</query_type>
+                <pool>analytics</pool>
+            </rule>
+
+            <!-- Route SSH connections by the client's public key. Provide keys inline (newline- or
+                 comma-separated "<type> <base64>") or point at an authorized_keys file. -->
+            <rule>
+                <!-- <authorized_key_file>/etc/clickhouse-proxy/staging.keys</authorized_key_file> -->
+                <authorized_key>ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAExampleStagingKey</authorized_key>
+                <pool>staging</pool>
+            </rule>
+        </rules>
+
+        <!-- Prefer the same backend for repeated connections. -->
+        <stickiness>
+            <by_session_id>1</by_session_id>    <!-- session_id from the HTTP URL. -->
+            <by_peer_address>0</by_peer_address>
+        </stickiness>
+
+        <!-- Optional hooks. Each runs: <command> KIND PROTOCOL HOST USER DATABASE -->
+        <hooks>
+            <!-- <on_unknown>/usr/local/bin/provision-backend</on_unknown> -->
+            <!-- <on_first_seen_database>/usr/local/bin/create-database</on_first_seen_database> -->
+            <timeout_ms>60000</timeout_ms>
+        </hooks>
+
+        <health_check>
+            <enabled>1</enabled>
+            <interval_ms>5000</interval_ms>
+            <timeout_ms>3000</timeout_ms>
+            <failures_to_mark_down>3</failures_to_mark_down>
+            <resource_poll_interval_ms>10000</resource_poll_interval_ms>
+        </health_check>
+
+        <!-- SSH termination: the proxy's own host key, and the bastion credential it uses to log in to
+             backends after it has identified the client by its public key. Required for `ssh` listeners. -->
+        <ssh>
+            <host_key_file>/etc/clickhouse-proxy/ssh_host_ed25519_key</host_key_file>
+            <backend_user>default</backend_user>
+            <backend_key_file>/etc/clickhouse-proxy/bastion_ed25519_key</backend_key_file>
+        </ssh>
+
+        <http>
+            <ping_path>/ping</ping_path>
+            <status_path>/proxy_status</status_path>
+            <add_x_forwarded_for>1</add_x_forwarded_for>
+            <static>
+                <page>
+                    <path>/</path>
+                    <content_type>text/html; charset=UTF-8</content_type>
+                    <content><![CDATA[<html><body>ClickHouse proxy</body></html>]]></content>
+                </page>
+            </static>
+        </http>
+    </proxy>
+
+    <!-- TLS material for terminating listeners (<secure>1</secure>) and, optionally, ACME.
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-proxy/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-proxy/server.key</privateKeyFile>
+        </server>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <verificationMode>relaxed</verificationMode>
+        </client>
+    </openSSL>
+    -->
+</clickhouse>
