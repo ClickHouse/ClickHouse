@@ -1003,6 +1003,11 @@ def get_processlist_size(args):
 # aggregating, so it is the only one that needs the per-user limit lifted.
 HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
+# One attempt, no retries: this dump runs under a caller that kills the process
+# group on its own deadline, so it has to fail with time left for the hung check
+# to report what it saw.
+HUNG_CHECK_STACKTRACES_RETRIES = 1
+
 
 def get_processlist_with_stacktraces(args):
     if args.replicated_database:
@@ -1031,6 +1036,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     if args.shared_catalog:
         return clickhouse_execute(
@@ -1058,6 +1064,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     return clickhouse_execute(
         args,
@@ -1080,6 +1087,7 @@ def get_processlist_with_stacktraces(args):
             "allow_introspection_functions": 1,
         },
         timeout=120,
+        max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
     )
 
 
@@ -6851,6 +6859,13 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
+                    # stdout is a pipe and the dumps below can outlast the deadline.
+                    sys.stdout.flush()
+                    # The query that failed is an expensive aggregate over
+                    # system.stack_trace via HTTP; the plain read goes over TCP,
+                    # and the C stacks need no answer from the server at all.
+                    print_sql_stacktraces(args)
+                    print_c_stacktraces(args)
                     exit_code.value = 1
                     hung_check_failed = True
                 else:
