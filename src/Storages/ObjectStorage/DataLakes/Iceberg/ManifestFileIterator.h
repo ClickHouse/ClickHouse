@@ -11,6 +11,8 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
 
+#include <atomic>
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 
@@ -92,7 +94,8 @@ public:
         Int64 inherited_snapshot_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
-        Int32 table_snapshot_schema_id_);
+        Int32 table_snapshot_schema_id_,
+        const std::atomic<bool> * stop_flag = nullptr);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
@@ -131,7 +134,8 @@ private:
         std::optional<DB::KeyDescription> partition_key_description,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
-        Int32 table_snapshot_schema_id);
+        Int32 table_snapshot_schema_id,
+        const std::atomic<bool> * stop_flag);
 
     ProcessedManifestFileEntryPtr processRow(size_t row_index);
 
@@ -151,6 +155,8 @@ private:
 
     /// Iteration state
     const size_t total_rows;
+    /// When set and observed true, `next` gives up between rows and returns nullptr as on EOF.
+    const std::atomic<bool> * const stop_flag;
     std::atomic<size_t> current_row_index{0};
     std::atomic<bool> fully_initialized{false};
     std::atomic<size_t> active_fetchers{0};
