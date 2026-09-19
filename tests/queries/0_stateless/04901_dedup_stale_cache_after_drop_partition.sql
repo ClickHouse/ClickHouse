@@ -37,7 +37,8 @@ SELECT 'after reinsert r1', count() FROM t_04901_r1;
 SYSTEM FLUSH LOGS part_log;
 SELECT 'cache hit observed', sum(ProfileEvents['AsyncInsertCacheHits']) > 0
 FROM system.part_log
-WHERE database = currentDatabase() AND table = 't_04901_r2'
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND database = currentDatabase() AND table = 't_04901_r2'
   AND event_type = 'NewPart' AND error = 0;
 
 DROP TABLE t_04901_r1 SYNC;
@@ -73,7 +74,8 @@ SELECT 'after reinsert detach part', count() FROM t_04901_detach_part;
 SYSTEM FLUSH LOGS part_log;
 SELECT 'cache hit observed', table, sum(ProfileEvents['AsyncInsertCacheHits']) > 0
 FROM system.part_log
-WHERE database = currentDatabase() AND table IN ('t_04901_drop_part', 't_04901_detach_part')
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND database = currentDatabase() AND table IN ('t_04901_drop_part', 't_04901_detach_part')
   AND event_type = 'NewPart' AND error = 0
 GROUP BY table ORDER BY table;
 
