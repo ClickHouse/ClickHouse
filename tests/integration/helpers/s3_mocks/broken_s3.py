@@ -1,3 +1,4 @@
+import http.client
 import http.server
 import random
 import socket
@@ -434,6 +435,8 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
+        # Was only set by reset(): a listing before the first reset crashed the handler.
+        self.at_listing = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -495,6 +498,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if host is None and port is None:
             host = self.server.upstream_host
             port = self.server.upstream_port
+            if getattr(self.server, "proxy_mode", False):
+                return self.forward(host, port)
 
         self.read_all_input()
 
@@ -504,6 +509,35 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Location", url)
         self.end_headers()
         self.wfile.write(b"Redirected")
+
+    def forward(self, host, port):
+        """Proxy the request upstream instead of redirecting. The `Host` header is passed
+        through unchanged so an AWS SigV4 signature computed for this mock stays valid: clients
+        such as delta-kernel-rs follow a 307 without re-signing and would get 403 from the
+        upstream."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length) if content_length > 0 else b""
+        headers = {
+            k: v for k, v in self.headers.items() if k.lower() not in ("transfer-encoding", "connection")
+        }
+        conn = http.client.HTTPConnection(host, int(port), timeout=120)
+        conn.request(self.command, self.path, body=body, headers=headers)
+        upstream = conn.getresponse()
+        data = b"" if self.command == "HEAD" else upstream.read()
+        self.log_message("forward %s %s -> %s", self.command, self.path, upstream.status)
+        self.send_response(upstream.status)
+        for k, v in upstream.getheaders():
+            if k.lower() in ("transfer-encoding", "connection"):
+                continue
+            if k.lower() == "content-length" and self.command != "HEAD":
+                continue
+            self.send_header(k, v)
+        if self.command != "HEAD":
+            self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        if data:
+            self.wfile.write(data)
+        conn.close()
 
     def write_error(self, http_code, data, content_length=None):
         if content_length is None:
@@ -769,15 +803,17 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
 
-    def set_upstream(self, upstream_host, upstream_port):
+    def set_upstream(self, upstream_host, upstream_port, proxy_mode=False):
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
+        self.proxy_mode = proxy_mode
 
 
 if __name__ == "__main__":
     httpd = _ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-    if len(sys.argv) == 4:
-        httpd.set_upstream(sys.argv[2], sys.argv[3])
+    if len(sys.argv) >= 4:
+        # A 5th argument `proxy` forwards requests instead of answering with a 307 redirect.
+        httpd.set_upstream(sys.argv[2], sys.argv[3], proxy_mode=(len(sys.argv) >= 5 and sys.argv[4] == "proxy"))
     else:
         httpd.set_upstream("minio1", 9001)
     httpd.serve_forever()

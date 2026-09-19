@@ -97,6 +97,18 @@ TEST_CONFIGS = [
         dist_each_sequential=True,
     ),
     TC(
+        "test_storage_delta/test_writes_table_features.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
+    TC(
+        "test_storage_delta/test_writes_evolution.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
+    TC(
         "test_storage_delta_disks/test.py",
         False,
         "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",

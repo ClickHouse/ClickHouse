@@ -34,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int FAULT_INJECTED;
 }
 
 namespace Setting
@@ -46,6 +47,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char delta_lake_write_cancel_in_commit_window[];
+    extern const char delta_lake_write_throw_before_commit[];
 }
 
 namespace
@@ -439,6 +441,12 @@ void DeltaLakePartitionedSink::onFinish()
     fiu_do_on(FailPoints::delta_lake_write_cancel_in_commit_window, {
         if (auto query_context = CurrentThread::tryGetQueryContext())
             query_context->killCurrentQuery();
+    });
+
+    /// Test-only hook: fail between the finalized data files and the commit, exercising the
+    /// cleanup of already-uploaded files for a failed commit.
+    fiu_do_on(FailPoints::delta_lake_write_throw_before_commit, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the Delta commit");
     });
 
     try
