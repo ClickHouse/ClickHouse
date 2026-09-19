@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/ReadSettings.h>
+#include <Common/logger_useful.h>
 
 #include <azure/core/http/raw_response.hpp>
 #include <azure/core/http/transport.hpp>
@@ -114,6 +115,11 @@ public:
 
 TEST(AzureNativeCopy, CompletionWithoutTheCopySourceInTheProperties)
 {
+    /// The copy source is logged at the trace level, and a `LOG_TRACE` evaluates its arguments only
+    /// when the logger is at that level - which is the default level of the server, so this is the
+    /// configuration in which the property is dereferenced.
+    getLogger("copyAzureBlobStorageFile")->setLevel("trace");
+
     auto transport = std::make_shared<CopyWithoutCopySourceTransport>();
 
     Azure::Storage::Blobs::BlobClientOptions client_options;
