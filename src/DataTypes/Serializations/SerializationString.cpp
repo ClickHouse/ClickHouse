@@ -478,10 +478,7 @@ bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
 
 void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
-    else
-        writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeStringForValues(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 

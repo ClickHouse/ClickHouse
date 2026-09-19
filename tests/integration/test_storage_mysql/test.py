@@ -361,6 +361,49 @@ def test_binary_type(started_cluster):
     drop_mysql_table(conn, "binary_type")
 
 
+def test_fixed_string_insert_preserves_binary_data(started_cluster):
+    table_name = "fixed_string_binary_insert"
+    uuid = "3c6f395f-c759-450c-8f18-0de417be064f"
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} "
+            "(id BINARY(16) PRIMARY KEY, value VARBINARY(16) NOT NULL)"
+        )
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name} (id FixedString(16), value String)
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
+    )
+    node1.query(
+        f"INSERT INTO {table_name} "
+        f"VALUES (UUIDStringToNum('{uuid}'), UUIDStringToNum('{uuid}'))"
+    )
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"SELECT HEX(id), HEX(value) FROM clickhouse.{table_name}")
+        assert cursor.fetchone() == (
+            "3C6F395FC759450C8F180DE417BE064F",
+            "3C6F395FC759450C8F180DE417BE064F",
+        )
+
+    assert (
+        node1.query(
+            f"SELECT count() FROM {table_name} WHERE id = UUIDStringToNum('{uuid}')"
+        ).strip()
+        == "1"
+    )
+
+    node1.query(f"DROP TABLE {table_name}")
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_enum_type(started_cluster):
     table_name = "test_enum_type"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

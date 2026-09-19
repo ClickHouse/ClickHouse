@@ -171,7 +171,7 @@ void StorageMySQL::readImpl(
             column_names,
             storage_snapshot->metadata->getColumns().getOrdinary(),
             IdentifierQuotingStyle::BackticksMySQL,
-            LiteralEscapingStyle::Regular,
+            LiteralEscapingStyle::MySQL,
             remote_database_name,
             remote_table_or_query.getTableName(),
             context_);
@@ -250,7 +250,10 @@ public:
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext());
+        auto format_settings = getFormatSettings(storage->getContext());
+        format_settings.values.use_mysql_compatible_escaping = true;
+        auto writer = FormatFactory::instance().getOutputFormat(
+            "Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext(), format_settings);
         writer->write(block);
 
         if (!storage->on_duplicate_clause.empty())
@@ -555,7 +558,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::MySQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -680,6 +683,30 @@ The table structure can differ from the original MySQL table structure:
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](/reference/engines/database-engines/mysql#data_types-support) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+
+## Binary columns {#binary-columns}
+
+For binary MySQL columns, use `FixedString(N)` for `BINARY(N)` and `String` for variable-length binary types such as `VARBINARY` and `BLOB`. The MySQL table engine preserves all bytes of `String` and `FixedString` values when inserting data.
+
+For example, a MySQL `BINARY(16)` column can be used to store UUIDs as follows:
+
+```sql
+CREATE TABLE test.mysql_uuid
+(
+    id BINARY(16) PRIMARY KEY
+);
+```
+
+```sql
+CREATE TABLE mysql_uuid
+(
+    id FixedString(16)
+)
+ENGINE = MySQL('localhost:3306', 'test', 'mysql_uuid', 'user', 'password');
+
+INSERT INTO mysql_uuid VALUES (UUIDStringToNum('3c6f395f-c759-450c-8f18-0de417be064f'));
+SELECT UUIDNumToString(id) FROM mysql_uuid;
+```
 
 **Engine Parameters**
 

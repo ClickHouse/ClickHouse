@@ -554,6 +554,9 @@ struct FormatSettings
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
         bool escape_quote_with_quote = false;
+        /// Internal mode used when Values output is sent to MySQL. MySQL does not support all
+        /// backslash escapes emitted by the regular Values serializer.
+        bool use_mysql_compatible_escaping = false;
     } values{};
 
     enum class ORCCompression : uint8_t
