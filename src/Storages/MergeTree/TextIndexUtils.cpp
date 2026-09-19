@@ -315,6 +315,17 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
+    /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
+    /// segments into a different directory and must claim nothing in this part.
+    if (writer_settings.stream_base_manifest)
+    {
+        const String index_file_name = index_ptr->getFileName();
+        for (const auto & substream : index_ptr->getSubstreams())
+            writer_settings.stream_base_manifest->registerStreamBase(
+                index_file_name + substream.suffix,
+                {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
+    }
+
     std::tie(output_streams, output_streams_holders) = makeOutputStreams(
         index_ptr->getSubstreams(),
         index_ptr->getFileName(),
