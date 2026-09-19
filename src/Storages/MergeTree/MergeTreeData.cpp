@@ -56,6 +56,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -12004,8 +12005,11 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
         /// Parallel replicas
         /// This branch is reached only with the analyzer disabled, and `parallel_replicas_plan_based`
         /// requires the analyzer, so such a query reads locally: keep the stage local as well.
+        /// The scope check must match the one in the storages' `read`, or the stage promised here and
+        /// the plan actually built disagree.
         if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState
-            && !settings[Setting::parallel_replicas_plan_based])
+            && !settings[Setting::parallel_replicas_plan_based]
+            && !ClusterProxy::hasForeignShardScope(query_context))
         {
             /// ReplicatedMergeTree
             if (supportsReplication())

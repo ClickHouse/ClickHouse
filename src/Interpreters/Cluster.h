@@ -78,17 +78,35 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     ///
     /// Used for remote() function.
+    ///
+    /// `shard_keys` are the per-shard keys this constructor's caller grouped `names` by and then
+    /// discarded - the shards are renumbered `1..N` here regardless. They are what makes a shard number
+    /// of this cluster mean something, so they, and not `params.cluster_name`, form the shard-scope
+    /// identity (see `getShardScopeIdentity`): the same name describes a different numbering as soon as
+    /// the caller's visible membership differs. A caller that has no such keys passes none and gets no
+    /// identity, which declines a shard scope rather than trusting the name.
     Cluster(
         const Settings & settings,
         const HostsByShard & names,
-        const ClusterConnectionParameters & params);
+        const ClusterConnectionParameters & params,
+        const Strings & shard_keys = {});
 
 
+    /// The shards are renumbered `1..N` here as well, so the shard-scope identity comes from each
+    /// shard's `DatabaseReplicaInfo::shard_name` rather than from `params.cluster_name`.
+    ///
+    /// `shard_scope_key` says whose shard names those are. Shard names are chosen per database and
+    /// repeat across databases, so the key must tell one database from another, but it must not tell
+    /// apart two spellings of the same one: a `Replicated` database is reachable both as `<db>` and as
+    /// `all_groups.<db>`, and when both spellings see the same ordered shards, a shard number means the
+    /// same shard through either. Such a caller passes a spelling-independent key - the database's
+    /// ZooKeeper path. A caller without one leaves it empty and `params.cluster_name` is used.
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
         const ClusterConnectionParameters & params,
-        bool internal_replication = false);
+        bool internal_replication = false,
+        const String & shard_scope_key = {});
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -296,6 +314,11 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
+    /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
+    /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
+    const String & getShardScopeIdentity() const { return shard_scope_identity; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -304,6 +327,20 @@ public:
 
 private:
     void initMisc();
+
+    /// Namespaces of `shard_scope_identity` values. A cluster name and a `Replicated` database name share
+    /// one namespace, so an identity a reader can spell is also one a user can name a database - and then
+    /// that database's cluster would authenticate a shard number it never produced. Every identity is
+    /// therefore prefixed with the shape that built it, and no identity is a bare name: a name is equal on
+    /// both sides of a hop by construction and so identifies no numbering.
+    static constexpr auto CONFIG_SHARDS_SCOPE = "config-shards ";
+    static constexpr auto HOSTS_BY_SHARD_SCOPE = "hosts-by-shard ";
+    static constexpr auto REPLICAS_BY_SHARD_SCOPE = "replicas-by-shard ";
+
+    /// Builds a shard-scope identity out of the ordered shard keys a constructor renumbered away.
+    /// Every part is written length-prefixed, so no two different (prefix, name, keys) triples can spell
+    /// the same identity however the parts are punctuated. No keys means no identity.
+    static String makeShardScopeIdentity(std::string_view prefix, const String & cluster_name, const Strings & shard_keys);
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};
@@ -342,6 +379,7 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+    String shard_scope_identity;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
