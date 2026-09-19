@@ -355,14 +355,24 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
+void CSVFormatReader::setDataTypes(const DataTypes & types)
+{
+    skip_whitespaces_before_field.resize(types.size());
+    for (size_t i = 0; i != types.size(); ++i)
+        skip_whitespaces_before_field[i]
+            = format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(types[i]));
+}
+
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
     const SerializationPtr & serialization,
     bool is_last_file_column,
-    const String & /*column_name*/)
+    const String & /*column_name*/,
+    size_t column_index)
 {
-    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
+    chassert(column_index < skip_whitespaces_before_field.size());
+    if (skip_whitespaces_before_field[column_index]) [[likely]]
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;

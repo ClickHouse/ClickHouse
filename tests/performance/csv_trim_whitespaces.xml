@@ -1,0 +1,27 @@
+<!--
+    `input_format_csv_trim_whitespaces = 0` has to keep the whitespace in front of an unquoted CSV
+    field for String and FixedString columns, and skip it for every other type. That used to be
+    decided per field with `isStringOrFixedString(removeNullable(type))`, and `removeNullable`
+    returns a `DataTypePtr` by value, so every field copied a `shared_ptr` that all the parsing
+    threads share. Its reference counter became a contention point and the CSV reader stopped
+    scaling with the number of cores: on a 96-core machine this query took 50 times more CPU than
+    the same one with the default setting.
+
+    The second query is the control: with the default setting the type check was short-circuited
+    away, so it was never affected. The two should now cost about the same, and a gap between them
+    means a per-field decision has become thread-shared again.
+
+    Note that the read goes through `file()` rather than a `File` engine table on purpose - only
+    the table function path parses in parallel, which is what made the contention visible.
+-->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_csv_trim_whitespaces.csv', CSV, 's String, n Int32')
+        SELECT concat('station_', toString(number % 500)), toInt32(number % 1000)
+        FROM numbers(10000000)
+        SETTINGS engine_file_truncate_on_insert = 1
+    ]]></fill_query>
+
+    <query>SELECT max(n) FROM file('test_csv_trim_whitespaces.csv', CSV, 's String, n Int32') SETTINGS input_format_csv_trim_whitespaces = 0 FORMAT Null</query>
+    <query>SELECT max(n) FROM file('test_csv_trim_whitespaces.csv', CSV, 's String, n Int32') SETTINGS input_format_csv_trim_whitespaces = 1 FORMAT Null</query>
+</test>
