@@ -24,6 +24,7 @@ SELECT parseReadableSize(materialize(toLowCardinality('1 KiB')));
 SELECT toModifiedJulianDay(materialize(toLowCardinality('2024-01-01')));
 SELECT JSONMergePatch(materialize(toLowCardinality('{"a":1}')), '{"b":2}');
 SELECT stringToH3(materialize(toLowCardinality('85283473fffffff')));
+SELECT h3ToString(materialize(toLowCardinality(toUInt64(599686042433355775))));
 SELECT h3ToParent(materialize(toLowCardinality(toUInt64(599686042433355775))), 1);
 SELECT h3GetResolution(materialize(toLowCardinality(toUInt64(599686042433355775))));
 SELECT h3IsPentagon(materialize(toLowCardinality(toUInt64(599686042433355775))));
@@ -64,6 +65,7 @@ SELECT IPv4StringToNum(x) FROM (SELECT arrayJoin([NULL, '10.0.0.1']) :: LowCardi
 SELECT toModifiedJulianDay(x) FROM (SELECT arrayJoin([NULL, '2024-01-01']) :: LowCardinality(Nullable(String)) AS x) ORDER BY ALL;
 SELECT parseReadableSize(x) FROM (SELECT arrayJoin([NULL, '1 KiB']) :: LowCardinality(Nullable(String)) AS x) ORDER BY ALL;
 SELECT h3GetResolution(x) FROM (SELECT arrayJoin([NULL, 599686042433355775]) :: LowCardinality(Nullable(UInt64)) AS x) ORDER BY ALL;
+SELECT h3ToString(x) FROM (SELECT arrayJoin([NULL, 599686042433355775]) :: LowCardinality(Nullable(UInt64)) AS x) ORDER BY ALL;
 SELECT s2CellsIntersect(x, geoToS2(37.0, 55.0)) FROM (SELECT arrayJoin([NULL, geoToS2(37.0, 55.0)]) :: LowCardinality(Nullable(UInt64)) AS x) ORDER BY ALL;
 
 SELECT 'invalid values behind a NULL-containing dictionary are still reported';
