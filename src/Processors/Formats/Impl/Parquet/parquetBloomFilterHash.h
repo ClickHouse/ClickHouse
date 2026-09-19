@@ -25,9 +25,8 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
  * */
 std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor);
 
-/// Whether a query constant of `requested_type` hashes to the digest of the stored value it has to
-/// match. Constants are hashed in the requested type, while dictionary values are hashed in
-/// `decoded_type` and the file's bloom filter holds digests of the parquet physical values.
+/// Whether a query constant of `requested_type` hashes to the digest of the stored value it has to match:
+/// constants are hashed in the requested type, dictionary values in `decoded_type`, the bloom filter in the physical type.
 bool parquetHashFilterOutputTypeIsExact(
     const DataTypePtr & decoded_type, const DataTypePtr & requested_type, parquet::Type::type physical_type);
 

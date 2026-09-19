@@ -918,8 +918,6 @@ void Reader::prepareBloomFilterCondition()
 
         parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
 
-        /// The constants hashed below are values of the output-block type, while the dictionary values
-        /// and the file's bloom filter are digests of the physical values.
         if (!parquetHashFilterOutputTypeIsExact(
                 column_info.decoded_type,
                 extended_sample_block_data_types.at(column_info.idx_in_output_block),

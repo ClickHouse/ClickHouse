@@ -291,11 +291,9 @@ struct RequestedIntegerSpace
 {
     size_t bits;
     bool is_signed;
-    /// Converting into `Date`/`Date32`/`DateTime`/`Enum*`/`IPv4` clamps or does arithmetic instead of
-    /// wrapping modulo 2^bits, so those types never qualify as a bit reinterpretation.
+    /// Converting into `Date`/`Date32`/`DateTime`/`Enum*`/`IPv4` clamps or rescales instead of wrapping modulo 2^bits.
     bool is_native_integer;
-    /// The integer -> date CAST reads the value as a day number only while it fits in 16 bits; a wider
-    /// source is read as a Unix timestamp instead, which is a unit change, not a bit pattern change.
+    /// The integer -> date CAST reads a value fitting in 16 bits as a day number, and a wider one as a Unix timestamp.
     bool source_must_fit_in_16_bits;
 };
 
@@ -323,7 +321,6 @@ std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & 
 bool parquetHashFilterOutputTypeIsExact(
     const DataTypePtr & decoded_type, const DataTypePtr & requested_type, parquet::Type::type physical_type)
 {
-    /// `castColumn` applies the `LowCardinality`/`Nullable` wrappers around values it does not change.
     const DataTypePtr requested = removeLowCardinalityAndNullable(requested_type);
     const DataTypePtr decoded = removeLowCardinalityAndNullable(decoded_type);
 
@@ -346,23 +343,17 @@ bool parquetHashFilterOutputTypeIsExact(
             if (requested_space->source_must_fit_in_16_bits && decoded_bits > 16)
                 return false;
 
-            /// The conversion preserves every value of the decoded type, so both sides cast to the same
-            /// physical value. A signed source cannot widen into an unsigned target: negatives do not survive.
             const bool value_preserving = requested_space->bits >= decoded_bits
                 && (requested_space->is_signed == decoded_signed
                     || (!decoded_signed && requested_space->bits > decoded_bits));
 
-            /// Or the conversion wraps modulo 2^bits at or above the physical width, so the low
-            /// `physical_bits` bits - the only ones the digests are computed over - are unchanged.
             const bool reinterpretation = requested_space->is_native_integer && requested_space->bits >= physical_bits;
 
             return value_preserving || reinterpretation;
         }
         case parquet::Type::type::BYTE_ARRAY:
         case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            /// Both sides hash raw bytes, so any difference in the byte count breaks the comparison.
-            /// A 16-byte fixed array is decoded as `FixedString(16)` even when `IPv6` was requested
-            /// (see `SchemaConverter`), and `IPv6` holds exactly those 16 bytes in the same order.
+            /// A 16-byte fixed array is decoded as `FixedString(16)` even when `IPv6` was requested, and `IPv6` holds those same bytes.
             return requested->equals(*decoded)
                 || (WhichDataType(*requested).isIPv6() && WhichDataType(*decoded).isFixedString()
                     && decoded->getSizeOfValueInMemory() == sizeof(IPv6));
