@@ -72,6 +72,14 @@ struct AggregateFunctionVarianceData
 
     void mergeWith(const AggregateFunctionVarianceData & source)
     {
+        if (source.count == 0)
+            return;
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
+
         UInt64 total_count = count + source.count;
         if (total_count == 0)
             return;
@@ -316,6 +324,14 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
     void mergeWith(const CovarianceData & source)
     {
+        if (source.count == 0)
+            return;
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
+
         UInt64 total_count = count + source.count;
         if (total_count == 0)
             return;
