@@ -187,7 +187,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 5")) << definition;
+    EXPECT_TRUE(definition.contains("version = 6")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -206,7 +206,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
 
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768");
     EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"),
-        "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+        "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1");
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
         "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
@@ -502,7 +502,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
         "TAGS ENGINE = AggregatingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree");
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768");
     EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"),
-        "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+        "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1");
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
         "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
@@ -522,8 +522,33 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 5")) << definition;
+    EXPECT_TRUE(definition.contains("version = 6")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
+{
+    static constexpr std::string_view legacy_engine
+        = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+    static constexpr std::string_view pinned_engine
+        = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+
+    /// The timezone is named only from the version that introduced it, so an earlier version keeps
+    /// generating the expression it always generated and stays reproducible.
+    EXPECT_EQ(
+        extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5"), "RECENT SAMPLES"),
+        legacy_engine);
+    EXPECT_EQ(extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries"), "RECENT SAMPLES"), pinned_engine);
+
+    /// A copy is a new table at the latest version. The source's own spelling is what identifies its
+    /// key as generated, so it is stripped rather than carried over as if it had been declared.
+    auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5"));
+    EXPECT_TRUE(copy.contains("version = 6")) << copy;
+    EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), pinned_engine);
 }
 
 

@@ -27,13 +27,16 @@ class StorageTimeSeries;
 ///       `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, the same name is used in backups,
 ///       and the definition is written with the keyword `METRIC FAMILIES` instead of `METRICS`.
 ///   5 - New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index by default.
+///   6 - The default partition key of an inner recent samples table pins the timezone:
+///       `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions leave it to the
+///       server timezone, whose every change moves the meaning of the partition values already written.
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 5;
+    constexpr UInt64 LATEST = 6;
 
     /// The first version recording the `id_type` setting (see the version history above).
     /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
@@ -44,6 +47,10 @@ namespace TimeSeriesVersion
 
     /// The first version creating a text index on the `tags` map by default.
     constexpr UInt64 MIN_WITH_TAGS_TEXT_INDEX = 5;
+
+    /// The first version whose default recent-samples partition key names a timezone. The earlier versions
+    /// generate it without one, so their tables keep the partition grid they were written on.
+    constexpr UInt64 MIN_WITH_UTC_PARTITION_KEY = 6;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -67,6 +74,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
     static_assert(MIN_WITH_TAGS_TEXT_INDEX <= LATEST);
+    static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
     static_assert(MIN_WRITABLE <= LATEST);
     static_assert(MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL);
     static_assert(MIN_SUPPORTED_BY_PROMQL <= LATEST);
