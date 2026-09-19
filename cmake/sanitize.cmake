@@ -136,6 +136,7 @@ if (SANITIZE)
             # The simplest way to avoid this is just to set this flag here.
             set(UBSAN_FLAGS "${UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
+        set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-recover=unsigned-integer-overflow") # LOCAL-DISCOVERY-ONLY, DO NOT COMMIT
         set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
@@ -146,6 +147,18 @@ if (SANITIZE)
         if (ENABLE_FUZZING)
             set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
+        ### TEMPORARY, REVERT BEFORE MERGE ###
+        ### One enumeration cycle. `-fno-sanitize-recover=all` above makes clang emit the aborting
+        ### handlers, so the first unsigned overflow ends the process and each CI run surfaces
+        ### exactly one site per job - at an estimated 20-50 remaining sites that is dozens of
+        ### cycles. Appended after it (the later flag wins), this switches the check to the
+        ### recoverable handler, which prints and continues, and UBSan disables each source location
+        ### after its first report - so one run lists every remaining site, deduplicated.
+        ### While this is in place the jobs may report GREEN even with reports in the log: read the
+        ### artifacts, not the status. The check is weakened until this block is removed.
+        set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fsanitize-recover=unsigned-integer-overflow")
+        ### END TEMPORARY ###
+
         set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_UBSAN_FLAGS}")
