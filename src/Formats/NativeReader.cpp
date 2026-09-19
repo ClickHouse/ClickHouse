@@ -175,7 +175,15 @@ Block NativeReader::read()
     }
 
     if (columns == 0 && header.empty() && rows != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+    {
+        /// The rows of such a block carry no values at all - it is what a shard sends for a query whose
+        /// intermediate result needs nothing from it. Only a sender that speaks a new enough protocol
+        /// revision can mean it; at a lower revision (a `Native` file, for one) this is malformed data.
+        if (server_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+
+        res.info.num_rows_without_columns = rows;
+    }
 
     /// `rows` comes from the block header, and the limit it is checked against is deliberately
     /// generous, so it must not be used to preallocate the columns: a header declaring a huge row
@@ -353,7 +361,8 @@ Block NativeReader::read()
         res.swap(tmp_res);
     }
 
-    if (res.rows() != rows)
+    /// A block with no columns keeps its row count in the block info, `Block::rows` reports zero for it.
+    if (res.columns() != 0 && res.rows() != rows)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;

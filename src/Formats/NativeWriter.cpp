@@ -135,6 +135,11 @@ size_t NativeWriter::write(const Block & block)
     size_t columns = block.columns();
     size_t rows = block.rows();
 
+    /// A block with no columns can still carry rows, and then its count is in the block info.
+    /// A receiver that does not expect it rejects such a block, so keep sending zero rows to those.
+    if (columns == 0 && client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+        rows = block.info.num_rows_without_columns;
+
     writeVarUInt(columns, ostr);
     writeVarUInt(rows, ostr);
 
