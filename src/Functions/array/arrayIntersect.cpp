@@ -668,6 +668,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         return arg_index <= map_arg ? arg_index - 1 : arg_index;
     };
 
+    const bool is_intersect = mode == ArraySetMode::Intersect;
     size_t result_offset = 0;
     for (size_t row = 0; row < rows; ++row)
     {
@@ -676,6 +677,25 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         {
             if (arena->allocatedBytes())
                 arena.emplace();
+        }
+
+        if (is_intersect)
+        {
+            const auto & seed_arg = arrays.args[map_arg];
+            const size_t seed_offset = seed_arg.is_const ? (*seed_arg.offsets)[0] : (*seed_arg.offsets)[row];
+            if (seed_offset == prev_off[map_arg])
+            {
+                for (size_t arg_num = 0; arg_num < args; ++arg_num)
+                {
+                    const auto & arg = arrays.args[arg_num];
+                    if (arg.is_const)
+                        prev_off[arg_num] = 0;
+                    else
+                        prev_off[arg_num] = (*arg.offsets)[row];
+                }
+                result_offsets.getElement(row) = result_offset;
+                continue;
+            }
         }
 
         bool all_has_nullable = arrays.nullable_result;
