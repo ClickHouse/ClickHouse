@@ -76,19 +76,21 @@ def format_query(query):
         # Aggregation and vector-matching modifiers.
         (
             'sum by(job)(rate(http_requests_total{code="200"}[5m]))/2',
-            'sum by (job) (rate(http_requests_total{code="200"}[300])) / 2',
+            'sum by (job) (rate(http_requests_total{code="200"}[5m])) / 2',
         ),
         ("bar + on(a, b) group_left(c) baz", "bar + on(a, b) group_left(c) baz"),
-        # Durations are printed as numbers of seconds, and subqueries keep their structure.
+        # Durations are printed in the units the parser accepts, and subqueries keep their structure.
         (
             "min_over_time(rate(foo[5m])[30m:5s])",
-            "min_over_time(rate(foo[300])[1800:5])",
+            "min_over_time(rate(foo[5m])[30m:5s])",
         ),
+        # A duration that is not a whole number of one unit is spelled with each unit it needs.
+        ("rate(foo[90s])", "rate(foo[1m30s])"),
         # Numeric literals are canonicalized.
         ("100 * 0x1F", "100 * 31"),
         # @ timestamps are parsed with millisecond precision, like in Prometheus.
         ("foo @ 1.23456789", "foo @ 1.234"),
-        ("foo @ 1609746183 offset 5m", "foo @ 1609746183 offset 300"),
+        ("foo @ 1609746183 offset 5m", "foo @ 1609746183 offset 5m"),
     ],
 )
 def test_format_query(query, expected):
@@ -104,7 +106,7 @@ def test_format_query_post_urlencoded():
     data = response.json()
     assert data == {
         "status": "success",
-        "data": "sum by (job) (rate(http_requests_total[300]))",
+        "data": "sum by (job) (rate(http_requests_total[5m]))",
     }
 
 

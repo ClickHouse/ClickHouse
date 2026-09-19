@@ -5,6 +5,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <base/hex.h>
@@ -156,6 +157,45 @@ namespace
     String formatMetricName(const String & metric)
     {
         return canPrintMetricNameUnquoted(metric) ? metric : quotePromQLString(metric);
+    }
+
+    /// Prints a duration in the units the parser accepts, longest first, the way Prometheus prints one.
+    /// A year or a week is used only when it divides the duration exactly, because 90d reads better than 12w6d.
+    String formatDuration(PrometheusQueryTree::DurationType duration, UInt32 scale)
+    {
+        static constexpr struct { std::string_view name; UInt64 length_ms; bool exact_only; } units[]
+            = {{"y", 365ULL * 24 * 60 * 60 * 1000, true}, {"w", 7ULL * 24 * 60 * 60 * 1000, true},
+               {"d", 24ULL * 60 * 60 * 1000, false}, {"h", 60ULL * 60 * 1000, false},
+               {"m", 60ULL * 1000, false}, {"s", 1000ULL, false}, {"ms", 1ULL, false}};
+
+        /// A duration finer than a millisecond has no spelling in the grammar, so it keeps the plain numeric form.
+        if (scale < 3)
+            return DB::toString(duration, scale);
+        const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(scale - 3);
+        if (duration.value % divisor)
+            return DB::toString(duration, scale);
+
+        const Int64 milliseconds = duration.value / divisor;
+        if (milliseconds == 0)
+            return "0s";
+
+        String str;
+        if (milliseconds < 0)
+            str += "-";
+        /// Negated as unsigned, so the most negative duration is not undefined behaviour.
+        UInt64 rest = milliseconds < 0 ? (0 - static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
+        for (const auto & unit : units)
+        {
+            if (unit.exact_only && (rest % unit.length_ms))
+                continue;
+            if (const UInt64 count = rest / unit.length_ms)
+            {
+                str += std::to_string(count);
+                str += unit.name;
+                rest -= count * unit.length_ms;
+            }
+        }
+        return str;
     }
 
     template <typename NodeType>
@@ -520,7 +560,7 @@ String PrometheusQueryTree::RangeSelector::toString(const PrometheusQueryTree & 
 {
     String str = getInstantSelector()->toString(tree);
     str += "[";
-    str += DB::toString(range, tree.timestamp_scale);
+    str += formatDuration(range, tree.timestamp_scale);
     str += "]";
     return str;
 }
@@ -537,10 +577,10 @@ String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree)
         str += ")";
 
     str += "[";
-    str += DB::toString(range, tree.timestamp_scale);
+    str += formatDuration(range, tree.timestamp_scale);
     str += ":";
     if (step)
-        str += DB::toString(*step, tree.timestamp_scale);
+        str += formatDuration(*step, tree.timestamp_scale);
     str += "]";
 
     return str;
@@ -568,7 +608,7 @@ String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) c
     if (offset_value)
     {
         str += " offset ";
-        str += DB::toString(Decimal64{*offset_value}, tree.timestamp_scale);
+        str += formatDuration(*offset_value, tree.timestamp_scale);
     }
     return str;
 }
