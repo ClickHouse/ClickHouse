@@ -298,7 +298,7 @@ On a VM it runs on the connector host. For a Kubernetes install it runs on a wor
 
 ## clicklink clctl executor teardown {#executor-teardown}
 
-Removes what `prepare` created for a service that ClickHouse Cloud has deleted. That is the IAM role, the buckets `prepare` created, the recorded name, the executor's record of the service, and, on a VM, the local access bundle and registry entry. The executor must be running and the service `terminated` (or `stale`); the run refuses while the service namespace still holds a ClickHouse cluster. Data and backups are kept unless asked for, and kept buckets are re-tagged `clicklink:retained-from=<instance>`. The command reads everything before it deletes anything. See [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
+Removes what `prepare` created for a service that ClickHouse Cloud has deleted. That is the IAM role, the buckets `prepare` created, the recorded name, the executor's record of the service, and, on a VM, the service's ClusterRole and ClusterRoleBinding, the local access bundle, and the registry entry. The executor must be running and the service `terminated` (or `stale`); the run refuses while the service namespace still holds a ClickHouse cluster. Data and backups are kept unless asked for, and kept buckets are re-tagged `clicklink:retained-from=<instance>`. The command reads everything before it deletes anything. See [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
 | Flag | Description |
 |------|-------------|

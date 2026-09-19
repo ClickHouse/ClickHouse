@@ -19,7 +19,7 @@ The executor is a daemon in the same `clicklink` binary as the scraper and the t
 
 Managed mode is available on Amazon EKS with S3 storage, as part of the private preview. Your ClickHouse account team enables it when registering your environment. `init` refuses a kube context that does not point at an EKS cluster.
 
-Each service needs three cloud resources you own: a data bucket, a backup bucket, and an IAM role the ClickHouse pods assume to reach them. You create them with your own credentials before the service exists and remove them after it is gone. The executor calls no AWS API directly and never deletes data. For each service it creates a Kubernetes `Service` of type LoadBalancer, which your cluster's load-balancer controller realizes as an internal NLB in your account.
+Each service needs three cloud resources you own: a data bucket, a backup bucket, and an IAM role the ClickHouse pods assume to reach them. You create them with your own credentials before the service exists and remove them after it is gone. The executor holds no credentials for your buckets or IAM and never deletes data. Its only AWS call is an Amazon ECR login with the host's or pod's own identity when a chart it pulls lives in ECR. For each service it creates a Kubernetes `Service` of type LoadBalancer, which your cluster's load-balancer controller realizes as an internal NLB in your account.
 
 On a VM the executor runs as the `clicklink-executor` systemd unit next to the other two. On Kubernetes it is a single-replica Deployment in the connector namespace. It serves health and metrics on port 8086 and its local API on `127.0.0.1:9999`.
 
@@ -70,7 +70,7 @@ The command runs four steps in order and stops at the first failure:
 4. **Summary.** Mints the `default` user's password and writes the create body to `<output-dir>/_prepare/<name>.create.json` (mode `0600`; it carries only the password's hashes). Prints the exact next command on a `Next:` line.
 
 <Warning>
-`prepare` prints the `default` user's password once, on the progress output, and never again. Neither the create body nor `--output json` contains it, and ClickHouse Cloud receives only its hashes. Store it before moving on. A re-run that finds the create body keeps the hashes already written, and says so.
+`prepare` prints the `default` user's password once, on stderr, and never again. Neither the create body nor `--output json` contains it, and ClickHouse Cloud receives only its hashes. Store it before moving on. A re-run that finds the create body keeps the hashes already written, and says so.
 </Warning>
 
 Pass `--context <name>` when your kubeconfig holds several contexts; the context must point at the EKS cluster named in `executor.cluster` in the config. `--dry-run` runs every step without creating or writing anything. The hashing step uses SHA-1, which Go refuses under `GODEBUG=fips140=only`; run `prepare` on a host without that setting.
@@ -177,7 +177,7 @@ sudo clicklink clctl executor teardown --instance <name>
 </Tab>
 </Tabs>
 
-The command reads the executor's record of the service: where its data lives and which role it had. It deletes the IAM role that `prepare` created and makes the executor forget the service, which frees the name. On a VM it also removes the local access bundle and registry entry.
+The command reads the executor's record of the service: where its data lives and which role it had. It deletes the IAM role that `prepare` created and makes the executor forget the service, which frees the name. On a VM it also removes the service's cluster-wide RBAC objects, the local access bundle, and the registry entry.
 
 By default it keeps the service's data and backups. It re-tags a kept bucket from `clicklink:deployed-name` to `clicklink:retained-from=<name>`, so a re-created service with the same name never inherits it, and the summary says where the data is. To delete them, add `--delete-data --delete-backups --yes` to the same command.
 
