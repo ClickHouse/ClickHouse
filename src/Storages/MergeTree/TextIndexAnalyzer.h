@@ -73,6 +73,8 @@ public:
     bool alwaysFalse() const { return always_false; }
     const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
     const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
+    /// True if `query` is one of the queries of the condition this analyzer was built from.
+    bool hasQueryBuilder(const TextSearchQuery & query) const;
     const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     /// True if at least one active query still depends on this token.

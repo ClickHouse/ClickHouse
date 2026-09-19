@@ -271,6 +271,19 @@ void MergeTreeReaderTextIndex::readGranule()
     setIndexGranule(std::move(granule_ptr));
 }
 
+bool MergeTreeReaderTextIndex::granuleAnalyzedSearchQueries(const MergeTreeIndexGranuleText & index_granule) const
+{
+    /// An empty granule was never deserialized and carries no analyzer.
+    if (index_granule.empty())
+        return false;
+
+    const auto & analyzer = index_granule.getAnalyzer();
+    return std::ranges::all_of(search_queries, [&](const auto & search_query)
+    {
+        return !search_query || analyzer.hasQueryBuilder(*search_query);
+    });
+}
+
 void MergeTreeReaderTextIndex::classifyVirtualColumns()
 {
     is_always_true.resize(columns_to_read.size(), false);
@@ -458,7 +471,8 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         /// Granule may be not set in the distributed index analysis.
         /// TODO: implement distributed index analysis for text index.
-        if (!granule)
+        /// A granule can also come from a step that analyzed a different filter, not this reader's search queries.
+        if (!granule || !granuleAnalyzedSearchQueries(*granule))
             readGranule();
 
         is_initialized = true;
