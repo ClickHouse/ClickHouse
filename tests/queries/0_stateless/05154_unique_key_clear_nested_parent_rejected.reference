@@ -1,0 +1,12 @@
+clear_nested_parent_rejected
+clear_nested_member_rejected
+clear_missing_if_exists_noop
+state_intact	2	[[10],[11]]	[[20],[21]]
+clear_parent_no_share_noop
+state_intact_no_share	1	10
+clear_parent_dotted_alias_noop
+state_intact_alias	1	1
+clear_mixed_alias_physical_rejected
+clear_mixed_alias_physical_if_exists_rejected
+state_intact_mixed	1	1	10
+state_intact_mixed	2	2	20

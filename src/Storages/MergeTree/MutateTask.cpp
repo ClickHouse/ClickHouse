@@ -270,11 +270,23 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+    const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
     auto nameInPart = [&](String name)
     {
         if (alter_conversions->isColumnRenamed(name))
             name = alter_conversions->getColumnOldName(name);
         return name;
+    };
+    /// Same-batch DROP/CLEAR after RENAME: `AlterConversions` records the drop under the
+    /// source-part name and erases the map, so walk `renamed_in_batch` before `nameInPart`.
+    /// Skip `nameInPart` while the part still has this name (`DROP a, RENAME b TO a`).
+    auto nameStoredInPart = [&](const String & name, const NameToNameMap & renamed_in_batch) -> String
+    {
+        if (auto it = renamed_in_batch.find(name); it != renamed_in_batch.end())
+            return it->second;
+        if (part_columns.has(name) || (share_nested && part_columns.hasNested(name)))
+            return name;
+        return nameInPart(name);
     };
 
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
@@ -282,7 +294,9 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
+        NameSet cleared_columns;
         NameSet extra_columns_for_indices_and_projections;
+        NameToNameMap renamed_in_batch;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
         for (const auto & command : commands)
@@ -395,48 +409,58 @@ static void splitAndModifyMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
-            else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
-                          has_column = part_columns.has(command.column_name),
-                          has_nested_column = share_nested && part_columns.hasNested(command.column_name);
-                     has_column || has_nested_column)
+            else if (command.type == MutationCommand::Type::DROP_COLUMN
+                     || command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
+                const String name_in_part = nameStoredInPart(command.column_name, renamed_in_batch);
+                const bool has_column = part_columns.has(name_in_part);
+                const bool has_nested_column = share_nested && part_columns.hasNested(name_in_part);
+
+                if (has_column || has_nested_column)
                 {
+                    if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                        renamed_in_batch[command.rename_to] = name_in_part;
+
+                    auto mark_source = [&](const String & name)
+                    {
+                        mutated_columns.emplace(name);
+                        if (command.type != MutationCommand::Type::DROP_COLUMN)
+                            return;
+                        if (command.clear)
+                            cleared_columns.emplace(name);
+                        else
+                            dropped_columns.emplace(name);
+                    };
+
                     if (has_nested_column)
                     {
-                        const auto & nested = part_columns.getNested(command.column_name);
+                        const auto & nested = part_columns.getNested(name_in_part);
                         chassert(!nested.empty());
                         for (const auto & nested_column : nested)
-                            mutated_columns.emplace(nested_column.name);
+                            mark_source(nested_column.name);
                     }
                     else
-                        mutated_columns.emplace(command.column_name);
-
-                    if (command.type == MutationCommand::Type::DROP_COLUMN)
                     {
-                        /// We need to keep the clear command so we also clear dependent indices
+                        mark_source(name_in_part);
+                    }
+
+                    if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
+                    {
+                        for_interpreter.push_back(command);
+                        for_file_renames.push_back(command); /// packed parts
+                    }
+                }
+                else if (command.type == MutationCommand::Type::DROP_COLUMN)
+                {
+                    if (part->getSerializationInfos().isMissingColumn(name_in_part))
+                    {
                         if (command.clear)
                         {
                             for_interpreter.push_back(command);
-                            for_file_renames.push_back(command); /// For packed parts
+                            mutated_columns.emplace(command.column_name);
                         }
-                        else
-                            dropped_columns.emplace(command.column_name);
+                        for_file_renames.push_back(command);
                     }
-                }
-            }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN)
-            {
-                /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
-                {
-                    if (command.clear)
-                    {
-                        for_interpreter.push_back(command);
-                        mutated_columns.emplace(command.column_name);
-                    }
-                    for_file_renames.push_back(command);
                 }
             }
         }
@@ -447,25 +471,30 @@ static void splitAndModifyMutationCommands(
         /// can be deduced based on difference between part's schema and table schema.
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
+            if (dropped_columns.contains(rename_from))
+                continue;
+
             if (part_columns.has(rename_from))
             {
-                /// Actual rename
-                for_interpreter.push_back(
-                {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = rename_to,
-                });
-
-                /// Not needed for compact parts (not executed), added here only to produce correct
-                /// set of columns for new part and their serializations
                 for_file_renames.push_back(
                 {
                      .type = MutationCommand::Type::RENAME_COLUMN,
                      .column_name = rename_from,
                      .rename_to = rename_to
                 });
-
                 part_columns.rename(rename_from, rename_to);
+
+                if (cleared_columns.contains(rename_from))
+                {
+                    mutated_columns.emplace(rename_to);
+                    continue;
+                }
+
+                for_interpreter.push_back(
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = rename_to,
+                });
             }
             else if (part->getSerializationInfos().isMissingColumn(rename_from))
             {
@@ -612,6 +641,8 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
+        NameSet dropped_column_names_in_part;
+        NameToNameMap renamed_in_batch;
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
@@ -679,20 +710,57 @@ static void splitAndModifyMutationCommands(
             else if (part_columns.has(command.column_name))
             {
                 if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    renamed_in_batch[command.rename_to] = nameStoredInPart(command.column_name, renamed_in_batch);
                     part_columns.rename(command.column_name, command.rename_to);
+                }
 
                 /// CLEAR COLUMN must also go to the interpreter, because we might have projections/indexes/materialized
                 /// columns that depend on this column and should be rebuilt.
                 if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
                     for_interpreter.push_back(command);
 
-                for_file_renames.push_back(command);
+                auto command_for_renames = command;
+                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                {
+                    command_for_renames.column_name = nameStoredInPart(command.column_name, renamed_in_batch);
+                    if (command_for_renames.column_name != command.column_name)
+                        dropped_column_names_in_part.emplace(command_for_renames.column_name);
+                }
+                for_file_renames.push_back(std::move(command_for_renames));
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                /// Marker-only DROP/CLEAR has the same logical effect as physical data.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                const String stored = nameStoredInPart(command.column_name, renamed_in_batch);
+                if (part_columns.has(stored))
+                {
+                    if (command.clear)
+                        for_interpreter.push_back(command);
+
+                    auto command_for_renames = command;
+                    command_for_renames.column_name = stored;
+                    dropped_column_names_in_part.emplace(stored);
+                    for_file_renames.push_back(std::move(command_for_renames));
+                }
+                else if (share_nested && part_columns.hasNested(stored))
+                {
+                    for (const auto & nested_member : part_columns.getNested(stored))
+                    {
+                        auto member_command = command;
+                        member_command.column_name = nested_member.name;
+                        if (member_command.clear)
+                        {
+                            if (alter_conversions->columnHasNewName(nested_member.name))
+                                member_command.column_name = alter_conversions->getColumnNewName(nested_member.name);
+                            for_interpreter.push_back(member_command);
+                        }
+
+                        member_command.column_name = nameInPart(nested_member.name);
+                        dropped_column_names_in_part.emplace(member_command.column_name);
+                        for_file_renames.push_back(member_command);
+                    }
+                }
+                else if (part->getSerializationInfos().isMissingColumn(stored))
                 {
                     if (command.clear)
                         for_interpreter.push_back(command);
@@ -709,6 +777,15 @@ static void splitAndModifyMutationCommands(
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+        }
+
+        if (!dropped_column_names_in_part.empty())
+        {
+            std::erase_if(for_file_renames, [&](const MutationCommand & command_for_renames)
+            {
+                return command_for_renames.type == MutationCommand::Type::RENAME_COLUMN
+                    && dropped_column_names_in_part.contains(command_for_renames.column_name);
+            });
         }
     }
 
