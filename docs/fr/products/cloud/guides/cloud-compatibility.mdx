@@ -59,6 +59,7 @@ Les moteurs de table suivants sont également pris en charge et utilisés tels q
 * Null
 * Buffer
 * Memory
+* `IcebergS3` et `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ Les moteurs de table suivants sont également pris en charge et utilisés tels q
 * PostgreSQL
 * S3
 * Kafka
+
+Les moteurs de table expérimentaux `PaimonS3` et `PaimonAzure` peuvent être activés sur certains services ClickHouse Cloud. Contactez le Support pour confirmer leur disponibilité.
 
 <div id="interfaces">
   ### Interfaces
@@ -87,6 +90,8 @@ Les dictionnaires sont un moyen courant d’accélérer les recherches dans Clic
 
 Nous prenons en charge les requêtes fédérées ClickHouse pour la communication entre clusters dans le cloud, ainsi que pour la communication avec des clusters ClickHouse externes autogérés. ClickHouse Cloud prend actuellement en charge les requêtes fédérées à l’aide des moteurs d’intégration suivants :
 
+* `IcebergS3` et `IcebergAzure`
+* `PaimonS3` et `PaimonAzure` (expérimental ; contactez le Support pour connaître la disponibilité)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,7 @@ Les fonctionnalités expérimentales sont désactivées dans les services ClickH
   ### Collections nommées
 </div>
 
-Les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) ne sont pas prises en charge actuellement dans ClickHouse Cloud.
+Les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) créées avec DDL peuvent être activées sur certains services ClickHouse Cloud. Contactez le Support pour confirmer leur disponibilité. Les collections nommées définies dans des fichiers de configuration ne sont pas disponibles, car les utilisateurs ne peuvent pas modifier les fichiers de configuration du serveur dans ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## Valeurs par défaut et considérations opérationnelles

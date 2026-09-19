@@ -64,12 +64,6 @@ void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColu
 }
 
 template <typename T>
-void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
-}
-
-template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
@@ -590,8 +584,9 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                bool try_sort = trySort(begin, end, pred);
-                if (try_sort)
+                /// `trySort` can reorder equal values even when it returns false.
+                /// Stable radix sorting must preserve the incoming order within equal ranges.
+                if (!sort_is_stable && trySort(begin, end, pred))
                     return;
 
                 PaddedPODArray<ValueWithIndex<T>> pairs(range_size);
@@ -1450,6 +1445,13 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     size_t start = data.size();
     data.resize(start + count);
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
+template <typename T>
+bool ColumnVector<T>::hasOnlyTypeDefaults() const
+{
+    /// A conservative bit check intentionally keeps -0.0 columns physical.
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <typename T>

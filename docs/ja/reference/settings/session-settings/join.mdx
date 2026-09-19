@@ -17,9 +17,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' は、join アルゴリズムを明示的に指定する方式が導入されたため非推奨になりました。また、現在は hash より parallel_hash が優先されます"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "`ie_join` がデフォルトリストに追加されました。これにより、`ON` 句に不等条件のみを含む join は、フィルタを伴う `CROSS JOIN` ではなく IEJoin で実行されます。最後に指定されているため、他のアルゴリズムが適用されない場合にのみ使用されます。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' は、join アルゴリズムを明示的に指定する方式が導入されたため非推奨になりました。また、現在は hash より parallel_hash が優先されます"}]}]} />
 
 使用する [JOIN](/ja/reference/statements/select/join) アルゴリズムを指定します。
 
@@ -60,7 +60,7 @@ grace join の最初のフェーズでは、右テーブルを読み取り、キ
 
 `RIGHT JOIN` と `FULL JOIN` は `ALL` strictness の場合にのみサポートされます (`SEMI`、`ANTI`、`ANY`、`ASOF` はサポートされません) 。
 
-`partial_merge` アルゴリズムを使用する場合、ClickHouse はデータをソートしてディスクに書き出します。ClickHouse の `partial_merge` アルゴリズムは、従来の実装とはやや異なります。まず、ClickHouse は右テーブルを結合キーで blocks 単位にソートし、ソート済み blocks に対して min-max 索引を作成します。次に、左テーブルの各 part を `join key` でソートし、それらを右テーブルと結合します。不要な右テーブル blocks をスキップするためにも min-max 索引が使用されます。
+`partial_merge` アルゴリズムを使用する場合、ClickHouse はデータをソートしてディスクに書き出します。ClickHouse の `partial_merge` アルゴリズムは、従来の実装とは若干異なります。まず、ClickHouse は右テーブルを結合キーで block 単位にソートし、ソート済み block に対する min-max 索引を作成します。次に、左テーブルの part を `join key` でソートし、右テーブルに対して結合します。min-max 索引は、不要な右テーブル block をスキップするためにも使用されます。
 
 * direct
 
@@ -83,7 +83,7 @@ MergeTree テーブルでは、このアルゴリズムは結合キーフィル�
 
 結合対象テーブルの式間に 2 つの不等比較 (`<`、`<=`、`>`、`>=`) を含む `ON` 句を持つ `JOIN` 向けの、ソートベースの [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) アルゴリズムです。`ALL INNER/LEFT/RIGHT/FULL JOIN` および `SEMI`/`ANTI` `LEFT/RIGHT JOIN` をサポートします。
 
-リスト内の位置で優先順位が決まります。他のアルゴリズムの後に記載した場合、IEJoin はそれらが適用されない場合にのみ使用されます (`ON` 句に等価条件がない場合)。先頭に記載した場合、`ON` 句に 2 つの不等条件があれば常に使用されます。残りの条件 (等価条件を含む) は、`ALL INNER JOIN` では結合結果に対するフィルタとして適用され、その他の kind ではマッチングに影響する残余条件として operator 内で評価されます。リストに `ie_join` がない場合、不等条件のみを持つ `INNER JOIN` はフィルタ付きの `CROSS JOIN` として実行され、その他の kind はサポートされません。
+リスト内の位置で優先順位が決まります。デフォルト値のように他のアルゴリズムの後に記載した場合、IEJoin はそれらが適用されない場合にのみ使用されます (`ON` 句に等価条件がない場合)。先頭に記載した場合、`ON` 句に 2 つの不等条件があれば常に使用されます。残りの条件 (等価条件を含む) は、`ALL INNER JOIN` では結合結果に対するフィルタとして適用され、その他の kind ではマッチングに影響する残余条件として operator 内で評価されます。リストに `ie_join` がない場合、不等条件のみを持つ `INNER JOIN` はフィルタ付きの `CROSS JOIN` として実行され、その他の kind はサポートされません。
 
 結合前に両方の入力がメモリに蓄積されます。[`max_rows_in_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_join) と [`max_bytes_in_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) は、両側の蓄積された入力の合計を制限します (右側のみではありません)。overflow 時の動作は [`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) で設定します。operator が蓄積された入力上に構築するソート索引は、この制限にカウントされません。結合 operator 自体は単一スレッドで実行されます。並列化されるのは、入力の結合前ソートのみです。
 
@@ -95,7 +95,7 @@ MergeTree テーブルでは、このアルゴリズムは結合キーフィル�
 
 * `ASOF` joins、および浮動小数点 / `JSON` / `Object` / `Dynamic` キー型: これらの hash は merge join の比較と一貫しないため、等しいキーが異なる分片に配置される可能性があります。
 * すでにソートされている側 (順序どおりの MergeTree 読み取り、または事前にソートされた入力): 分片ごとの merge への順序保持 scatter により、パイプラインがデッドロックする可能性があります。代わりに、順序どおりの読み取りとその `read_in_order_use_virtual_row` 最適化が維持されます。
-* initiator が distributed plan (`make_distributed_plan`) を構築する場合: scatter されたソートはリモート実行用にシリアライズできないためです。ローカルの単一フラグメント plan と worker ごとのフラグメントは、その設定を無効にして再最適化されるため、引き続き分片化できます。
+* initiator が distributed プラン (`make_distributed_plan`) を構築する場合: scatter されたソートはリモート実行用にシリアライズできないためです。ローカルの単一フラグメント プラン と worker ごとのフラグメントは、その設定を無効にして再最適化されるため、引き続き分片化できます。
 
 これをスキップしても無効になるのはこの書き換えのみであり、一般的な並列性は無効になりません。結合は単一の `full_sorting_merge` として実行され、順序どおりに読み取る MergeTree 側は、`query_plan_join_shard_by_pk_ranges` が有効な場合、プライマリキー範囲によってソースで引き続き分片化できます (この範囲は結合で使用される比較と同じ比較で順序付けられるため、等しいキーは同じ場所に保持されます)。
 

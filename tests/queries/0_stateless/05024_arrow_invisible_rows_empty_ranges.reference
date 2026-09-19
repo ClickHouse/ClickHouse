@@ -1,0 +1,24 @@
+=== list_string_under_null as Array(Int32)
+[]
+[456]
+=== large_list_string_under_null as Array(Int32)
+[]
+[456]
+=== fixed_size_list_string_under_null as Array(Int32)
+[]
+[456]
+=== list_dict_string_under_null as Array(Int32)
+[]
+[456]
+=== map_string_under_null as Map(String, Int32)
+{}
+{'k2':456}
+=== map_key_string_under_null as Map(Int32, String)
+{}
+{456:'v2'}
+=== struct_list_string_under_null as Tuple(a Array(Int32))
+([])
+([456])
+=== struct_time32_under_null as Tuple(t Time64(0))
+('00:00:00')
+('01:01:01')

@@ -92,11 +92,29 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
+/// Check if current user has privileges to SELECT columns from table
+/// Throws an exception if access to any column from `column_names` is not granted
+/// If `column_names` is empty, check access to any columns and return names of accessible columns
+NameSet checkAccessRights(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & column_names,
+    const ContextPtr & query_context);
+
+/// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context,
+        bool check_access_rights = false);
+
 /// Build filter for specific table_expression
+/// `check_access_rights`: check column-level SELECT for the columns the filter reads (for user-supplied filters).
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
+        NameSet table_expression_required_names_without_filter = {},
+        bool check_access_rights = false);
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         const TableExpressionNodePtr & table_expression,

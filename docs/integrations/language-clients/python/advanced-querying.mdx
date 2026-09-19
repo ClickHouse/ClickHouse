@@ -360,6 +360,7 @@ client.query(
 | Float32               | float                   | string            | All Python floats are 64 bits internally                                                                          |
 | Float64               | float                   | string            |                                                                                                                   |
 | Decimal               | decimal.Decimal         | -                 |                                                                                                                   |
+| Interval*             | int                     | string            | Values are signed 64-bit counts in the interval type's unit.                                                       |
 | String                | str                     | bytes             | ClickHouse String columns have no inherent encoding, so they're also used for variable length binary data        |
 | FixedString           | bytes                   | string            | FixedStrings are fixed size byte arrays, but sometimes are treated as Python strings                              |
 | Enum[8,16]            | str                     | int               | The native format returns labels; `int` returns the underlying integer.                                            |
@@ -368,17 +369,21 @@ client.query(
 | DateTime              | datetime.datetime       | int               | The integer format returns epoch seconds.                                                                         |
 | DateTime64            | datetime.datetime       | int               | The integer format returns ticks at the column precision. Python `datetime` is limited to microseconds.           |
 | Time                  | datetime.timedelta      | int, string, time | The integer format returns seconds. The `time` format is limited to values that fit `datetime.time`.              |
-| Time64                | datetime.timedelta      | int, string, time | The integer format returns ticks at the column precision. Python `timedelta` is limited to microseconds.           |
+| Time64                | datetime.timedelta      | int, string, time | Scales 0 through 9 are supported. The integer format returns ticks at the column precision. Python `timedelta` is limited to microseconds. |
 | IPv4                  | `ipaddress.IPv4Address` | string, int       | IP addresses can be read as strings or integers.                                                                  |
 | IPv6                  | `ipaddress.IPv6Address` | string            | IP addresses can be read as strings and properly formatted can be inserted as IP addresses                        |
-| Tuple                 | dict or tuple           | tuple, dict, json | Named tuples return dictionaries by default; unnamed tuples return tuples.                                        |
+| Tuple                 | dict or tuple           | tuple, dict, json | Named tuples return dictionaries by default; unnamed tuples return tuples. A `Tuple()` value returns `()`.         |
 | Map                   | dict                    | -                 |                                                                                                                   |
 | Nested                | Sequence[dict]          | -                 |                                                                                                                   |
 | UUID                  | uuid.UUID               | string            | UUIDs can be read as strings formatted as per RFC 4122<br/>                                                       |
 | JSON                  | dict                    | string            | A python dictionary is returned by default. The `string` format will return a JSON string                         |
 | Variant               | object                  | typed             | `typed` returns `TypedVariant(value, type_name)` so the originating member type is preserved.                     |
 | Dynamic               | object                  | -                 | Returns the matching Python type for the ClickHouse datatype stored for the value                                 |
+| MultiPoint            | list[tuple]             | -                 | Each point is returned as a 2-tuple.                                                                               |
+| Geometry              | tuple or list           | typed             | Point values are 2-tuples. Other members, including MultiPoint, use nested lists. Select `typed` with the `Geometry` key to preserve the member type. `Variant` format settings do not apply. |
 | QBit                  | list[float]             | -                 | NumPy is used automatically for faster bit transposition when installed.                                          |
+
+`query_np`, `query_np_stream`, `query_df`, and `query_df_stream` support `Time64` scales 0, 3, 6, and 9. Other scales raise `ProgrammingError` because they do not have a matching NumPy time unit. Use a standard Python query with the `int` or `string` read format to preserve those precisions. The experimental [Rust codec](/integrations/language-clients/python/rust-codec#known-behavior-differences) documents an exception for `Time64` stored inside `Dynamic`.
 
 ## External data {#external-data}
 

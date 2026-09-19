@@ -6,6 +6,7 @@
 # shows, and `unstable` means its output is random and any outcome is accepted.
 # An entry is not an excuse: fix the example and drop the line whenever you can.
 
+AggregateFunction/groupArrayInsertAt#3    unstable  # every thread inserts at the same position, and the documentation says the surviving value is undetermined
 AggregateFunction/groupArraySample#0      unstable  # the output is not the same on every run
 AggregateFunction/groupArraySample#2      unstable  # the output is not the same on every run
 AggregateFunction/kolmogorovSmirnovTest#0 unstable  # the output is not the same on every run
@@ -47,7 +48,6 @@ Function/arrayRandomSample#0              unstable  # the output is random and s
 Function/arrayRandomSample#1              unstable  # the output is random and sometimes equals the documented one
 Function/arrayShuffle#0                   unstable  # the output is not the same on every run
 Function/buildId#0                        output  # the response describes the server or the machine it runs on
-Function/catboostEvaluate#0               error  # the example reads a demo dataset that the server under test does not have
 Function/currentDatabase#0                output  # the response describes the server or the machine it runs on
 Function/currentDatabase#1                output  # the response describes the server or the machine it runs on
 Function/currentQueryID#0                 unstable  # the output is not the same on every run
