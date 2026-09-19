@@ -154,6 +154,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .index = *index,
             .readable_ranges = readable_ranges,
             .skip_postings_deserialization = false,
+            .reader_settings = settings,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);

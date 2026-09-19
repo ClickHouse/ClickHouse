@@ -332,11 +332,27 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     {
         for (const auto & substream : substreams)
         {
-            auto stream = makeTextIndexInputStream(
-                segments[i].part_storage,
-                segments[i].index_file_name + substream.suffix,
-                substream.extension,
-                MergeTreeIndexReader::patchSettings(reader_settings_, substream.type));
+            std::unique_ptr<MergeTreeReaderStream> stream;
+
+            /// The merge reads the postings of a source part in order, list after list,
+            /// so its stream takes the largest buffer of the range: the regular read buffer size.
+            if (substream.type == MergeTreeIndexSubstream::Type::TextIndexPostings)
+            {
+                stream = makePostingsInputStream(
+                    segments[i].part_storage,
+                    segments[i].index_file_name + substream.suffix,
+                    substream.extension,
+                    reader_settings_,
+                    std::numeric_limits<size_t>::max());
+            }
+            else
+            {
+                stream = makeTextIndexInputStream(
+                    segments[i].part_storage,
+                    segments[i].index_file_name + substream.suffix,
+                    substream.extension,
+                    MergeTreeIndexReader::patchSettings(reader_settings_, substream.type));
+            }
 
             input_streams[i][substream.type] = stream.get();
             input_streams_holders.emplace_back(std::move(stream));
@@ -806,21 +822,20 @@ size_t estimateLargestPostingListSegmentBytes(const TokenPostingsInfo & token_in
     return cardinality * bits / 8 + blocks * (1 + 2 * 5) + 64;
 }
 
-std::unique_ptr<MergeTreeReaderStream> makeCursorPostingsInputStream(
+std::unique_ptr<MergeTreeReaderStream> makePostingsInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,
     const String & extension,
     const MergeTreeReaderSettings & reader_settings,
-    const TokenPostingsInfo & token_info)
+    size_t expected_read_bytes)
 {
     auto settings = MergeTreeIndexReader::patchSettings(reader_settings, MergeTreeIndexSubstream::Type::TextIndexPostings);
 
     /// The patched size is the floor (small lists are read in one piece anyway), the regular read buffer
-    /// size of the query is the cap: postings streams of the cursors then use at most what a column stream does.
-    const size_t segment_bytes = estimateLargestPostingListSegmentBytes(token_info);
+    /// size of the query is the cap: postings streams then use at most what a column stream does.
     auto adjust = [&](size_t & buffer_size, size_t regular_size)
     {
-        buffer_size = std::clamp(segment_bytes, std::min(buffer_size, regular_size), std::max(buffer_size, regular_size));
+        buffer_size = std::clamp(expected_read_bytes, std::min(buffer_size, regular_size), std::max(buffer_size, regular_size));
     };
     adjust(settings.read_settings.local_fs_settings.buffer_size, reader_settings.read_settings.local_fs_settings.buffer_size);
     adjust(settings.read_settings.remote_fs_settings.buffer_size, reader_settings.read_settings.remote_fs_settings.buffer_size);

@@ -433,7 +433,9 @@ private:
     std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens);
 
     std::shared_ptr<TextIndexHeader> loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
-    void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    /// Reads the single-segment posting lists of the needed tokens and folds them into the analyzer. Opens the
+    /// postings stream itself, once the tokens are known, with a buffer that fits the largest of the lists.
+    void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
     MergeTreeIndexTextParams params;
