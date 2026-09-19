@@ -2762,6 +2762,20 @@ function commitResultShape(el) {
 const MAX_LOG_DOM_LINES = 100000;
 const MAX_LOG_LINES_PER_FRAME = 1000;
 
+/// The inner HTML of a long integer, with its digits split into groups of three by an empty element
+/// (see `.num-sep`) instead of a separator character, so the grouping is only a gap in the painted
+/// number and the text of the cell is still nothing but the digits. Mirrors `clickhouse-client` in
+/// grouping from the right; the caller decides what is long enough to group, and passes digits only
+/// (nothing here is escaped).
+function digitGroupsHTML(digits)
+{
+    /// The leading group is the short one: 1 234 567, not 123 456 7.
+    const head = digits.length % 3 || 3;
+    const groups = [digits.slice(0, head)];
+    for (let i = head; i < digits.length; i += 3) { groups.push(digits.slice(i, i + 3)); }
+    return groups.join('<span class="num-sep"></span>');
+}
+
 class QueryResultElement extends HTMLElement
 {
     static _loadVizPromise = null;
@@ -2927,9 +2941,17 @@ class QueryResultElement extends HTMLElement
                     max-height: none;
                 }
 
-                td u
+                /* An empty element inserted between the digit groups of a long number: a gap a
+                   quarter of a digit wide, so that a long number reads as 1 234 567 while remaining
+                   a single run of digits - selecting the number, or copying the cell, yields the
+                   digits alone, which a real separator character (a thin space) would not.
+                   Inline-block, because a width does not apply to an inline box, and in ch units,
+                   which in this monospace font is exactly the width of one digit.
+                   No backticks in this comment: this style block lives inside a JS template literal. */
+                .num-sep
                 {
-                    text-decoration-color: var(--misc-text-color);
+                    display: inline-block;
+                    width: 0.25ch;
                 }
 
                 .right
@@ -4512,18 +4534,14 @@ class QueryResultElement extends HTMLElement
 
         td.className = this._column_is_number[name] ? 'right' : 'left';
 
-        if (this._column_is_number[name])
+        /// A long number is grouped for readability. At least five digits, as in `clickhouse-client`:
+        /// a four-digit number is as often a year, which nobody groups.
+        if (this._column_is_number[name] && text.match(/^\d{5,}$/))
         {
-            if (text.length >= 5 && text.match(/^[\d]{5,}$/))
-            {
-                let i = 0;
-                div.innerHTML = text.split('').reverse().map(c => {
-                    if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
-                }).reverse().join('');
-                td.appendChild(div);
-                this._appendCopyButton(td, text, value);
-                return td;
-            }
+            div.innerHTML = digitGroupsHTML(text);
+            td.appendChild(div);
+            this._appendCopyButton(td, text, value);
+            return td;
         }
 
         div.appendChild(node);
@@ -4655,7 +4673,9 @@ class QueryResultElement extends HTMLElement
         let td = document.createElement('td');
         td.className = 'row-number';
         /// Numbered within the whole result, not within the page (see `_rowNumberOffset`).
-        td.appendChild(document.createTextNode(this._rowNumberOffset() + this._row_idx));
+        const row_number = String(this._rowNumberOffset() + this._row_idx);
+        if (row_number.length >= 5) { td.innerHTML = digitGroupsHTML(row_number); }
+        else { td.appendChild(document.createTextNode(row_number)); }
         tr.appendChild(td);
 
         for (const column of this._header)
