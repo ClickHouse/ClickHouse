@@ -109,6 +109,14 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
+    /// Make the auto-spill wrapper participate in memory-reservation recovery. During collection
+    /// explicit reservation pressure may force the normal HashJoin -> GraceHashJoin transition;
+    /// after the switch the request is delegated to the active GraceHashJoin.
+    bool spillForMemoryReservation();
+    bool hasPendingMemoryReservationSpill() const;
+    /// Arm the active GraceHashJoin to spill from ordinary processor work.
+    bool forceSpill();
+
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
     /// fixed hash map, publishing the shared runtime filter).

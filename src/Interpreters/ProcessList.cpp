@@ -1,4 +1,5 @@
 #include <Interpreters/ProcessList.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -65,6 +66,17 @@ namespace Setting
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
     extern const SettingsMilliseconds workload_admission_timeout_ms;
+    extern const SettingsBool memory_reservation_protect_from_eviction;
+    extern const SettingsBool memory_reservation_force_spill_before_eviction;
+    extern const SettingsMilliseconds memory_reservation_suction_queue_timeout_ms;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 memory_reservation_max_allocation_before_suction_bytes;
+    extern const ServerSettingsUInt64 memory_reservation_suction_max_allocation_bytes;
+    extern const ServerSettingsUInt64 memory_reservation_suction_reserved_bytes;
+    extern const ServerSettingsString memory_reservation_suction_queue_policy;
 }
 
 namespace ErrorCodes
@@ -170,7 +182,47 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
+
+                MemoryReservation::Settings reservation_settings;
+                reservation_settings.pressure_policy.protect_from_eviction
+                    = settings[Setting::memory_reservation_protect_from_eviction];
+                reservation_settings.force_spill_before_eviction
+                    = settings[Setting::memory_reservation_force_spill_before_eviction];
+                reservation_settings.suction_queue_timeout_ms
+                    = settings[Setting::memory_reservation_suction_queue_timeout_ms].totalMilliseconds();
+
+                const auto & server_settings = query_context->getServerSettings();
+                reservation_settings.pressure_policy.max_allocation_before_suction_bytes
+                    = server_settings[ServerSetting::memory_reservation_max_allocation_before_suction_bytes];
+                reservation_settings.pressure_policy.suction_max_allocation_bytes
+                    = server_settings[ServerSetting::memory_reservation_suction_max_allocation_bytes];
+                reservation_settings.pressure_policy.suction_reserved_bytes
+                    = server_settings[ServerSetting::memory_reservation_suction_reserved_bytes];
+                const String suction_queue_policy = server_settings[ServerSetting::memory_reservation_suction_queue_policy];
+                if (suction_queue_policy == "fifo")
+                {
+                    reservation_settings.pressure_policy.suction_queue_policy
+                        = ResourceAllocation::SuctionQueuePolicy::Fifo;
+                }
+                else if (suction_queue_policy == "largest_memory_first")
+                {
+                    reservation_settings.pressure_policy.suction_queue_policy
+                        = ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst;
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unknown `memory_reservation_suction_queue_policy`: '{}'. Expected `fifo` or `largest_memory_first`",
+                        suction_queue_policy);
+                }
+
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link,
+                    client_info.current_query_id,
+                    settings[Setting::reserve_memory],
+                    admission_deadline,
+                    reservation_settings);
             }
         }
     }
@@ -216,7 +268,7 @@ ProcessList::EntryPtr ProcessList::insert(
              * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
              * the default profile (or 0 for unlimited).
              *
-             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
+             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default_profile,
              * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
              * exporters).
              *
@@ -1041,7 +1093,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 
 ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) const
 {
-    ProcessListForUserInfo res;
+    ProcessListForUserInfo res{};
 
     res.memory_usage = user_memory_tracker.get();
     res.peak_memory_usage = user_memory_tracker.getPeak();
