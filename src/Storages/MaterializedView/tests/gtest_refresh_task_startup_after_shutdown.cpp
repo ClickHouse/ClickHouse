@@ -81,16 +81,12 @@ std::shared_ptr<StorageMaterializedView> attachRefreshableView(const ContextMuta
 
 }
 
-/// A database-wide shutdown sweep (server shutdown, or the rollback of a failed ATTACH DATABASE)
-/// calls flushAndPrepareForShutdown() on every table, and an AsyncLoader `startup table` job can
-/// still call startup() on the same table afterwards. That is the ordering behind the SIGSEGV in
-/// CI: RefreshTask::shutdown() nulls its `view` back-pointer, and RefreshTask::startup() used to
-/// read through it before taking the lock.
+/// shutdown() is documented to be callable before or during startup(), and it nulls the `view`
+/// back-pointer that startup() reads, so this order is sanctioned rather than a misuse.
 ///
-/// This lives in a unit test because the ordering is not reachable from SQL: ATTACH TABLE builds a
-/// fresh IStorage with a fresh RefreshTask, and a database sweep joins in-flight startup jobs
-/// (DatabaseOnDisk::shutdown() calls stopLoading() first), so no query sequence gets startup() to
-/// run on an already shut-down task.
+/// The two calls are made directly because no query sequence produces that order: ATTACH TABLE
+/// builds a fresh RefreshTask, and a database sweep joins the outstanding startup jobs before it
+/// begins (DatabaseOnDisk::shutdown() calls stopLoading()).
 TEST(RefreshTaskStartupAfterShutdown, StartupAfterShutdownDoesNotDereferenceNullView)
 {
     const auto & state = State::instance();
