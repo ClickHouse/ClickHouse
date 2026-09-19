@@ -85,7 +85,8 @@ TEST(IcebergMetadataListingRequests, EmptyMetadataPrefixIsListedOncePerAttempt)
 {
     ScopedTempDir temporary_directory("ch_gtest_iceberg_metadata_listing_requests");
     auto table = temporary_directory.path / "default" / "test_table";
-    fs::create_directories(table / "metadata");
+    const String metadata_prefix = (table / "metadata").string();
+    fs::create_directories(metadata_prefix);
 
     auto object_storage = std::make_shared<CountingLocalObjectStorage>(LocalObjectStorageSettings(
         "test_iceberg_metadata_listing_requests", temporary_directory.path.string(), /*read_only_=*/false));
@@ -108,7 +109,8 @@ TEST(IcebergMetadataListingRequests, EmptyMetadataPrefixIsListedOncePerAttempt)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
-        EXPECT_NE(e.message().find("which held 0 entries"), String::npos) << e.message();
+        EXPECT_NE(e.message().find("no .metadata.json under " + metadata_prefix + ", which held 0 entries"), String::npos)
+            << e.message();
     }
 
     /// `5` is the file-local `MAX_LIST_RETRIES` of `Utils.cpp`; the message describes a listing already made.

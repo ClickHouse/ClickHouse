@@ -85,7 +85,8 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixHoldsOnlyUnmatchedObject)
 {
     ScopedTempDir temporary_directory("ch_gtest_paimon_schema_unmatched");
     auto table = temporary_directory.path / "test.db" / "test_table";
-    const auto other = table / Paimon::PAIMON_SCHEMA_DIR / "other.txt";
+    const String schema_prefix = (table / Paimon::PAIMON_SCHEMA_DIR).string();
+    const auto other = fs::path(schema_prefix) / "other.txt";
     writeFile(other, "");
     /// A fixed modification time, so the rendering asserted below is the object's own, not a wall clock.
     ::utimbuf times{};
@@ -107,7 +108,7 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixHoldsOnlyUnmatchedObject)
 
         const String & message = e.message();
         EXPECT_NE(message.find("The metadata file for Paimon table with path"), String::npos) << message;
-        EXPECT_NE(message.find("No schema file was found under"), String::npos) << message;
+        EXPECT_NE(message.find("No schema file was found under " + schema_prefix + ","), String::npos) << message;
 
         EXPECT_NE(message.find("1 entry: /other.txt (2001-09-09T01:46:40Z)"), String::npos) << message;
     }
@@ -120,7 +121,8 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixEmpty)
 {
     ScopedTempDir temporary_directory("ch_gtest_paimon_schema_empty");
     auto table = temporary_directory.path / "test.db" / "test_table";
-    fs::create_directories(table / Paimon::PAIMON_SCHEMA_DIR);
+    const String schema_prefix = (table / Paimon::PAIMON_SCHEMA_DIR).string();
+    fs::create_directories(schema_prefix);
 
     auto object_storage = makeLocalObjectStorage(temporary_directory.path);
     PaimonTableClient client(object_storage, table.string(), getContext().context);
@@ -136,7 +138,8 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixEmpty)
 
         const String & message = e.message();
         EXPECT_NE(message.find("The metadata file for Paimon table with path"), String::npos) << message;
-        EXPECT_NE(message.find("which held 0 entries"), String::npos) << message;
+        EXPECT_NE(message.find("No schema file was found under " + schema_prefix + ", which held 0 entries"), String::npos)
+            << message;
     }
 
     EXPECT_EQ(object_storage->list_calls.load(), 1u);
