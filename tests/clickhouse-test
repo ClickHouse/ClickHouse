@@ -1983,10 +1983,8 @@ class SettingsRandomizer:
         # subquery over a recursive CTE throws NOT_IMPLEMENTED "Cannot clone ReadFromRecursiveCTEStep".
         # "correlated_subqueries_use_in_memory_buffer": lambda: random.random() > 0.05,
         "use_parquet_metadata_cache": lambda: random.randint(0, 1),
-        # MD5 is the default for a non-S3Express bucket, CRC32/SHA256 send a flexible
-        # x-amz-checksum-* header instead. Spelled out rather than left empty, because an
-        # empty value would render as a bare `--setting` that swallows the next option.
-        "s3_upload_checksum_algorithm": lambda: random.choice(["MD5", "CRC32", "SHA256"]),
+        # Not randomized: a FIPS build rejects MD5 outright (`Requests.cpp`), so every test
+        # touching S3 storage fails there, and an S3Express bucket rejects it too.
         # Iceberg manifest decode concurrency and the queue between the decode tasks and the
         # query. Both NonZeroUInt64, so never 0; 1 serializes, a small queue forces the
         # decoders to block on a full queue and a large one removes the backpressure.
