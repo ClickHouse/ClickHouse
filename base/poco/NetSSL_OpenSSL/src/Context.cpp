@@ -13,16 +13,21 @@
 
 
 #include "Poco/Net/Context.h"
+#include "Poco/Net/EmbeddedCertificates.h"
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Utility.h"
 #include "Poco/File.h"
 #include "Poco/Path.h"
+#include "Poco/String.h"
 #include "Poco/DirectoryIterator.h"
 #include "Poco/RegularExpression.h"
 #include "Poco/Timestamp.h"
+#include <string>
+#include <vector>
 #include <openssl/bio.h>
 #include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
@@ -131,16 +136,59 @@ static bool poco_dir_cert(const std::string & dir)
 
 static bool poco_dir_contains_certs(const std::string & dir)
 {
+	/// A hash-shaped file name alone does not mean that a CA certificate can be obtained from the
+	/// directory: a stale symlink or a zero-byte placeholder such as `deadbeef.0` makes
+	/// `SSL_CTX_load_verify_locations` succeed while leaving the trust store empty, and the failure
+	/// only shows up later, at handshake time. Require at least one certificate that actually parses,
+	/// so that the caller falls back to the probe and to the certificates embedded into the binary.
 	RegularExpression re("^[a-fA-F0-9]{8}\\.\\d$");
 	try
 	{
 		for (DirectoryIterator it(dir), end; it != end; ++it)
-			if (re.match(Path(it->path()).getFileName()))
+		{
+			if (!re.match(Path(it->path()).getFileName()))
+				continue;
+
+			/// OpenSSL looks up hash-named entries of a certificate directory in PEM format.
+			BIO * bio = BIO_new_file(it->path().c_str(), "r");
+			if (bio == nullptr)
+			{
+				ERR_clear_error();
+				continue;
+			}
+
+			X509 * cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+			BIO_free(bio);
+			ERR_clear_error();
+
+			if (cert != nullptr)
+			{
+				X509_free(cert);
 				return true;
+			}
+		}
 	}
 	catch (Poco::Exception& exc) {}
 
+	ERR_clear_error();
 	return false;
+}
+
+/// Splits a `:`-separated directory list, as accepted by OpenSSL for `SSL_CERT_DIR`, skipping empty entries.
+static std::vector<std::string> poco_split_dir_list(const std::string & dirs)
+{
+	std::vector<std::string> result;
+	std::string::size_type begin = 0;
+	while (begin <= dirs.size())
+	{
+		std::string::size_type end = dirs.find(':', begin);
+		if (end == std::string::npos)
+			end = dirs.size();
+		if (end > begin)
+			result.push_back(dirs.substr(begin, end - begin));
+		begin = end + 1;
+	}
+	return result;
 }
 
 static bool poco_file_cert(const std::string & file)
@@ -221,11 +269,74 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 
 	if (dir != nullptr)
 	{
+		/// The directory exists but contains no certificates (checked by poco_dir_contains_certs above):
+		/// register it anyway, as certificates may appear there later, but report that nothing was found,
+		/// so that the caller can fall back to the certificates embedded into the binary. Without
+		/// hash-named files the directory lookup cannot return anything at verification time anyway.
 		caPaths.caDefaultDir = dir;
-		return SSL_CTX_load_verify_locations(ctx, NULL, dir);
+		SSL_CTX_load_verify_locations(ctx, NULL, dir);
 	}
 
 	return 0;
+}
+
+static int poco_load_embedded_certificates(SSL_CTX * ctx, Context::CAPaths & caPaths)
+{
+	std::string_view pem = embeddedCACertificates();
+	if (pem.empty())
+		return 0;
+
+	BIO * bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+	if (bio == nullptr)
+		return 0;
+
+	X509_STORE * store = SSL_CTX_get_cert_store(ctx);
+	size_t added = 0;
+	while (X509 * cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr))
+	{
+		int ok = X509_STORE_add_cert(store, cert);
+		X509_free(cert);
+		if (ok != 1)
+		{
+			/// The store is not necessarily empty here: a custom `caConfig` may have been loaded before,
+			/// and it can overlap with the embedded bundle. A certificate that is already known is not an
+			/// error, and the rest of the bundle still has to be loaded.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+			int reason = ERR_GET_REASON(ERR_peek_last_error());
+#pragma clang diagnostic pop
+			if (reason != X509_R_CERT_ALREADY_IN_HASH_TABLE)
+			{
+				/// Any other failure to add a certificate must fail context creation: continuing would
+				/// silently leave a partial trust store, and only some remote peers would fail later,
+				/// depending on which root was skipped. The error is left on the queue for the caller.
+				BIO_free(bio);
+				return 0;
+			}
+
+			ERR_clear_error();
+		}
+		++added;
+	}
+
+	/// `PEM_read_bio_X509` returns null both at the normal end of the bundle (`PEM_R_NO_START_LINE`)
+	/// and on a parse failure in the middle of it. The bundle is embedded at build time, so a parse
+	/// failure means it is malformed or truncated: fail closed instead of using a partial trust store.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+	int end_reason = ERR_GET_REASON(ERR_peek_last_error());
+#pragma clang diagnostic pop
+	BIO_free(bio);
+	if (end_reason != PEM_R_NO_START_LINE)
+		return 0;
+
+	ERR_clear_error();
+
+	if (added == 0)
+		return 0;
+
+	caPaths.caEmbedded = true;
+	return 1;
 }
 
 
@@ -236,10 +347,12 @@ void Context::init(const Params& params)
 	try
 	{
 		int errCode = 0;
+		bool caLocationLoaded = false;
 		if (!params.caLocation.empty())
 		{
 			Poco::File aFile(params.caLocation);
-			if (aFile.isDirectory())
+			bool isDirectory = aFile.isDirectory();
+			if (isDirectory)
 				errCode = SSL_CTX_load_verify_locations(_pSSLContext, 0, Poco::Path::transcode(params.caLocation).c_str());
 			else
 				errCode = SSL_CTX_load_verify_locations(_pSSLContext, Poco::Path::transcode(params.caLocation).c_str(), 0);
@@ -249,6 +362,12 @@ void Context::init(const Params& params)
 				throw SSLContextException(std::string("Cannot load CA file/directory at ") + params.caLocation, msg);
 			}
 			_caPaths.caLocation = params.caLocation;
+
+			/// Whether this location is a usable trust store on its own, which decides below whether the
+			/// certificates embedded into the binary may still be added. A file that yields no certificate
+			/// already fails `SSL_CTX_load_verify_locations` above; a directory does not, so it has to be
+			/// checked separately.
+			caLocationLoaded = !isDirectory || poco_dir_contains_certs(params.caLocation);
 		}
 
 		if (params.loadDefaultCAs)
@@ -261,30 +380,63 @@ void Context::init(const Params& params)
 			if (!file)
 				file = X509_get_default_cert_file();
 
-			if (poco_file_cert(file))
-			{
-				_caPaths.caDefaultFile = file;
-				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-			}
-			else
-			{
-				if (poco_dir_cert(dir))
-				{
-					errCode = 0;
-					if (!poco_dir_contains_certs(dir))
-						errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+			errCode = 0;
 
-					if (errCode == 0)
-					{
-						errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-						_caPaths.caDefaultDir = dir;
-					}
+			if (poco_file_cert(file) && SSL_CTX_load_verify_locations(_pSSLContext, file, 0))
+			{
+				/// `SSL_CTX_load_verify_locations` (unlike `SSL_CTX_set_default_verify_paths`) fails when
+				/// the file exists but yields no certificates, so an empty or malformed default CA file
+				/// falls through to the directory check and then to the probe / embedded fallback below,
+				/// instead of silently producing an empty trust store.
+				_caPaths.caDefaultFile = file;
+				errCode = 1;
+			}
+
+			/// The default file and the default directory are not alternatives:
+			/// `SSL_CTX_set_default_verify_paths` loads both, and a split trust store may keep some
+			/// roots only in the directory, so the directory is loaded even when the file succeeded.
+			///
+			/// `SSL_CERT_DIR` may name several directories separated by `:` (OpenSSL's `X509_LOOKUP_hash_dir`
+			/// accepts such a list), so every entry is checked and loaded on its own: a missing or empty entry
+			/// must not hide the roots kept in the others. Only the entries that were actually loaded are
+			/// recorded, so that `system.certificates` enumerates exactly the trust store in use.
+			std::string loadedDirs;
+			for (const std::string & entry : poco_split_dir_list(dir))
+			{
+				if (poco_dir_cert(entry) && poco_dir_contains_certs(entry) && SSL_CTX_load_verify_locations(_pSSLContext, 0, entry.c_str()))
+				{
+					if (!loadedDirs.empty())
+						loadedDirs += ':';
+					loadedDirs += entry;
 				}
-				else
-					errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+			}
+			if (!loadedDirs.empty())
+			{
+				_caPaths.caDefaultDir = loadedDirs;
+				errCode = 1;
 			}
 
 			if (errCode != 1)
+			{
+				/// The default locations are missing or contain no certificates (e.g. a container built
+				/// "from scratch"): probe the well-known locations, and then fall back to the certificates
+				/// embedded into the binary, if any.
+				///
+				/// `SSL_CTX_set_default_verify_paths` must not be used as a fallback here: it reports success
+				/// even when the default locations are an empty directory or a missing file, which would
+				/// silently produce an empty trust store and only fail later, at handshake time.
+				errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+
+				/// The embedded bundle is a substitute for a *missing* filesystem trust store, not an
+				/// addition to a configured one: when `caLocation` was loaded successfully, its roots are
+				/// exactly the trust store the deployment asked for, and appending the public roots of the
+				/// embedded bundle would widen the trust surface beyond it. The store is not empty in that
+				/// case either, so nothing is thrown.
+				if (errCode != 1 && !caLocationLoaded)
+					errCode = poco_load_embedded_certificates(_pSSLContext, _caPaths);
+			}
+
+			if (errCode != 1 && !caLocationLoaded)
 			{
 				std::string msg = Utility::getLastError();
 				throw SSLContextException("Cannot load default CA certificates", msg);
@@ -316,7 +468,33 @@ void Context::init(const Params& params)
 		else
 			SSL_CTX_set_verify(_pSSLContext, params.verificationMode, &SSLManager::verifyClientCallback);
 
-		SSL_CTX_set_cipher_list(_pSSLContext, params.cipherList.c_str());
+		// Only ':', ' ', ';' and ',' separate items in an OpenSSL cipher list, so a newline or
+		// tab is a lexing error rather than padding.
+		std::string cipherList = Poco::trim(params.cipherList);
+
+		// The reason code below only describes this call if the queue is empty on entry: the
+		// default-CA probing above leaves errors queued for candidate paths it discards, and
+		// ERR_peek_error() returns the oldest entry.
+		ERR_clear_error();
+		if (SSL_CTX_set_cipher_list(_pSSLContext, cipherList.c_str()) != 1)
+		{
+			unsigned long err = ERR_peek_error();
+
+			// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
+			// https://github.com/openssl/openssl/issues/16776
+			bool noCipherMatch = (err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == SSL_R_NO_CIPHER_MATCH;
+
+			// A list that lexes but selects no TLS 1.2 or older cipher is legitimate - a
+			// TLS 1.3 only deployment reaches this - so only an unlexable list is an error.
+			if (noCipherMatch)
+				ERR_clear_error();
+			else
+			{
+				std::string msg = Utility::getLastError();
+				throw SSLContextException(std::string("Cannot set cipher list ") + cipherList, msg);
+			}
+		}
+
 		SSL_CTX_set_verify_depth(_pSSLContext, params.verificationDepth);
 		SSL_CTX_set_mode(_pSSLContext, SSL_MODE_AUTO_RETRY);
 		SSL_CTX_set_session_cache_mode(_pSSLContext, SSL_SESS_CACHE_OFF);

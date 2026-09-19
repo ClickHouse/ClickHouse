@@ -103,7 +103,14 @@
       "group": "Data ingestion",
       "pages": [
         "integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+            {
+         "expanded": false,
+         "group": "Apache Airflow",
+         "pages": [
+          "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+          "integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
+         ]
+        },
         "integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -147,17 +154,7 @@
           ]
         },
         "integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
-        },
+        { "$ref": "data-ingestion/etl-tools/dbt/navigation.json" },
         "integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
           "group": "Fivetran",

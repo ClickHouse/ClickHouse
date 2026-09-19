@@ -7,7 +7,7 @@
         "ja/resources/changelogs/cloud/index",
         "ja/resources/changelogs/cloud/2026",
         {
-          "group": "アーカイブ",
+          "group": "Archive",
           "pages": [
             "ja/resources/changelogs/cloud/archive/2025",
             "ja/resources/changelogs/cloud/archive/2024",
@@ -17,7 +17,7 @@
         },
         "ja/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloudデータベースのリリース changelog",
+          "group": "Cloud database release changelog",
           "pages": [
             "ja/resources/changelogs/cloud/release-notes-index",
             {
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "dropdown": "オープンソース",
+      "dropdown": "Open source",
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "ja/resources/changelogs/oss/2026",
         {
           "expanded": false,
-          "group": "アーカイブ",
+          "group": "Archive",
           "pages": [
             "ja/resources/changelogs/oss/2025",
             "ja/resources/changelogs/oss/2024",
@@ -77,5 +77,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "変更履歴"
+  "item": "Changelogs"
 }

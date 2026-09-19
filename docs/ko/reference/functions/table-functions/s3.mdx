@@ -40,20 +40,20 @@ s3(named_collection[, option=value [,..]])
 
 `s3` 테이블 함수는 다음과 같은 일반 매개변수를 지원합니다.
 
-| Parameter                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                                   | 파일 경로가 포함된 버킷 URL입니다. 읽기 전용 모드에서 `*`, `**`, `?`, `{abc,def}`, `{N..M}` 와일드카드를 지원합니다. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다. 자세한 내용은 [여기](/ko/reference/engines/table-engines/integrations/s3#wildcards-in-path)를 참조하십시오.                                                                                                                                                                                                                     |
-| `NOSIGN`                                | 자격 증명 대신 이 키워드를 지정하면 모든 요청이 서명되지 않습니다.                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `access_key_id` and `secret_access_key` | 지정된 엔드포인트와 함께 사용할 자격 증명을 지정하는 키입니다. 선택 사항입니다.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `session_token`                         | 지정된 키와 함께 사용할 세션 토큰입니다. 키를 전달하는 경우 선택 사항입니다.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `format`                                | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `structure`                             | 테이블 구조입니다. 형식은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                                                                                                                                                                                                                                |
-| `compression_method`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `none`, `gzip` 또는 `gz`, `brotli` 또는 `br`, `xz` 또는 `LZMA`, `zstd` 또는 `zst`입니다. 기본적으로 파일 확장자를 기준으로 압축 방식을 자동 감지합니다.                                                                                                                                                                                                                                                                                                       |
-| `headers`                               | 선택 사항인 매개변수입니다. S3 요청에 헤더를 전달할 수 있습니다. `headers(key=value)` 형식으로 전달하십시오. 예: `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                     |
-| `partition_strategy`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `wildcard` 또는 `hive`입니다. `wildcard`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `hive`는 와일드카드를 허용하지 않고, 경로를 테이블 루트로 간주하며, 파일 이름으로 Snowflake ID를 사용하고 파일 포맷을 확장자로 하여 Hive 스타일의 파티션 디렉터리를 생성합니다. 경로에 `{_partition_id}` 플레이스홀더가 포함된 경우 이러한 경로와 호환되는 유일한 전략인 `wildcard`가 기본값입니다. 그렇지 않은 경우 기본값은 `file_like_engine_default_partition_strategy` 설정을 따릅니다(`26.6`보다 오래된 `compatibility` 설정에서는 `wildcard`, 그 외에는 `hive`). |
-| `partition_columns_in_data_file`        | 선택 사항인 매개변수입니다. `hive` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 ClickHouse가 예상할지 여부를 지정합니다. 기본값은 `false`입니다.                                                                                                                                                                                                                                                                                                                                   |
-| `extra_credentials`                     | 선택 사항인 매개변수입니다. ClickHouse Cloud에서 역할 기반 접근을 위한 `role_arn`을 전달하는 데 사용됩니다. 구성 단계는 [Secure S3](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.                                                                                                                                                                                                                                                                           |
-| `storage_class_name`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`입니다. 즉시 검색을 허용하는 S3 storage classes만 지원됩니다(`GLACIER`, `DEEP_ARCHIVE`와 같은 아카이브 클래스는 지원되지 않음). [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)을 지정할 수 있습니다. 기본값은 `STANDARD`입니다.                                                                         |
+| Parameter                               | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                   | 파일 경로가 포함된 버킷 URL입니다. 읽기 전용 모드에서 `*`, `**`, `?`, `{abc,def}`, `{N..M}` 와일드카드를 지원합니다. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다. 자세한 내용은 [여기](/ko/reference/engines/table-engines/integrations/s3#wildcards-in-path)를 참조하십시오.                                                                                                                                                                                                                                   |
+| `NOSIGN`                                | 자격 증명 대신 이 키워드를 지정하면 모든 요청이 서명되지 않습니다.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `access_key_id` and `secret_access_key` | 지정된 엔드포인트와 함께 사용할 자격 증명을 지정하는 키입니다. 선택 사항입니다.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `session_token`                         | 지정된 키와 함께 사용할 세션 토큰입니다. 키를 전달하는 경우 선택 사항입니다.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `format`                                | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `structure`                             | 테이블 구조입니다. 형식은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                                                                                                                                                                                                                                              |
+| `compression_method`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `none`, `gzip` 또는 `gz`, `brotli` 또는 `br`, `xz` 또는 `LZMA`, `zstd` 또는 `zst`입니다. 기본적으로 파일 확장자를 기준으로 압축 방식을 자동 감지합니다.                                                                                                                                                                                                                                                                                                                     |
+| `headers`                               | 선택 사항인 매개변수입니다. S3 요청에 헤더를 전달할 수 있습니다. `headers(key=value)` 형식으로 전달하십시오. 예: `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                   |
+| `partition_strategy`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `wildcard` 또는 `hive`입니다. `wildcard`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `hive`는 와일드카드를 허용하지 않고, 경로를 테이블 루트로 간주하며, 파일 이름으로 Snowflake ID를 사용하고 파일 포맷을 확장자로 하여 Hive 스타일의 파티션 디렉터리를 생성합니다. 명시적인 전략이 없으면 `{_partition_id}`가 포함된 경로는 `wildcard`를 사용합니다. 다른 글롭이 포함된 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `hive`인 경우 `hive`를 사용하며, 그렇지 않으면 파티션 전략을 사용하지 않습니다. |
+| `partition_columns_in_data_file`        | 선택 사항인 매개변수입니다. `hive` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 ClickHouse가 예상할지 여부를 지정합니다. 기본값은 `false`입니다.                                                                                                                                                                                                                                                                                                                                                 |
+| `extra_credentials`                     | 선택 사항인 매개변수입니다. ClickHouse Cloud에서 역할 기반 접근을 위한 `role_arn`을 전달하는 데 사용됩니다. 구성 단계는 [Secure S3](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.                                                                                                                                                                                                                                                                                         |
+| `storage_class_name`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`입니다. 즉시 검색을 허용하는 S3 storage classes만 지원됩니다(`GLACIER`, `DEEP_ARCHIVE`와 같은 아카이브 클래스는 지원되지 않음). [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)을 지정할 수 있습니다. 기본값은 `STANDARD`입니다.                                                                                       |
 
 <Info>
   **GCS**
@@ -92,6 +92,7 @@ S3 파일 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -113,7 +114,8 @@ LIMIT 5;
   ```sql
   SELECT *
   FROM s3(
-     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+     NOSIGN
   )
   LIMIT 5;
   ```
@@ -156,7 +158,7 @@ S3에 다음 URI를 가진 파일이 여러 개 있다고 가정해 보겠습니
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -169,7 +171,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -182,11 +184,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
   파일 목록에 앞에 0이 붙은 숫자 범위가 포함된 경우, 각 자릿수별로 중괄호를 사용하는 구문 또는 `?`를 사용하십시오.
 </Tip>
 
-`file-000.csv`, `file-001.csv`, ... , `file-999.csv` 파일들의 전체 행 수를 계산합니다:
+`file-1.csv`, ..., `file-4.csv` 파일들의 전체 행 수를 계산합니다:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -209,25 +211,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-Glob **는 재귀적 디렉터리 탐색에 사용할 수 있습니다. 아래 예시는 `my-test-bucket-768` 디렉터리에서 모든 파일을 재귀적으로 가져옵니다:
+Glob **는 재귀적으로 디렉터리를 탐색하는 데 사용할 수 있습니다. 아래 예시는 `my-test-bucket-768` 디렉터리의 모든 파일을 재귀적으로 가져옵니다:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 아래 예시는 `my-test-bucket` 디렉터리 내 모든 하위 폴더에서 `test-data.csv.gz` 파일의 데이터를 재귀적으로 가져옵니다:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 참고. 서버 설정 파일에서 사용자 정의 URL 매퍼를 지정할 수 있습니다. 예시:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'`는 `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`로 대체됩니다.
+URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'`은 `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`으로 대체됩니다.
 
 사용자 지정 매퍼는 `config.xml`에 추가할 수 있습니다:
 
@@ -266,7 +268,9 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 `INSERT` 쿼리에서만 지원됩니다.
 
-`wildcard`: 파일 경로의 `{_partition_id}` 와일드카드를 실제 파티션 키로 대체합니다. 경로에 `{_partition_id}` 플레이스홀더가 포함된 경우(이러한 경로와 호환되는 유일한 전략) 기본값으로 선택되며, 그렇지 않은 경우 `compatibility` 설정이 `26.6`보다 이전이면 기본값으로 선택됩니다. 그 외의 경우 기본값은 `hive`입니다(`file_like_engine_default_partition_strategy` 설정 참조).
+`wildcard`: 파일 경로의 `{_partition_id}` 와일드카드를 실제 파티션 키로 대체합니다. 경로에 `{_partition_id}`가 포함된 경우 기본값으로 선택됩니다.
+
+`partition_strategy`가 설정되지 않은 경우, 다른 글롭이 있는 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `hive`이면 `hive`를 사용하고, 그렇지 않으면 파티션 전략을 사용하지 않습니다.
 
 `hive`: 읽기 및 쓰기에 Hive 스타일 파티셔닝을 사용합니다. 다음 포맷으로 파일을 생성합니다: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -367,7 +371,8 @@ S3에 다음 URI의 여러 아카이브 파일이 있다고 가정합니다.
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -440,7 +445,7 @@ Peak memory usage: 192.27 KiB.
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 <div id="storage-settings">
