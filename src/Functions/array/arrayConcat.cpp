@@ -40,6 +40,9 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
     if (result_type->onlyNull())
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
+    if (arguments.size() == 1)
+        return arguments[0].column;
+
     size_t num_args = arguments.size();
 
     Columns preprocessed_columns(num_args);
