@@ -14,6 +14,7 @@
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
+#include <Access/EnabledRowPolicies.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
@@ -36,6 +37,7 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -196,6 +198,20 @@ SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
     return set;
+}
+
+
+void StorageSet::checkNoRowPolicy(const ContextPtr & context) const
+{
+    auto storage_id = getStorageID();
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use table {} on the right side of IN because a row policy applies to it. "
+            "The Set engine has no read path that could filter the rows",
+            storage_id.getNameForLogs());
 }
 
 
