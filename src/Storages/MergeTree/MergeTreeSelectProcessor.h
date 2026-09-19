@@ -125,6 +125,7 @@ public:
         const IndexReadTasks & index_read_tasks_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
+        ContextPtr context_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
         LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
         const ColumnsDescription * columns_ = nullptr);
@@ -182,6 +183,8 @@ private:
     const LazilyReadInfoPtr lazily_read_info;
 
     const MergeTreeReaderSettings reader_settings;
+    /// The context of the query. Its settings are part of the query condition cache key.
+    const ContextPtr context;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
 
     /// Current task to read from.

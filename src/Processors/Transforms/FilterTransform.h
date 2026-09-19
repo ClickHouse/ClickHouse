@@ -2,6 +2,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -11,6 +12,13 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 class QueryConditionCache;
+
+struct QueryConditionCacheCondition
+{
+    UInt64 hash;
+    String condition;
+    ContextPtr context;
+};
 
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
@@ -23,7 +31,7 @@ public:
     FilterTransform(
         SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
+        std::optional<QueryConditionCacheCondition> condition_ = std::nullopt,
         bool update_row_numbers_info_ = false);
 
     /// Use this overload when the transformed header (the header after the expression, but before
@@ -33,7 +41,7 @@ public:
     FilterTransform(
         SharedHeader header_, SharedHeader transformed_header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
+        std::optional<QueryConditionCacheCondition> condition_ = std::nullopt,
         bool update_row_numbers_info_ = false);
 
     static Block
@@ -63,7 +71,7 @@ private:
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
     /// If set, we need to update the query condition cache at runtime for every processed chunk
-    std::optional<std::pair<UInt64, String>> condition;
+    std::optional<QueryConditionCacheCondition> condition;
 
     std::shared_ptr<QueryConditionCache> query_condition_cache;
 

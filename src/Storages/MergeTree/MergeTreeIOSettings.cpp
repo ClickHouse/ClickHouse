@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <Core/Settings.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -137,7 +136,6 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache]
         && settings[Setting::allow_experimental_analyzer]
         && settings[Setting::apply_deleted_mask];
-    result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];

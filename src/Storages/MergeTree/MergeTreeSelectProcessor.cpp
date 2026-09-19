@@ -158,6 +158,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const IndexReadTasks & index_read_tasks_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
+    ContextPtr context_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
     LazyMaterializingRowsPtr lazy_materializing_rows_,
     const ColumnsDescription * columns_)
@@ -175,6 +176,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           reader_settings_.force_short_circuit_execution,
           columns_))
     , reader_settings(reader_settings_)
+    , context(std::move(context_))
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
@@ -439,7 +441,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
-                                queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
+                                output->getHash(),
+                                context->getSettingsRef(),
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),
