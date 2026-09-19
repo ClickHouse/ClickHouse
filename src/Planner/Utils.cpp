@@ -857,7 +857,11 @@ void buildPreparedSetsInplace(const PlannerContextPtr & planner_context, const C
             subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
         }
 
-        subquery->buildSetInplace(context);
+        /// The interactive cancellation of the build polls the client socket and sends it progress.
+        /// These actions are executed while the client may be waiting for the header of an `INSERT` it
+        /// is about to upload, or for the end of the query - neither accepts a `Progress` packet, and
+        /// one there breaks the protocol with `UNEXPECTED_PACKET_FROM_SERVER`.
+        subquery->buildSetInplace(context, /*allow_interactive_cancel=*/ false);
     }
 }
 

@@ -5,6 +5,11 @@
 -- column defaults. Every consumer of the definition then has to compute the set, instead of
 -- reporting `Not-ready Set is passed as the second argument for function 'in'`.
 
+-- The set has to be built while the block of an `INSERT` is converted, which happens on the
+-- synchronous insert path only: an asynchronous insert answers the client before the block is
+-- converted. Pin the setting so that path is always the one covered.
+SET async_insert = 0;
+
 DROP TABLE IF EXISTS t_default_in_set_keys;
 DROP TABLE IF EXISTS t_default_in_set_alias;
 DROP TABLE IF EXISTS t_default_in_set_default;

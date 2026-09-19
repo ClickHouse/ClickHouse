@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -233,6 +234,17 @@ std::optional<ActionsDAG> createExpressions(
     auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
     ActionsDAG dag(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
+
+    /// Same as in `createExpressionsAnalyzer`: the actions are executed as a standalone
+    /// `ExpressionActions` over a block, so no `CreatingSet` step ever builds the deferred set of a
+    /// column default containing an `IN` over a table, and `FunctionIn` would report "Not-ready Set is
+    /// passed". Unlike the analyzer path, the set registered here already carries its own plan, so it
+    /// only has to be filled. This path is reachable only for a query another server sent with the
+    /// old query analysis, which is no longer selectable by a user since v26.9.
+    for (const auto & subquery : expression_analyzer.getPreparedSets()->getSubqueries())
+        if (!subquery->get())
+            subquery->buildSetInplace(context, /*allow_interactive_cancel=*/ false);
+
     return ActionsDAG::merge(std::move(dag), std::move(actions));
 }
 

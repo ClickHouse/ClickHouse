@@ -467,10 +467,10 @@ void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context
         convertSetSourceForDistributedPlan(*source, context);
 }
 
-void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
+void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context, bool allow_interactive_cancel)
 {
     if (external_table_set)
-        external_table_set->buildSetInplace(context);
+        external_table_set->buildSetInplace(context, allow_interactive_cancel);
 
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
     /// They will be decorrelated and executed as part of the outer query instead.
@@ -500,7 +500,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     /// cancellation so a source already consumed by `build` cannot leave an uncreated set behind.
     bool observed_cancel = false;
     CompletedPipelineExecutor executor(pipeline);
-    if (context->hasQueryContext())
+    if (allow_interactive_cancel && context->hasQueryContext())
     {
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(

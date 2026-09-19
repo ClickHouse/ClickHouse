@@ -235,7 +235,11 @@ public:
     /// it. The following `build` call must skip the cache: a cached set has no values.
     void prepareForDistributedPlan(const ContextPtr & context);
 
-    void buildSetInplace(const ContextPtr & context);
+    /// `allow_interactive_cancel` turns off the interactive cancellation of the build - the callback
+    /// that polls the client socket and sends it progress. A caller that builds a set while the client
+    /// is waiting for something else on the connection has to turn it off, otherwise the progress goes
+    /// out at a point where the client does not expect a `Progress` packet and the protocol breaks.
+    void buildSetInplace(const ContextPtr & context, bool allow_interactive_cancel = true);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
