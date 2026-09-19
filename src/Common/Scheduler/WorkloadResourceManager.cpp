@@ -536,6 +536,15 @@ void WorkloadResourceManager::Resource::forEachResourceNode(IResourceManager::Vi
 {
     executeInSchedulerThread([&, this]
     {
+        // Expose the implicit root workload and the inter-root scheduling nodes it holds, so
+        // system.scheduler stays complete: with several root workloads the fairness/priority node
+        // that multiplexes them lives on the implicit root rather than on any user workload.
+        if (implicit_root)
+            implicit_root->forEachSchedulerNode([&] (ISchedulerNode * scheduler_node)
+            {
+                visitor(resource_name, scheduler_node->getPath(), scheduler_node);
+            });
+
         for (auto & [path, node] : node_for_workload)
         {
             node->forEachSchedulerNode([&] (ISchedulerNode * scheduler_node)

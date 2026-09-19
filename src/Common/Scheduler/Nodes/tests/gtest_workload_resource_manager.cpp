@@ -425,6 +425,27 @@ TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattache
         << "priority change on a parentless workload was not re-positioned under the implicit root";
 }
 
+// The implicit anonymous root workload (and the inter-root scheduling nodes it holds) must be
+// exposed by forEachNode so system.scheduler is complete. It is not a user workload, so it is
+// reached only through this traversal; having an empty basename it renders at the root path "/".
+TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    bool seen_root = false;
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
+    {
+        if (path == "/")
+            seen_root = true;
+    });
+    EXPECT_TRUE(seen_root)
+        << "implicit root workload was not exposed in system.scheduler introspection";
+}
+
 TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
