@@ -96,7 +96,7 @@ QUERY id: 0
 6
 8
 9
-UNION id: 0, union_mode: UNION_ALL
+UNION id: 0, union_mode: UNION_ALL, column_match_mode: POSITION
   QUERIES
     LIST id: 1, nodes: 2
       QUERY id: 2, alias: __table1
