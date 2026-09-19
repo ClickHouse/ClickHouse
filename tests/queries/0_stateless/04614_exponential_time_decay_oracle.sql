@@ -266,7 +266,6 @@ SELECT value + value FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNC
 
 -- The legacy OVER form remains available without the experimental setting and
 -- keeps the window-only properties used by analyzer rewrites.
-SET enable_analyzer = 0;
 
 SELECT
     toTypeName(decayed_sum),
@@ -301,8 +300,7 @@ FROM
 )
 ORDER BY time;
 
--- Exercise the corresponding QueryAnalyzer rewrite as well.
-SET enable_analyzer = 1;
+-- Exercise the same rewrite with the current analyzer path.
 
 SELECT
     toTypeName(decayed_sum),
@@ -749,9 +747,8 @@ FROM VALUES('value Float64, time Float64', (1, 1))
 WHERE false
 SETTINGS aggregate_functions_null_for_empty = 1;
 
--- Old-analyzer parameterized views must not capture the experimental type while disabled.
+-- Parameterized views must not capture the experimental type while disabled.
 SET allow_experimental_time_decay_aggregate_functions = 0;
-SET enable_analyzer = 0;
 CREATE VIEW time_decay_parameterized_view_gate AS
 SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
 CREATE VIEW time_decay_nested_parameterized_view_gate AS
