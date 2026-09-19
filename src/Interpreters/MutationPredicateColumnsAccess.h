@@ -47,9 +47,18 @@ void addExpressionColumnsSelectAccess(
 /// under-requires. `WITH` names and session temporary tables are not tables to grant on and are
 /// skipped. A table function inside a subquery is not covered: its privilege is derived from an
 /// instance of the function, which is what validation builds.
+///
+/// `mutated_database`, `mutated_table` and `mutated_metadata` describe the table being mutated, and
+/// are used only to tell a table from a column on the right of `IN`: `... WHERE x IN arr` reads an
+/// array column, `... WHERE x IN other` reads a table, and the two are the same identifier in the
+/// AST. `mutated_metadata` may be null when the table is not present locally, and then that case
+/// fails closed and requires the grant.
 void addExpressionIndirectReadsAccess(
     AccessRightsElements & required_access,
     const IAST * expression,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const String & mutated_database,
+    const String & mutated_table,
+    const StorageInMemoryMetadata * mutated_metadata);
 
 }

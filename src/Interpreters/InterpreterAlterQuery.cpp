@@ -448,10 +448,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 /// Reads hidden behind a subquery or a `dictGet`/`joinGet` name their own objects, so
                 /// they are collected without the mutated table's metadata - which also covers the
                 /// paths where it is not present locally.
-                addExpressionIndirectReadsAccess(read_access, command.predicate, getContext());
+                addExpressionIndirectReadsAccess(
+                    read_access, command.predicate, getContext(),
+                    table_id.database_name, table_id.table_name, metadata_ptr ? &*metadata_ptr : nullptr);
                 for (const ASTPtr & assignment : command.update_assignments->children)
                     addExpressionIndirectReadsAccess(
-                        read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext());
+                        read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext(),
+                        table_id.database_name, table_id.table_name, metadata_ptr ? &*metadata_ptr : nullptr);
             }
             else if (command.type == ASTAlterCommand::DELETE)
             {
@@ -459,7 +462,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (metadata_ptr)
                     addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
 
-                addExpressionIndirectReadsAccess(read_access, command.predicate, getContext());
+                addExpressionIndirectReadsAccess(
+                    read_access, command.predicate, getContext(),
+                    table_id.database_name, table_id.table_name, metadata_ptr ? &*metadata_ptr : nullptr);
             }
         }
         /// Table is not present locally (e.g. ON CLUSTER issued from a node without it): the read

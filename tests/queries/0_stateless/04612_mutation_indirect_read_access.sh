@@ -20,9 +20,9 @@ DROP DICTIONARY IF EXISTS dict;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
 
-CREATE TABLE tab (id UInt32, name String, hidden UInt32) ENGINE = MergeTree ORDER BY id
+CREATE TABLE tab (id UInt32, name String, hidden UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO tab VALUES (1, 'a', 7), (42, 'b', 8);
+INSERT INTO tab VALUES (1, 'a', 7, [1]), (42, 'b', 8, [42]);
 
 -- The tables, set, dictionary and Join table the user has no access to.
 CREATE TABLE secret_tab (secret UInt32, payload String) ENGINE = MergeTree ORDER BY secret;
@@ -47,7 +47,7 @@ CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 GRANT ALTER UPDATE, ALTER DELETE, UPDATE, DELETE ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 -- The user can read and write 'id' and 'name', but not 'hidden', and has no grant at all on the
 -- other objects.
-GRANT SELECT(id, name) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
+GRANT SELECT(id, name, arr) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 "
 
 function check_access()
@@ -79,6 +79,14 @@ check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT 1 FROM secret_tab WHERE
 
 echo "-- A table on the right of IN, validation off"
 check_access "ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
+
+# The right-hand side of IN is a table name, a set name or an array-valued column, and the three are
+# the same identifier in the AST, so a column of the mutated table must not be mistaken for a table.
+echo "-- An array column on the right of IN is a column, not a table"
+check_access "ALTER TABLE tab DELETE WHERE 1 IN arr AND 0 SETTINGS $off"
+check_access "ALTER TABLE tab DELETE WHERE 1 IN tab.arr AND 0 SETTINGS $off"
+echo "-- A WITH name on the right of IN is not a table either"
+check_access "ALTER TABLE tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM s) AND 0 SETTINGS $off"
 
 echo "-- dictGet and joinGet name their object instead of reading it as a column"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"

@@ -98,7 +98,9 @@ BlockIO InterpreterDeleteQuery::execute()
         addExpressionColumnsSelectAccess(
             read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
             *metadata_snapshot);
-        addExpressionIndirectReadsAccess(read_access, delete_query.predicate.get(), getContext());
+        addExpressionIndirectReadsAccess(
+            read_access, delete_query.predicate.get(), getContext(),
+            table_id.database_name, table_id.table_name, &*metadata_snapshot);
         if (!read_access.empty())
             getContext()->checkAccess(read_access);
     }

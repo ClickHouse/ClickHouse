@@ -105,9 +105,17 @@ bool selectsEverything(const IAST & ast)
 class IndirectReadsCollector
 {
 public:
-    IndirectReadsCollector(AccessRightsElements & required_access_, ContextPtr context_)
+    IndirectReadsCollector(
+        AccessRightsElements & required_access_,
+        ContextPtr context_,
+        const String & mutated_database_,
+        const String & mutated_table_,
+        const StorageInMemoryMetadata * mutated_metadata_)
         : required_access(required_access_)
         , context(std::move(context_))
+        , mutated_database(mutated_database_)
+        , mutated_table(mutated_table_)
+        , mutated_metadata(mutated_metadata_)
     {
     }
 
@@ -142,8 +150,12 @@ private:
         if (functionIsInOrGlobalInOperator(function.name) && arguments.size() == 2)
         {
             /// `x IN other` reads `other`; `x IN (SELECT ...)` and `x IN (1, 2)` do not name a table.
-            if (auto table_id = tryGetNamedTable(*arguments[1]); table_id && !arguments[1]->as<ASTLiteral>())
-                required_access.emplace_back(AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name);
+            if (const auto * identifier = arguments[1]->as<ASTIdentifier>(); identifier && namesATable(*identifier))
+            {
+                if (auto table_id = tryGetNamedTable(*identifier))
+                    required_access.emplace_back(
+                        AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name);
+            }
         }
         else if (functionIsJoinGet(function.name) && arguments.size() >= 2)
         {
@@ -198,6 +210,14 @@ private:
     }
 
     void visitSelectOrUnion(const IAST & ast)
+    {
+        const bool prev_inside_subquery = inside_subquery;
+        inside_subquery = true;
+        visitSelectOrUnionImpl(ast);
+        inside_subquery = prev_inside_subquery;
+    }
+
+    void visitSelectOrUnionImpl(const IAST & ast)
     {
         if (const auto * select = ast.as<ASTSelectQuery>())
         {
@@ -348,6 +368,51 @@ private:
         return columns;
     }
 
+    /// The right-hand side of `IN` is a table name, a set name or an array-valued column, and the
+    /// three are the same identifier as far as the AST is concerned: `... WHERE x IN arr` is a valid
+    /// read of a column, and `WITH s AS (...) ... WHERE x IN s` names a `WITH` element. Requiring
+    /// `SELECT` on a table of that name would deny both, so a name that resolves to a column of the
+    /// mutated table, or to a `WITH` name, is left alone.
+    ///
+    /// The mutated table's columns are only known at the top level of the mutation expression. Inside
+    /// a subquery an identifier belongs to that subquery's tables, whose columns are not known here,
+    /// so the rule does not apply there - a subquery's own tables are required by `visitSelect`
+    /// instead. When the mutated table is not present locally its columns are unknown too, and then
+    /// this fails closed and requires the grant, like the whole-table requirement the callers add in
+    /// that case.
+    bool namesATable(const ASTIdentifier & identifier) const
+    {
+        if (inside_subquery)
+            return false;
+
+        const String & name = identifier.name();
+        if (cte_names.contains(name))
+            return false;
+
+        if (!mutated_metadata)
+            return true;
+
+        /// Resolve the name against the mutated table the same way `addExpressionColumnsSelectAccess`
+        /// does: as written first, then with a `table.` / `db.table.` qualifier stripped.
+        if (isColumnOfMutatedTable(name))
+            return false;
+
+        std::string_view bare = name;
+        const String db_table_prefix = mutated_database.empty() ? String{} : mutated_database + "." + mutated_table + ".";
+        const String table_prefix = mutated_table + ".";
+        if (!db_table_prefix.empty() && bare.starts_with(db_table_prefix))
+            bare.remove_prefix(db_table_prefix.size());
+        else if (bare.starts_with(table_prefix))
+            bare.remove_prefix(table_prefix.size());
+
+        return !isColumnOfMutatedTable(String(bare));
+    }
+
+    bool isColumnOfMutatedTable(const String & name) const
+    {
+        return mutated_metadata->columns.has(name) || mutated_metadata->isVirtualColumn(name);
+    }
+
     /// A `WITH` name and a session temporary table are not tables to grant `SELECT` on, exactly as
     /// in a plain `SELECT`.
     bool needsNoGrant(const StorageID & table_id) const
@@ -372,7 +437,11 @@ private:
 
     AccessRightsElements & required_access;
     ContextPtr context;
+    const String & mutated_database;
+    const String & mutated_table;
+    const StorageInMemoryMetadata * mutated_metadata;
     std::unordered_set<String> cte_names;
+    bool inside_subquery = false;
 };
 
 }
@@ -380,12 +449,16 @@ private:
 void addExpressionIndirectReadsAccess(
     AccessRightsElements & required_access,
     const IAST * expression,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const String & mutated_database,
+    const String & mutated_table,
+    const StorageInMemoryMetadata * mutated_metadata)
 {
     if (!expression)
         return;
 
-    IndirectReadsCollector(required_access, context).visitExpression(expression);
+    IndirectReadsCollector(required_access, context, mutated_database, mutated_table, mutated_metadata)
+        .visitExpression(expression);
 }
 
 }

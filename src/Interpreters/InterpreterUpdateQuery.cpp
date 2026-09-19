@@ -108,12 +108,18 @@ BlockIO InterpreterUpdateQuery::execute()
     AccessRightsElements read_access;
 
     /// Reads hidden behind a subquery or a `dictGet`/`joinGet` name their own objects, so they are
-    /// collected without the updated table's metadata - which also covers the paths where it is not
-    /// present locally, and holds when `validate_mutation_query` is disabled.
-    addExpressionIndirectReadsAccess(read_access, update_query.predicate.get(), getContext());
-    for (const ASTPtr & assignment : update_query.assignments->children)
+    /// required on every path - including the ones where the updated table is not present locally,
+    /// and when `validate_mutation_query` is disabled. The updated table is passed along only to
+    /// tell one of its columns from a table on the right of `IN`.
+    auto add_indirect_reads = [&](const String & database, const String & table, const StorageInMemoryMetadata * metadata)
+    {
         addExpressionIndirectReadsAccess(
-            read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext());
+            read_access, update_query.predicate.get(), getContext(), database, table, metadata);
+        for (const ASTPtr & assignment : update_query.assignments->children)
+            addExpressionIndirectReadsAccess(
+                read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext(),
+                database, table, metadata);
+    };
 
     StoragePtr resolved_table;
     auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
@@ -131,21 +137,29 @@ BlockIO InterpreterUpdateQuery::execute()
                 addExpressionColumnsSelectAccess(
                     read_access, assignment->as<const ASTAssignment &>().expression().get(),
                     resolved_id.database_name, resolved_id.table_name, metadata);
+
+            add_indirect_reads(resolved_id.database_name, resolved_id.table_name, &*metadata_snapshot);
         }
-        else if (!update_query.cluster.empty())
+        else
         {
             /// ON CLUSTER from a node without the table: columns cannot be resolved, so fail closed
             /// by requiring SELECT on the whole table.
-            read_access.emplace_back(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
+            if (!update_query.cluster.empty())
+                read_access.emplace_back(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
+
+            add_indirect_reads(resolved_id.database_name, resolved_id.table_name, nullptr);
         }
     }
-    else if (!update_query.cluster.empty())
+    else
     {
         /// ON CLUSTER with no current database: the id stays unresolved here, but
         /// executeDDLQueryOnCluster expands empty-database access elements to each host's default
         /// database. Fail closed with the AST table name and an empty database so the predicate/RHS
         /// SELECT requirement is expanded together with ALTER_UPDATE instead of being dropped.
-        read_access.emplace_back(AccessType::SELECT, update_query.getDatabase(), update_query.getTable());
+        if (!update_query.cluster.empty())
+            read_access.emplace_back(AccessType::SELECT, update_query.getDatabase(), update_query.getTable());
+
+        add_indirect_reads(update_query.getDatabase(), update_query.getTable(), nullptr);
     }
 
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
