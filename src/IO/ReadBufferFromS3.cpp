@@ -346,6 +346,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (!processException(range_begin, attempt) || last_attempt)
                 throw;
 
+            /// Drop the failed request before pausing, for the same reason as in `nextImpl`: its
+            /// connection is of no use to this read anymore, and holding it during the back-off
+            /// would only keep it away from the other readers of the same group.
+            result.reset();
+
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
         }
