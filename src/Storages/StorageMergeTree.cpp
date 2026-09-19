@@ -419,17 +419,30 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
     return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) const
 {
+    chassert(local_context);
+
     UInt64 res = 0;
-    auto lock = readLockParts();
-    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
-        res += part->rows_count;
+    if (local_context->getCurrentTransaction())
+    {
+        for (const auto & part : getVisibleDataPartsVector(local_context))
+            res += part->rows_count;
+    }
+    else
+    {
+        auto lock = readLockParts();
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+            res += part->rows_count;
+    }
+
     return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
+    chassert(local_context);
+
     auto parts = getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
