@@ -31,7 +31,7 @@ void TypoCorrection::collectCompoundExpressionValidIdentifiers(
 
             valid_identifiers_result.insert(std::move(new_identifier));
         }
-    }, ISerialization::SubstreamData(compound_expression_type->getDefaultSerialization()));
+    }, ISerialization::SubstreamData(compound_expression_type->getDefaultSerialization()).withType(compound_expression_type));
 }
 
 /// Get valid identifiers for typo correction from table expression
