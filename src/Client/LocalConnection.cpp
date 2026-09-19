@@ -26,6 +26,7 @@
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
@@ -41,6 +42,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsString database;
@@ -62,6 +64,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
+    extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
@@ -274,6 +277,8 @@ void LocalConnection::sendQuery(
     state->allow_settings_after_format_in_insert = query_context->getSettingsRef()[Setting::allow_settings_after_format_in_insert];
     state->implicit_select = query_context->getSettingsRef()[Setting::implicit_select];
     state->enable_trino_dialect = query_context->getSettingsRef()[Setting::enable_trino_dialect];
+    state->allow_experimental_polyglot_dialect = query_context->getSettingsRef()[Setting::allow_experimental_polyglot_dialect];
+    state->polyglot_dialect = query_context->getSettingsRef()[Setting::polyglot_dialect];
     state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
     state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
     state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
@@ -380,6 +385,14 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
             else if (dialect == Dialect::trino)
                 parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->enable_trino_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
+            /// The query text is in a foreign SQL dialect, so it has to be transpiled again to be
+            /// parsed here: `state->query` is the original text (the client sends foreign-dialect
+            /// queries verbatim, see `send_query_verbatim` in `ClientBase`), and only the
+            /// `INSERT ... SELECT * FROM input(...)` shape reaches this initializer — the transpiled
+            /// statement is what `executeQuery` runs, and this reparse only has to agree with it about
+            /// the `input()` structure hint and the data format.
+            else if (dialect == Dialect::polyglot)
+                parser = std::make_unique<ParserPolyglotQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, state->polyglot_dialect, end, state->allow_experimental_polyglot_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 

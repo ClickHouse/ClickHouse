@@ -228,6 +228,22 @@ public:
         return parse(pos, node, expected);
     }
 
+    /** Does this parser consume its input as an opaque blob written in a foreign language
+      * (e.g. the polyglot dialect, which hands the raw text to a transpiler) instead of as a
+      * stream of ClickHouse SQL tokens?
+      *
+      * For such a parser the generic lexical validation of the original buffer in `tryParseQuery`
+      * (the invalid-token shortcut and the unmatched-parentheses check) is meaningless and harmful:
+      * the text is not expected to be lexically valid ClickHouse SQL, so those checks would reject
+      * perfectly legal foreign statements before the parser is even called. The parser is then
+      * responsible for validating the text itself (the polyglot parser does it by parsing the
+      * transpiled ClickHouse SQL with the standard parser).
+      */
+    virtual bool consumesForeignText() const
+    {
+        return false;
+    }
+
     /** If the parsed fragment should be highlighted in the query editor,
       * which type of highlighting to use?
       */
