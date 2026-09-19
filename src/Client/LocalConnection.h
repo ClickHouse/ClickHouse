@@ -44,6 +44,10 @@ struct LocalQueryState
     bool allow_settings_after_format_in_insert = false;
     bool implicit_select = false;
     bool enable_trino_dialect = false;
+    /// The `polyglot` dialect transpiles the query, so the `input()` initializer must reparse it with
+    /// the same source dialect and feature gate that accepted it.
+    bool allow_experimental_polyglot_dialect = false;
+    String polyglot_dialect;
     String promql_database;
     String promql_table;
     Field promql_evaluation_time;
