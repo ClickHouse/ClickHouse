@@ -1844,11 +1844,17 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                     return set;
 #if CLICKHOUSE_CLOUD
                 if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
+                {
+                    checkAccessForSetTableOnRightOfIn(data.getContext(), *storage_shared_set, table_id);
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+                }
 #endif
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                {
+                    checkAccessForSetTableOnRightOfIn(data.getContext(), *storage_set, table_id);
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
+                }
             }
 
             if (!data.getContext()->isGlobalContext())

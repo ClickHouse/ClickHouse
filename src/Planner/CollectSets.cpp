@@ -88,6 +88,8 @@ public:
             if (sets.findStorage(set_key))
                 return;
             auto ast = in_second_argument->toAST();
+            checkAccessForSetTableOnRightOfIn(
+                planner_context.getQueryContext(), *storage_set, second_argument_table->getStorageID());
             sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())

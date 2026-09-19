@@ -101,4 +101,10 @@ private:
     size_t getSize(ContextPtr) const override;
 };
 
+
+/// A set table keys its set on every physical column it declares, so taking its contents for the
+/// right-hand side of `IN` reads all of them: it needs `SELECT` on all of them, and is refused when
+/// a row policy applies to the table, which a set built in advance cannot enforce.
+void checkAccessForSetTableOnRightOfIn(const ContextPtr & context, const IStorage & table, const StorageID & table_id);
+
 }
