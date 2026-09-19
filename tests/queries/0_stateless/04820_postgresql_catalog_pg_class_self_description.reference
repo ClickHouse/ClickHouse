@@ -1,0 +1,14 @@
+--- pg_type resolves by name and lists its own columns
+oid|1
+typnamespace|2
+typname|3
+typrelid|4
+typnotnull|5
+typtype|6
+typreceive|7
+typelem|8
+typbasetype|9
+typcategory|10
+--- the built-in relations live in the pg_catalog namespace
+pg_type|pg_catalog|r
+pg_class|pg_catalog|r
