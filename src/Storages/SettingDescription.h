@@ -28,7 +28,7 @@ enum class SettingOrigin : uint8_t
     /// The engine's compiled-in default. Also what `SettingsWithRecordedOrigin` stores for "nothing recorded",
     /// which is why it must stay the first value.
     Default,
-    Config,          /// a server config section, e.g. <merge_tree> or <distributed>
+    Config,           /// a server config section, e.g. <merge_tree> or <distributed>
     Compatibility,    /// rolled back to an older release's default by the `compatibility` setting
     /// A named collection the table was built from, for the settings it actually supplied - not those the
     /// engine arguments overrode. Reported by the engines whose settings object records them as it loads the

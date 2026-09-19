@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Reads every setting of a `BaseSettings` instance into the common form both settings tables use.
+/// Reads every setting of a `SettingsWithRecordedOrigin` instance into the common form both settings tables use.
 ///
 /// The instance decides what is reported: a default-constructed one describes an engine, the one a
 /// storage holds describes a table. `origin` is the source the instance recorded, and otherwise `Other` for
