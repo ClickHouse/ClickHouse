@@ -44,16 +44,17 @@ SELECT count() >= 1
 FROM (SELECT DISTINCT number % 2 FROM system.numbers_mt)
 SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break';
 
--- Abandoned preliminary sets release their allocations before byte limits are checked.
+-- An abandoning preliminary `DISTINCT` does not lift the byte limit: the keys retained by the final
+-- `DISTINCT` are still checked, in the single-stream plan and in the hash-scattered one alike, where
+-- the check sums the retained bytes of every stream.
 SELECT DISTINCT concat(toString(number), repeat('x', 10000)) AS s
 FROM numbers_mt(2000)
 ORDER BY s
 SETTINGS allow_preliminary_distinct_abandoning = 1, allow_parallel_distinct = 0,
-    max_block_size = 5000, max_bytes_in_distinct = 1048576 FORMAT Null;
+    max_block_size = 5000, max_bytes_in_distinct = 1048576 FORMAT Null; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
--- Abandoned preliminary sets release their allocations before byte limits are checked.
 SELECT DISTINCT concat(toString(number), repeat('x', 10000)) AS s
 FROM numbers_mt(2000)
 ORDER BY s
 SETTINGS allow_preliminary_distinct_abandoning = 1, allow_parallel_distinct = 1,
-    max_block_size = 5000, max_bytes_in_distinct = 1048576 FORMAT Null;
+    max_block_size = 5000, max_bytes_in_distinct = 1048576 FORMAT Null; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
