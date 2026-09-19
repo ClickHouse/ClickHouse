@@ -406,6 +406,13 @@ OracleResult runOracleQuery(DB::ContextMutablePtr session_context, const std::st
         result.error_code = e.code();
         result.error = e.message();
     }
+    catch (const std::exception & e)
+    {
+        /// `executeQuery` lets `Poco::Exception` and standard exceptions through; the server reports
+        /// them as `POCO_EXCEPTION` / `STD_EXCEPTION`, so they are query errors here as well.
+        result.error_code = DB::getCurrentExceptionCode();
+        result.error = e.what();
+    }
     return result;
 }
 
