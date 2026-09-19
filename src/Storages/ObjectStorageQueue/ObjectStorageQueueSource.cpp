@@ -92,6 +92,27 @@ namespace ErrorCodes
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
 }
 
+std::string ObjectStorageQueueSource::makeDeduplicationToken(const std::string & etag_from_metadata, size_t row_offset)
+{
+    /// Etag is quoted for some reason.
+    std::string etag = etag_from_metadata;
+    if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+        etag = etag.substr(1, etag.size() - 2);
+
+    /// `ETag` is an optional response header. Against an endpoint that omits it, a token built all
+    /// the same would give the first chunk of every file `:0`, the second `:<rows in the first
+    /// chunk>`, and so on, and `DeduplicationInfo::getBlockUnifiedHash` uses a non-empty user token
+    /// verbatim - distinct files would deduplicate against each other and their rows would disappear
+    /// from the dependent materialized views. An empty token is the documented "no user token" value
+    /// and makes the unified hash come from the data, which deduplicates on content.
+    if (etag.empty())
+        return {};
+
+    /// Create unique token per chunk: etag + row offset
+    return fmt::format("{}:{}", etag, row_offset);
+}
+
+
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
     : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
@@ -1418,20 +1439,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             std::string dedup_token;
             if (add_deduplication_info)
             {
-                /// Etag is quoted for some reason.
-                std::string etag = object_metadata->etag;
-                if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
-                    etag = etag.substr(1, etag.size() - 2);
-
-                /// Create unique token per chunk: etag + row offset. The token identifies a chunk only
-                /// as far as the `ETag` identifies the file, and `ETag` is an optional response header:
-                /// against an endpoint that omits it the first chunk of every file would get the same
-                /// token `:0`, the second `:<rows in the first chunk>`, and so on, so distinct files would
-                /// deduplicate against each other and their rows would disappear from the dependent
-                /// materialized views. Leave the token empty in that case - `getBlockUnifiedHash` then
-                /// falls back to the hash of the data, which deduplicates on content.
-                if (!etag.empty())
-                    dedup_token = fmt::format("{}:{}", etag, row_offset);
+                dedup_token = makeDeduplicationToken(object_metadata->etag, row_offset);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());

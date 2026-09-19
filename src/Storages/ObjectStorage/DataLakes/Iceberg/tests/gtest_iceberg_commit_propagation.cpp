@@ -7,7 +7,9 @@
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Core/Defines.h>
 #include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
@@ -124,6 +126,174 @@ bool commitWithFailingWrite(int write_error_code)
         /*try_write_version_hint=*/ false);
 }
 
+/// Accepts and discards everything written to it: the commit only needs its writes to succeed.
+class DiscardingWriteBuffer : public WriteBufferFromFileBase
+{
+public:
+    explicit DiscardingWriteBuffer(std::string file_name_)
+        : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), file_name(std::move(file_name_))
+    {
+    }
+
+    void sync() override { }
+    std::string getFileName() const override { return file_name; }
+
+private:
+    void nextImpl() override { }
+
+    std::string file_name;
+};
+
+/// A backend that already has a `version-hint.text` and answers the read of it with the `ETag` it is
+/// configured with - in particular with none at all, which is what an Azure-compatible endpoint that
+/// omits the optional header produces. Records every write so the test can tell whether the hint was
+/// rewritten and under which precondition.
+class ExistingVersionHintObjectStorage : public IObjectStorage
+{
+public:
+    struct Write
+    {
+        std::string path;
+        std::string write_if_none_match;
+        std::string write_if_match;
+    };
+
+    explicit ExistingVersionHintObjectStorage(std::string hint_etag_) : hint_etag(std::move(hint_etag_)) { }
+
+    std::vector<Write> writes;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
+        const StoredObject & object,
+        WriteMode,
+        std::optional<ObjectAttributes>,
+        size_t,
+        const WriteSettings & write_settings) override
+    {
+        writes.push_back(Write{
+            object.remote_path,
+            write_settings.object_storage_write_if_none_match,
+            write_settings.object_storage_write_if_match});
+        return std::make_unique<DiscardingWriteBuffer>(object.remote_path);
+    }
+
+    /// The metadata file of the commit is new; the version hint is already there.
+    bool exists(const StoredObject & object) const override { return object.remote_path.ends_with(version_hint_name); }
+
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings &,
+        size_t,
+        std::optional<size_t>) const override
+    {
+        EXPECT_TRUE(object.remote_path.ends_with(version_hint_name)) << object.remote_path;
+
+        SmallObjectDataWithMetadata result;
+        result.data = "1";
+        result.metadata.etag = hint_etag;
+        return result;
+    }
+
+    std::string getName() const override { return "ExistingVersionHintObjectStorage"; }
+    ObjectStorageType getType() const override { return ObjectStorageType::None; }
+    std::string getCommonKeyPrefix() const override { return ""; }
+    std::string getDescription() const override { return "test stub"; }
+    String getObjectsNamespace() const override { return ""; }
+    bool isRemote() const override { return true; }
+    void startup() override { }
+    void shutdown() override { }
+
+    ObjectMetadata getObjectMetadata(const std::string &, bool) const override { unexpected("getObjectMetadata"); }
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override
+    {
+        unexpected("tryGetObjectMetadata");
+    }
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const StoredObject &,
+        const ReadSettings &,
+        std::optional<size_t>,
+        bool,
+        bool) const override
+    {
+        unexpected("readObject");
+    }
+    void removeObjectIfExists(const StoredObject &) override { unexpected("removeObjectIfExists"); }
+    void removeObjectsIfExist(const StoredObjects &, StoredObjects *) override { unexpected("removeObjectsIfExist"); }
+    void copyObject( /// NOLINT
+        const StoredObject &,
+        const StoredObject &,
+        const ReadSettings &,
+        const WriteSettings &,
+        std::optional<ObjectAttributes>) override
+    {
+        unexpected("copyObject");
+    }
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override { unexpected("createKeyGenerator"); }
+
+private:
+    [[noreturn]] static void unexpected(std::string_view method)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not used by this test", method);
+    }
+
+    static constexpr std::string_view version_hint_name = "version-hint.text";
+
+    std::string hint_etag;
+};
+
+/// Drives the real commit against a backend whose existing version hint carries `hint_etag`.
+std::vector<ExistingVersionHintObjectStorage::Write> commitOverExistingVersionHint(const std::string & hint_etag)
+{
+    Iceberg::IcebergPathResolver resolver(
+        "/table",
+        "/table",
+        Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
+    GeneratedMetadataFileWithInfo metadata_file_info{
+        .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
+        .version = 2,
+        .compression_method = CompressionMethod::None,
+    };
+
+    auto object_storage = std::make_shared<ExistingVersionHintObjectStorage>(hint_etag);
+
+    EXPECT_TRUE(Iceberg::writeMetadataFileAndVersionHint(
+        resolver,
+        metadata_file_info,
+        "{}",
+        Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
+        object_storage,
+        getContext().context,
+        /*try_write_version_hint=*/ true));
+
+    return object_storage->writes;
+}
+
+}
+
+TEST(IcebergCommitPropagation, VersionHintIsRewrittenUnderItsETag)
+{
+    /// The control: with an `ETag` the hint is advanced, and the rewrite carries the tag of the copy
+    /// that was read as its compare-and-swap. Without this the test below would also pass against a
+    /// commit that never touches the hint at all.
+    auto writes = commitOverExistingVersionHint("\"abc\"");
+
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[1].write_if_match, "\"abc\"");
+    EXPECT_TRUE(writes[1].write_if_none_match.empty());
+}
+
+TEST(IcebergCommitPropagation, VersionHintWithoutETagIsNotOverwritten)
+{
+    /// `ETag` is an optional response header. Without it there is no compare-and-swap to put on the
+    /// rewrite, so the update would degrade into an unconditional overwrite and two concurrent
+    /// writers could move the hint backwards, which makes a reader with `iceberg_use_version_hint = 1`
+    /// resolve a stale snapshot. The commit must leave the hint alone instead - only the metadata
+    /// file, which has its own `IfNoneMatch` condition, is written.
+    auto writes = commitOverExistingVersionHint("");
+
+    ASSERT_EQ(writes.size(), 1u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_EQ(writes[0].write_if_none_match, "*");
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
