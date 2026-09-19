@@ -482,11 +482,8 @@ def test_optimize_rejected_on_format_v3(
     # 5 rows appended across two snapshots -> next-row-id advanced to 5.
     assert meta_before.get("next-row-id") == 5
 
-    # Positional delete so compaction would otherwise have work to do.
-    instance.query(
-        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
-        settings={"allow_insert_into_iceberg": 1},
-    )
+    # The table carries no delete files: `DELETE` is refused outright on format-version 3, and
+    # the version check runs before `need_optimize`, so the refusal does not depend on one.
     error = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={
@@ -501,7 +498,7 @@ def test_optimize_rejected_on_format_v3(
     assert meta_after.get("next-row-id") == meta_before.get("next-row-id")
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id")
-        == "1\ta\n3\tc\n4\td\n5\te\n"
+        == "1\ta\n2\tb\n3\tc\n4\td\n5\te\n"
     )
 
 
