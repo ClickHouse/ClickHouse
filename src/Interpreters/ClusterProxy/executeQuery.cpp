@@ -2,6 +2,7 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
@@ -1101,6 +1102,32 @@ static void seedAuthoritativePartNameIdentity(
     }
 }
 
+/// Same as above for every `MergeTree` table read by an analyzed query tree, used where the
+/// initiator has the source `SELECT` of an `INSERT SELECT` instead of a plan fragment.
+static void seedAuthoritativePartNameIdentity(
+    ParallelReplicasReadingCoordinator & coordinator, const QueryTreeNodePtr & query_tree)
+{
+    std::vector<const IQueryTreeNode *> stack{query_tree.get()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * table_node = node->as<TableNode>())
+        {
+            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table_node->getStorage().get()))
+                coordinator.setAuthoritativePartNameIdentity(
+                    merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                stack.push_back(child.get());
+        }
+    }
+}
+
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -1711,9 +1738,11 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
 
     String formatted_query;
+    QueryTreeNodePtr source_query_tree;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
         const auto & query_tree = analyzer.getQueryTree();
+        source_query_tree = query_tree;
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();
@@ -1757,7 +1786,14 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
 
     if (!coordinator)
+    {
         coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
+        /// No local pipeline was built, so nothing has seeded this coordinator yet: take the source
+        /// tables from the analyzed `SELECT` above. Without this, announcements from replicas that
+        /// predate the part fingerprint carry `PartNameIdentity::Unknown` and the same-named-part
+        /// check degrades to the mark-count fallback even for node-local `MergeTree` tables.
+        seedAuthoritativePartNameIdentity(**coordinator, source_query_tree);
+    }
 
     for (size_t i = 0; i < connection_pools.size(); ++i)
     {

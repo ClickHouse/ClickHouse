@@ -799,6 +799,57 @@ TEST(ParallelReplicasCoordinator, InOrderFailsClosedOnSplitStreamOfNodeLocalTabl
         DB::Exception);
 }
 
+/// `#split_` is only a suffix marker when it is appended after the whole table name, and a
+/// back-quoted identifier may contain it: a table named `t#split_1` is registered - and announces -
+/// under `default.`t#split_1``. Stripping at the first occurrence would look the identity up under
+/// `default.`t` instead, miss it, and reopen the fail-open window for exactly such tables.
+TEST(ParallelReplicasCoordinator, InOrderFailsClosedOnNodeLocalTableWhoseNameContainsSplitMarker)
+{
+    const String stream_id = "default.`t#split_1`";
+
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, stream_id);
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(
+            makeAnnouncementForStream(/*replica_num=*/0, std::move(parts), stream_id));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(
+            makeAnnouncementForStream(/*replica_num=*/1, std::move(parts_old), stream_id)),
+        DB::Exception);
+}
+
+/// The same table read as several streams: only the appended `#split_{0}` is stripped, the marker
+/// inside the quoted identifier is kept, so the lookup still lands on the registered table name.
+TEST(ParallelReplicasCoordinator, InOrderFailsClosedOnSplitStreamOfTableWhoseNameContainsSplitMarker)
+{
+    const String table_name = "default.`t#split_1`";
+    const String stream_id = table_name + "#split_0";
+
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+    setAuthoritativeNodeLocalPartNames(coordinator, table_name);
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(
+            makeAnnouncementForStream(/*replica_num=*/0, std::move(parts), stream_id));
+    }
+
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(
+            makeAnnouncementForStream(/*replica_num=*/1, std::move(parts_old), stream_id)),
+        DB::Exception);
+}
+
 /// The authoritative class must not over-reject: a `ReplicatedMergeTree` (or a plain `MergeTree` on
 /// shared-metadata storage) classifies as `ClusterWide`, where a part name does imply identical
 /// content, so two pre-upgrade announcements of the same-named part keep working. This is what makes
