@@ -2197,6 +2197,14 @@ public:
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
+    /// The server-wide throttlers, without the per-query limit (and, for the remote pair, the per-user
+    /// limit) that the getters above compose on top of them. Use these to report a server-wide limit, not
+    /// to throttle a request.
+    ThrottlerPtr getServerWideRemoteReadThrottler() const;
+    ThrottlerPtr getServerWideRemoteWriteThrottler() const;
+    ThrottlerPtr getServerWideLocalReadThrottler() const;
+    ThrottlerPtr getServerWideLocalWriteThrottler() const;
+
     ThrottlerPtr getBackupsThrottler() const;
 
     ThrottlerPtr getMutationsThrottler() const;
@@ -2204,6 +2212,12 @@ public:
 
     ThrottlerPtr getDistributedCacheReadThrottler() const;
     ThrottlerPtr getDistributedCacheWriteThrottler() const;
+
+    /// The bare server-wide distributed-cache throttlers, for reporting a server-wide limit rather than
+    /// throttling: getDistributedCacheReadThrottler() may compose a request-scoped throttler (e.g. the
+    /// per-user network limit) on top of the server-wide one; these return it unwrapped.
+    ThrottlerPtr getServerWideDistributedCacheReadThrottler() const;
+    ThrottlerPtr getServerWideDistributedCacheWriteThrottler() const;
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
