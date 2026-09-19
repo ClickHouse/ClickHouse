@@ -2262,26 +2262,25 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
 
     /// Read once: the names mark the origin and the values fill in what the rebuild left out, and both have
     /// to come from the same reading of the definition, or an `ALTER` in between would split them.
-    const auto stated = getSettingsStatedInDefinition(getStorageID(), query_context);
+    auto stated = getSettingsStatedInDefinition(getStorageID(), query_context);
 
     /// The definition may spell a setting the way this engine used to accept it - with the
     /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
-    /// those rather than declaring them as aliases. Attribution has to read them the same way, or a
-    /// table created with a legacy spelling reports its settings as coming from nowhere.
-    settings = withOriginFromDefinition(std::move(settings), stated, ObjectStorageQueueSettings::adjustSettingName);
+    /// those rather than declaring them as aliases. Read them the same way, or a table created with a
+    /// legacy spelling reports its settings as coming from nowhere.
+    for (auto & change : stated)
+        if (const auto canonical = ObjectStorageQueueSettings::adjustSettingName(change.name))
+            change.name = String{*canonical};
+
+    settings = withOriginFromDefinition(std::move(settings), stated);
 
     /// For a setting the rebuild does not assign, the definition is the only source of the value the table
     /// works with, so reporting the rebuilt default would say the table ignores a setting it honours. Only
     /// the value: the origin is already `Definition`. Disjoint from the shared metadata below, which the
     /// rebuild does assign - see `not_assigned_by_rebuild`.
     for (const auto & change : stated)
-    {
-        std::string_view name = change.name;
-        if (const auto canonical = ObjectStorageQueueSettings::adjustSettingName(name))
-            name = *canonical;
-        if (not_assigned_by_rebuild.contains(String{name}))
-            setEffectiveValue(settings, name, convertFieldToString(change.value));
-    }
+        if (not_assigned_by_rebuild.contains(change.name))
+            setEffectiveValue(settings, change.name, convertFieldToString(change.value));
 
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this

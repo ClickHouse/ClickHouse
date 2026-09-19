@@ -37,23 +37,16 @@ SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, Contex
     return create.storage->settings->as<const ASTSetQuery &>().changes;
 }
 
-SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const StorageID & table_id, ContextPtr context, SettingNameNormalizer normalize)
+SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const StorageID & table_id, ContextPtr context)
 {
-    return withOriginFromDefinition(std::move(settings), getSettingsStatedInDefinition(table_id, context), normalize);
+    return withOriginFromDefinition(std::move(settings), getSettingsStatedInDefinition(table_id, context));
 }
 
-SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const SettingsChanges & stated, SettingNameNormalizer normalize)
+SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const SettingsChanges & stated)
 {
     NameSet stated_in_definition;
     for (const auto & change : stated)
-    {
-        std::optional<std::string_view> canonical;
-        if (normalize)
-            canonical = normalize(change.name);
-        stated_in_definition.insert(canonical ? String{*canonical} : change.name);
-    }
+        stated_in_definition.insert(change.name);
 
     for (auto & setting : settings)
     {

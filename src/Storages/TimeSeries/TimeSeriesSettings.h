@@ -39,7 +39,9 @@ struct TimeSeriesSettings
 
     TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    /// Loads the settings from a CREATE TABLE query (SETTINGS clause).
+    /// Loads the settings from a CREATE TABLE query (SETTINGS clause). Unlike other engines' loaders it records no
+    /// source: it is applied to normalised copies of a definition, which state more than the stored one does, so
+    /// the table records what its own definition states with `recordDefinition`.
     void loadFromQuery(const ASTStorage & storage_def);
 
     /// Saves the settings to a CREATE TABLE query (SETTINGS clause), keeping any pre-existing entries.
@@ -50,6 +52,10 @@ struct TimeSeriesSettings
 
     /// Applies a list of settings changes, overwriting any existing values.
     void applyChanges(const SettingsChanges & changes);
+
+    /// Applies the table's whole `SETTINGS` clause as `ALTER ... MODIFY` or `RESET SETTING` leaves it, recorded as
+    /// the definition.
+    void applyDefinition(const SettingsChanges & changes);
 
     /// Records every setting `stated` names as the table's definition's, without assigning it again. The settings
     /// are loaded from a normalised copy of the definition, which can state more than the table's own does - a

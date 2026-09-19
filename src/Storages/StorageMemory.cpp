@@ -442,7 +442,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     {
         auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
         auto changed_settings = *memory_settings;
-        changed_settings.applyChanges(settings_changes.changes);
+        changed_settings.applyDefinition(settings_changes.changes);
         changed_settings.sanityCheck();
 
         /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,

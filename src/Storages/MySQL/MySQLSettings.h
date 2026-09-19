@@ -45,9 +45,10 @@ struct MySQLSettings
 
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
-    /// Records the clause as the source of what it assigns: `Definition` for a table's own `SETTINGS` clause,
-    /// none for a `MySQL` database's, which its tables report as `other`, not as their definition.
-    void loadFromQuery(ASTStorage & storage_def, SettingOrigin origin = SettingOrigin::Definition);
+    /// A table's own `SETTINGS` clause, recorded as the definition.
+    void loadFromQuery(ASTStorage & storage_def);
+    /// A clause that is not a table's definition - a `MySQL` database's, the `mysql` table function's - recorded as
+    /// nothing, so a database's tables report its values as `other`.
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);

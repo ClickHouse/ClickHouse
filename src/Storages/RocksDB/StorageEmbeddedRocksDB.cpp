@@ -1506,7 +1506,7 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
     {
         const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
         auto new_settings = std::make_unique<RocksDBSettings>();
-        new_settings->applyChanges(settings_changes.changes);
+        new_settings->applyDefinition(settings_changes.changes);
         setSettings(std::move(new_settings));
     }
 }

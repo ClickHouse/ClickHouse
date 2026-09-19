@@ -6694,7 +6694,7 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing. `new_changes` is the table's whole `SETTINGS` clause
         /// after the `ALTER`, so what it states is the definition's again.
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true, SettingOrigin::Definition);
+        copy->applyDefinition(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
             copy->sanityCheck(

@@ -2981,12 +2981,18 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
     return res;
 }
 
-void MergeTreeSettings::applyChanges(
-    const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, SettingOrigin origin)
+void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
-    impl->applyChangesWithOrigin(resolved_changes, origin);
+    impl->applyChanges(resolved_changes);
+}
+
+void MergeTreeSettings::applyDefinition(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    auto resolved_changes = changes;
+    resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    impl->applyChangesWithOrigin(resolved_changes, SettingOrigin::Definition);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)

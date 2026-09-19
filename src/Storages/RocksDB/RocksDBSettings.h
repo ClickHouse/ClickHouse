@@ -28,8 +28,10 @@ struct RocksDBSettings
 
     ROCKSDB_SETTINGS_SUPPORTED_TYPES(RocksDBSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void applyChanges(const SettingsChanges & changes);
+    /// The table's own `SETTINGS` clause, recorded as the definition.
     void loadFromQuery(const ASTStorage & storage_def);
+    /// The same for the whole clause as `ALTER ... MODIFY` or `RESET SETTING` leaves it.
+    void applyDefinition(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
     DECLARE_SETTINGS_ENUMERATION(RocksDBSettings)

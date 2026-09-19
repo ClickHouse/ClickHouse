@@ -91,7 +91,7 @@ void MemorySettings::sanityCheck() const
             (*impl)[MemorySetting::max_rows_to_keep].value);
 }
 
-void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
+void MemorySettings::applyDefinition(const DB::SettingsChanges & changes)
 {
     impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
 }

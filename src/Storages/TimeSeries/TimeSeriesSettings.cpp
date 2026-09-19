@@ -106,6 +106,11 @@ void TimeSeriesSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void TimeSeriesSettings::applyDefinition(const SettingsChanges & changes)
+{
+    impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
+}
+
 void TimeSeriesSettings::recordDefinition(const SettingsChanges & stated)
 {
     for (const auto & change : stated)

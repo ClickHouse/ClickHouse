@@ -35,11 +35,12 @@ struct MemorySettings
 
     MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def);
     ASTPtr getSettingsChangesQuery();
     void sanityCheck() const;
-    /// The table's whole `SETTINGS` clause as `ALTER ... MODIFY SETTING` leaves it, recorded as the definition.
-    void applyChanges(const SettingsChanges & changes);
+    /// The table's own `SETTINGS` clause, recorded as the definition, as `loadFromQuery` records it.
+    void loadFromQuery(ASTStorage & storage_def);
+    /// The same for the whole clause as `ALTER ... MODIFY SETTING` leaves it.
+    void applyDefinition(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
     DECLARE_SETTINGS_ENUMERATION(MemorySettings)

@@ -41,7 +41,7 @@ RocksDBSettings::~RocksDBSettings() = default;
 
 ROCKSDB_SETTINGS_SUPPORTED_TYPES(RocksDBSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-void RocksDBSettings::applyChanges(const SettingsChanges & changes)
+void RocksDBSettings::applyDefinition(const SettingsChanges & changes)
 {
     impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
 }

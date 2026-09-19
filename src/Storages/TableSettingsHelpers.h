@@ -23,23 +23,15 @@ struct StorageID;
 /// (`ObjectStorageQueue`); the others correct rows for values the engine keeps outside it. `set*` modify in
 /// place; `withOriginFromDefinition` returns.
 
-/// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
-/// the two are the same. For an engine that accepts legacy spellings its loader rewrites -
-/// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
-/// without declaring them as aliases, so nothing else can know they refer to the same setting.
-using SettingNameNormalizer = std::optional<std::string_view> (*)(std::string_view);
-
 /// The `SETTINGS` clause of the table's stored `CREATE` query, copied out. Empty when there is none, or when
 /// the catalog does not know the table, as for a table function's storage.
 SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context);
 
-/// Returns `settings` with every setting the table's own `SETTINGS` clause names marked `Definition`,
-/// matching aliases and names as `normalize` rewrites them. The second form takes a clause already read,
-/// for an engine that needs its values as well as its names, so that both come from one reading.
-SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const StorageID & table_id, ContextPtr context, SettingNameNormalizer normalize = nullptr);
-SettingDescriptions withOriginFromDefinition(
-    SettingDescriptions settings, const SettingsChanges & stated, SettingNameNormalizer normalize = nullptr);
+/// Returns `settings` with every setting the table's own `SETTINGS` clause names marked `Definition`, matching
+/// aliases too. The second form takes a clause already read, for an engine that needs its values as well as its
+/// names, so that both come from one reading.
+SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const StorageID & table_id, ContextPtr context);
+SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const SettingsChanges & stated);
 
 /// Sets `origin` for every setting in `names`, matched by canonical name only, not by alias. Used where the
 /// engine assigns settings outside its loaders, so the settings object cannot record the source.

@@ -601,12 +601,11 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         /// Round-trip through `TimeSeriesSettings` to validate the names/values and
         /// to write them back in a canonical form.
         new_settings = std::make_unique<TimeSeriesSettings>();
-        new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        new_settings->applyDefinition(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         settings_ast->changes = new_settings->changes();
-        new_settings->recordDefinition(settings_ast->changes);
         new_metadata.settings_changes = settings_ast;
     }
 
