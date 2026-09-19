@@ -29,6 +29,8 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
 
+#include <tuple>
+
 #include <zstd.h>
 
 namespace ProfileEvents
@@ -1075,7 +1077,10 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
     bool metadata_published = false;
     try
     {
-        moveFileBetweenDisks(
+        /// The result is `metadata_published`, which the callback below already records - and
+        /// records in a way that survives an exception thrown after it ran, so that a published
+        /// move is never followed by target cleanup.
+        std::ignore = moveFileBetweenDisks(
             candidate.source_disk,
             candidate.source_path,
             candidate.target_disk,
