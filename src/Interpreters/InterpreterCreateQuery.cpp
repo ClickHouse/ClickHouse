@@ -35,6 +35,7 @@
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -54,6 +55,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecAST.h>
+#include <Storages/ColumnCodecValidation.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -126,6 +130,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -563,10 +568,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->setComment(make_intrusive<ASTLiteral>(Field(column.comment)));
         }
 
-        if (column.codec)
-        {
-            column_declaration->setCodec(column.codec->clone());
-        }
+        applyCodecDescriptionToAST(*column_declaration, column.type, column.codec);
 
         if (column.statistics.hasExplicitStatistics())
         {
@@ -783,12 +785,16 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        if (auto codec = col_decl.getCodec())
+        /// Extract Tuple codec paths against the declared type so the AST and type shapes match.
+        /// Validate against the final type so an outer Nullable added by NULL handling is included.
+        const auto declared_type = col_decl.getType()
+            ? DataTypeFactory::instance().get(col_decl.getType())
+            : column.type;
+        column.codec = codecDescriptionFromAST(col_decl, declared_type, column.type, codec_validation_settings);
+        if (!column.codec.empty())
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            column.codec
-                = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
@@ -1827,6 +1833,29 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+void validateTupleElementCodecAdmission(
+    const ColumnsDescription & columns,
+    const ASTCreateQuery & create,
+    LoadingStrictnessLevel mode,
+    const ContextPtr & context,
+    bool is_restore_from_backup)
+{
+    /// The setting controls user-supplied definitions that will create metadata. Replaying stored
+    /// metadata, internal secondary CREATE queries, and backup restore must remain loadable.
+    if (!isFreshTableDefinition(mode, create.attach_short_syntax)
+        || is_restore_from_backup
+        || context->getSettingsRef()[Setting::enable_tuple_element_codecs])
+        return;
+
+    for (const auto & column : columns)
+    {
+        if (column.codec.hasSubcolumns())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+    }
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2164,6 +2193,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// The initial query does not construct the storage locally. Admit the definition before it is
+        /// placed in the replicated DDL log; secondary replays deliberately skip experimental gates.
+        validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
+
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
@@ -2388,6 +2421,20 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+
+    const auto metadata = storage.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    for (const auto & column : metadata->getColumns())
+    {
+        if (!column.codec.hasSubcolumns())
+            continue;
+
+        if (!storage.supportsPerSubcolumnCodecs())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Storage {} does not support Tuple-element CODEC declarations",
+                storage.getName());
+        break;
+    }
 }
 catch (...)
 {
@@ -2415,6 +2462,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
+
+        validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -2506,6 +2555,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
     }
+
+    validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
@@ -3155,6 +3206,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    validateTupleElementCodecAdmission(properties.columns, create, mode, getContext(), is_restore_from_backup);
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
