@@ -534,18 +534,23 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
 
 void StatementGenerator::generateExprIn(RandomGenerator & rg, const bool allow_empty, ExprInType * expr)
 {
-    const uint32_t nopt = rg.nextSmallNumber();
+    const uint32_t nopt = rg.nextMediumNumber();
 
-    if (allow_empty && rg.nextMediumNumber() < 4)
+    if (allow_empty && nopt < 4)
     {
-        /// `x IN ()` and `x IN []` are valid, and always evaluate to 0
         expr->set_empty_list(rg.nextBool());
     }
-    else if (nopt < 5 && this->allow_subqueries)
+    else if (allow_empty && nopt < 21 && this->allow_not_deterministic && collectionHas<SQLTable>(attached_tables))
+    {
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+        t.setName(expr->mutable_tbl(), false);
+    }
+    else if (nopt < 41 && this->allow_subqueries)
     {
         this->generateSubquery(rg, expr->mutable_sel());
     }
-    else if (nopt < 9)
+    else if (nopt < 81)
     {
         ExprList * elist2 = rg.nextBool() ? expr->mutable_tuple() : expr->mutable_array();
         const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
