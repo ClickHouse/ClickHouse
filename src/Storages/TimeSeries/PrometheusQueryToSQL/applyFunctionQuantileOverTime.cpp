@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/hasExactMetricNameMatcher.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -172,11 +173,26 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
     /// range vector holds series, and a scalar grid if it was made from a scalar.
     const bool has_group = (range_argument.store_method == StoreMethod::VECTOR_GRID) || (range_argument.store_method == StoreMethod::RAW_DATA);
+    const bool can_fuse_drop_metric_name = has_group
+        && (range_argument.store_method == StoreMethod::RAW_DATA)
+        && hasExactMetricNameMatcher(range_argument.node);
 
     SelectQueryBuilder builder;
 
     if (has_group)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    {
+        if (can_fuse_drop_metric_name)
+        {
+            auto remove_tag = makeASTFunction(
+                "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName));
+            remove_tag->setAlias(ColumnNames::Group);
+            builder.select_list.push_back(std::move(remove_tag));
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        }
+    }
 
     /// timeSeriesQuantileToGrid(<start_timestamp>, <end_timestamp>, <step>, <staleness_window>)(<timestamps>, <values>, <phi>) AS values
     /// For each grid point it returns the phi-quantile of the values inside that window (NULL if the window is empty),
@@ -218,9 +234,11 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
+    if (can_fuse_drop_metric_name)
+        res.metric_name_dropped = true;
 
     /// `quantile_over_time` always drops the metric name (PromQL: function outputs have no `__name__`).
-    if (has_group)
+    if (has_group && !res.metric_name_dropped)
         res = dropMetricName(std::move(res), context);
 
     return res;

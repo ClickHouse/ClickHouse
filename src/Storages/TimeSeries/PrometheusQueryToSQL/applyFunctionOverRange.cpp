@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/hasExactMetricNameMatcher.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -226,11 +227,28 @@ SQLQueryPiece applyFunctionOverRange(
     /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
     /// range vector holds series, and a scalar grid if it was made from a scalar.
     const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
+    const bool should_drop_metric_name = drop_metric_name.value_or(impl_info->drop_metric_name);
+    const bool can_fuse_drop_metric_name = has_group
+        && (argument.store_method == StoreMethod::RAW_DATA)
+        && should_drop_metric_name
+        && hasExactMetricNameMatcher(argument.node);
 
     SelectQueryBuilder builder;
 
     if (has_group)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    {
+        if (can_fuse_drop_metric_name)
+        {
+            auto remove_tag = makeASTFunction(
+                "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName));
+            remove_tag->setAlias(ColumnNames::Group);
+            builder.select_list.push_back(std::move(remove_tag));
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        }
+    }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
@@ -267,8 +285,10 @@ SQLQueryPiece applyFunctionOverRange(
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
+    if (can_fuse_drop_metric_name)
+        res.metric_name_dropped = true;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (has_group && should_drop_metric_name && !res.metric_name_dropped)
         res = dropMetricName(std::move(res), context);
 
     return res;
