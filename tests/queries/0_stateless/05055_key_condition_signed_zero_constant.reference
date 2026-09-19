@@ -1,0 +1,40 @@
+equals	1
+equals, ground truth	1
+notEquals	0
+notEquals, ground truth	0
+zero inside a tuple constant	1
+zero inside a tuple constant, ground truth	1
+non-zero constant inside a tuple	1
+non-zero constant inside a tuple	Granules: 2/3
+non-zero constant	1
+non-zero constant	Granules: 2/3
+zero constant, transform keeps the values equal	1
+zero constant, transform keeps the values equal, ground truth	1
+zero constant, transform keeps the values equal	Granules: 1/3
+isNotDistinctFrom	1
+isNotDistinctFrom, ground truth	1
+partition key	1
+partition key, ground truth	1
+partition key, non-zero constant	1
+partition key, non-zero constant, the pruner still gets the atom	1
+minmax index	1
+minmax index, ground truth	1
+minmax index, non-zero constant	1
+minmax index, non-zero constant, ground truth	1
+minmax index, non-zero constant	Granules: 1/3
+dynamically typed domain	1
+dynamically typed domain, ground truth	1
+dynamically typed domain nested in a container	1
+dynamically typed domain nested in a container, ground truth	1
+zero on the dynamically typed member	1
+zero on the dynamically typed member, ground truth	1
+zero on a fixed-typed member beside a dynamically typed one	1
+zero on a fixed-typed member beside a dynamically typed one, ground truth	1
+zero on a fixed-typed member beside a dynamically typed one	Granules: 1/3
+variant domain	1
+variant domain, ground truth	1
+zero written as a string	1
+zero written as a string, ground truth	1
+constant denoting no number	1
+constant denoting no number, ground truth	1
+constant denoting no number	Granules: 1/3
