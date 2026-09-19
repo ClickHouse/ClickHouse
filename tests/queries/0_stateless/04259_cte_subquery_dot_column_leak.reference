@@ -13,6 +13,7 @@
 -- CTE leak with subcolumn (default fails) --
 -- CTE leak with subcolumn (compat) --
 1	(2)	1	(2)	1	(2)	1	(2)
--- inline subquery aliased b, with subcolumn (default fails) --
+-- inline subquery aliased b, with subcolumn (default: both ON keys on one side) --
+1	(2)	0	(0)	0	(0)
 -- inline subquery aliased b, with subcolumn (compat) --
 1	(2)	1	(2)	1	(2)
