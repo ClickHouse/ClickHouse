@@ -4986,11 +4986,10 @@ def test_truncate(started_cluster):
 
     assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
-    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
-
     def count_files():
+        # Re-list on every call: the point is to prove TRUNCATE removed nothing.
         count = 0
-        for obj in s3_objects:
+        for obj in minio_client.list_objects(bucket, result_file, recursive=True):
             print(f"File: {obj.object_name}")
             count = count + 1
         return count
@@ -5000,6 +4999,7 @@ def test_truncate(started_cluster):
         f"TRUNCATE TABLE {table_name}"
     )
     assert count_files() == 3
+    assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
 @pytest.mark.parametrize("on_cluster", [False, True])
