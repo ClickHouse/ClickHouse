@@ -7,6 +7,10 @@
 -- on every `IDENTIFIED` clause that only shares the authentication method.
 
 DROP USER IF EXISTS user_05230;
+-- Rules are global server state, so a run that aborted mid-test would otherwise leave
+-- them behind and make every later run fail with `REWRITE_RULE_ALREADY_EXISTS`.
+DROP RULE IF EXISTS rule_05230_grants;
+DROP RULE IF EXISTS rule_05230_usage;
 
 CREATE RULE rule_05230_grants AS (CREATE USER user_05230 IDENTIFIED WITH no_password GRANTS (SELECT ON db_05230.t)) REJECT WITH 'blocked_05230';
 SET query_rules = 'rule_05230_grants';
