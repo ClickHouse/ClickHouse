@@ -63,17 +63,27 @@ SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size
 
 SYSTEM DISABLE FAILPOINT patch_parts_reverse_column_order;
 
--- A regression that gave every read task its own cache entry would also avoid the mismatch
--- and return the same sums, so assert that both merged parts really did apply a Join-mode
--- patch. A lower bound, not an equality: the count scales with granule splitting.
+SELECT sum(a), sum(b), count() FROM t_pjc
+SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size = 1,
+    max_threads = 2,
+    log_comment = '04991_shared';
+
 SYSTEM FLUSH LOGS query_log;
 
+-- Join mode was actually used: on `patch_parts_version = 'v2'` these sums are identical but this is 0.
 SELECT ProfileEvents['PatchesJoinAppliedInAllReadTasks'] >= 2
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04991_decisive' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
-SELECT sum(a), sum(b), count() FROM t_pjc;
+-- The two merged parts shared one cache entry: with the failpoint off they fill one entry, with it on
+-- they fill one each, so the second read adds strictly fewer rows. Equal counts mean the entries were
+-- private per read task, or the parts were read through separate pools, and the test above is blind.
+SELECT maxIf(ProfileEvents['PatchesJoinRowsAddedToHashTable'], log_comment = '04991_decisive')
+     > maxIf(ProfileEvents['PatchesJoinRowsAddedToHashTable'], log_comment = '04991_shared')
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+  AND log_comment IN ('04991_decisive', '04991_shared');
 
 DROP TABLE t_pjc;
