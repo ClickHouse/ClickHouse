@@ -28,6 +28,10 @@ struct GroupingKeys
     std::vector<size_t> positions;
 };
 
+/// The mapped slot holds a group index biased by one, so that the zeroth group is not a null pointer.
+AggregateDataPtr mappedFromGroupIndex(size_t group_index);
+size_t groupIndexFromMapped(AggregateDataPtr mapped);
+
 /// The grouping keys whose header-sample column is not `ColumnConst`. Constant columns do not help
 /// distinguish groups because they have the same value on every row.
 GroupingKeys filterNonConstKeys(const Block & header, const Names & column_names);
@@ -150,17 +154,6 @@ private:
     template <bool is_two_level, typename Method>
     requires MapAggregationMethod<Method>
     void extractGroupsImpl(Method & hash_method, MutableColumns & key_columns, PaddedPODArray<UInt64> & rows_seen);
-
-    /// The mapped slot holds a group index biased by one, so that the zeroth group is not a null pointer.
-    static AggregateDataPtr mappedFromGroupIndex(size_t group_index)
-    {
-        return reinterpret_cast<AggregateDataPtr>(static_cast<uintptr_t>(group_index) + 1);
-    }
-
-    static size_t groupIndexFromMapped(AggregateDataPtr mapped)
-    {
-        return static_cast<size_t>(reinterpret_cast<uintptr_t>(mapped) - 1);
-    }
 
     GroupingKeys keys;
 

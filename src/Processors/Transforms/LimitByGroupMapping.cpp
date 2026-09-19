@@ -20,6 +20,16 @@ UInt64 computeGroupLimitEnd(UInt64 length, UInt64 offset)
     return length + offset;
 }
 
+AggregateDataPtr mappedFromGroupIndex(size_t group_index)
+{
+    return reinterpret_cast<AggregateDataPtr>(static_cast<uintptr_t>(group_index) + 1);
+}
+
+size_t groupIndexFromMapped(AggregateDataPtr mapped)
+{
+    return static_cast<size_t>(reinterpret_cast<uintptr_t>(mapped) - 1);
+}
+
 GroupingKeys filterNonConstKeys(const Block & header, const Names & column_names)
 {
     GroupingKeys non_const_keys;

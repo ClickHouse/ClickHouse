@@ -365,6 +365,14 @@ void ExternalLimitByTransform::filterChunkInMemory(Chunk & chunk)
 
 bool ExternalLimitByTransform::shouldSpill() const
 {
+    if (spilled || !mapping)
+    {
+        /// After the grouping hash table is released, only the query-wide threshold can trigger
+        /// flushing buffered runs.
+        return max_bytes_in_query_before_external_limit_by
+            && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_in_query_before_external_limit_by);
+    }
+
     /// A constant-keyed `LIMIT BY` holds one counter, and a spill can only carry over groups that exist.
     if (mapping->isTrivial() || mapping->getNumGroups() == 0)
         return false;
