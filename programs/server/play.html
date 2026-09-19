@@ -56,6 +56,13 @@
                Light theme: a high lightness so the dark cell text stays readable on top. */
             --viz-cell-lightness: 88%;
             --viz-cell-chroma: 0.09;
+            /* Fills of a Graphviz-rendered `EXPLAIN ... graph = 1` result. Graphviz hardcodes
+               `white` node fills and `lightgrey` cluster boxes in the graph it emits, and draws
+               everything else (borders, edges, arrowheads, labels) in `black`; the rules under
+               `#graph` remap exactly those three colors, so the light theme keeps the familiar
+               look while the dark theme gets dark boxes and light lines. */
+            --graph-node-color: #FFF;
+            --graph-cluster-color: #D3D3D3; /* Graphviz' `lightgrey`. */
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
@@ -147,6 +154,10 @@
             /* Dark theme: a low lightness so the light cell text stays readable on top. */
             --viz-cell-lightness: 38%;
             --viz-cell-chroma: 0.08;
+            /* Dark theme: node boxes a shade above the graph background, cluster boxes a shade
+               above the nodes, keeping the same nesting order as the light theme. */
+            --graph-node-color: #111;
+            --graph-cluster-color: #2A2A2A;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -3817,8 +3828,8 @@ class QueryResultElement extends HTMLElement
                     display: none;
                     margin: auto;
                     overflow: auto;
-                    background: white;
-                    color: black;
+                    background: var(--element-background-color);
+                    color: var(--text-color);
                     padding: 0.5rem;
                     border-radius: 3px;
                     filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
@@ -3829,6 +3840,22 @@ class QueryResultElement extends HTMLElement
                     display: block;
                     margin: auto;
                 }
+
+                /* Theme the Graphviz output. Graphviz writes its colors as presentation
+                   attributes, which the cascade ranks below any stylesheet rule, so these
+                   selectors override them without touching the rendered SVG. Only the default
+                   colors Graphviz emits for an EXPLAIN graph are matched, so a graph that asks
+                   for a color of its own still gets it. */
+                #graph svg [fill="black"] { fill: var(--text-color); }
+                #graph svg [stroke="black"] { stroke: var(--text-color); }
+                #graph svg [fill="white"] { fill: var(--graph-node-color); }
+                #graph svg [stroke="white"] { stroke: var(--graph-node-color); }
+                #graph svg [fill="lightgrey"] { fill: var(--graph-cluster-color); }
+                #graph svg [stroke="lightgrey"] { stroke: var(--graph-cluster-color); }
+
+                /* Labels carry no fill attribute unless the graph sets fontcolor: they default
+                   to black. */
+                #graph svg text:not([fill]) { fill: var(--text-color); }
 
                 #chart
                 {
@@ -4123,6 +4150,7 @@ class QueryResultElement extends HTMLElement
         this._error = this.shadowRoot.getElementById('error');
 
         this._row_idx = 0;
+        this._skipped_rows = 0;
         this._elapsed_ns = 0;
         this._incomplete_result = false;
         this._is_explain_graph = false;
@@ -4305,6 +4333,7 @@ class QueryResultElement extends HTMLElement
         this._totals = null;
         this._header = {};
         this._row_idx = 0;
+        this._skipped_rows = 0;
         this._elapsed_ns = 0;
         this._incomplete_result = false;
         this._is_explain_graph = false;
@@ -4625,7 +4654,8 @@ class QueryResultElement extends HTMLElement
 
         let td = document.createElement('td');
         td.className = 'row-number';
-        td.appendChild(document.createTextNode(this._row_idx));
+        /// Numbered within the whole result, not within the page (see `_rowNumberOffset`).
+        td.appendChild(document.createTextNode(this._rowNumberOffset() + this._row_idx));
         tr.appendChild(td);
 
         for (const column of this._header)
@@ -5490,6 +5520,23 @@ class QueryResultElement extends HTMLElement
         const columns = Array.isArray(this._header) ? this._header.length : 0;
         if (columns <= 0) { return 0; }
         return Math.max(1, Math.min(this._max_rows, Math.floor(this._max_cells / columns)));
+    }
+
+    /// How many rows of the result come before the page being shown: the offset the server skipped for
+    /// it, `size * (page - 1)` (see `shapeUrlParams`). The row-number column counts from it, so the
+    /// numbers name the rows' positions in the whole result and stay the same rows' numbers on whatever
+    /// page they are shown - rather than restarting at 1 on every page. Zero while no page is selected,
+    /// which is the unpaginated first page.
+    ///
+    /// While no page is selected the offset is `_skipped_rows` instead, which is zero except when a
+    /// failed run's snapshot is replayed: the failure path drops the tab's shape (see `postSingle`), so
+    /// the restored element has no page to compute the offset from, and the snapshot carries the count
+    /// the rows were numbered from live (`skipped_rows`) so they restore with the same numbers.
+    _rowNumberOffset()
+    {
+        const { page, size } = this._pagination;
+        if (!(page >= 1) || !(size >= 1)) { return this._skipped_rows; }
+        return size * (page - 1);
     }
 
     /// (Re)render the pager under the table.
@@ -7161,20 +7208,34 @@ class QueryResultElement extends HTMLElement
         });
     }
 
+    /// Where a JavaScript asset that ships with the server lives. The server serves these from
+    /// the site root, but a page opened straight from disk has no site root - `/js/...` there
+    /// points at the root of the filesystem - so resolve the name against the document instead,
+    /// which finds the copy sitting next to `play.html` in the source tree. The site-root path is
+    /// kept for http(s), where the page is also served under `/play/` and a document-relative URL
+    /// would resolve to `/play/js/...`, which the server does not serve.
+    static _assetURL(name)
+    {
+        return location.protocol === 'file:'
+            ? new URL('js/' + name, document.baseURI).href
+            : '/js/' + name;
+    }
+
     async _getViz()
     {
         if (QueryResultElement._vizInstance) { return QueryResultElement._vizInstance; }
+        const src = QueryResultElement._assetURL('viz-standalone.js');
         if (!QueryResultElement._loadVizPromise)
         {
             /// Drop the cached promise on failure so a later attempt can retry the load
             /// instead of re-awaiting a permanently rejected promise.
-            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js')
+            QueryResultElement._loadVizPromise = this._loadJS(src)
                 .catch((e) => { QueryResultElement._loadVizPromise = null; throw e; });
         }
         await QueryResultElement._loadVizPromise;
         if (typeof Viz === 'undefined')
         {
-            throw new Error('Viz.js failed to load from /js/viz-standalone.js.');
+            throw new Error('Viz.js failed to load from ' + src + '.');
         }
         QueryResultElement._vizInstance = await Viz.instance();
         return QueryResultElement._vizInstance;
@@ -7199,7 +7260,18 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._dataTable);
         const viz = await this._getViz();
         if (isValid && !isValid()) return;
-        const svg = viz.renderSVGElement(this._explain_graph);
+        /// These are *default* attributes (like `dot -G`/`-N`/`-E`), so a graph setting them
+        /// itself still wins. Graphviz defaults to Times, a serif face nothing else on the page
+        /// uses; asking for Helvetica makes it lay the graph out with sans-serif metrics, which a
+        /// stylesheet could not do - overriding `font-family` after the fact would leave the
+        /// labels sized for the wrong font and spilling out of their boxes. A transparent
+        /// background drops the opaque white canvas rectangle, letting `#graph` (and with it the
+        /// light/dark theme) show through.
+        const svg = viz.renderSVGElement(this._explain_graph, {
+            graphAttributes: { fontname: 'Helvetica', bgcolor: 'transparent' },
+            nodeAttributes: { fontname: 'Helvetica' },
+            edgeAttributes: { fontname: 'Helvetica' },
+        });
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
     }
@@ -11596,6 +11668,12 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         /// unreachable one they cannot clear: it may well be what failed the query (an ambiguous column
         /// name, a filter that does not type-check, or a server too old for these settings), and the
         /// error itself is still reported in full below.
+        ///
+        /// Rows that streamed before the failure were numbered from the page's offset (see
+        /// `_rowNumberOffset`), and dropping the page takes that offset away from the snapshot. Keep the
+        /// count itself, so a restore (a reload, Back/Forward, reopening the tab) replays the rows with
+        /// the numbers they had live instead of renumbering page 2 from 1.
+        const skipped_rows = el._rowNumberOffset();
         clearResultShape(tab);
         tab.logoVisible = false;
         tab.progressPhase = 'error';
@@ -11635,6 +11713,8 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 /// Persist the non-OK plain each-row carrier provenance. Text equality is not a
                 /// discriminator: a transport-failed partial result can contain the same object.
                 plain_http_each_row_error: !!result.plain_http_each_row_error,
+                /// The row-number offset of the rows replayed on restore (see `_rowNumberOffset`).
+                skipped_rows: skipped_rows,
                 ok: result.response_ok,
                 /// A run can fail while `response_ok` stays true (an in-band `{"exception":...}`
                 /// after rows already streamed under 200 OK); persist the failure separately so a
@@ -12684,6 +12764,17 @@ async function materializeResult(tab) {
     let format = result.format;
     const kind = snapshotFramingKind(result);
 
+    if (!result.ok) {
+        /// The rows a failed run streamed before failing are replayed below, and they are numbered
+        /// from the offset of the page the run was on (see `_rowNumberOffset`): the shape itself was
+        /// dropped by the failure (see `postSingle`), so the offset comes from the snapshot, validated
+        /// like the rest of it rather than trusted. Set before any of the failure branches: the
+        /// default-format run of a current server is a framed `EventStream` and replays in the first
+        /// branch, not in the plain one.
+        const skipped_rows = Math.floor(Number(result.skipped_rows));
+        el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;
+    }
+
     if (kind === 'event_stream') {
         /// A framing `EventStream` snapshot: replay the multiplexed data, logs, progress, and
         /// (on failure) the exception. The default format is a table; any other format is raw text,
@@ -12734,7 +12825,8 @@ async function materializeResult(tab) {
         if (result.data || typeof result.display_error === 'string') {
             /// Replay any output that streamed before the mid-stream failure, exactly as the live
             /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
-            /// table rows need the same layout pass as the success restore below.
+            /// table rows need the same layout pass as the success restore below, and are numbered
+            /// from the offset restored above.
             renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error, result.plain_http_each_row_error);
             if (el.rowCount > 0) el._changeTableLayout();
         } else {
@@ -14304,6 +14396,11 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// Provenance for a non-OK plain each-row exception object, used by restore instead of
         /// guessing from equal text in the response body and `display_error`.
         plain_http_each_row_error: stateData.plain_http_each_row_error ?? false,
+        /// The number of result rows before the first replayed row of a failed run: the offset of the
+        /// page it ran, kept apart from `pagination` because the failure path drops the shape (see
+        /// `postSingle`), so the replayed rows restore with the numbers they had live. Zero for
+        /// successful runs (their rows are numbered from the restored `pagination`) and legacy entries.
+        skipped_rows: stateData.skipped_rows ?? 0,
         ok: stateData.ok,
         /// Whether the run failed even though `ok` (the HTTP-level success) is true: an in-band
         /// `{"exception":...}` arriving after rows were already streamed under 200 OK. The data

@@ -47,6 +47,7 @@
     {"prefix":"paimon_metadata","mode":"token","target":"/reference/settings/server-settings/settings/paimon-metadata"},
     {"prefix":"query_cache.max","mode":"token","target":"/reference/settings/server-settings/settings/query-cache-max"},
     {"prefix":"query_condition","mode":"token","target":"/reference/settings/server-settings/settings/query-condition"},
+    {"prefix":"reader_executor","mode":"token","target":"/reference/settings/server-settings/settings/reader-executor"},
     {"prefix":"access_control","mode":"token","target":"/reference/settings/server-settings/settings/access-control"},
     {"prefix":"jemalloc_flush","mode":"token","target":"/reference/settings/server-settings/settings/jemalloc-flush"},
     {"prefix":"logger.console","mode":"token","target":"/reference/settings/server-settings/settings/logger-console"},

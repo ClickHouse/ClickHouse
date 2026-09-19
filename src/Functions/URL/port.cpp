@@ -117,7 +117,7 @@ private:
         bool saw_digit = false;
         while (p < end)
         {
-            if (*p == '/')
+            if (*p == '/' || *p == '?' || *p == '#')
                 break;
             if (!isNumericASCII(*p))
                 return default_port;
