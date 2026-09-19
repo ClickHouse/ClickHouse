@@ -415,9 +415,34 @@ namespace DB
 
 void registerStatementQuota(StatementFactory & factory)
 {
+    /// `parseQuotaType` accepts every `QuotaType`, and the documentation below has to list all of them:
+    /// it feeds `system.statements`, `system.documentation` and the generated reference pages, so a
+    /// missing resource tells the user that a valid one is unsupported. Generate the lists from the enum
+    /// metadata, so that adding a resource cannot leave them behind.
+    String resources;       /// `queries | query_selects | ...`, for the syntax blocks.
+    String resources_list;  /// `` `queries`, `query_selects`, ... ``, for the prose.
+    for (auto quota_type : collections::range(QuotaType::MAX))
+    {
+        const String & name = QuotaTypeInfo::get(quota_type).name;
+        if (!resources.empty())
+        {
+            resources += " | ";
+            resources_list += ", ";
+        }
+        resources += name;
+        resources_list += "`" + name + "`";
+    }
+
+    auto substitute = [&](String text)
+    {
+        replaceAll(text, "%RESOURCES%", resources);
+        replaceAll(text, "%RESOURCES_LIST%", resources_list);
+        return text;
+    };
+
     factory.registerStatement("CREATE QUOTA",
     {
-        .description = R"DOCS_MD(
+        .description = substitute(R"DOCS_MD(
 Creates a [quota](/concepts/features/security/access-rights#quotas-management) that can be assigned to a user or a role.
 
 Syntax:
@@ -429,8 +454,7 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | written_rows | execution_time | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] |
-         NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -438,7 +462,7 @@ Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_ke
 
 `IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](/reference/system-tables/quotas) table.
 
-Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `written_rows`, `execution_time`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+Parameters %RESOURCES_LIST% correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
 
@@ -475,24 +499,24 @@ Further examples, using the xml configuration (not supported in ClickHouse Cloud
 ## Related Content {#related-content}
 
 - Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
-)DOCS_MD",
-        .syntax = R"(
+)DOCS_MD"),
+        .syntax = substitute(R"(
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IN access_storage_type]
     [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | written_rows | execution_time} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-)",
+)"),
         .parent = "CREATE",
         .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
     });
 
     factory.registerStatement("ALTER QUOTA",
     {
-        .description = R"DOCS_MD(
+        .description = substitute(R"DOCS_MD(
 Changes quotas.
 
 Syntax:
@@ -504,15 +528,14 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | written_rows | execution_time | queries_per_normalized_hash} = number } [,...] |
-        NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](/reference/system-tables/quotas) table.
 
 `IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](/reference/system-tables/quotas) table.
 
-Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `written_rows`, `execution_time`, `queries_per_normalized_hash` correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+Parameters %RESOURCES_LIST% correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
 
@@ -529,17 +552,17 @@ For the default user limit the maximum execution time with half a second in 30 m
 ```sql
 ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
 ```
-)DOCS_MD",
-        .syntax = R"(
+)DOCS_MD"),
+        .syntax = substitute(R"(
 ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | written_rows | execution_time} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-)",
+)"),
         .parent = "ALTER",
         .related = {"CREATE QUOTA", "ALTER", "SHOW"},
     });
