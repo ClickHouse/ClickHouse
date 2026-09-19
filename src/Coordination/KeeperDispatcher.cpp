@@ -123,7 +123,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     keeper_context->initialize(config, this);
 
-    snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
+    snapshot_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { snapshotThread(); });
 
     snapshot_s3.startup(config, macros);
 
@@ -203,23 +203,23 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     }
 
     /// Start it after keeper server start
-    session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
+    session_cleaner_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { sessionCleanerTask(); });
 
     const auto & feature_flags = keeper_context->getFeatureFlags();
     const auto & keeper_coordination_settings = keeper_context->getCoordinationSettings();
     size_t batch_size = keeper_coordination_settings[CoordinationSetting::ttl_gc_batch_size];
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
-        ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { ttlGarbageCollectorThread(batch_size); });
+        ttl_garbage_collector_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, batch_size] { ttlGarbageCollectorThread(batch_size); });
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER))
     {
         size_t container_batch_size = keeper_coordination_settings[CoordinationSetting::container_gc_batch_size];
         UInt64 container_max_never_used_ms = keeper_coordination_settings[CoordinationSetting::container_gc_max_never_used_interval_ms].totalMilliseconds();
-        container_garbage_collector_thread = ThreadFromGlobalPool([this, container_batch_size, container_max_never_used_ms] { containerGarbageCollectorThread(container_batch_size, container_max_never_used_ms); });
+        container_garbage_collector_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, container_batch_size, container_max_never_used_ms] { containerGarbageCollectorThread(container_batch_size, container_max_never_used_ms); });
     }
 
     update_configuration_thread = reconfigEnabled()
-        ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
-        : ThreadFromGlobalPool([this] { clusterUpdateWithReconfigDisabledThread(); });
+        ? ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { clusterUpdateThread(); })
+        : ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { clusterUpdateWithReconfigDisabledThread(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }

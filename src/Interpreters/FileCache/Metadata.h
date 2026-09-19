@@ -196,6 +196,12 @@ public:
 
     void startup();
 
+    /// Stop and join the permanent background threads started by `startup`, keeping the
+    /// queues usable, so that a retried `startup` (the caller of `FileCache::initialize`
+    /// may retry it after an exception) starts from a clean state instead of replacing
+    /// still-joinable threads, which would abort the process.
+    void stopThreads();
+
     bool isEmpty() const;
 
     const String & getBaseDirectory() const { return path; }
