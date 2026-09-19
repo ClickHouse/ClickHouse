@@ -44,8 +44,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
-    /// overload declared below; FunctionWithLowCardinalityFastPath calls it by qualified name.
+    /// FunctionWithLowCardinalityFastPath calls the base ColumnsWithTypeAndName overload by qualified name.
     using IFunction::getReturnTypeImpl;
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -104,8 +103,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h):
-    /// hasAll/hasAny over Array(LowCardinality(T)) decided from dictionary indexes. nullptr declines.
+    /// Hook called by FunctionWithLowCardinalityFastPath (FunctionLowCardinalityFastPath.h); nullptr declines it.
     ColumnPtr tryExecuteLowCardinality(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
     {
@@ -153,7 +151,6 @@ public:
         if (dictionary_size == 0 || dictionary_size > MAX_DICTIONARY_SIZE_FOR_FAST_PATH)
             return nullptr;
 
-        /// Holds one byte per dictionary entry and is built once per block, which is what the bound above caps.
         PaddedPODArray<UInt8> slot_of_dictionary_index(dictionary_size, 0);
         size_t distinct_needles = 0;
         for (size_t i = 0; i != needle_size; ++i)
