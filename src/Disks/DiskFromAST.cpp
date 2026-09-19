@@ -1,11 +1,13 @@
 #include <Disks/DiskFromAST.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskBackup.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -57,6 +59,21 @@ static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr &
             base_directory);
 }
 
+/// Whether the backend described at `prefix` keeps its data on the local filesystem, in the
+/// directory named by `<prefix>path`. `DiskLocal` is spelled `local`, `local_blob_storage` is the
+/// compatibility spelling of an object storage over the local filesystem, and the object storage
+/// types backed by the local filesystem all start with `local` as well - so one prefix test covers
+/// all of them. `object_storage_type` names the backend of a `type = object_storage` disk and of
+/// every `locations.<name>` child, and `type` is the spelling that stands for it everywhere else,
+/// which is the order `ObjectStorageFactory::create` reads them in.
+static bool namesLocalFilesystem(const Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
+    auto type = config.getString(prefix + "object_storage_type", "");
+    if (type.empty())
+        type = config.getString(prefix + "type", "");
+    return type.starts_with("local");
+}
+
 /// The locations on the local filesystem that the disk definition names itself. A definition that
 /// refers to a disk of the server configuration (`disk = '<name>'`, as a `cache` or an `encrypted`
 /// disk does) inherits the location of that disk, which the administrator chose and the query did
@@ -66,17 +83,22 @@ static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr &
 /// the server happens to run from the right place.
 static void checkCustomDiskDefinitionPaths(const Poco::Util::AbstractConfiguration & config, const ContextPtr & context)
 {
-    const auto disk_type = config.getString("type", "");
-    const auto object_storage_type = config.getString("object_storage_type", "");
+    /// The disk root, and every `locations.<name>` child: a multi-location `DiskObjectStorage`
+    /// builds one object storage per child, each with its own backend and its own `path`, so an
+    /// `include` can hide a local child behind a root that names a remote backend
+    /// (see `RegisterDiskObjectStorage`).
+    std::vector<String> prefixes{""};
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back("locations." + location + ".");
+    }
 
-    /// `local_blob_storage` is the compatibility spelling of `object_storage` over `local`; the
-    /// object storage types backed by the local filesystem all start with `local`. A `local` disk,
-    /// which is not an object storage, is checked after it is created instead.
-    const bool names_local_object_storage
-        = disk_type == "local_blob_storage" || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
-
-    if (names_local_object_storage && config.has("path"))
-        checkCustomDiskPathIsAllowed(config.getString("path"), context);
+    for (const auto & prefix : prefixes)
+        if (namesLocalFilesystem(config, prefix) && config.has(prefix + "path"))
+            checkCustomDiskPathIsAllowed(config.getString(prefix + "path"), context);
 
     /// The metadata of a disk is written to the local filesystem whenever `metadata_path` is given.
     /// Its default, `<clickhouse path>/disks/<name>/`, needs no check of its own: the check of the
@@ -181,10 +203,13 @@ static std::string getOrCreateCustomDisk(
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
 
-        /// A disk of the local filesystem that is not an object storage answers with the directory it
-        /// was given. Checked here rather than after `getOrCreateDisk` returns, so that a rejected
-        /// disk is not registered and usable by the statements that follow.
-        if (!attach && !result->isRemote() && result->getName() != "backup")
+        /// A backstop for the local disks whose directory the definition does not name outright -
+        /// a `default` local disk answers with the path of the server, an `encrypted` disk with the
+        /// path of the disk it wraps. `DiskBackup` serves the files of a backup rather than a
+        /// directory, and is exempt by its type: its name, which the query chooses, says nothing.
+        /// Checked here rather than after `getOrCreateDisk` returns, so that a rejected disk is not
+        /// registered and usable by the statements that follow.
+        if (!attach && !result->isRemote() && !typeid_cast<const DiskBackup *>(result.get()))
             checkCustomDiskPathIsAllowed(result->getPath(), context);
 
         return result;
