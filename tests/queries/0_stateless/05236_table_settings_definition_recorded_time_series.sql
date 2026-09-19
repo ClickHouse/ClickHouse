@@ -1,11 +1,12 @@
 -- Tags: no-replicated-database
--- Tag no-replicated-database: plain `DETACH TABLE` is not allowed there, only `DETACH TABLE PERMANENTLY`.
+-- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred
+-- DROPs are rejected.
 --
 -- `TimeSeries` records what its definition states in the settings object, so `system.table_settings` reads the
 -- source from there rather than from the stored `CREATE` query. The settings are loaded from a normalised copy of
 -- the definition, and the names the definition states are recorded afterwards; the two have to agree on `CREATE`,
 -- after `ALTER ... MODIFY SETTING` and `RESET SETTING`, which write the clause back in a canonical form, and after
--- the table is loaded again from what it stored. Values are left out: some depend on the build.
+-- the table is loaded again from what it stored. Only the sources are checked, not the values.
 
 SET allow_experimental_time_series_table = 1;
 

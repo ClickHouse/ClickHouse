@@ -16,13 +16,12 @@ struct StorageID;
 /// Helpers for `IStorage::getTableSettings` overrides. Free functions, since none of them needs the storage
 /// beyond its id.
 ///
-/// An override starts from the enumeration of a settings struct - every setting `Default`, `Other` once
-/// assigned, or the source a `SettingsWithRecordedOrigin` recorded as it loaded a config section,
-/// `compatibility` or a named collection - and corrects each row to what the engine knows. Every engine applies
-/// the corrections in one order: the definition, then whatever the engine assigns itself, so that each source
-/// overrides the earlier ones as it does when the table is built. `set*` modify in place;
-/// `withOriginFromDefinition` returns, since it is usually the last step and most overrides are the single line
-/// `return withOriginFromDefinition(settings->enumerateSettings(), getStorageID(), context);`.
+/// Most overrides need none of these: an engine's settings object records every source it can name, the table's
+/// own `SETTINGS` clause included, so its override is the enumeration. These are for what the settings object
+/// cannot hold: `withOriginFromDefinition` and `getSettingsStatedInDefinition` read the stored `CREATE` query for
+/// an engine with no settings object of its own (`Join`, `Set`, the `IStorage` base) or one rebuilt on every call
+/// (`ObjectStorageQueue`); the others correct rows for values the engine keeps outside it. `set*` modify in
+/// place; `withOriginFromDefinition` returns.
 
 /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
 /// the two are the same. For an engine that accepts legacy spellings its loader rewrites -

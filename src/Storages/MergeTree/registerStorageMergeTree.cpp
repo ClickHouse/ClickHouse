@@ -958,9 +958,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
         /// still be subject to these checks.
+        /// A restart and a short `ATTACH` load the definition already stored and do not write it again, so what
+        /// `loadFromQuery` adds to it stays in memory rather than becoming the definition's.
+        const bool stores_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, stores_definition);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A

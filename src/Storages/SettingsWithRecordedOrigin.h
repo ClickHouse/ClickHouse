@@ -10,10 +10,11 @@
 namespace DB
 {
 
-/// A settings `Impl` that remembers which source assigned each setting, for the sources a reader cannot
-/// recover afterwards: a server config section and `compatibility`, which assign every key they name and so
-/// set the changed bit even where the value equals the default, and a named collection, whose values look
-/// like any other. Enumeration reports the recorded source for a setting that is still changed.
+/// A settings `Impl` that remembers which source assigned each setting: a server config section and
+/// `compatibility`, which assign every key they name and so set the changed bit even where the value equals the
+/// default, a named collection, whose values look like any other, and the table's own `SETTINGS` clause, which
+/// each engine's loader records as it applies it. Enumeration reports the recorded source for a setting that is
+/// still changed, so a table's report comes from its settings object alone.
 ///
 /// The origin lives in the settings object, so it travels with every copy of it - from the server's baseline
 /// into each table, from a database into each table it makes. Every assignment records one - `setWithOrigin` the
@@ -34,8 +35,8 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
         setOrigin(settingIndex(name), origin);
     }
 
-    /// What `applyChanges` and `loadFromQuery` reach through `BaseSettings`, so the table's own clause records
-    /// no source.
+    /// What `BaseSettings::applyChanges` reaches, recording no source. A loader that applies a source records it
+    /// through `setWithOrigin` or `applyChangesWithOrigin` instead.
     void set(std::string_view name, const Field & value) override
     {
         setWithOrigin(name, value, SettingOrigin::Default);

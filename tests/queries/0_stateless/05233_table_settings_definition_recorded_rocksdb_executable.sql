@@ -18,18 +18,21 @@ SETTINGS bulk_insert_block_size = 1000;
 SELECT '-- EmbeddedRocksDB: CREATE';
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'rocksdb_definition'
+    AND name IN ('bulk_insert_block_size', 'optimize_for_bulk_insert')
 ORDER BY name;
 
 SELECT '-- EmbeddedRocksDB: MODIFY SETTING';
 ALTER TABLE rocksdb_definition MODIFY SETTING optimize_for_bulk_insert = 0;
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'rocksdb_definition'
+    AND name IN ('bulk_insert_block_size', 'optimize_for_bulk_insert')
 ORDER BY name;
 
 SELECT '-- EmbeddedRocksDB: RESET SETTING';
 ALTER TABLE rocksdb_definition RESET SETTING bulk_insert_block_size;
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'rocksdb_definition'
+    AND name IN ('bulk_insert_block_size', 'optimize_for_bulk_insert')
 ORDER BY name;
 
 SELECT '-- EmbeddedRocksDB: loaded again from what it stored';
@@ -37,6 +40,7 @@ DETACH TABLE rocksdb_definition;
 ATTACH TABLE rocksdb_definition;
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'rocksdb_definition'
+    AND name IN ('bulk_insert_block_size', 'optimize_for_bulk_insert')
 ORDER BY name;
 
 CREATE TABLE executable_definition (x UInt64) ENGINE = Executable('nonexistent_05233.sh', 'TSV')

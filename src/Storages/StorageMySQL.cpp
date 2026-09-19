@@ -620,8 +620,11 @@ void registerStorageMySQL(StorageFactory & factory)
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
         /// the same way the MySQL database engine does. An explicit per-engine SETTINGS value, loaded
-        /// right after, takes precedence over it.
-        mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
+        /// right after, takes precedence over it. Not for a short `ATTACH`, which loads the definition
+        /// already stored and does not write it again: what the definition froze is in it, and a value
+        /// bridged now would be the session's, lost at the next restart.
+        if (!args.query.attach_short_syntax)
+            mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
 
@@ -961,8 +964,8 @@ SettingDescriptions StorageMySQL::getTableSettings(ContextPtr /* query_context *
 {
     /// The settings object (a `SettingsWithRecordedOrigin`) records what a named collection supplied, as
     /// `loadSettingsFromNamedCollection` loads it, and then the table's own `SETTINGS` clause, as
-    /// `MySQLSettings::loadFromQuery` applies it over the collection. A table a `MySQL` database makes records
-    /// neither for the database's clause, which it reports as `other`.
+    /// `MySQLSettings::loadFromQuery` applies it over the collection. A `MySQL` database's own clause is not
+    /// recorded, so the tables it makes report those values as `other`.
     return mysql_settings->enumerateSettings();
 }
 

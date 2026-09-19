@@ -268,8 +268,8 @@ public:
     /// fixed defaults. An engine with settings of its own overrides this to report every one of them with its
     /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
     /// It is a method on the storage rather than a static enumeration of the settings type because some values
-    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. Overrides build their answer
-    /// with the helpers in `Storages/TableSettingsHelpers.h`.
+    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. An override with a settings
+    /// object enumerates it, and reaches for `Storages/TableSettingsHelpers.h` only for what that object cannot hold.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.

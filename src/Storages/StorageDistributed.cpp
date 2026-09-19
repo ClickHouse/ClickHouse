@@ -2872,7 +2872,7 @@ SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_con
     /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the
     /// ones the definition does not state. Copying a field of the same type copies its changed bit as well,
     /// so a `Milliseconds` one keeps a value that is not its default while still reading as unchanged.
-    /// Whatever set that value, it was not the default. From the settings object alone, like the rest.
+    /// Whatever set that value, it was not the default.
     for (auto & setting : settings)
         if (setting.origin == SettingOrigin::Default && setting.value != setting.default_value)
             setting.origin = SettingOrigin::Other;

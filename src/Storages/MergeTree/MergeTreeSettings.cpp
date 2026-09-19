@@ -2584,7 +2584,8 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public SettingsWithRecordedOrigin<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+    void loadFromQuery(
+        ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -2622,7 +2623,8 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition)
 {
     if (storage_def.settings)
     {
@@ -2682,16 +2684,18 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
     SettingsChanges & changes = storage_def.settings->changes;
 
-    /// Written into the definition, so from here on they are the definition's, as they are when the table is
-    /// loaded again from it: assigned again, so that they count as changed then as well as now.
+    /// Written into the definition. Where that definition is stored, the setting is the definition's from now on, as
+    /// it is when the table is loaded again - so recorded, and assigned again to count as changed as it will then.
+    /// Where the table is loaded from what is already stored, the addition stays in memory and records nothing.
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
                   [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
     {                                                                                                         \
-        const Field value = (*this)[MergeTreeSetting::NAME].value;                                           \
+        const Field value = (*this)[MergeTreeSetting::NAME].value;                                            \
         changes.push_back(SettingChange{#NAME, value});                                                       \
-        setWithOrigin(#NAME, value, SettingOrigin::Definition);                                               \
+        if (stores_definition)                                                                                \
+            setWithOrigin(#NAME, value, SettingOrigin::Definition);                                           \
     }
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
@@ -3114,9 +3118,10 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stores_definition);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
