@@ -196,6 +196,9 @@ private:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
+
+    /// The column of the part that answers `name_in_part`, or nothing when the part does not hold it.
+    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_part, bool subcolumn_requested) const;
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
