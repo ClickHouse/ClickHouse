@@ -60,8 +60,15 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     name = r.getString("name");
 
     /// `query` is the parser-owned `ASTProjectionSelectQuery`; `ProjectionDescription::getProjectionFromAST`
-    /// does `query->as<ASTProjectionSelectQuery &>()`, so reject any other node type here.
-    auto query_child = r.readChildOfType<ASTProjectionSelectQuery>("query");
+    /// does `query->as<ASTProjectionSelectQuery &>()`, so reject any other node type here. It is also an
+    /// expression slot: `fillProjectionDescriptionByQuery` always analyzes the restored query with the
+    /// legacy `InterpreterSelectQuery`, whose window-expression collector dereferences
+    /// `ASTFunction::arguments` unconditionally — so screen it the same way
+    /// `ASTConstraintDeclaration::readJSON` screens its `expr` slot.
+    auto query_child = r.readExpressionChild("query");
+    if (query_child && !query_child->as<ASTProjectionSelectQuery>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected node type for key 'query' during AST JSON deserialization");
     if (query_child)
         set(query, query_child);
 
