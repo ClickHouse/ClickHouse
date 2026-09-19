@@ -2006,12 +2006,7 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
-                "./.github/workflows/pull_request.yml",
                 "./ci/jobs/parser_memory_check.py",
-                "./ci/jobs/scripts/workflow_hooks/store_data.py",
-                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
@@ -2025,13 +2020,8 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
-                "./.github/workflows/pull_request.yml",
-                "./ci/jobs/parser_memory_check.py",
-                "./ci/jobs/scripts/workflow_hooks/store_data.py",
                 "./ci/jobs/storage_memory_check.py",
-                "./ci/workflows/pull_request.py",
+                "./ci/jobs/parser_memory_check.py",
                 "./utils/storage-memory-profiler/",
             ],
         ),
