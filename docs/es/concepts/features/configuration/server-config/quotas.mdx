@@ -44,6 +44,7 @@ Veamos la sección del archivo &#39;users.xml&#39; que define las QUOTAS.
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 De forma predeterminada, la QUOTA hace un seguimiento del consumo de recursos por hora, sin limitar su uso.
@@ -115,6 +116,18 @@ Estas son las cantidades que se pueden restringir:
 
 Si se supera el límite durante al menos un intervalo de tiempo, se lanza una excepción con un mensaje que indica qué restricción se ha superado, para qué intervalo y cuándo comienza el nuevo intervalo (cuándo se pueden volver a enviar consultas).
 
+<Note>
+  **Consultas excluidas de la contabilización de QUOTAS**
+
+  Para permitir inspeccionar la configuración y el uso de las QUOTAS incluso cuando una QUOTA se ha agotado, las consultas `SELECT` que leen exclusivamente de una de las siguientes tablas del sistema no se cargan a las QUOTAS ni están sujetas a límites de complejidad de las consultas:
+
+  * `system.quotas`
+  * `system.quota_limits`
+  * `system.quota_usage`
+  * `system.quotas_usage`
+  * `system.one`
+</Note>
+
 Las QUOTAS pueden usar la función de &quot;clave de QUOTA&quot; para hacer un seguimiento de los recursos de varias claves de forma independiente. Este es un ejemplo de ello:
 
 ```xml
@@ -141,6 +154,7 @@ Las QUOTAS pueden usar la función de &quot;clave de QUOTA&quot; para hacer un s
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 También puede asociar las QUOTAS al hash de la consulta normalizada, de modo que cada patrón de consulta distinto tenga su propio bucket de QUOTA independiente. En la configuración XML, esto se escribe como `<keyed_by_normalized_query_hash />`:

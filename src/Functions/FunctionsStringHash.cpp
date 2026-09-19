@@ -804,7 +804,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
 It is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/sql-reference/functions/bit-functions#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax ngramSimHashCaseInsensitive_syntax = "ngramSimHashCaseInsensitive(string[, ngramsize])";

@@ -70,7 +70,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 | [CustomSeparatedIgnoreSpacesWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpacesWithNamesAndTypes) | ✔       | ✗       |
 | [CustomSeparatedWithNames](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNames)                                         | ✔       | ✔       |
 | [CustomSeparatedWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)                         | ✔       | ✔       |
-| [HiveText](/ar/reference/formats/HiveText)                                                                                         | ✔       | ✗       |
+| [HiveText](/ar/reference/formats/HiveText)                                                                                         | ✔       | ✔       |
 | [SQLInsert](/ar/reference/formats/SQLInsert)                                                                                       | ✗       | ✔       |
 | [Values](/ar/reference/formats/Values)                                                                                             | ✔       | ✔       |
 | [Vertical](/ar/reference/formats/Vertical)                                                                                         | ✗       | ✔       |
@@ -171,15 +171,15 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 أما إذا كنت تستخدم العميل في [وضع الدفعات](/ar/concepts/features/interfaces/client#batch-mode)، فيجب أن يكون مسار المخطط نسبيًا لأسباب أمنية.
 
 إذا كنت تُدخل البيانات أو تُخرجها عبر [واجهة HTTP](/ar/concepts/features/interfaces/http)، فإن اسم الملف المحدد في مخطط التنسيق
-يجب أن يكون موجودًا في الدليل المحدد في [format&#95;schema&#95;path](/ar/reference/settings/server-settings/settings#format_schema_path)
+يجب أن يكون موجودًا في الدليل المحدد في [format&#95;schema&#95;path](/ar/reference/settings/server-settings/settings/format#format_schema_path)
 ضمن إعدادات الخادم.
 
 <div id="skippingerrors">
   ## تخطي الأخطاء
 </div>
 
-يمكن لبعض التنسيقات مثل `CSV` و`TabSeparated` و`TSKV` و`JSONEachRow` و`Template` و`CustomSeparated` و`Protobuf` تخطي صف تالف عند حدوث خطأ في التحليل، ومواصلة التحليل من بداية الصف التالي. راجع إعدادَي [input&#95;format&#95;allow&#95;errors&#95;num](/ar/reference/settings/formats#input_format_allow_errors_num) و
-[input&#95;format&#95;allow&#95;errors&#95;ratio](/ar/reference/settings/formats#input_format_allow_errors_ratio).
+يمكن لبعض التنسيقات مثل `CSV` و`TabSeparated` و`TSKV` و`JSONEachRow` و`Template` و`CustomSeparated` و`Protobuf` تخطي صف تالف عند حدوث خطأ في التحليل، ومواصلة التحليل من بداية الصف التالي. راجع إعدادَي [input&#95;format&#95;allow&#95;errors&#95;num](/ar/reference/settings/formats/input-format#input_format_allow_errors_num) و
+[input&#95;format&#95;allow&#95;errors&#95;ratio](/ar/reference/settings/formats/input-format#input_format_allow_errors_ratio).
 القيود:
 
 * عند حدوث خطأ في التحليل، يتخطى `JSONEachRow` جميع البيانات حتى نهاية السطر (أو EOF)، لذا يجب أن تكون الصفوف مفصولة بـ `\n` لكي يُحتسب عدد الأخطاء بشكل صحيح.

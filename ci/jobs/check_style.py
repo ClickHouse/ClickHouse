@@ -1,14 +1,21 @@
 import argparse
+import json
 import math
 import multiprocessing
 import os
 import re
+import shlex
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
+from ci.jobs.scripts.check_style.clickhouse_spelling import (
+    CLICKHOUSE_ANY_SPELLING,
+    CLICKHOUSE_CORRECT_SPELLINGS,
+    clickhouse_misspellings,
+)
 
 NPROC = multiprocessing.cpu_count()
 
@@ -77,7 +84,7 @@ def _embedded_doc_lines(lines):
             idx = line.find('R"DOCS_MD(')
             if idx != -1:
                 exempt.add(i)
-                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD('):]:
+                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD(') :]:
                     in_raw = True
         else:
             exempt.add(i)
@@ -206,13 +213,23 @@ def check_functional_test_cases(files):
             if "0_stateless" in test_case:
                 name = os.path.basename(test_case)
                 has_streaming_queries_in_name = "_streaming_queries_" in name
-                has_streaming_in_content = re.search(r"enable_streaming_queries\s*=?\s*(0|1|true|false)\b", file_content) or "streaming.lib" in file_content
+                has_streaming_in_content = (
+                    re.search(
+                        r"enable_streaming_queries\s*=?\s*(0|1|true|false)\b",
+                        file_content,
+                    )
+                    or "streaming.lib" in file_content
+                )
 
                 if has_streaming_in_content and not has_streaming_queries_in_name:
-                    errors.append(f"{test_case} uses enable_streaming_queries or streaming.lib but has no _streaming_queries_ in its name")
+                    errors.append(
+                        f"{test_case} uses enable_streaming_queries or streaming.lib but has no _streaming_queries_ in its name"
+                    )
 
                 if has_streaming_queries_in_name and not has_streaming_in_content:
-                    errors.append(f"{test_case} has _streaming_queries_ in its name but uses neither enable_streaming_queries nor streaming.lib")
+                    errors.append(
+                        f"{test_case} has _streaming_queries_ in its name but uses neither enable_streaming_queries nor streaming.lib"
+                    )
 
         except Exception as e:
             errors.append(f"Error checking {test_case}: {e}")
@@ -222,6 +239,345 @@ def check_functional_test_cases(files):
             errors.append(f"test case {test_case} includes 'fail' in its name")
 
     return " ".join(errors)
+
+
+# A `SELECT` star projection can include optional `DISTINCT` / `ALL` and a table alias.
+# It still materializes the server-side path column in the shell.
+STAR_PROJECTION_RE = (
+    r"\bselect\s+(?:(?:distinct|all)\s+)?"
+    r"(?:[^\"`|;]*?,\s*)?(?:[A-Za-z_]\w*\.)?\*"
+)
+
+# A query that pulls a server-side filesystem path out of a system table into the shell.
+# Single quotes are allowed inside the window so that a derived expression such as
+# `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
+# semicolons still bound the match to one query.
+SYSTEM_PATH_TABLE_RE = (
+    r"`?(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|"
+    r"distribution_queue|remote_data_paths|filesystem_cache_settings)`?(?=[\s;])"
+)
+FETCHES_SERVER_PATH_RE = re.compile(
+    r"(?i)(?:[`\"]?\b(?:path|data_path|data_paths|metadata_path|cache_paths|local_path)\b[`\"]?[^\"`|;]{0,300}?"
+    rf"\bfrom\s+system\.{SYSTEM_PATH_TABLE_RE}"
+    rf"|{STAR_PROJECTION_RE}[^\"`|;]{{0,300}}?\bfrom\s+system\.{SYSTEM_PATH_TABLE_RE})"
+)
+# The server data root fetched as `SELECT value` or a star projection from
+# `system.server_settings` where `name = 'path'` or `name IN ('path')`. The `value` token (or `*`) is required
+# so that queries that merely inspect the setting without materializing the path (e.g.
+# `SELECT count()`) are not classified as a path fetch.
+FETCHES_SERVER_ROOT_RE = re.compile(
+    rf"(?i)(?:[`\"]?\bvalue\b[`\"]?|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.`?server_settings`?(?=[\s;])"
+    r"[^\"`|;]{0,100}?(?:`?name`?\s*=\s*'path'|'path'\s*=\s*`?name`?|`?name`?\s+in\s*\([^)]*'path'[^)]*\))"
+)
+# Wrapper commands that can precede the actual mutation verb without changing what it does,
+# their options and numeric arguments (`sudo -n rm ...`, `timeout 60 rm ...`), options that
+# consume a following value (`sudo -u nobody rm ...`, `env -u HOME rm ...`,
+# `timeout -s KILL 60 rm ...`), and leading variable assignments (`FOO=1 rm ...`). All of
+# these must be skipped over, otherwise the mutation verb is not recognized and the check is
+# trivially bypassed. An option's value may not start with `-`, and the regex engine
+# backtracks when the value would swallow the mutation verb itself (`sudo -n rm ...`).
+MUTATION_CMD_WRAPPER = (
+    r"(?:sudo|command|builtin|exec|env|time|nice|ionice|nohup|stdbuf|timeout|xargs)"
+)
+MUTATION_CMD_WRAPPER_ARG = r"(?:-{1,2}[\w-]+(?:=[^\s;|&<>`]+|\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
+MUTATION_CMD_ASSIGNMENT_VALUE = r"(?:'[^']*'|\"(?:\\.|[^\"\\])*\"|[^\s;|&<>`]+)"
+MUTATION_CMD_PREFIX = (
+    rf"(?:[A-Za-z_]\w*={MUTATION_CMD_ASSIGNMENT_VALUE}\s+"
+    rf"|{MUTATION_CMD_WRAPPER}\s+(?:{MUTATION_CMD_WRAPPER_ARG}\s+)*)*"
+)
+FILE_MUTATION_VERBS = r"rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred|tee"
+# Shell commands that create, modify, or delete files, at the start of a line or after
+# anything that can precede a command: a pipe / & / ; / subshell / group / backtick /
+# `case` branch delimiter, or a shell keyword (`if true; then rm ...; fi` compressed onto
+# one line must not slip through), optionally behind benign wrappers and assignments.
+FILE_MUTATION_CMD_RE = re.compile(
+    r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
+    + MUTATION_CMD_PREFIX
+    + rf"(?:{FILE_MUTATION_VERBS})\s"
+)
+SED_IN_PLACE_RE = re.compile(
+    r"\bsed\s+(?:(?:--?[\w-]+)(?:=[^\s]+)?\s+)*(?:-\w*i\w*|--in-place(?:=[^\s]+)?)(?:\s|$)"
+)
+# Redirection into a path built from a shell variable, except well-known test scratch areas.
+REDIRECT_TO_VAR_RE = re.compile(
+    r"(?<!-)>(?:>|\|)?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
+    r"|CLICKHOUSE_USER_FILES|CLICKHOUSE_SCHEMA_FILES|CLICKHOUSE_LOG|\()"
+)
+# Redirection into a path built from command substitution. A `$(mktemp)` scratch path is
+# fine, but any other substitution is suspicious once the file fetches a server path. This
+# includes helpers that conceal the system-table query from the redirection line.
+REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>(?:>|\|)?\s*\"?(?:\$\(|`)")
+# Exempt only a redirect whose complete target is the default `mktemp` scratch path.
+# Arguments can select a server-owned directory, so they must be treated as suspicious.
+REDIRECT_TO_MKTEMP_RE = re.compile(
+    r"(?<!-)>(?:>|\|)?\s*\"?\$\(\s*mktemp\s*\)\"?\s*(?:$|[;|&])"
+)
+# An `sh -c` / `bash -c` / `eval` payload is opaque: a quote in front of a mutation verb hides
+# it from the command-position anchor of the patterns above.
+SHELL_COMMAND_STRING_RE = re.compile(
+    r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
+    r"(?P<executor>(?:sh|bash)\s+-c\b)|(?P<eval>\beval\s+)"
+)
+# ... except when the payload is provably a plain call of a shell function of the test itself:
+# a literal command word that is not a mutation verb, followed only by plain arguments and
+# simple variable expansions, with no way to reach a second command (no separator, redirection,
+# or command substitution). Such a payload hides nothing - the function body lives in the same
+# file, and every one of its lines is scanned by this check on its own - so it must not arm the
+# check. This is the `bash -c insert_thread &` idiom that stress tests use to spawn background
+# threads. Only the payload is exempted: the rest of the line is still matched by every pattern
+# above, so a mutation or a redirection that follows it is still reported.
+SHELL_COMMAND_STRING_PLAIN_CALL_RE = re.compile(
+    rf"""(?x)
+    (?:sh|bash)\s+-c\s+
+    (?P<quote>["']?)
+    (?!(?:{FILE_MUTATION_VERBS})\b)
+    [A-Za-z_]\w*                                 # the function or command to call
+    (?:\s+(?:\$\{{?\w+\}}?|[\w@%.,:=+/-]+))*     # plain arguments and simple variables
+    (?P=quote)
+    """
+)
+CLICKHOUSE_DISKS_WRITE_RE = re.compile(
+    r"""(?x)
+    \bclickhouse(?:-|\s+)disks\b
+    [^|;&]*?
+    (?:--query|(?<![\w-])-q)\s*(?:=\s*)?[\"']?\s*
+    (?:write|w|remove|rm|delete|copy|cp|move|mv|mkdir|link|ln|touch|create|sed|packed-io|packed_io)\b
+    """
+)
+
+# Do not add new entries: tests that modify the server's data on disk must be integration
+# tests instead. The only acceptable additions are false positives - tests that only touch
+# their own scratch files - and they must say so in a comment.
+SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
+    "04326_disks_app_read_checksums.sh",
+}
+
+
+def strip_shell_comment(line):
+    """
+    Cut a shell line at the first `#` that actually starts a comment: unquoted, not
+    backslash-escaped, and at the start of a word. A naive `line.split("#")[0]` would also
+    chop quoted payloads such as `echo '# broken' > "$path/data.bin"`, truncating the line
+    before the redirection and bypassing the check.
+    """
+    quote = None
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+        elif quote == '"':
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                quote = None
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;|&(){}"):
+            return line[:i]
+        i += 1
+    return line
+
+
+# `clickhouse-local` is not the server: it runs against its own `--path`, so a filesystem
+# path it reports from a system table points into the test's own scratch directory, and
+# removing or rewriting a file there is not a manipulation of the server's data.
+CLICKHOUSE_LOCAL_RE = re.compile(r"\$\{?CLICKHOUSE_LOCAL\}?|\bclickhouse(?:-|\s+)local\b")
+
+
+def command_end(text, quote=None):
+    """
+    Where the command that `text` starts inside ends, as `(index, quote)`.
+
+    `index` is the position of the first separator that is not inside a quoted string, or
+    `None` when the command continues past the end of `text`; `quote` is then the quote
+    character left open, so the scan can resume on the following line.
+    """
+    i = 0
+    continued = False
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+        elif quote == '"':
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                quote = None
+        elif c == "\\":
+            continued = i == len(text) - 1
+            i += 1
+        elif c in "'\"":
+            quote = c
+        elif c in ";|&)`":
+            return i, None
+        i += 1
+    if quote is None and not continued:
+        # A command ends with its line unless it is continued by a trailing backslash.
+        return len(text), None
+    return None, quote
+
+
+def strip_clickhouse_local(code, pending=None):
+    """
+    Remove every `clickhouse-local` invocation from `code`, as `(remainder, pending)`.
+
+    Only the invocation itself is removed, up to the end of its command - the text around it
+    stays, so a server-side query that precedes or follows it on the same line is still seen.
+    `pending` carries an invocation whose command continues on the following lines: `None`
+    when there is none, the quote character left open by its query, or an empty string when
+    it continues unquoted.
+    """
+    kept = []
+    while True:
+        if pending is not None:
+            end, quote = command_end(code, pending or None)
+            if end is None:
+                return " ".join(kept), quote or ""
+            pending = None
+            code = code[end:]
+
+        match = CLICKHOUSE_LOCAL_RE.search(code)
+        if match is None:
+            kept.append(code)
+            return " ".join(kept), None
+
+        kept.append(code[: match.start()])
+        code = code[match.end() :]
+        pending = ""
+
+
+def executable_shell_content(lines):
+    """
+    Return the shell text that can execute a system-table query.
+
+    `echo` and `printf` payloads are output, not commands, and quoted heredoc bodies are
+    similarly inert. Omitting them avoids arming the file-level check on documentation or
+    generated SQL text while retaining every executable command and unquoted heredoc.
+    A `clickhouse-local` invocation is omitted as well: it queries its own `--path`, so the
+    paths it reports are the test's own, not the server's.
+    """
+    result = []
+    quoted_heredoc_end = None
+    clickhouse_local_pending = None
+    quoted_heredoc_re = re.compile(r"<<-?\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1")
+    output_command_re = re.compile(r"^\s*(?:echo|printf)\b")
+    command_substitution_re = re.compile(r"`([^`]*)`|\$\(([^()]*)\)")
+
+    for line in lines:
+        if quoted_heredoc_end is not None:
+            if line.strip() == quoted_heredoc_end:
+                quoted_heredoc_end = None
+            continue
+
+        code = strip_shell_comment(line)
+        heredoc_match = quoted_heredoc_re.search(code)
+        if heredoc_match:
+            quoted_heredoc_end = heredoc_match.group(2)
+
+        # Drop every `clickhouse-local` invocation, including one whose query started on an
+        # earlier line, but keep the text around it: a server-side query before or after the
+        # invocation - even on the line where its multiline query closes - still counts.
+        code, clickhouse_local_pending = strip_clickhouse_local(code, clickhouse_local_pending)
+
+        if output_command_re.match(code):
+            # An output command can still execute a query in command substitution, e.g.
+            # `echo > `clickhouse-client -q "SELECT path ..."``. Keep that executable
+            # fragment while discarding the ordinary payload text.
+            # An empty substitution (``` in a `grep -qF` pattern, `$()`) matches with the
+            # captured group empty or `None`; contribute an empty string, never `None`,
+            # otherwise the final `join` raises.
+            result.extend(
+                match.group(1) or match.group(2) or ""
+                for match in command_substitution_re.finditer(code)
+            )
+            continue
+        result.append(code)
+
+    return " ".join(result)
+
+
+def has_opaque_shell_command_string(code):
+    """
+    Whether the line runs a shell command string whose payload could hide a file mutation.
+    Every `sh -c` / `bash -c` / `eval` on the line counts, except a `-c` payload that just calls
+    a shell function of the test itself - see `SHELL_COMMAND_STRING_PLAIN_CALL_RE`. Checking the
+    occurrences one by one, rather than the line as a whole, keeps an exempt call from covering
+    for a second, opaque executor on the same line.
+    """
+    for match in SHELL_COMMAND_STRING_RE.finditer(code):
+        if match.group("eval"):
+            return True
+        if not SHELL_COMMAND_STRING_PLAIN_CALL_RE.match(code, match.start("executor")):
+            return True
+    return False
+
+
+def check_no_server_data_manipulation(files):
+    """
+    Stateless tests must not modify the server's on-disk data: part directories, detached
+    parts, table metadata, or anything else under the server path. The stateless suite runs
+    against arbitrary server configurations - object storage, shared MergeTree, encrypted
+    disks - where the local part layout either does not exist or does not mean what the
+    test assumes, and modifying it corrupts shared state (on a remote disk, a plain `cp` of
+    a part directory duplicates metadata files without incrementing blob reference counts,
+    and the later removal deletes blobs still referenced by the live part - see
+    https://github.com/ClickHouse/ClickHouse/pull/113978). Such scenarios belong in
+    integration tests, where the environment is fully controlled.
+
+    Heuristic: the test fetches a server-side filesystem path from a system table and also
+    runs file-modifying shell commands.
+    """
+
+    errors = []
+    for test_case in files:
+        if "0_stateless" not in test_case or not test_case.endswith(".sh"):
+            continue
+        if os.path.basename(test_case) in SERVER_DATA_MANIPULATION_EXCLUSIONS:
+            continue
+        try:
+            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
+                file_content = f.read()
+        except Exception as e:
+            errors.append(f"Error checking {test_case}: {e}")
+            continue
+
+        # Use the same comment handling as the mutation scan below. Otherwise a commented
+        # query could arm the file-level check but could not itself produce a violation.
+        joined_content = executable_shell_content(file_content.splitlines())
+        if not FETCHES_SERVER_PATH_RE.search(
+            joined_content
+        ) and not FETCHES_SERVER_ROOT_RE.search(joined_content):
+            continue
+
+        for line_number, line in enumerate(file_content.splitlines(), 1):
+            code = strip_shell_comment(line)
+            if (
+                FILE_MUTATION_CMD_RE.search(code)
+                or SED_IN_PLACE_RE.search(code)
+                or REDIRECT_TO_VAR_RE.search(code)
+                or (
+                    REDIRECT_TO_COMMAND_SUBSTITUTION_RE.search(code)
+                    and not REDIRECT_TO_MKTEMP_RE.search(code)
+                )
+                or has_opaque_shell_command_string(code)
+                or CLICKHOUSE_DISKS_WRITE_RE.search(code)
+            ):
+                errors.append(
+                    f"{test_case}:{line_number} fetches a server-side filesystem path from a system table "
+                    f"and runs file-modifying commands: `{code.strip()}`. Modifying the server's data "
+                    f"on disk is not allowed in stateless tests (they run against arbitrary server "
+                    f"configurations: object storage, shared MergeTree, encrypted disks). "
+                    f"Write an integration test instead."
+                )
+                break
+
+    return "\n".join(errors)
 
 
 def check_gaps_in_tests_numbers(file_paths, gap_threshold=100):
@@ -411,9 +767,7 @@ def _is_in_destructor(lines, catch_line_idx):
 def _is_in_main_or_fuzzer(lines, catch_line_idx):
     """Check if the catch is inside ``main`` or ``LLVMFuzzerTestOneInput``."""
     sig = _find_enclosing_function_lines(lines, catch_line_idx)
-    return any(
-        re.search(r"\b(main|LLVMFuzzerTestOneInput)\b", l) for l in sig
-    )
+    return any(re.search(r"\b(main|LLVMFuzzerTestOneInput)\b", l) for l in sig)
 
 
 def _get_catch_block_lines(lines, catch_line_idx):
@@ -588,6 +942,226 @@ def check_compose_images(files) -> str:
     return "\n".join(violations)
 
 
+# Release notes are a record of what was published and are not edited afterwards. Matches the
+# versioned files inside any `changelogs/` or `private-changelogs/` directory
+# (`docs/changelogs/v25.9.2.1-stable.md`, `docs/resources/changelogs/cloud/release-notes/25_10.mdx`)
+# and leaves the landing and status pages that live next to them enforced.
+CHANGELOG_RECORD_RE = re.compile(r"(^|/)(?:private-)?changelogs/(.+/)?v?[0-9][^/]*$")
+
+CLICKHOUSE_SPELLING_IGNORE_FILE = (
+    "ci/jobs/scripts/check_style/clickhouse_spelling_ignore.txt"
+)
+
+
+def _clickhouse_spelling_ignore_list():
+    """Parse the exception list. A line with a path alone exempts the whole file; a path followed
+    by a literal exempts only the lines of that file containing that literal. Returns
+    {path: set of literals}, where `None` in the set means the whole file."""
+    ignore_list = {}
+    with open(CLICKHOUSE_SPELLING_IGNORE_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip() or line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split(maxsplit=1)
+            path = parts[0]
+            literal = parts[1].strip() if len(parts) > 1 else None
+            ignore_list.setdefault(path, set()).add(literal)
+    return ignore_list
+
+
+def _clickhouse_spelling_generated_locale_prefixes():
+    """Path prefixes of the generated documentation translations. The English pages are the
+    source, so a misspelling in a locale directory is fixed by fixing the English page and
+    letting the translation workflow regenerate it (see docs/README.md)."""
+    config = json.loads(Path("docs/gt.config.json").read_text(encoding="utf-8"))
+    prefixes = []
+    for locale in config["locales"]:
+        if locale == config["defaultLocale"]:
+            continue
+        prefixes.append(f"docs/{locale}/")
+        prefixes.append(f"docs/snippets/{locale}/")
+    return prefixes
+
+
+def _autogenerated_line_numbers(file_path):
+    """1-based numbers of the lines between `AUTOGENERATED_START` and `AUTOGENERATED_END`
+    markers, inclusive."""
+    generated = set()
+    inside = False
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        for i, line in enumerate(f, 1):
+            if "AUTOGENERATED_START" in line:
+                inside = True
+            if inside:
+                generated.add(i)
+            if "AUTOGENERATED_END" in line:
+                inside = False
+    return generated
+
+
+def check_clickhouse_spelling():
+    """The product name is written `ClickHouse` - one word, capital `C`, capital `H`. The
+    checker also accepts the conventional token spellings `clickhouse` and `CLICKHOUSE`;
+    `Clickhouse`, `clickHouse`,
+    `click_house`, `CLICK_HOUSE`, `click-house` and `Click House` are misspellings.
+
+    Every file tracked by git is checked, and so are the file names themselves, except:
+    * `contrib` - third-party sources;
+    * the generated locale directories of the documentation - a machine translation of the
+      English pages, which are checked instead;
+    * release notes - a record of what was published;
+    * `docs/_specs` - API specifications pinned from their generator;
+    * regions between `AUTOGENERATED_START` and `AUTOGENERATED_END` markers - their source of
+      truth (a `FunctionDocumentation` string, for instance) is checked instead;
+    * URLs, and the exceptions listed in `clickhouse_spelling_ignore.txt`.
+    """
+    ignore_list = _clickhouse_spelling_ignore_list()
+    excluded_prefixes = _clickhouse_spelling_generated_locale_prefixes() + [
+        # Pinned copies of API specifications, refreshed from their generator by
+        # ci/jobs/cloud_api_docs_nightly.py.
+        "docs/_specs/",
+        # This check also runs on the private repository, on the synced tree, where this
+        # directory holds nothing but release records, some of them named by release codename
+        # without a version prefix, so CHANGELOG_RECORD_RE does not cover them.
+        "docs/private-changelogs/",
+    ]
+
+    def is_excluded(path):
+        return any(path.startswith(p) for p in excluded_prefixes) or bool(
+            CHANGELOG_RECORD_RE.search(path)
+        )
+
+    def is_exempt(path, text):
+        literals = ignore_list.get(path)
+        if literals is None:
+            return False
+        return None in literals or any(l in text for l in literals if l is not None)
+
+    # A superset of what is reported below - the same spellings, minus the correct ones - used
+    # only to find the candidate lines quickly, without reading every file in Python.
+    prefilter = "(?!{})(?:{})".format(
+        "|".join(CLICKHOUSE_CORRECT_SPELLINGS), CLICKHOUSE_ANY_SPELLING
+    )
+    # `-I` skips the binary files, `-z` separates the file name and the line number with a NUL
+    # so that a path holding a colon cannot be mistaken for one.
+    exit_code, out, err = Shell.get_res_stdout_stderr(
+        f"git grep -I -n -z -P {shlex.quote(prefilter)} -- . ':(exclude)contrib'",
+        verbose=False,
+    )
+    # 0 - matches found, 1 - none found, anything else is a failure of the search itself.
+    if exit_code > 1:
+        return f"Failed to search for misspellings of ClickHouse: {err}"
+
+    violations = []
+    generated_lines = {}
+    for record in out.splitlines():
+        path, line_number, line = record.split("\0", 2)
+        if is_excluded(path) or is_exempt(path, line):
+            continue
+        misspellings = clickhouse_misspellings(line)
+        if not misspellings:
+            continue
+        if path not in generated_lines:
+            generated_lines[path] = _autogenerated_line_numbers(path)
+        if int(line_number) in generated_lines[path]:
+            continue
+        for misspelling in sorted(set(misspellings)):
+            violations.append(f"{path}:{line_number}: {misspelling}")
+
+    # `-z` keeps the paths verbatim; without it git quotes the unusual ones.
+    exit_code, out, err = Shell.get_res_stdout_stderr(
+        "git ls-files -z -- . ':(exclude)contrib'", verbose=False
+    )
+    if exit_code != 0:
+        return f"Failed to list the files of the repository: {err}"
+    for path in out.split("\0"):
+        if not path:
+            continue
+        if is_excluded(path) or is_exempt(path, path):
+            continue
+        for misspelling in sorted(set(clickhouse_misspellings(path))):
+            violations.append(f"{path}: in the file name: {misspelling}")
+
+    if violations:
+        return (
+            "The product name is spelled `ClickHouse`; `clickhouse` and `CLICKHOUSE` are the "
+            "only accepted case variants. Fix the spellings below, or, if the text is not ours "
+            f"to spell, add an exception to {CLICKHOUSE_SPELLING_IGNORE_FILE}:\n"
+            + "\n".join(violations)
+        )
+    return ""
+
+
+# Where the settings themselves are declared, per `SettingsChangesHistory.cpp` namespace. Used to
+# tell a setting that a change REMOVED from the code apart from one that still exists - only the
+# latter can be recorded in the history at all (see `check_settings_changes_history`). Mirrors
+# `LIST_OF_SETTINGS` in src/Core/Settings.cpp and `MERGE_TREE_SETTINGS` in
+# src/Storages/MergeTree/MergeTreeSettings.cpp.
+_SETTINGS_DECLARATION_SOURCES = {
+    "Session": ("src/Core/Settings.cpp", "src/Core/FormatFactorySettings.h"),
+    "MergeTree": ("src/Storages/MergeTree/MergeTreeSettings.cpp",),
+}
+
+# `DECLARE(Type, name, default, R"(...)", tier)` and its aliasing variant.
+_SETTINGS_DECLARE_RE = re.compile(
+    r"^\s*DECLARE(?:_WITH_ALIAS)?\(\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
+)
+# `MAKE_OBSOLETE(M, Type, name, default)` and friends. An obsolete or deprecated setting is still
+# a setting - it keeps its row in system.settings - so its history records are still required.
+# The longest alternative comes first: `MAKE_OBSOLETE` is a prefix of
+# `MAKE_OBSOLETE_MERGE_TREE_SETTING`.
+_SETTINGS_OBSOLETE_RE = re.compile(
+    r"^\s*MAKE_(?:OBSOLETE_MERGE_TREE_SETTING|OBSOLETE|DEPRECATED_BY_SERVER_CONFIG)\("
+    r"\s*\w+\s*,\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
+)
+# The alias of a `DECLARE_WITH_ALIAS` sits on the line that closes the declaration:
+# `)", 0, insert_distributed_sync) \`. An alias is a settable name of its own - system.settings
+# has a row for it and history records may use it, `applyCompatibilitySetting` resolves aliases -
+# so it counts as declared.
+_SETTINGS_ALIAS_RE = re.compile(r'^\)"\s*,\s*[^,]+,\s*([A-Za-z0-9_]+)\)\s*\\?\s*$')
+
+
+def declared_setting_names():
+    """`({namespace: {name, ...}}, "")` for every setting declared in the checked-out tree, or
+    `(None, error)` when the declarations could not be read.
+
+    Fail-close: a missing file or a namespace that parses to nothing means the declaration macros
+    or their files moved, and quietly returning an empty set would exempt every setting from the
+    current-version-block rule in `check_settings_changes_history`. Pure text parsing of the
+    declaration macros."""
+    names = {}
+    for namespace, sources in _SETTINGS_DECLARATION_SOURCES.items():
+        found = set()
+        for source in sources:
+            source_path = Path(source)
+            if not source_path.is_file():
+                return None, (
+                    f"Cannot validate the settings history: the {namespace} settings are "
+                    f"declared in {source}, which does not exist. If the declarations moved, "
+                    f"update _SETTINGS_DECLARATION_SOURCES in ci/jobs/check_style.py."
+                )
+            for line in source_path.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines():
+                for regexp in (
+                    _SETTINGS_DECLARE_RE,
+                    _SETTINGS_OBSOLETE_RE,
+                    _SETTINGS_ALIAS_RE,
+                ):
+                    m = regexp.match(line)
+                    if m:
+                        found.add(m.group(1))
+                        break
+        if not found:
+            return None, (
+                f"Cannot validate the settings history: no {namespace} setting declaration was "
+                f"found in {', '.join(sources)}. If the declaration macros changed, update the "
+                f"parser in ci/jobs/check_style.py."
+            )
+        names[namespace] = found
+    return names, ""
+
+
 def check_settings_changes_history():
     """Every setting added, value-changed, removed, moved to another block, or sitting in a
     block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
@@ -606,6 +1180,23 @@ def check_settings_changes_history():
     `compatibility` attributes the default flip to the wrong release. A block header edit does
     the same to every record of that block at once, without touching a single entry line, so
     such a change reports the whole block.
+
+    A record RENAMED in place - removed and re-added in the same block, identical apart from the
+    setting name - is reported under the new name only (see `parse_settings_history_changes`).
+    The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
+    rejects a documented name that no longer exists, so requiring it would leave no history file
+    that satisfies both guards.
+
+    A setting REMOVED from the code is exempt for the same reason: its records have to go with it.
+    A record naming a setting that is not in system.settings / system.merge_tree_settings is
+    rejected by 03999_stateless_settings_history, and `applyCompatibilitySetting` resolves every
+    recorded name, so nothing can be recorded for a setting that no longer exists - demanding an
+    entry would leave no way to drop a setting that was never released. The exemption is also safe:
+    `compatibility` only ever restores values of settings that exist, so a setting that is gone has
+    no default left for any release to disagree about - unlike the deletion of a record of a
+    setting that stays, which is what the removals paragraph above is about. A setting that is
+    merely made OBSOLETE keeps its row in system.settings, so its records stay required; only a
+    real removal is exempt.
 
     Runs only when that file changed; the list of changed setting names is provided by the
     store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
@@ -679,6 +1270,28 @@ def check_settings_changes_history():
         # block) - nothing to validate against the current version block.
         return ""
 
+    declared, declared_error = declared_setting_names()
+    if declared_error:
+        return declared_error
+
+    def setting_still_exists(item):
+        """Whether the reported setting is still declared, i.e. whether the history can record it
+        at all - a setting this change removed from the code cannot be recorded anywhere (see the
+        removal paragraph in the docstring). Direction-agnostic on purpose: a record ADDED for a
+        name that is not declared is a dangling record, which 03999_stateless_settings_history
+        rejects outright, so there is nothing for this check to demand on top of that."""
+        declared_in_namespace = declared.get(item["namespace"])
+        if declared_in_namespace is None:
+            # An unrecognized namespace cannot be resolved to declarations - do not exempt it.
+            return True
+        return item["name"] in declared_in_namespace
+
+    changed = [item for item in changed if setting_still_exists(item)]
+    if not changed:
+        # Every reported setting was removed from the code by this change - nothing left to
+        # record in the current version block.
+        return ""
+
     version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
     current_version = "{}.{}".format(
         re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
@@ -726,7 +1339,11 @@ def check_settings_changes_history():
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
             f"entries for backports). If this is a correction of what an older release recorded "
             f"and not a default change made here, split it into a change that touches only "
-            f"{path}:\n" + "\n".join(sorted(set(violations)))
+            f"{path}. If you REMOVED a setting from the code, remove its declaration in this "
+            f"same change - a record is only demanded for a setting that is still declared. "
+            f"If you RENAMED a setting, keep its record in the same block and change "
+            f"only the name in it - the values and the reason text must stay identical for the "
+            f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
         )
     return ""
 
@@ -812,12 +1429,23 @@ if __name__ == "__main__":
                 files=functional_test_files,
             )
         )
+    testname = "server_data_manipulation_in_stateless_tests"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_no_server_data_manipulation,
+                files=functional_test_files,
+            )
+        )
     testname = "test_numbers_check"
     # Skip on release branches and backport PRs: backports cherry-pick a small
     # subset of test files, which legitimately leaves large gaps in the numbering.
     info = Info()
     release_branch_re = re.compile(r"^\d{2}\.\d+$")
-    branch_to_check = (info.base_branch or info.git_branch or "").removeprefix("release/")
+    branch_to_check = (info.base_branch or info.git_branch or "").removeprefix(
+        "release/"
+    )
     is_release_branch = bool(release_branch_re.match(branch_to_check))
     if testpattern.lower() in testname.lower() and not is_release_branch:
         results.append(
@@ -855,6 +1483,14 @@ if __name__ == "__main__":
                 check_name=testname,
                 check_function=check_compose_images,
                 files=compose_files,
+            )
+        )
+    testname = "clickhouse_spelling"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_clickhouse_spelling,
             )
         )
     testname = "settings_changes_history"

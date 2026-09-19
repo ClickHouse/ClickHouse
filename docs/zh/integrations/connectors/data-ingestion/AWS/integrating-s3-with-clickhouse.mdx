@@ -23,7 +23,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 `s3` 表函数允许你从兼容 S3 的存储中读取文件，也可以将文件写入其中。其语法结构如下：
 
 ```sql
-s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
 ```
 
 其中：
@@ -42,13 +42,13 @@ s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compr
 在 ClickHouse 中创建表之前，你可能想先仔细查看一下 S3 存储桶中的数据。你可以直接在 ClickHouse 中使用 `DESCRIBE` 语句：
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 `DESCRIBE TABLE` 语句的输出应显示 ClickHouse 会如何自动推断 S3 存储桶中所见的数据。注意，它还会自动识别并解压 gzip 压缩格式：
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
 ```
 
 ```response
@@ -169,7 +169,7 @@ ORDER BY pickup_datetime
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 10;
 ```
 
@@ -179,7 +179,7 @@ LIMIT 10;
 
 ```sql
 SELECT  _path, _file, trip_id
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 5;
 ```
 
@@ -197,7 +197,7 @@ LIMIT 5;
 
 ```sql
 SELECT count() AS count
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 ```response
@@ -215,7 +215,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trip
 `clickhouse-local` 程序让你无需部署和配置 ClickHouse server，即可快速处理本地文件。任何使用 `s3` 表函数 的查询都可以通过该实用工具执行。例如：
 
 ```sql
-clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <div id="inserting-data-from-s3">
@@ -228,7 +228,7 @@ clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu
 ```sql
 INSERT INTO trips
    SELECT *
-   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
    LIMIT 1000000;
 ```
 
@@ -239,7 +239,7 @@ INSERT INTO trips
 如果网络安全策略阻止您的 ClickHouse 集群发起出站连接，您仍可使用 `clickhouse-local` 将 S3 数据插入 ClickHouse。在下面的示例中，我们从 S3 存储桶读取数据，并使用 `remote` 函数将其插入 ClickHouse：
 
 ```sql
-clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <Note>
@@ -318,7 +318,7 @@ LIMIT 100000;
 `s3Cluster` 函数的格式与单节点变体相同，不同之处在于它需要指定目标集群，以标明工作节点：
 
 ```sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [NOSIGN | access_key_id, secret_access_key,] format, structure)
 ```
 
 * `cluster_name` — 用于构建远程和本地服务器地址集合及连接参数的集群名称。
@@ -337,11 +337,12 @@ INSERT INTO default.trips_all
    FROM s3Cluster(
        'events',
        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
+       NOSIGN,
        'TabSeparatedWithNames'
     )
 ```
 
-插入操作会在发起节点上执行。这意味着，虽然读取会在每个节点上进行，但生成的行会被路由到发起节点进行分发。在高吞吐量场景下，这可能会成为瓶颈。为解决此问题，请为 `s3cluster` 函数设置 [parallel&#95;distributed&#95;insert&#95;select](/zh/reference/settings/session-settings#parallel_distributed_insert_select) 参数。
+插入操作会在发起节点上执行。这意味着，虽然读取会在每个节点上进行，但生成的行会被路由到发起节点进行分发。在高吞吐量场景下，这可能会成为瓶颈。为解决此问题，请为 `s3cluster` 函数设置 [parallel&#95;distributed&#95;insert&#95;select](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select) 参数。
 
 <div id="s3-table-engines">
   ## S3 表引擎
@@ -351,7 +352,7 @@ INSERT INTO default.trips_all
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
-    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS ...]
 ```
 
@@ -414,7 +415,7 @@ CREATE TABLE trips_raw
    `dropoff_ntacode`       FixedString(4),
    `dropoff_ntaname`       String,
    `dropoff_puma`          UInt16
-) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', NOSIGN, 'TabSeparatedWithNames', 'gzip');
 ```
 
 请注意，这里使用了 `{0..9}` 模式，将范围限制为前十个文件。创建后，我们可以像查询其他任何表一样查询这个表：
@@ -669,7 +670,7 @@ SETTINGS storage_policy='s3_main'
 ```
 
 ```sql
-INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 根据硬件配置的不同，后面这次插入 100 万行的数据可能需要几分钟才能完成。你可以通过 system.processes 表查看其进度。你也可以按需将行数增加到最多 1000 万行，并试试一些示例查询。
@@ -725,7 +726,7 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 以下说明介绍了 ClickHouse 与 S3 交互的实现方式。虽然通常只是补充信息，但在[性能优化](#s3-optimizing-performance)时，可能会对读者有所帮助：
 
-* 默认情况下，查询处理管道中任一阶段可使用的最大查询处理线程数等于 CPU 核心数。某些阶段比其他阶段更容易并行化，因此该值只是一个上限。由于数据是从磁盘流式传输的，多个查询阶段可能会同时执行，因此单个查询实际使用的线程数可能会超过该值。可通过设置 [max&#95;threads](/zh/reference/settings/session-settings#max_threads) 进行调整。
+* 默认情况下，查询处理管道中任一阶段可使用的最大查询处理线程数等于 CPU 核心数。某些阶段比其他阶段更容易并行化，因此该值只是一个上限。由于数据是从磁盘流式传输的，多个查询阶段可能会同时执行，因此单个查询实际使用的线程数可能会超过该值。可通过设置 [max&#95;threads](/zh/reference/settings/session-settings/max-threads#max_threads) 进行调整。
 * 默认情况下，从 S3 读取是异步进行的。此行为由设置 `remote_filesystem_read_method` 决定，其默认值为 `threadpool`。处理请求时，ClickHouse 会以 stripe 为单位读取粒度。每个 stripe 可能包含很多列。线程会逐个读取这些粒度中的列。与同步逐列读取不同，系统会先对所有列执行预取，然后再等待数据返回。相比对每一列都进行同步等待，这种方式能显著提升性能。大多数情况下，你无需更改此设置——请参见[性能优化](#s3-optimizing-performance)。
 * 写入会并行执行，最多支持 100 个并发文件写入线程。`max_insert_delayed_streams_for_parallel_write` 的默认值为 1000，用于控制并行写入的 S3 blob 数量。由于每个正在写入的文件都需要一个缓冲区 (约 1MB) ，这实际上限制了 INSERT 的内存占用。在服务器内存较低的场景下，适当调低该值可能更合适。
 
@@ -1259,7 +1260,7 @@ sudo service clickhouse-server start
   ```
 
 <Note>
-  你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings#default_replica_path)。
+  你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path)。
 </Note>
 
 <div id="testing">
@@ -1284,7 +1285,7 @@ sudo service clickhouse-server start
          tip_amount,
          total_amount,
          payment_type
-     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
   ```
 * 验证数据已存储在 S3 中。
 

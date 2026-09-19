@@ -46,7 +46,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Note>
-  ClickPipes не поддерживает подключения через Azure Private Link. Если вы не открываете публичный доступ к своему экземпляру Azure Flexible Server for MySQL, для безопасного подключения можно [использовать SSH-туннель](/ru/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access). Поддержка Azure Private Link появится в будущем.
+  ClickPipes пока не поддерживает Azure Private Link. Чтобы подключиться к экземпляру, для которого не открыт публичный доступ, используйте SSH-туннель. Подробнее см. [Сеть ClickPipes](/ru/integrations/clickpipes/networking).
 </Note>
 
 Далее необходимо разрешить ClickPipes подключаться к вашему экземпляру Azure Flexible Server for MySQL.
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     2. В разделе **Settings** выберите **Networking**. Убедитесь, что **Public access** включен.
 
-    3. В разделе **Firewall rules** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) для региона, в котором развернут ваш сервис.
+    3. В разделе **Firewall rules** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развернут ваш сервис.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="Настройка сети для публичного доступа со списком разрешенных IP-адресов" size="lg" border />
 
@@ -71,7 +71,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        * Убедитесь, что VM находится в той же Virtual Network (VNet), что и ваш экземпляр Azure Flexible Server for MySQL, либо в связанной VNet с настроенной связностью.
        * Убедитесь, что у VM есть [статический публичный IP-адрес](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address). Этот IP-адрес вы будете использовать при подключении ClickPipes к вашему SSH-бастиону.
 
-    2. Обновите правила Network Security Group (NSG) для SSH-бастиона, чтобы разрешить трафик из [списка статических IP-адресов ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) для региона, в котором развернут ваш сервис.
+    2. Обновите правила Network Security Group (NSG) для SSH-бастиона, чтобы разрешить трафик из [списка статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развернут ваш сервис.
 
     3. Обновите правила межсетевого экрана вашего экземпляра Azure Flexible Server for MySQL, чтобы разрешить трафик с [частного IP-адреса](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses) SSH-бастиона.
   </Tab>

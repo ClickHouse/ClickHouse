@@ -15,6 +15,8 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Se você precisar obter a lista de IPs estáticos, poderá usar o seguinte endpoint da ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Essa API fornece os endpoints dos serviços do ClickHouse Cloud, como IPs de entrada/saída e endpoints do S3 por região e por Cloud.
 
+Para regiões em que o [ClickPipes](/pt-BR/integrations/clickpipes/home) está disponível, cada entrada também inclui um campo `clickpipes_egress_ips` que lista os IPs NAT estáticos que o ClickPipes usa para acessar suas fontes de dados. Adicione-os à lista de permissão da sua fonte ao fazer ingestão por meio do ClickPipes. Consulte [a lista de IPs estáticos do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) para obter detalhes.
+
 Se você estiver usando uma integração como o Engine MySQL ou PostgreSQL, talvez precise autorizar o ClickHouse Cloud a acessar suas instâncias. Você pode usar essa API para recuperar os IPs públicos e configurá-los em `firewalls` ou `Authorized networks` no GCP, em `Security Groups` no Azure ou AWS, ou em qualquer outro sistema de gerenciamento de tráfego de saída da infraestrutura que estiver usando.
 
 Por exemplo, para permitir acesso a partir de um serviço do ClickHouse Cloud hospedado na AWS na região `ap-south-1`, você pode adicionar os endereços `egress_ips` dessa região:
@@ -24,6 +26,14 @@ Por exemplo, para permitir acesso a partir de um serviço do ClickHouse Cloud ho
 {
   "aws": [
     {
+      "clickpipes_egress_ips": [
+        "13.203.140.189",
+        "13.232.213.12",
+        "13.235.145.208",
+        "35.154.167.40",
+        "65.0.39.245",
+        "65.1.225.89"
+      ],
       "egress_ips": [
         "3.110.39.68",
         "15.206.7.77",

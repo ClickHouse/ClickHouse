@@ -565,7 +565,7 @@ collector の観点では、(1) と (2) を区別するのは難しいことが�
 
 collector で非同期挿入を有効にするには、接続文字列に `async_insert=1` を追加します。配信保証を得るため、`wait_for_async_insert=1` (既定値) を使用することを推奨します。詳細は [こちら](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) を参照してください。
 
-非同期 INSERT のデータは、ClickHouse のバッファが flush されると挿入されます。これは、[`async_insert_max_data_size`](/ja/reference/settings/session-settings#async_insert_max_data_size) を超過した後、または最初の INSERT クエリから [`async_insert_busy_timeout_ms`](/ja/reference/settings/session-settings#async_insert_max_data_size) ミリ秒が経過した後のいずれかで発生します。`async_insert_stale_timeout_ms` が 0 以外の値に設定されている場合は、最後のクエリから `async_insert_stale_timeout_ms` ミリ秒後にデータが挿入されます。これらの設定を調整することで、パイプラインのエンドツーエンドのレイテンシを制御できます。バッファ flush の調整に使用できるその他の設定は [こちら](/ja/reference/settings/session-settings#async_insert) に記載されています。一般には、既定値のままで十分です。
+非同期 INSERT のデータは、ClickHouse のバッファが flush されると挿入されます。これは、[`async_insert_max_data_size`](/ja/reference/settings/session-settings/async-insert#async_insert_max_data_size) を超過した後、または最初の INSERT クエリから [`async_insert_busy_timeout_ms`](/ja/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) ミリ秒が経過した後のいずれかで発生します。`async_insert_stale_timeout_ms` が 0 以外の値に設定されている場合は、最後のクエリから `async_insert_stale_timeout_ms milliseconds` 後にデータが挿入されます。これらの設定を調整することで、パイプラインのエンドツーエンドのレイテンシを制御できます。バッファ flush の調整に使用できるその他の設定は [こちら](/ja/reference/settings/session-settings/async-insert#async_insert) に記載されています。一般には、既定値のままで十分です。
 
 <Info>
   **適応型非同期挿入も検討してください**
@@ -573,7 +573,7 @@ collector で非同期挿入を有効にするには、接続文字列に `async
   使用する エージェント の数が少なく、スループットは低い一方で、エンドツーエンドのレイテンシ要件が厳しい場合は、[adaptive asynchronous inserts](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) が役立つことがあります。一般に、ClickHouse で見られるような高スループットのオブザーバビリティのユースケースには適していません。
 </Info>
 
-最後に、ClickHouse への同期 insert に関連する従来の重複排除の挙動は、非同期挿入を使用する場合、既定では有効になりません。必要に応じて、設定 [`async_insert_deduplicate`](/ja/reference/settings/session-settings#async_insert_deduplicate) を参照してください。
+最後に、ClickHouse への同期 insert に関連する従来の重複排除の挙動は、非同期挿入を使用する場合、既定では有効になりません。必要に応じて、設定 [`async_insert_deduplicate`](/ja/reference/settings/session-settings/async-insert#async_insert_deduplicate) を参照してください。
 
 この機能の設定に関する詳細は、[ドキュメントページ](/ja/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts) または、より詳しい [ブログ記事](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) を参照してください。
 

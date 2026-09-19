@@ -3,16 +3,20 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <functional>
 #include <list>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
+
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
@@ -78,12 +82,24 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// Show estimates
+    bool estimates = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
+    /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
+    /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
+    /// durin colleciton
+    bool matches = false;
 
     SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
+
+struct CostEstimationInfo
+{
+    Float64 cost = 0.0;
+    Float64 rows = 0.0;
+};
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -106,6 +122,11 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    /// Serialization for a distributed-plan worker task: every subquery set ships as its built
+    /// values (a `TupleValues` record bounded by `sets_transfer_limits`), and a set without
+    /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
+    /// the subquery.
+    void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
@@ -120,10 +141,22 @@ public:
 
     void resolveStorages(const ContextPtr & context);
 
+    /// Optimizes the query. Make sure you have called applyDistributedPlanFallbackToLocal
+    /// or call buildQueryPipeline which does it inherently.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
+
+    /// The single decision function for `make_distributed_plan`. When this plan cannot be
+    /// distributed: throws under `distributed_plan_fallback_to_local_execution = 0`, otherwise
+    /// logs, flips `settings.make_distributed_plan` to false and returns true. The plan is
+    /// verified at most once and the outcome is recorded in `distributed_plan_decision`.
+    bool applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings);
+
+    /// True once `applyDistributedPlanFallbackToLocal` accepted this plan for distributed execution.
+    bool staysDistributed() const { return distributed_plan_decision == DistributedPlanDecision::Distributed; }
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -176,6 +209,7 @@ public:
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
+        std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
     using Nodes = std::list<Node>;
@@ -199,10 +233,21 @@ public:
     /// (multiple sources / multi-input steps).
     static QueryPlan cloneSubtree(Node * subplan_root);
 
+    /// Same as above, preserving the execution limits and resources from the plan that owns the subtree.
+    static QueryPlan cloneSubtree(Node * subplan_root, const QueryPlan & source_plan);
+
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
-    struct SerializationFlags;
+    struct SerializationFlags
+    {
+        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        UInt64 version = 0;
+        bool skip_data = false;
+        /// See `serializeForDistributedTask`.
+        bool sets_must_be_ready = false;
+        SizeLimits sets_transfer_limits = {};
+    };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
@@ -224,7 +269,22 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+
+    enum class DistributedPlanDecision
+    {
+        Undecided,
+        Distributed,
+        FellBack,
+    };
+
+    /// The outcome of `applyDistributedPlanFallbackToLocal` for this plan. Later calls do not
+    /// re-verify the plan, they only re-apply the recorded outcome to the settings. This is correct
+    /// only while every caller passes the same settings as the inputs of the decision
+    /// (`enable_cascades_optimizer`, the `distributed_plan_default_*_bucket_count` values, the
+    /// projection force flags). It holds today because they all come from the same query context.
+    DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
 };
+
 
 /// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,
@@ -252,6 +312,12 @@ struct QueryPlanAndSets
 
 std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
+
+/// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.
+/// Steps for which `ignore` returns true are accepted anyway, e.g. planner markers that are replaced
+/// before the plan is shipped.
+const QueryPlan::Node * findNonSerializableStep(
+    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore = {});
 
 
 struct ExchangeDescription

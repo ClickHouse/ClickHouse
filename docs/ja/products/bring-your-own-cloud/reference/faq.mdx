@@ -3,7 +3,7 @@ title: 'BYOC よくある質問'
 slug: /cloud/reference/byoc/reference/faq
 sidebarTitle: 'よくある質問'
 keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', 'よくある質問']
-description: '自社のクラウドインフラストラクチャに ClickHouse をデプロイ'
+description: 'ClickHouse Bring Your Own Cloud（BYOC）に関するよくある質問'
 doc_type: 'reference'
 ---
 
@@ -11,56 +11,217 @@ doc_type: 'reference'
   ## よくある質問
 </div>
 
-<div id="compute">
-  ### コンピュート
+<div id="onboarding-and-provisioning">
+  ### オンボーディングとプロビジョニング
 </div>
 
-<Accordion title="この 1 つの EKS クラスター内で複数のサービスを作成できますか？">
-  はい。インフラストラクチャのプロビジョニングは、AWS アカウントとリージョンの組み合わせごとに 1 回だけ行えば十分です。
+<Accordion title="BYOC を開始するにはどうすればよいですか？">
+  [お問い合わせフォーム](https://clickhouse.com/cloud/bring-your-own-cloud)から ClickHouse までご連絡ください。チームが組織で BYOC を有効化します。その後、専用のクラウドアカウント (AWS アカウント、GCP プロジェクト、または Azure サブスクリプション) を準備し、[標準オンボーディングガイド](/ja/products/bring-your-own-cloud/onboarding/standard)に従ってください。BYOC 専用のアカウント、プロジェクト、またはサブスクリプションを使用することを強く推奨します。
 </Accordion>
 
-<Accordion title="BYOC でサポートしているリージョンはどこですか？">
-  BYOC デプロイでは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントに記載されているすべての**パブリックリージョン**をご利用いただけます。
+<Accordion title="インフラストラクチャのプロビジョニングにはどのくらいかかりますか？また、停滞する一般的な原因は何ですか？">
+  エンドツーエンドで約 45～90 分かかります。時間に幅があるのは、その大半をクラウドプロバイダーによるリソース (Kubernetes クラスター、ロードバランサー、ネットワークコンポーネント) のプロビジョニングが占め、その所要時間は実行ごとに異なり、ClickHouse では制御できないためです。プロビジョニングが停滞する場合、最も一般的な原因はアカウント側にあります。
+
+  * CloudFormation template または Terraform module を適用前に変更した場合。たとえば、`PermissionsBoundary` を追加した場合や、命名規則に合わせて IAM ロール名を変更した場合です (AWS では、ClickHouse が別の名前を明示的に承認していない限り、デフォルトの `ClickHouseManagementRole` 名を維持してください) 。提供されたアーティファクトをそのまま適用してください。サポート対象のカスタマイズはパラメーターとして公開されており、それ以外の変更には事前に ClickHouse の承認が必要です。
+  * 組織レベルのポリシー (AWS SCP、`iam.allowedPolicyMemberDomains` などの GCP 組織ポリシー、またはロール割り当てを制限する Azure ポリシー) により、ロールの引き受けや IAM バインディングがブロックされている場合。
+  * オンボーディングロールの外部 ID が一致しない場合 (以下の外部 ID に関する質問を参照) 。
+  * アカウントのクォータ制限 (たとえば、AWS の Elastic IP または VPC) 。
+
+  プロビジョニングは自動的に再試行され、根本的な問題が解決されると自己修復します。インフラストラクチャが数時間以上停滞したままの場合は、サポートにお問い合わせください。
 </Accordion>
 
-<Accordion title="多少のリソースオーバーヘッドはありますか？ ClickHouseインスタンス以外のサービスを実行するには、どの程度のリソースが必要ですか？">
-  ClickHouseインスタンス自体 (ClickHouse server と ClickHouse Keeper) に加えて、`clickhouse-operator`、`aws-cluster-autoscaler`、Istio、監視スタックなどの補助サービスも稼働します。
+<Accordion title="オンボーディングテンプレートの外部 ID にはどの値を使用すべきですか？">
+  ClickHouse Cloud コンソールでは、オンボーディングの開始時に AWS アカウント用の外部 ID が生成され、CloudFormation リンク内の `ExternalID` パラメーターにあらかじめ入力されます。Terraform を使用する場合は、同じ値を `external_id` として渡してください。同じ AWS アカウント上のすべての BYOC インフラストラクチャは、同じ外部 ID を共有します。独自の値を指定しないでください。ClickHouse の自動化が想定する値と一致している必要があり、一致しない場合はクロスアカウントロールを引き受けられず、プロビジョニングが失敗します。詳細については、[AWS 外部 ID](/ja/products/bring-your-own-cloud/onboarding/standard#aws-external-id)を参照してください。
+</Accordion>
 
-  これらの共有コンポーネントのリソース使用量は比較的安定しており、ClickHouseサービスの数やサイズに応じて比例的に増えるわけではありません。大まかな目安として、AWS では通常、これらのワークロードを実行するために、`4xlarge` の EC2 インスタンス約 4 台で構成された専用ノードグループを使用します。
+<Accordion title="外部 ID が emptyid なのはなぜですか？">
+  外部 ID が導入される前にオンボーディングされた BYOC インフラストラクチャでは、後方互換性のためにプレースホルダー値 `emptyid` が使用されます。既存のレガシーデプロイメントがある AWS アカウントに新しいインフラストラクチャを追加すると、コンソールはこのプレースホルダーを再利用し、アカウント内のすべてのインフラストラクチャで一貫した信頼設定を維持します。一意の外部 ID に切り替えたい場合は、ClickHouse Support にお問い合わせください。
+</Accordion>
+
+<Accordion title="BYOC で既存の VPC を使用できますか？共有 VPC はどうですか？">
+  AWS および GCP では、BYOC インフラストラクチャと**同じ**アカウントまたはプロジェクトにある既存の VPC にデプロイできます。[AWS](/ja/products/bring-your-own-cloud/onboarding/customization-aws) および [GCP](/ja/products/bring-your-own-cloud/onboarding/customization-gcp) のカスタマイズガイドを参照してください。GCP では、別のホストプロジェクトの **Shared VPC** もサポートされています。[オンボーディングモジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)ではホストプロジェクトとサブネットを直接指定できます。セットアップと前提条件については、その「Shared VPC」セクションを参照してください。Azure で独自の VNet を使用する機能は近日提供予定です。
+
+  AWS では、別のアカウントから共有されたサブネット (AWS RAM) はサポートされていません。代わりに、VPC peering または PrivateLink を介して既存のネットワークに接続された専用アカウントを使用してください。customer-managed VPC では、デフォルトで private load balancer のみが有効になることに注意してください ([configuration](/ja/products/bring-your-own-cloud/configuration/configurations)を参照) 。
+</Accordion>
+
+<Accordion title="BYOC を既存の Kubernetes クラスターにインストールできますか？">
+  いいえ。Kubernetes クラスター (EKS、GKE、または AKS) は ClickHouse が作成し、完全に管理します。これは、ClickHouse がプラットフォームを確実に運用し、常に最新の状態に保つために必要です。
+</Accordion>
+
+<Accordion title="BYOC クラスターまたはクラウドアカウントで独自のワークロードを実行できますか？">
+  クラウドアカウント内でも可能ですが、同居するリソースは常にある程度、ClickHouse の権限範囲に含まれます。AWS では、ほとんどの書き込み権限がタグおよびプレフィックス単位でスコープ設定されています (ClickHouse によってプロビジョニングされたリソースには `clickhouse-byoc=true` が付与されます) 。ただし、一部の EC2 アクションはタグ単位でスコープ設定できません。GCP と Azure では、オンボーディング用の ID にプロジェクトまたはサブスクリプション単位の権限が付与されます。リソースは ClickHouse によってプロビジョニングされたリソースとは分離し、すべてのクラウドで専用のアカウント、プロジェクト、またはサブスクリプションを使用することを強く推奨します。
+
+  Kubernetes クラスター内でも、制約はありますが可能です。テイントとトレランスを設定した独自のノードグループを使用し、ClickHouse 管理のネームスペースは使用せず、ClickHouse コンポーネントのリコンシリエーションを妨げる可能性があるクラスター全体に適用される admission コントローラーやポリシーエンジンはインストールしないでください。競合がないことを確認できるよう、事前にサポートへ計画をお知らせください。
+</Accordion>
+
+<div id="compute">
+  ### コンピュートとスケーリング
+</div>
+
+<Accordion title="1 つの BYOC インフラストラクチャに複数のサービスを作成できますか？">
+  はい。インフラストラクチャ (Kubernetes クラスターを含む) は、クラウドアカウント／プロジェクト／サブスクリプションとリージョンの組み合わせごとに一度だけプロビジョニングすればよく、そのリージョン内で作成するすべてのサービスで共有されます。
+</Accordion>
+
+<Accordion title="BYOC ではどのリージョンがサポートされていますか？">
+  [サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントに記載されているすべての**パブリックリージョン**で、BYOC をデプロイできます。BYOC は 3 つのアベイラビリティゾーンにまたがってプロビジョニングされるため、ゾーンが 3 つ未満のリージョンおよび AWS Local Zones はサポートされていません。必要なリージョンが記載されていない場合は、利用可否について ClickHouse 担当者にお問い合わせください。
+</Accordion>
+
+<Accordion title="リソースのオーバーヘッドはありますか？ClickHouse インスタンス以外のサービスを実行するには、どのようなリソースが必要ですか？">
+  ClickHouse インスタンス自体 (ClickHouse server と ClickHouse Keeper) に加え、`clickhouse-operator`、クラスターオートスケーラー、Istio、監視スタックなどのサポートサービスも実行されます。
+
+  これらの共有コンポーネントのリソース消費量は比較的安定しており、ClickHouse サービスの数やサイズに比例して増加するわけではありません。大まかな目安として、これらのワークロード専用のシステムノードグループには、合計で約 48 vCPU、192 GB のメモリが必要です。たとえば AWS では、約 6 台の `2xlarge` インスタンスに相当します。さらに、各ウェアハウスでは、同じウェアハウス内のすべてのサービスで共有される専用の 3 ノード ClickHouse Keeper ensemble が実行されます。詳細は[コストモデル](/ja/products/bring-your-own-cloud/reference/cost-model-aws)を参照してください。
+</Accordion>
+
+<Accordion title="BYOC はオートスケーリングをサポートしていますか？">
+  サービスレベルの (垂直) オートスケーリングはロードマップに含まれています。現在利用可能な機能は、コンソールでの手動の垂直・水平スケーリング、予測可能な負荷パターン向けのスケジュールスケーリング、断続的なワークロード向けの自動アイドル化と復帰、インフラストラクチャレベルでのノードグループの自動スケーリングです。ノードを自分で管理する必要はありません。ClickHouse Keeper は ClickHouse によって監視およびスケーリングされます。
+</Accordion>
+
+<Accordion title="BYOC はどのインスタンスタイプで実行されますか？インスタンスファミリーを変更できますか？">
+  BYOC は任意のインスタンスタイプではなく、厳選されたノードグループ上で実行されます。ワークロードノードグループ (ClickHouse server と Keeper) はデフォルトで ARM ベースのメモリ最適化インスタンス (AWS では Graviton) を使用し、システムノードグループは通常 x86 インスタンスを使用します。異なるインスタンスファミリー、CPU とメモリの比率、またはアーキテクチャは、サポートへのリクエストに応じてプロビジョニングできます。スポットインスタンスはサポートされていません。[設定](/ja/products/bring-your-own-cloud/configuration/configurations)を参照してください。
+</Accordion>
+
+<Accordion title="コストを抑えるために非常に小さいレプリカを実行できますか？">
+  各レプリカは、それぞれ専用ノード上の 1 つの Pod として実行されます。ノードサイズはレプリカサイズに合わせられ、ノードはオンデマンドでプロビジョニングされ、複数のレプリカが 1 つのノードに配置されることはありません。そのため、非常に小さいレプリカは非効率的です。ハードウェアに占めるオーバーヘッドの割合が大きくなり、ネットワークおよびディスク帯域幅はインスタンスサイズに応じて拡張されます。コンソールで提供されるサイズ未満のものは、サポートを通じたカスタムリクエストとなります。
+</Accordion>
+
+<Accordion title="インジェストワークロードとクエリワークロードを分離できますか？">
+  はい。BYOC ではウェアハウス (コンピュート分離) がサポートされています。複数のサービスで同じデータを共有できるため、インジェスト専用のサービスとクエリ専用のサービスを割り当てることができます。
 </Accordion>
 
 <div id="network-and-security">
   ### ネットワークとセキュリティ
 </div>
 
-<Accordion title="セットアップ完了後に、インストール時に設定した権限を取り消すことはできますか？">
-  現在、これはできません。
+<Accordion title="インストール時に付与される権限を制限または取り消すことはできますか？">
+  AWS と GCP では、最初から付与する権限を減らせます。オンボーディングアーティファクトはパラメーター化されているため、自身の VPC を使用する場合、VPC のネットワークトポロジーを管理する権限を付与しないようにできます (CloudFormation では `IncludeVPCWritePermissions`、Terraform モジュールでは `include_vpc_write_permissions`) 。GCP では、制限されるのはトポロジー管理のみです。ClickHouse は、Private Service Connect NAT サブネット、サービスアタッチメント、イングレスアドレスなど、VPC 内で所有するネットワーキングリソースへの書き込みアクセスを維持します。AWS ではさらに、サポートを通じて有効化されるプライベートプレビューで、IAM ロールを自身で管理できます (`IncludeIAMWritePermissions=false`、[顧客管理 IAM ロール](/ja/products/bring-your-own-cloud/onboarding/customization-aws)を参照) 。また、クロスアカウントロールは、混乱した代理人問題によるアクセスを防ぐため、外部 ID で保護されています。Azure では、オンボーディングモジュールは現時点で、スコープ設定パラメーターのない固定のサブスクリプションスコープのロールを付与します。すべてのクラウドにおいて、一部の権限は特定の機能でのみ必要であり、その機能を使用しない場合は削除できます。アーティファクトで指定可能な範囲を超えて権限を制限する必要がある場合は、サポートにお問い合わせください。
+
+  プロビジョニング後は、管理アイデンティティから一方的に権限を削除しないでください。ClickHouse はインフラストラクチャを継続的に整合させているため、権限が不足するとプロビジョニング、アップグレード、サポートに支障が生じます。付与済みの権限を変更する場合や完全にオフボードする場合は、サポートと調整してください (下記の廃止に関する質問を参照) 。
 </Accordion>
 
-<Accordion title="トラブルシューティングのために ClickHouse エンジニアが顧客インフラへアクセスすることについて、将来的なセキュリティ制御は検討されていますか？">
-  はい。お客様がエンジニアのクラスターへのアクセスを承認できる、お客様管理の仕組みの実装をロードマップに含めています。現時点では、エンジニアがクラスターへのジャストインタイムアクセスを取得するには、社内のエスカレーションプロセスを経る必要があります。これは当社のセキュリティチームによって記録・監査されています。
+<Accordion title="ClickHouse は当社のクラウドアカウントで具体的に何ができますか？セキュリティチームは権限を確認できますか？">
+  [権限リファレンス](/ja/products/bring-your-own-cloud/reference/privilege)では、AWS、GCP、Azure におけるすべてのロールとアイデンティティ、およびその目的の概要を確認できます。オンボーディング (ブートストラップ) アイデンティティについては、正確なポリシー範囲が公開アーティファクト、すなわち [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) と [Terraform modules](https://github.com/ClickHouse/terraform-byoc-onboarding)によって定義されており、セキュリティチームが直接監査できます。オンボーディング後に ClickHouse が作成する追加のアイデンティティ (コントローラーロール、サービスアカウント、マネージドアイデンティティ) は、権限リファレンスでクラウドプロバイダーごとに説明されています。これらはお客様のアカウント内に存在するため、クラウドコンソールで実際のポリシーを確認し、CloudTrail または GCP/Azure の同等のサービスで作成および使用状況を確認できます。AWS では、管理ロールの書き込み権限の大半は、`clickhouse-cloud-*` などのリソースタグと名前プレフィックスでスコープ設定されているため、通常は自身が作成していないリソースを変更できません (一部の EC2 アクションはタグでスコープ設定できません) 。また、**お客様のデータバケットに対するオブジェクトレベルのアクセス権はありません**。オブジェクトへのアクセスは、ClickHouse ワークロードにスコープ設定されたクラスター内アイデンティティに限定されます。GCP と Azure では、オンボーディングアイデンティティが代わりにプロジェクトまたはサブスクリプションスコープの権限を保持します。このため、専用のプロジェクトまたはサブスクリプションを強く推奨しています。継続的な整合性維持に必要なため、読み取り権限の範囲はより広くなります。
 </Accordion>
 
-<Accordion title="作成される VPC の IP 範囲のサイズはどれくらいですか？">
-  デフォルトでは、BYOC VPC に `10.0.0.0/16` を使用します。将来的なスケーリングの可能性を考慮し、少なくとも /22 を確保しておくことを推奨しますが、
-  サイズを小さくしたい場合は、
-  サーバー ポッドが 30 個までに制限される見込みであれば /23 を使用することも可能です。
+<Accordion title="ClickHouse の従業員は当社の環境とデータにどのようなアクセス権を持ちますか？">
+  デフォルトでは、お客様のデータには一切アクセスできません。トラブルシューティングのため、エンジニアは内部のジャストインタイム・エスカレーションプロセスを経る必要があります。アクセスは期間限定かつ証明書ベースで、`system.*` テーブル (顧客データテーブルを除く) に限定され、ログに記録され、セキュリティチームによって監査されます。ClickHouse のエンジニアが実行するクエリはすべて、お客様自身の `system.query_log` で確認できます。インフラストラクチャの診断では、同じく承認を要するエスカレーションにより、Tailscale 経由で Kubernetes API server およびクラスター内の監視スタックへの期間限定アクセスを付与することもできます。データアクセスモデルについては [ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)、接続モデルについては [ネットワークセキュリティ](/ja/products/bring-your-own-cloud/reference/network-security)を参照してください。
 </Accordion>
 
-<Accordion title="メンテナンス頻度は決められますか？">
-  メンテナンス ウィンドウの調整についてはサポートにお問い合わせください。更新スケジュールは少なくとも週 1 回となることを想定してください。
+<Accordion title="トラブルシューティングのために ClickHouse のエンジニアが顧客インフラにアクセスする際の、将来的なセキュリティ制御を検討していますか？">
+  はい。お客様がエンジニアによるクラスターへのアクセスを承認できる、お客様管理の仕組みの実装はロードマップに含まれています。現在、エンジニアはクラスターへのジャストインタイムアクセスを取得するために、内部エスカレーションプロセスを経る必要があります。これはログに記録され、セキュリティチームによって監査されます。
 </Accordion>
 
-<Accordion title="BYOC VPC と S3 の間のネットワーク通信はどのように機能しますか？">
-  お客様の BYOC VPC と S3 間のトラフィックでは、テーブルデータ、バックアップ、ログのために AWS S3 API 経由の HTTPS (ポート 443) を使用します。S3 VPC エンドポイントを使用する場合、このトラフィックは AWS ネットワーク内にとどまり、パブリックインターネットを経由しません。
+<Accordion title="どのデータが当社のアカウント外に送信されますか？">
+  送信されるのは運用メタデータのみです。サービスおよびバックアップの状態イベント、請求用の使用量メトリクス、アラート通知が該当します。お客様のデータ、バックアップ、ログ、監視データは、お客様のアカウント内に保持されます。送信フローの完全な一覧については、[ネットワークセキュリティ](/ja/products/bring-your-own-cloud/reference/network-security)を参照してください。
 </Accordion>
 
-<Accordion title="ClickHouse クラスター内部の通信にはどのポートが使用されますか？">
-  お客様の BYOC VPC 内での ClickHouse クラスター内部通信には、以下を使用します。
+<Accordion title="ClickHouse コントロールプレーンは、当社アカウント内の Kubernetes API にどのように接続しますか？Tailscale は必要ですか？">
+  デフォルトでは、Kubernetes API エンドポイントはパブリックですが、ClickHouse の NAT IP アドレスのみに制限されています。このデフォルト設定を使用している間は、コントロールプレーンによるクラスター管理に必要なため、ClickHouse の許可リストエントリを削除しないでください。代わりに、ClickHouse チームと調整のうえ、エンドポイントをプライベートアクセス専用に切り替えることもできます。Tailscale (アウトバウンド専用で、トラブルシューティングアクセスにも使用) または AWS では VPC Lattice (プライベートプレビュー) を使用します。詳細は [configuration](/ja/products/bring-your-own-cloud/configuration/configurations) を参照してください。これは Kubernetes API にのみ適用される点に注意してください。クラウドプロバイダー API 呼び出し (たとえば AWS の EKS や EC2) は、クロスアカウントでのロール引き受けを通じて ClickHouse Cloud のネットワークから発信されるため、Tailscale 経由でルーティングすることはできません。詳細は [cloud provider APIs vs the Kubernetes API](/ja/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api) を参照してください。
+</Accordion>
 
-  * ポート 9000 のネイティブ ClickHouse プロトコル
-  * ポート 8123/8443 の HTTP/HTTPS
-  * レプリケーションおよび分散クエリ用のポート 9009 のサーバー間通信
+<Accordion title="BYOC ネットワークとオブジェクトストレージ間のネットワーク通信はどのように行われますか？">
+  AWS では、Customer BYOC VPC と S3 間のテーブルデータ、バックアップ、ログのトラフィックは、AWS S3 API 経由で HTTPS (ポート 443) を使用します。このトラフィックは S3 ゲートウェイ VPC エンドポイントを経由するため、AWS ネットワーク内に留まり、パブリックインターネットを通過せず、NAT ゲートウェイ料金も発生しません。GCP では、Google API へのアクセスにも同様に Private Google Access を使用します。Azure では、データはお客様のサブスクリプション内の Azure Blob Storage アカウントに保存されます。
+</Accordion>
+
+<Accordion title="データは自社の bucket にあります。直接読み取ったり変更したりできますか？">
+  いいえ。テーブルデータのブロブはテーブルごとのパスを持たない共有レイアウトで保存されるため、オブジェクトをテーブルに対応付けることはできず、直接変更するとサービスが破損するおそれがあります。bucket の内容は絶対に直接変更しないでください。問題が疑われる場合は、サポートチケットを起票してください。
+</Accordion>
+
+<Accordion title="クライアント通信とクラスター通信にはどのポートが使用されますか？">
+  クライアント接続は、TLS ポート上のロードバランサーで終端されます。**8443** (HTTPS インターフェイス) および **9440** (TLS 経由のネイティブプロトコル) です。ポート 443 も HTTPS インターフェイスにルーティングされます。MySQL インターフェイス (ポート 3306) は現在 BYOC では公開されていません。ロードマップに含まれています ([概要](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) を参照) 。
+
+  ネットワーク内では、クラスター内通信にポート 9000 のネイティブプロトコル、ポート 8123 の HTTP、レプリケーションおよび分散クエリ用のポート 9009 のサーバー間通信を使用します。これらの内部ポートおよび ClickHouse Keeper のポートがロードバランサーで公開されることはありません。
+</Accordion>
+
+<Accordion title="サービスエンドポイントはパブリックインターネットに公開されますか？プライベート専用にできますか？">
+  ClickHouse 管理 VPC では、各サービスに IP アクセスリストで保護されたパブリックロードバランサーがデフォルトで割り当てられます。お客様のネットワークおよびピアリングされたネットワークから到達可能なプライベートロードバランサーは、ClickHouse Cloud コンソールで追加で有効にできます ([Load Balancers](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers) を参照) 。customer-managed VPC ではデフォルトが逆になり、プライベートロードバランサーのみが有効になります。IP フィルタリングはイングレスプロキシ層で適用されるため、スキャンではロードバランサーのポートが開いているように見える場合がありますが、リストにない送信元からの接続は拒否されます。依存先がなくなれば、パブリックエンドポイントを完全に無効にできます。コンソールの [Connection via selector](/ja/products/bring-your-own-cloud/configuration/connect#connection-via) には、サービスで有効な各接続経路のエンドポイントが表示されます。[connectivity](/ja/products/bring-your-own-cloud/configuration/connect) を参照してください。
+</Accordion>
+
+<Accordion title="独自の DNS ドメインを使用したり、独自の TLS 証明書を持ち込んだりできますか？">
+  現時点ではできません。サービスエンドポイントは、ClickHouse 管理の証明書とともに `clickhouse-byoc.com` 配下にプロビジョニングされます。
+</Accordion>
+
+<Accordion title="AWS PrivateLink、GCP Private Service Connect、または Azure Private Link はどのように設定しますか？">
+  [AWS](/ja/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/ja/products/bring-your-own-cloud/onboarding/network-gcp)、および [Azure](/ja/products/bring-your-own-cloud/onboarding/network-azure) のネットワーク設定ガイドに従ってください。見落とされがちな点が 2 つあります。エンドポイントの許可リスト登録は**サービスごと**に行うため、新しいサービスごとにエンドポイントを再度登録する必要があります。また、独自の DNS を運用している場合は、プライベートエンドポイント名の DNS 解決をお客様側で設定する必要があります。設定後、コンソールの [Connection via selector](/ja/products/bring-your-own-cloud/configuration/connect#connection-via) を使用して、正しいプライベートエンドポイントのホスト名をコピーしてください。
+</Accordion>
+
+<Accordion title="別の AWS リージョンから PrivateLink 経由で接続できますか？">
+  はい。ただし、コンソールの **Enable private link** トグルが対象とするのは同一リージョンのコンシューマーのみです。AWS では、エンドポイントサービスのクロスリージョンアクセスはデフォルトで無効になっており、ClickHouse コンソール では管理されません。エンドポイントサービスはお客様の BYOC アカウント内にあるため、ご自身で有効にする必要があります。AWS console でエンドポイントサービスの **Supported regions** リストにコンシューマーリージョンを追加し、コンシューマー側でクロスリージョンオプションを指定してエンドポイントを作成します。ClickHouse がこれらの値を変更またはリセットすることはありません。手順については、[PrivateLink 設定ガイド](/ja/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink)を参照してください。AWS のリージョン間データ転送料金が適用されます。
+</Accordion>
+
+<Accordion title="ファイアウォールまたは egress ルールで許可する必要があるエンドポイントのリストはありますか？">
+  公開された単一のエンドポイントリストはありません。クラスターには、クラウドプロバイダー API へのプライベートアクセスに加え、正常に機能するアウトバウンドインターネットアクセス (直接または NAT 経由) が必要です。詳細は、[ネットワーク接続要件](/ja/products/bring-your-own-cloud/onboarding/customization-aws#ensure-network-connectivity)を参照してください。ネットワークポリシーで明示的な一覧が必要な場合は、サポートに連絡して設定を確認してください。
+</Accordion>
+
+<Accordion title="セキュリティツールで BYOC クラスター内の特権コンテナーまたはホストマウントが検出されました。これは想定どおりですか？">
+  EBS CSI ドライバー、ノード設定ジョブ、Prometheus node exporter (`/proc` および `/sys` を読み取ります) など、一部のプラットフォームコンポーネントには、正当な理由から昇格された権限またはホストファイルシステムへのアクセスが必要です。スキャナーで検出事項が報告された場合は、サポートに共有してください。各項目が仕様によるものか、対応が必要かを確認します。
+</Accordion>
+
+<Accordion title="顧客管理の暗号化キー（CMEK）はサポートされていますか？">
+  現在、BYOC ではサポートされていません。保存データはクラウドプロバイダー管理のキーで暗号化されます。現在予定されている機能の一覧については、[概要](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview)を参照してください。
+</Accordion>
+
+<div id="upgrades-and-maintenance">
+  ### アップグレードとメンテナンス
+</div>
+
+<Accordion title="ClickHouseのバージョンアップグレードはどのように行われますか？メンテナンス頻度は指定できますか？">
+  アップグレードはClickHouse Cloudと同様に行われます。サービスはリリースチャネル (fast、regular、slow) に登録され、スケジュールされたメンテナンスウィンドウに従います。設定についてはサポートにお問い合わせください。更新は最低でも週1回のスケジュールとなります。アップグレードはローリング方式で、レプリカごとに (make-before-break) 実行されるため、サービス全体のダウンタイムは発生しません。[操作](/ja/products/bring-your-own-cloud/configuration/operations)を参照してください。
+</Accordion>
+
+<Accordion title="Kubernetesのアップグレードは誰が担当し、どのような影響が予想されますか？">
+  ClickHouseは、プロバイダーのサポート終了日より前にKubernetesのアップグレードを先行して実施し、サポートを通じてお客様と実施時間帯を調整します。コントロールプレーンのアップグレードは透過的に行われます。ノードグループのアップグレードでは、make-before-break方式でノードを1台ずつローリング更新するため、ポッドの再起動に伴い短時間の接続リセットが発生する場合がありますが、データ損失はありません。[操作](/ja/products/bring-your-own-cloud/configuration/operations)を参照してください。
+</Accordion>
+
+<div id="backups-and-disaster-recovery">
+  ### バックアップと災害復旧
+</div>
+
+<Accordion title="バックアップはどこに保存されますか？">
+  お客様のクラウドアカウント内のオブジェクトストレージに保存されます。バックアップが環境外に出ることはありません。バックアップスケジュールと保持期間は設定可能です。調整についてはサポートにお問い合わせください。
+</Accordion>
+
+<Accordion title="バックアップには何が含まれますか？システムテーブルもバックアップされますか？">
+  ユーザーが作成したすべてのデータベース、テーブル、オブジェクトに加え、アクセスエンティティ (ユーザー、ロール、設定プロファイル、行ポリシー、クォータ) およびユーザー定義関数が含まれます。`system.query_log` などのシステムログテーブルは含まれません。
+</Accordion>
+
+<Accordion title="保持期間を過ぎたバックアップに対して請求されるのはなぜですか？">
+  バックアップはチェーンを構成します。完全バックアップの後に、そのバックアップに依存するインクリメンタルバックアップが続きます。チェーン内のインクリメンタルバックアップを復元するにはベースとなる完全バックアップが必要なため、依存するすべてのインクリメンタルバックアップが保持期間を過ぎるまで、完全バックアップも保持・保存されます。
+</Accordion>
+
+<Accordion title="バックアップのステータスを自分たちで監視するにはどうすればよいですか？">
+  方法は2つあります。ClickHouse Cloud API のバックアップエンドポイントと、クラスター内の監視スタックで公開されるバックアップメトリクス (開始、完了、失敗のカウンター) です。独自の監視で失敗に対するアラートを設定することを推奨します。[オブザーバビリティ](/ja/products/bring-your-own-cloud/reference/observability-aws)を参照してください。
+</Accordion>
+
+<Accordion title="災害復旧要件（RPO/RTO）を満たすにはどうすればよいですか？">
+  BYOC は3つのアベイラビリティゾーンにまたがってデプロイされ、書き込みはオブジェクトストレージによる確認後にのみ確認応答されます。現時点ではクロスリージョンレプリケーションは利用できないため、リージョンレベルの災害復旧はバックアップに基づいて行われ、達成可能な RPO はバックアップ頻度によって決まります。別のリージョンのバケットへのバックアップを含め、目標に合わせてバックアップ頻度と宛先を設定できます。設定についてはサポートにお問い合わせください。
+</Accordion>
+
+<div id="observability">
+  ### オブザーバビリティ
+</div>
+
+<Accordion title="BYOC を自社の監視・アラート環境と統合するにはどうすればよいですか？">
+  監視スタック (Prometheus、Grafana、AlertManager) はお客様のアカウント内で稼働しており、private connectivity 経由で直接利用できます。PromQL API 経由でクエリを実行したり、自社の Prometheus にフェデレーションしたり、サービスごとに ClickHouse の `/metrics_all` エンドポイントをスクレイプしたりできます。現時点では、Datadog などのサードパーティプラットフォーム向けのすぐに利用できるインテグレーションはありません。各プラットフォームの Prometheus 互換インジェストを介して統合してください。エンドポイントとセットアップについては、[オブザーバビリティ](/ja/products/bring-your-own-cloud/reference/observability-aws)を参照してください。
+</Accordion>
+
+<div id="cost">
+  ### コスト
+</div>
+
+<Accordion title="BYOC では何に料金がかかりますか？">
+  請求は2つに分かれます。ClickHouse Cloud はサービスに割り当てられたメモリに基づいて課金し、クラウドプロバイダーは基盤となるインフラストラクチャの実費を上乗せなしで直接請求します。現在、詳細なコストリファレンスは AWS のみを対象としています。[コストモデル](/ja/products/bring-your-own-cloud/reference/cost-model-aws)、[課金対象の AWS サービス](/ja/products/bring-your-own-cloud/reference/billable-aws-services)、[AWS サービス制限](/ja/products/bring-your-own-cloud/reference/aws-service-limits)を参照してください。
+</Accordion>
+
+<div id="availability-and-lifecycle">
+  ### 可用性とライフサイクル
+</div>
+
+<Accordion title="BYOC はどのクラウドプロバイダーで利用できますか？">
+  AWS、GCP、Azure はすべて一般提供されています。各クラウドでサポートされている機能とリージョンについては、[概要](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview)を参照してください。
+</Accordion>
+
+<Accordion title="BYOC 環境を廃止するにはどうすればよいですか？">
+  ClickHouse コンソールからサービスと BYOC インフラストラクチャを終了してください。クラウドプロバイダーのコンソールでリソースを削除したり、権限を取り消したりすることから始めないでください。処理の途中でコントロールプレーンとの接続が切断され、手動でのクリーンアップが必要になります。コンソールからの終了処理が完了したら、オンボーディングスタック (CloudFormation stack または Terraform module) と残存するリソースをすべて削除します。AWS では、ClickHouse が作成したすべてのリソースに `clickhouse-byoc=true` タグが付けられているため、後で列挙して何も残っていないことを確認できます。GCP と Azure では、オンボーディング時に使用した専用のプロジェクトまたはサブスクリプションが、確認対象の範囲を限定します。
 </Accordion>
 
 <div id="uptime-sla">
@@ -68,5 +229,5 @@ doc_type: 'reference'
 </div>
 
 <Accordion title="ClickHouse は BYOC 向けのアップタイム SLA を提供していますか？">
-  いいえ。データプレーンはお客様のクラウド環境でホストされるため、サービスの可用性は ClickHouse の管理下にないリソースに左右されます。そのため、ClickHouse は BYOC デプロイメントに対する正式なアップタイム SLA を提供していません。ご不明な点があれば、support@clickhouse.com までお問い合わせください。
+  いいえ。データプレーンはお客様のクラウド環境でホストされるため、サービスの可用性は ClickHouse の管理下にないリソースに左右されます。そのため、ClickHouse は BYOC デプロイメントに対する正式なアップタイム SLA を提供していません。稼働中のサービスは ClickHouse コントロールプレーンとは独立して動作します。コントロールプレーンで障害が発生しても、お客様のアカウントで稼働中のサービスが停止することはありません。ご不明な点があれば、support@clickhouse.com までお問い合わせください。
 </Accordion>

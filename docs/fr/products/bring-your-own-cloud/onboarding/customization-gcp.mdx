@@ -18,7 +18,7 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
 <Steps>
   <Step title="Configurez votre VPC existant" id="configure-existing-vpc">
     1. Allouez au moins 1 sous-réseau privé dans une [région prise en charge par ClickHouse BYOC](/fr/products/cloud/reference/supported-regions) pour le cluster Kubernetes (GKE) de ClickHouse. Assurez-vous que le sous-réseau dispose d’une plage CIDR minimale de `/24` (par exemple, 10.0.0.0/24) afin de fournir suffisamment d’adresses IP aux nœuds du cluster GKE.
-    2. Dans le sous-réseau privé, allouez au moins 1 plage IPv4 secondaire qui sera utilisée pour les pods du cluster GKE. Cette plage secondaire doit être d’au moins `/23` afin de fournir suffisamment d’adresses IP aux pods du cluster GKE.
+    2. Dans le sous-réseau privé, allouez au moins 1 plage IPv4 secondaire qui sera utilisée pour les pods du cluster GKE. Cette plage secondaire doit être d’au moins `/21`. Les plages plus petites ne fournissent pas suffisamment d’adresses IP de pods pour que le cluster GKE termine son provisionnement, et la configuration de l’infrastructure échouera.
     3. Activez **Private Google Access** sur le sous-réseau. Cela permet aux nœuds GKE d’accéder aux API et services Google sans nécessiter d’adresses IP externes.
 
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Détails du sous-réseau GCP BYOC montrant les plages IPv4 primaires et secondaires avec Private Google Access activé" />
@@ -33,6 +33,10 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
   </Step>
 
   <Step title="Configurez l’infrastructure BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      Lorsque vous cliquez sur **Set up Infrastructure**, ClickHouse Cloud exécute automatiquement la [validation préalable](/fr/products/bring-your-own-cloud/onboarding/standard#preflight-validation) avant le provisionnement, afin de vérifier que le compte de service de gestion dispose des autorisations requises et que les API Google Cloud requises sont activées. La validation automatique d’un VPC que vous fournissez ne fait pas encore partie de la vérification préalable GCP. Assurez-vous donc que votre VPC respecte les [exigences réseau](#configure-existing-vpc) ci-dessus avant de commencer.
+    </Note>
+
     Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
 
     1. Sous **Configuration du VPC**, sélectionnez **Use existing VPC**.
