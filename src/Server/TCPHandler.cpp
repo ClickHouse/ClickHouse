@@ -9,7 +9,9 @@
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/chooseNetworkCompressionCodec.h>
+#include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -53,6 +55,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/quoteString.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
@@ -2805,10 +2808,14 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
     query_kind = state->query_context->getClientInfo().query_kind;
 
-    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// FIXME: Remove together with the old query analysis itself.
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
-    /// different servers.
+    /// different servers. `enable_analyzer` is an obsolete setting a user cannot disable anymore,
+    /// but an initiator this old has no analyzer at all, so a query it sends has to keep being
+    /// analyzed the old way. The value survives `clampToSettingsConstraints` below because a
+    /// change disabling the analyzer is only refused on the throwing paths (see
+    /// `SettingsConstraints`), which a secondary query does not take.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
             < VersionNumber(23, 3, 0)
@@ -2934,6 +2941,22 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
+
+        /// The block is self-describing and comes from the client, while the schema of an external table
+        /// is bound once, by its first block (see the branch above). Every block after that one must match
+        /// that schema: the columns are written to the table as a `Chunk`, which carries no types at all,
+        /// and `MemorySink::consume` labels them with the table header again. A block declaring other
+        /// types would therefore not be rejected anywhere, and its data would later be read as the type
+        /// the header names - a type confusion on data the client controls, not a data error.
+        if (resolved && !isCompatibleHeader(block, metadata_snapshot->getSampleBlock()))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Structure of the block for external table {} does not match the structure of the table. "
+                "Received:\n{}\nExpected:\n{}",
+                backQuoteIfNeed(temporary_id.table_name),
+                block.dumpStructure(),
+                metadata_snapshot->getSampleBlock().dumpStructure());
+
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
