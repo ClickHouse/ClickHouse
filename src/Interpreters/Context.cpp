@@ -392,6 +392,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
@@ -4034,6 +4035,15 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
+
+    /// A mutation runs in the background, from a context built out of the background one rather
+    /// than from the query that submitted it, so the normalization in `executeQuery` never sees it
+    /// and a `0` written in a settings profile of the server configuration survives. The analyzer
+    /// analyzes the mutation either way, so leaving it would only make `getSetting` inside an
+    /// `UPDATE` expression report an analysis that did not happen. Every context a mutation is
+    /// analyzed and executed in comes through here.
+    if (!(*settings)[Setting::allow_experimental_analyzer])
+        (*settings)[Setting::allow_experimental_analyzer] = true;
 }
 
 void Context::makeSessionContext()
