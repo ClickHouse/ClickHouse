@@ -78,6 +78,53 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
 }
 
+TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
+{
+    ZooKeeperListWithOptionsRequest request;
+    request.path = "/round/trip";
+    request.has_watch = true;
+    request.options = {
+        .filter = ListRequestType::EPHEMERAL_ONLY,
+        .with_stat = true,
+        .with_data = true,
+        .recursive = true,
+        .max_results = 17,
+        .shuffle = true,
+    };
+
+    WriteBufferFromOwnString request_out;
+    request.writeImpl(request_out);
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
+    ReadBufferFromString request_in(request_out.str());
+    decoded.readImpl(request_in);
+
+    EXPECT_TRUE(request_in.eof());
+    EXPECT_EQ(decoded.options_version, ListOptionsVersion::V1);
+    EXPECT_EQ(decoded.path, request.path);
+    EXPECT_EQ(decoded.has_watch, request.has_watch);
+    EXPECT_EQ(decoded.options.filter, request.options.filter);
+    EXPECT_EQ(decoded.options.with_stat, request.options.with_stat);
+    EXPECT_EQ(decoded.options.with_data, request.options.with_data);
+    EXPECT_EQ(decoded.options.recursive, request.options.recursive);
+    EXPECT_EQ(decoded.options.max_results, request.options.max_results);
+    EXPECT_EQ(decoded.options.shuffle, request.options.shuffle);
+
+    auto response = request.makeResponse();
+    auto & expected_response = dynamic_cast<ZooKeeperListWithOptionsResponse &>(*response);
+    expected_response.names = {"child", "child/grandchild"};
+    expected_response.stats.resize(expected_response.names.size());
+    expected_response.data = {"one", "two"};
+    expected_response.truncated = true;
+
+    WriteBufferFromOwnString response_out;
+    expected_response.writeImpl(response_out);
+    auto decoded_response = request.makeResponse();
+    ReadBufferFromString response_in(response_out.str());
+    dynamic_cast<ZooKeeperListWithOptionsResponse &>(*decoded_response).readImpl(response_in);
+    EXPECT_TRUE(response_in.eof());
+}
+
 TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
 {
     ZooKeeperCreate2Response original;

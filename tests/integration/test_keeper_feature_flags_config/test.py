@@ -83,7 +83,7 @@ def test_keeper_feature_flags(started_cluster):
             assert f"{feature}\t{1 if is_enabled else 0}" in res
 
     assert_feature_flags(
-        [("filtered_list", 1), ("multi_read", 1), ("remove_recursive", 1)]
+        [("filtered_list", 1), ("multi_read", 1), ("remove_recursive", 1), ("list_with_options", 1)]
     )
 
     feature_flags = [
@@ -92,7 +92,7 @@ def test_keeper_feature_flags(started_cluster):
         ("create_if_not_exists", 1),
     ]
     restart_clickhouse(feature_flags)
-    assert_feature_flags(feature_flags + [("filtered_list", 1)])
+    assert_feature_flags(feature_flags + [("filtered_list", 1), ("list_with_options", 1)])
 
     feature_flags = [
         ("multi_read", 0),
@@ -101,6 +101,6 @@ def test_keeper_feature_flags(started_cluster):
         ("create_if_not_exists", 0),
     ]
     restart_clickhouse(feature_flags)
-    assert_feature_flags(feature_flags)
+    assert_feature_flags(feature_flags + [("list_with_options", 1)])
 
     restart_clickhouse([("invalid_feature", 1)], expect_fail=True)

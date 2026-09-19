@@ -48,7 +48,7 @@ bool KeeperFeatureFlags::isEnabled(KeeperFeatureFlag feature_flag) const
 {
     auto [byte_idx, bit_idx] = getByteAndBitIndex(magic_enum::enum_integer(feature_flag));
 
-    if (byte_idx > feature_flags.size())
+    if (byte_idx >= feature_flags.size())
         return false;
 
     return feature_flags[byte_idx] & (1 << bit_idx);
