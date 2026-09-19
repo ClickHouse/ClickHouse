@@ -20,7 +20,10 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/BitpackingBlockCodec.h>
 
+#include <algorithm>
+#include <bit>
 #include <limits>
 
 namespace ProfileEvents
@@ -772,6 +775,57 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
     storage->beginTransaction();
     storage->createDirectories();
     return storage;
+}
+
+size_t estimateLargestPostingListSegmentBytes(const TokenPostingsInfo & token_info)
+{
+    const size_t num_segments = token_info.offsets.size();
+    if (num_segments == 0)
+        return 0;
+
+    /// With several segments all but the last are full, so the last one has at most as many postings as
+    /// the largest of them and its size is bounded by theirs.
+    if (num_segments >= 2)
+    {
+        size_t largest = 0;
+        for (size_t i = 1; i < num_segments; ++i)
+            largest = std::max(largest, static_cast<size_t>(token_info.offsets[i] - token_info.offsets[i - 1]));
+        return largest;
+    }
+
+    /// A single segment holds the whole list. Its row-id deltas are bit-packed per block of BLOCK_SIZE to the
+    /// block's largest gap, which is a few times the average gap: give the bit width of the average gap three
+    /// bits of headroom. Each block adds a bits byte and two varints of the block index.
+    const size_t cardinality = token_info.cardinality;
+    const auto & range = token_info.ranges.front();
+    const size_t span = range.end >= range.begin ? range.end - range.begin + 1 : 1;
+    const size_t average_gap = std::max<size_t>(1, span / std::max<size_t>(1, cardinality));
+    const size_t bits = std::min<size_t>(32, static_cast<size_t>(std::bit_width(average_gap)) + 3);
+    const size_t blocks = (cardinality + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    return cardinality * bits / 8 + blocks * (1 + 2 * 5) + 64;
+}
+
+std::unique_ptr<MergeTreeReaderStream> makeCursorPostingsInputStream(
+    DataPartStoragePtr data_part_storage,
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeReaderSettings & reader_settings,
+    const TokenPostingsInfo & token_info)
+{
+    auto settings = MergeTreeIndexReader::patchSettings(reader_settings, MergeTreeIndexSubstream::Type::TextIndexPostings);
+
+    /// The patched size is the floor (small lists are read in one piece anyway), the regular read buffer
+    /// size of the query is the cap: postings streams of the cursors then use at most what a column stream does.
+    const size_t segment_bytes = estimateLargestPostingListSegmentBytes(token_info);
+    auto adjust = [&](size_t & buffer_size, size_t regular_size)
+    {
+        buffer_size = std::clamp(segment_bytes, std::min(buffer_size, regular_size), std::max(buffer_size, regular_size));
+    };
+    adjust(settings.read_settings.local_fs_settings.buffer_size, reader_settings.read_settings.local_fs_settings.buffer_size);
+    adjust(settings.read_settings.remote_fs_settings.buffer_size, reader_settings.read_settings.remote_fs_settings.buffer_size);
+
+    return makeTextIndexInputStream(std::move(data_part_storage), stream_name, extension, settings);
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(

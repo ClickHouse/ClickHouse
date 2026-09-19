@@ -365,7 +365,16 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     for (const auto & [token, token_info] : token_infos)
     {
         if (analyzer.isTokenNeeded(token) && !analyzer.hasReadPostings(token))
-            large_postings_streams.emplace(token, makeTextIndexStream(substream));
+        {
+            auto stream = makeCursorPostingsInputStream(
+                data_part->getDataPartStoragePtr(),
+                index.index->getFileName() + substream.suffix,
+                substream.extension,
+                settings,
+                *token_info);
+
+            large_postings_streams.emplace(token, std::move(stream));
+        }
     }
 }
 

@@ -193,4 +193,22 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & extension,
     const MergeTreeReaderSettings & reader_settings);
 
+/// Opens the postings substream for a `PostingListCursor` over `token_info`. The cursor reads a segment whole
+/// (header, payload, block index), so the stream's buffer is sized to the largest segment instead of the
+/// 16 KiB that suits the small random reads of the dictionary lookups: a segment then takes one read rather
+/// than one per 16 KiB, and the buffer carries the beginning of the next one. Bounded by the regular read
+/// buffer size of `reader_settings`.
+std::unique_ptr<MergeTreeReaderStream> makeCursorPostingsInputStream(
+    DataPartStoragePtr data_part_storage,
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeReaderSettings & reader_settings,
+    const TokenPostingsInfo & token_info);
+
+/// Estimated size in bytes of the largest segment of `token_info`'s compressed posting list. Segment sizes
+/// follow from consecutive segment offsets; the last segment ends where the next token's postings begin,
+/// which the dictionary entry does not record, so a single-segment list is estimated from its cardinality
+/// and row span. Meant for sizing read buffers: an underestimate only costs a second read.
+size_t estimateLargestPostingListSegmentBytes(const TokenPostingsInfo & token_info);
+
 }
