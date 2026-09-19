@@ -1,0 +1,31 @@
+-- A subquery on an unreadable table, validation off
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- The subquery reads nothing of the target table, so its own columns are not the point
+ACCESS_DENIED
+-- A table on the right of IN, validation off
+ACCESS_DENIED
+-- dictGet and joinGet name their object instead of reading it as a column
+ACCESS_DENIED
+ACCESS_DENIED
+-- A UDF body reading a column the user cannot read, on every entry point
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- Unreadable columns are equally unreadable with validation on (the default)
+ACCESS_DENIED
+ACCESS_DENIED
+-- With the grants, the same mutations are allowed
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+-- The value of an unreadable table never reached a readable column
+0
