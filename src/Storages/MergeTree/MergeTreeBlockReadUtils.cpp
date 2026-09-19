@@ -392,6 +392,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
@@ -454,13 +455,23 @@ void addPatchPartsColumns(
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
     auto first_step_columns_set = first_step_columns.getNameSet();
 
+    /// `injectRequiredColumns` falls back to a minimum-size column when none of the names it is given resolves to one present in the part.
+    auto names_to_read = first_step_columns.getNames();
+
     for (const auto & key_column_name : required_key_columns)
     {
         if (!first_step_columns_set.contains(key_column_name))
-        {
-            auto column = storage_snapshot->getColumn(options, key_column_name);
-            first_step_columns.push_back(std::move(column));
-        }
+            names_to_read.push_back(key_column_name);
+    }
+
+    /// A key column absent from the part is materialized from its DEFAULT expression over this step's
+    /// block alone, where an absent input of that expression yields its type's default, not its value.
+    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, options.with_subcolumns, names_to_read);
+
+    for (const auto & name : names_to_read)
+    {
+        if (first_step_columns_set.insert(name).second)
+            first_step_columns.push_back(storage_snapshot->getColumn(options, name));
     }
 }
 
