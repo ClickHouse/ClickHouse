@@ -70,8 +70,9 @@ SELECT arrayExists(x -> x = tuple(tuple('V0\0')), v) FROM t_tuple2 SETTINGS opti
 SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
 SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
--- Array and Map elements: over a column both spellings answer 0, but over a constant array
--- `has` compares raw Fields and answers 1 where `equals` answers 0, so they diverge as well.
+-- Array and Map elements: `equals` compares these through a cast to their common type, and `has`
+-- does the same, so both spellings answer 0 over a column and over a constant array alike. The
+-- rewrite is declined for them regardless, which the rows further down pin.
 DROP TABLE IF EXISTS t_nested_arr;
 CREATE TABLE t_nested_arr (v Array(Array(FixedString(3)))) ENGINE = Memory;
 INSERT INTO t_nested_arr SELECT [[toFixedString('V0', 3)]];
@@ -149,7 +150,8 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedStrin
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 1, [1, 2]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 1, [1, 2]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: in%';
 
--- Direct membership calls keep their current semantics: this change is only about the rewrite.
+-- Direct membership calls apply the same zero-padding rule as `equals`, so the rewrite and the
+-- chain it replaces agree here.
 SELECT has(v, 'V0\0'), indexOf(v, 'V0\0'), countEqual(v, 'V0\0') FROM t_fs;
 
 DROP TABLE t_fs;

@@ -3,7 +3,8 @@
 -- `mapContainsKey`/`mapContainsValue`/`mapContains`, and `has` over a `Map`, are adapters of the
 -- same array-search machinery as `has` over an array, so a `bloom_filter` index on `mapKeys`/
 -- `mapValues` must coerce a string constant the same way. Cells compare the keyed answer against
--- an unindexed oracle, so no expected value is baked in; every reference row answers 1.
+-- an unindexed oracle, so no expected value is baked in; every reference row of that shape
+-- answers 1.
 
 DROP TABLE IF EXISTS o_map;
 DROP TABLE IF EXISTS k_map;
@@ -33,8 +34,8 @@ SELECT (SELECT count() FROM k_map WHERE mapContainsKey(m, 'K1')) = (SELECT count
 SELECT (SELECT count() FROM k_map WHERE mapContains(m, 'K1')) = (SELECT count() FROM o_map WHERE mapContains(m, 'K1'));
 SELECT (SELECT count() FROM k_map WHERE has(m, 'K1')) = (SELECT count() FROM o_map WHERE has(m, 'K1'));
 
--- The `String`-key raw-byte comparison matches the padded key only, and the index must not prune
--- the padded row: pin the selected rows.
+-- The `String`-key comparison ignores the constant's trailing zero bytes, so both spellings are
+-- selected and the index must not prune either: pin the selected rows.
 SELECT id FROM k_map WHERE mapContainsKey(m, toFixedString('K1', 3)) ORDER BY id;
 SELECT id FROM k_map WHERE mapContainsValue(m, toFixedString('V0', 5)) ORDER BY id;
 

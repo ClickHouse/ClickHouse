@@ -1,7 +1,8 @@
--- `has(<constant array>, <indexed scalar>)` compares `Field`s directly. An
--- over-wide `FixedString` array element cannot match a narrower scalar, and
--- bloom-filter analysis must decline its index instead of throwing while it
--- materializes the element in the scalar's type.
+-- `has(<constant array>, <indexed scalar>)` applies the zero-padding rule, so an over-wide
+-- `FixedString` array element does match a narrower scalar of the same value:
+-- `toFixedString('V0', 5) = toFixedString('V0', 3)` is 1. Bloom-filter analysis must decline its
+-- index rather than throw while materializing the element in the scalar's type, and must not
+-- prune the matching row away.
 CREATE TABLE k_fixed
 (
     s FixedString(3),
