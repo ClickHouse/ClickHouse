@@ -1,2 +1,8 @@
 deep: rejected
 shallow: ok
+liar filtered: rejected
+geo liar filtered: rejected
+geo comb filtered: rejected
+geo root liar filtered: rejected
+geo nested bbox filtered: rejected
+geo absent bbox filtered: ok
