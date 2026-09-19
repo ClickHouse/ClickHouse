@@ -12,6 +12,7 @@
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTUpdateQuery.h>
@@ -24,6 +25,8 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+
+#include <optional>
 
 
 namespace DB
@@ -42,6 +45,7 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool use_legacy_to_time;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -105,6 +109,37 @@ BlockIO InterpreterUpdateQuery::execute()
         replaceLegacyToTime(*query_ptr);
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
+
+    /// The mutation command is stored as text, which undoes the CTE rewrite below, so a lightweight update
+    /// materializes its CTEs like a `SELECT`. The check runs here so a rejection precedes the Replicated enqueue,
+    /// the table lock and the block-number allocation. Without the analyzer the mutation cannot run a CTE at all,
+    /// so `AS MATERIALIZED` is rejected regardless of `force_materialized_cte`.
+    std::optional<RejectMaterializedCTEVisitor::Data> reject;
+    if (!shouldUseAnalyzerForMutations(getContext()))
+    {
+        reject.emplace();
+        reject->reason = "require the analyzer, which is not used for this mutation";
+        reject->remedy = "The server setting `use_analyzer_for_mutations` disables the analyzer for mutations";
+    }
+    else if (shouldRejectMaterializedCTE(getContext()) && !settings[Setting::enable_materialized_cte])
+    {
+        reject.emplace();
+        reject->reason = "are disabled";
+        reject->remedy = "Enable setting `enable_materialized_cte` to materialize it, or disable setting `force_materialized_cte` to inline it as a regular CTE";
+    }
+    if (reject)
+    {
+        if (update_query.predicate)
+        {
+            ASTPtr predicate = update_query.predicate->ptr();
+            RejectMaterializedCTEVisitor(*reject).visit(predicate);
+        }
+        if (update_query.assignments)
+        {
+            ASTPtr assignments = update_query.assignments->ptr();
+            RejectMaterializedCTEVisitor(*reject).visit(assignments);
+        }
+    }
 
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
     /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by

@@ -1,0 +1,12 @@
+udf scalar	[1]
+udf scalar forwarded	0
+udf with argument	[1]
+udf with argument forwarded	0
+apply udf	[1]
+apply udf forwarded	0
+apply lambda	[1]
+apply lambda forwarded	0
+udf calling udf	[1]
+udf calling udf forwarded	0
+udf with COLUMNS argument takes the route	[1]
+udf with COLUMNS argument takes the route forwarded	1
