@@ -7,6 +7,7 @@ window over predicate	40
 parallel replicas	1	20
 distributed table	1	40
 distributed over distributed	1	80
+above fold cutoff	1	40
 literal array control	0	16
 literal array control	1	24
 tuple in control	0	16

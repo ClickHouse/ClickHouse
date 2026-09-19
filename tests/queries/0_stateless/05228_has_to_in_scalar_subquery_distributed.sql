@@ -56,6 +56,11 @@ FROM t_05228_dist GROUP BY p ORDER BY p;
 SELECT 'distributed over distributed', has((SELECT groupUniqArray(uid) FROM t_05228_local), uid) AS p, count()
 FROM t_05228_dist_over_dist GROUP BY p ORDER BY p;
 
+-- Above the size at which a secondary server stops folding the shipped set source, the rewrite is
+-- declined, so both sides keep `has()`.
+SELECT 'above fold cutoff', has((SELECT groupUniqArray(repeat(toString(number), 200)) FROM numbers(1800)), repeat(uids, 200)) AS p, count()
+FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_05228_local) GROUP BY p ORDER BY p;
+
 -- Controls: a literal array (the same node on both sides) and a plain tuple `IN` (not rewritten at
 -- all) have to keep answering in the same shape.
 SELECT 'literal array control', has(['0', '1', '2'], uid) AS p, count()
@@ -64,7 +69,7 @@ FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_05228_local) GROUP BY p 
 SELECT 'tuple in control', uid IN ('0', '1', '2') AS p, count()
 FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_05228_local) GROUP BY p ORDER BY p;
 
--- The rewrite still fires: a "fix" that simply declined it would pass every row above.
+-- The rewrite still fires below the cutoff: a "fix" that just declined would pass everything above.
 SELECT 'rewrite fires', count() FROM (
     EXPLAIN QUERY TREE run_passes = 1
     SELECT has((SELECT groupUniqArray(uid) FROM t_05228_local), uid) AS p, count() FROM t_05228_local GROUP BY p

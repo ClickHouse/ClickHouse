@@ -13,6 +13,8 @@
 
 #include <Core/Settings.h>
 
+#include <base/unit.h>
+
 namespace DB
 {
 namespace Setting
@@ -49,6 +51,13 @@ public:
         else
             first_arg_column = tryGetScalarSubqueryColumn(has_function_arguments_nodes[0], getContext());
         if (!first_arg_column)
+            return;
+
+        /// A secondary server only resolves the shipped query, so it reaches the rewritten `in` only if its
+        /// resolver constant-folds the set source; `resolveFunction` refuses to make a constant out of a column
+        /// this large ("Sanity check: do not convert large columns to constants") and lowers `in` back to `has`
+        /// instead, which leaves the two servers naming the predicate differently.
+        if (ConstantValue::wrapToColumnConst(first_arg_column)->byteSize() >= 1_MiB)
             return;
 
         /// Verify that the first argument is actually an array type
