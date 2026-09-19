@@ -37,6 +37,7 @@ public:
     {
         PartialAggregation = 0,
         FinalAggregation = 1,
+        Scatter = 2,
     };
 
     AggregatingStep(
@@ -187,7 +188,8 @@ private:
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
-
+    /// The scatter + per-shard merge stage; non-empty only for shuffled aggregation-in-order.
+    Processors scatter;
     Processors aggregating;
 };
 

@@ -50,6 +50,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_conflict_detector", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."},
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a private cache capped at 100 MiB, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"aggregation_in_order_shuffle", false, false, "New setting to parallelize aggregation-in-order by repartitioning the sorted input by the hash of the `GROUP BY` keys into independent shards, avoiding the single-threaded `FinishAggregatingInOrderTransform` funnel while keeping bounded memory. Applied only when the result order is not relied upon downstream and `max_rows_to_group_by` is not set."},
+            {"aggregation_in_order_shuffle_max_buffered_bytes", 536870912, 536870912, "New setting that bounds the total bytes buffered by the repartitioning stage of `aggregation_in_order_shuffle`; exceeding it fails the query with a `TOO_MANY_ROWS_OR_BYTES` exception instead of buffering without limit."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
