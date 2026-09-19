@@ -1,6 +1,9 @@
-creating a replicated table with the setting is still refused
+creating a replicated table with the setting is refused
 and so is turning it on later
 turning it off is allowed, whatever it was
 10
-a table whose metadata carries the setting can be attached
-10
+converting a table that carries the setting is refused
+and the refusal changed nothing, so the table comes back as it was
+MergeTree
+once the setting is gone, the conversion goes through
+ReplicatedMergeTree

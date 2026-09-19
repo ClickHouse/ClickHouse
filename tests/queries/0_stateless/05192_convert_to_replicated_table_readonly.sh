@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The `convert_to_replicated` flag converted a table that has `table_readonly = 1` - a setting that is
 # not supported for `ReplicatedMergeTree` - into a replicated table carrying it: exactly the state the
-# check in the constructor exists to make unrepresentable. The conversion is skipped instead, so the
+# checks around that setting exist to make unrepresentable. The conversion is skipped instead, so the
 # table keeps serving and the setting can be reset; the flag stays, so the conversion runs once it is
 # gone. `clickhouse local` is used because the flag is a file in the table's directory.
 
