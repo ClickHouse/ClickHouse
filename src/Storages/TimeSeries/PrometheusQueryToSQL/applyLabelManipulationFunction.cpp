@@ -4,6 +4,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
+#include <Common/isValidUTF8.h>
+#include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -24,6 +26,20 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    void checkLabelName(std::string_view function_name, const SQLQueryPiece & argument, size_t argument_number)
+    {
+        const auto & label_name = argument.string_value;
+        if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                "Function '{}' received invalid label name {} in argument #{}",
+                function_name,
+                quoteString(label_name),
+                argument_number);
+        }
+    }
+
     /// Checks if the types of the specified arguments are valid for a label manipulation function.
     void checkArgumentTypes(
         const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
@@ -65,6 +81,18 @@ namespace
                                 "Function '{}' expects argument #{} of type {}, but expression {} has type {}",
                                 function_name, i + 1, ResultType::STRING, getPromQLText(argument, context), argument.type);
             }
+        }
+
+        if (function_name == "label_replace")
+        {
+            checkLabelName(function_name, arguments[1], 2);
+        }
+        else
+        {
+            for (size_t i = 3; i < arguments.size(); ++i)
+                checkLabelName(function_name, arguments[i], i + 1);
+
+            checkLabelName(function_name, arguments[1], 2);
         }
     }
 
