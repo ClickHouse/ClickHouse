@@ -4702,27 +4702,37 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
                 src_transaction.renameParts();
 
-                /// Run the commit-time checks of BOTH transactions before committing either of
-                /// them. `commit` enforces the publish fence itself and undoes only its OWN
-                /// published renames when it fails: with the two commits back to back, a source
-                /// side rejected after the destination has already committed would leave the
-                /// moved partition visible in the destination while it is still present in the
-                /// source, even though the command returns an exception. Checking both here
-                /// makes the commits below unable to fail independently on the leadership fence,
-                /// and a failure of either check is undone for the whole command by the handler
-                /// below.
+                /// Run every throw-capable step of BOTH commits before committing either of
+                /// them. The leadership fence is not the only way a commit can fail: after it
+                /// passes, `commit` still calls `IDataPartStorage::commitTransaction`,
+                /// `getActivePartsToReplace`, `addNewPartAndRemoveCovered` and
+                /// `NonTransactionalRemovalLocks::store`, any of which can throw. With the two
+                /// commits back to back, a source side that failed in any of those after the
+                /// destination had already committed would leave the moved partition visible in
+                /// the destination while it is still present in the source, even though the
+                /// command returns an exception. Preparing both sides here makes the commits
+                /// below unable to fail at all, and a failure of either preparation is undone for
+                /// the whole command by the handler below.
                 dest_transaction.validateCommitPreconditions();
+                src_transaction.validateCommitPreconditions();
 
-                /// Test hook for the window between the two commits: the destination side has
-                /// passed its commit-time fence (and, before this fence was hoisted, would have
-                /// been committed already), and the source side is about to be rejected.
+                /// Both leadership fences have passed; now run the rest of the throw-capable
+                /// commit work of both sides, still before either of them is finalized.
+                dest_transaction.prepareCommit(dest_data_parts_lock);
+
+                /// Test hook for the last window in which the command can still fail: both
+                /// commit preconditions have passed and the destination side has completed every
+                /// step of its commit that can throw — its parts are durable under their
+                /// persistent names and their removal locks are stored — and the source side is
+                /// then rejected. This stands in for any throw from the source's own
+                /// post-validation commit work.
                 fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_between_move_commits,
                 {
                     throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
                         "Simulated leadership loss between the two commits of MOVE PARTITION TO TABLE (leader_election)");
                 });
 
-                src_transaction.validateCommitPreconditions();
+                src_transaction.prepareCommit(src_data_parts_lock);
             }
             catch (...)
             {

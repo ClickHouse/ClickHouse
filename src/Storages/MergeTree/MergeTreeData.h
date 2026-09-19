@@ -418,6 +418,19 @@ public:
         /// renames, and the caller rolls both of them back).
         void validateCommitPreconditions();
 
+        /// Run every step of `commit` that can throw, and stop right before the `noexcept`
+        /// bookkeeping that makes the parts active. After this returns, `commit` cannot fail.
+        /// Needed by two-table operations (`MOVE PARTITION TO TABLE`): validating the leadership
+        /// fence of both sides is not enough, because the rest of `commit` is throw-capable too
+        /// (`IDataPartStorage::commitTransaction`, `getActivePartsToReplace`,
+        /// `MergeTreeTransaction::addNewPartAndRemoveCovered`, `NonTransactionalRemovalLocks::store`).
+        /// A source side that threw from any of those after the destination had already committed
+        /// would leave the moved partition visible in the destination while it is still present in
+        /// the source, even though the command returns an exception. Preparing both sides first and
+        /// only then committing them removes that window entirely. Calling it twice is a no-op, and
+        /// `commit` calls it itself when the caller did not.
+        void prepareCommit(DataPartsLock & acquired_parts_lock, bool is_refresh = false);
+
         /// Rename the parts already published by `renameParts` back to the temporary directories
         /// they came from. For two-table operations (`MOVE PARTITION TO TABLE`) that publish
         /// through two transactions: when one side's batch has fully published and the other
@@ -460,6 +473,14 @@ public:
         /// Set by `validateCommitPreconditions`: the commit-time leadership checks have already
         /// been made by the caller, so `commit` must not repeat them.
         bool commit_preconditions_validated = false;
+
+        /// Set by `prepareCommit`: every throw-capable step of the commit has already run, so
+        /// `commit` only has to perform its `noexcept` part. `covered_parts_for_commit` and
+        /// `covering_parts` carry the results of that work; they stay valid because the caller
+        /// holds the parts lock across both calls.
+        bool commit_prepared = false;
+        std::vector<DataPartsVector> covered_parts_for_commit;
+        std::vector<DataPartPtr> covering_parts;
 
         /// Parts published by `renameParts`, with the temporary directory each of them came
         /// from, kept until `commit` so that an abort after a fully-published batch (see

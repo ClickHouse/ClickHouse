@@ -3842,13 +3842,19 @@ def test_move_partition_not_split_when_source_commit_fails(started_cluster):
     visible in the destination while it was still present in the source — data duplicated by a
     command that returned an exception.
 
-    Both commit-time checks now run before either transaction commits
-    (`validateCommitPreconditions`), and the
-    `merge_tree_leader_election_stale_lease_between_move_commits` failpoint fires exactly in
-    between them: the destination side has passed its check (and, with the old code, would have
-    been committed already) and the source side is then rejected. The whole command must be
-    undone — neither table may show the partition twice, including after both part sets are
-    reloaded from shared storage.
+    The leadership fence is not the only way a commit can fail: once it passes, `commit` still
+    calls `IDataPartStorage::commitTransaction`, `getActivePartsToReplace`,
+    `addNewPartAndRemoveCovered` and `NonTransactionalRemovalLocks::store`, any of which can
+    throw. So every throw-capable step of both commits now runs first (`prepareCommit`), and the
+    two `commit` calls that follow cannot fail at all.
+
+    The `merge_tree_leader_election_stale_lease_between_move_commits` failpoint fires after BOTH
+    commit preconditions have passed and after the destination side has completed every step of
+    its commit that can throw — its parts are durable under their persistent names and their
+    removal locks are stored. That is the last point at which the command can still abort, and it
+    stands in for a throw from the source's own post-validation commit work. The whole command
+    must be undone — neither table may show the partition twice, including after both part sets
+    are reloaded from shared storage.
     """
     ensure_node_up(node1)
     failpoint = "merge_tree_leader_election_stale_lease_between_move_commits"

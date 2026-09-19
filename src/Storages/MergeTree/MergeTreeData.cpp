@@ -12118,6 +12118,13 @@ void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, bool need_re
     precommitted_parts.insert(part);
     if (need_rename)
         precommitted_parts_need_rename.insert(part);
+
+    /// A part added after `prepareCommit` invalidates what it computed, so let `commit` redo it
+    /// instead of indexing the stale vectors. Re-preparing is harmless: the storage transactions
+    /// it already committed are no longer active.
+    commit_prepared = false;
+    covered_parts_for_commit.clear();
+    covering_parts.clear();
 }
 
 MergeTreeData::Transaction::~Transaction()
@@ -12215,6 +12222,9 @@ void MergeTreeData::Transaction::clear()
     precommitted_parts.clear();
     precommitted_parts_need_rename.clear();
     published_parts_pending_commit.clear();
+    commit_prepared = false;
+    covered_parts_for_commit.clear();
+    covering_parts.clear();
 }
 
 void MergeTreeData::Transaction::renameParts()
@@ -12334,8 +12344,11 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(bool is_refres
     return commit(lock, is_refresh);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock, bool is_refresh)
+void MergeTreeData::Transaction::prepareCommit(DataPartsLock & acquired_parts_lock, bool is_refresh)
 {
+    if (commit_prepared)
+        return;
+
     /// Refresh-path commits (`loadNewlyAppearedParts`) only add parts that already exist on
     /// shared storage to the local in-memory index; they do not produce new data. Followers
     /// under `leader_election` must be able to run this path to keep their part view fresh,
@@ -12343,14 +12356,10 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
     if (!is_refresh && !commit_preconditions_validated)
         validateCommitPreconditions();
 
-    DataPartsVector total_covered_parts;
-
     if (!isEmpty())
     {
         if (!precommitted_parts_need_rename.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts had not been renamed");
-
-        auto settings = data.getSettings();
 
         for (const auto & part : precommitted_parts)
             if (part->getDataPartStorage().hasActiveTransaction())
@@ -12358,10 +12367,10 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
         /// Collect covered parts and call addNewPartAndRemoveCovered before NOEXCEPT_SCOPE,
         /// because lockRemovalTID inside addNewPartAndRemoveCovered can throw SERIALIZATION_ERROR.
-        std::vector<DataPartsVector> covered_parts_for_commit;
+        covered_parts_for_commit.clear();
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        std::vector<DataPartPtr> covering_parts;
+        covering_parts.clear();
         covering_parts.reserve(precommitted_parts.size());
 
         for (const auto & part : precommitted_parts)
@@ -12410,8 +12419,20 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             }
             removal_locks.store();
         }
+    }
 
+    commit_prepared = true;
+}
 
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock, bool is_refresh)
+{
+    /// Everything that can throw happens here; after it returns, this function cannot fail.
+    prepareCommit(acquired_parts_lock, is_refresh);
+
+    DataPartsVector total_covered_parts;
+
+    if (!isEmpty())
+    {
         NOEXCEPT_SCOPE({
             auto current_time = time(nullptr);
 
