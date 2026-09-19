@@ -199,7 +199,7 @@ QueryPipeline makePipeline(
     const AggregateFunctionPtr & sum_function,
     Strings labels_to_keep,
     size_t max_output_groups = 1024,
-    PromQLRangeSumByTransform::FullGroupGuardPtr full_group_guard = nullptr)
+    PromQLGroupLimitPtr group_limit = nullptr)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
     auto transform = std::make_shared<PromQLRangeSumByTransform>(header,
@@ -208,7 +208,7 @@ QueryPipeline makePipeline(
         sum_function,
         std::move(labels_to_keep),
         max_output_groups,
-        std::move(full_group_guard));
+        std::move(group_limit));
     Pipe pipe(source);
     pipe.addTransform(transform);
     return QueryPipeline(std::move(pipe));
@@ -235,10 +235,12 @@ QueryPipeline makePartialGroupMergePipeline(
     const SharedHeader & header,
     Chunks chunks,
     const AggregateFunctionPtr & sum_function,
-    size_t max_output_groups = 1024)
+    size_t max_output_groups = 1024,
+    PromQLGroupLimitPtr group_limit = nullptr)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
-    auto transform = std::make_shared<PromQLPartialGroupMergeTransform>(header, sum_function, max_output_groups);
+    auto transform = std::make_shared<PromQLPartialGroupMergeTransform>(
+        header, sum_function, max_output_groups, std::move(group_limit));
     Pipe pipe(source);
     pipe.addTransform(transform);
     return QueryPipeline(std::move(pipe));
@@ -476,31 +478,10 @@ TEST(PromQLRangeSumByTransform, UsesPopulatedTagsCollector)
     ASSERT_FALSE(executor.pull(output));
 }
 
-TEST(PromQLRangeSumByTransform, RejectsDifferentIdentifiersWithSameFullTags)
+TEST(ContextTimeSeriesTagsCollector, DetectsDifferentIdentifiersWithSameFullTags)
 {
-    const auto samples_type = makeSamplesType();
-    const auto header = makeInputHeader(samples_type);
-    const auto collector = makeCollector(/*duplicate_full_tags=*/true);
-    const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
-
-    Chunks chunks;
-    chunks.emplace_back(makeSamplesChunk(
-        samples_type,
-        {1, 2},
-        {{{0, 0.0}, {10, 10.0}, {20, 20.0}}, {{0, 0.0}, {10, 10.0}, {20, 20.0}}}));
-    auto pipeline = makePipeline(
-        header,
-        std::move(chunks),
-        collector,
-        rate_function,
-        sum_function,
-        Strings{"namespace"},
-        1024);
-
-    PullingPipelineExecutor executor(pipeline);
-    Chunk output;
-    expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY);
+    ASSERT_FALSE(makeCollector()->hasMultipleIdentifiersForSameTags());
+    ASSERT_TRUE(makeCollector(/*duplicate_full_tags=*/true)->hasMultipleIdentifiersForSameTags());
 }
 
 TEST(PromQLRangeSumByStep, BuildsAndRunsSingleStreamPipeline)
@@ -642,44 +623,51 @@ TEST(PromQLRangeSumByStep, MergesSortedInputStreamsBeforeNativeKernel)
     ASSERT_TRUE(found_namespace_b);
 }
 
-TEST(PromQLRangeSumByTransform, RejectsSameFullTagsAcrossLanesWithSharedGuard)
+TEST(PromQLGroupLimit, BoundsDistinctOutputGroups)
+{
+    PromQLGroupLimit limit(/* max_groups_ = */ 2);
+    ASSERT_TRUE(limit.tryRegister(10));
+    ASSERT_TRUE(limit.tryRegister(10));
+    ASSERT_TRUE(limit.tryRegister(20));
+    ASSERT_FALSE(limit.tryRegister(30));
+}
+
+TEST(PromQLRangeSumByStep, ParallelLanesShareOneOutputGroupAtLimit)
 {
     const auto samples_type = makeSamplesType();
-    const auto header = makeInputHeader(samples_type);
+    const auto header = makeOrderedInputHeader(samples_type);
+    const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
     const auto sum_function = makeSumFunction(rate_function);
-    auto full_group_guard = std::make_shared<PromQLRangeSumByTransform::FullGroupGuard>();
 
-    Chunks first_lane_chunks;
-    first_lane_chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}, {10, 10.0}}}));
-    auto first_lane = makePipeline(
-        header,
-        std::move(first_lane_chunks),
-        makeCollector(),
-        rate_function,
-        sum_function,
-        Strings{"namespace"},
-        1024,
-        full_group_guard);
-    PullingPipelineExecutor first_executor(first_lane);
-    Chunk first_output;
-    ASSERT_TRUE(first_executor.pull(first_output));
-    ASSERT_FALSE(first_executor.pull(first_output));
+    Pipes pipes;
+    Chunks first_stream_chunks;
+    first_stream_chunks.emplace_back(makeOrderedSamplesChunk(
+        samples_type, {1}, {0}, {{{0, 0.0}, {10, 10.0}, {20, 20.0}}}));
+    pipes.emplace_back(std::make_shared<ChunksSource>(header, std::move(first_stream_chunks)));
 
-    Chunks second_lane_chunks;
-    second_lane_chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}, {10, 10.0}}}));
-    auto second_lane = makePipeline(
-        header,
-        std::move(second_lane_chunks),
-        makeCollector(),
-        rate_function,
-        sum_function,
-        Strings{"namespace"},
-        1024,
-        full_group_guard);
-    PullingPipelineExecutor second_executor(second_lane);
-    Chunk second_output;
-    expectExceptionCode([&] { second_executor.pull(second_output); }, ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY);
+    Chunks second_stream_chunks;
+    second_stream_chunks.emplace_back(makeOrderedSamplesChunk(
+        samples_type, {2}, {0}, {{{0, 0.0}, {10, 20.0}, {20, 40.0}}}));
+    pipes.emplace_back(std::make_shared<ChunksSource>(header, std::move(second_stream_chunks)));
+
+    auto builder = std::make_unique<QueryPipelineBuilder>();
+    builder->init(Pipe::unitePipes(std::move(pipes)));
+
+    PromQLRangeSumByStep step(
+        header, collector, rate_function, sum_function, Strings{"namespace"}, /*max_output_groups=*/1);
+    step.enableParallelProcessing();
+    QueryPipelineBuilders inputs;
+    inputs.emplace_back(std::move(builder));
+    BuildQueryPipelineSettings settings(getContext().context);
+    auto result = step.updatePipeline(std::move(inputs), settings);
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*result));
+
+    PullingPipelineExecutor executor(pipeline);
+    Chunk output;
+    ASSERT_TRUE(executor.pull(output));
+    ASSERT_EQ(output.getNumRows(), 1);
+    ASSERT_FALSE(executor.pull(output));
 }
 
 TEST(PromQLPartialGroupMergeTransform, MergesPartialGroupsAndSortsGroupKeys)

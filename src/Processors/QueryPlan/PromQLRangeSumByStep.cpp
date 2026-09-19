@@ -61,14 +61,14 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
 
     if (parallel_processing_enabled && pipeline.getNumStreams() > 1)
     {
-        auto full_group_guard = std::make_shared<PromQLRangeSumByTransform::FullGroupGuard>();
+        auto group_limit = std::make_shared<PromQLGroupLimit>(max_output_groups);
         pipeline.addSimpleTransform(
             [collector_ptr = collector,
              rate_function_ptr = rate_function,
              sum_function_ptr = sum_function,
              labels = labels_to_keep,
-             group_limit = max_output_groups,
-             full_group_guard](const SharedHeader & header)
+             max_groups = max_output_groups,
+             group_limit](const SharedHeader & header)
             {
                 return std::make_shared<PromQLRangeSumByTransform>(
                     header,
@@ -76,15 +76,16 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
                     rate_function_ptr,
                     sum_function_ptr,
                     labels,
-                    group_limit,
-                    full_group_guard);
+                    max_groups,
+                    group_limit);
             });
 
         pipeline.resize(1);
         pipeline.addSimpleTransform(
-            [sum_function_ptr = sum_function, group_limit = max_output_groups](const SharedHeader & header)
+            [sum_function_ptr = sum_function, max_groups = max_output_groups, group_limit](const SharedHeader & header)
             {
-                return std::make_shared<PromQLPartialGroupMergeTransform>(header, sum_function_ptr, group_limit);
+                return std::make_shared<PromQLPartialGroupMergeTransform>(
+                    header, sum_function_ptr, max_groups, group_limit);
             });
         return;
     }

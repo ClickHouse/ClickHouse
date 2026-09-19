@@ -971,7 +971,8 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */,
-    SamplesReadOrder samples_read_order)
+    SamplesReadOrder samples_read_order,
+    bool enable_whole_metric_id_range_optimization)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
@@ -1055,21 +1056,25 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
         }
     }
 
-    ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
-        matchers,
-        column_name_by_tag_name,
-        samples_table_id,
-        samples_table_metadata->getColumns(),
-        tags_table_id,
-        tags_table_metadata->getColumns(),
-        *time_series_settings,
-        config.time_series_storage_id,
-        config.id_data_type,
-        config.timestamp_data_type,
-        min_time_to_filter_ids,
-        max_time_to_filter_ids,
-        context,
-        log);
+    ASTs whole_metric_id_range_conditions;
+    if (enable_whole_metric_id_range_optimization)
+    {
+        whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
+            matchers,
+            column_name_by_tag_name,
+            samples_table_id,
+            samples_table_metadata->getColumns(),
+            tags_table_id,
+            tags_table_metadata->getColumns(),
+            *time_series_settings,
+            config.time_series_storage_id,
+            config.id_data_type,
+            config.timestamp_data_type,
+            min_time_to_filter_ids,
+            max_time_to_filter_ids,
+            context,
+            log);
+    }
 
     auto modified_context = Context::createCopy(context);
     ContextPtr interpreter_context = modified_context;

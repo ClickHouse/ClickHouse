@@ -2,8 +2,11 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/Transforms/PromQLGroupLimit.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+
+#include <memory>
 
 
 namespace DB
@@ -17,7 +20,11 @@ namespace DB
 class PromQLPartialGroupMergeTransform final : public IAccumulatingTransform
 {
 public:
-    PromQLPartialGroupMergeTransform(SharedHeader input_header_, AggregateFunctionPtr sum_function_, size_t max_output_groups_);
+    PromQLPartialGroupMergeTransform(
+        SharedHeader input_header_,
+        AggregateFunctionPtr sum_function_,
+        size_t max_output_groups_,
+        PromQLGroupLimitPtr group_limit_ = nullptr);
 
     ~PromQLPartialGroupMergeTransform() override;
 
@@ -35,11 +42,12 @@ private:
 
     AggregateFunctionPtr sum_function;
     const size_t max_output_groups;
+    const PromQLGroupLimitPtr group_limit;
 
     size_t group_position = 0;
     size_t values_position = 0;
 
-    Arena group_arena;
+    std::unique_ptr<Arena> group_arena;
     HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> group_states;
     bool generated = false;
 };

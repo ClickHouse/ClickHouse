@@ -4,14 +4,13 @@
 #include <Columns/IColumn_fwd.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/Transforms/PromQLGroupLimit.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
 #include <Common/PODArray.h>
 
 #include <memory>
-#include <mutex>
 
 
 namespace DB
@@ -32,18 +31,6 @@ public:
     using CollectorPtr = std::shared_ptr<Collector>;
     using Group = Collector::Group;
 
-    /// Query-owned guard shared by all ordered range-sum lanes. It rejects a
-    /// full tag set as soon as a second physical series tries to register it.
-    /// The check and insertion are one operation so two lanes cannot both
-    /// admit the same full group.
-    struct FullGroupGuard
-    {
-        std::mutex mutex;
-        HashSet<Group, HashCRC32<Group>> groups;
-    };
-
-    using FullGroupGuardPtr = std::shared_ptr<FullGroupGuard>;
-
     PromQLRangeSumByTransform(
         SharedHeader input_header,
         CollectorPtr collector_,
@@ -51,8 +38,8 @@ public:
         AggregateFunctionPtr sum_function_,
         Strings labels_to_keep_,
         size_t max_output_groups_,
-        /// Optional query-wide duplicate full-group check shared by parallel lanes.
-        FullGroupGuardPtr full_group_guard_ = nullptr);
+        /// Optional query-wide output-group limit shared by parallel lanes and their merge.
+        PromQLGroupLimitPtr group_limit_ = nullptr);
 
     ~PromQLRangeSumByTransform() override;
 
@@ -76,7 +63,7 @@ private:
     AggregateFunctionPtr sum_function;
     Strings labels_to_keep;
     const size_t max_output_groups;
-    const FullGroupGuardPtr full_group_guard;
+    const PromQLGroupLimitPtr group_limit;
 
     size_t id_position = 0;
     size_t time_series_position = 0;
@@ -84,9 +71,8 @@ private:
     AlignedBuffer rate_place;
     MutableColumnPtr current_id;
     MutableColumnPtr rate_result;
-    Arena group_arena;
+    std::unique_ptr<Arena> group_arena;
     HashMap<Group, AggregateDataPtr, HashCRC32<Group>> group_states;
-    HashSet<Group, HashCRC32<Group>> seen_full_groups;
     PaddedPODArray<Group> full_groups;
 
     Group current_output_group = Collector::getGroupForNoTags();

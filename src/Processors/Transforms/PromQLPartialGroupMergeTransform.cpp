@@ -33,10 +33,15 @@ SharedHeader PromQLPartialGroupMergeTransform::transformHeader(const AggregateFu
 }
 
 PromQLPartialGroupMergeTransform::PromQLPartialGroupMergeTransform(
-    SharedHeader input_header_, AggregateFunctionPtr sum_function_, size_t max_output_groups_)
+    SharedHeader input_header_,
+    AggregateFunctionPtr sum_function_,
+    size_t max_output_groups_,
+    PromQLGroupLimitPtr group_limit_)
     : IAccumulatingTransform(input_header_, transformHeader(sum_function_))
     , sum_function(std::move(sum_function_))
     , max_output_groups(max_output_groups_)
+    , group_limit(std::move(group_limit_))
+    , group_arena(std::make_unique<Arena>())
 {
     if (sum_function->getName() != "sumForEach")
         throw Exception(
@@ -105,7 +110,7 @@ void PromQLPartialGroupMergeTransform::consume(Chunk chunk)
     for (size_t row = 0; row < chunk.getNumRows(); ++row)
     {
         AggregateDataPtr group_place = getOrCreateGroupState(group_column->getElement(row));
-        sum_function->add(group_place, sum_arguments, row, &group_arena);
+        sum_function->add(group_place, sum_arguments, row, group_arena.get());
     }
 }
 
@@ -114,7 +119,7 @@ AggregateDataPtr PromQLPartialGroupMergeTransform::getOrCreateGroupState(UInt64 
     if (auto it = group_states.find(group); it != group_states.end())
         return it->getMapped();
 
-    if (group_states.size() >= max_output_groups)
+    if (!group_limit && group_states.size() >= max_output_groups)
         throw Exception(
             ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
             "PromQL partial group merge exceeded its limit of {} output groups",
@@ -125,9 +130,18 @@ AggregateDataPtr PromQLPartialGroupMergeTransform::getOrCreateGroupState(UInt64 
     group_states.emplace(group, it, inserted);
     chassert(inserted);
 
+    if (group_limit && !group_limit->tryRegister(group))
+    {
+        group_states.erase(group);
+        throw Exception(
+            ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+            "PromQL partial group merge exceeded its query-wide limit of {} output groups",
+            max_output_groups);
+    }
+
     try
     {
-        AggregateDataPtr new_place = group_arena.alignedAlloc(sum_function->sizeOfData(), sum_function->alignOfData());
+        AggregateDataPtr new_place = group_arena->alignedAlloc(sum_function->sizeOfData(), sum_function->alignOfData());
         sum_function->create(new_place);
         it->getMapped() = new_place;
     }
@@ -159,10 +173,13 @@ Chunk PromQLPartialGroupMergeTransform::generate()
     for (UInt64 group : groups)
     {
         group_column->insertValue(group);
-        sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, &group_arena);
+        sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, group_arena.get());
     }
 
-    return Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
+    auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
+    destroyStates();
+    group_arena = std::make_unique<Arena>();
+    return result;
 }
 
 void PromQLPartialGroupMergeTransform::destroyStates() noexcept

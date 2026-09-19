@@ -47,8 +47,10 @@ namespace Setting
 {
     extern const SettingsBool enable_promql_native_plan;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_promql_native_output_groups;
     extern const SettingsUInt64 min_promql_native_query_range_points;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace
@@ -126,11 +128,13 @@ public:
         const StorageID & table_id,
         std::shared_ptr<const PrometheusQueryTree> promql_query_,
         PrometheusQueryEvaluationSettings evaluation_settings_,
-        size_t max_output_groups_)
+        size_t max_output_groups_,
+        BuiltSetsByHashPtr prepared_identifier_sets_)
         : IStorage(table_id)
         , promql_query(std::move(promql_query_))
         , evaluation_settings(std::move(evaluation_settings_))
         , max_output_groups(max_output_groups_)
+        , prepared_identifier_sets(std::move(prepared_identifier_sets_))
     {
         const auto nullable_scalar_type = makeNullable(evaluation_settings.scalar_data_type);
         StorageInMemoryMetadata metadata;
@@ -164,7 +168,8 @@ public:
                 num_streams,
                 *promql_query,
                 evaluation_settings,
-                max_output_groups))
+                max_output_groups,
+                prepared_identifier_sets))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -176,6 +181,7 @@ private:
     const std::shared_ptr<const PrometheusQueryTree> promql_query;
     const PrometheusQueryEvaluationSettings evaluation_settings;
     const size_t max_output_groups;
+    const BuiltSetsByHashPtr prepared_identifier_sets;
 };
 
 }
@@ -324,7 +330,19 @@ void StoragePrometheusQuery::readImpl(
             *config.evaluation_settings.step)
         : 1;
     const bool native_range_admitted = !is_query_range || !min_native_range_points || query_range_points >= min_native_range_points;
-    const bool native_plan_enabled = context->getSettingsRef()[Setting::enable_promql_native_plan];
+    const auto & settings = context->getSettingsRef();
+    const bool native_plan_enabled = settings[Setting::enable_promql_native_plan]
+        && !settings[Setting::make_distributed_plan]
+        && !settings[Setting::serialize_query_plan];
+
+    if (settings[Setting::enable_promql_native_plan] && !native_plan_enabled)
+    {
+        LOG_INFO(
+            log,
+            "PromQL native plan steps are not serializable; using the SQL plan while make_distributed_plan={} and serialize_query_plan={}",
+            settings[Setting::make_distributed_plan].value,
+            settings[Setting::serialize_query_plan].value);
+    }
 
     if (native_plan_enabled && !native_range_admitted)
     {
@@ -372,7 +390,15 @@ void StoragePrometheusQuery::readImpl(
         if (fragment_node)
         {
             auto fragment_query = clonePromQLSubtree(fragment_node, config.promql_query->getTimestampScale());
-            if (canBuildPromQLNativeVectorGridPlan(*fragment_query, config.evaluation_settings, context))
+            auto prepared_identifier_sets = tryPreparePromQLNativeVectorGridPlan(
+                query_info,
+                query_context,
+                processed_stage,
+                max_block_size,
+                num_streams,
+                *fragment_query,
+                config.evaluation_settings);
+            if (prepared_identifier_sets)
             {
                 String fragment_name = "__promql_native_fragment_" + toString(UUIDHelpers::generateV4());
                 std::ranges::replace(fragment_name, '-', '_');
@@ -380,10 +406,11 @@ void StoragePrometheusQuery::readImpl(
                 TemporaryTableHolder fragment_holder(
                     query_context,
                     [fragment_query, evaluation_settings = config.evaluation_settings,
-                     max_output_groups = context->getSettingsRef()[Setting::max_promql_native_output_groups]](const StorageID & table_id)
+                     max_output_groups = context->getSettingsRef()[Setting::max_promql_native_output_groups],
+                     prepared_identifier_sets](const StorageID & table_id)
                     {
                         return std::make_shared<StoragePromQLNativeFragment>(
-                            table_id, fragment_query, evaluation_settings, max_output_groups);
+                            table_id, fragment_query, evaluation_settings, max_output_groups, prepared_identifier_sets);
                     });
                 query_context->addExternalTable(fragment_name, std::move(fragment_holder));
                 native_fragment = PrometheusQueryToSQL::NativeFragmentDescription{

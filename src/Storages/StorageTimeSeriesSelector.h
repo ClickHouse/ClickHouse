@@ -71,7 +71,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams,
-        SamplesReadOrder samples_read_order);
+        SamplesReadOrder samples_read_order,
+        bool enable_whole_metric_id_range_optimization = true);
 
     void readImpl(
         QueryPlan & query_plan,

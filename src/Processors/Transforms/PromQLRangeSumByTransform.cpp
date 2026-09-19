@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
-#include <mutex>
 
 
 namespace DB
@@ -41,15 +40,16 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     AggregateFunctionPtr sum_function_,
     Strings labels_to_keep_,
     size_t max_output_groups_,
-    FullGroupGuardPtr full_group_guard_)
+    PromQLGroupLimitPtr group_limit_)
     : IAccumulatingTransform(input_header, transformHeader(sum_function_))
     , collector(std::move(collector_))
     , rate_function(std::move(rate_function_))
     , sum_function(std::move(sum_function_))
     , labels_to_keep(std::move(labels_to_keep_))
     , max_output_groups(max_output_groups_)
-    , full_group_guard(std::move(full_group_guard_))
+    , group_limit(std::move(group_limit_))
     , rate_place(rate_function ? rate_function->sizeOfData() : 0, rate_function ? rate_function->alignOfData() : 1)
+    , group_arena(std::make_unique<Arena>())
 {
     if (!collector)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native tags collector is null");
@@ -137,22 +137,6 @@ void PromQLRangeSumByTransform::startSeries(const IColumn & id_column, size_t ro
     chassert(!rate_state_created);
     chassert(current_id->empty());
 
-    bool inserted = false;
-    if (full_group_guard)
-    {
-        std::lock_guard lock(full_group_guard->mutex);
-        inserted = full_group_guard->groups.insert(full_group).second;
-    }
-    else
-    {
-        inserted = seen_full_groups.insert(full_group).second;
-    }
-
-    if (!inserted)
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "PromQL native range sum found different identifiers with the same full set of tags");
-
     current_id->insertFrom(id_column, row);
     current_output_group = projectGroup(full_group);
     rate_function->create(rate_place.data());
@@ -173,7 +157,7 @@ void PromQLRangeSumByTransform::finishSeries()
     {
         AggregateDataPtr group_place = getOrCreateGroupState(current_output_group);
         const IColumn * sum_arguments[] = {rate_result.get()};
-        sum_function->add(group_place, sum_arguments, 0, &group_arena);
+        sum_function->add(group_place, sum_arguments, 0, group_arena.get());
     }
     catch (...)
     {
@@ -199,7 +183,7 @@ AggregateDataPtr PromQLRangeSumByTransform::getOrCreateGroupState(Group group)
     if (auto it = group_states.find(group); it != group_states.end())
         return it->getMapped();
 
-    if (group_states.size() >= max_output_groups)
+    if (!group_limit && group_states.size() >= max_output_groups)
         throw Exception(
             ErrorCodes::TOO_MANY_ROWS_OR_BYTES, "PromQL native range sum exceeded its limit of {} output groups", max_output_groups);
 
@@ -208,9 +192,18 @@ AggregateDataPtr PromQLRangeSumByTransform::getOrCreateGroupState(Group group)
     group_states.emplace(group, it, inserted);
     chassert(inserted);
 
+    if (group_limit && !group_limit->tryRegister(group))
+    {
+        group_states.erase(group);
+        throw Exception(
+            ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+            "PromQL native range sum exceeded its query-wide limit of {} output groups",
+            max_output_groups);
+    }
+
     try
     {
-        AggregateDataPtr new_place = group_arena.alignedAlloc(sum_function->sizeOfData(), sum_function->alignOfData());
+        AggregateDataPtr new_place = group_arena->alignedAlloc(sum_function->sizeOfData(), sum_function->alignOfData());
         sum_function->create(new_place);
         it->getMapped() = new_place;
     }
@@ -243,10 +236,13 @@ Chunk PromQLRangeSumByTransform::generate()
     for (Group group : groups)
     {
         group_column->insertValue(group);
-        sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, &group_arena);
+        sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, group_arena.get());
     }
 
-    return Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
+    auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
+    destroyStates();
+    group_arena = std::make_unique<Arena>();
+    return result;
 }
 
 void PromQLRangeSumByTransform::destroyStates() noexcept
