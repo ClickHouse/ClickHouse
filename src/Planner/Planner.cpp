@@ -2489,7 +2489,6 @@ void Planner::buildPlanForUnionNode()
 
         addConvertingToCommonHeaderActionsIfNeeded(
             query_plans, output_header, query_plans_headers, query_context, SetOperationColumnMatchMode::Position);
-        union_common_header = std::move(output_header);
     }
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = getMaxThreadsForAvailableMemory(
