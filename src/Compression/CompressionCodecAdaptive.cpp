@@ -130,7 +130,7 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, con
     chassert(!pool.empty());
 }
 
-ASTPtr CompressionCodecAdaptive::getCodecDesc() const
+ASTPtr CompressionCodecAdaptive::getCodecDescription() const
 {
     return makeCodecDescription("Adaptive");
 }
@@ -196,7 +196,7 @@ UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_si
 
 void CompressionCodecAdaptive::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/true);
     for (const auto & codec : pool)
         codec->updateHash(hash);
 }
