@@ -443,6 +443,10 @@
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByWritePart, "Number of times a temporary file was written to disk for `LIMIT BY` in external memory.", ValueType::Number) \
+    M(ExternalLimitByMerge, "Number of times temporary files were merged for `LIMIT BY` in external memory.", ValueType::Number) \
+    M(ExternalLimitByCompressedBytes, "Number of compressed bytes written for `LIMIT BY` in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByUncompressedBytes, "Amount of data (uncompressed, before compression) written for `LIMIT BY` in external memory.", ValueType::Bytes) \
     M(ExternalDistinctWritePart, "Number of times a temporary file was written to disk for DISTINCT in external memory.", ValueType::Number) \
     M(ExternalDistinctMerge, "Number of times temporary files were merged for DISTINCT in external memory.", ValueType::Number) \
     M(ExternalDistinctCompressedBytes, "Number of compressed bytes written for DISTINCT in external memory.", ValueType::Bytes) \

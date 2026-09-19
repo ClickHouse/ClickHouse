@@ -1,0 +1,16 @@
+LIMIT 3 BY: every row of a 3-row group survives
+300000	300000	0	299999
+LIMIT 5 BY: a limit above the group size keeps the group whole
+300000	300000
+LIMIT 2 BY: exactly two rows per key, and each row belongs to its key
+200000	100000	200000	0
+LIMIT 2 BY: no group comes back short or long
+2	2	100000
+LIMIT 2 OFFSET 1 BY: the offset skips one row per group, not one row overall
+2	2	100000	200000
+LIMIT 1 BY: one row per key
+100000	100000	0
+the spilled LIMIT 3 BY result is exactly the input
+0
+the spill actually happened
+1	1	1

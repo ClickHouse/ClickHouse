@@ -1536,6 +1536,7 @@ void addLimitByStep(
     bool do_not_skip_offset)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    const LimitByStep::ExternalSettings external_settings(settings);
     const bool always_read_till_end = limitByAlwaysReadsTillEnd(query_analysis_result, settings, query_node);
 
     /// Constness of LIMIT BY limit is validated during query analysis stage
@@ -1563,7 +1564,7 @@ void addLimitByStep(
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
         auto step = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, always_read_till_end);
+            query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, external_settings, always_read_till_end);
         query_plan.addStep(std::move(step));
     }
     else if (is_limit_negative && is_offset_negative)
@@ -1580,7 +1581,7 @@ void addLimitByStep(
         if (limit_by_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, always_read_till_end);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, external_settings, always_read_till_end);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
@@ -1596,7 +1597,7 @@ void addLimitByStep(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
         query_plan.addStep(std::move(step1));
         auto step2 = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_by_length, 0, column_names, always_read_till_end);
+            query_plan.getCurrentHeader(), limit_by_length, 0, column_names, external_settings, always_read_till_end);
         query_plan.addStep(std::move(step2));
     }
 }

@@ -3629,13 +3629,14 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     if (fractional_limit > 0 || fractional_offset > 0)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
 
+    const LimitByStep::ExternalSettings external_limit_by_settings(context->getSettingsRef());
     const bool always_read_till_end = limitByAlwaysReadsTillEnd(query, context->getSettingsRef());
 
     if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
         auto limit_by = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_length, limit_offset, columns, always_read_till_end);
+            query_plan.getCurrentHeader(), limit_length, limit_offset, columns, external_limit_by_settings, always_read_till_end);
         query_plan.addStep(std::move(limit_by));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
@@ -3652,7 +3653,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         if (limit_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns, always_read_till_end);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns, external_limit_by_settings, always_read_till_end);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
@@ -3668,7 +3669,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
         query_plan.addStep(std::move(step1));
         auto step2 = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_length, 0, columns, always_read_till_end);
+            query_plan.getCurrentHeader(), limit_length, 0, columns, external_limit_by_settings, always_read_till_end);
         query_plan.addStep(std::move(step2));
     }
 }
