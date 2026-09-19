@@ -104,7 +104,11 @@ function setup_logs_replication()
     # second definition free to drift from the expression it must match.
     echo "EXTRA_COLUMNS=${EXTRA_COLUMNS:?}"
     echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
-    EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
+    # Keep in sync with EXTRA_ORDER_BY_COLUMNS in
+    # tests/integration/helpers/ci_logs_export.py: a destination table is created by
+    # whichever job reaches it first, so the two export paths must agree on its
+    # sorting key. Checked by ci/tests/test_ci_logs_export_images.py.
+    EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, test_name"}
 
     if [[ -n "$CLICKHOUSE_CI_LOGS_HOST" ]]; then
         check_logs_credentials

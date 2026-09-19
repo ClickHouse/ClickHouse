@@ -16,9 +16,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_system_clusters_query():
+def run_system_clusters_query(database):
+    # The whole of `system.clusters` is generated, so the filter does not change
+    # what the query does to a Replicated database whose replicas are missing;
+    # it only keeps the assertion about the rows this database contributes
+    # independent of the other clusters the instance may have in its config
+    # (the CI logs export adds one, see tests/integration/helpers/ci_logs_export.py).
     answer, error = node.query_and_get_answer_with_error(
-        "SELECT count() > 0 FROM system.clusters",
+        f"SELECT count() > 0 FROM system.clusters WHERE cluster = '{database}'",
         settings={"send_logs_level": "warning"},
     )
     assert answer == "0\n"
@@ -51,7 +56,7 @@ def test_system_clusters_does_not_log_missing_replicas(started_cluster):
     try:
         metadata_path = create_replicated_database(database, path)
         cluster.get_kazoo_client("zoo1").delete(f"{path}/replicas", recursive=True)
-        run_system_clusters_query()
+        run_system_clusters_query(database)
     finally:
         cleanup_replicated_database(database, path, metadata_path)
 
@@ -67,6 +72,6 @@ def test_system_clusters_does_not_log_no_active_replicas(started_cluster):
         zk = cluster.get_kazoo_client("zoo1")
         zk.delete(f"{path}/replicas", recursive=True)
         zk.create(f"{path}/replicas")
-        run_system_clusters_query()
+        run_system_clusters_query(database)
     finally:
         cleanup_replicated_database(database, path, metadata_path)
