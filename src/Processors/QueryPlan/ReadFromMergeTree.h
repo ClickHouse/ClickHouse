@@ -337,6 +337,27 @@ public:
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
 
+    /// Whether this read can consume a join runtime filter for granule pruning at all, regardless of
+    /// which key it is on. Every veto it lists is known already during plan optimization, so the build
+    /// side can ask the same question before the pipeline exists.
+    bool canUseJoinRuntimeFilterIndexAnalysis() const;
+
+    /// The runtime filters this read actually consumes for granule pruning. Empty when no join key of
+    /// this read is prunable, which is what tells the build side that tracking the key range is useless.
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
+    {
+        return join_runtime_filters_for_index_analysis;
+    }
+
+    /// Drop the descriptors of the given filters: they can never produce a positive pruning predicate,
+    /// so keeping them would only install the dynamic-predicate machinery for nothing.
+    void removeJoinRuntimeFiltersForIndexAnalysis(const std::unordered_set<String> & filter_ids)
+    {
+        std::erase_if(
+            join_runtime_filters_for_index_analysis,
+            [&](const auto & descriptor) { return filter_ids.contains(descriptor.filter_id); });
+    }
+
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -538,6 +559,15 @@ public:
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
     }
 
+    /// Re-register the join runtime filter keys of a read this step replaces (the projection rewrites
+    /// build a fresh `ReadFromMergeTree` over the projection parts, the lazy `FINAL` rewrite builds
+    /// non-`FINAL` reads over the parts of a `FINAL` one). Every key the replaced read was offered goes
+    /// through `addJoinRuntimeFilterIndexAnalysisOnDataRead` again, so it is kept only if this step can
+    /// prune with it: a projection has a primary key and skip indexes of its own, and may prune a key the
+    /// base table cannot, or the other way round; a read that dropped `FINAL` passes a veto the replaced
+    /// read failed.
+    void inheritJoinRuntimeFiltersForIndexAnalysis(const ReadFromMergeTree & replaced_step);
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
@@ -617,10 +647,16 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// optimization. Carried by clone() (in-process clones such as the `IN` subquery build in
+    /// `PreparedSets::build` run against the same runtime filter lookup), but not by
+    /// serialize()/deserialize(), so the pruning is intentionally skipped when the step is rebuilt for
+    /// distributed or parallel-replicas reads (results stay correct, only the optimization is lost);
+    /// propagating it there is a follow-up. The projection rewrites, which replace the read in the same
+    /// plan, carry it over with `inheritJoinRuntimeFiltersForIndexAnalysis`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
+    /// Every key `addJoinRuntimeFilterIndexAnalysisOnDataRead` was called with, prunable here or not.
+    /// A read that replaces this one (a projection read) re-validates them against its own metadata.
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filter_candidates_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;

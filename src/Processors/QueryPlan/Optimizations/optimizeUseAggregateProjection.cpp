@@ -1585,6 +1585,13 @@ UseProjectionsResult optimizeUseAggregateProjections(
             reading->isParallelReadingEnabled(),
             reading->getParallelReadingExtension());
 
+        /// A join runtime filter pushed below the aggregation was registered on the replaced read for
+        /// granule pruning (`enable_join_runtime_filters_index_analysis`); carry it over, or the final
+        /// plan would show no consumer of the filter and the build side would stop tracking the key range.
+        if (projection_reading)
+            if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+                projection_reading_step->inheritJoinRuntimeFiltersForIndexAnalysis(*reading);
+
         /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
         filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
         has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();

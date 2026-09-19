@@ -234,6 +234,11 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     non_final_reading->disableQueryConditionCache();
 
+    /// The original read refused the join runtime filters for granule pruning because it reads with
+    /// `FINAL`. The non-intersecting parts are read without it, one row at a time, so this read can prune
+    /// with them: offer it every key the original read was offered.
+    non_final_reading->inheritJoinRuntimeFiltersForIndexAnalysis(*reading_step);
+
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
     /// Copy them over, otherwise the filter drops every row.
@@ -661,6 +666,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
         /// This is an internal read — don't pollute or use the query condition cache.
         set_reading->disableQueryConditionCache();
+
+        /// Same as for the non-intersecting read above: this read is not `FINAL`, and the copied WHERE
+        /// filter below carries the `__applyFilter` predicates of the join runtime filters, so the set can
+        /// be built from the granules the filters leave instead of all of them.
+        set_reading->inheritJoinRuntimeFiltersForIndexAnalysis(*reading_step);
 
         set_plan.addStep(std::move(set_reading));
     }

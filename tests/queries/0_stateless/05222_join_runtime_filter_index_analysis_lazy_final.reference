@@ -1,0 +1,24 @@
+disjoint parts, lazy FINAL: the non-FINAL read prunes
+ReadFromMergeTree (default.probe_lazy_final_disjoint)
+Key range tracking: 1
+ReadFromMergeTree (default.build_lazy_final)
+overlapping parts, lazy FINAL: the set-building read prunes
+InputSelector
+ReadFromMergeTree (default.probe_lazy_final_overlapping)
+ReadFromMergeTree (default.probe_lazy_final_overlapping)
+LazilyReadFromMergeTree
+ReadFromMergeTree (default.probe_lazy_final_overlapping)
+Key range tracking: 1
+ReadFromMergeTree (default.build_lazy_final)
+disjoint parts, plain FINAL: nothing prunes
+ReadFromMergeTree (default.probe_lazy_final_disjoint)
+Key range tracking: 0
+ReadFromMergeTree (default.build_lazy_final)
+results
+10	45000
+10	45010
+10	45000
+10	45010
+granules pruned by the rewritten reads
+05222_lazy_final_disjoint	1	1
+05222_lazy_final_overlapping	1	1

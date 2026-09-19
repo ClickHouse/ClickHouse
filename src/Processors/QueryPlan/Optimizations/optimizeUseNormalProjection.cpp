@@ -722,9 +722,18 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
     /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
     /// by passing the stamp into `analyzeProjectionCandidate` above.)
+    /// The join runtime filter descriptors (`enable_join_runtime_filters_index_analysis`) are registered
+    /// on the read in the first optimization pass too, so they would be lost with the replaced read as
+    /// well - and then the build side, which looks for them in the final plan, would stop tracking the
+    /// key range and the probe side would fall back to filtering rows instead of pruning granules.
     if (projection_reading)
+    {
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+        {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
+            projection_reading_step->inheritJoinRuntimeFiltersForIndexAnalysis(*reading);
+        }
+    }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
