@@ -47,6 +47,19 @@ SET make_distributed_plan = 0;
 SELECT count(), uniqExact(key) FROM result04613;
 SELECT key, value FROM result04613 ORDER BY key;
 
+SYSTEM FLUSH LOGS query_log;
+-- The child plans executed as distributed-plan tasks (`main`, `stage_*`) of the statements above. The outer plan
+-- falls back on `ReadFromMerge` by design, so a lost child distribution shows only here, not in the rows.
+-- Only rows of this run: the test's own `Merge` table is created at the start of the run.
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'merge04613') AS run_start
+SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
+            AND current_database = currentDatabase() AND query LIKE 'INSERT INTO result04613%');
+
 DROP TABLE merge04613;
 DROP VIEW join04613;
 DROP TABLE big04613;

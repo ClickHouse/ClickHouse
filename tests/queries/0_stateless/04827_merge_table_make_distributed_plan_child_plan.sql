@@ -38,5 +38,28 @@ SELECT x FROM m_merge_dp WHERE x = 3 SETTINGS make_distributed_plan = 1;
 SELECT sum(explain LIKE '%Exchange%') FROM (EXPLAIN SELECT x FROM m_merge_dp WHERE x GLOBAL IN (SELECT number FROM numbers(3)) SETTINGS make_distributed_plan = 1);
 SELECT x FROM m_merge_dp WHERE x GLOBAL IN (SELECT number FROM numbers(3)) SETTINGS make_distributed_plan = 1;
 
+SYSTEM FLUSH LOGS query_log;
+-- The child plans executed as distributed-plan tasks (`main`, `stage_*`) of the statements above. The outer plan
+-- falls back on `ReadFromMerge` by design, so a lost child distribution shows only here, not in the rows.
+-- Only rows of this run: the test's own `Merge` table is created at the start of the run.
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_merge_dp') AS run_start
+SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
+            AND current_database = currentDatabase() AND query LIKE 'SELECT x FROM m\_merge\_dp WHERE x = 3%');
+-- With a subquery set the child plans stayed local: no task at all for that statement.
+-- Only rows of this run: the test's own `Merge` table is created at the start of the run.
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_merge_dp') AS run_start
+SELECT countIf(query = 'main' OR query LIKE 'stage\_%') = 0 AS children_stayed_local
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
+            AND current_database = currentDatabase() AND query LIKE 'SELECT x FROM m\_merge\_dp WHERE x GLOBAL IN%');
+
 DROP TABLE m_merge_dp;
 DROP TABLE t_merge_dp;
