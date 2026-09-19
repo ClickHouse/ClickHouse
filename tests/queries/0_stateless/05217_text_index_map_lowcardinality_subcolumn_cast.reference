@@ -1,0 +1,95 @@
+-- the analyzer wraps the subcolumn into a cast to String
+1
+-- keyValuePairs: the index prunes granules through the cast
+Granules: 2/2
+Name: idx
+Granules: 1/2
+-- keyValuePairs: exact direct read replaces the predicate
+1
+-- keyValuePairs: results match the scan
+idx	1
+idx	3
+scan	1
+scan	3
+idx	3
+scan	3
+idx	0
+idx	0
+-- mapValues: the index prunes granules through the cast
+Granules: 2/2
+Name: idx
+Granules: 1/2
+Granules: 2/2
+Name: idx
+Granules: 1/2
+-- mapValues: results match the scan
+idx	1
+idx	3
+scan	1
+scan	3
+idx	1
+idx	2
+scan	1
+scan	2
+idx	3
+scan	3
+-- mapValues is only a hint: a value that belongs to another key does not match
+idx	0
+-- mapValues on LowCardinality(Nullable) values: the cast to Nullable(String) is looked through
+Granules: 2/2
+Name: idx
+Granules: 1/2
+idx	3
+scan	3
+-- String column: conversions that only add Nullable or LowCardinality are looked through
+CAST Nullable	Granules: 2/2
+CAST Nullable	Name: idx
+CAST Nullable	Granules: 1/2
+CAST LowCardinality	Granules: 2/2
+CAST LowCardinality	Name: idx
+CAST LowCardinality	Granules: 1/2
+toNullable	Granules: 2/2
+toNullable	Name: idx
+toNullable	Granules: 1/2
+toLowCardinality	Granules: 2/2
+toLowCardinality	Name: idx
+toLowCardinality	Granules: 1/2
+nested	Granules: 2/2
+nested	Name: idx
+nested	Granules: 1/2
+idx	1
+idx	2
+scan	1
+scan	2
+not idx	3
+not idx	4
+not scan	3
+not scan	4
+in idx	1
+in idx	3
+in scan	1
+in scan	3
+-- join_use_nulls pushes the filter down to the outer side as toNullable(column)
+1
+3
+-- Nullable column: adding LowCardinality is looked through
+Granules: 2/2
+Name: idx
+Granules: 1/2
+idx	1
+idx	2
+scan	1
+scan	2
+-- Nullable column: dropping Nullable is not looked through, the cast still throws on the NULL row
+0
+-- Array column: a cast that only wraps the elements is looked through
+Array(Nullable)	Granules: 2/2
+Array(Nullable)	Name: idx
+Array(Nullable)	Granules: 1/2
+Array(LowCardinality)	Granules: 2/2
+Array(LowCardinality)	Name: idx
+Array(LowCardinality)	Granules: 1/2
+idx	1
+idx	2
+scan	1
+scan	2
