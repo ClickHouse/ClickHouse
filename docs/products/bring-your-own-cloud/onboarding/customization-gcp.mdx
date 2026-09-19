@@ -29,7 +29,12 @@ To expose services over [Private Service Connect](/cloud/reference/byoc/onboardi
 <Step title="Ensure network connectivity" id="ensure-network-connectivity">
 
 **Cloud NAT Gateway**
-Ensure a [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview) is deployed for the VPC. ClickHouse BYOC components require outbound internet access to communicate with the Tailscale control plane. Tailscale is used to provide secure, zero-trust networking for private management operations. The Cloud NAT gateway provides this outbound connectivity for instances without external IP addresses.
+Ensure a [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview) is deployed for the VPC. It provides outbound connectivity for instances without external IP addresses, and two things depend on it:
+
+- **Tailscale.** ClickHouse BYOC components register with the Tailscale control plane, which provides secure, zero-trust networking for private management operations without requiring inbound public access.
+- **Container images.** Some images the deployment runs are not mirrored into the BYOC registry, including community images, and are pulled from their upstream registries.
+
+A VPC with no outbound path will not finish provisioning; pre-flight validation checks that a Cloud NAT gateway covers the network. There is no single published endpoint list; if your network policy requires an explicit inventory, contact support to review your setup.
 
 **DNS Resolution**
 Ensure your VPC has working DNS resolution and doesn't block, interfere with, or overwrite standard DNS names. ClickHouse BYOC relies on DNS to resolve Tailscale control servers and ClickHouse service endpoints. If DNS is unavailable or misconfigured, BYOC services may fail to connect or operate properly.

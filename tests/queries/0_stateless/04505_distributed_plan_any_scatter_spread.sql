@@ -1,5 +1,4 @@
--- Tags: no-old-analyzer, no-flaky-check
--- no-old-analyzer: distributed planning requires the analyzer.
+-- Tags: no-flaky-check
 -- no-flaky-check: the distributed-plan queries take tens of seconds on a TSan build, and the
 -- flaky check runs all new tests at once, so the runs at peak load exceed its per-run time limit.
 
