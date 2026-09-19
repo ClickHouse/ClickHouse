@@ -74,9 +74,6 @@ namespace Setting
 {
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
     extern const SettingsBool database_replicated_always_detach_permanently;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -1553,7 +1550,23 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
         std::move(database_guard));
 }
 
-static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
+/** The metadata of a table stored in ZooKeeper (and on disk) is the server's own canonical `CREATE`
+  * text, already parsed and validated when the table was created. Re-parse it with no limits (`0`
+  * disables each of them) rather than with the reading server's `max_query_size`, `max_parser_depth`
+  * and `max_parser_backtracks`: the text is as long and as deep as the table's definition needs,
+  * while those settings bound what a *client* may send. A replica recovering the table has no way to
+  * learn the values the creating session raised them to, so bounding the parse here left such a table
+  * beyond reach: recovery threw (`Max query size exceeded`, `Maximum parse depth exceeded`) before
+  * creating it and retried forever, while the replicas that had loaded the very same text from their
+  * disk kept serving it. `parseQuery` still guards against stack overflow via `checkStackSize`.
+  */
+static ASTPtr parseStoredMetadata(const String & metadata, const String & description)
+{
+    ParserCreateQuery parser;
+    return parseQuery(parser, metadata, description, /*max_query_size=*/ 0, /*max_parser_depth=*/ 0, /*max_parser_backtracks=*/ 0);
+}
+
+static UUID getTableUUIDIfReplicated(const String & metadata)
 {
     bool looks_like_replicated = metadata.contains("Replicated");
     bool looks_like_shared = metadata.contains("Shared");
@@ -1561,11 +1574,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
-    ParserCreateQuery parser;
-    auto size = context->getSettingsRef()[Setting::max_query_size];
-    auto depth = context->getSettingsRef()[Setting::max_parser_depth];
-    auto backtracks = context->getSettingsRef()[Setting::max_parser_backtracks];
-    ASTPtr query = parseQuery(parser, metadata, size, depth, backtracks);
+    ASTPtr query = parseStoredMetadata(metadata, "");
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
@@ -1605,7 +1614,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
     for (const auto & zk_table : table_name_to_metadata)
     {
-        UUID zk_replicated_id = getTableUUIDIfReplicated(zk_table.second, getContext());
+        UUID zk_replicated_id = getTableUUIDIfReplicated(zk_table.second);
         if (zk_replicated_id != UUIDHelpers::Nil)
             zk_replicated_id_to_name.emplace(zk_replicated_id, zk_table.first);
     }
@@ -1911,7 +1920,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 const auto & create_query_string = metadata_it->second;
                 if (isTableExist(table_name, getContext()))
                 {
-                    chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+                    chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string) != UUIDHelpers::Nil);
                     return;
                 }
 
@@ -2314,16 +2323,11 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 }
 
 ASTPtr DatabaseReplicated::parseQueryFromMetadata(
-    ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description)
+    ContextPtr /* context_ */, const String & database_name_, const String & table_name, const String & query, const String & description)
 {
-    ParserCreateQuery parser;
-    auto ast = parseQuery(
-        parser,
-        query,
-        description,
-        0,
-        context_->getSettingsRef()[Setting::max_parser_depth],
-        context_->getSettingsRef()[Setting::max_parser_backtracks]);
+    /// The context is not consulted: see `parseStoredMetadata` for why the parse is not bounded by the
+    /// reader's parser settings.
+    auto ast = parseStoredMetadata(query, description);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
@@ -2902,9 +2906,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
     for (const auto & [table_name, metadata] : snapshot)
     {
-        ParserCreateQuery parser;
-        auto create_table_query = parseQuery(
-            parser, metadata, 0, getContext()->getSettingsRef()[Setting::max_parser_depth], getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
+        auto create_table_query = parseStoredMetadata(metadata, "");
 
         auto & create = create_table_query->as<ASTCreateQuery &>();
         create.attach = false;
