@@ -789,7 +789,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
-    size_t max_processed_files_override)
+    size_t max_processed_files_override,
+    std::atomic_bool * iterator_consumed)
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
@@ -829,7 +830,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         is_direct_select,
         add_deduplication_info,
         is_deduplication_v2,
-        *this);
+        *this,
+        iterator_consumed);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -861,6 +863,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     /// Attached but unready views must not consume a pending REFRESH permit, so no cycle is claimed
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
+
+    /// Whether this cycle actually consumed from the file iterator; only then may the reschedule
+    /// interval be capped by a pending foreign-processing recheck (see below).
+    std::atomic_bool consumed_this_cycle = false;
 
     if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
@@ -901,7 +907,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 metadata->registerActive(storage_id);
 
-                if (streamToViews(streaming_tasks_index, cycle_epoch))
+                if (streamToViews(streaming_tasks_index, cycle_epoch, consumed_this_cycle))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -937,6 +943,25 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             reschedule_interval_ms = reschedule_processing_interval_ms;
         }
 
+        /// `processing_state_cache_ttl_seconds` bounds the retry latency of a file
+        /// skipped because of a foreign `processing` node: on an otherwise idle queue the
+        /// polling backoff may exceed the TTL, so wake up no later than the earliest recheck.
+        /// Only cycles that consume may be capped: a paused or streaming-disabled cycle never
+        /// touches the iterator, so an overdue recheck would make it reschedule immediately forever.
+        std::optional<time_t> recheck_time;
+        if (consumed_this_cycle)
+        {
+            std::lock_guard streaming_lock(streaming_mutex);
+            if (streaming_file_iterator)
+                recheck_time = streaming_file_iterator->earliestForeignProcessingRecheckTime();
+        }
+        if (recheck_time.has_value())
+        {
+            const time_t current_time = std::time(nullptr);
+            const UInt64 recheck_delay_ms = *recheck_time > current_time ? (*recheck_time - current_time) * 1000 : 0;
+            reschedule_interval_ms = std::min(reschedule_interval_ms, recheck_delay_ms);
+        }
+
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task->scheduleAfter(reschedule_interval_ms);
 
@@ -954,7 +979,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::atomic_bool & iterator_consumed)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -1077,7 +1102,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
-                effective_max_files);
+                effective_max_files,
+                &iterator_consumed);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);

@@ -67,6 +67,13 @@ public:
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
 
+    /// The partition key of a file path; an empty string when partitioning
+    /// is not used or the path does not match the partitioning scheme.
+    static std::string getPartitionKeyForPath(
+        const std::string & path,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
+
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
     static std::vector<std::string> getLastProcessedPaths(
@@ -93,11 +100,14 @@ public:
         bool is_processed = false;
         /// Populated from the failed node data when `is_failed` is true.
         std::string failure_message;
+        /// The retries recorded in the failed node data; populated together with `failure_message`.
+        size_t failed_retries = 0;
         /// Version of the bucket-level processed pointer node (`processed_bucket_path`).
         std::optional<int32_t> processed_bucket_version;
     };
 
-    /// Return vector of indexes of filtered paths.
+    /// Remove the paths which keeper says are terminal (already processed, or failed),
+    /// recording the state of each removed path in `terminal_states`.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
@@ -106,6 +116,7 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
+        std::unordered_map<std::string, FileTerminalState> & terminal_states,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
@@ -121,7 +132,7 @@ private:
     /// global version-pinning and for writes via doPrepareProcessedRequests.
     const std::string processed_bucket_path;
 
-    std::pair<bool, FileStatus::State> setProcessingImpl() override;
+    std::pair<bool, FileStatus::State> setProcessingImpl(std::optional<FileTerminalState> & terminal_state) override;
 
     void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) override;

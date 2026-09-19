@@ -41,7 +41,7 @@ public:
     PathState getPathState(std::string & failure_message) const override;
 
 private:
-    std::pair<bool, FileStatus::State> setProcessingImpl() override;
+    std::pair<bool, FileStatus::State> setProcessingImpl(std::optional<FileTerminalState> & terminal_state) override;
 
     void debugFinalizeProcessed() override;
     void debugFinalizeFailed() override;

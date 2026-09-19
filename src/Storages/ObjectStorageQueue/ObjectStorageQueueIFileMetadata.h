@@ -3,6 +3,9 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <memory>
+#include <unordered_map>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -41,6 +44,26 @@ public:
         void onProcessed();
         void reset();
         void onFailed(const std::string & exception);
+        /// The same observation of a foreign `processing` node, guarded by the terminal-state
+        /// generation: `expected_terminal_generation` is the value of `terminalStateGeneration`
+        /// taken before the keeper read which discovered that node. If the cached record received
+        /// a terminal state in the meantime, that record is newer than this observation and is
+        /// kept, and the method returns false without changing anything.
+        bool onProcessingObservedInKeeper(UInt64 expected_terminal_generation);
+        /// The file was committed by another processor: replace the data of a previous
+        /// local attempt with the terminal state discovered in keeper, including the
+        /// exception and the retries of the `failed` node.
+        void onTerminalStateObservedInKeeper(State state_, const std::string & exception, size_t retries_);
+        /// Incremented on every transition of the cached record into a terminal state,
+        /// so that a concurrent observation of a foreign `processing` node can tell whether
+        /// it is older than the terminal state which is cached now.
+        UInt64 terminalStateGeneration() const { return terminal_state_generation.load(); }
+        /// Whether the `Processing` state is only an observation of a `processing` node held by
+        /// another processor (see `processing_observed_in_keeper_time`).
+        bool isProcessingObservedInKeeper() const { return processing_observed_in_keeper_time.load() != 0; }
+        /// Whether such an observation is still trusted, i.e. it is younger than `ttl_seconds`.
+        /// A zero TTL trusts nothing: keeper is checked on every attempt.
+        bool isProcessingObservedInKeeperTrusted(size_t ttl_seconds) const;
 
         std::string getException() const;
 
@@ -62,10 +85,22 @@ public:
         /// attempt of this server (rows, timings, exception) and `processing_observed_in_keeper_time`.
         void resetAttempt();
 
+        /// Incremented on every transition into a terminal state (see `terminalStateGeneration`).
+        std::atomic<UInt64> terminal_state_generation = 0;
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
+
+    /// A terminal state of a file discovered in keeper (a `processed` or `failed` node
+    /// committed by another processor).
+    struct FileTerminalState
+    {
+        FileStatus::State state;
+        /// The exception from the `failed` node; empty for `Processed`.
+        std::string exception = {};
+        size_t retries = 0;
+    };
 
     /// Helper structure for storing the flag of presence or absence of a node in the keeper.
     struct PartitionLastProcessedFileInfo
@@ -202,7 +237,17 @@ public:
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
-    void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
+    /// `terminal_state` carries the `failed` node metadata when `file_state` is terminal.
+    void afterSetProcessing(
+        bool success,
+        std::optional<FileStatus::State> file_state,
+        std::optional<FileTerminalState> terminal_state = std::nullopt);
+
+    /// Remember which terminal state the cached record had before this attempt reads keeper,
+    /// so that `afterSetProcessing` can tell whether a terminal state committed by another
+    /// processor in the meantime is newer than what this attempt found (see
+    /// `FileStatus::onProcessingObservedInKeeper`).
+    void snapshotTerminalStateGeneration() { terminal_state_generation_before_set_processing = file_status->terminalStateGeneration(); }
 
     void setUncertainCommit() { uncertain_commit = true; }
 
@@ -224,7 +269,9 @@ protected:
     /// so SipHash64 of the path is used instead.
     static std::string getNodeName(const std::string & path);
 
-    virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
+    /// `terminal_state` is filled with the discovered node metadata
+    /// when the returned state is `Processed` or `Failed`.
+    virtual std::pair<bool, FileStatus::State> setProcessingImpl(std::optional<FileTerminalState> & terminal_state) = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
 
@@ -260,6 +307,9 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// The terminal state generation of the cached record before this attempt read keeper
+    /// (see `snapshotTerminalStateGeneration`).
+    UInt64 terminal_state_generation_before_set_processing = 0;
     /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
     /// the multi-op may have succeeded in ZK but the connection was lost before we received
     /// the response. In this case the destructor must check ownership before removing the
