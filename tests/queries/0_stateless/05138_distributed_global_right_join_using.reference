@@ -1,0 +1,108 @@
+using_initiator
+k	v1	v2
+1	a	A
+1	a	A
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+2	b	B
+2	b	B
+3	\N	C
+3	\N	C
+using_global
+k	v1	v2
+1	a	A
+1	a	A
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+2	b	B
+2	b	B
+3	\N	C
+3	\N	C
+using_distributed_product_mode
+k	v1	v2
+1	a	A
+1	a	A
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+2	b	B
+2	b	B
+3	\N	C
+3	\N	C
+using_multiple_keys_global
+k	k2	v1	v2
+1	1	a	A
+1	1	a	A
+1	1	a	A
+1	1	a	A
+2	2	b	B
+2	2	b	B
+2	2	b	B
+2	2	b	B
+3	3	\N	C
+3	3	\N	C
+natural_initiator
+k	v1	v2
+1	a	A
+1	a	A
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+2	b	B
+2	b	B
+3	\N	C
+3	\N	C
+natural_global
+k	v1	v2
+1	a	A
+1	a	A
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+2	b	B
+2	b	B
+3	\N	C
+3	\N	C
+using_alias_initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+3	\N	3	C
+3	\N	3	C
+using_alias_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+3	\N	3	C
+3	\N	3	C
+using_left_join_global
+k	v1	v2
+1	a	A
+1	a	A
+1	a	A
+1	a	A
+2	b	B
+2	b	B
+2	b	B
+2	b	B
+4	d	\N
+4	d	\N
