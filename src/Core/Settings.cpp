@@ -4521,6 +4521,8 @@ When enabled together with [optimize_aggregation_in_order](#optimize_aggregation
 
 The order of `GROUP BY` keys in the output is not preserved, so this optimization is only applied when the result order is not relied upon downstream (i.e. when memory-bound merging is not used). It is also not applied when [max_rows_to_group_by](#max_rows_to_group_by) is set to a non-zero value, because the shuffled path does not enforce that limit.
 
+The rows of one group reach the aggregate function in the same order as on the ordinary aggregation-in-order path, so order-dependent aggregates such as `groupArray`, `any` and `anyLast` return the same result. Aggregates that additionally depend on how the partial states are combined can differ in the last bits: the ordinary path accumulates one partial state per input stream and merges those states, while the shuffled path accumulates the merged row sequence in a single pass, so `sum` over a floating-point argument builds a different addition tree over the same rows. This is the same kind of difference that the ordinary path already exhibits between different values of `max_threads`.
+
 Possible values:
 
 - 0 — Shuffled aggregation-in-order is disabled.
