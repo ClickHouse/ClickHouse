@@ -104,6 +104,9 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
 {
     std::vector<const QueryNode *> res;
 
+    /// Context of the enclosing (sub)query: per-subquery SETTINGS can change table eligibility.
+    ContextPtr current_context = context;
+
     while (query_tree_node)
     {
         auto join_tree_node_type = query_tree_node->getNodeType();
@@ -113,7 +116,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                if (canUseTableForParallelReplicas(table_node, context))
+                if (canUseTableForParallelReplicas(table_node, current_context))
                     return res;
 
                 return {};
@@ -125,6 +128,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             case QueryTreeNodeType::QUERY:
             {
                 const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
+                current_context = query_node_to_process.getContext();
                 query_tree_node = query_node_to_process.getJoinTreeNode().get();
                 res.push_back(&query_node_to_process);
                 break;
@@ -137,6 +141,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                 if (union_queries.empty())
                     return {};
 
+                current_context = union_node.getContext();
                 query_tree_node = union_queries.front().get();
                 break;
             }
@@ -417,12 +422,18 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::stack<const IQueryTreeNode *> join_nodes;
+    /// Enclosing (sub)query context per pending join branch: must match the one
+    /// getSupportingParallelReplicasQueries used, or no eligible table is found here.
+    std::stack<ContextPtr> join_contexts;
+    ContextPtr current_context = context;
     while (query_tree_node || !join_nodes.empty())
     {
         if (!query_tree_node)
         {
             query_tree_node = join_nodes.top();
             join_nodes.pop();
+            current_context = join_contexts.top();
+            join_contexts.pop();
         }
 
         auto join_tree_node_type = query_tree_node->getNodeType();
@@ -432,7 +443,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                if (canUseTableForParallelReplicas(table_node, context))
+                if (canUseTableForParallelReplicas(table_node, current_context))
                     return &table_node;
 
                 query_tree_node = nullptr;
@@ -446,6 +457,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::QUERY:
             {
                 const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
+                current_context = query_node_to_process.getContext();
                 query_tree_node = query_node_to_process.getJoinTreeNode().get();
                 break;
             }
@@ -456,7 +468,10 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
 
                 query_tree_node = nullptr;
                 if (!union_queries.empty())
+                {
+                    current_context = union_node.getContext();
                     query_tree_node = union_queries.front().get();
+                }
 
                 break;
             }
@@ -481,11 +496,13 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 {
                     query_tree_node = join_node.getLeftTableExpressionNode().get();
                     join_nodes.push(join_node.getRightTableExpressionNode().get());
+                    join_contexts.push(current_context);
                 }
                 else if (join_kind == JoinKind::Right)
                 {
                     query_tree_node = join_node.getRightTableExpressionNode().get();
                     join_nodes.push(join_node.getLeftTableExpressionNode().get());
+                    join_contexts.push(current_context);
                 }
                 else
                 {
