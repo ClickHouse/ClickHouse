@@ -27,8 +27,8 @@ The logical OR between two bits is true if at least one of the input bits is tru
     )";
     FunctionDocumentation::Syntax syntax = "bitTestAny(a, index1[, index2, ... , indexN])";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "An integer value.", {"(U)Int8/16/32/64"}},
-        {"index1, ...", "One or multiple positions of bits.", {"(U)Int8/16/32/64"}},
+        {"a", "An integer value.", {"(U)Int8/16/32/64/128/256"}},
+        {"index1, ...", "One or multiple positions of bits.", {"UInt8/16/32/64"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the logical disjunction", {"UInt8"}};
     FunctionDocumentation::Examples examples = {{"Usage example 1", "SELECT bitTestAny(43, 0, 2);",
