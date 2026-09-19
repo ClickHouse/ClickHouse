@@ -1,7 +1,7 @@
 -- the recent samples inner table exists
 1
 -- the recent samples inner table is partitioned by 5-hour buckets by default, has the TTL and ttl_only_drop_parts
-MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(864000) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, \'UTC\'), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(864000) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 -- inserted samples are written to the recent samples table as well
 3	3
 -- a query fitting in the TTL window reads from the recent samples table and returns the same data
