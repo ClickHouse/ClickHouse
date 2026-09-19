@@ -118,6 +118,8 @@ struct DataPartsLock
     DataPartsLock(DataPartsLock &&) = default;
     DataPartsLock & operator=(DataPartsLock &&) = default;
 
+    bool owns_lock() const noexcept { return lock.owns_lock(); }
+
 private:
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
@@ -136,6 +138,7 @@ struct DataPartsSharedLock
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
     void unlock() { lock.unlock(); }
+    bool owns_lock() const noexcept { return lock.owns_lock(); }
 
 private:
     std::optional<Stopwatch> wait_watch;
@@ -150,8 +153,15 @@ public:
     DataPartsAnyLock(const DataPartsAnyLock &) = delete;
     DataPartsAnyLock(DataPartsAnyLock &&) = delete;
 
-    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
-    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock(const DataPartsLock & lock) noexcept // NOLINT(google-explicit-constructor)
+    {
+        chassert(lock.owns_lock()); /// guards data_parts_indexes
+    }
+
+    DataPartsAnyLock(const DataPartsSharedLock & lock) noexcept // NOLINT(google-explicit-constructor)
+    {
+        chassert(lock.owns_lock()); /// guards data_parts_indexes
+    }
 };
 
 /// Data structure for *MergeTree engines.
