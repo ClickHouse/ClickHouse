@@ -776,6 +776,7 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     /// For each alternative in the Variant, build the function and get the actual result type.
     DataTypes result_types;
     result_types.reserve(variant_alternatives.size());
+    bool skipped_null_for_every_row_alternative = false;
 
     const auto process_list_element = tryGetProcessListElement();
     const auto function_name = function_overload_resolver->getName();
@@ -797,6 +798,14 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         try
         {
             const auto func_base = function_overload_resolver->build(alt_columns_with_type);
+            /// Another argument may still be a Variant, so build() can return a nested adaptor. One that
+            /// matched no alternative is NULL for every row and carries no result type of its own.
+            const auto * nested_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(func_base.get());
+            if (nested_adaptor && nested_adaptor->resolvedToNullForEveryRow())
+            {
+                skipped_null_for_every_row_alternative = true;
+                continue;
+            }
             /// Strip LowCardinality from result type for consistency with executeImpl,
             /// where we also strip LC from nested function results.
             result_types.push_back(removeLowCardinality(func_base->getResultType()));
@@ -823,6 +832,7 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         if (!shouldThrowOnVariantTypeMismatch())
         {
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
+            resolved_to_null_for_every_row = true;
             return;
         }
 
@@ -856,7 +866,9 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         }
     }
 
-    if (all_same)
+    /// A skipped alternative still needs its rows to be NULL, and makeNullableSafe returns the type bare
+    /// when it cannot be inside Nullable, which would make those rows default values instead.
+    if (all_same && (!skipped_null_for_every_row_alternative || common_type->canBeInsideNullable()))
     {
         return_type = makeNullableSafe(common_type);
     }
