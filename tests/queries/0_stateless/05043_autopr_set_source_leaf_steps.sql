@@ -24,6 +24,11 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET enable_analyzer = 1;
+-- Pinned to the query-based implementation: the plan-based one does not distribute a plan that
+-- builds an `IN` set (`planHasSubquerySet`), so there is no parallel-replicas step to instrument
+-- and the query stops being a candidate. See
+-- https://github.com/ClickHouse/ClickHouse/issues/118264.
+SET parallel_replicas_plan_based = 0;
 
 -- The `IN` is on a column outside the primary key, so the set is not there to be turned into a key
 -- condition - it is only ever a filter, which is the shape that leaves the set source plan otherwise

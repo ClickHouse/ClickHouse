@@ -1,9 +1,10 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: to fix pipeline structure
 
--- The `explain pipeline` below is pinned to the query-based implementation of parallel replicas:
--- the plan-based one builds a differently shaped pipeline. The plan and result checks around it
--- are not pinned and run on the default implementation.
+-- The two explains below are pinned to the query-based implementation of parallel replicas: the
+-- plan-based one builds a differently shaped pipeline, and it embeds the shipped fragment in the
+-- step description, whose lines then match the `ReadFromMergeTree` filter as extra rows. The
+-- result check is not pinned and runs on the default implementation.
 
 SET explain_query_plan_default = 'legacy';
 drop table if exists pr_t;
@@ -26,7 +27,7 @@ set max_estimated_execution_time = 0;
 
 -- { echoOn } --
 set optimize_aggregation_in_order = 0;
-SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_plan_based = 0) WHERE explain LIKE '%ReadFromMergeTree%';
 set optimize_aggregation_in_order = 1;
 explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500 settings parallel_replicas_plan_based = 0;
 select sum(b) from pr_t group by a order by a limit 5 offset 500;
