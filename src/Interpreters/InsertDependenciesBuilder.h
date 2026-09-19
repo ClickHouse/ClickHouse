@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
+class InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
+
 namespace DB
 {
 
@@ -36,6 +38,8 @@ class InsertDependenciesBuilder : public std::enable_shared_from_this<InsertDepe
 {
 private:
     friend class ViewErrorsRegistry;
+    /// White-box unit test: a node observed on several paths must keep its first metadata snapshot.
+    friend class ::InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
 
     /// We cannot use std::set, because operator< is inconsistent with operator==
     /// for StorageId and StorageIDPrivate.

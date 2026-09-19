@@ -1486,9 +1486,20 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         }
     }
 
-    storages[current] = storage;
-    metadata_snapshots[current] = metadata;
-    storage_locks[current] = std::move(lock);
+    /// A node is observed once per path, so keep the first observation: everything derived below, in
+    /// particular `output_headers`, is paired with this storage and snapshot when the sink is built.
+    auto [snapshot_it, snapshot_inserted] = metadata_snapshots.try_emplace(current, metadata);
+    if (snapshot_inserted)
+    {
+        storages[current] = storage;
+        storage_locks[current] = std::move(lock);
+    }
+    else
+    {
+        metadata = snapshot_it->second;
+        /// Re-derive from the pinned handle, so the branch below describes the object it came from.
+        materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
+    }
 
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {
