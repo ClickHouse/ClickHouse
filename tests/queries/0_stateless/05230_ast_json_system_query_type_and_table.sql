@@ -17,5 +17,5 @@ SELECT formatQueryFromJSON('{"type":123}'); -- { serverError BAD_ARGUMENTS }
 
 -- The parser-produced shapes still round-trip.
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM REFRESH VIEW db.mv'));
-SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP MERGES'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP MERGES t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM START MERGES t'));
