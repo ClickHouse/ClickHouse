@@ -45,6 +45,6 @@ ${CLICKHOUSE_LOCAL} --query "SELECT j FROM file('${FILE}.trailing', 'ArrowStream
 
 echo "--- tag without the ClickHouse type name is not acted on ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT j FROM file('${FILE}.untyped', 'ArrowStream', 'j JSON')" 2>&1 |
-    grep -oaF 'INCORRECT_DATA' | head -1
+    grep -oaF 'while converting column `j` from type String to type JSON' | head -1
 
 rm -f "${FILE}"*
