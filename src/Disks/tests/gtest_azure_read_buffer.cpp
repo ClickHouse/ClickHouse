@@ -11,6 +11,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
+#include <IO/ReadHelpers.h>
 
 #include <azure/core/http/raw_response.hpp>
 #include <azure/core/http/transport.hpp>
@@ -176,6 +177,91 @@ TEST(AzureReadBigAt, ReturnsAccumulatedCountOnTruncatedResponse)
         ASSERT_EQ(storage.payload[i], '\xCD');
     for (char byte : storage.canary)
         ASSERT_EQ(byte, '\xCD');
+}
+
+namespace
+{
+
+/// Reads a blob sequentially from an endpoint that answers every ranged request with `response_size`
+/// bytes counting up from zero, with the right bound set to `read_until_position` and a
+/// `buffer_size`-byte reading buffer.
+std::string readWithRightBound(size_t response_size, size_t read_until_position, size_t buffer_size)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = std::make_shared<RangeResponseTransport>(response_size, response_size);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = buffer_size;
+
+    DB::ReadBufferFromAzureBlobStorage buffer(
+        container_client,
+        "blob",
+        read_settings,
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1);
+
+    buffer.setReadUntilPosition(read_until_position);
+
+    std::string result;
+    DB::readStringUntilEOF(result, buffer);
+    return result;
+}
+
+void assertCountsUpFromZero(const std::string & data)
+{
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(data[i]), static_cast<uint8_t>(i)) << "at position " << i;
+}
+
+}
+
+/// The endpoint answers a 100-byte ranged request with 128 bytes. The reader must stop at the right
+/// bound instead of handing the extra 28 bytes to the caller: it reads through a 64-byte buffer, so
+/// with the bound derived from the `Content-Length` of the response the second `nextImpl` call
+/// already delivers bytes 100..127, and only the third one trips the right-bound check.
+TEST(AzureReadUntilPosition, OverlongRangeResponse)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 128, /* read_until_position */ 100, /* buffer_size */ 64));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// The same, with a reading buffer larger than the requested range: a single response must not
+/// overrun the right bound either.
+TEST(AzureReadUntilPosition, OverlongRangeResponseWithLargeBuffer)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 128, /* read_until_position */ 100, /* buffer_size */ 1024));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// A well-behaved endpoint returns exactly the requested range.
+TEST(AzureReadUntilPosition, ExactRangeResponse)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 100, /* read_until_position */ 100, /* buffer_size */ 64));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// An endpoint that returns less than the requested range must not make the reader report bytes it
+/// never received.
+TEST(AzureReadUntilPosition, ShortRangeResponse)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 40, /* read_until_position */ 100, /* buffer_size */ 64));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(40));
+    assertCountsUpFromZero(data);
 }
 
 #endif
