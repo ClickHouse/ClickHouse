@@ -112,7 +112,8 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
         end = num_marks_without_final - 1;
     }
 
-    total_rows += constant_granularity * (end - begin);
+    if (end > begin)
+        total_rows += constant_granularity * (end - begin);
     return total_rows;
 }
 

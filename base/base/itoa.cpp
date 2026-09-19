@@ -116,6 +116,7 @@ template <bool B, class T, class F>
 using cond = typename _cond<B, T, F>::type;
 
 template <class T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
     constexpr auto q = sizeof(T);
@@ -360,7 +361,11 @@ namespace avx512ifma
 
 #define ITOA_IFMA_TARGET __attribute__((target("avx512f,avx512vl,avx512bw,avx512dq,avx512ifma,avx512vbmi")))
 
-ALWAYS_INLINE inline char * shiftedPointer(char * p, Int32 offset)
+/// The offset is negative when a masked store writes the last digits, so the base pointer is built
+/// by wrapping the address around on purpose - which is exactly why the arithmetic goes through
+/// `uintptr_t` rather than the pointer. The attribute has to carry `always_inline` itself, since
+/// `no_sanitize` does not survive a separate `__attribute__((always_inline))`.
+ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW inline char * shiftedPointer(char * p, Int32 offset)
 {
     return reinterpret_cast<char *>(reinterpret_cast<uintptr_t>(p) + static_cast<uintptr_t>(static_cast<intptr_t>(offset)));
 }
@@ -842,7 +847,7 @@ char * itoa(UInt64 i, char * p)
     return writeUInt64Text(i, p);
 }
 
-char * itoa(Int64 i, char * p)
+char * NO_SANITIZE_UNSIGNED_OVERFLOW itoa(Int64 i, char * p)
 {
     if (i < 0)
         return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));

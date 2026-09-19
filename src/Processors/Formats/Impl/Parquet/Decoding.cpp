@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
 #include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
 #include <Interpreters/convertFieldToType.h>
@@ -712,6 +713,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     }
 
     template <typename T, typename F>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void decodeImpl(size_t num_values, char * out_bytes, F func)
     {
         if (total_values_remaining < num_values)
@@ -1811,11 +1813,11 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
 {
     auto & col_str = assert_cast<ColumnString &>(col);
     col_str.reserve(col_str.size() + num_values);
-    chassert(chars.size() >= offsets[num_values - 1]);
+    chassert(chars.size() >= offsets[static_cast<ssize_t>(num_values) - 1]);
     if (separator_bytes == 0)
     {
         /// Can memcpy all strings in bulk.
-        col_str.getChars().insert(chars.data() + offsets[-1], chars.data() + offsets[num_values - 1]);
+        col_str.getChars().insert(chars.data() + offsets[-1], chars.data() + offsets[static_cast<ssize_t>(num_values) - 1]);
 
         auto & out_offsets = col_str.getOffsets();
         UInt64 diff = out_offsets.back() - offsets[-1]; // (wrapping overflow is ok)
@@ -1826,7 +1828,7 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
     }
     else
     {
-        col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values);
+        col_str.getChars().reserve(col_str.getChars().size() + (offsets[static_cast<ssize_t>(num_values) - 1] - offsets[-1]) - separator_bytes * num_values);
         for (size_t i = 0; i < num_values; ++i)
             col_str.insertData(chars.data() + offsets[ssize_t(i) - 1], offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes);
     }
@@ -2148,7 +2150,7 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
 void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     col.reserve(col.size() + num_values);
-    chassert(chars.size() >= offsets[num_values - 1]);
+    chassert(chars.size() >= offsets[static_cast<ssize_t>(num_values) - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
         char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);

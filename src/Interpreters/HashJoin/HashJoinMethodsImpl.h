@@ -913,7 +913,7 @@ static ColumnPtr buildAdditionalFilter(
                 auto new_col = src_col->column->cloneEmpty();
                 for (size_t i = 0; i < row_replicate_offset.size(); ++i)
                 {
-                    size_t rows = row_replicate_offset[i] - row_replicate_offset[i - 1];
+                    size_t rows = row_replicate_offset[i] - row_replicate_offset[static_cast<ssize_t>(i) - 1];
                     if (rows)
                     {
                         new_col->insertManyFrom(*src_col->column, selector[i], rows);

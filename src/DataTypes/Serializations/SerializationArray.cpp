@@ -90,7 +90,7 @@ void SerializationArray::serializeBinary(const IColumn & column, size_t row_num,
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
     size_t size = next_offset - offset;
 
@@ -165,7 +165,7 @@ namespace
             ? offset + limit
             : size;
 
-        ColumnArray::Offset prev_offset = offset_values[offset - 1];
+        ColumnArray::Offset prev_offset = offset_values[static_cast<ssize_t>(offset) - 1];
         for (size_t i = offset; i < end; ++i)
         {
             ColumnArray::Offset current_offset = offset_values[i];
@@ -181,7 +181,7 @@ namespace
         offset_values.resize(initial_size + limit);
 
         size_t i = initial_size;
-        ColumnArray::Offset current_offset = initial_size ? offset_values[initial_size - 1] : 0;
+        ColumnArray::Offset current_offset = initial_size ? offset_values[static_cast<ssize_t>(initial_size) - 1] : 0;
         while (i < initial_size + limit && !istr.eof())
         {
             ColumnArray::Offset current_size = 0;
@@ -379,9 +379,9 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 
     size_t end = std::min(offset + limit, offset_values.size());
 
-    size_t nested_offset = offset ? offset_values[offset - 1] : 0;
+    size_t nested_offset = offset ? offset_values[static_cast<ssize_t>(offset) - 1] : 0;
     size_t nested_limit = limit
-        ? offset_values[end - 1] - nested_offset
+        ? offset_values[static_cast<ssize_t>(end) - 1] - nested_offset
         : 0;
 
     if (limit == 0 || nested_limit)
@@ -515,7 +515,7 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffe
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();
@@ -673,7 +673,7 @@ void SerializationArray::serializeTextHive(const IColumn & column, size_t row_nu
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();
@@ -746,7 +746,7 @@ void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_nu
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();
@@ -766,7 +766,7 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();
@@ -859,7 +859,7 @@ void SerializationArray::serializeTextXML(const IColumn & column, size_t row_num
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();

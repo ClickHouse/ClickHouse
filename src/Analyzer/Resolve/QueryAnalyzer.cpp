@@ -76,6 +76,7 @@
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
@@ -846,6 +847,7 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
   * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
   */
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();

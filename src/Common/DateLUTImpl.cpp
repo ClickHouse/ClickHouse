@@ -309,7 +309,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
 
     /// Fill saturated LUT.
     {
-        ssize_t day = DATE_LUT_SIZE - 1;
+        ssize_t day = static_cast<ssize_t>(DATE_LUT_SIZE) - 1;
         for (; day >= 0; --day)
         {
             if (lut[day].date >= 0)

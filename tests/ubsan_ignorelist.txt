@@ -20,3 +20,21 @@ src:*/contrib/boost/boost/geometry/*
 # We don't want to receive sanitizer alerts from third-party libraries during fuzzing
 src:*/contrib/contrib/protobuf/*
 src:*/contrib/libprotobuf-mutator/*
+
+[unsigned-integer-overflow]
+# Unsigned integer overflow is well-defined behaviour, and third-party code uses it liberally -
+# in hash functions, checksums, pseudo-random number generators and bignum arithmetic. Compiled
+# third-party code gets `-fno-sanitize=unsigned-integer-overflow` from `contrib/CMakeLists.txt`,
+# but header-only third-party code is compiled as a part of our own translation units, so it has
+# to be excluded here.
+src:*/contrib/*
+
+# Third-party code vendored under `base/`: Poco (digests, hash functions, number parsing),
+# the PCG pseudo-random number generators, musl-derived string and math functions.
+# The patterns do not spell out the `base/` prefix: the compiler matches the file name as it was
+# written on the command line, which for these is not normalized (`base/base/../pcg-random/...`).
+src:*/poco/*
+src:*/pcg-random/*
+src:*/glibc-compatibility/*
+src:*/darwin-compatibility/*
+src:*/widechar_width/*

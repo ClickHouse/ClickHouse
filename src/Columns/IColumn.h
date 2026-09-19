@@ -619,7 +619,7 @@ public:
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
 
     /** Copies each element according offsets parameter.
-      * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
+      * (i-th element should be copied offsets[i] - offsets[static_cast<ssize_t>(i) - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
     using Offset = UInt64;

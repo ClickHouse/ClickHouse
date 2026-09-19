@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
@@ -45,6 +46,7 @@
 #include <Functions/FunctionGenerateRandomStructure.h>
 
 #include <pcg_random.hpp>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -152,7 +154,7 @@ T fuzzyRandomInteger(pcg64 & rng)
     {
         UInt64 low_mask = num_bits == 64 ? ~UInt64(0) : (UInt64(1) << num_bits) - 1;
         UInt64 u_number = static_cast<UInt64>(static_cast<std::make_unsigned_t<T>>(number));
-        UInt64 sign = -(u_number >> (sizeof(T) * 8 - 1));
+        UInt64 sign = common::negateIgnoreOverflow(u_number >> (sizeof(T) * 8 - 1));
         return static_cast<T>((u_number & low_mask) | (sign & ~low_mask));
     }
     else
@@ -456,6 +458,7 @@ size_t estimateValueSize(
 
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr fillColumnWithRandomData(
     DataTypePtr type,
     UInt64 limit,

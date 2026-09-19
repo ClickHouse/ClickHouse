@@ -7,6 +7,7 @@
 #include <crc32c/crc32c.h>
 
 #include <IO/SnappyFramedWriteBuffer.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ constexpr size_t MAX_UNCOMPRESSED_CHUNK_SIZE = 65536;
 
 /// Compute masked CRC-32C as defined by snappy framing format:
 ///   mask = ((crc >> 15) | (crc << 17)) + 0xa282ead8
+NO_SANITIZE_UNSIGNED_OVERFLOW
 uint32_t maskedCrc32c(const char * data, size_t size)
 {
     uint32_t crc = crc32c::Crc32c(data, size);

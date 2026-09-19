@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <filesystem>
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
@@ -41,6 +42,7 @@
 #include <Disks/IO/WriteBufferFromDistributedCache.h>
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Server/DistributedCache/DistributedCacheServerInstance.h>
+#include <base/sanitizer_defs.h>
 #endif
 
 namespace ProfileEvents
@@ -517,6 +519,7 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 }
 
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
@@ -525,14 +528,15 @@ void TemporaryDataBuffer::freeAlloc()
     stat.uncompressed_size = 0;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
         parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
     /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < -static_cast<size_t>(uncompressed_delta)))
+    if ((compressed_delta < 0 && stat.compressed_size < common::negateIgnoreOverflow(static_cast<size_t>(compressed_delta))) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < common::negateIgnoreOverflow(static_cast<size_t>(uncompressed_delta))))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }

@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Common/UTF8Helpers.h>
@@ -212,9 +213,12 @@ private:
             return offset - 1;
         }
 
-        if (input_size < -static_cast<size_t>(offset))
+        /// Both the comparison and the sum below used to be computed on the wrapped-around
+        /// magnitude of a negative offset; taking the magnitude once keeps them ordinary.
+        const size_t magnitude = common::negateIgnoreOverflow(static_cast<size_t>(offset));
+        if (input_size < magnitude)
             return 0;
-        return input_size + offset;
+        return input_size - magnitude;
     }
 
     /// get character count of a slice [data, data+bytes)
@@ -376,8 +380,8 @@ private:
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
+            size_t input_offset = input_offsets[static_cast<ssize_t>(i) - 1];
+            size_t input_bytes = input_offsets[i] - input_offsets[static_cast<ssize_t>(i) - 1];
             size_t input_size = getSliceSize<is_utf8_>(&input_data[input_offset], input_bytes);
 
             if constexpr (offset_is_const)
@@ -492,8 +496,8 @@ private:
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
+            size_t replace_offset = replace_offsets[static_cast<ssize_t>(i) - 1];
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[static_cast<ssize_t>(i) - 1];
             size_t replace_size = getSliceSize<is_utf8_>(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (!offset_is_const)
@@ -609,12 +613,12 @@ private:
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
+            size_t input_offset = input_offsets[static_cast<ssize_t>(i) - 1];
+            size_t input_bytes = input_offsets[i] - input_offsets[static_cast<ssize_t>(i) - 1];
             size_t input_size = getSliceSize<is_utf8_>(&input_data[input_offset], input_bytes);
 
-            size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
+            size_t replace_offset = replace_offsets[static_cast<ssize_t>(i) - 1];
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[static_cast<ssize_t>(i) - 1];
             size_t replace_size = getSliceSize<is_utf8_>(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (offset_is_const)

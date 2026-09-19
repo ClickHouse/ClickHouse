@@ -3102,7 +3102,8 @@ private:
         ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
-        (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
+        (*ctx->mutate_entry)->columns_written
+            = ctx->storage_columns.size() - std::min(ctx->storage_columns.size(), ctx->updated_header.columns());
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;

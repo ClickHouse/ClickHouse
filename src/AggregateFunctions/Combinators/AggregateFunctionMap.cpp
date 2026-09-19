@@ -160,7 +160,7 @@ public:
         const auto & map_nested_tuple = map_column.getNestedData();
         const IColumn::Offsets & map_array_offsets = map_column.getNestedColumn().getOffsets();
 
-        const size_t offset = map_array_offsets[row_num - 1];
+        const size_t offset = map_array_offsets[static_cast<ssize_t>(row_num) - 1];
         const size_t size = (map_array_offsets[row_num] - offset);
 
         const auto & key_column = map_nested_tuple.getColumn(0);

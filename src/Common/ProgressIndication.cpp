@@ -199,7 +199,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         profiling_msg = profiling_msg_builder.str();
     }
 
-    int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
+    int64_t remaining_space = static_cast<int64_t>(terminal_width) - static_cast<int64_t>(written_progress_chars);
 
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
     if (progress.total_rows_to_read || progress.total_bytes_to_read)

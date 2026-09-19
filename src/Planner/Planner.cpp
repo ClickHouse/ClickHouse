@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Planner.h>
 #include <Columns/IColumn.h>
@@ -98,6 +99,7 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace ProfileEvents
@@ -461,6 +463,7 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
 }
 
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
 {
     const IColumn & value = *node.getColumn();
@@ -476,7 +479,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
 
         chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
-        const UInt64 magnitude = -static_cast<UInt64>(int_value);
+        const UInt64 magnitude = common::negateIgnoreOverflow(static_cast<UInt64>(int_value));
         return {magnitude, 0, true};
     }
 

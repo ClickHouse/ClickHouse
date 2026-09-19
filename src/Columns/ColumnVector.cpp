@@ -1102,7 +1102,7 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[may
     {
         for (size_t i = 0; i < size; ++i)
         {
-            size_t span_size = (offsets[i] - offsets[i - 1]);
+            size_t span_size = (offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
             if (!span_size)
                 continue;
             /// We will do block writes of "padding_elements" size from left to write, so writing more bytes than necessary is ok
@@ -1115,7 +1115,7 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[may
             it = result + offsets[i];
 
             if constexpr (use_window)
-                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                if (i + window_size - 1 < size && offsets[i] == offsets[static_cast<ssize_t>(i + window_size) - 1])
                     i += window_size - 1;
         }
     }
@@ -1127,7 +1127,7 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[may
             std::fill(it, span_end, data[i]);
             it = span_end;
             if constexpr (use_window)
-                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                if (i + window_size - 1 < size && offsets[i] == offsets[static_cast<ssize_t>(i + window_size) - 1])
                     i += window_size - 1;
         }
     }
@@ -1148,7 +1148,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[i + window - 1])
+    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[static_cast<ssize_t>(i + window) - 1])
     /// The threshold of 16 is chosen experimentally, based on the case when all offsets are 0 and we spend no time doing actual copying (i.e. the overhead
     /// from these additional checks is pronounced the most).
     const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));

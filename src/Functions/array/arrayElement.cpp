@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -29,6 +30,7 @@
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context.h>
 #include <base/TypeList.h>
+#include <base/sanitizer_defs.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Settings.h>
@@ -394,6 +396,7 @@ struct ArrayElementNumImpl
     /** Implementation for non-constant index.
       */
     template <typename TIndex>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void vector(
         const PaddedPODArray<T> & data,
         const ColumnArray::Offsets & offsets,
@@ -416,7 +419,7 @@ struct ArrayElementNumImpl
                 result[i] = data[j];
                 builder.update(j);
             }
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 result[i] = data[j];
@@ -460,11 +463,11 @@ struct ArrayElementArrayNumImpl
         size_t result_data_size = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             if (index < array_size)
             {
-                size_t j = !negative ? (offsets[i - 1] + index) : (offsets[i] - index - 1);
-                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
+                size_t j = !negative ? (offsets[static_cast<ssize_t>(i) - 1] + index) : (offsets[i] - index - 1);
+                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
                 result_data_size += nested_array_size;
             }
         }
@@ -478,14 +481,14 @@ struct ArrayElementArrayNumImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             if (index < array_size)
             {
-                size_t j = !negative ? (offsets[i - 1] + index) : (offsets[i] - index - 1);
+                size_t j = !negative ? (offsets[static_cast<ssize_t>(i) - 1] + index) : (offsets[i] - index - 1);
                 builder.update(j);
 
-                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
-                ColumnArray::Offset nested_array_pos = nested_offsets[j - 1];
+                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
+                ColumnArray::Offset nested_array_pos = nested_offsets[static_cast<ssize_t>(j) - 1];
                 memcpy(&result_data[current_offset], &data[nested_array_pos], nested_array_size * sizeof(T));
                 if constexpr (nullable_number)
                     memcpy(&(*result_number_null_map)[current_offset], &(*number_null_map)[nested_array_pos], nested_array_size);
@@ -522,18 +525,18 @@ struct ArrayElementArrayNumImpl
         size_t result_data_size = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
             {
-                size_t j = offsets[i - 1] + index - 1;
-                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
+                size_t j = offsets[static_cast<ssize_t>(i) - 1] + index - 1;
+                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
                 result_data_size += nested_array_size;
             }
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
                 size_t j = offsets[i] + index;
-                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
+                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
                 result_data_size += nested_array_size;
             }
         }
@@ -547,29 +550,29 @@ struct ArrayElementArrayNumImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
             {
-                size_t j = offsets[i - 1] + index - 1;
+                size_t j = offsets[static_cast<ssize_t>(i) - 1] + index - 1;
                 builder.update(j);
 
-                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
-                ColumnArray::Offset nested_array_pos = nested_offsets[j - 1];
+                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
+                ColumnArray::Offset nested_array_pos = nested_offsets[static_cast<ssize_t>(j) - 1];
                 memcpy(&result_data[current_offset], &data[nested_array_pos], nested_array_size * sizeof(T));
                 if constexpr (nullable_number)
                     memcpy(&(*result_number_null_map)[current_offset], &(*number_null_map)[nested_array_pos], nested_array_size);
 
                 current_offset += nested_array_size;
             }
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 builder.update(j);
 
-                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
-                ColumnArray::Offset nested_array_pos = nested_offsets[j - 1];
+                ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
+                ColumnArray::Offset nested_array_pos = nested_offsets[static_cast<ssize_t>(j) - 1];
                 memcpy(&result_data[current_offset], &data[nested_array_pos], nested_array_size * sizeof(T));
                 if constexpr (nullable_number)
                     memcpy(&(*result_number_null_map)[current_offset], &(*number_null_map)[nested_array_pos], nested_array_size);
@@ -612,16 +615,16 @@ struct ArrayElementArrayStringImpl
         size_t result_strings_size = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             if (index < array_size)
             {
                 size_t adjusted_index = !negative ? index : (array_size - index - 1);
-                size_t j = offsets[i - 1] + adjusted_index;
+                size_t j = offsets[static_cast<ssize_t>(i) - 1] + adjusted_index;
 
-                auto nested_array_start = nested_offsets[j - 1];
+                auto nested_array_start = nested_offsets[static_cast<ssize_t>(j) - 1];
                 auto nested_array_size = nested_offsets[j] - nested_array_start;
 
-                result_data_size += string_offsets[nested_array_start + nested_array_size - 1] - string_offsets[nested_array_start - 1];
+                result_data_size += string_offsets[static_cast<ssize_t>(nested_array_start + nested_array_size) - 1] - string_offsets[static_cast<ssize_t>(nested_array_start) - 1];
                 result_strings_size += nested_array_size;
             }
         }
@@ -637,22 +640,22 @@ struct ArrayElementArrayStringImpl
         ColumnArray::Offset current_string_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             if (index < array_size)
             {
                 size_t adjusted_index = !negative ? index : (array_size - index - 1);
 
-                size_t j = offsets[i - 1] + adjusted_index;
+                size_t j = offsets[static_cast<ssize_t>(i) - 1] + adjusted_index;
                 builder.update(j);
 
-                auto nested_array_start = nested_offsets[j - 1];
+                auto nested_array_start = nested_offsets[static_cast<ssize_t>(j) - 1];
                 auto nested_array_size = nested_offsets[j] - nested_array_start;
 
                 /// For each String in Array(String), append it to result_data and update result_offsets and result_string_offsets
                 for (size_t k = 0; k < nested_array_size; ++k)
                 {
-                    auto string_start = string_offsets[nested_array_start + k - 1];
+                    auto string_start = string_offsets[static_cast<ssize_t>(nested_array_start + k) - 1];
                     auto string_size = string_offsets[nested_array_start + k] - string_start;
                     memcpySmallAllowReadWriteOverflow15(&result_data[current_string_offset], &data[string_start], string_size);
                     current_string_offset += string_size;
@@ -695,24 +698,24 @@ struct ArrayElementArrayStringImpl
         size_t result_strings_size = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             size_t adjusted_index = 0; /// index in array from zero
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
                 adjusted_index = array_size + index;
             else
                 adjusted_index = array_size; /// means no element should be taken
 
             if (adjusted_index < array_size)
             {
-                size_t j = offsets[i - 1] + adjusted_index;
+                size_t j = offsets[static_cast<ssize_t>(i) - 1] + adjusted_index;
 
-                auto nested_array_start = nested_offsets[j - 1];
+                auto nested_array_start = nested_offsets[static_cast<ssize_t>(j) - 1];
                 auto nested_array_size = nested_offsets[j] - nested_array_start;
 
-                result_data_size += string_offsets[nested_array_start + nested_array_size - 1] - string_offsets[nested_array_start - 1];
+                result_data_size += string_offsets[static_cast<ssize_t>(nested_array_start + nested_array_size) - 1] - string_offsets[static_cast<ssize_t>(nested_array_start) - 1];
                 result_strings_size += nested_array_size;
             }
         }
@@ -728,13 +731,13 @@ struct ArrayElementArrayStringImpl
         ColumnArray::Offset current_string_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - offsets[i - 1];
+            size_t array_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             size_t adjusted_index = 0; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
                 adjusted_index = array_size + index;
             else
                 adjusted_index = array_size; /// means no element should be taken
@@ -742,16 +745,16 @@ struct ArrayElementArrayStringImpl
 
             if (adjusted_index < array_size)
             {
-                size_t j = offsets[i - 1] + adjusted_index;
+                size_t j = offsets[static_cast<ssize_t>(i) - 1] + adjusted_index;
                 builder.update(j);
 
-                auto nested_array_start = nested_offsets[j - 1];
+                auto nested_array_start = nested_offsets[static_cast<ssize_t>(j) - 1];
                 auto nested_array_size = nested_offsets[j] - nested_array_start;
 
                 /// For each String in Array(String), append it to result_data and update result_offsets and result_string_offsets
                 for (size_t k = 0; k < nested_array_size; ++k)
                 {
-                    auto string_start = string_offsets[nested_array_start + k - 1];
+                    auto string_start = string_offsets[static_cast<ssize_t>(nested_array_start + k) - 1];
                     auto string_size = string_offsets[nested_array_start + k] - string_start;
                     memcpySmallAllowReadWriteOverflow15(&result_data[current_string_offset], &data[string_start], string_size);
                     current_string_offset += string_size;
@@ -810,7 +813,7 @@ struct ArrayElementStringImpl
                 builder.update(j);
 
                 ColumnArray::Offset string_pos
-                    = current_offset == 0 && adjusted_index == 0 ? 0 : string_offsets[current_offset + adjusted_index - 1];
+                    = current_offset == 0 && adjusted_index == 0 ? 0 : string_offsets[static_cast<ssize_t>(current_offset + adjusted_index) - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
@@ -839,6 +842,7 @@ struct ArrayElementStringImpl
     /** Implementation for non-constant index.
       */
     template <typename TIndex>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void vector(
         const ColumnString::Chars & data,
         const ColumnArray::Offsets & offsets,
@@ -864,7 +868,7 @@ struct ArrayElementStringImpl
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
                 adjusted_index = array_size + index;
             else
                 adjusted_index = array_size; /// means no element should be taken
@@ -875,7 +879,7 @@ struct ArrayElementStringImpl
                 builder.update(j);
 
                 ColumnArray::Offset string_pos
-                    = current_offset == 0 && adjusted_index == 0 ? 0 : string_offsets[current_offset + adjusted_index - 1];
+                    = current_offset == 0 && adjusted_index == 0 ? 0 : string_offsets[static_cast<ssize_t>(current_offset + adjusted_index) - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
                 total_result_bytes += string_size;
@@ -963,7 +967,7 @@ struct ArrayElementGenericImpl
                 result.insertFrom(data, j);
                 builder.update(j);
             }
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 result.insertFrom(data, j);
@@ -984,6 +988,7 @@ struct ArrayElementGenericImpl
 
 template <ArrayElementExceptionMode mode>
 template <typename DataType>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeNumberConst(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -1063,6 +1068,7 @@ ColumnPtr FunctionArrayElement<mode>::executeNumber(
 }
 
 template <ArrayElementExceptionMode mode>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeStringConst(
     const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder<mode> & builder)
 {
@@ -1107,6 +1113,7 @@ ColumnPtr FunctionArrayElement<mode>::executeStringConst(
 }
 
 template <ArrayElementExceptionMode mode>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeArrayStringConst(
     const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder<mode> & builder)
 {
@@ -1201,6 +1208,7 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayStringConst(
 
 template <ArrayElementExceptionMode mode>
 template <typename DataType>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeArrayNumberConst(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -1467,6 +1475,7 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayString(
 }
 
 template <ArrayElementExceptionMode mode>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeGenericConst(
     const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder<mode> & builder)
 {
@@ -1526,6 +1535,7 @@ ColumnPtr FunctionArrayElement<mode>::executeGeneric(
 
 template <ArrayElementExceptionMode mode>
 template <typename IndexType>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeConst(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -1553,7 +1563,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
             res->insertFrom(array_elements, j);
             builder.update(j);
         }
-        else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+        else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
         {
             size_t j = array_size + index;
             res->insertFrom(array_elements, j);
@@ -1664,6 +1674,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 }
 
 template <ArrayElementExceptionMode mode>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> & builder, size_t input_rows_count) const
 {
     const ColumnArray * col_array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
@@ -1686,7 +1697,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
         const IColumn * index_col = arguments[1].column.get();
 
         /// Non-const numeric index vector (Int*/UInt*) path
-        auto fill_null_map_for_vector = [&](const auto * index_column) -> bool
+        auto fill_null_map_for_vector = [&](const auto * index_column) NO_SANITIZE_UNSIGNED_OVERFLOW -> bool
         {
             if (!index_column)
                 return false;
@@ -1713,7 +1724,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
                 }
                 else if constexpr (std::is_signed_v<IndexType>)
                 {
-                    if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
+                    if (idx < 0 && common::negateIgnoreOverflow(static_cast<UInt64>(idx)) <= array_size)
                     {
                         /// Negative index from the end: arr[-1] is last element
                         zero_based = static_cast<UInt64>(array_size + idx);
@@ -1793,7 +1804,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
                     zero_based = static_cast<UInt64>(idx) - 1;
                     in_range = true;
                 }
-                else if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
+                else if (idx < 0 && common::negateIgnoreOverflow(static_cast<UInt64>(idx)) <= array_size)
                 {
                     zero_based = static_cast<UInt64>(array_size + idx); /// idx < 0
                     in_range = true;
@@ -2374,7 +2385,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     /// `NULL`, exactly like the scalar form: `[10, 20, 30][toNullable(5)]` is `0`, not `NULL`.
     bool out_of_bounds_is_null = result_is_nullable && (is_null_mode || nullable_data != nullptr);
 
-    size_t total_indices = input_rows_count ? index_offsets[input_rows_count - 1] : 0;
+    size_t total_indices = input_rows_count ? index_offsets[static_cast<ssize_t>(input_rows_count) - 1] : 0;
 
     /// Result offsets are identical to index offsets
     auto result_offsets_col = ColumnArray::ColumnOffsets::create();
@@ -2389,8 +2400,8 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
         {
             if (idx > 0 && static_cast<size_t>(idx) <= array_size)
                 return static_cast<size_t>(idx) - 1;
-            if (idx < 0 && -static_cast<size_t>(idx) <= array_size)
-                return array_size - (-static_cast<size_t>(idx));
+            if (idx < 0 && common::negateIgnoreOverflow(static_cast<size_t>(idx)) <= array_size)
+                return array_size - (common::negateIgnoreOverflow(static_cast<size_t>(idx)));
         }
         else
         {
@@ -2432,9 +2443,9 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
             size_t out = 0;
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[row - 1] : 0);
+                size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[static_cast<ssize_t>(row) - 1] : 0);
                 size_t array_size = is_data_const ? const_array_size : (data_offsets[row] - data_start);
-                size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
+                size_t idx_start = row > 0 ? index_offsets[static_cast<ssize_t>(row) - 1] : 0;
                 size_t idx_end = index_offsets[row];
 
                 for (size_t k = idx_start; k < idx_end; ++k, ++out)
@@ -2540,9 +2551,9 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
         size_t out = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[row - 1] : 0);
+            size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[static_cast<ssize_t>(row) - 1] : 0);
             size_t array_size = is_data_const ? const_array_size : (data_offsets[row] - data_start);
-            size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
+            size_t idx_start = row > 0 ? index_offsets[static_cast<ssize_t>(row) - 1] : 0;
             size_t idx_end = index_offsets[row];
 
             for (size_t k = idx_start; k < idx_end; ++k, ++out)
@@ -2677,7 +2688,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
     const IColumn & index_data = nullable_index ? nullable_index->getNestedColumn() : *index_holder;
     const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
     const auto & offsets = index_array->getOffsets();
-    const size_t total_indices = input_rows_count ? offsets[input_rows_count - 1] : 0;
+    const size_t total_indices = input_rows_count ? offsets[static_cast<ssize_t>(input_rows_count) - 1] : 0;
 
     auto result = ColumnVector<T>::create(total_indices);
     auto & result_data = result->getData();
@@ -2715,7 +2726,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
         size_t output_row = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const size_t begin = row ? offsets[row - 1] : 0;
+            const size_t begin = row ? offsets[static_cast<ssize_t>(row) - 1] : 0;
             for (size_t pos = begin; pos < offsets[row]; ++pos, ++output_row)
             {
                 if (source_is_null(row))
@@ -3515,6 +3526,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
 
 template <ArrayElementExceptionMode mode>
 template <typename IndexType>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool FunctionArrayElement<mode>::gatherReplicated(
     const IColumn & index_column,
     const ColumnIndex & replication_indexes,

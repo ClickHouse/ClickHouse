@@ -265,7 +265,7 @@ public:
         const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
-        size_t begin = offsets[row_num - 1];
+        size_t begin = offsets[static_cast<ssize_t>(row_num) - 1];
         size_t end = offsets[row_num];
 
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
@@ -274,7 +274,7 @@ public:
             const ColumnArray & ith_column = assert_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
-            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[static_cast<ssize_t>(row_num) - 1] != begin))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 

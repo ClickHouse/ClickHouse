@@ -126,7 +126,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
 
             for (size_t i = 0; i < rows_read; ++i)
             {
-                size_t element_start_row = column_offsets[current_position - 1];
+                size_t element_start_row = column_offsets[static_cast<ssize_t>(current_position) - 1];
                 size_t elements_size = column_offsets[current_position] - element_start_row;
 
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)

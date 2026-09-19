@@ -45,7 +45,7 @@ struct LemmatizeImpl
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// `lemmatize` requires terminating zero
-            buffer.assign(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
+            buffer.assign(reinterpret_cast<const char *>(data.data() + offsets[static_cast<ssize_t>(i) - 1]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
             auto result = lemmatizer->lemmatize(buffer.c_str());
             size_t new_size = strlen(result.get());
 

@@ -1394,6 +1394,7 @@ void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & lo
 #endif
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) const
 {
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
@@ -2571,6 +2572,7 @@ void DatabaseReplicated::shutdown()
         std::rethrow_exception(first_error);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropTable");
@@ -2608,6 +2610,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assertDigest(local_context);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
@@ -2684,6 +2687,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     assertDigest(local_context);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                        ContextPtr query_context)

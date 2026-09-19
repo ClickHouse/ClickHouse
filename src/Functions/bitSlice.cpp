@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -9,6 +10,7 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -118,7 +120,7 @@ public:
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1));
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetUnbounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
+                        source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(start_value)));
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -136,7 +138,7 @@ public:
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1), length_value);
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetBounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
+                        source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(start_value)), length_value);
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -221,6 +223,7 @@ public:
     }
 
     template <class Source>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void bitSliceDynamicOffsetUnbounded(Source && src, StringSink && sink, const IColumn & offset_column) const
     {
         while (!src.isEnd())
@@ -242,7 +245,7 @@ public:
                 }
                 else
                 {
-                    UInt64 offset = -static_cast<UInt64>(start);
+                    UInt64 offset = common::negateIgnoreOverflow(static_cast<UInt64>(start));
                     size_t offset_byte = offset / word_size;
                     size_t offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
                     if (offset_bit)
@@ -340,6 +343,7 @@ public:
     }
 
     template <class Source>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void bitSliceDynamicOffsetBounded(Source && src, StringSink && sink, const IColumn & offset_column, const IColumn & length_column) const
     {
         while (!src.isEnd())
@@ -351,7 +355,7 @@ public:
             if (start && length)
             {
                 bool left_offset = start > 0;
-                size_t offset = left_offset ? static_cast<size_t>(start - 1) : -static_cast<size_t>(start);
+                size_t offset = left_offset ? static_cast<size_t>(start - 1) : common::negateIgnoreOverflow(static_cast<size_t>(start));
                 size_t size = src.getElementSize();
 
                 size_t offset_byte = 0;

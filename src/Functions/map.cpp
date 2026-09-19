@@ -330,7 +330,7 @@ public:
         auto result_keys = keys_data_left.cloneEmpty();
         auto result_values = values_data_left.cloneEmpty();
 
-        size_t size_to_reserve = keys_data_right.size() + (keys_data_left.size() - keys_data_right.size());
+        size_t size_to_reserve = keys_data_left.size();
 
         result_keys->reserve(size_to_reserve);
         result_values->reserve(size_to_reserve);
@@ -350,10 +350,10 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            size_t left_from = is_left_const ? 0 : offsets_left[row_idx - 1];
+            size_t left_from = is_left_const ? 0 : offsets_left[static_cast<ssize_t>(row_idx) - 1];
             size_t left_to = is_left_const ? offsets_left[0] : offsets_left[row_idx];
 
-            size_t right_from = is_right_const ? 0 : offsets_right[row_idx - 1];
+            size_t right_from = is_right_const ? 0 : offsets_right[static_cast<ssize_t>(row_idx) - 1];
             size_t right_to = is_right_const ? offsets_right[0] : offsets_right[row_idx];
 
             auto execute_row = [&](const auto & set)

@@ -494,7 +494,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
         // Extract time series data
         writeString(R"("values":[)", response);
 
-        size_t start = (i == 0) ? 0 : offsets[i-1];
+        size_t start = (i == 0) ? 0 : offsets[static_cast<ssize_t>(i) - 1];
         size_t end = offsets[i];
 
         for (size_t j = start; j < end; ++j)
@@ -791,7 +791,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
                 writeJSONString(metric_family_column.getDataAt(i), response, format_settings);
                 writeString(":[", response);
 
-                size_t start = (i == 0) ? 0 : offsets[i - 1];
+                size_t start = (i == 0) ? 0 : offsets[static_cast<ssize_t>(i) - 1];
                 size_t end = offsets[i];
 
                 for (size_t j = start; j < end; ++j)
@@ -963,7 +963,7 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
             for (size_t i = 0; i < result_block.rows(); ++i)
             {
-                size_t start = (i == 0) ? 0 : offsets[i - 1];
+                size_t start = (i == 0) ? 0 : offsets[static_cast<ssize_t>(i) - 1];
                 for (size_t j = start; j < offsets[i]; ++j)
                 {
                     if (limit && (written == limit))
@@ -1019,7 +1019,7 @@ void PrometheusHTTPProtocolAPI::writeTags(WriteBuffer & response, const Block & 
 
     writeString("{", response);
 
-    size_t start = (row_index == 0) ? 0 : offsets[row_index - 1];
+    size_t start = (row_index == 0) ? 0 : offsets[static_cast<ssize_t>(row_index) - 1];
     size_t end = offsets[row_index];
 
     for (size_t j = start; j < end; ++j)

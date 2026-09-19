@@ -50,8 +50,8 @@ void AggregateFunctionTimeseriesQuantileToGridPhi::captureOrCheck(
     const IColumn & number_column = array_column ? array_column->getData() : column;
 
     /// `[begin, begin + size)` are the elements of the current `row` in the nested column (`offsets[-1]` is 0).
-    auto array_begin = [&] { return array_column->getOffsets()[row - 1]; };
-    auto array_size = [&] { return array_column->getOffsets()[row] - array_column->getOffsets()[row - 1]; };
+    auto array_begin = [&] { return array_column->getOffsets()[static_cast<ssize_t>(row) - 1]; };
+    auto array_size = [&] { return array_column->getOffsets()[row] - array_column->getOffsets()[static_cast<ssize_t>(row) - 1]; };
 
     /// The argument holds any native number type (checked when the function is created).
     const bool dispatched = castTypeToEither<

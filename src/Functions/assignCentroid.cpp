@@ -246,7 +246,7 @@ struct CentroidMatrix
 
         for (size_t row = 0; row < num_rows; ++row) /// checked up front: the scoring loop assumes dense rows
         {
-            size_t start = row ? offsets[row - 1] : 0;
+            size_t start = row ? offsets[static_cast<ssize_t>(row) - 1] : 0;
             size_t length = offsets[row] - start;
             if (length != dim)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
@@ -447,7 +447,7 @@ private:
         VectorWithMemoryTracking<Float32> row_major(num_centroids * dim);
         for (size_t centroid_index = 0; centroid_index < num_centroids; ++centroid_index)
         {
-            size_t start = centroid_index ? inner_array.getOffsets()[centroid_index - 1] : 0;
+            size_t start = centroid_index ? inner_array.getOffsets()[static_cast<ssize_t>(centroid_index) - 1] : 0;
             size_t length = inner_array.getOffsets()[centroid_index] - start;
             if (length != dim)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,

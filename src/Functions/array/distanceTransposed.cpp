@@ -472,12 +472,12 @@ public:
         {
             for (size_t i = 0; i < reference_vector.size(); ++i)
             {
-                if (offsets[i] - offsets[i - 1] < used_dims)
+                if (offsets[i] - offsets[static_cast<ssize_t>(i) - 1] < used_dims)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The reference vector in the last argument of function {} is too small. Got: {}, expected at least: {}",
                         getName(),
-                        offsets[i] - offsets[i - 1],
+                        offsets[i] - offsets[static_cast<ssize_t>(i) - 1],
                         used_dims);
             }
         }
@@ -901,7 +901,7 @@ private:
                     if constexpr (ref_is_const)
                         return data_ptr->data();
                     else
-                        return data_ptr->data() + (base_row + r == 0 ? 0 : ref_offsets[base_row + r - 1]);
+                        return data_ptr->data() + (base_row + r == 0 ? 0 : ref_offsets[static_cast<ssize_t>(base_row + r) - 1]);
                 }();
 
                 auto * dst = block_row(r);
@@ -1035,7 +1035,7 @@ private:
                     if constexpr (ref_is_const)
                         return ref_array_data.data();
                     else
-                        return ref_array_data.data() + (base_row + r == 0 ? 0 : ref_offsets[base_row + r - 1]);
+                        return ref_array_data.data() + (base_row + r == 0 ? 0 : ref_offsets[static_cast<ssize_t>(base_row + r) - 1]);
                 }();
 
                 Float32 * dst = block_row(r);

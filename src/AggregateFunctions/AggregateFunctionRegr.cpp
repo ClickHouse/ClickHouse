@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <limits>
 #include <memory>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -84,6 +85,7 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// the whole of their range - UInt64 spans up to 2^64 - and wrapping it would not merely lose
 /// precision, it would flip the sign of the slope.
 template <typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 Float64 exactDelta(T value, T shift)
 {
     if constexpr (is_integer<T>)

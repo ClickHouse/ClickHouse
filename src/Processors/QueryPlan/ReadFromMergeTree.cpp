@@ -2065,7 +2065,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 {
                     ranges_to_get_from_part = part.ranges;
 
-                    need_marks -= marks_in_part;
+                    need_marks -= std::min(need_marks, marks_in_part);
                     info.sum_marks_in_parts.pop_back();
                 }
                 else

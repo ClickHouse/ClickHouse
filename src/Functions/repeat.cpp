@@ -52,7 +52,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
-            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[i - 1]) * repeat_time);
+            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[static_cast<ssize_t>(i) - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -61,9 +61,9 @@ struct RepeatImpl
         for (UInt64 i = 0; i < res_offsets.size(); ++i)
         {
             process(
-                data.data() + offsets[i - 1],
-                res_data.data() + res_offsets[i - 1],
-                offsets[i] - offsets[i - 1],
+                data.data() + offsets[static_cast<ssize_t>(i) - 1],
+                res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
+                offsets[i] - offsets[static_cast<ssize_t>(i) - 1],
                 static_cast<UInt64>(repeat_time));
         }
     }
@@ -81,7 +81,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
-            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[i - 1]) * repeat_time);
+            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[static_cast<ssize_t>(i) - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -93,9 +93,9 @@ struct RepeatImpl
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             checkRepeatTime(static_cast<UInt64>(repeat_time));
             process(
-                data.data() + offsets[i - 1],
-                res_data.data() + res_offsets[i - 1],
-                offsets[i] - offsets[i - 1],
+                data.data() + offsets[static_cast<ssize_t>(i) - 1],
+                res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
+                offsets[i] - offsets[static_cast<ssize_t>(i) - 1],
                 static_cast<UInt64>(repeat_time));
         }
     }
@@ -126,7 +126,7 @@ struct RepeatImpl
             checkRepeatTime(static_cast<UInt64>(repeat_time));
             process(
                 reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
-                res_data.data() + res_offsets[i - 1],
+                res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
                 str_size,
                 static_cast<UInt64>(repeat_time));
         }

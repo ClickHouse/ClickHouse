@@ -29,6 +29,11 @@ extern const ptrdiff_t __rseq_offset __attribute__((weak)); // NOLINT(bugprone-r
 extern const unsigned int __rseq_size __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #pragma clang diagnostic pop
 
+/* `__rseq_offset` is a signed offset from the thread pointer and is negative on aarch64, where TLS
+ * variant I places `struct pthread` below it, so the address computation below wraps around on
+ * purpose. This runs during static initialization (`sched_getcpu` from gRPC), so an abort here stops
+ * the binary before `main`. */
+__attribute__((no_sanitize("unsigned-integer-overflow")))
 int32_t rseq_cpu_id(void)
 {
     if (&__rseq_size == NULL || __rseq_size < offsetof(struct kernel_rseq, cpu_id) + sizeof(uint32_t))

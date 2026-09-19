@@ -162,7 +162,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
-    ColumnString::Offset prev_string_offset = offsets[offset - 1];
+    ColumnString::Offset prev_string_offset = offsets[static_cast<ssize_t>(offset) - 1];
     for (size_t i = offset; i < end; ++i)
     {
         ColumnString::Offset next_string_offset = offsets[i];
@@ -641,7 +641,7 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
         return;
 
     size_t end = limit && (offset + limit < size) ? offset + limit : size;
-    UInt64 prev_offset = offset_values[offset - 1];
+    UInt64 prev_offset = offset_values[static_cast<ssize_t>(offset) - 1];
     if constexpr (std::endian::native == std::endian::big)
     {
         for (size_t i = offset; i < end; ++i)
@@ -764,8 +764,8 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
     /// Serialize string data
-    size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
-    size_t end = offsets[offset + limit - 1];
+    size_t begin = (offset == 0) ? 0 : offsets[static_cast<ssize_t>(offset) - 1];
+    size_t end = offsets[static_cast<ssize_t>(offset + limit) - 1];
     size_t bytes = end - begin;
     stream->write(reinterpret_cast<const char *>(&column_string.getChars()[begin]), bytes);
     settings.path.pop_back();

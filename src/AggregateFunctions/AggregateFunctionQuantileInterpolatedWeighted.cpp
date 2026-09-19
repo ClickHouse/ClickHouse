@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -109,6 +110,7 @@ private:
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     T getImpl(Float64 level) const
     {
         size_t size = map.size();
@@ -183,6 +185,8 @@ private:
                     else
                     {
                         idx = mid;
+                        if (mid == 0)
+                            break;
                         end = mid - 1;
                     }
                 }
@@ -271,21 +275,22 @@ private:
                 }
                 else
                 {
+                    /// The smallest index whose next pair reaches `level`. Half-open: `end` is the
+                    /// last candidate rather than one past the tested one, so `mid` stays below it
+                    /// and `end = mid` replaces an `end = mid - 1` that underflowed to `SIZE_MAX`
+                    /// whenever `mid` was 0 - the `mid > size` guard was there to catch exactly that
+                    /// wrapped value on the next iteration, and is no longer needed.
                     size_t start = 0;
                     size_t end = size - 1;
-                    while (start <= end)
+                    while (start < end)
                     {
-                        size_t mid = start + (end - start) / 2;
-                        if (mid > size)
-                            break;
+                        const size_t mid = start + (end - start) / 2;
                         if (level > value_weight_pairs[mid + 1].second)
                             start = mid + 1;
                         else
-                        {
-                            idx = mid;
-                            end = mid - 1;
-                        }
+                            end = mid;
                     }
+                    idx = start;
                 }
             }
 

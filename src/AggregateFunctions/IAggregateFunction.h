@@ -396,7 +396,7 @@ public:
         ssize_t if_argument_pos = -1) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
-      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
+      *  as long as they are between offsets[static_cast<ssize_t>(i) - 1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
       *  "places" contains a large number of same values consecutively.
       */

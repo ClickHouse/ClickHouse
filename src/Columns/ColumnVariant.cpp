@@ -350,7 +350,7 @@ MutableColumnPtr ColumnVariant::cloneResized(size_t new_size) const
     /// [0, new_size)
     if (2 * new_size <= size)
     {
-        for (ssize_t i = new_size - 1; i > -1; --i)
+        for (ssize_t i = static_cast<ssize_t>(new_size) - 1; i > -1; --i)
         {
             Discriminator discr = local_discriminators_data[i];
             if (discr != NULL_DISCRIMINATOR)
@@ -1334,7 +1334,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
         Discriminator discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
         {
-            size_t repeat_count = replicate_offsets[i] - replicate_offsets[i - 1];
+            size_t repeat_count = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
             nested_replicated_offsets[discr].push_back(nested_replicated_offsets[discr].back() + repeat_count);
         }
     }

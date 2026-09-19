@@ -356,12 +356,12 @@ public:
             value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
         }
 
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_begin) - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[static_cast<ssize_t>(row_begin) - 1]);
 
         /// Reserve memory for all the samples at once if no rows are skipped.
         if (!flags_data && row_end > row_begin)
-            reserveAdd(place, timestamp_offsets[row_end - 1] - previous_timestamp_offset, arena);
+            reserveAdd(place, timestamp_offsets[static_cast<ssize_t>(row_end) - 1] - previous_timestamp_offset, arena);
 
         for (size_t i = row_begin; i < row_end; ++i)
         {

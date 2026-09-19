@@ -27,6 +27,7 @@
 
 #if defined(OS_DARWIN)
 #include <Common/MachO.h>
+#include <base/sanitizer_defs.h>
 #endif
 
 #define DW_CHILDREN_no 0
@@ -259,7 +260,7 @@ uint64_t readULEB(std::string_view & sp)
 }
 
 // Read SLEB (signed) varint value; algorithm from the DWARF spec
-int64_t readSLEB(std::string_view & sp)
+int64_t NO_SANITIZE_UNSIGNED_OVERFLOW readSLEB(std::string_view & sp)
 {
     uint8_t shift = 0;
     uint8_t val = 0;
@@ -2121,7 +2122,7 @@ bool Dwarf::LineNumberVM::nextDefineFile(std::string_view & program, FileName & 
     return false;
 }
 
-Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & program)
+Dwarf::LineNumberVM::StepResult NO_SANITIZE_UNSIGNED_OVERFLOW Dwarf::LineNumberVM::step(std::string_view & program)
 {
     auto opcode = read<uint8_t>(program);
 

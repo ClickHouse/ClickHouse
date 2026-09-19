@@ -63,6 +63,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace CurrentMetrics
@@ -1091,8 +1092,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     r_index_priority = 0;
 #endif
                 // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -l_index->getGranularity();
-                const auto neg_r_granularity = -r_index->getGranularity();
+                const auto neg_l_granularity = -static_cast<Int64>(l_index->getGranularity());
+                const auto neg_r_granularity = -static_cast<Int64>(r_index->getGranularity());
 
                 const auto l_size = idx_sizes[l];
                 const auto r_size = idx_sizes[r];
@@ -2026,6 +2027,7 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
+NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks)
 {

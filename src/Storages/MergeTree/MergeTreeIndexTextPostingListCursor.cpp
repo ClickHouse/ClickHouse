@@ -287,11 +287,11 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
                 i, segment.block_offsets[i], payload_bytes);
         }
 
-        if (i > 0 && segment.block_offsets[i] <= segment.block_offsets[i - 1])
+        if (i > 0 && segment.block_offsets[i] <= segment.block_offsets[static_cast<ssize_t>(i) - 1])
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupted data in lazy posting list cursor: block_offsets not strictly monotonic at block {}: previous = {}, current = {}",
-                i, segment.block_offsets[i - 1], segment.block_offsets[i]);
+                i, segment.block_offsets[static_cast<ssize_t>(i) - 1], segment.block_offsets[i]);
         }
     }
 

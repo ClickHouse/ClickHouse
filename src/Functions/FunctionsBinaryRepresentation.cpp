@@ -638,7 +638,7 @@ public:
             size_t max_out_len = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const size_t len = in_offsets[i] - in_offsets[i - 1];
+                const size_t len = in_offsets[i] - in_offsets[static_cast<ssize_t>(i) - 1];
                 max_out_len += (len + word_size - 1) / word_size;
             }
             out_vec.resize(max_out_len);
