@@ -399,7 +399,43 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto subcolumn_name = required_column.getSubcolumnName();
 
     if (alter_conversions->isColumnRenamed(name_in_storage))
+    {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+    }
+    else if (!subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
+    {
+        /** A leaf of a Nested column is requested as a subcolumn of its parent (`n.z` becomes the
+          * subcolumn `z` of `n`, see `Nested::convertToSubcolumns`), while a pending rename of that
+          * leaf is recorded under the flattened name `n.z`. The lookup above asks for the parent and
+          * misses it, so the part is searched for a column that only exists there under its old name
+          * and the values are read as defaults while the mutation is pending.
+          */
+        /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
+        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so every prefix of the
+        /// subcolumn name is a candidate for the leaf. Try them from the longest, which prefers the leaf `b.c`
+        /// over the leaf `b` with the subcolumn `c`, in the same way as the column lookup in the part does.
+        for (size_t leaf_length = subcolumn_name.size();;)
+        {
+            auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, leaf_length));
+
+            if (alter_conversions->isColumnRenamed(leaf_name))
+            {
+                /// A rename cannot move a leaf to another Nested column, so the parent stays the same.
+                auto old_leaf_split = Nested::splitName(alter_conversions->getColumnOldName(leaf_name));
+                auto leaf_subcolumn_name = leaf_length < subcolumn_name.size() ? subcolumn_name.substr(leaf_length + 1) : String{};
+
+                name_in_storage = old_leaf_split.first;
+                subcolumn_name = Nested::concatenateName(old_leaf_split.second, leaf_subcolumn_name);
+                break;
+            }
+
+            auto previous_dot = subcolumn_name.rfind('.', leaf_length - 1);
+            if (previous_dot == std::string::npos || previous_dot == 0)
+                break;
+
+            leaf_length = previous_dot;
+        }
+    }
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
