@@ -89,6 +89,12 @@ public:
     /// as the real remote error instead of being reported as "does not exist".
     bool isTableExist(const String & name, ContextPtr context) const override;
 
+    /// The tables are read-through proxies of the remote server's tables: `DETACH TABLE` and
+    /// `ATTACH TABLE` are not implemented, and even probing a table (`isTableExist`, `tryGetTable`)
+    /// reaches out to the remote server under the caller's credentials, so it is not free of
+    /// side effects.
+    bool supportsDetachingTables() const override { return false; }
+
     /// Returns `nullptr` only for a genuinely missing table; a transport/authentication failure is
     /// propagated as the real remote error, so user queries do not misreport it as `UNKNOWN_TABLE`.
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;

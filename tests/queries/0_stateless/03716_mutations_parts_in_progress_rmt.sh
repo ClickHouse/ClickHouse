@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-random-detach
+# no-random-detach: test checks mutation state
 # Tag no-parallel: Fails due to failpoint intersection
 # no-replicated-database: Fails due to additional replicas or shards
 

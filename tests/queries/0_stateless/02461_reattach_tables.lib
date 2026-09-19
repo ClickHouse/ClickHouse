@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Shared helpers for the `reattach_tables_before_query_execution` suite. The suite is split across
+# several test files so that no single one approaches the per-test timeout: a check costs one
+# `clickhouse-client` invocation, and on a sanitizer build that is seconds rather than milliseconds.
+#   `02461_reattach_tables`           - reads and writes, `BACKUP`/`RESTORE`, temporary tables, CTE scoping
+#   `05099_reattach_tables_access`    - the access preflight the internal `DETACH`/`ATTACH` has to pass
+#   `05100_reattach_tables_create`    - unresolvable references, object kinds, `CREATE` destinations
+#   `05101_reattach_tables_engines`   - engines and database engines the hook has to skip
+#   `05102_reattach_tables_mutations` - mutation carriers, a busy table, `max_tables`, `INSERT`
+
+MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
+
+# Run the query and capture both the client exit code and its output (including trace logs).
+# A non-zero client exit code means the query itself failed, which must be reported as FAIL by the
+# callers instead of being silently treated as "the table was not detached".
+function check_if_detached_impl()
+{
+    query="$1"
+    REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+        --reattach_tables_before_query_execution=1  \
+        --query "$query" 2>&1)
+    REATTACH_STATUS=$?
+}
+
+function check_if_detached()
+{
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -ne 0 ]; then
+        echo "FAIL (client error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "OK"
+    else
+        echo "FAIL"
+    fi
+}
+
+function check_if_not_detached()
+{
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -ne 0 ]; then
+        echo "FAIL (client error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "FAIL"
+    else
+        echo "OK"
+    fi
+}
+
+function check_fails_kind_without_detach()
+{
+    local expected_error="${3:-BAD_ARGUMENTS}"
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "$expected_error"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "FAIL (table was detached for a kind-mismatched metadata query)"
+    else
+        echo "OK"
+    fi
+}

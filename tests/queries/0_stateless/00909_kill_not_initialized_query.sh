@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: timing-sensitive test (sleeps and KILL QUERY timeouts), DETACH/ATTACH adds latency that can break the assumed ordering
 
 set -e
 

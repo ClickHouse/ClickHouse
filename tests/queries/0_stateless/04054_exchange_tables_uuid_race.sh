@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-random-detach
+# no-random-detach: the oracle is that no exception at all reaches the client from
+# `ALTER TABLE ... COMMENT COLUMN` while `EXCHANGE TABLES` runs concurrently. A random
+# `DETACH`/`ATTACH` of the same table in another session makes `UNKNOWN_TABLE` a legitimate
+# answer for the `ALTER`, so the test can no longer distinguish it from the `DDLGuard` bug.
 
 set -e
 

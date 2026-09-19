@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, long, no-shared-merge-tree
+# Tags: no-random-settings, no-fasttest, long, no-shared-merge-tree, no-random-detach
+# no-random-detach: DETACH/ATTACH interferes with async insert pipeline
 # no-shared-merge-tree: heavy-weight test which doesn't test shared merge tree
 
 set -e

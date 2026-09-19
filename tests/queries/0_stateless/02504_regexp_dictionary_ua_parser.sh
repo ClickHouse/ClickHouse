@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-detach, no-flaky-check
+# no-random-detach: test checks dictionary state
+# no-flaky-check: takes ~200s on the debug build with randomized settings, over the 180s flaky-check cap
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

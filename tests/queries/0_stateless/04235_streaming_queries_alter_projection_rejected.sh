@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree
+# Tags: no-shared-merge-tree, no-random-detach
 # no-shared-merge-tree: STREAM reads are only exercised on plain MergeTree here, like the other streaming .sh tests.
+# no-random-detach: a random DETACH/ATTACH drops the streaming subscription, so the ALTER is no longer rejected and the STREAM query hangs.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

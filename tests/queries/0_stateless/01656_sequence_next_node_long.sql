@@ -1,4 +1,5 @@
--- Tags: long, no-azure-blob-storage
+-- Tags: long, no-azure-blob-storage, no-random-detach
+-- no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 SET allow_experimental_funnel_functions = 1;
 

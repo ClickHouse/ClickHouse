@@ -1,4 +1,5 @@
--- Tags: no-object-storage, no-random-settings, no-parallel
+-- Tags: no-object-storage, no-random-settings, no-parallel, no-random-detach
+-- Tag no-random-detach: extra FileOpen while attach.
 
 SET use_uncompressed_cache = 0;
 

@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: size of table in bytes may slightly differ after reattaching it.
+
 DROP TABLE IF EXISTS join_test;
 DROP TABLE IF EXISTS join_test_right;
 

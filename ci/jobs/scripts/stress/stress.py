@@ -355,6 +355,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
+        options.append("--no-random-detach")
 
     if i > 0:
         options.append("--order=random")

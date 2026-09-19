@@ -1,10 +1,12 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, no-random-detach
 -- Tag no-fasttest: requires S3/minio-backed storage with a filesystem cache.
 -- Tag no-parallel: the cold->warm assertion needs the cold read's populate to reserve cache space
 -- and survive to the warm read. The dedicated `s3_cache_04511` policy isolates it from other tests'
 -- background-merge cache traffic (which saturates the shared `s3_cache` with non-releasable segments
 -- so the populate can't reserve); no-parallel additionally keeps the test's own flaky-check reruns
 -- from contending that dedicated cache.
+-- Tag no-random-detach: a DETACH/ATTACH between the cold and the warm read drops the populated
+-- filesystem cache, so the warm read goes back to the source.
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
