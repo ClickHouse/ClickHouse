@@ -95,3 +95,49 @@ def test_table_loads_after_restart_without_config_macros(started_cluster):
     assert replica_path(node_with_macros, "t2").endswith(
         "/config_shard\tconfig_replica"
     )
+
+
+def set_config_macros(node, macros):
+    # The harness writes the shard/replica macros into conf.d/macros.xml, alongside {instance};
+    # rewrite that same file so the change actually removes them.
+    full = {"instance": node.name}
+    full.update(macros)
+    node.replace_config(
+        "/etc/clickhouse-server/conf.d/macros.xml",
+        "<clickhouse><macros>"
+        + "".join(f"<{k}>{v}</{k}>" for k, v in full.items())
+        + "</macros></clickhouse>",
+    )
+
+
+def test_table_created_with_config_macros_loads_without_them(started_cluster):
+    # `t` was created above while the config defined the macros, so its stored path still holds `{shard}`.
+    path_with_macros = replica_path(node_with_macros, "t")
+    assert path_with_macros.endswith("/config_shard\tconfig_replica")
+
+    set_config_macros(node_with_macros, {})
+    node_with_macros.restart_clickhouse()
+
+    # Bound to the database arguments now: no replica exists on that path, so the table is read-only
+    # with its local data intact, instead of failing to load.
+    assert replica_path(node_with_macros, "t").endswith("/db_shard_b\tdb_replica_b")
+    assert (
+        node_with_macros.query(
+            "SELECT is_readonly FROM system.replicas WHERE database = 'rdb' AND table = 't'"
+        )
+        == "1\n"
+    )
+    assert node_with_macros.query("SELECT count() FROM rdb.t") == "2\n"
+    assert "TABLE_IS_READ_ONLY" in node_with_macros.query_and_get_error(
+        "INSERT INTO rdb.t VALUES (30)"
+    )
+
+    # The configured macros back, the table is its old replica again.
+    set_config_macros(
+        node_with_macros, {"shard": "config_shard", "replica": "config_replica"}
+    )
+    node_with_macros.restart_clickhouse()
+
+    assert replica_path(node_with_macros, "t") == path_with_macros
+    node_with_macros.query("INSERT INTO rdb.t VALUES (30)")
+    assert node_with_macros.query("SELECT count() FROM rdb.t") == "3\n"
