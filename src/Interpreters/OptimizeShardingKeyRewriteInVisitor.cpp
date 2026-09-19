@@ -1,9 +1,13 @@
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
@@ -149,10 +153,44 @@ public:
         , data(std::move(data_))
     {}
 
+    /// Rewrite the set only inside the filtering clauses. Pruning the set to the elements routed to
+    /// this shard leaves the value of the expression correct - a row on this shard can only equal an
+    /// element routed here - but it changes the expression's name, and every other clause can carry
+    /// that name into the header the shard returns to the initiator: the projection directly, and
+    /// `GROUP BY` / `ORDER BY` / `LIMIT BY` through the intermediate stages, which ship the
+    /// aggregation keys and the `before_order_by` columns and are matched by name on the initiator.
+    ///
+    /// The join tree is visited too, so a subquery in `FROM` keeps being pruned by its own filters,
+    /// but only its table expressions are: the `ON` section of a `JOIN` and the expressions of an
+    /// `ARRAY JOIN` belong to a different source, which is not partitioned by the sharding key of this
+    /// table even when its columns share their names with it, and the arguments of a table function
+    /// are not part of the query stage that is executed on the shard.
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>())
+            return child == query_node->getWhere() || child == query_node->getPrewhere() || child == query_node->getJoinTreeNode();
+
+        if (const auto * join_node = parent->as<JoinNode>())
+            return child == join_node->getLeftTableExpressionNode() || child == join_node->getRightTableExpressionNode();
+
+        if (const auto * array_join_node = parent->as<ArrayJoinNode>())
+            return child == array_join_node->getTableExpressionNode();
+
+        if (parent->as<TableFunctionNode>())
+            return false;
+
+        return true;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "in")
+            return;
+
+        /// An aliased node is shared between the clauses that reference the alias, so rewriting it
+        /// through a filter would also rewrite it in the projection or in `ORDER BY`.
+        if (node->hasAlias())
             return;
 
         auto & arguments = function_node->getArguments().getNodes();
