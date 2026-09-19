@@ -625,7 +625,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
 
         is_killed = true;
         cancel_reason = reason;
-        cancellation_exception = exception;
+        /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
+        cancellation_exception = exception ? copyMutableException(exception) : nullptr;
     }
 
     /// A query waiting for a concurrency slot to resume gives up when killed, and the cancellation
@@ -719,8 +720,9 @@ bool QueryStatus::checkTimeLimit()
 
 void QueryStatus::throwQueryWasCancelled() const
 {
+    /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
-        std::rethrow_exception(cancellation_exception);
+        std::rethrow_exception(copyMutableException(cancellation_exception));
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }

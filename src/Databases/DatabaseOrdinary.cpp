@@ -39,7 +39,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 
 namespace fs = std::filesystem;
 
@@ -461,6 +461,11 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.is_time_series_table)
         return false;
 
+    /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
+    /// metadata could be read without a grant on the target. Load it eagerly, as for views.
+    if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        return false;
+
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
         return false;
@@ -541,7 +546,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    TransactionLog::increaseAsyncTablesLoadingJobNumber();
+    TransactionManager::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
@@ -551,7 +556,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         onLoadJobWaitersDecrement,
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
-            SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
+            SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
 
