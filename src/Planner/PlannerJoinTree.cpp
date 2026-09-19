@@ -779,6 +779,19 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
+/** Check the SELECT privilege for the columns that the planner resolved "away"
+  */
+void checkAccessRightsForColumnsResolvedAway(
+    const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)
+{
+    const auto & column_names = table_expression_data.getAccessCheckedColumnsNames();
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(
+        table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), column_names, query_context);
+}
+
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -801,6 +814,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+
+        checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
     }
     else if (table_function_node)
     {

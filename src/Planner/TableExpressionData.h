@@ -93,6 +93,24 @@ public:
             selected_column_names.push_back(column_name);
     }
 
+    /** Mark a column that the user references explicitly, but that never becomes a selected column.
+      *
+      * This is needed for columns that the planner resolves away before the access check runs :
+      * an ALIAS column inlined into PREWHERE and a column used only as an indexHint argument.
+      */
+    void markColumnForAccessCheck(const std::string & column_name)
+    {
+        auto [_, inserted] = access_checked_column_names_set.emplace(column_name);
+        if (inserted)
+            access_checked_column_names.push_back(column_name);
+    }
+
+    /// Get columns that are not selected, but still require a SELECT privilege check
+    const Names & getAccessCheckedColumnsNames() const
+    {
+        return access_checked_column_names;
+    }
+
     /// Get columns that are requested from table expression, including ALIAS columns
     const Names & getSelectedColumnsNames() const
     {
@@ -304,6 +322,11 @@ private:
     Names selected_column_names;
     /// To deduplicate columns in `selected_column_names`
     NameSet selected_column_names_set;
+
+    /// Columns that the user references explicitly, but that are resolved away before access check.
+    Names access_checked_column_names;
+    /// To deduplicate columns in above
+    NameSet access_checked_column_names_set;
 
     /// Expression to calculate ALIAS columns
     /// Keep alias name (String) + expression (ActionsDAG) pairs; vector preserves insertion order.
