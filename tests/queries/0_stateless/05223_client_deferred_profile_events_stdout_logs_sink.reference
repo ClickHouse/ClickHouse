@@ -1,0 +1,2 @@
+OK: the deferred profile events reached the regular file on stdout
+OK: the write error on /dev/full was reported
