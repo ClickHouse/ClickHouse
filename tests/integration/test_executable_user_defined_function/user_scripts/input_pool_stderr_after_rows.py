@@ -9,9 +9,14 @@
 # The setting would then cost the command a worker while telling the user nothing, which is not what
 # it says it does.
 #
-# Written right after the rows, with no pause: what the server can act on is what has already
-# arrived by the time it looks. Output that lands later is beyond reach without making every
-# successful pooled call wait for output that usually never comes.
+# The diagnostic is put on the stderr pipe *before* the rows are flushed to stdout: the rows are
+# composed into the buffer first, the diagnostic goes out, and only then the buffer is flushed. From
+# the server's side the diagnostic is therefore already waiting whenever the rows arrive, and what
+# it can act on is deterministic. The other order - rows flushed, then the diagnostic - would leave
+# a window in which the server has its rows, looks at stderr once, and the diagnostic is still on
+# the way; a command that lost the CPU in that window would pass, and the test would flake. Output
+# that lands after the server has looked is beyond reach without making every successful pooled
+# call wait for output that usually never comes.
 
 import sys
 
@@ -22,7 +27,8 @@ if __name__ == "__main__":
             continue
 
         sys.stdout.write(f"Key {line}\n")
-        sys.stdout.flush()
 
         sys.stderr.write("complaining right after the rows\n")
         sys.stderr.flush()
+
+        sys.stdout.flush()

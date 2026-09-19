@@ -446,7 +446,9 @@ def test_executable_function_pooled_late_stderr_fails_the_query_that_caused_it(s
     # waited for, so this is the one path on which nothing looks at its stderr again: the probe that
     # refuses to pool a dirty worker runs after the query has already succeeded. Under `throw` that
     # would mean the setting silently costs a worker instead of failing the query that caused the
-    # output - which is the only thing it promises to do.
+    # output - which is the only thing it promises to do. The command puts the diagnostic on the
+    # pipe before it flushes its rows (see the script), so the server finds it there every time it
+    # has the rows - the check is deterministic, not a race against the command's scheduling.
     with pytest.raises(Exception) as exc:
         node.query("SELECT test_function_pool_stderr_after_rows_python(1)")
 

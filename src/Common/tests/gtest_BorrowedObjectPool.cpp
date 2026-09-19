@@ -242,7 +242,8 @@ namespace
 struct FailsToBeHandedOver
 {
     int value = 0;
-    static inline bool fail_next_handover = false;
+    /// Set by the test thread, consumed by whichever borrower thread the next hand-over runs on.
+    static inline std::atomic<bool> fail_next_handover = false;
 
     FailsToBeHandedOver() = default;
     explicit FailsToBeHandedOver(int value_) : value(value_) {}
@@ -276,10 +277,9 @@ struct FailsToBeHandedOver
 private:
     static void throwIfAsked()
     {
-        if (!fail_next_handover)
+        if (!fail_next_handover.exchange(false))
             return;
 
-        fail_next_handover = false;
         throw std::runtime_error("cannot hand this object over");
     }
 };

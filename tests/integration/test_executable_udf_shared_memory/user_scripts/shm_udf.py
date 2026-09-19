@@ -89,6 +89,14 @@ def main():
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
 
+    # A line on stderr before the first request is ever read: what a command that logs its startup
+    # writes. It belongs to the query that started the process, and under `stderr_reaction`
+    # `throw` it fails that query - the process is new, so there is no earlier invocation for the
+    # server to pin it on.
+    if "--stderr-at-startup" in sys.argv:
+        sys.stderr.write("starting up\n")
+        sys.stderr.flush()
+
     while True:
         version = read_varint(stdin)
         if version is None:

@@ -1593,6 +1593,21 @@ def test_shared_memory_udf_none_reaction_worker_flooding_after_a_quiet_gap(start
     assert len(pids) == 1, f"the worker was not reused: {pids}"
 
 
+def test_shared_memory_udf_startup_stderr_of_a_fresh_pooled_worker_fails_the_query(started_cluster):
+    skip_test_msan(node)
+
+    # The command logs a line to stderr as it starts, before it reads its first request. The
+    # process is new for this borrow, so that line is this query's and nobody else's: under
+    # `throw` it fails the query, exactly as the pipe transport does. Taking it for a previous
+    # invocation's leftovers - the borrow-start cleanup does that for a worker that served an
+    # earlier borrow - would log it against nobody and let the query succeed, and `throw` would
+    # then mean something different on the two transports.
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_stderr_at_startup_throw_pool_python(1)")
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "starting up" in str(exc.value), str(exc.value)
+
+
 def test_shared_memory_udf_none_reaction_worker_is_not_left_blocked_on_stderr(started_cluster):
     skip_test_msan(node)
 
@@ -1996,15 +2011,31 @@ def test_shared_memory_udf_pool_command_logging_after_its_answer_keeps_its_worke
     # logged against the query that caused it, and the worker goes back to the pool - one process
     # serves every call. Discarding it, as under `throw`, would turn `executable_pool` into a
     # process per call for every command that logs after its rows.
+    query_ids = [f"shm-chatty-stderr-log-{i}" for i in range(3)]
     pids = [
         node.query(
             "SELECT DISTINCT test_function_shm_chatty_stderr_log_pool_python(number) "
-            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
+            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000",
+            query_id=query_id,
         ).strip()
-        for _ in range(3)
+        for query_id in query_ids
     ]
     assert all(pid.isdigit() for pid in pids), pids
     assert len(set(pids)) == 1, f"a worker that only logged after answering was not reused: {pids}"
+
+    # Keeping the worker is half of it: the line must also have been logged, under the query that
+    # caused it. A server that kept the worker by not looking at its stderr would pass the check
+    # above and drop the one diagnostic the command wrote.
+    for query_id in query_ids:
+        logged = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"grep -a '{query_id}' /var/log/clickhouse-server/clickhouse-server.log "
+                "| grep -c 'Executable generates stderr at the end: done' || true",
+            ]
+        ).strip()
+        assert logged == "1", f"query {query_id} logged the command's line {logged} times"
 
 
 def test_shared_memory_udf_pool_discard_survives_being_decided_twice(started_cluster):
