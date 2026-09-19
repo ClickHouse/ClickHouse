@@ -55,6 +55,7 @@
 #cmakedefine01 USE_NATSIO
 #cmakedefine01 USE_EMBEDDED_COMPILER
 #cmakedefine01 USE_DWARF_PARSER
+#cmakedefine01 USE_PCAP
 #cmakedefine01 USE_LDAP
 #cmakedefine01 USE_ROCKSDB
 #cmakedefine01 USE_LIBPQXX
