@@ -103,6 +103,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
+        if (!MergeTreeIndexSubstream::isOpenedByIndexReader(substream.type))
+            continue;
+
         auto full_stream_name = index_name + substream.suffix;
         auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
 

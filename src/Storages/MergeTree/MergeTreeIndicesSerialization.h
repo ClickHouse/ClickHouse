@@ -55,6 +55,14 @@ struct MergeTreeIndexSubstream
         /// because the compression is implicitly applied during building them.
         return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
     }
+
+    /// Whether `MergeTreeIndexReader` opens the stream of this type for `deserializeBinaryWithMultipleStreams`.
+    /// The text index reads its postings and positions through streams it opens itself once it knows which
+    /// posting lists it needs, with buffers sized to them (see `makePostingsInputStream`).
+    static bool isOpenedByIndexReader(Type type)
+    {
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
