@@ -769,11 +769,12 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
-/// True if the query has subquery sets (`IN (SELECT ...)`). A child plan is built and optimized
-/// while the *outer* plan is already being executed (`ReadFromMerge` materializes its children
-/// lazily), so by this point `addStepsToBuildSets` has already moved the source plan out of every
-/// `FutureSetFromSubquery`. A child fragment referencing such a consumed set then fails to
-/// serialize with the logical error `Cannot serialize FutureSetFromSubquery with no query plan`.
+/// True if the outer query has subquery sets (`IN (SELECT ...)`). Such a set is owned by the outer
+/// plan: its `DelayedCreatingSetsStep` builds it, and a child plan only references it through the
+/// filter pushed down from the outer `WHERE`. Worker tasks need a set with its values
+/// (`QueryPlan::serializeForDistributedTask`), and only the plan that owns a set prepares it that way
+/// in `convertToDistributed`, so a distributed child fragment referencing an outer set fails with
+/// `Cannot ship an IN-subquery set to distributed-plan worker tasks`.
 static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 {
     if (query_info.planner_context && query_info.planner_context->getPreparedSets().hasSubqueries())
@@ -787,22 +788,44 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 ///
 /// Parallel replicas must stay disabled here. The outer plan has decided its own
 /// parallel-replicas strategy, and distributing the child read from here ships a fragment that
-/// (a) silently loses the filters pushed down into it, and (b) may reference a subquery set
-/// consumed by the outer plan (see `queryHasSubquerySets`).
+/// silently loses the filters pushed down into it.
 ///
-/// `make_distributed_plan` stays enabled — distributing the child plans is supported (see
-/// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
-/// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
-/// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
+/// `make_distributed_plan` is decided per child (see 04367_distributed_plan_merge_scatter_multishard;
+/// the second, materializing run of the transforms in `ReadFromMerge::buildPipeline` is fenced by
+/// `planContainsLogicalExchange`).
+/// getChildPlanOptimizationSettings function is called several times for the same child, and the
+/// context it gets differs between the calls:
+///  1. `createChildrenPlans`: the child's own copy of the context, which carries
+///     `make_distributed_plan = 1 if it is set on the plan.
+///     The child calls `applyDistributedPlanFallbackToLocal`
+///     to decide on the execution mode, and records the verdict referenced under call in 2.
+///  2. `addFilter` and `buildPipeline` send the context from outer query.
+///      The verdict recorded in step 1 is what counts and is applied directly, without a second walk.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.enable_parallel_replicas = false;
+
+    /// A child referencing an outer subquery set cannot ship it, so it is never asked to decide and
+    /// runs locally. This must come first: a decision taken here would insert the logical exchanges
+    /// into the child plan, and they would then be built as pass-throughs.
     if (queryHasSubquerySets(query_info))
+    {
         optimization_settings.make_distributed_plan = false;
-    /// Include the fallback decision here before call to optimize
-    if (child_plan.isInitialized())
+        return optimization_settings;
+    }
+
+    if (!child_plan.isInitialized())
+        return optimization_settings;
+
+    /// The child's verdict lives on the plan, not in the context these settings come from (call 2
+    /// above). An undecided child decides now, on the setting of its own context (call 1).
+    if (child_plan.staysDistributed())
+        optimization_settings.make_distributed_plan = true;
+    else if (child_plan.fellBackToLocal())
+        optimization_settings.make_distributed_plan = false;
+    else
         child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }

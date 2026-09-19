@@ -40,6 +40,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
+#include <fmt/ranges.h>
+
 namespace ProfileEvents
 {
     extern const Event QueryPlanOptimizeMicroseconds;
@@ -884,7 +886,17 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    for (const auto & context : resources.distributed_plan_decision_contexts)
+        context->setSetting("make_distributed_plan", false);
     return true;
+}
+
+void QueryPlan::takeContextsFrom(const QueryPlan & kept_aside_plan)
+{
+    for (const auto & context : kept_aside_plan.resources.interpreter_context)
+        addInterpreterContext(context);
+    for (const auto & context : kept_aside_plan.resources.distributed_plan_decision_contexts)
+        addDistributedPlanDecisionContext(context);
 }
 
 
