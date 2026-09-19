@@ -26,3 +26,14 @@ FROM
 )
 WHERE equals(modulo(test_function(toUInt64(k), toUInt64(k)), 2), 0)
 10
+executable with parameter
+SELECT k
+FROM
+(
+    SELECT k
+    FROM t_wasm_legacy_pd
+)
+WHERE equals(modulo(test_function_with_parameter(2)(toUInt64(k)), 2), 0)
+5
+executable with parameter in subquery
+5

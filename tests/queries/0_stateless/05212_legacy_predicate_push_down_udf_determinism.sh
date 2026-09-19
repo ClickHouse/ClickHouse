@@ -53,6 +53,16 @@ SELECT count() FROM (SELECT k FROM t_wasm_legacy_pd) WHERE wasm_legacy_pd_det(k)
 SELECT 'executable';
 EXPLAIN SYNTAX SELECT k FROM (SELECT k FROM t_wasm_legacy_pd) WHERE test_function(toUInt64(k), toUInt64(k)) % 2 = 0 FORMAT TSVRaw;
 SELECT count() FROM (SELECT k FROM t_wasm_legacy_pd) WHERE test_function(toUInt64(k), toUInt64(k)) % 2 = 0;
+
+-- A parametric `EXECUTABLE` UDF must be recognized by name only: instantiating it with an empty
+-- `parameters` array would throw `BAD_ARGUMENTS` from inside the optimizer walk.
+SELECT 'executable with parameter';
+EXPLAIN SYNTAX SELECT k FROM (SELECT k FROM t_wasm_legacy_pd) WHERE test_function_with_parameter(2)(toUInt64(k)) % 2 = 0 FORMAT TSVRaw;
+SELECT count() FROM (SELECT k FROM t_wasm_legacy_pd) WHERE test_function_with_parameter(2)(toUInt64(k)) % 2 = 0;
+
+-- The same UDF in the subquery `SELECT` list goes through `hasNonRewritableFunction`.
+SELECT 'executable with parameter in subquery';
+SELECT count() FROM (SELECT test_function_with_parameter(2)(toUInt64(k)) AS v FROM t_wasm_legacy_pd) WHERE v % 2 = 0;
 SQL
 
 ${CLICKHOUSE_CLIENT} --enable_analyzer=1 << 'SQL'

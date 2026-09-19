@@ -55,9 +55,20 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         /// a non-deterministic `EXECUTABLE` or `WASM` UDF looks like an unknown function here and is
         /// treated as deterministic, so a predicate that calls it may be duplicated into a subquery and
         /// evaluated twice per row.
-        FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(ast_function.name, data.getContext()); /// NOLINT(readability-static-accessed-through-instance)
+        ///
+        /// `EXECUTABLE` UDFs are never deterministic in the scope of a query, so their determinism is
+        /// decided by the name alone. Do not instantiate them: `UserDefinedExecutableFunctionFactory::tryGet`
+        /// builds a `UserDefinedFunction` with an empty `parameters` array, and that constructor throws
+        /// `BAD_ARGUMENTS` for a parametric UDF such as `test_function_with_parameter(1)(k)`, which would
+        /// turn a mere optimizer walk into a query failure.
+        if (UserDefinedExecutableFunctionFactory::has(ast_function.name, data.getContext()))
+        {
+            data.is_deterministic_function = false;
+            return;
+        }
 
-        if (!function)
+        FunctionOverloadResolverPtr function;
+
         {
             auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(ast_function.name);
             if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
