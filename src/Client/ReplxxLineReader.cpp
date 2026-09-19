@@ -26,6 +26,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
@@ -787,10 +788,9 @@ bool ReplxxLineReader::hintChosen()
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    /// `Replxx::print` writes straight to the terminal fd and throws `std::runtime_error` ("write failed")
-    /// when the write is short, e.g. the pty of the embedded (SSH) client is already gone. A destructor is
-    /// implicitly `noexcept`, so letting it escape would `std::terminate` the whole process. There is nobody
-    /// left to report to on a dead terminal, so suppress it here, the same way `Replxx::ReplxxImpl::~ReplxxImpl` does.
+    /// `Replxx::print` may fail with `std::runtime_error("write failed")` when e.g. the pty of the embedded
+    /// SSH client is gone already. A destructor is implicitly `noexcept`, so letting anything escape from
+    /// here would `std::terminate` the whole process.
     try
     {
         if (history_file_fd >= 0 && close(history_file_fd))
@@ -800,9 +800,9 @@ ReplxxLineReader::~ReplxxLineReader()
         if (overwrite_mode)
             rx.print("%s", "\033[0 q");
     }
-    catch (const std::runtime_error &) // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
-        /// Deliberately empty: see the comment above.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

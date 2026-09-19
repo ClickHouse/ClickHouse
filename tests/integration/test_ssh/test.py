@@ -1,6 +1,7 @@
 import os
 import re
 import socket
+import struct
 import subprocess
 import time
 
@@ -495,3 +496,66 @@ def test_interactive_tab_completion_respects_session_user(started_cluster):
         instance.query("DROP USER IF EXISTS completer")
         instance.query("DROP TABLE IF EXISTS default.visible_completion_target")
         instance.query("DROP TABLE IF EXISTS default.hidden_completion_target")
+
+
+def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
+    """Losing the pty while the embedded client is shutting down must not kill the server.
+
+    `ReplxxLineReader::~ReplxxLineReader` writes an escape sequence to the
+    terminal to reset cursor blinking when overwrite mode was ever enabled.
+    `Replxx::print` throws `std::runtime_error("write failed")` when that write
+    does not go through, and a destructor is implicitly `noexcept`, so the
+    exception used to `std::terminate` the whole server process.
+
+    Reproduce it the way a real disconnect does: turn overwrite mode on with
+    the `Insert` key, then drop the TCP connection with a RST so that the
+    server's side of the pty is gone by the time the line reader is destroyed.
+    """
+    pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        hostname=instance.ip_address,
+        port=9022,
+        username="lucy",
+        pkey=pkey,
+        timeout=30,
+    )
+    try:
+        channel = client.invoke_shell(term="xterm", width=80, height=24)
+        channel.settimeout(20)
+        output = _read_channel_until(channel, timeout=20, marker=":) ")
+        assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+        # `Insert` toggles overwrite mode, which is what makes the destructor
+        # print the "reset cursor blinking" sequence in the first place.
+        channel.sendall("\x1b[2~")
+        _read_channel_until(channel, timeout=2)
+
+        # Abort the connection with a RST instead of a graceful shutdown, so
+        # writes on the server side fail rather than being silently discarded.
+        sock = client.get_transport().sock
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        sock.close()
+    finally:
+        client.close()
+
+    # The server must survive the teardown: before the fix it died with
+    # `std::terminate` and this query could not be answered at all.
+    deadline = time.time() + 30
+    last_error = None
+    while time.time() < deadline:
+        try:
+            assert instance.query("SELECT 1").strip() == "1"
+            last_error = None
+            break
+        except Exception as e:  # the SSH session teardown is asynchronous
+            last_error = e
+            time.sleep(0.5)
+    assert (
+        last_error is None
+    ), f"server is not responding after the disconnect: {last_error}"
+
+    assert not instance.contains_in_log(
+        "std::terminate"
+    ), "the server called `std::terminate` while tearing down the SSH session"
