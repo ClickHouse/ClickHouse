@@ -5,12 +5,10 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 
-#include <functional>
 #include <limits>
 
 
@@ -70,18 +68,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::function<void()> check_cancellation = makeCancellationCheck(name);
-
-        /// Before materialization: expanding a constant into a full column is itself unbounded.
-        if (check_cancellation)
-            check_cancellation();
-
         ColumnPtr column_haystack = arguments[0].column;
         column_haystack = column_haystack->convertToFullColumnIfConst();
-
-        /// After materialization, so that a deadline crossed by the expansion above is observed too.
-        if (check_cancellation)
-            check_cancellation();
 
         const ColumnPtr column_needle = arguments[1].column;
         const ColumnPtr column_replacement = arguments[2].column;
@@ -104,16 +92,17 @@ public:
             auto & res_chars = col_res->getChars();
             auto & res_offsets = col_res->getOffsets();
             /// Only impls that opt in (currently `ReplaceRegexpImpl`) take the JIT compile-count threshold.
-            if constexpr (requires { Impl::vectorConstantConstant(col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement, res_chars, res_offsets, input_rows_count, regexp_jit_min_count, check_cancellation); })
+            if constexpr (requires { Impl::vectorConstantConstant(col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement, res_chars, res_offsets, input_rows_count, regexp_jit_min_count); })
                 Impl::vectorConstantConstant(
                     col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
-                    res_chars, res_offsets, input_rows_count, regexp_jit_min_count, check_cancellation);
+                    res_chars, res_offsets, input_rows_count, regexp_jit_min_count);
             else
                 Impl::vectorConstantConstant(
                     col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
-                    res_chars, res_offsets, input_rows_count, check_cancellation);
+                    res_chars, res_offsets, input_rows_count);
+            return col_res;
         }
-        else if (col_haystack && col_needle_vector && col_replacement_const)
+        if (col_haystack && col_needle_vector && col_replacement_const)
         {
             Impl::vectorVectorConstant(
                 col_haystack->getChars(),
@@ -123,10 +112,10 @@ public:
                 col_replacement_const->getValue<String>(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count,
-                check_cancellation);
+                input_rows_count);
+            return col_res;
         }
-        else if (col_haystack && col_needle_const && col_replacement_vector)
+        if (col_haystack && col_needle_const && col_replacement_vector)
         {
             Impl::vectorConstantVector(
                 col_haystack->getChars(),
@@ -136,10 +125,10 @@ public:
                 col_replacement_vector->getOffsets(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count,
-                check_cancellation);
+                input_rows_count);
+            return col_res;
         }
-        else if (col_haystack && col_needle_vector && col_replacement_vector)
+        if (col_haystack && col_needle_vector && col_replacement_vector)
         {
             Impl::vectorVectorVector(
                 col_haystack->getChars(),
@@ -150,10 +139,10 @@ public:
                 col_replacement_vector->getOffsets(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count,
-                check_cancellation);
+                input_rows_count);
+            return col_res;
         }
-        else if (col_haystack_fixed && col_needle_const && col_replacement_const)
+        if (col_haystack_fixed && col_needle_const && col_replacement_const)
         {
             Impl::vectorFixedConstantConstant(
                 col_haystack_fixed->getChars(),
@@ -162,19 +151,11 @@ public:
                 col_replacement_const->getValue<String>(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count,
-                check_cancellation);
+                input_rows_count);
+            return col_res;
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
-
-        /// One check on the single exit path, covering every fast path that copies the column in one bulk
-        /// operation and returns without reaching a throttled loop, including any added later.
-        if (check_cancellation)
-            check_cancellation();
-
-        return col_res;
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 
 private:

@@ -27,7 +27,6 @@ struct AggregateFunctionTimeseriesChangesTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
 
     static String getName()
     {
@@ -91,6 +90,7 @@ struct AggregateFunctionTimeseriesChangesTraits
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
 
         /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
         /// not the two-stacks path which combines values out of time order.
@@ -98,9 +98,9 @@ struct AggregateFunctionTimeseriesChangesTraits
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Preaggregate the bucket's samples (`forEachSample` visits them in ascending timestamp order) into a per-bucket summary.
+            /// Preaggregate the bucket's samples (visited in ascending order) into a per-bucket summary.
             Summary summary;
-            samples.forEachSample([&summary](TimestampType, ValueType value)
+            samples.forEachSampleSorted([&summary](TimestampType, ValueType value)
             {
                 if (summary.count == 0)
                     summary.first_value = value;
@@ -108,7 +108,7 @@ struct AggregateFunctionTimeseriesChangesTraits
                     ++summary.changes;
                 summary.last_value = value;
                 ++summary.count;
-            });
+            }, temp_buffer);
             add(std::move(summary), bucket_end_timestamp);
         }
 
@@ -135,8 +135,6 @@ struct AggregateFunctionTimeseriesChangesTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
 };
 
 
@@ -156,10 +154,13 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesChanges, Traits>;
     using Base::Base;
 
-    Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
+    Aggregator createAggregator(size_t /* num_populated_buckets */) const
     {
         return {};
     }
+
+    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr bool DateTime64Supported = true;
 };
 
 /// Each SQL function as a 3-argument template with its is_resets variant baked in, so registration names the

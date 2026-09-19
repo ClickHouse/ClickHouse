@@ -69,7 +69,7 @@
 	url = https://github.com/ClickHouse/h3
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/ClickHouse/simdjson
+	url = https://github.com/simdjson/simdjson
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/ClickHouse/rapidjson
@@ -151,7 +151,7 @@
 	url = https://github.com/ClickHouse/NuRaft
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
-	url = https://github.com/ClickHouse/datasketches-cpp
+	url = https://github.com/apache/datasketches-cpp
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse/yaml-cpp
@@ -342,6 +342,12 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
+[submodule "contrib/wasmedge"]
+	path = contrib/wasmedge
+	url = https://github.com/WasmEdge/WasmEdge.git
+[submodule "contrib/spdlog"]
+	path = contrib/spdlog
+	url = https://github.com/gabime/spdlog.git
 [submodule "contrib/wasmtime"]
 	path = contrib/wasmtime
 	url = https://github.com/ClickHouse/wasmtime
@@ -372,9 +378,6 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
-[submodule "contrib/darts-clone"]
-	path = contrib/darts-clone
-	url = https://github.com/s-yata/darts-clone
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
@@ -387,9 +390,6 @@
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
-[submodule "contrib/sql-console"]
-	path = contrib/sql-console
-	url = https://github.com/ClickHouse/clickhouse-sql-console.git
 [submodule "contrib/librseq"]
 	path = contrib/librseq
 	url = https://github.com/compudj/librseq.git
@@ -414,51 +414,3 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/ClickHouse/zxc
-[submodule "contrib/libucontext"]
-	path = contrib/libucontext
-	url = https://github.com/kaniini/libucontext
-[submodule "contrib/Jieba-CPP"]
-	path = contrib/Jieba-CPP
-	url = https://github.com/amosbird/Jieba-CPP
-[submodule "contrib/MeCab"]
-	path = contrib/MeCab
-	url = https://github.com/taku910/mecab
-[submodule "contrib/substrait"]
-	path = contrib/substrait
-	url = https://github.com/substrait-io/substrait.git
-[submodule "contrib/cudf"]
-	path = contrib/cudf
-	url = https://github.com/rapidsai/cudf.git
-[submodule "contrib/rmm"]
-	path = contrib/rmm
-	url = https://github.com/rapidsai/rmm.git
-[submodule "contrib/kvikio"]
-	path = contrib/kvikio
-	url = https://github.com/rapidsai/kvikio.git
-[submodule "contrib/cccl"]
-	path = contrib/cccl
-	url = https://github.com/NVIDIA/cccl.git
-[submodule "contrib/cuCollections"]
-	path = contrib/cuCollections
-	url = https://github.com/NVIDIA/cuCollections.git
-[submodule "contrib/nvtx"]
-	path = contrib/nvtx
-	url = https://github.com/NVIDIA/NVTX.git
-[submodule "contrib/rapids-logger"]
-	path = contrib/rapids-logger
-	url = https://github.com/rapidsai/rapids-logger.git
-[submodule "contrib/bs-thread-pool"]
-	path = contrib/bs-thread-pool
-	url = https://github.com/bshoshany/thread-pool.git
-[submodule "contrib/dlpack"]
-	path = contrib/dlpack
-	url = https://github.com/dmlc/dlpack.git
-[submodule "contrib/nanoarrow"]
-	path = contrib/nanoarrow
-	url = https://github.com/apache/arrow-nanoarrow.git
-[submodule "contrib/librtcx"]
-	path = contrib/librtcx
-	url = https://github.com/rapidsai/librtcx.git
-[submodule "contrib/spdlog"]
-	path = contrib/spdlog
-	url = https://github.com/gabime/spdlog.git

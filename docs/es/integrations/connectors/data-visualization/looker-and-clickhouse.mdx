@@ -2,7 +2,7 @@
 sidebarTitle: 'Looker'
 slug: /integrations/looker
 keywords: ['clickhouse', 'looker', 'conectar', 'integrar', 'UI']
-description: 'Looker es una plataforma empresarial de BI, aplicaciones de datos y analítica embebida que te ayuda a explorar y compartir información en tiempo real.'
+description: 'Looker es una plataforma empresarial de BI, aplicaciones de datos y analítica embebida que ayuda a explorar y compartir información en tiempo real.'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -13,48 +13,50 @@ integration:
 import { Image } from "/snippets/es/components/Image.jsx";
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
 
-import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
-Looker puede conectarse a ClickHouse Cloud o a una implementación on-premise mediante el origen de datos oficial de ClickHouse.
+Looker puede conectarse a ClickHouse Cloud o a un despliegue on-premise mediante el origen de datos oficial de ClickHouse.
 
-<Steps>
-  <Step title="Reúne los detalles de tu conexión" id="1-gather-your-connection-details">
-    <ConnectionDetails />
-  </Step>
+<div id="1-gather-your-connection-details">
+  ## 1. Reúne los datos de conexión
+</div>
 
-  <Step title="Crear un origen de datos de ClickHouse" id="2-create-a-clickhouse-data-source">
-    Ve a Admin -&gt; Database -&gt; Connections y haz clic en el botón &quot;Add Connection&quot;, en la esquina superior derecha.
+<ConnectionDetails />
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Añadir una nueva conexión en la interfaz de administración de bases de datos de Looker" border />
+<div id="2-create-a-clickhouse-data-source">
+  ## 2. Crear un origen de datos de ClickHouse
+</div>
 
-    <br />
+Ve a Admin -&gt; Database -&gt; Connections y haz clic en el botón &quot;Add Connection&quot;, en la esquina superior derecha.
 
-    Elige un nombre para tu origen de datos y selecciona `ClickHouse` en el menú desplegable de dialecto. Introduce tus credenciales en el formulario.
+<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Añadir una nueva conexión en la interfaz de administración de bases de datos de Looker" border />
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Especificar tus credenciales de ClickHouse en el formulario de conexión de Looker" border />
+<br />
 
-    <br />
+Elige un nombre para tu origen de datos y selecciona `ClickHouse` en el menú desplegable de dialecto. Introduce tus credenciales en el formulario.
 
-    Si utilizas ClickHouse Cloud o tu entorno requiere SSL, asegúrate de tener SSL activado en la configuración adicional.
+<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Especificar tus credenciales de ClickHouse en el formulario de conexión de Looker" border />
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Activar SSL para la conexión de ClickHouse en la configuración de Looker" border />
+<br />
 
-    <br />
+Si utilizas ClickHouse Cloud o tu entorno requiere SSL, asegúrate de tener SSL activado en la configuración adicional.
 
-    Primero prueba la conexión y, una vez completado este paso, conéctate a tu nuevo origen de datos de ClickHouse.
+<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Activar SSL para la conexión de ClickHouse en la configuración de Looker" border />
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Probar y conectarse al origen de datos de ClickHouse" border />
+<br />
 
-    <br />
+Primero prueba la conexión y, una vez completado este paso, conéctate a tu nuevo origen de datos de ClickHouse.
 
-    Ahora ya deberías poder asociar el origen de datos de ClickHouse a tu proyecto de Looker.
-  </Step>
-</Steps>
+<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Probar y conectarse al origen de datos de ClickHouse" border />
+
+<br />
+
+Ahora ya deberías poder asociar el origen de datos de ClickHouse a tu proyecto de Looker.
 
 <div id="3-known-limitations">
-  ## Limitaciones conocidas
+  ## 3. Limitaciones conocidas
 </div>
 
 1. Los siguientes tipos de datos se tratan como cadenas de forma predeterminada:

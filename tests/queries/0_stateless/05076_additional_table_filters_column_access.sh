@@ -138,13 +138,13 @@ echo "-- analyzer=$analyzer: 14 distributed table, filter keyed by itself over g
 run "$u_low" "SELECT count() FROM d SETTINGS enable_analyzer=$analyzer, additional_table_filters = {'$DB.d': 'public_label = ''customer_1'''}"
 
 echo "-- analyzer=$analyzer: 15 parallel replicas custom key (sampling) over denied column"
-run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 1, parallel_replicas_custom_key = 'secret_token = ''$T'''"
+run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 1, parallel_replicas_custom_key = 'secret_token = ''$T'''"
 
 echo "-- analyzer=$analyzer: 16 parallel replicas custom key (range) over denied column"
-run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'cityHash64(secret_token)', parallel_replicas_custom_key_range_lower = 0, parallel_replicas_custom_key_range_upper = 1000, parallel_replicas_count = 2, parallel_replica_offset = 1"
+run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'cityHash64(secret_token)', parallel_replicas_custom_key_range_lower = 0, parallel_replicas_custom_key_range_upper = 1000, parallel_replicas_count = 2, parallel_replica_offset = 1"
 
 echo "-- analyzer=$analyzer: 17 parallel replicas custom key (sampling) over granted column"
-run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id', parallel_replicas_count = 2, parallel_replica_offset = 1"
+run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id', parallel_replicas_count = 2, parallel_replica_offset = 1"
 
 # One shard, three replicas: the key is shipped to the replicas; sum() merges the per-replica partial counts.
 echo "-- analyzer=$analyzer: 18 custom key shipped to the replicas, over denied column"
@@ -182,7 +182,7 @@ echo "-- analyzer=$analyzer: 26 filter over granted column, qualified key and ex
 run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, additional_table_filters = {'$DB.t': '$DB.t.public_label = ''customer_1'''}"
 
 echo "-- analyzer=$analyzer: 27 parallel replicas custom key (sampling) over granted column, qualified"
-run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = '$DB.t.id', parallel_replicas_count = 2, parallel_replica_offset = 1"
+run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = '$DB.t.id', parallel_replicas_count = 2, parallel_replica_offset = 1"
 
 done
 
@@ -201,21 +201,11 @@ run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1,
 echo "-- analyzer=1: 31 definer parameterized view, no filter"
 run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1"
 
-# The pushdown replaces the read from the view with a read from d3; the key must be checked against d3 there too.
-echo "-- analyzer=1: 32 trivial view over the replicas, pushdown, custom key over denied column"
-run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
+echo "-- analyzer=1: 32 trivial view over the replicas, custom key over denied column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
 
-echo "-- analyzer=1: 33 trivial view over the replicas, pushdown, custom key over granted column"
-run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id'"
-
-echo "-- analyzer=1: 34 trivial view over the replicas, no pushdown, custom key over denied column"
-run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 0, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
-
-echo "-- analyzer=1: 35 trivial view shadowing the denied column, pushdown, custom key over the shadowing column"
-run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3_shadow) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
-
-echo "-- analyzer=1: 36 trivial view shadowing the denied column, no pushdown, custom key over the shadowing column"
-run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3_shadow) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 0, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
+echo "-- analyzer=1: 33 trivial view shadowing the denied column, custom key over the shadowing column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3_shadow) SETTINGS enable_analyzer=1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
 
 # `parallel_replicas_count` and `parallel_replica_offset` are internal settings that only the initiator may set.
 # `MergeTreeDataSelectExecutor` splits an active SAMPLE into `parallel_replicas_count` pieces and reads the piece
@@ -223,19 +213,19 @@ run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3_shadow) SETT
 # pick a slice of the definer's sample: the full sample is 100 rows, the second half of it is 36.
 for analyzer in 1 0; do
 
-echo "-- analyzer=$analyzer: 37 definer view with SAMPLE, control"
+echo "-- analyzer=$analyzer: 34 definer view with SAMPLE, control"
 run "$u_view" "SELECT c FROM v_def_sample SETTINGS enable_analyzer=$analyzer"
 
-echo "-- analyzer=$analyzer: 38 definer view with SAMPLE, invoker supplies the replica slice"
+echo "-- analyzer=$analyzer: 35 definer view with SAMPLE, invoker supplies the replica slice"
 run "$u_view" "SELECT c FROM v_def_sample SETTINGS enable_analyzer=$analyzer, parallel_replicas_count = 2, parallel_replica_offset = 1"
 
-echo "-- analyzer=$analyzer: 39 SQL SECURITY NONE view with SAMPLE, invoker supplies the replica slice"
+echo "-- analyzer=$analyzer: 36 SQL SECURITY NONE view with SAMPLE, invoker supplies the replica slice"
 run "$u_view" "SELECT c FROM v_none_sample SETTINGS enable_analyzer=$analyzer, parallel_replicas_count = 2, parallel_replica_offset = 1"
 
-echo "-- analyzer=$analyzer: 40 definer view with SAMPLE read through Distributed by three followers in sampling_key mode"
+echo "-- analyzer=$analyzer: 37 definer view with SAMPLE read through Distributed by three followers in sampling_key mode"
 run "$u_view" "SELECT sum(c) FROM d_def_sample SETTINGS enable_analyzer=$analyzer, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'sampling_key', prefer_localhost_replica = 0"
 
-echo "-- analyzer=$analyzer: 41 SQL SECURITY NONE view with SAMPLE read through Distributed by three followers in sampling_key mode"
+echo "-- analyzer=$analyzer: 38 SQL SECURITY NONE view with SAMPLE read through Distributed by three followers in sampling_key mode"
 run "$u_view" "SELECT sum(c) FROM d_none_sample SETTINGS enable_analyzer=$analyzer, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'sampling_key', prefer_localhost_replica = 0"
 
 done

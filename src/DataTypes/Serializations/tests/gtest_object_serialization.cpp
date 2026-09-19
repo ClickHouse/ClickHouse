@@ -107,7 +107,7 @@ TEST(ObjectSerialization, JSONSerialization)
 
 }
 
-/// SharedDataBucketsSplitter::flattenBucket must densify each shared-data path into a column that has one
+/// flattenAndBucketSharedDataPaths must densify each shared-data path into a column that has one
 /// entry per row (the stored value where the path is present, a default where it is absent), for an
 /// arbitrary subrange [start, end). This exercises rows with different, overlapping and missing paths,
 /// empty rows and trailing gaps -- the exact shape the merge/serialization path produces.
@@ -121,12 +121,12 @@ void checkFlattenedSharedData(
     size_t end,
     const std::map<String, DensePath> & expected)
 {
-    SharedDataBucketsSplitter splitter(*col_object.getSharedDataPtr(), start, end, 1);
-    auto bucket = splitter.flattenBucket(0, col_object.getDynamicType());
+    auto buckets = flattenAndBucketSharedDataPaths(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 1);
+    ASSERT_EQ(buckets.size(), 1u);
 
     std::map<String, ColumnPtr> path_to_column;
-    for (const auto & [path, column] : bucket)
-        path_to_column[String(path)] = column;
+    for (const auto & [path, column] : buckets[0])
+        path_to_column[path] = column;
 
     ASSERT_EQ(path_to_column.size(), expected.size());
     for (const auto & [path, values] : expected)
@@ -374,10 +374,10 @@ static void expectGranulePathCountRejected(size_t num_paths, int expected_error_
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    auto column = DataTypeObject::getTypeOfSharedData()->createColumn();
+    ColumnPtr column = DataTypeObject::getTypeOfSharedData()->createColumn();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(*column, /*limit=*/1, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/0, /*limit=*/1, settings, state, nullptr);
         FAIL() << "Expected an exception for a corrupted granule num_paths count " << num_paths;
     }
     catch (const Exception & e)

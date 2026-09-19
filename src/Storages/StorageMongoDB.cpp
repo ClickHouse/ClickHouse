@@ -49,12 +49,6 @@ using bsoncxx::to_json;
 namespace DB
 {
 
-MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
-{
-    static MongoDBInstanceHolder instance;
-    return instance;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -82,7 +76,7 @@ void MongoDBConfiguration::checkCollection() const
     /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
     /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
     /// effectively empty collection name, which aborts the process inside the driver.
-    if (collection.empty() || collection.contains('\0'))
+    if (collection.empty() || collection.find('\0') != String::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
 }
 
@@ -326,7 +320,7 @@ static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const Joi
         return {};
     if (table_function && table_function->getStorage()->getStorageID() != storage_id)
         return {};
-    if (join_node && column->getColumnSource().get() != join_node->getLeftTableExpressionNode().get())
+    if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
         return {};
 
     return column;
@@ -543,7 +537,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     const ConstantNode * limit = nullptr;
     const ConstantNode * offset = nullptr;
 
-    if (query_tree.hasLimit() && !query_tree.hasLimitAfter() && !query_tree.hasLimitUntil())
+    if (query_tree.hasLimit())
     {
         limit = query_tree.getLimit()->as<ConstantNode>();
         if (!limit)
@@ -602,16 +596,16 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (query_tree.hasWhere())
     {
-        const auto & join_tree = query_tree.getJoinTreeNode();
+        const auto & join_tree = query_tree.getJoinTree();
         const auto * join_node = join_tree->as<JoinNode>();
         bool allow_where = true;
 
         if (join_node)
         {
             if (join_node->getKind() == JoinKind::Left)
-                allow_where = join_node->getLeftTableExpressionNode()->isEqual(*query.table_expression);
+                allow_where = join_node->getLeftTableExpression()->isEqual(*query.table_expression);
             else if (join_node->getKind() == JoinKind::Right)
-                allow_where = join_node->getRightTableExpressionNode()->isEqual(*query.table_expression);
+                allow_where = join_node->getRightTableExpression()->isEqual(*query.table_expression);
             else
                 allow_where = (join_node->getKind() == JoinKind::Inner);
         }
@@ -688,10 +682,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 | `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
 | `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
 
-<Tip>
+:::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
-</Tip>
+:::
 
 Alternatively, you can pass a URI:
 
@@ -781,10 +775,10 @@ SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea4
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
-You can disable all these restriction, using [mongodb_throw_on_unsupported_query](/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
+You can disable all these restriction, using [mongodb_throw_on_unsupported_query](../../../operations/settings/settings.md#mongodb_throw_on_unsupported_query).
 In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
 
-<Note>
+:::note
 It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
 For example you want to filter by `Date`:
 
@@ -799,7 +793,8 @@ SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024
 ```
 
 This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
-</Note>
+
+:::
 
 ## Usage example {#usage-example}
 

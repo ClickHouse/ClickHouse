@@ -2,6 +2,7 @@
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -147,10 +148,21 @@ void PackedFilesWriter::writePackedIndex(WriteBuffer & out, const PackedFilesIO:
     }
 }
 
-PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings & files_order_hint, UInt8 version) const
+PackedFilesIO::Index PackedFilesWriter::finalize(CommitDataFunc commit_func, const Strings & files_order_hint, UInt8 version)
+{
+    WriteBufferFromOwnString serialized;
+    auto [index, need_sync] = finalize(serialized, files_order_hint, version);
+
+    serialized.preFinalize();
+    serialized.finalize();
+    commit_func(serialized.str(), write_settings.value_or(WriteSettings{}), need_sync);
+    return index;
+}
+
+std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version)
 {
     const bool with_uncompressed_size = version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE;
-    for (const auto & change : metadata_changes)
+    for (auto & change : metadata_changes)
     {
         if (!change.is_applied)
         {
@@ -165,6 +177,8 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
     }
 
     const UInt64 num_files = written_files.size();
+    writeIntBinary(version, out);
+    writeIntBinary(num_files, out);
 
     Strings ordered_file_names;
     ordered_file_names.reserve(num_files);
@@ -210,51 +224,30 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
         data_offset += getLengthOfSerializedString(name) + sizeof(UInt64) * num_size_fields;
 
     PackedFilesIO::Index index;
-    bool need_sync = false;
     for (const auto & name : ordered_file_names)
     {
-        const auto & data = written_files.at(name);
+        const auto & data = written_files[name];
         const UInt64 data_size = data->chars.size();
+        writeStringBinary(name, out);
+        writeIntBinary(data_offset, out);
+        writeIntBinary(data_size, out);
+        if (with_uncompressed_size)
+            writeIntBinary(data->uncompressed_size, out);
 
         index[name] = {data_offset, data_size, data->uncompressed_size};
         data_offset += data_size;
-        /// fsync the whole file with archive if any of files were requested to be fsynced.
+    }
+
+    /// fsync the whole file with archive if any of files were requested to be fsynced.
+    bool need_sync = false;
+    for (const auto & name : ordered_file_names)
+    {
+        const auto & data = written_files[name];
+        out.write(reinterpret_cast<const char *>(data->chars.data()), data->chars.size());
         need_sync |= data->need_sync;
     }
 
-    return {std::move(index), std::move(ordered_file_names), version, need_sync};
-}
-
-void PackedFilesWriter::finalize(WriteBuffer & out, const FinalizePlan & plan) const
-{
-    const bool with_uncompressed_size = plan.version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE;
-    const UInt64 num_files = plan.ordered_file_names.size();
-
-    writeIntBinary(plan.version, out);
-    writeIntBinary(num_files, out);
-
-    for (const auto & name : plan.ordered_file_names)
-    {
-        const auto & offset = plan.index.at(name);
-        writeStringBinary(name, out);
-        writeIntBinary(offset.offset, out);
-        writeIntBinary(offset.size, out);
-        if (with_uncompressed_size)
-            writeIntBinary(offset.uncompressed_size, out);
-    }
-
-    for (const auto & name : plan.ordered_file_names)
-    {
-        const auto & data = written_files.at(name);
-        out.write(reinterpret_cast<const char *>(data->chars.data()), data->chars.size());
-    }
-}
-
-std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version) const
-{
-    auto plan = prepareFinalize(files_order_hint, version);
-    finalize(out, plan);
-    return {std::move(plan.index), plan.need_sync};
+    return {index, need_sync};
 }
 
 size_t PackedFilesWriter::getSizeOfHeader()
