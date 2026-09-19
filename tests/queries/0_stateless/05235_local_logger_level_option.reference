@@ -1,0 +1,8 @@
+--log-level=fatal
+0
+--log-level=trace
+many
+--logger.level=fatal
+0
+--logger.level=trace
+many
