@@ -1,0 +1,14 @@
+CREATE TABLE t (`x` UInt64, PROJECTION p (SELECT x ORDER BY x)) ENGINE = MergeTree ORDER BY x
+CREATE TABLE t (`x` UInt64, PROJECTION p (`x` UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x)) ENGINE = MergeTree ORDER BY x
+CREATE TABLE t (`ts` DateTime, `id` UInt64, PROJECTION p (`ts` CODEC(DoubleDelta)) AS (SELECT ts, id ORDER BY ts)) ENGINE = MergeTree ORDER BY ts
+CREATE TABLE t (`ts` DateTime, `id` UInt64, PROJECTION p (`ts` CODEC(DoubleDelta), `id` UInt64 CODEC(NONE)) AS (SELECT ts, id ORDER BY ts)) ENGINE = MergeTree ORDER BY ts
+CREATE TABLE t (`x` UInt64, PROJECTION p (`x` UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 1024)) ENGINE = MergeTree ORDER BY x
+CREATE TABLE t\n(\n    `x` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE)\n    )\n    AS\n    (\n        SELECT x\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x
+CREATE TABLE t\n(\n    `ts` DateTime,\n    `id` UInt64,\n    PROJECTION p\n    (\n        `ts` CODEC(DoubleDelta),\n        `id` UInt64 CODEC(NONE)\n    )\n    AS\n    (\n        SELECT\n            ts,\n            id\n        ORDER BY ts\n    )\n)\nENGINE = MergeTree\nORDER BY ts
+CREATE TABLE t\n(\n    `x` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE)\n    )\n    AS\n    (\n        SELECT x\n        ORDER BY x\n    ) WITH SETTINGS (index_granularity = 1024)\n)\nENGINE = MergeTree\nORDER BY x
+CREATE TABLE t (`x` UInt64, PROJECTION p (`x` UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x)) ENGINE = MergeTree ORDER BY x
+CREATE TABLE t (`ts` DateTime, `id` UInt64, PROJECTION p (`ts` CODEC(DoubleDelta), `id` UInt64 CODEC(NONE)) AS (SELECT ts, id ORDER BY ts)) ENGINE = MergeTree ORDER BY ts
+CREATE TABLE t (`x` UInt64, PROJECTION p (`x` UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 1024)) ENGINE = MergeTree ORDER BY x
+1
+1
+1

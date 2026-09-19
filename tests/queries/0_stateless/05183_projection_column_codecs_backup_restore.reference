@@ -1,0 +1,14 @@
+renamed restore metadata and data
+{'x':'CODEC(NONE)','y':'CODEC(ZSTD(1))'}
+100000	4999950000	10000000
+1
+renamed restore after merge
+200000	19999900000	16000000
+1
+restore into different codec metadata
+{'x':'CODEC(Delta(8), ZSTD(1))','y':'CODEC(ZSTD(1))'}
+200000	29999900000	26000000
+1	1
+restore into different codec after merge
+200000	29999900000	26000000
+1

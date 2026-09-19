@@ -156,4 +156,7 @@ private:
     CompressionCodecFactory();
 };
 
+/// Returns true if `codec` compresses any substream of `type` lossily.
+bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type);
+
 }
