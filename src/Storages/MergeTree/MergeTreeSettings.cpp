@@ -210,6 +210,34 @@ additionally need `nullable_serialization_version = 'allow_sparse'`).
 Leaving it disabled keeps inserts/merges as fast as before; enabling it
 adds an O(rows) pass per sparse-eligible column.
 )", BETA) \
+    DECLARE(UInt64, max_uniq_number_for_low_cardinality, 0, R"(
+Maximal estimated number of unique values in a `String` or `FixedString` column for the column to be
+stored using automatic `LowCardinality` serialization (dictionary encoding). The estimate is taken from
+the column's cardinality statistic, so a `uniq` or `uniq_v2` statistic must be declared on the column for
+this to take effect.
+
+When a column qualifies, it is stored in dictionary-encoded form on disk even though its data type is not
+`LowCardinality`, and is materialized to a full column when a query requires it. This is checked after
+sparse serialization, so a column that qualifies for sparse serialization is stored as sparse instead.
+
+Reading a subcolumn of such a column (for example `s.size`) is not supported, because the subcolumn's
+streams do not exist in a dictionary-encoded part.
+
+The decision is made anew every time a part is written, from the current value of this setting and from
+the statistics available before the first row of the part is written (the serialization of a part cannot
+change once writing has started, which is also how sparse serialization is chosen): on `INSERT` from the
+statistics of the inserted block, on merges from the statistics of the source parts combined, and on
+rewrites of the parts by mutations from the statistics of the source part. A mutation that changes the
+data of a column enough to change the choice therefore writes the part with the encoding chosen for the
+source part, and the next merge of that part re-chooses from the new data. Enabling this setting on a
+table that already has data upgrades the existing parts on their next merge or rewrite, and lowering it
+demotes the columns that no longer qualify on their next merge or rewrite.
+
+A value of `0` disables automatic `LowCardinality` serialization: no new part is encoded, and a merge or a
+rewrite of an already encoded part drops the encoding, so setting it back to `0` and running
+`OPTIMIZE TABLE ... FINAL` or `ALTER TABLE ... REWRITE PARTS` rolls the table back to the plain
+representation.
+)", 0) \
     DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
 If enabled, columns whose values are entirely type-defaults in a given INSERT
 block are not written to the data part on disk. When the part is later read,

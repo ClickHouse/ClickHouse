@@ -64,8 +64,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
         if (!inputs[i].chunk)
             continue;
 
-        if (!is_result_sparse)
-            removeSpecialColumnRepresentations(inputs[i].chunk);
+        removeInputRepresentations(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
@@ -82,6 +81,23 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
     if (result_column->hasStatistics())
         result_column->takeOrCalculateStatisticsFrom(source_columns);
+}
+
+void ColumnGathererStream::removeInputRepresentations(Chunk & chunk) const
+{
+    if (!is_result_sparse)
+    {
+        removeSpecialColumnRepresentations(chunk);
+        return;
+    }
+
+    /// The sparse result keeps sparse inputs as they are, but a column read from a part stored with
+    /// automatic (non-native) `LowCardinality` serialization arrives as a `ColumnLowCardinality`
+    /// while its data type is not `LowCardinality`. The result column is cloned from the first input
+    /// and the others are inserted into it, so all inputs have to share the representation of the
+    /// data type: a sparse column wrapping a dictionary cannot be written with the sparse
+    /// serialization of the data type.
+    convertToFullIfNonNativeLowCardinality(chunk);
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -194,8 +210,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
     auto & source = sources[source_num];
     if (input.chunk)
     {
-        if (!is_result_sparse)
-            removeSpecialColumnRepresentations(input.chunk);
+        removeInputRepresentations(input.chunk);
 
         source.update(input.chunk.getColumns().at(0));
     }

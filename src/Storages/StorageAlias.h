@@ -234,7 +234,13 @@ public:
         if (!target)
             return std::nullopt;
 
-        return target->getSerializationHints();
+        return target->tryGetSerializationHints();
+    }
+
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name) const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasAutomaticLowCardinalitySerialization(column_name);
     }
 
     ActionLock getActionLock(StorageActionBlockType type) override
