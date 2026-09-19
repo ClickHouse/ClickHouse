@@ -58,6 +58,10 @@ class Workflow:
         enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
+        # When true (or when Settings.PRAKTIKA_DEBUG is set), the
+        # praktika-controller's full per-job log is attached to each job's result
+        # for debugging (native engine only).
+        praktika_debug: bool = False
         # do a best effort to merge the PR if all jobs are successful
         enable_automerge: bool = False
         enable_merge_ready_status: bool = False
@@ -67,7 +71,6 @@ class Workflow:
         # workflow/job status via the GitHub Checks API.
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
-        enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
         pre_hooks: List[Union[str, callable]] = field(default_factory=list)
@@ -108,6 +111,8 @@ class Workflow:
         # If set, every runs_on label across user-defined and Praktika-injected
         # jobs is prefixed with this string, except "self-hosted".
         runs_on_label_prefix: str = ""
+        # Override the dispatch `concurrency.group`; empty keeps `${{ github.workflow }}`.
+        concurrency_group: str = ""
         # If set, GHAuth mints the GitHub token for this workflow's jobs by
         # invoking this AWS Lambda instead of Settings.GH_AUTH_LAMBDA_NAME. Lets
         # a workflow control its token's permission scope - e.g. a more
@@ -178,12 +183,20 @@ class Workflow:
             raise RuntimeError(message)
 
         def _enabled_workflow_config(self):
+            from .settings import Settings
+
             return (
                 self.enable_cache
                 or self.enable_report
                 or self.dockers
                 or self.enable_merge_ready_status
                 or self.pre_hooks
+                # The repo snapshot is built by the Config Workflow, so a native
+                # workflow needs one injected even if it enables nothing else.
+                or (
+                    self.engine == Workflow.Engine.PRAKTIKA
+                    and Settings.ENABLE_S3_REPO_SNAPSHOT
+                )
             )
 
         @dataclass

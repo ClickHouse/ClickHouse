@@ -1,8 +1,25 @@
 #include <QueryPipeline/BlockIO.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
+
+#include <string_view>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char completed_pipeline_pause_before_teardown[];
+}
+
+namespace
+{
+
+constexpr std::string_view completed_pipeline_pause_before_teardown_query_id_prefix
+    = "completed_pipeline_pause_failpoint_";
+
+}
 
 void BlockIO::resetPipeline(bool cancel)
 {
@@ -69,6 +86,13 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     /// in `PipelineExecutor`) and read it until the pipeline is finalized below, so releasing it here would
     /// be a data race. It is released a bit later instead — the extra hold is brief and harmless.
     releaseQuerySlot();
+
+    /// The teardown below releases the table locks the interpreter moved into the pipeline's
+    /// resources, and a patch sink's lightweight update lock: after it, neither is held.
+    if (pipeline.completed() && FailPointInjection::hasAnyFailPointBeenRegistered()
+        && CurrentThread::getQueryId().starts_with(completed_pipeline_pause_before_teardown_query_id_prefix))
+        FailPointInjection::pauseFailPoint(FailPoints::completed_pipeline_pause_before_teardown);
+
     if (finalize_query_pipeline)
     {
         const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
