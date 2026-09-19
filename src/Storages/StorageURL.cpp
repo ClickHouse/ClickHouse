@@ -2928,8 +2928,12 @@ void registerStorageURL(StorageFactory & factory)
             /// Only a definition replayed from metadata stored on this server may defer a missing named
             /// collection to a lazy proxy; one the user supplies now must fail its own DDL. The WHOLE
             /// construction is deferred, so the retry rebuilds through the eager path.
+            /// A `Replicated` database replaying its own Keeper metadata arrives below
+            /// `LoadingStrictnessLevel::ATTACH` with no short syntax, so only the context tells it apart
+            /// from a user `CREATE` (same predicate as `StorageDistributed`).
             const bool loading_from_existing_metadata
-                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax
+                || args.getLocalContext()->isRecoveryFromStoredMetadata();
             const bool can_defer_missing_named_collection
                 = loading_from_existing_metadata
                 && !args.columns.empty()
