@@ -53,6 +53,14 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    /// Whether the alias of the table expression hides its name from the qualifier of this identifier,
+    /// see the definition.
+    static bool tableNameIsHiddenByAlias(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        size_t identifier_column_qualifier_parts,
+        const IdentifierResolveScope & scope);
+
     static bool tryBindIdentifierToTableExpression(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
