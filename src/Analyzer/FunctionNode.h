@@ -68,6 +68,12 @@ public:
 
     void markAsOperator(bool val = true) { this->is_operator = val; }
 
+    /// Whether the parser saw operator syntax for this call, e.g. `a + b` rather than `plus(a, b)`.
+    /// It normally affects only formatting, but it also tells an operator apart from an ordinary
+    /// call to a function of the same name, which matters for an operator whose internal name is
+    /// a legal identifier a user can define a function with.
+    bool isOperator() const { return is_operator; }
+
     /// Get parameters
     const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
 
