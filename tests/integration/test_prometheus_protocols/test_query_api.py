@@ -130,6 +130,119 @@ def test_range_query_post_urlencoded():
     assert get_data == post_data
 
 
+def assert_limited_query_response(response, result_type, expected_series, truncated):
+    assert response.status_code == requests.codes.ok
+    response_json = response.json()
+    assert response_json["status"] == "success"
+    assert response_json["data"]["resultType"] == result_type
+    assert len(response_json["data"]["result"]) == expected_series
+    if truncated:
+        assert response_json["warnings"] == ["results truncated due to limit"]
+    else:
+        assert "warnings" not in response_json
+
+
+def test_query_limit_truncates_instant_vector():
+    response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "foo",
+        timestamp=150,
+        params={"limit": 2, "max_block_size": 1},
+    )
+    assert_limited_query_response(response, "vector", 2, True)
+
+
+def test_query_range_limit_truncates_matrix():
+    response = get_response_to_http_api_range_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "foo",
+        110,
+        150,
+        10,
+        params={"limit": 2, "max_block_size": 1},
+    )
+    assert_limited_query_response(response, "matrix", 2, True)
+
+
+@pytest.mark.parametrize("limit", [0, 3, 10])
+def test_query_limit_does_not_warn_when_result_fits(limit):
+    response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "foo",
+        timestamp=150,
+        params={"limit": limit, "max_block_size": 1},
+    )
+    assert_limited_query_response(response, "vector", 3, False)
+
+
+@pytest.mark.parametrize("limit", ["-1", "banana"])
+def test_query_limit_rejects_invalid_values(limit):
+    instant_response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "foo",
+        timestamp=150,
+        params={"limit": limit},
+    )
+    range_response = get_response_to_http_api_range_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "foo",
+        110,
+        150,
+        10,
+        params={"limit": limit},
+    )
+    for response in (instant_response, range_response):
+        assert response.status_code == requests.codes.bad_request
+        assert "Invalid value of the 'limit' parameter" in extract_error_from_http_api_response(response)
+
+
+def test_query_limit_does_not_affect_scalar_or_string():
+    scalar_response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "2",
+        timestamp=150,
+        params={"limit": 1},
+    )
+    scalar_json = scalar_response.json()
+    assert scalar_json["data"]["resultType"] == "scalar"
+    assert scalar_json["data"]["result"][1] == "2"
+    assert "warnings" not in scalar_json
+
+    string_response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        '"hello"',
+        timestamp=150,
+        params={"limit": 1},
+    )
+    string_json = string_response.json()
+    assert string_json["data"]["resultType"] == "string"
+    assert string_json["data"]["result"][1] == "hello"
+    assert "warnings" not in string_json
+
+
+def test_query_limit_post_urlencoded():
+    response = requests.post(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        data={"query": "foo", "time": "150", "limit": "2", "max_block_size": "1"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert_limited_query_response(response, "vector", 2, True)
+
+
 def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
     for step in (0, -1):
         error = execute_range_query_via_http_api(
@@ -250,6 +363,21 @@ def test_error_after_first_block():
         f"http://{node.ip_address}:9093/api/v1/query_range"
         f"?query={urllib.parse.quote_plus('stream_error')}"
         f"&start=100&end=200&step=10"
+        f"&max_block_size=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
+        f"&result_overflow_mode=throw"
+    )
+    response = requests.get(url)
+    error_message = extract_error_from_http_api_response(response)
+    assert "Limit for result exceeded" in error_message
+
+
+def test_query_limit_does_not_hide_late_errors():
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
+        f"&start=100&end=200&step=10"
+        f"&limit=2"
         f"&max_block_size=1"
         f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
         f"&result_overflow_mode=throw"

@@ -451,7 +451,7 @@ public:
         return !reserved_param_names.contains(name);
     }
 
-    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
+    /// Parses the optional Prometheus `limit` parameter: the maximum number of returned items,
     /// with 0 (the default) meaning no limit.
     UInt64 getLimitParam() const
     {
@@ -507,10 +507,10 @@ public:
                 String end = params->get("end", "");
                 String step = params->get("step", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                UInt64 limit = getLimitParam();
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
-                /// - limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -521,6 +521,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .lookback_delta_param = lookback_delta,
+                    .limit = limit,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -530,8 +531,9 @@ public:
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                UInt64 limit = getLimitParam();
 
-                /// TODO: Support optional parameters same as for the range query.
+                /// TODO: Support timeout=<duration>: Evaluation timeout
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -542,6 +544,7 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .lookback_delta_param = lookback_delta,
+                    .limit = limit,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
