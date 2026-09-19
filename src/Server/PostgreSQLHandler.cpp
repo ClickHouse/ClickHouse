@@ -887,6 +887,32 @@ static String removePgCatalogQualifier(const String & query)
     return result;
 }
 
+namespace
+{
+
+/// The option list of a `COPY` command is accepted only when it asks for the shape the PostgreSQL
+/// protocol transfers anyway - see `checkDataShapeOptions` in the parser. That check compares the
+/// requested values against the defaults of the formats, so the format settings of the session must
+/// not be able to move them: a session that did `SET format_csv_delimiter = ';'` would otherwise get
+/// its `COPY ... WITH (FORMAT csv, DELIMITER ',')` accepted and then served with `;`, which is the
+/// silent shape mismatch the option list is there to prevent.
+void pinCopyFormatSettings(const ContextMutablePtr & query_context)
+{
+    query_context->setSetting("format_csv_delimiter", String(","));
+    query_context->setSetting("format_csv_null_representation", String("\\N"));
+    query_context->setSetting("format_tsv_null_representation", String("\\N"));
+    query_context->setSetting("format_csv_allow_single_quotes", false);
+    query_context->setSetting("format_csv_allow_double_quotes", true);
+    query_context->setSetting("input_format_csv_allow_whitespace_or_tab_as_delimiter", false);
+
+    /// The rows of a `COPY` are separated by a single line feed on the wire.
+    query_context->setSetting("input_format_tsv_crlf_end_of_line", false);
+    query_context->setSetting("output_format_tsv_crlf_end_of_line", false);
+    query_context->setSetting("output_format_csv_crlf_end_of_line", false);
+}
+
+}
+
 bool PostgreSQLHandler::processCopyQuery(const String & query)
 {
     ParserCopyQuery parser_copy;
@@ -896,8 +922,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         copy_query_parsed = parseQuery(parser_copy, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        /// `BAD_ARGUMENTS` is raised by `ParserCopyQuery` only once it has recognized a `COPY`
+        /// command and got as far as its options, so it says "this `COPY` asks for something this
+        /// protocol cannot serve" rather than "this was not a `COPY` command at all". Handing such a
+        /// query to the generic SQL parser would replace the targeted message with a plain syntax
+        /// error, so let it reach the client.
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+            throw;
         copy_query_parsed.reset();
     }
 
@@ -914,6 +947,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto query_context = session->makeQueryContext();
         assignStatementQueryId(query_context);
         QueryScope query_scope = QueryScope::create(query_context);
+
+        pinCopyFormatSettings(query_context);
 
         String columns_to_insert;
         if (!copy_query->column_names.empty())
@@ -1000,6 +1035,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         assignStatementQueryId(query_context);
 
         QueryScope query_scope = QueryScope::create(query_context);
+
+        pinCopyFormatSettings(query_context);
 
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())

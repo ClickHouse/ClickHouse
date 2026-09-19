@@ -201,6 +201,19 @@ struct DataShapeOptions
 void checkDataShapeOptions(const DataShapeOptions & options, const ASTCopyQuery & node)
 {
     const bool is_csv = node.format == ASTCopyQuery::Formats::CSV;
+    const bool is_binary = node.format == ASTCopyQuery::Formats::Binary;
+
+    /// The binary format has neither a field separator nor a textual representation of NULL, so
+    /// there is no value of these options it could honour. PostgreSQL refuses them there as well.
+    if (is_binary)
+    {
+        if (options.delimiter)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Option DELIMITER of the postgresql copy command is not supported with the binary format");
+        if (options.null_value)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Option NULL of the postgresql copy command is not supported with the binary format");
+    }
 
     if (options.delimiter && *options.delimiter != (is_csv ? "," : "\t"))
         throw Exception(
