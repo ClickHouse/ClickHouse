@@ -28,6 +28,29 @@ class MetaColumn:
     index: str = ""
 
 
+class LogClusterError(Exception):
+    """A read that did not produce a result."""
+
+
+class LogClusterUnavailable(LogClusterError):
+    """The cluster never answered the query.
+
+    The endpoint or its credentials could not be resolved, every POST failed at
+    the transport level, or the server answered 5xx on every attempt - the
+    shared cluster goes through minutes-long server-wide memory-pressure
+    windows that fail every query with Code 241. Nothing was read, so this says
+    nothing about the caller or about the commit it reports on.
+    """
+
+
+class LogClusterQueryError(LogClusterError):
+    """The cluster answered by rejecting the query (4xx).
+
+    Bad SQL, a missing table, denied access: a defect no retry can fix, and one
+    that must stay visible.
+    """
+
+
 class LogCluster:
     URL_SECRET = "clickhouse_ci_logs_host"
     PASSWD_SECRET = "clickhouse_ci_logs_password"
@@ -305,12 +328,18 @@ class LogCluster:
         return False
 
     def select(self, query, retries=8, timeout=60):
-        """Run a read-only query and return the response body, or None on failure.
+        """Run a read-only query and return the response body.
 
         Unlike do_query (INSERT transport, discards the body), this returns the
         result text. Retries transient (>=500 and connection) errors with a
         growing backoff: the shared cluster goes through minutes-long
         server-wide memory-pressure spikes (Code 241 for every query).
+
+        Raises LogClusterQueryError if the cluster rejected the query and
+        LogClusterUnavailable if it never answered it. The two are different
+        incidents - the first is a defect in the caller, the second is an
+        outage of a shared service - and a caller that reports a CI check has
+        to tell them apart rather than see one opaque "no result".
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
@@ -320,16 +349,29 @@ class LogCluster:
         params = {} if self.readonly else {"send_logs_level": "warning"}
 
         response = None
+        post_attempted = False
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
-            if not self.is_ready():
+            # It raises rather than returns False when the AWS SSM lookup of
+            # the endpoint or the password fails - another way of not reaching
+            # the cluster, and one that is transient too (SSM rate limiting),
+            # so it joins the same retry schedule instead of escaping as an
+            # exception of its own that the caller cannot classify.
+            try:
+                ready = self.is_ready()
+            except Exception:
+                print("WARNING: LogCluster readiness check failed with exception")
+                traceback.print_exc()
+                ready = False
+            if not ready:
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
             if not self._session:
                 self._session = requests.Session()
             try:
+                post_attempted = True
                 response = self._session.post(
                     url=self.url,
                     params=params,
@@ -354,7 +396,22 @@ class LogCluster:
             print(
                 f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
             )
-        return None
+            reason = f"code {response.status_code}: {response.text.strip()[:512]}"
+            # A 4xx is the server's verdict on this very query, and it is the
+            # same verdict on every retry; anything else means it never got to
+            # run one.
+            if response.status_code < 500:
+                raise LogClusterQueryError(reason)
+            raise LogClusterUnavailable(reason)
+        if post_attempted:
+            # The endpoint was ready but every POST raised before returning a
+            # response (timeout, connection reset, ...). Blaming readiness here
+            # would point the incident at the wrong subsystem; the tracebacks
+            # of the attempts are already in the log above.
+            raise LogClusterUnavailable("every POST attempt failed with an exception")
+        # Every attempt gave up before its POST: the endpoint never became
+        # ready (no secret, or `SELECT 1` never succeeded).
+        raise LogClusterUnavailable("the endpoint never became ready")
 
 
 class LogClusterBuildProfileQueries:
