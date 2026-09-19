@@ -1,0 +1,3 @@
+top k: 1 1
+plain WHERE entries reused by top k: 1
+disabled, entries cached: 0
