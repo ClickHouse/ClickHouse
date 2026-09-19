@@ -195,6 +195,15 @@ void IColumn::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
 
+void IColumn::batchSerializeValueIntoMemory(
+    VectorWithMemoryTracking<char *> & /* memories */,
+    size_t /* row_begin */,
+    size_t /* row_end */,
+    const IColumn::SerializationSettings * /* settings */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
+}
+
 std::string_view IColumn::serializeValueIntoArenaWithNull(
     size_t /* n */,
     Arena & /* arena */,
@@ -209,6 +218,16 @@ char * IColumn::serializeValueIntoMemoryWithNull(
     size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
+}
+
+void IColumn::batchSerializeValueIntoMemoryWithNull(
+    VectorWithMemoryTracking<char *> & /* memories */,
+    size_t /* row_begin */,
+    size_t /* row_end */,
+    const UInt8 * /* is_null */,
+    const IColumn::SerializationSettings * /* settings */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
 void IColumn::batchSerializeValueIntoMemoryWithNull(
@@ -960,17 +979,27 @@ template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
     VectorWithMemoryTracking<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
+    batchSerializeValueIntoMemoryWithNull(memories, 0, static_cast<const Derived &>(*this).size(), is_null, settings);
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
+    VectorWithMemoryTracking<char *> & memories,
+    size_t row_begin,
+    size_t row_end,
+    const UInt8 * is_null,
+    const IColumn::SerializationSettings * settings) const
+{
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
 
     if (!is_null)
     {
-        self.batchSerializeValueIntoMemory(memories, settings);
+        self.batchSerializeValueIntoMemory(memories, row_begin, row_end, settings);
         return;
     }
 
-    size_t rows = self.size();
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = row_begin; i < row_end; ++i)
     {
         *memories[i] = is_null[i];
         ++memories[i];
@@ -994,9 +1023,16 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
+    batchSerializeValueIntoMemory(memories, 0, static_cast<const Derived &>(*this).size(), settings);
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(
+    VectorWithMemoryTracking<char *> & memories, size_t row_begin, size_t row_end, const IColumn::SerializationSettings * settings) const
+{
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
+    for (size_t i = row_begin; i < row_end; ++i)
         memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
 }
 
