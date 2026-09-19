@@ -525,21 +525,24 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                             std::optional<ObjectAttributes> provenance;
                             SourceGeneration consumed{.version_id = {}, .etag = source_object.etag};
                             auto write_settings = move_write_settings;
-                            if (!preserve_path)
+                            /// A preserved path needs no destination guard, but the move still acts on the
+                            /// generation that was ingested, so the source is looked up whatever the guard is.
+                            if (auto source_metadata
+                                = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false))
                             {
-                                if (auto source_metadata
-                                    = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false))
-                                {
-                                    /// Only the generation the rows were read from may be moved. Rethrown once the
-                                    /// batch is done, so the file is not committed and the newer generation is ingested.
-                                    if (!isSameGeneration(type, source_metadata->etag, source_object.etag))
-                                        throw Exception(
-                                            type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
-                                                                             : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                                            "Object {} was not moved: it changed after it was ingested "
-                                            "(its `ETag` is {} instead of {})",
-                                            source_object.remote_path, source_metadata->etag, source_object.etag);
-                                    consumed.version_id = source_metadata->version_id;
+                                /// Only the generation the rows were read from may be moved. Rethrown once the
+                                /// batch is done, so the file is not committed and the newer generation is ingested.
+                                if (!isSameGeneration(type, source_metadata->etag, source_object.etag))
+                                    throw Exception(
+                                        type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
+                                                                         : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                        "Object {} was not moved: it changed after it was ingested "
+                                        "(its `ETag` is {} instead of {})",
+                                        source_object.remote_path, source_metadata->etag, source_object.etag);
+                                consumed.version_id = source_metadata->version_id;
+                                /// Only a guarded move re-uploads the object, so only it stamps provenance for a
+                                /// later attempt to recognise its own copy by.
+                                if (!preserve_path)
                                     provenance = makeMoveProvenance(
                                         source_metadata->attributes,
                                         keeper_identity,
@@ -547,18 +550,17 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
                                         source_metadata->version_id);
-                                    /// The backend looks the source up again, so pin it to the generation this
-                                    /// provenance describes: a rewrite in between fails the copy instead of
-                                    /// stamping these attributes onto newer bytes.
-                                    write_settings.object_storage_copy_source_if_match = source_metadata->etag;
-                                    /// Two generations of one key can share an `ETag`, so only the version
-                                    /// names the one the provenance, the copy and the delete all describe.
-                                    write_settings.object_storage_copy_source_version_id = source_metadata->version_id;
-                                    /// Park between the source lookup and the copy. No-op unless
-                                    /// explicitly enabled.
-                                    FailPointInjection::pauseFailPoint(
-                                        FailPoints::object_storage_queue_pause_after_move_source_lookup);
-                                }
+                                /// The backend looks the source up again, so pin it to the generation this
+                                /// lookup describes: a rewrite in between fails the copy instead of copying
+                                /// newer bytes.
+                                write_settings.object_storage_copy_source_if_match = source_metadata->etag;
+                                /// Two generations of one key can share an `ETag`, so only the version names
+                                /// the one this lookup, the copy and the delete all describe.
+                                write_settings.object_storage_copy_source_version_id = source_metadata->version_id;
+                                /// Park between the source lookup and the copy. No-op unless
+                                /// explicitly enabled.
+                                FailPointInjection::pauseFailPoint(
+                                    FailPoints::object_storage_queue_pause_after_move_source_lookup);
                             }
 
                             try
