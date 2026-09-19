@@ -7,6 +7,8 @@ after second insert (skipped tags):
 after mixed insert (one cached, one new):
 2
 4
+the skipped series is still selectable:
+3
 cache disabled: both inserts write tags:
 2
 2
@@ -16,3 +18,8 @@ after truncate and insert:
 after alter to disable cache:
 2
 2
+bounds stored: both inserts write tags:
+2
+2
+max_time advanced to the latest sample:
+1

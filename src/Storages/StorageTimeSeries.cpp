@@ -46,6 +46,7 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsUInt64 tags_cache_max_series;
     extern const TimeSeriesSettingsUInt64 tags_cache_ttl_seconds;
     extern const TimeSeriesSettingsUInt64 version;
@@ -74,6 +75,14 @@ namespace
         auto copy = boost::static_pointer_cast<ASTCreateQuery>(query.clone());
         normalizeTimeSeriesDefinition(*copy, local_context, mode, is_restore_from_backup);
         return copy;
+    }
+
+    /// Skipping a tags insert also skips the `min_time` and `max_time` that batch would have contributed, and the
+    /// selector prunes series by those columns, so the cache is only sound where the row does not carry them.
+    bool activeSeriesCacheAllowed(const TimeSeriesSettings & settings)
+    {
+        return (settings[TimeSeriesSetting::tags_cache_max_series] != 0)
+            && !settings[TimeSeriesSetting::store_min_time_and_max_time];
     }
 
     /// We allow altering `id_generator`, `filter_by_min_time_and_max_time`, `tags_cache_max_series`, and `tags_cache_ttl_seconds`.
@@ -226,10 +235,10 @@ StorageTimeSeries::StorageTimeSeries(
     storage_settings.set(std::move(settings));
 
     const auto & initial_settings = *storage_settings.get();
-    UInt64 max_series = initial_settings[TimeSeriesSetting::tags_cache_max_series];
-    UInt64 ttl = initial_settings[TimeSeriesSetting::tags_cache_ttl_seconds];
-    if (max_series > 0)
-        active_series_cache = std::make_shared<TimeSeriesActiveSeriesCache>(max_series, static_cast<UInt32>(ttl));
+    if (activeSeriesCacheAllowed(initial_settings))
+        active_series_cache = std::make_shared<TimeSeriesActiveSeriesCache>(
+            initial_settings[TimeSeriesSetting::tags_cache_max_series],
+            static_cast<UInt32>(initial_settings[TimeSeriesSetting::tags_cache_ttl_seconds]));
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -629,7 +638,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         const auto & updated_settings = *storage_settings.get();
         UInt64 max_series = updated_settings[TimeSeriesSetting::tags_cache_max_series];
         UInt64 ttl = updated_settings[TimeSeriesSetting::tags_cache_ttl_seconds];
-        if (max_series > 0)
+        if (activeSeriesCacheAllowed(updated_settings))
         {
             if (active_series_cache)
                 active_series_cache->updateSettings(max_series, static_cast<UInt32>(ttl));
