@@ -88,6 +88,28 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
+String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & function, const Array & parameters)
+{
+    if (parameters.empty())
+        return {};
+
+    const bool with_types = function.shouldPrintParametersWithTypes();
+
+    WriteBufferFromOwnString stream;
+    stream << '(';
+    for (size_t i = 0, size = parameters.size(); i < size; ++i)
+    {
+        if (i)
+            stream << ", ";
+        if (with_types)
+            stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
+        else
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+    }
+    stream << ')';
+    return stream.str();
+}
+
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
@@ -98,32 +120,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (with_version && data_type_version)
         stream << data_type_version << ", ";
     stream << function->getName();
-
-    if (!parameters.empty())
-    {
-        stream << '(';
-        if (function->shouldPrintParametersWithTypes())
-        {
-            FieldVisitorToCastedLiteral visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        else
-        {
-            FieldVisitorToString visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        stream << ')';
-    }
+    stream << formatParameters(*function, parameters);
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
