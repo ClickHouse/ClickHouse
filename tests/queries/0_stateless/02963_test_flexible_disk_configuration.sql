@@ -1,20 +1,27 @@
 -- Tags: no-fasttest
 
 drop table if exists test;
+drop table if exists test_other;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test1/');
 
-drop table if exists test;
-create table test (a Int32) engine = MergeTree() order by tuple()
+-- While a table uses the disk, it cannot be redefined with other settings or referred to by name.
+create table test_other (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
 
-drop table if exists test;
-create table test (a Int32) engine = MergeTree() order by tuple()
+create table test_other (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='02963_custom_disk'); -- { serverError BAD_ARGUMENTS }
 
-drop table if exists test;
-create table test (a Int32) engine = MergeTree() order by tuple()
+create table test_other (a Int32) engine = MergeTree() order by tuple()
 settings disk='02963_custom_disk'; -- { serverError BAD_ARGUMENTS }
+
+-- The disk is unregistered together with the last table using it, so the name is free again.
+drop table test sync;
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk='02963_custom_disk'; -- { serverError UNKNOWN_DISK }
+
+create table test (a Int32) engine = MergeTree() order by tuple()
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/');
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
