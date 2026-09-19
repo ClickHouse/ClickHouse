@@ -7,7 +7,7 @@ AggregateFunction(1, uniqDistinct, UInt8)
 AggregateFunction(1, uniqOrNull, UInt8)
 AggregateFunction(1, uniqOrDefault, UInt8)
 AggregateFunction(1, uniqArgMin, UInt8, UInt8)
-AggregateFunction(1, uniqResample(1, 1, 1), UInt8, UInt8)
+AggregateFunction(1, uniqResample(1, 2, 1), UInt8, UInt8)
 AggregateFunction(uniqExact, Nullable(UInt8))
 AggregateFunction(sumMap, Map(UInt8, UInt8))
 [3,100315]

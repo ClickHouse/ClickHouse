@@ -21,7 +21,7 @@ SELECT toTypeName(uniqDistinctState(1));
 SELECT toTypeName(uniqOrNullState(1));
 SELECT toTypeName(uniqOrDefaultState(1));
 SELECT toTypeName(uniqArgMinState(1, 1));
-SELECT toTypeName(uniqResampleState(1, 1, 1)(1, 1));
+SELECT toTypeName(uniqResampleState(1, 2, 1)(1, 1));
 SELECT toTypeName(uniqExactState(toNullable(1)));
 SELECT toTypeName(sumMapState(map(1, 2)));
 
