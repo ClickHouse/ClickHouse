@@ -112,6 +112,7 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
@@ -585,6 +586,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
+    mutable OnceFlag user_defined_types_storage_initialized;
+    mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_types_storage;
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
@@ -1047,6 +1050,7 @@ struct ContextSharedPart : boost::noncopyable
 
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
+        SHUTDOWN(log, "UDTs storage", user_defined_types_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -1165,6 +1169,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
+        std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_types_storage;
         std::shared_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
 
@@ -1240,6 +1245,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
+            delete_user_defined_types_storage = std::move(user_defined_types_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_ddl_worker = std::move(ddl_worker);
 
@@ -1296,6 +1302,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
         delete_user_defined_sql_objects_storage.reset();
+        delete_user_defined_types_storage.reset();
         delete_workload_entity_storage.reset();
         delete_ddl_worker.reset();
 
@@ -4361,7 +4368,7 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
 const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage() const
 {
     callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
+        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext(), UserDefinedSQLObjectType::Function);
     });
 
     return *shared->user_defined_sql_objects_storage;
@@ -4370,10 +4377,28 @@ const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 {
     callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
+        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext(), UserDefinedSQLObjectType::Function);
     });
 
     return *shared->user_defined_sql_objects_storage;
+}
+
+const IUserDefinedSQLObjectsStorage & Context::getUserDefinedTypesStorage() const
+{
+    callOnce(shared->user_defined_types_storage_initialized, [&] {
+        shared->user_defined_types_storage = createUserDefinedSQLObjectsStorage(getGlobalContext(), UserDefinedSQLObjectType::Type);
+    });
+
+    return *shared->user_defined_types_storage;
+}
+
+IUserDefinedSQLObjectsStorage & Context::getUserDefinedTypesStorage()
+{
+    callOnce(shared->user_defined_types_storage_initialized, [&] {
+        shared->user_defined_types_storage = createUserDefinedSQLObjectsStorage(getGlobalContext(), UserDefinedSQLObjectType::Type);
+    });
+
+    return *shared->user_defined_types_storage;
 }
 
 std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const

@@ -1,0 +1,7 @@
+UInt64	Array(UInt64)
+Maybe	Variant(T, String)	T	CREATE TYPE Maybe(T) AS Variant(T, String)
+Variant(String, UInt64)
+{"name":"ShownType","base_type":"UInt64","type_parameters":null,"create_query":"CREATE TYPE ShownType AS UInt64"}
+ShownType	UInt64	\N	CREATE TYPE ShownType AS UInt64
+SHOW TYPES FORMAT JSONEachRow
+SHOW TYPES SETTINGS max_result_rows = 10

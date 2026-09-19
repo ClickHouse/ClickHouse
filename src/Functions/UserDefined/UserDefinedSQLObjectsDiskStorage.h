@@ -14,7 +14,7 @@ namespace DB
 class UserDefinedSQLObjectsDiskStorage : public UserDefinedSQLObjectsStorageBase
 {
 public:
-    UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
+    UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, UserDefinedSQLObjectType object_type_, const String & dir_path_);
 
     void loadObjects() override;
 

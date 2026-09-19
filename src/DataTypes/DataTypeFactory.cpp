@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/UserDefinedTypeFactory.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/parseQuery.h>
@@ -9,6 +10,8 @@
 #include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTCreateTypeQuery.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils.h>
@@ -34,6 +37,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <typename FieldType>
@@ -233,10 +238,130 @@ DataTypePtr DataTypeFactory::tryGet(const String & family_name_param, const ASTP
     return getImpl<true>(family_name_param, parameters);
 }
 
+class ASTIdentifierSubstituter
+{
+public:
+    static ASTPtr substitute(const ASTPtr & ast_node, const std::unordered_map<String, ASTPtr> & substitutions)
+    {
+        if (!ast_node)
+            return nullptr;
+
+        if (const auto * identifier_node = ast_node->as<ASTIdentifier>())
+        {
+            auto it = substitutions.find(identifier_node->name());
+            if (it != substitutions.end())
+            {
+                return it->second->clone();
+            }
+        }
+        else if (const auto * data_type_node = ast_node->as<ASTDataType>())
+        {
+            const auto arguments = data_type_node->getArguments();
+            if (!data_type_node->name.empty() && (!arguments || arguments->children.empty()))
+            {
+                auto it = substitutions.find(data_type_node->name);
+                if (it != substitutions.end())
+                {
+                    return it->second->clone();
+                }
+            }
+        }
+
+        ASTPtr new_node = ast_node->clone();
+        for (auto & child : new_node->children)
+        {
+            child = substitute(child, substitutions);
+        }
+
+        /// For ASTDataType the arguments are stored as the first (and only) child, so
+        /// substituting the children above already keeps getArguments() in sync.
+
+        return new_node;
+    }
+};
+
+namespace
+{
+
+/// User-defined types expand to their definitions recursively. The registry rejects cyclic definitions, but a
+/// definition file edited by hand (or a replicated definition from another version) could still form a cycle,
+/// which must not overflow the stack.
+constexpr size_t max_user_defined_type_expansion_depth = 100;
+
+thread_local size_t user_defined_type_expansion_depth = 0;
+
+struct UserDefinedTypeExpansionDepthGuard
+{
+    UserDefinedTypeExpansionDepthGuard() { ++user_defined_type_expansion_depth; }
+    ~UserDefinedTypeExpansionDepthGuard() { --user_defined_type_expansion_depth; }
+};
+
+}
+
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
 {
     String family_name = getAliasToOrName(family_name_param);
+    auto query_context = CurrentThread::tryGetQueryContext();
+
+    if (auto create_type_query = UserDefinedTypeFactory::instance().tryGet(family_name))
+    {
+        const auto & create = create_type_query->as<const ASTCreateTypeQuery &>();
+        const ASTPtr & udt_formal_params_ast = create.type_parameters;
+        const ASTPtr & udt_base_type_definition_ast = create.base_type;
+
+        if (!udt_base_type_definition_ast)
+        {
+            if constexpr (nullptr_on_error) return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "User-defined type '{}' has no base type definition AST.", family_name);
+        }
+
+        if (user_defined_type_expansion_depth >= max_user_defined_type_expansion_depth)
+        {
+            if constexpr (nullptr_on_error) return nullptr;
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                            "Too deep nesting of user-defined types while expanding '{}' (the definitions probably form a cycle)",
+                            family_name);
+        }
+        UserDefinedTypeExpansionDepthGuard depth_guard;
+
+        const auto * actual_args_list_node = parameters ? parameters->as<ASTExpressionList>() : nullptr;
+        size_t num_actual_args = actual_args_list_node ? actual_args_list_node->children.size() : 0;
+
+        const auto * formal_params_list_node = udt_formal_params_ast ? udt_formal_params_ast->as<ASTExpressionList>() : nullptr;
+        size_t num_formal_params = formal_params_list_node ? formal_params_list_node->children.size() : 0;
+
+        if (num_formal_params != num_actual_args)
+        {
+            if constexpr (nullptr_on_error) return nullptr;
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "User-defined type '{}' expects {} argument(s), but {} provided",
+                            family_name, num_formal_params, num_actual_args);
+        }
+
+        if (num_formal_params == 0)
+        {
+            return getImpl<nullptr_on_error>(udt_base_type_definition_ast);
+        }
+        else
+        {
+            std::unordered_map<String, ASTPtr> substitutions;
+            for (size_t i = 0; i < num_formal_params; ++i)
+            {
+                const auto * formal_param_ident_node = formal_params_list_node->children[i]->as<ASTIdentifier>();
+                if (!formal_param_ident_node)
+                {
+                    if constexpr (nullptr_on_error) return nullptr;
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Formal parameter for user-defined type '{}' at position {} is not an identifier.", family_name, i + 1);
+                }
+                substitutions[formal_param_ident_node->name()] = actual_args_list_node->children[i];
+            }
+
+            ASTPtr substituted_ast = ASTIdentifierSubstituter::substitute(udt_base_type_definition_ast, substitutions);
+
+            return getImpl<nullptr_on_error>(substituted_ast);
+        }
+    }
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
     DataTypePtr data_type;
@@ -260,7 +385,6 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
         data_type = (*creator)(parameters);
     }
 
-    auto query_context = CurrentThread::tryGetQueryContext();
     if (query_context && query_context->getSettingsRef()[Setting::log_queries])
     {
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());
@@ -371,11 +495,15 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     }
 
     if constexpr (nullptr_on_error)
+    {
         return nullptr;
+    }
 
     auto hints = this->getHints(family_name);
     if (!hints.empty())
+    {
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
+    }
     throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
