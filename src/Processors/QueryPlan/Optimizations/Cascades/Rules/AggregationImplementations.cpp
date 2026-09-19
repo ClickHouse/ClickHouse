@@ -301,19 +301,21 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
     if (agg_step == nullptr || expression->strategy != nullptr)
         return false;
 
-    /// A non-final aggregation is split only when it promises bucket order to a consumer outside
-    /// this plan: `AggregationImplementation` restricts it to a single node then, and the split -
-    /// a partial on every node, gathered one stream per node into a merge that restores the bucket
-    /// order - is its distributed alternative. The partial half of a split is never split again.
-    /// An aggregation in order stays single-node: its consumer expects the stream sorted by the
-    /// keys as well, and the merge does not restore that, the same as in the rule-based planner.
-    const bool split_for_bucket_order = !agg_step->getFinal()
-        && agg_step->shouldProduceResultsInBucketOrder()
-        && !expression->is_partial_of_two_stage_aggregation
-        && !agg_step->inOrder()
-        && !agg_step->explicitSortingRequired();
-    if (!agg_step->getFinal() && !split_for_bucket_order)
-        return false;
+    if (!agg_step->getFinal())
+    {
+        /// A non-final aggregation is split only when it promises bucket order to a consumer outside
+        /// this plan: `AggregationImplementation` restricts it to a single node then, and the split -
+        /// a partial on every node, gathered one stream per node into a merge that restores the bucket
+        /// order - is its distributed alternative. The partial half of a split is never split again.
+        /// An aggregation in order stays single-node: its consumer expects the stream sorted by the
+        /// keys as well, and the merge does not restore that, the same as in the rule-based planner.
+        const bool split_for_bucket_order = agg_step->shouldProduceResultsInBucketOrder()
+            && !expression->is_partial_of_two_stage_aggregation
+            && !agg_step->inOrder()
+            && !agg_step->explicitSortingRequired();
+        if (!split_for_bucket_order)
+            return false;
+    }
 
     /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split whenever the
     /// shuffle strategy is available: a final aggregation with group keys. A grouping-set
