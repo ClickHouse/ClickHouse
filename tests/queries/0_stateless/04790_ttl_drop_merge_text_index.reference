@@ -17,3 +17,10 @@ idx_txt	text	1
 0
 1
 1
+-- Case 5: projections are not announced as pending work
+0
+1
+1
+0
+1
+1

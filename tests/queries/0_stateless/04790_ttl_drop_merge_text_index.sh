@@ -230,3 +230,51 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ttl_drop_default SETTINGS check_query_single_value_result = 1;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_default;"
+
+echo "-- Case 5: projections are not announced as pending work"
+
+# prepareProjectionsToMergeAndRebuild both bumps the projection profile events and pushes the
+# names into MergeListElement::projections_pending, which system.merges.projections_remaining
+# reads and which only the rebuild and merge paths erase from. The short-circuit runs neither.
+#
+# projections_pending is fed from two lists, and deduplicate_merge_projection_mode decides which
+# one a projection lands in, so both modes are covered: asserting RebuiltProjections alone passes
+# on unfixed code under 'ignore', where the name arrives via projections_to_merge instead.
+for mode in throw ignore
+do
+    table="t_ttl_drop_projection_$mode"
+
+    ${CLICKHOUSE_CLIENT} -q "
+        CREATE TABLE $table
+        (
+            c0 UInt64,
+            c1 Date,
+            c2 String,
+            PROJECTION p0 (SELECT c2, count() GROUP BY c2)
+        )
+        ENGINE = MergeTree()
+        ORDER BY c0
+        TTL c1 + INTERVAL 1 SECOND DELETE
+        SETTINGS deduplicate_merge_projection_mode = '$mode';
+
+        INSERT INTO $table SELECT number, toDate('2020-01-01'), 'w' || toString(number) FROM numbers(100);
+    "
+
+    wait_for_ttl_drop "$table"
+
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM $table;"
+
+    # read_rows = 0 pins the short-circuit; both counters at 0 are the assertion. Each mode gets
+    # its own table so this reads only its own merge.
+    ${CLICKHOUSE_CLIENT} -q "
+        SYSTEM FLUSH LOGS part_log;
+        SELECT countIf(merge_reason = 'TTLDropMerge' AND error = 0 AND read_rows = 0
+                       AND ProfileEvents['RebuiltProjections'] = 0
+                       AND ProfileEvents['MergedProjections'] = 0) > 0
+        FROM system.part_log
+        WHERE database = currentDatabase() AND table = '$table' AND event_type = 'MergeParts';
+    "
+
+    ${CLICKHOUSE_CLIENT} -q "CHECK TABLE $table SETTINGS check_query_single_value_result = 1;"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE $table;"
+done
