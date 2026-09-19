@@ -335,6 +335,79 @@ namespace
         }
     };
 
+    /// Replace every literal inside a secret argument with `'[HIDDEN]'`, preserving the expression
+    /// structure (e.g. an `encrypt` key built as `leftPad('...', 16, '*')`).
+    void hideLiteralsInSubtree(ASTPtr & node)
+    {
+        if (const auto * literal = node->as<ASTLiteral>())
+        {
+            auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+            hidden->setAlias(literal->tryGetAlias());
+            node = std::move(hidden);
+            return;
+        }
+        for (auto & child : node->children)
+            hideLiteralsInSubtree(child);
+    }
+
+    /// The secret value of a `key = value` argument is its second child; anything else carries the
+    /// secret in the node itself.
+    ASTPtr & secretValueSlot(ASTPtr & node)
+    {
+        if (const auto * function = node->as<ASTFunction>();
+            function && function->name == "equals" && function->arguments && function->arguments->children.size() == 2)
+            return function->arguments->children[1];
+        return node;
+    }
+
+    /// `DumpASTNode` prints a literal through `IAST::getID`, value included, so the dump cannot hide
+    /// secrets while formatting as `ASTFunction::formatImpl` does. Hide them in the tree instead.
+    /// All values of a nested map (`headers(...)`, `extra_credentials(...)`) are hidden; the formatter
+    /// keeps the non-secret `extra_credentials` values, so the dump is stricter.
+    struct HideSecretArgumentsMatcher
+    {
+        struct Data
+        {
+        };
+
+        static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data &)
+        {
+            auto * function = ast->as<ASTFunction>();
+            if (!function || !function->arguments)
+                return;
+
+            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            if (!secret_arguments.hasSecrets())
+                return;
+
+            auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (auto * map = arguments[i]->as<ASTFunction>();
+                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                {
+                    for (auto & entry : map->arguments->children)
+                        hideLiteralsInSubtree(secretValueSlot(entry));
+                    continue;
+                }
+
+                const bool in_span = secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count;
+                const auto masked = secret_arguments.masked_arguments.find(i);
+                if (!in_span && masked == secret_arguments.masked_arguments.end() && !secret_arguments.replaced_arguments.contains(i))
+                    continue;
+
+                /// Only a named argument keeps its key; a positional one is hidden whole, as the formatter does.
+                const bool is_named = (in_span && secret_arguments.are_named)
+                    || (masked != secret_arguments.masked_arguments.end() && masked->second);
+                hideLiteralsInSubtree(is_named ? secretValueSlot(arguments[i]) : arguments[i]);
+            }
+        }
+    };
+
+    using HideSecretArgumentsVisitor = InDepthNodeVisitor<HideSecretArgumentsMatcher, true>;
+
     bool hasSecretsInActionsDAG(const ActionsDAG & dag)
     {
         for (const auto & node : dag.getNodes())
@@ -1001,6 +1074,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 ExplainAnalyzedSyntaxVisitor::Data data(query_context);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
+            }
+
+            /// `optimize = 1` inlines views the user may read but whose secrets they may not see.
+            /// Hide them under the same gate as `SHOW CREATE`.
+            if (!canDisplaySecrets(query_context))
+            {
+                HideSecretArgumentsVisitor::Data data;
+                HideSecretArgumentsVisitor(data).visit(query);
             }
 
             if (settings.graph)
