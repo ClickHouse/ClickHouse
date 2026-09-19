@@ -127,6 +127,9 @@ DROP TABLE t_intdiv_mono;
 -- but the wrap boundary depends on the decimal width and scale rather than the dividend width. intDiv must
 -- therefore not be reported monotonic for a Decimal divisor, otherwise key analysis builds a reversed Range
 -- and aborts with Invalid binary search result in MergeTreeSetIndex (or silently over-prunes in release).
+-- With `decimal_check_overflow = 1` (the default) an operand that does not fit the native width now raises
+-- `DECIMAL_OVERFLOW` instead of wrapping, so every `Decimal` probe from here on runs with the check disabled.
+SET decimal_check_overflow = 0;
 CREATE TABLE t_intdiv_mono (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_intdiv_mono VALUES (9223372036854775806), (9223372036854775807), (9223372036854775808), (9223372036854775809), (18446744073709551615);
 SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toDecimal64(1000000000000000000, 0)) IN (9))
@@ -284,3 +287,5 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT sum(a) FROM t_intdiv_mono WHERE 
        WHERE explain LIKE '%Granules: 3/5%';
 
 DROP TABLE t_intdiv_mono;
+
+SET decimal_check_overflow = 1;
