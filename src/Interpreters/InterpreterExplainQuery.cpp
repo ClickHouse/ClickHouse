@@ -8,6 +8,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/ExplainTextRewrite.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -16,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -91,6 +93,7 @@ namespace Setting
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
 }
@@ -123,8 +126,12 @@ namespace
             explicit Data(ContextPtr context_) : WithContext(context_) {}
         };
 
-        static bool needChildVisit(ASTPtr &, ASTPtr &)
+        static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
+            /// the source of `EXPLAIN TEXT` is preserved text: never analyzed, never rewritten
+            if (const auto * explain = node->as<ASTExplainQuery>();
+                explain && explain->getKind() == ASTExplainQuery::FormattedQuery)
+                return false;
             return true;
         }
 
@@ -243,6 +250,10 @@ namespace
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
+            /// the source of `EXPLAIN TEXT` is preserved text: never analyzed, never rewritten
+            if (const auto * explain = node->as<ASTExplainQuery>();
+                explain && explain->getKind() == ASTExplainQuery::FormattedQuery)
+                return false;
             return !node->as<ASTSelectQuery>();
         }
 
@@ -444,7 +455,7 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
 
     Block res;
     ColumnWithTypeAndName col;
-    col.name = "explain";
+    col.name = kind == ASTExplainQuery::FormattedQuery ? "text" : "explain";
     col.type = std::make_shared<DataTypeString>();
     col.column = col.type->createColumn();
     res.insert(col);
@@ -982,18 +993,49 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
     /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
     auto explain_query_context = Context::createCopy(query_context);
-
     if (ast.getKind() != ASTExplainQuery::Analyze)
     {
         explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
         explain_query_context->setSetting("use_query_condition_cache", false);
     }
 
-    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    if (ast.getKind() == ASTExplainQuery::FormattedQuery)
+    {
+        /// Apply only the outer settings: the source is text to rewrite, not a query to run. The
+        /// construction settings have nothing to shape here, so refuse them on the outer clause
+        /// instead of accepting a silent no-op. Settings that reach the context without a clause,
+        /// from the session or hoisted by `EXECUTE AS`, are ignored like any other effective setting.
+        if (ast.settings_ast)
+        {
+            if (hasConstructionSettings(*ast.settings_ast))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `select`, `filter`, `order`, `sort`, `limit`, `offset` and `page` have no effect on EXPLAIN TEXT, "
+                                                                     "which formats its source without executing it. Use the MODIFY LIMIT, MODIFY OFFSET or PAGE actions instead");
+            InterpreterSetQuery(ast.settings_ast, explain_query_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        }
+    }
+    else
+    {
+        InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    }
     query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
     {
+        case ASTExplainQuery::FormattedQuery:
+        {
+            auto rewritten = rewriteExplainTextQuery(ast.getExplainedQuery(), ast.getActions());
+
+            IAST::FormatSettings format_settings(rewritten.one_line);
+            /// the source is the caller's own text and the result must stay executable, so
+            /// secrets are kept as written, like formatQuery. `EXPLAIN SYNTAX` hides them
+            /// because it shows a rewritten query the caller did not write.
+            format_settings.show_secrets = true;
+            format_settings.print_pretty_type_names = query_context->getSettingsRef()[Setting::print_pretty_type_names];
+
+            rewritten.query->format(buf, format_settings);
+            single_record = true;
+            break;
+        }
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());

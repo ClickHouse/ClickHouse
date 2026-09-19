@@ -1,6 +1,10 @@
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExplainTextAction.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -19,6 +23,7 @@ void ASTExplainQuery::writeJSON(WriteBuffer & out) const
     w.writeString("kind", toString(kind));
     w.writeChild("settings", ast_settings);
     w.writeChild("query", query);
+    w.writeChild("actions", actions);
     w.writeChild("table_function", table_function);
     w.writeChild("table_override", table_override);
     writeOutputOptionsJSON(w);
@@ -40,6 +45,22 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     if (query_child)
         setExplainedQuery(std::move(query_child));
 
+    auto actions_child = r.readChildOfType<ASTExpressionList>("actions");
+    if (actions_child)
+    {
+        const auto & action_list = actions_child->as<const ASTExpressionList &>();
+        if (action_list.getSeparator() != ',' || action_list.children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXPLAIN TEXT requires a non-empty comma-separated action list during AST JSON deserialization");
+        for (const auto & action : action_list.children)
+        {
+            if (!action->as<ASTExplainTextAction>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXPLAIN TEXT action list can contain only ASTExplainTextAction nodes during AST JSON deserialization");
+        }
+        setActions(std::move(actions_child));
+    }
+
     auto table_function_child = r.readChildOfType<ASTFunction>("table_function");
     if (table_function_child)
         setTableFunction(std::move(table_function_child));
@@ -47,6 +68,10 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     auto table_override_child = r.readChildOfType<ASTTableOverride>("table_override");
     if (table_override_child)
         setTableOverride(std::move(table_override_child));
+
+    if (kind != ExplainKind::FormattedQuery && getActions())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'actions' are only valid for EXPLAIN TEXT during AST JSON deserialization");
 
     /// Enforce the exact parser-produced child set per kind, rejecting forbidden extras as well:
     /// `EXPLAIN TABLE OVERRIDE` dereferences the table function and override but never parses an
@@ -56,6 +81,29 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     /// `InterpreterExplainQuery` silently ignores it.
     switch (kind)
     {
+        case ExplainKind::FormattedQuery:
+            if (!getExplainedQuery() || getExplainedQuery()->getQueryKind() == QueryKind::None)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT requires an explained query during AST JSON deserialization");
+            /// `ParserQuery` never produces a top-level `ASTSelectIntersectExceptQuery` it only exists
+            /// inside an `ASTSelectWithUnionQuery`, which is also what carries the output options that
+            /// `MODIFY FORMAT` sets. A bare `ASTSelectQuery` stays accepted as a convenience for callers
+            /// that build the JSON by hand
+            if (getExplainedQuery()->as<ASTSelectIntersectExceptQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT requires INTERSECT and EXCEPT to be wrapped in 'SelectWithUnionQuery' during AST JSON deserialization");
+            /// `ASTSetQuery` also represents embedded settings clauses, which are not source statements.
+            if (const auto * set_query = getExplainedQuery()->as<ASTSetQuery>();
+                set_query && (!set_query->is_standalone
+                    || (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT requires a non-empty standalone SET query during AST JSON deserialization");
+            if (getSettings())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT cannot carry leading kind-specific settings during AST JSON deserialization");
+            if (getTableFunction() || getTableOverride())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT cannot carry 'table_function' or 'table_override' during AST JSON deserialization");
+            break;
         case ExplainKind::TableOverride:
             if (!getTableFunction() || !getTableOverride())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -81,13 +129,38 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
                     "EXPLAIN CURRENT TRANSACTION cannot carry 'query', 'table_function', or 'table_override' during AST JSON deserialization");
             break;
         default:
-            if (!getExplainedQuery())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "{} requires an explained query during AST JSON deserialization", toString(kind));
+        {
+            const auto & explained = getExplainedQuery();
+            if (!explained || explained->getQueryKind() == QueryKind::None)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires an explained query during AST JSON deserialization", toString(kind));
+
+            /// `ASTSetQuery` also represents embedded settings clauses, which are not statements.
+            if (const auto * set_query = explained->as<ASTSetQuery>();
+                set_query && (!set_query->is_standalone || (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires a non-empty standalone SET query during AST JSON deserialization", toString(kind));
+
+            /// `ParsedQuery` always wraps a top-level `SELECT` in `ASTSelectWithUnionQuery`, and the
+            /// interpreters of these kinds check for that wrapper. Only `EXPLAIN TEXT` formats a bare
+            /// `ASTSelectQuery`, which `forQueryFromJSON` callers may build directly.
+            if (explained->getQueryKind() == QueryKind::Select && !explained->as<ASTSelectWithUnionQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires the SELECT to be wrapped in 'SelectWithUnionQuery' during AST JSON deserialization", toString(kind));
+
+            /// `ParserExplainQuery` hands `EXPLAIN AST` to the full `ParserQuery`. `EXPLAIN QUERY TREE` accepts
+            /// only `SELECT`. Every other kind accepts `SELECT`, `CREATE TABLE`, `INSERT` and `SYSTEM`. a wider
+            /// child would format into SQL the parser can never produce.
+            if (kind != ExplainKind::ParsedAST)
+            {
+                const auto query_kind = explained->getQueryKind();
+                const bool allowed = query_kind == QueryKind::Select || (kind != ExplainKind::QueryTree && (query_kind == QueryKind::Create || query_kind == QueryKind::Insert || query_kind == QueryKind::System));
+                if (!allowed)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot explain this statement during AST JSON deserialization: only SELECT{} is accepted", toString(kind), kind == ExplainKind::QueryTree ? "" : ", CREATE TABLE, INSERT and SYSTEM");
+            }
+
             if (getTableFunction() || getTableOverride())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "'table_function' and 'table_override' are only valid for EXPLAIN TABLE OVERRIDE during AST JSON deserialization");
             break;
+        }
     }
 
     readOutputOptionsJSON(r);

@@ -198,7 +198,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
 {
     auto ttl_expr = ttl();
     auto nested_frame = frame;
-    if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl_expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+    if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl_expr.get()); ast_alias && ast_alias->hasAlias())
         nested_frame.need_parens = true;
     ttl_expr->format(ostr, settings, state, nested_frame);
     if (mode == TTLMode::MOVE)
@@ -252,7 +252,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     {
         ostr << " WHERE ";
         auto where_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(where_expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(where_expr.get()); ast_alias && ast_alias->hasAlias())
             where_frame.need_parens = true;
         where_expr->format(ostr, settings, state, where_frame);
     }

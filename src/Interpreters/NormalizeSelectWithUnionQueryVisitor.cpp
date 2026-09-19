@@ -1,4 +1,5 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -150,5 +151,11 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     ast.set_of_modes = std::move(current_set_of_modes);
 
     ast.list_of_selects->children = std::move(selects);
+}
+
+bool NormalizeSelectWithUnionQueryMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr &)
+{
+    const auto * explain = ast->as<ASTExplainQuery>();
+    return !explain || explain->getKind() != ASTExplainQuery::FormattedQuery;
 }
 }

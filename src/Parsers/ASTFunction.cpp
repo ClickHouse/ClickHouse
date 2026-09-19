@@ -604,7 +604,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                              || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
                 bool is_array = (literal && literal->value.getType() == Field::Types::Array)
                              || (function && function->name == "array");
-                bool has_alias = !arguments->children[0]->tryGetAlias().empty();
+                bool has_alias = arguments->children[0]->hasAlias();
 
                 /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
                 bool literal_need_parens = literal && !is_tuple && !is_array;
@@ -760,7 +760,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
                 bool extra_parens_around_in_rhs = is_in_operator
                     && !arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array
-                    && arguments->children[1]->tryGetAlias().empty();
+                    && !arguments->children[1]->hasAlias();
 
                 if (extra_parens_around_in_rhs)
                 {

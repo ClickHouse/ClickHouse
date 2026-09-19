@@ -1150,6 +1150,20 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
         auto node = nodes_to_process.back();
         nodes_to_process.pop_back();
 
+        if (const auto * explain_query = node->as<ASTExplainQuery>();
+            explain_query && explain_query->getKind() == ASTExplainQuery::FormattedQuery)
+        {
+            /// the source and actions of `EXPLAIN TEXT` are preserved text
+            /// only outer output options belong to the executing request
+            for (auto member : ASTQueryWithOutput::output_option_members)
+            {
+                const auto & output_option = explain_query->*member;
+                if (output_option)
+                    nodes_to_process.push_back(output_option);
+            }
+            continue;
+        }
+
         if (auto * set_query = node->as<ASTSetQuery>())
         {
             if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
@@ -1672,6 +1686,11 @@ void wrapNestedConstructionSettings(
     if (!ast)
         return;
 
+    // stop recursive traversal into source queries, including nested subqueries and union branches
+    if (const auto * explain_query = ast->as<ASTExplainQuery>();
+        explain_query && explain_query->getKind() == ASTExplainQuery::FormattedQuery)
+        return;
+
     /// `INSERT … SELECT` and an *immediate* `CREATE … AS SELECT` (`CREATE TABLE … AS SELECT`, or a
     /// `POPULATE`d materialized view) run their source `SELECT` right now, so a construction setting
     /// the source `SELECT` carries in its own `SETTINGS` clause must be materialized onto it — exactly
@@ -1763,6 +1782,11 @@ void wrapPerArmConstructionSettings(
     ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     if (!ast)
+        return;
+
+    // stop recursive traversal into source queries, including nested subqueries and union branches
+    if (const auto * explain_query = ast->as<ASTExplainQuery>();
+        explain_query && explain_query->getKind() == ASTExplainQuery::FormattedQuery)
         return;
 
     /// Descend into an `INSERT … SELECT` / immediate `CREATE … AS SELECT` source `SELECT` and keep the
@@ -1907,6 +1931,11 @@ static void applyQueryConstructionSettings(
     /// `EXPLAIN SELECT * FROM t SETTINGS filter = 'a > 0'` would plan the unfiltered query).
     if (auto * explain_query = ast->as<ASTExplainQuery>())
     {
+        /// construction settings must not rewrite the source of `EXPLAIN TEXT`
+        if (explain_query->getKind() == ASTExplainQuery::FormattedQuery)
+        {
+            return;
+        }
         if (const ASTPtr & explained = explain_query->getExplainedQuery())
         {
             ASTPtr wrapped = explained;
@@ -2873,21 +2902,28 @@ static BlockIO executeQueryImpl(
                 query_table = query_with_table_output->getTable();
             }
 
-            /// Propagate WITH statement to children ASTSelect.
-            if (settings[Setting::enable_global_with_statement])
+            /// `EXPLAIN TEXT` preserves its source for formatting and explicit actions
+            const auto * explain_query = out_ast->as<ASTExplainQuery>();
+            if (!explain_query || explain_query->getKind() != ASTExplainQuery::FormattedQuery)
             {
-                ApplyWithGlobalVisitor::visit(out_ast);
-            }
+                /// propagate `WITH` statements to child `ASTSelectQuery` nodes
+                if (settings[Setting::enable_global_with_statement])
+                {
+                    ApplyWithGlobalVisitor::visit(out_ast);
+                }
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
-            }
+                {
+                    SelectIntersectExceptQueryVisitor::Data data{
+                        settings[Setting::intersect_default_mode],
+                        settings[Setting::except_default_mode]};
+                    SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
+                }
 
-            {
-                /// Normalize SelectWithUnionQuery
-                NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
+                {
+                    /// Normalize `ASTSelectWithUnionQuery`
+                    NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+                    NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
+                }
             }
 
             /// Check the limits.

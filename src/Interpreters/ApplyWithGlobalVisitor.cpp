@@ -1,4 +1,5 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -89,6 +90,10 @@ void ApplyWithGlobalVisitor::visit(
 void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
+
+    if (const auto * explain = ast->as<ASTExplainQuery>();
+        explain && explain->getKind() == ASTExplainQuery::FormattedQuery)
+        return;
 
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {

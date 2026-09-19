@@ -1,0 +1,8 @@
+{"text":"EXPLAIN AST\nINSERT INTO t SELECT 1"}
+1
+1
+1
+1
+1
+1
+1

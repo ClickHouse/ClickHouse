@@ -158,7 +158,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         {
             ostr << ' ';
             auto nested_frame = frame;
-            if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(default_expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(default_expression.get()); ast_alias && ast_alias->hasAlias())
                 nested_frame.need_parens = true;
             default_expression->format(ostr, format_settings, state, nested_frame);
         }
@@ -193,7 +193,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     {
         ostr << ' '  << "TTL"  << ' ';
         auto nested_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         ttl->format(ostr, format_settings, state, nested_frame);
     }

@@ -1,10 +1,17 @@
+#include <Common/checkStackSize.h>
+#include <Common/Exception.h>
+
 #include <Parsers/ParserExplainQuery.h>
 
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExplainTextAction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserExplainTextActions.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -13,14 +20,119 @@
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
+#include <algorithm>
+#include <string_view>
+
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+#include <Parsers/Access/ASTExecuteAsQuery.h>
+#endif
+
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
+}
+
+namespace
+{
+IAST * findTrailingQuery(const ASTPtr & query)
+{
+    IAST * node = query.get();
+
+    while (node)
+    {
+        /// a nested `EXPLAIN` may already have extracted the insert's format
+        /// `EXECUTE AS` may then have moved that format onto itself
+        if (auto * output = dynamic_cast<ASTQueryWithOutput *>(node);
+            output && output->format_ast)
+            return node;
+
+#if !defined (CLICKHOUSE_PARSER_NO_DCL)
+        if (auto * execute_as = node->as<ASTExecuteAsQuery>())
+        {
+            node = execute_as->subquery.get();
+            continue;
+        }
+#endif
+
+        if (auto * parallel = node->as<ASTParallelWithQuery>())
+        {
+            /// only the final statement of `PARALLEL WITH` can own the trailing format
+            if (parallel->children.empty())
+                return nullptr;
+
+            node = parallel->children.back().get();
+            continue;
+        }
+        return node->as<ASTInsertQuery>();
+    }
+    return nullptr;
+}
+
+ASTPtr extractExplainOutputFormat(const ASTPtr & query, IParser::Pos & pos, Expected & expected)
+{
+    auto * trailing_query = findTrailingQuery(query);
+    if (!trailing_query)
+        return {};
+
+    if (auto * output = dynamic_cast<ASTQueryWithOutput *>(trailing_query);
+        output && output->format_ast)
+    {
+        ASTPtr format = output->format_ast;
+        output->reset(output->format_ast);
+        return format;
+    }
+
+    auto * insert_query = trailing_query->as<ASTInsertQuery>();
+    if (!insert_query || !insert_query->select || insert_query->format.empty())
+        return {};
+
+    ASTPtr input_function;
+    insert_query->tryFindInputFunction(input_function);
+
+    /// preserve the input format for the `input` table function and `FROM INFILE`
+    if (insert_query->infile || input_function)
+        return {};
+
+    /// first FORMAT clause belongs to the source when there are 2 consecutive FORMATS
+    ParserKeyword format_parser(Keyword::FORMAT);
+    if (format_parser.checkWithoutMoving(pos, expected))
+        return {};
+
+    ASTPtr explain_output_format = make_intrusive<ASTIdentifier>(insert_query->format);
+    setIdentifierSpecial(explain_output_format);
+
+    /// do not rewind `pos`. `ParserInsertQuery` might have also consumed `SETTINGS` when
+    /// `allow_settings_after_format_in_insert` is enabled.
+    insert_query->format.clear();
+    insert_query->data = nullptr;
+    insert_query->end = nullptr;
+
+    return explain_output_format;
+}
+
+void rejectExplainTextInlineData(const ASTPtr & query)
+{
+    checkStackSize();
+
+    if (const auto * insert_query = query->as<ASTInsertQuery>();
+        insert_query && insert_query->hasInlinedData())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot format an INSERT query containing inline data");
+
+    for (const auto & child : query->children)
+        rejectExplainTextInlineData(child);
+}
+
+}
 
 bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTExplainQuery::ExplainKind kind = {};
 
     ParserKeyword s_ast(Keyword::AST);
+    ParserKeyword s_text(Keyword::TEXT);
     ParserKeyword s_explain(Keyword::EXPLAIN);
     ParserKeyword s_syntax(Keyword::SYNTAX);
     ParserKeyword s_query_tree(Keyword::QUERY_TREE);
@@ -38,6 +150,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         if (s_ast.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::ParsedAST;
+        else if (s_text.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::FormattedQuery;
         else if (s_syntax.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::AnalyzedSyntax;
         else if (s_query_tree.ignore(pos, expected))
@@ -68,7 +182,12 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         auto begin = pos;
         if (parser_settings.parse(pos, settings, expected))
+        {
+            if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT does not support settings before the explained query");
+
             explain_query->setSettings(std::move(settings), String(textBetween(begin, pos)));
+        }
         else
             pos = begin;
     }
@@ -78,12 +197,103 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserSystemQuery system_p;
     ASTPtr query;
-    if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
+    ASTPtr explain_output_format;
+    if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
     {
-        ParserQuery p(end, allow_settings_after_format_in_insert);
+        ASTPtr actions;
+        bool parenthesized_source = pos->type == TokenType::OpeningRoundBracket;
+        auto bare_begin = pos;
+        if (parenthesized_source)
+        {
+            ++pos;
+            auto source_end = pos;
+            size_t depth{1};
+            while (!source_end->isEnd() && !source_end->isError())
+            {
+                if (source_end->type == TokenType::OpeningRoundBracket)
+                    ++depth;
+                else if (source_end->type == TokenType::ClosingRoundBracket && --depth == 0)
+                    break;
+
+                ++source_end;
+            }
+
+            if (depth != 0)
+                return false;
+
+            /// bound both the token stream and the raw input so `ParserInsertQuery` cannot
+            /// mistake the closing parenthesis or actions for inline data
+            Tokens source_tokens(pos->begin, source_end->begin);
+            Pos source_pos(source_tokens, pos);
+            ParserQuery source_parser(source_end->begin, allow_settings_after_format_in_insert);
+
+            const bool parsed = source_parser.parse(source_pos, query, expected);
+            pos.backtracks = std::max(pos.backtracks, source_pos.backtracks);
+
+            if (!parsed)
+                return false;
+
+            rejectExplainTextInlineData(query);
+
+            if (source_pos->type != TokenType::EndOfStream)
+                return false;
+
+            source_end.backtracks = pos.backtracks;
+            pos = source_end;
+            ++pos;
+
+            /// a leading parenthesis may also open the first branch of a set operation, as in
+            /// `(SELECT 1) UNION ALL (SELECT 2)`. It delimits the source only when what follows
+            /// the closing parenthesis can follow a source; otherwise the statement is read in
+            /// bare form.
+            if (isExplainTextActionLeadingToken(*pos) || canFollowExplainTextActions(*pos))
+            {
+                /// actions are optional. upon failing the parser restores `pos` while keeping
+                /// diagnostics for improper action leading input in `expected`.
+                ParserExplainTextActions actions_parser;
+                if (actions_parser.parse(pos, actions, expected) && isExplainTextActionLeadingToken(*pos))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(pos->begin, pos->size()));
+            }
+            else
+            {
+                bare_begin.backtracks = pos.backtracks;
+                pos = bare_begin;
+                query = nullptr;
+                parenthesized_source = false;
+            }
+          }
+        if (!parenthesized_source && !parseExplainTextBareSourceAndActions(pos, query, actions, expected, end, allow_settings_after_format_in_insert))
+            return false;
+        if (actions)
+        {
+            for (const auto & action : actions->children)
+                action->as<const ASTExplainTextAction &>().validateShape();
+        }
+
+        rejectExplainTextInlineData(query);
+
+        /// parentheses and actions explicitly delimit from the source. only bare form
+        /// without actions gives a trailing `FORMAT` to `EXPLAIN TEXT`
+        if (!parenthesized_source && !actions)
+          explain_output_format = extractExplainOutputFormat(query, pos, expected);
+
+        explain_query->setExplainedQuery(std::move(query));
+
+        if (actions)
+            explain_query->setActions(std::move(actions));
+    }
+    else if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
+    {
+        /// inside a bare `EXPLAIN TEXT` (no output options) a `SETTINGS` after the insert's
+        /// `FORMAT` travels upward with the `FORMAT`, so the insert parser must leave it alone
+        ParserQuery p(end, allow_settings_after_format_in_insert && parse_output_options, false, parse_output_options);
         bool parsed_query = false;
         if (p.parse(pos, query, expected))
         {
+            /// pass an insert-derived format toward the enclosing formatting request
+            if (!parse_output_options)
+                explain_output_format = extractExplainOutputFormat(query, pos, expected);
+
             explain_query->setExplainedQuery(std::move(query));
             parsed_query = true;
         }
@@ -92,7 +302,10 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             auto saved = pos;
             ++pos;
-            if (p.parse(pos, query, expected) && pos->type == TokenType::ClosingRoundBracket)
+
+            /// explicit parentheses preserve the inner query's output options
+            ParserQuery parenthesized_parser(end, allow_settings_after_format_in_insert);
+            if (parenthesized_parser.parse(pos, query, expected) && pos->type == TokenType::ClosingRoundBracket)
             {
                 ++pos;
                 explain_query->setExplainedQuery(std::move(query));
@@ -140,52 +353,18 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         insert_p.parse(pos, query, expected) ||
         system_p.parse(pos, query, expected))
     {
-        /// When the inner query is INSERT ... SELECT ... FORMAT <fmt>, the INSERT parser
-        /// consumes the trailing FORMAT clause as part of itself. But for EXPLAIN, the
-        /// FORMAT should apply to the EXPLAIN output, not to the inner INSERT.
-        /// We only do this when there is no second FORMAT keyword following -- if there
-        /// is one, the user wrote the double-FORMAT form explicitly and the first FORMAT
-        /// genuinely belongs to the INSERT.
-        /// We also keep the FORMAT on the INSERT when it describes the insert's input data,
-        /// i.e. when the data is read FROM INFILE or via the `input` table function -- in
-        /// those cases the format is required for the insert input, not the EXPLAIN output.
-        ASTPtr explain_output_format;
-        if (auto * insert_query = query->as<ASTInsertQuery>())
-        {
-            ASTPtr input_function;
-            insert_query->tryFindInputFunction(input_function);
-
-            if (insert_query->select && !insert_query->format.empty() && !insert_query->infile && !input_function)
-            {
-                ParserKeyword s_format(Keyword::FORMAT);
-                if (!s_format.checkWithoutMoving(pos, expected))
-                {
-                    /// We set the output format on the EXPLAIN query directly instead of rewinding
-                    /// `pos` and letting ParserQueryWithOutput re-parse it: a `pos` rewind is only
-                    /// correct when `FORMAT <name>` is the last thing the INSERT consumed, which is
-                    /// not the case when SETTINGS follow the FORMAT
-                    /// (allow_settings_after_format_in_insert).
-                    explain_output_format = make_intrusive<ASTIdentifier>(insert_query->format);
-                    setIdentifierSpecial(explain_output_format);
-
-                    insert_query->format.clear();
-                    insert_query->data = nullptr;
-                    insert_query->end = nullptr;
-                }
-            }
-        }
-
+        explain_output_format = extractExplainOutputFormat(query, pos, expected);
         explain_query->setExplainedQuery(std::move(query));
-
-        /// Attach the moved FORMAT only after setExplainedQuery, so that the explained query
-        /// is added to the children first, as the rest of the code expects.
-        if (explain_output_format)
-            explain_query->set(explain_query->format_ast, std::move(explain_output_format));
     }
     else
     {
         return false;
     }
+
+    /// attach output option after explain query and its actions preserving
+    /// the canonical order of `children`
+    if (explain_output_format)
+      explain_query->set(explain_query->format_ast, std::move(explain_output_format));
 
     node = std::move(explain_query);
     return true;
@@ -201,7 +380,7 @@ void registerStatementExplain(StatementFactory & factory)
     factory.registerStatement("EXPLAIN",
     {
         .description = R"DOCS_MD(
-Shows the execution plan of a statement.
+Shows a statement's parsed representation, query text, execution plan, or runtime metrics.
 
 <div class='vimeo-container'>
   <Frame>
@@ -224,6 +403,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+
+EXPLAIN TEXT query [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+EXPLAIN TEXT (query) [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
 ```
 
 Example:
@@ -255,6 +437,7 @@ Union
 ## EXPLAIN Types {#explain-types}
 
 - `AST` — Abstract syntax tree.
+- `TEXT` — Formatted query text with optional pagination and output-format changes.
 - `SYNTAX` — Query text after AST-level optimizations.
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
@@ -300,6 +483,106 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
        Function today (children 1)
         ExpressionList
 ```
+
+### EXPLAIN TEXT {#explain-text}
+
+Formats a query and optionally changes its pagination or output format without executing it. The source query is parsed without resolving referenced tables or running query optimization.
+
+The result contains exactly one row with one `String` column named `text`. Formatting uses multiple lines by default. Original whitespace and comments are not preserved. The text contains the source query as written, including secrets such as passwords or access keys, so that it remains executable; this matches `formatQuery`.
+
+**Syntax**
+
+```sql
+EXPLAIN TEXT query [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+EXPLAIN TEXT (query) [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+```
+
+**Actions**
+
+Actions are applied from left to right. Separate consecutive actions with commas; do not put a comma before the first action. A later action can replace an earlier change.
+
+| Action | Effect |
+| --- | --- |
+| `ONELINE` | Formats the query on one line. |
+| `MULTILINE` | Formats the query across multiple lines. This is the default. |
+| `MODIFY LIMIT expression` | Replaces or adds the source query's `LIMIT` length. Preserves any existing offset. |
+| `MODIFY OFFSET expression` | Replaces or adds the source query's offset. Preserves any existing limit length. |
+| `PAGE n` | Sets the offset to the current limit length multiplied by `n - 1`. Requires an existing `LIMIT` and a positive `UInt64` literal page number. `PAGE 1` removes the offset. |
+| `MODIFY FORMAT identifier` | Replaces or adds the source query's output `FORMAT`. |
+
+`MODIFY LIMIT`, `MODIFY OFFSET`, and `PAGE` require a single plain `SELECT`; they reject queries with multiple union branches. `MODIFY FORMAT` supports unions and other statements that accept output formats. Inside `EXECUTE AS` or `PARALLEL WITH` it applies to the wrapped or last statement. `INSERT` is not among them, because its `FORMAT` describes the input data.
+
+`MODIFY OFFSET` and `PAGE` are not supported when the source query uses `LIMIT ... AFTER` or `LIMIT ... UNTIL`, including their combined form. This restriction also applies to `PAGE 1`.
+
+For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. Fractional limit literals between zero and one are not supported, including with `PAGE 1`. An expression limit remains an expression in the generated offset; its value is not evaluated or validated.
+
+**Source and result options**
+
+Parentheses make the source boundary explicit: options inside them belong to the source query, and options after them or after the action list belong to `EXPLAIN TEXT`. A leading parenthesis is treated as the source boundary when its closing parenthesis is followed by an action, an output option, or the end of the statement; otherwise the statement is read in bare form, so `EXPLAIN TEXT (SELECT 1) UNION ALL (SELECT 2)` formats the whole union.
+
+In the bare form with actions, output options before the first action belong to the source, and options after the action list belong to `EXPLAIN TEXT`. Without actions, a `SETTINGS` clause directly after the source statement stays with the source, while trailing `FORMAT` and `INTO OUTFILE` clauses, and any `SETTINGS` after them, belong to `EXPLAIN TEXT`.
+
+`SETTINGS` parsed as part of the source `SELECT` remain source settings. To apply settings to `EXPLAIN TEXT`, put them after the source's closing parenthesis or after the action list.
+
+Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, including parametrised aliases such as `AS {name:Identifier}`, even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected when given in the outer `SETTINGS` clause because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead. A clause hoisted onto an enclosing `EXECUTE AS` reaches the session settings instead and is ignored like any other effective setting.
+
+In bare syntax, action keywords take precedence over implicit aliases when they form a complete action. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting, while `EXPLAIN TEXT SELECT 1 PAGE` (no page number) formats `SELECT 1 AS PAGE`. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
+
+**Examples**
+
+Replace a limit and return the formatted query as JSON:
+
+```sql
+EXPLAIN TEXT (SELECT * FROM t LIMIT 100)
+MODIFY LIMIT 5, ONELINE
+FORMAT JSONEachRow;
+```
+
+```json
+{"text":"SELECT * FROM t LIMIT 5"}
+```
+
+Select the third page with ten rows per page:
+
+```sql
+EXPLAIN TEXT SELECT * FROM t LIMIT 10 PAGE 3, ONELINE;
+```
+
+The `text` value is:
+
+```sql
+SELECT * FROM t LIMIT 20, 10
+```
+
+Preserve a parameterized limit:
+
+```sql
+EXPLAIN TEXT SELECT * FROM t LIMIT {n:UInt64} PAGE 3, ONELINE;
+```
+
+The `text` value is:
+
+```sql
+SELECT * FROM t LIMIT multiply({n:UInt64}, 2), {n:UInt64}
+```
+
+Keep the source format while choosing a different format for the result:
+
+```sql
+EXPLAIN TEXT SELECT 1 FORMAT TSV
+MODIFY LIMIT 2, ONELINE
+FORMAT JSONEachRow;
+```
+
+```json
+{"text":"SELECT 1 LIMIT 2 FORMAT TSV"}
+```
+
+**Limitations**
+
+- `INSERT` statements containing inline data are rejected.
+- Leading kind-specific settings, such as `EXPLAIN TEXT oneline = 1 SELECT 1`, are not supported. Use actions instead.
+- `EXPLAIN TEXT` cannot be used in a subquery or through the `viewExplain` table function.
 
 ### EXPLAIN SYNTAX {#explain-syntax}
 
@@ -1376,6 +1659,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+
+EXPLAIN TEXT query [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+EXPLAIN TEXT (query) [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
 )",
         .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
     });
