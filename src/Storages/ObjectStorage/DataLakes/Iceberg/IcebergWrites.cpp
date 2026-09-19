@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
@@ -411,6 +412,28 @@ void setVersionedField(avro::GenericRecord & rec, const auto & value, const Stri
     }
 }
 
+void setVersionedFieldNull(avro::GenericRecord & rec, const String & field_name)
+{
+    size_t field_index = rec.fieldIndex(field_name);
+    const avro::NodePtr & field_schema = rec.schema()->leafAt(static_cast<UInt32>(field_index));
+
+    if (field_schema->type() != avro::AVRO_UNION)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest field '{}' is not optional, cannot write null into it", field_name);
+
+    avro::GenericUnion field(field_schema);
+    field.selectBranch(0);
+    rec.fieldAt(field_index) = avro::GenericDatum(field_schema, field);
+}
+
+template <typename T>
+void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value, const String & field_name)
+{
+    if (value)
+        setVersionedField(rec, *value, field_name);
+    else
+        setVersionedFieldNull(rec, field_name);
+}
+
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
 {
     Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
@@ -538,15 +561,17 @@ void generateManifestFile(
 
         if (version > 1)
         {
-            Int64 sequence_number = (entry_lineage && entry_lineage->sequence_number)
-                ? *entry_lineage->sequence_number
-                : user_defined_sequence_number.value_or(new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number));
+            /// An ADDED entry leaves the sequence numbers null and readers inherit them from the manifest list
+            /// (https://iceberg.apache.org/spec/#sequence-number-inheritance), so the manifest does not depend on the
+            /// committing snapshot. An EXISTING entry keeps the values of the snapshot that added the file.
+            std::optional<Int64> sequence_number = (entry_lineage && entry_lineage->sequence_number)
+                ? entry_lineage->sequence_number
+                : user_defined_sequence_number;
 
-            /// A manifest-only rewrite preserves the source entry's `file_sequence_number`, which can differ from the data
-            /// `sequence_number`; for a genuinely new file there is no lineage and it equals the data sequence number.
-            Int64 file_sequence_number = (entry_lineage && entry_lineage->file_sequence_number)
-                ? *entry_lineage->file_sequence_number
-                : sequence_number;
+            /// The file sequence number is always that of the committing snapshot, so a new file always inherits it.
+            std::optional<Int64> file_sequence_number = (entry_lineage && entry_lineage->file_sequence_number)
+                ? entry_lineage->file_sequence_number
+                : (entry_lineage ? sequence_number : std::optional<Int64>{});
 
             setVersionedField(manifest, sequence_number, Iceberg::f_sequence_number);
             setVersionedField(manifest, file_sequence_number, Iceberg::f_file_sequence_number);
@@ -1284,6 +1309,13 @@ bool IcebergStorageSink::initializeMetadata()
     Int64 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+
+    /// Incremental refreshable-MV write: the streaming source filled the cursor on the query context;
+    /// embed it (as stored) so it commits atomically with these data files. Absent for plain inserts.
+    std::optional<String> refresh_cursor;
+    if (auto streaming_cursor = context->getStreamingCursor())
+        refresh_cursor = refreshCursorToStorage(streaming_cursor->tree);
+
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
         metadata_info.path,
@@ -1293,7 +1325,11 @@ bool IcebergStorageSink::initializeMetadata()
         total_chunks_size,
         /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
         /* added_delete_files */ 0,
-        /* num_deleted_rows */ 0);
+        /* num_deleted_rows */ 0,
+        /* user_defined_snapshot_id */ std::nullopt,
+        /* user_defined_timestamp */ std::nullopt,
+        MetadataGenerator::SnapshotOperation::Append,
+        refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
 

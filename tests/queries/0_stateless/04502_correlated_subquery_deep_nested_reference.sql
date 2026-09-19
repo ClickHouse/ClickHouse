@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- Correlated subqueries are only supported by the analyzer; the old analyzer
 -- rejects every correlated reference with UNKNOWN_IDENTIFIER (Code 47) before this
 -- feature's NOT_IMPLEMENTED path is reached.
