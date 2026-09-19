@@ -31,27 +31,6 @@ namespace DB::QueryPlanOptimizations
 
 using StepStack = std::vector<IQueryPlanStep *>;
 
-static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
-{
-    /// A STREAM read selects its parts and ranges during execution, so the range set captured
-    /// here is not the one that will be read.
-    if (reading->getQueryInfo().isStream())
-        return false;
-
-    /// Allow FINAL only for ReplacingMergeTree.
-    if (reading->isQueryWithFinal()
-        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
-
-    if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->getMutationsSnapshot()->hasPatchParts())
-        return false;
-
-    return true;
-}
-
 /// A DAG input that has no counterpart in the step's input header. A step can legitimately carry
 /// such a dangling input when no output depends on it — e.g. `optimizePrewhere` moves a filter
 /// into a reading step whose header shrinks after applying a row-level filter, while the remaining
@@ -519,7 +498,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     auto * object_storage_reading_step = typeid_cast<ReadFromObjectStorageStep *>(reading_step);
     auto * file_reading_step = typeid_cast<ReadFromFile *>(reading_step);
 
-    if (merge_tree_reading_step && !canUseLazyMaterializationForReadingStep(merge_tree_reading_step))
+    if (merge_tree_reading_step && !merge_tree_reading_step->canUseLazyMaterialization())
         return false;
 
     if (object_storage_reading_step
@@ -647,20 +626,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
         if (read_from_merge_tree)
         {
-            /// For FINAL, the merge transform needs sorting key, version, and is_deleted columns.
-            /// These must stay in the main read, not be deferred to lazy materialization.
-            if (read_from_merge_tree->isQueryWithFinal())
-            {
-                const auto & merging_params = read_from_merge_tree->getMergeTreeData().merging_params;
-                const auto & metadata = read_from_merge_tree->getStorageMetadata();
-                for (const auto & column : metadata->getColumnsRequiredForSortingKey())
-                    required_names.insert(column);
-                if (!merging_params.version_column.empty())
-                    required_names.insert(merging_params.version_column);
-                if (!merging_params.is_deleted_column.empty())
-                    required_names.insert(merging_params.is_deleted_column);
-            }
-
             merge_tree_lazy_reading = read_from_merge_tree->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
             if (!merge_tree_lazy_reading)
                 return false;

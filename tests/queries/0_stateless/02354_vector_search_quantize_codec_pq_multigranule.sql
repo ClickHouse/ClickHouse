@@ -6,6 +6,9 @@
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
+-- Lazy materialization is an analyzer-only plan optimization and the rewrite requires it, so under the old-analyzer CI
+-- config every check below would be satisfied by a plain exact scan.
+SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
@@ -27,6 +30,19 @@ SELECT 'one_part', count() FROM system.parts WHERE database = currentDatabase() 
 -- Read the codebook subcolumn across many small blocks (each well below one granule): every row sees the same 65536-byte
 -- codebook, and the read does not fail. Comparing the length avoids materializing the broadcast blob.
 SELECT 'codebook_read_all_granules', countIf(length(vec.product_quantization_codebook) = 65536), count() FROM quantize_pq_mg SETTINGS max_block_size = 1024;
+
+-- In-range control: the rewrite engages for this shape, so a decline reddens here instead of leaving the checks below
+-- satisfied by an exact scan. `enable_parallel_replicas = 0` inline because the runner can inject parallel replicas,
+-- which disables the rewrite, and this file carries no `no-parallel-replicas` tag.
+SELECT 'rewrite_engages',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_pq_mg
+    ORDER BY L2Distance(vec, (SELECT vec FROM quantize_pq_mg WHERE id = 5000)) ASC
+    LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 1000, enable_parallel_replicas = 0
+);
 
 -- The two-stage vector search reads codes and codebook across all granules and rescores exactly. The shortlist covers
 -- the whole table (multiplier 1000 * LIMIT 10 = 10000 rows), so the result equals the exact brute-force top-k.

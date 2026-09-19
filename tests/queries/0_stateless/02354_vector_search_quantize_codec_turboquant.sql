@@ -6,8 +6,14 @@
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
--- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
--- the test harness randomizes the latter, which would shrink the shortlist and make the exact/recall checks flaky. Pin it.
+-- Lazy materialization is an analyzer-only plan optimization and the rewrite requires it, so under the old-analyzer CI
+-- config every check below would be satisfied by a plain exact scan.
+SET enable_analyzer = 1;
+-- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization,
+-- and the rewrite runs at all only when lazy materialization is on. The test harness randomizes both: a smaller clamp
+-- shrinks the shortlist and makes the exact/recall checks flaky, and the boolean leaves them on a plain exact scan, which
+-- satisfies them while exercising nothing. Pin both.
+SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
 DROP TABLE IF EXISTS quantize_turboquant;
@@ -24,6 +30,19 @@ FROM numbers(5000);
 
 -- turboquant code size at 1024 dims: 1024/4 = 256 packed bytes (2 bits per coordinate) + a 4-byte correction factor.
 SELECT 'code_length', length(vec.quantized) FROM quantize_turboquant GROUP BY length(vec.quantized);
+
+-- In-range control: the rewrite engages for this shape, so a decline reddens here instead of leaving the checks below
+-- satisfied by an exact scan. `enable_parallel_replicas = 0` inline because the runner can inject parallel replicas,
+-- which disables the rewrite, and this file carries no `no-parallel-replicas` tag.
+SELECT 'rewrite_engages',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM quantize_turboquant
+    ORDER BY cosineDistance(vec, (SELECT vec FROM quantize_turboquant WHERE id = 42)) ASC
+    LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 1000, enable_parallel_replicas = 0
+);
 
 -- A shortlist covering all rows reproduces the exact brute-force top-k.
 WITH (SELECT vec FROM quantize_turboquant WHERE id = 42) AS ref
