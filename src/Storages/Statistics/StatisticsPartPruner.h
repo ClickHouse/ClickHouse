@@ -7,10 +7,11 @@
 namespace DB
 {
 
-/// Part pruner based on column statistics, now only supports MinMax.
+/// Part pruner based on column statistics (min/max and NULL count from `Basic` statistics,
+/// plus the deprecated `MinMax` statistics).
 /// Similar to PartitionPruner but uses per-column statistics instead of partition keys.
-/// When MinMax statistics are available for columns used in the filter condition,
-/// this pruner can skip entire parts where the min/max range doesn't overlap with the query condition.
+/// When usable statistics are available for columns used in the filter condition,
+/// this pruner can skip entire parts where the column ranges don't overlap with the query condition.
 class StatisticsPartPruner
 {
 public:
@@ -34,6 +35,8 @@ private:
 
     /// Cache key_condition by column names to avoid recreating them for each part.
     std::unordered_map<Names, std::unique_ptr<KeyCondition>, NamesHash> key_condition_cache;
+
+    std::vector<std::pair<String, bool>> null_predicates;
 
     const ActionsDAGWithInversionPushDown filter_dag;
     const ContextPtr context;
