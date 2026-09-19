@@ -43,7 +43,7 @@ ROCKSDB_SETTINGS_SUPPORTED_TYPES(RocksDBSettings, IMPLEMENT_SETTING_SUBSCRIPT_OP
 
 void RocksDBSettings::applyChanges(const SettingsChanges & changes)
 {
-    impl->applyChanges(changes);
+    impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
 }
 
 void RocksDBSettings::loadFromQuery(const ASTStorage & storage_def)
@@ -53,7 +53,7 @@ void RocksDBSettings::loadFromQuery(const ASTStorage & storage_def)
         try
         {
             auto changes = storage_def.settings->changes;
-            impl->applyChanges(changes);
+            impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {

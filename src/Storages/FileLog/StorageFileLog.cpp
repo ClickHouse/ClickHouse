@@ -27,7 +27,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -1206,9 +1205,11 @@ bool StorageFileLog::updateFileInfos()
     return events.empty() || file_infos.file_names.empty();
 }
 
-SettingDescriptions StorageFileLog::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageFileLog::getTableSettings(ContextPtr /* query_context */) const
 {
-    return withOriginFromDefinition(filelog_settings->enumerateSettings(), getStorageID(), query_context);
+    /// `FileLogSettings::loadFromQuery` records the table's own `SETTINGS` clause in the settings object. An
+    /// `auto` `max_threads` is resolved in place afterwards, and keeps whatever source it had.
+    return filelog_settings->enumerateSettings();
 }
 
 }
