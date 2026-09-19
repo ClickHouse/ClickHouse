@@ -1578,7 +1578,6 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
-    OLD_ANALYZER = "old-analyzer"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
     LINUX_ONLY = "supported only on Linux"
 
@@ -2039,9 +2038,9 @@ class MergeTreeSettingsRandomizer:
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
         "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -2070,6 +2069,17 @@ class MergeTreeSettingsRandomizer:
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
         "packed_skip_index_max_bytes": lambda: random.choice(
             [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
+        ),
+    }
+
+    # Settings that depend on previously randomized settings.
+    # Each entry: setting_name -> (dependency_setting, generator_fn)
+    # generator_fn receives the resolved value of the dependency setting.
+    # Skipped when the dependency was not randomized.
+    dependent_settings = {
+        "object_shared_data_target_chunk_rows": (
+            "index_granularity",
+            lambda ig: random.randint(max(1, ig // 10), ig * 10),
         ),
     }
 
@@ -2108,6 +2118,13 @@ class MergeTreeSettingsRandomizer:
                 continue
 
             random_settings[setting] = value
+
+        for setting, (dep, gen) in MergeTreeSettingsRandomizer.dependent_settings.items():
+            if setting in args.changed_merge_tree_settings:
+                continue
+            if dep not in random_settings:
+                continue
+            random_settings[setting] = gen(random_settings[dep])
 
         return random_settings
 
@@ -2289,30 +2306,6 @@ def load_diagnostics_results(diagnostics_dir):
                 entry = json.loads(line)
                 results[entry["test_name"]] = entry.get("diagnosis", "")
     return results
-
-
-# unlike functools.cache() ignore args
-# (since args can be non-hashable)
-def cache_ignore_args(func):
-    cached_result = None
-    has_result = False
-
-    def wrapper(*args, **kwargs):
-        nonlocal cached_result, has_result
-        if not has_result:
-            cached_result = func(*args, **kwargs)
-            has_result = True
-        return cached_result
-
-    return wrapper
-
-
-@cache_ignore_args
-def is_old_analyzer_used(args):
-    return (
-        clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip()
-        == b"false"
-    )
 
 
 def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int):
@@ -3114,9 +3107,6 @@ class TestCase:
 
         if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
-
-        if "no-old-analyzer" in tags and is_old_analyzer_used(args):
-            return FailureReason.OLD_ANALYZER
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
@@ -7806,13 +7796,10 @@ if __name__ == "__main__":
         args.client += " --no-secure"
 
     if args.cloud:
-        enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
         enable_pr = os.getenv("CLOUD_ENABLE_PARALLEL_REPLICAS", "0")
-        print("analyzer:", enable_analyzer)
         print("pr:", enable_pr)
         query_params = {
-            # These two are enabled by default in dev env
-            "allow_experimental_analyzer": enable_analyzer,
+            # Enabled by default in dev env
             "allow_experimental_parallel_reading_from_replicas": enable_pr,
             "allow_suspicious_types_in_order_by": 1,
             "distributed_ddl_output_mode": "none",
@@ -7828,8 +7815,6 @@ if __name__ == "__main__":
             # Test 00765_locate.sql
             "function_locate_has_mysql_compatible_argument_order": 1,
             "input_format_try_infer_datetimes_only_datetime64": "false",
-            # check setting if analyzer enabled, so we will test 2 outcomes
-            # it's behaviour doesn't depend on analyzer
             "database_replicated_allow_replicated_engine_arguments": 0,
         }
         cloud_settings = " ".join([f"--{k}={v}" for k, v in query_params.items()])
