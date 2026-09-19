@@ -68,8 +68,8 @@ void writeSharedSettingColumns(
     writer.put(setting.default_value);
     writer.put(setting.origin != SettingOrigin::Default);
     writer.put(setting.comment);
-    writer.put(setting.min_value ? Field(*setting.min_value) : Field());
-    writer.put(setting.max_value ? Field(*setting.max_value) : Field());
+    writer.put(setting.min_value);
+    writer.put(setting.max_value);
 
     /// Built only when the column is wanted, because it is per-setting work rather than a copy.
     Array disallowed;

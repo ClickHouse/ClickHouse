@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/maskEngineSettingValue.h>
 #include <Storages/TableSettingsHelpers.h>
 #include <Backups/RestorerFromBackup.h>
@@ -314,17 +315,49 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
 
 SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
 {
+    /// A view, a dictionary or a system table has no `SETTINGS` clause, so its stored definition is not read at all.
+    if (isView() || isDictionary() || isSystemStorage())
+        return {};
+
     /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an
-    /// override backed by a settings struct there is no accessor to give a type-faithful rendering,
-    /// nor a default, type, description or tier to report.
-    const auto changes = getSettingsStatedInDefinition(getStorageID(), context);
+    /// override backed by a settings struct there is no accessor to give a type-faithful rendering.
+    const auto [engine_name, changes] = getEngineStatedInDefinition(getStorageID(), context);
+    if (changes.empty())
+        return {};
+
+    /// The default, type, description, tier and aliases of a setting are compiled in: where the engine lists its
+    /// settings for `system.engine_settings`, take them from there, so that the two tables describe it alike.
+    SettingDescriptions known;
+    const auto & engines = StorageFactory::instance().getAllStorages();
+    if (const auto engine = engines.find(engine_name); engine != engines.end())
+        if (const auto enumerate = engine->second.features.enumerate_engine_settings_fn)
+            known = enumerate(context);
 
     SettingDescriptions result;
     result.reserve(changes.size());
     for (const auto & change : changes)
     {
+        /// A clause may state a setting under an alias; the row then carries the canonical name, as every other
+        /// row does.
+        const auto it = std::ranges::find_if(known, [&](const SettingDescription & setting)
+        {
+            return setting.name == change.name || std::ranges::find(setting.aliases, change.name) != setting.aliases.end();
+        });
+
         SettingDescription described;
-        described.name = change.name;
+        if (it != known.end())
+        {
+            described.name = it->name;
+            described.default_value = it->default_value;
+            described.type = it->type;
+            described.comment = it->comment;
+            described.tier = it->tier;
+            described.aliases = it->aliases;
+        }
+        else
+        {
+            described.name = change.name;
+        }
         described.value = convertFieldToString(change.value);
         described.origin = SettingOrigin::Definition;
 

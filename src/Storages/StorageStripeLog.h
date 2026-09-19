@@ -41,6 +41,9 @@ public:
 
     String getName() const override { return "StripeLog"; }
 
+    /// Both settings of the family, with the disk this table keeps its data on.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
+
     using StorageWithCommonVirtualColumns::read;
 
     Pipe read(

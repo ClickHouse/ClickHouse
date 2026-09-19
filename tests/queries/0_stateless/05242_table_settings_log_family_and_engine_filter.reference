@@ -1,0 +1,15 @@
+-- both settings of every Log family table, with the source of each
+log_plain	disk	default	0	default
+log_plain	storage_policy		0	default
+stripe_with_disk	disk	default	1	definition
+stripe_with_disk	storage_policy		0	default
+tiny_with_policy	disk	default	0	default
+tiny_with_policy	storage_policy	default	1	definition
+-- described as system.engine_settings describes them
+0
+-- a view has no settings
+0
+-- a predicate on engine selects the same rows as filtering after the fact
+1	1	1
+-- and combined with a predicate on the table
+mt	index_granularity

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <Core/Names.h>
 #include <Storages/SettingDescription.h>
 
@@ -9,7 +10,6 @@
 namespace DB
 {
 
-class SettingsChanges;
 struct StorageID;
 
 /// Helpers for `IStorage::getTableSettings` overrides. Free functions, since none of them needs the storage
@@ -25,6 +25,15 @@ struct StorageID;
 /// The `SETTINGS` clause of the table's stored `CREATE` query, copied out. Empty when there is none, or when
 /// the catalog does not know the table, as for a table function's storage.
 SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context);
+
+/// The same, with the engine the query names: the name the engine is registered under, which `IStorage::getName`
+/// need not be - an `AzureBlobStorage` table calls itself `Azure`. Both empty in the same cases.
+struct EngineStatedInDefinition
+{
+    String engine;
+    SettingsChanges settings;
+};
+EngineStatedInDefinition getEngineStatedInDefinition(const StorageID & table_id, ContextPtr context);
 
 /// Returns `settings` with every setting the table's own `SETTINGS` clause names marked `Definition`, matching
 /// aliases too. The second form takes a clause already read, for an engine that needs its values as well as its

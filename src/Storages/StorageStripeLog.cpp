@@ -771,6 +771,11 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
+SettingDescriptions StorageStripeLog::getTableSettings(ContextPtr query_context) const
+{
+    return StorageLogSettings::describeTable(disk->getName(), getStorageID(), query_context);
+}
+
 void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {

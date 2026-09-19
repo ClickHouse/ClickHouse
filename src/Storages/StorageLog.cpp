@@ -1440,6 +1440,11 @@ void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
+SettingDescriptions StorageLog::getTableSettings(ContextPtr query_context) const
+{
+    return StorageLogSettings::describeTable(disk->getName(), getStorageID(), query_context);
+}
+
 void registerStorageLog(StorageFactory & factory);
 void registerStorageLog(StorageFactory & factory)
 {

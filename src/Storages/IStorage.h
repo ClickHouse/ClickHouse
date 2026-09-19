@@ -263,9 +263,11 @@ public:
 
     /// Report this table's settings as they are actually in effect, for `system.table_settings`.
     ///
-    /// The base implementation answers from the table's own `SETTINGS` clause. That is all a storage can say when
-    /// it has no settings of its own to list: `File` and `URL` take core settings, and the `Log` family's two have
-    /// fixed defaults. An engine with settings of its own overrides this to report every one of them with its
+    /// The base implementation answers from the table's own `SETTINGS` clause, with the metadata the engine's
+    /// registered settings give each stated setting, and reports nothing for a view, a dictionary or a system
+    /// table. That is all a storage can say when it keeps no settings of its own: `File` and `URL` take core
+    /// settings, plain object storage only a `FormatSettings`. An engine with settings of its own overrides this to
+    /// report every one of them with its
     /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
     /// It is a method on the storage rather than a static enumeration of the settings type because some values
     /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. An override with a settings

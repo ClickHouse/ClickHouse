@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/TableSettingsHelpers.h>
 
 namespace DB
 {
@@ -74,5 +75,28 @@ SettingDescriptions StorageLogSettings::enumerateEngineSettings(ContextPtr)
             "",
             "Storage policy whose first disk the table keeps its data on. Cannot be set together with `disk`."),
     };
+}
+
+SettingDescriptions StorageLogSettings::describeTable(const String & disk_name, const StorageID & table_id, ContextPtr context)
+{
+    const auto stated = getSettingsStatedInDefinition(table_id, context);
+    auto settings = enumerateEngineSettings(context);
+    for (auto & setting : settings)
+    {
+        if (setting.name == "disk")
+        {
+            setting.value = disk_name;
+        }
+        else
+        {
+            for (const auto & change : stated)
+                if (change.name == setting.name)
+                    setting.value = change.value.safeGet<String>();
+        }
+
+        /// A disk the table did not name comes from its `storage_policy`, which is what `Other` says here.
+        setting.origin = setting.value == setting.default_value ? SettingOrigin::Default : SettingOrigin::Other;
+    }
+    return withOriginFromDefinition(std::move(settings), stated);
 }
 }

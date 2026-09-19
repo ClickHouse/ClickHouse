@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SettingDescription.h>
 
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -32,11 +34,18 @@ public:
     /// Whether the query reads the next column - for a value that is work to build.
     bool wants() const { return columns_mask[src_index]; }
 
-    /// Writes the next column of the current row, or skips it.
-    void put(const Field & value)
+    /// Writes the next column of the current row, or skips it. A template, so that the `Field` - a copy of a string,
+    /// often - is built only for a column the query reads. An empty `optional` is written as `NULL`.
+    template <typename T>
+    void put(const T & value)
     {
         if (wants())
-            res_columns[res_index++]->insert(value);
+        {
+            if constexpr (requires { value.has_value(); })
+                res_columns[res_index++]->insert(value ? Field(*value) : Field());
+            else
+                res_columns[res_index++]->insert(Field(value));
+        }
         ++src_index;
     }
 
@@ -45,6 +54,10 @@ public:
         src_index = 0;
         res_index = 0;
     }
+
+    /// Every column the table declares was visited, in order: the writes and the declarations are in different
+    /// places, and a missing or extra one would shift every column after it.
+    void finishRow() const { chassert(src_index == columns_mask.size()); }
 
 private:
     MutableColumns & res_columns;
@@ -78,6 +91,7 @@ size_t writeSettingRows(
         write_leading(writer);
         writeSharedSettingColumns(writer, name, setting, is_masked, alias_for);
         write_trailing(writer);
+        writer.finishRow();
     };
 
     write_row(setting.name, "");

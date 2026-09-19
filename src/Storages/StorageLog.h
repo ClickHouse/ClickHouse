@@ -48,6 +48,9 @@ public:
     ~StorageLog() override;
     String getName() const override { return engine_name; }
 
+    /// Both settings of the family, with the disk this table keeps its data on.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
+
     Pipe createReadingPipe(
         const Names & column_names,
         ContextPtr local_context,

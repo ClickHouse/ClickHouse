@@ -4,6 +4,7 @@
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS jn;
 DROP TABLE IF EXISTS lg;
+DROP TABLE IF EXISTS fl;
 DROP TABLE IF EXISTS plain;
 DROP TABLE IF EXISTS kfk;
 
@@ -12,6 +13,7 @@ CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a
 -- Engines that keep no settings struct of their own must still report their SETTINGS clause.
 CREATE TABLE jn (a UInt64, b UInt64) ENGINE = Join(ANY, LEFT, a) SETTINGS persistent = 0;
 CREATE TABLE lg (a UInt64) ENGINE = Log SETTINGS disk = 'default';
+CREATE TABLE fl (a UInt64) ENGINE = File(TSV) SETTINGS engine_file_truncate_on_insert = 1;
 -- A table with no SETTINGS clause contributes no rows.
 CREATE TABLE plain (a UInt64) ENGINE = Memory;
 CREATE TABLE kfk (a String) ENGINE = Kafka
@@ -32,10 +34,10 @@ WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'plain')
   AND name IN ('index_granularity', 'enable_block_number_column', 'persistent', 'disk')
 ORDER BY table, name;
 
-SELECT '-- an engine that has settings of its own reports their defaults too, one that only has its clause does not';
+SELECT '-- an engine that describes its settings reports their defaults too, one that only has its clause does not';
 SELECT table, countIf(source = 'default') > 0 AS has_defaults
 FROM system.table_settings
-WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg')
+WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'fl')
 GROUP BY table ORDER BY table;
 
 SELECT '-- a secret is masked, and says so';
@@ -88,5 +90,6 @@ SELECT count() FROM system.table_settings WHERE database = 'database_that_does_n
 DROP TABLE mt;
 DROP TABLE jn;
 DROP TABLE lg;
+DROP TABLE fl;
 DROP TABLE plain;
 DROP TABLE kfk;

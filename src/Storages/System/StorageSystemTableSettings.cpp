@@ -88,8 +88,8 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
         "reports it yet. "
         "`other` - something assigned the setting, but the engine does not say what. "
         "Which of these an engine can report depends on the engine: only `MergeTree` family tables report "
-        "`compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and `File`, `URL`, the `Log` "
-        "family and the object storage engines report only `definition`."});
+        "`compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and `File`, `URL` and the "
+        "plain object storage engines report only `definition`."});
     description.add({"is_masked", std::make_shared<DataTypeUInt8>(),
         "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
         "user may not see it. Grant `displaySecretsInShowAndSelect` and enable "
@@ -116,6 +116,7 @@ public:
         ColumnPtr databases_,
         bool with_temporary_tables_,
         ExpressionActionsPtr table_filter_,
+        ExpressionActionsPtr engine_filter_,
         TablesFilter tables_filter_,
         ContextPtr context_)
         : ISource(header)
@@ -124,6 +125,7 @@ public:
         , databases_cursor(std::move(databases_))
         , with_temporary_tables(with_temporary_tables_)
         , table_filter(std::move(table_filter_))
+        , engine_filter(std::move(engine_filter_))
         , tables_filter(std::move(tables_filter_))
         , context(Context::createCopy(context_))
     {
@@ -154,6 +156,11 @@ protected:
                 return;
 
             const String engine_name = table->getName();
+
+            /// The engine is known only once the table is, so a predicate on it is applied here - still before the
+            /// settings are read, which is the expensive part.
+            if (engine_filter && !engineFilterKeeps(db_name, tbl_name, engine_name))
+                return;
 
             for (const auto & setting : table->getTableSettings(context))
             {
@@ -264,6 +271,27 @@ protected:
     }
 
 private:
+    /// Whether the query's predicate on `engine` - which may involve `database` and `table` too - keeps this table.
+    bool engineFilterKeeps(const String & db_name, const String & tbl_name, const String & engine_name) const
+    {
+        auto database_column = ColumnString::create();
+        database_column->insert(db_name);
+        auto table_column = ColumnString::create();
+        table_column->insert(tbl_name);
+        const auto engine_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        auto engine_column = engine_type->createColumn();
+        engine_column->insert(engine_name);
+
+        Block block
+        {
+            ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"),
+            ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "table"),
+            ColumnWithTypeAndName(std::move(engine_column), engine_type, "engine"),
+        };
+        VirtualColumnUtils::filterBlockWithExpression(engine_filter, block);
+        return block.rows() > 0;
+    }
+
     /// Drops from the session's temporary tables, which no database lists, every one the query's `table`
     /// predicate excludes, so their settings are never read. Only that predicate: one on `database` alone
     /// builds no `table_filter` and is answered once by `with_temporary_tables`, before this is called.
@@ -339,6 +367,7 @@ private:
     DatabaseTablesCursor databases_cursor;
     bool with_temporary_tables;
     ExpressionActionsPtr table_filter;
+    ExpressionActionsPtr engine_filter;
     TablesFilter tables_filter;
     ContextPtr context;
     Tables external_tables;
@@ -381,6 +410,7 @@ private:
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
     ExpressionActionsPtr table_filter;
+    ExpressionActionsPtr engine_filter;
     TablesFilter tables_filter;
 };
 
@@ -411,6 +441,17 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context);
         dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "table"; }))
         table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+
+    /// And one that reads `engine`, applied to each table once it is resolved - `system.tables` pushes it down too.
+    Block engines_block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+        { ColumnString::create(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "engine" },
+    };
+    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &engines_block, context);
+        dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "engine"; }))
+        engine_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
 
     /// A namespace-pushdown hint for catalogs that can restrict what they list server-side. The
     /// table name lives in the `table` column here - `name` is the setting's name - so that is the
@@ -486,7 +527,7 @@ void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipe
 
     pipeline.init(Pipe(std::make_shared<TableSettingsSource>(
         std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases),
-        with_temporary_tables, table_filter, tables_filter, context)));
+        with_temporary_tables, table_filter, engine_filter, tables_filter, context)));
 }
 
 }

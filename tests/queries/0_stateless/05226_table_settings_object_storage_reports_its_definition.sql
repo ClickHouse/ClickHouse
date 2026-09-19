@@ -4,8 +4,8 @@
 --
 -- The plain object storage engines build no settings object at all: the creator applies the `SETTINGS` clause
 -- to a copy of the server settings and converts the result to `FormatSettings`, which carries no setting names
--- to report. They used to report nothing; they now report what their definition states, as `File`, `URL` and
--- the `Log` family do. What the definition leaves out is still not reported - there is nothing to read it from.
+-- to report. They used to report nothing; they now report what their definition states, as `File` and `URL`
+-- do. What the definition leaves out is still not reported - there is nothing to read it from.
 --
 -- Nothing is connected here: the columns are given explicitly, so no schema inference runs.
 

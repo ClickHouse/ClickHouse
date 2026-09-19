@@ -5,6 +5,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/maskEngineSettingValue.h>
 
@@ -17,7 +18,7 @@ namespace DB
 /// The stored `CREATE` query rather than `StorageInMemoryMetadata::settings_changes`: it is what
 /// `SHOW CREATE TABLE` renders and the only source every engine keeps, while `settings_changes` is populated
 /// by a few engines only. `ALTER ... MODIFY SETTING` writes back into the `CREATE` query, so this stays current.
-SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
+EngineStatedInDefinition getEngineStatedInDefinition(const StorageID & table_id, ContextPtr context)
 {
     if (table_id.database_name.empty())
         return {};
@@ -34,7 +35,15 @@ SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, Contex
     if (!create.storage || !create.storage->settings)
         return {};
 
-    return create.storage->settings->as<const ASTSetQuery &>().changes;
+    return {
+        .engine = create.storage->engine ? create.storage->engine->name : String{},
+        .settings = create.storage->settings->as<const ASTSetQuery &>().changes,
+    };
+}
+
+SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
+{
+    return getEngineStatedInDefinition(table_id, context).settings;
 }
 
 SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const StorageID & table_id, ContextPtr context)

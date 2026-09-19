@@ -22,9 +22,10 @@ jn	Join	persistent	0	1	definition
 lg	Log	disk	default	1	definition
 mt	MergeTree	enable_block_number_column	1	1	definition
 mt	MergeTree	index_granularity	4096	1	definition
--- an engine that has settings of its own reports their defaults too, one that only has its clause does not
+-- an engine that describes its settings reports their defaults too, one that only has its clause does not
+fl	0
 jn	1
-lg	0
+lg	1
 mt	1
 -- a secret is masked, and says so
 kafka_sasl_password	[HIDDEN]	1
