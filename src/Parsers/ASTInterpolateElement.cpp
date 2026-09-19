@@ -49,7 +49,7 @@ void ASTInterpolateElement::readJSON(const Poco::JSON::Object & json)
     if (column.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have a non-empty column during AST JSON deserialization");
 
-    auto child = r.readChild("expr");
+    auto child = r.readExpressionChild("expr");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have an expression during AST JSON deserialization");
     expr = child;

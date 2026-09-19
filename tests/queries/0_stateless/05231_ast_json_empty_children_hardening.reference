@@ -1,0 +1,3 @@
+SELECT a, * REPLACE (b + 1 AS b) FROM t WHERE c > 0 GROUP BY GROUPING SETS ((a), ()) LIMIT 1 BY a
+SELECT * FROM t ARRAY JOIN arr AS x
+KILL QUERY WHERE query_id = \'x\' SYNC

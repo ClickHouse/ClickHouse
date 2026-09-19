@@ -420,7 +420,12 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTViewTargets JSON must not carry a 'table_uuid': a `TO` target with a UUID cannot be "
                     "formatted back to SQL faithfully during AST JSON deserialization");
-            target.table_id = StorageID(database, target_reader.getString("table_name"), UUIDHelpers::Nil);
+            const String table_name = target_reader.getString("table_name");
+            /// `StorageID` itself rejects an empty name with `UNKNOWN_TABLE`; report it as malformed input.
+            if (table_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTViewTargets JSON target at index {} has an empty 'table_name' during AST JSON deserialization", i);
+            target.table_id = StorageID(database, table_name, UUIDHelpers::Nil);
         }
         if (target_obj->has("inner_uuid"))
         {

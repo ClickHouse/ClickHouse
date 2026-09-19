@@ -212,6 +212,12 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     if (database && !table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`InsertQuery` 'database' requires a 'table' during AST JSON deserialization");
+
+    /// The parser always leaves one of `SELECT`, `FROM INFILE` or `FORMAT` (`VALUES` is `FORMAT Values`
+    /// with inline data, which JSON cannot carry); a node with none formats as `INSERT INTO t VALUES`
+    /// and re-parses as `FORMAT Values`.
+    if (!select && !infile && format.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`InsertQuery` must have a 'select', an 'infile' or a 'format' during AST JSON deserialization");
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

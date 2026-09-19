@@ -268,7 +268,7 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
             "`ColumnDeclaration` 'data_type' must be a data type during AST JSON deserialization");
     setType(std::move(data_type));
 
-    ASTPtr default_expression = r.readChild("default_expression");
+    ASTPtr default_expression = r.readExpressionChild("default_expression");
 
     /// Validate the (default_specifier, default_expression) pair so that it mirrors what the parser and `formatImpl` allow.
     /// `formatImpl` emits the default clause only when a `default_expression` is present, prefixing it with the specifier keyword.
@@ -308,7 +308,7 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     /// the restored AST has the same shape - and the same tree hash - as a parsed one.
     setSettings(r.readChildOfType<ASTSetQuery>("settings"));
     setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
-    setTTL(r.readChild("ttl"));
+    setTTL(r.readExpressionChild("ttl"));
     setCollation(r.readChildOfType<ASTCollation>("collation"));
 }
 
