@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int STD_EXCEPTION;
 };
 
 namespace FailPoints
@@ -44,6 +45,7 @@ namespace FailPoints
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
     extern const char plain_object_storage_fail_after_copy_on_file_move[];
+    extern const char plain_object_storage_pause_on_file_copy[];
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -57,6 +59,35 @@ MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataSto
 void MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::execute()
 {
     preconditions->runChecks(fs_tree);
+}
+
+MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainObjectStoragePublishOperation(
+    std::shared_ptr<FsSnapshot> fs_tree_,
+    FsMetadata & fs_)
+    : fs_tree(std::move(fs_tree_))
+    , fs(fs_)
+{
+}
+
+void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
+{
+    /// This is the last operation of the transaction: everything it publishes has already been written to the object
+    /// storage. Replaying the journal on top of the latest metadata allocates, and `MetadataOperationsHolder::commit`
+    /// undoes the preceding operations only for a `DB::Exception`, so an escaping `std::bad_alloc` would leave the
+    /// storage mutated with no published metadata. Translate it so that the rollback path is taken.
+    try
+    {
+        fs.applyJournal(fs_tree->getJournal());
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::STD_EXCEPTION, "Failed to publish plain_rewritable metadata: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -486,6 +517,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const auto normalized_path_to = normalizePath(path_to);
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_on_file_copy);
 
     copy_attempted = true;
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());

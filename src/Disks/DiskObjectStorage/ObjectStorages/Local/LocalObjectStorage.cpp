@@ -178,6 +178,7 @@ String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path)
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     return fs::exists(resolved_path);
 }
@@ -552,6 +553,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     bool /* use_external_buffer */,
     bool /* restrict_seek */) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read object: {}", resolved_path);
     auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
@@ -582,6 +584,8 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
+    /// Held until the file is created below, so that `removeObject` cannot prune the directory in the meantime.
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Write object: {}", resolved_path);
 
@@ -638,10 +642,13 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     throwIfReadonly();
+
+    /// Exclusive: see `directories_mutex`.
+    std::unique_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
 
     /// For local object storage files are actually removed when "metadata" is removed.
-    if (!exists(object))
+    if (!fs::exists(resolved_path))
         return;
 
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
@@ -693,7 +700,8 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
         std::string dir_str = dir;
         if (0 != rmdir(dir_str.data()))
         {
-            if (errno == ENOTDIR || errno == ENOTEMPTY)
+            /// ENOENT: the directory was already removed together with its last object by another remover.
+            if (errno == ENOTDIR || errno == ENOTEMPTY || errno == ENOENT)
                 break;
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, dir_str, "Cannot remove directory {}", dir_str);
         }
@@ -738,6 +746,7 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     /// this method only differs from it in tolerating an object that does not exist,
     /// so a caller must not be able to observe a different file or a differently
     /// shaped etag depending on which of the two it called.
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
@@ -750,6 +759,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     size_t max_size_bytes,
     std::optional<size_t>) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read small object: {}", resolved_path);
 
@@ -792,6 +802,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
@@ -829,9 +840,12 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             "Path contains an embedded NUL byte", path,
             std::make_error_code(std::errc::invalid_argument));
 
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     if (!fs::exists(resolved_path) || !fs::is_directory(resolved_path))
         return;
+    /// The traversal below tolerates entries vanishing, so removals may proceed during it.
+    lock.unlock();
 
     /// Listing is a best-effort snapshot driven with the non-throwing
     /// `error_code` overloads. Tolerate ONLY the concurrent-disappearance class
@@ -926,10 +940,11 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
-    return exists(StoredObject(resolved_path));
+    return fs::exists(resolved_path);
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
