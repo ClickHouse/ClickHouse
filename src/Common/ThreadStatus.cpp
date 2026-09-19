@@ -1,4 +1,5 @@
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerSwitcher.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -194,6 +195,8 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
+    /// Callers construct the adopted string in global accounting too.
+    MemoryTrackerSwitcher query_id_memory_scope(&total_memory_tracker);
     SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id = std::move(new_query_id);
 }
@@ -334,6 +337,8 @@ ThreadStatus::~ThreadStatus()
 
 void ThreadStatus::updatePerformanceCounters()
 {
+    /// The procfs reader retains buffers across queries; keep error cleanup in the same scope.
+    MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
     try
     {
         auto & counters = current_performance_counters ? *current_performance_counters : performance_counters;

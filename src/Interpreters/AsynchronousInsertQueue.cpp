@@ -8,6 +8,7 @@
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
 #include <Common/ThreadStatus.h>
+#include <Common/GlobalMemoryAllocator.h>
 #include <Common/assert_cast.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
@@ -122,6 +123,26 @@ static const NameSet settings_to_skip
     "insert_deduplication_token",
     "log_comment",
 };
+
+/// Queue keys own settings and AST copies created by an inserting query but released by a
+/// background thread. Keep the originating tracker alive and credit their destruction to it.
+static std::shared_ptr<const AsynchronousInsertQueue::InsertQuery> makeQueuedKey(const AsynchronousInsertQueue::InsertQuery & key)
+{
+    return std::shared_ptr<const AsynchronousInsertQueue::InsertQuery>(
+        new AsynchronousInsertQueue::InsertQuery(key),
+        [group = CurrentThread::getGroup()](const AsynchronousInsertQueue::InsertQuery * value) mutable
+        {
+            {
+                /// Keys copied by the background scheduler have no query group.
+                MemoryTrackerSwitcher key_memory_scope(group ? &group->memory_tracker : &total_memory_tracker);
+                delete value;
+            }
+            /// Group metadata and the shared pointer's control block are globally accounted.
+            MemoryTrackerSwitcher group_memory_scope(&total_memory_tracker);
+            group.reset();
+        },
+        GlobalMemoryAllocator<AsynchronousInsertQueue::InsertQuery>{});
+}
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
@@ -426,7 +447,7 @@ void AsynchronousInsertQueue::clear()
         std::lock_guard lock(shard.mutex);
         for (const auto & [first_update, elem] : shard.queue)
         {
-            const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
+            const auto & insert_query = elem.key->query->as<const ASTInsertQuery &>();
             LOG_WARNING(log, "Has unprocessed async insert for {}.{}",
                         backQuoteIfNeed(insert_query.getDatabase()), backQuoteIfNeed(insert_query.getTable()));
         }
@@ -450,10 +471,10 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     try
     {
         pool.scheduleOrThrowOnError(
-            [this, key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
+            [this, queued_key = makeQueuedKey(key), global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
             {
                 processData(
-                    key,
+                    *queued_key,
                     std::move(*my_data),
                     std::move(global_context),
                     std::move(current_query_thread_group),
@@ -679,7 +700,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         {
             try
             {
-                it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)});
+                it->second = shard.queue.emplace(now + timeout_ms, Container{makeQueuedKey(key), std::make_unique<InsertData>(timeout_ms)});
             }
             catch (...)
             {
@@ -883,7 +904,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
 
             for (auto it = queue.begin(); it != queue.end();)
             {
-                const auto storage = it->second.key.getStorageID();
+                const auto storage = it->second.key->getStorageID();
                 /// it is not strict match of database and table name
                 /// async insert queue does not store database name always
                 if (tables.end() == std::find(tables.begin(), tables.end(), storage))
@@ -893,9 +914,10 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
                 }
 
                 affected_set.emplace(storage.getNameForLogs());
+                const auto key_hash = it->second.key->hash;
                 queues_to_flush[i].emplace(it->first, std::move(it->second));
                 NOEXCEPT_SCOPE({
-                    shard.iterators.erase(it->second.key.hash);
+                    shard.iterators.erase(key_hash);
                     it = queue.erase(it);
                 });
             }
@@ -918,7 +940,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
                 // that call is blocking when pool is full
                 // and we are under flush_mutex lock so other flushes are blocked too
                 // but other pending inserts are not blocked and can be processed concurrently
-                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i, CurrentThread::getGroup());
+                scheduleDataProcessingJob(*entry.key, std::move(entry.data), getContext(), i, CurrentThread::getGroup());
             }
         }
 
@@ -968,7 +990,7 @@ void AsynchronousInsertQueue::flushAll()
         {
             total_bytes += entry.data->size_in_bytes;
             total_entries += entry.data->entries.size();
-            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+            scheduleDataProcessingJob(*entry.key, std::move(entry.data), getContext(), i);
         }
     }
 
@@ -1033,7 +1055,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
                     /// Besides it is not possible to write exception safe code here even with proper rollback, since the object can be moved out already (we can do copy, but this is more costly)
                     MemoryTrackerBlockerInThread lock_memory_tracker;
 
-                    shard.iterators.erase(it->second.key.hash);
+                    shard.iterators.erase(it->second.key->hash);
 
                     entries_to_flush.emplace_back(std::move(it->second));
 
@@ -1049,7 +1071,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
         }
 
         for (auto & entry : entries_to_flush)
-            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), shard_num);
+            scheduleDataProcessingJob(*entry.key, std::move(entry.data), getContext(), shard_num);
     }
 }
 

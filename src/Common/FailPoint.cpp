@@ -357,6 +357,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     ONCE(attach_to_group_failure) \
+    ONCE(query_context_control_block_allocation_failure) \
+    PAUSEABLE_ONCE(query_setup_memory_rejection_before_cleanup) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \

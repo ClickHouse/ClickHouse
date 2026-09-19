@@ -50,6 +50,8 @@
 #include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/GlobalMemoryAllocator.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -107,6 +109,7 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsUInt64 max_untracked_memory;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
@@ -593,7 +596,7 @@ void TCPHandler::runImpl()
 
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
-        std::optional<QueryScope> query_scope;
+        QueryScope query_scope;
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
@@ -606,7 +609,7 @@ void TCPHandler::runImpl()
             *  If Ping or Cancel - go back to the beginning of outer loop.
             *  There may come settings for a separate query that modify `query_context`.
             */
-            while (!query_state && receivePacketsExpectQuery(query_state))
+            while (!query_state && receivePacketsExpectQuery(query_state, query_scope))
             {
             }
 
@@ -623,17 +626,21 @@ void TCPHandler::runImpl()
             }
 
             /// Set up tracing context for this query on current thread
-            thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
-                query_state->query_context->getClientInfo().client_trace_context,
-                query_state->query_context->getSettingsRef(),
-                query_state->query_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-            thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
+            {
+                /// The tracing holder is destroyed after query detachment.
+                MemoryTrackerSwitcher tracing_memory_scope(&total_memory_tracker);
+                thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
+                    query_state->query_context->getClientInfo().client_trace_context,
+                    query_state->query_context->getSettingsRef(),
+                    query_state->query_context->getOpenTelemetrySpanLog());
+                thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+                thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
+            }
 
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
             /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
-            query_scope = QueryScope::create(
+            query_scope.attachToQueryContext(
                 query_state->query_context,
                 /* fatal_error_callback */
                 [tcp_protocol_version = this->client_tcp_protocol_version,
@@ -678,7 +685,11 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
                 && client_logs_level != LogsLevel::none)
             {
-                query_state->logs_queue = std::make_shared<InternalTextLogsQueue>();
+                {
+                    /// Weak references in the thread and group outlive query detachment.
+                    MemoryTrackerSwitcher queue_memory_scope(&total_memory_tracker);
+                    query_state->logs_queue = std::make_shared<InternalTextLogsQueue>();
+                }
                 query_state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 query_state->logs_queue->setSourceRegexp(query_state->query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
@@ -687,7 +698,11 @@ void TCPHandler::runImpl()
             const auto send_profile_events = query_state->query_context->getSettingsRef()[Setting::send_profile_events];
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && send_profile_events)
             {
-                query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+                {
+                    /// Thread and group weak references retain the empty queue's shared storage after detachment.
+                    MemoryTrackerSwitcher queue_memory_scope(&total_memory_tracker);
+                    query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+                }
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
             }
 
@@ -1007,7 +1022,7 @@ void TCPHandler::runImpl()
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
-            query_scope->logPeakMemoryUsage();
+            query_scope.logPeakMemoryUsage();
 
             {
                 std::lock_guard lock(*callback_mutex);
@@ -1249,7 +1264,7 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
 }
 
 
-bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
+bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state, QueryScope & query_scope)
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1289,8 +1304,22 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
             processObsoleteIgnoredPartUUIDs();
 
         case Protocol::Client::Query:
+        {
+            Int64 setup_untracked_memory_limit = 0;
+            if (!is_interserver_mode)
+            {
+                const auto exempt_users = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();
+                if (exempt_users && exempt_users->contains(session->getClientInfo().current_user))
+                {
+                    /// Recovery queries must be receivable under memory pressure. Preserve their
+                    /// configured allowance before parsing query text and per-query settings.
+                    setup_untracked_memory_limit = session->sessionContext()->getSettingsRef()[Setting::max_untracked_memory];
+                }
+            }
+            query_scope = QueryScope::createForQueryContext(setup_untracked_memory_limit);
             processQuery(state);
             return true;
+        }
 
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
@@ -2552,7 +2581,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     UInt64 compression = 0;
 
     chassert(!state);
-    state = std::make_shared<QueryState>();
+    /// Its shared storage survives through the thread group's weak callback reference, but
+    /// construction of its members (including the initial pipeline) belongs to the query.
+    state = std::allocate_shared<QueryState>(GlobalMemoryAllocator<QueryState>{});
 
     readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 
@@ -2562,6 +2593,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// so it is better to reset session to avoid using old user.
     if (is_interserver_mode)
     {
+        MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
         session = makeSession();
     }
 
@@ -2644,6 +2676,8 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     if (is_interserver_mode)
     {
+        /// Authentication establishes session state, which can outlive this query.
+        MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
 

@@ -31,6 +31,9 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/GlobalMemoryAllocator.h>
+#include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
@@ -469,6 +472,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -1568,6 +1572,47 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
 
+namespace
+{
+
+/// Weak references in thread and group metadata can retain this storage after query detachment.
+/// Only shared-pointer bookkeeping uses this allocator; the context and its owned data do not.
+template <typename T>
+struct QueryContextControlBlockAllocator : GlobalMemoryAllocator<T>
+{
+    using value_type = T;
+
+    QueryContextControlBlockAllocator() = default;
+    template <typename U>
+    explicit QueryContextControlBlockAllocator(const QueryContextControlBlockAllocator<U> &)
+    {
+    }
+
+    T * allocate(size_t count)
+    {
+        MemoryTrackerSwitcher scope(&total_memory_tracker, 0);
+        fiu_do_on("query_context_control_block_allocation_failure",
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected query context control block allocation failure");
+        });
+        return std::allocator<T>{}.allocate(count);
+    }
+
+    template <typename U>
+    bool operator==(const QueryContextControlBlockAllocator<U> &) const noexcept
+    {
+        return true;
+    }
+};
+
+}
+
+ContextMutablePtr Context::createCopyForQuery(const ContextPtr & other)
+{
+    SharedLockGuard lock(other->mutex);
+    return ContextMutablePtr(new Context(*other), std::default_delete<Context>{}, QueryContextControlBlockAllocator<Context>{});
+}
+
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
@@ -2612,7 +2657,10 @@ UUIDs Context::getEnabledProfiles() const
 
 ResourceManagerPtr Context::getResourceManager() const
 {
-    callOnce(shared->resource_manager_initialized, [&] {
+    callOnce(shared->resource_manager_initialized, [&]
+    {
+        /// The manager and its subscriptions outlive the query that first requests them.
+        MemoryTrackerSwitcher manager_memory_scope(&total_memory_tracker);
         shared->resource_manager = createResourceManager(getGlobalContext());
     });
 
@@ -2927,7 +2975,10 @@ SessionQueryIdsHistory & Context::getSessionQueryIdsHistory() const
 
     std::lock_guard lock(mutex);
     if (!session_query_ids_history)
+    {
+        MemoryTrackerSwitcher history_memory_scope(&total_memory_tracker);
         session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
+    }
     return *session_query_ids_history;
 }
 
@@ -4378,7 +4429,9 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 
 std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const
 {
-    callOnce(shared->workload_entity_storage_initialized, [&] {
+    callOnce(shared->workload_entity_storage_initialized, [&]
+    {
+        MemoryTrackerSwitcher storage_memory_scope(&total_memory_tracker);
         auto storage = createWorkloadEntityStorage(getGlobalContext());
         std::lock_guard lock(shared->mutex);
         shared->workload_entity_storage = std::move(storage);

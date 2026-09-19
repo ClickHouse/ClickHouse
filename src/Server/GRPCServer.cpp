@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
@@ -764,8 +765,8 @@ namespace
         LoggerRawPtr log = nullptr;
 
         std::optional<Session> session;
-        ContextMutablePtr query_context;
         std::optional<QueryScope> query_scope;
+        ContextMutablePtr query_context;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
@@ -943,6 +944,7 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
+        query_scope = QueryScope::createForQueryContext();
         query_context = session->makeQueryContext(std::move(client_info));
 
         /// Prepare settings.
@@ -955,7 +957,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope = QueryScope::create(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
+        query_scope->attachToQueryContext(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
@@ -1482,6 +1484,8 @@ namespace
 
     void Call::onException(const Exception & exception)
     {
+        /// The retained context can still exceed its limit while we send the original error.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         io.onException();
 
         LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
@@ -1555,7 +1559,6 @@ namespace
             reading_query_info.wait(false);
         }
 
-        responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;
         output_format_processor.reset();
@@ -1564,9 +1567,19 @@ namespace
         nested_write_buffer = nullptr;
         compressing_write_buffer = nullptr;
         io = {};
-        query_scope.reset();
-        query_context.reset();
+        ast.reset();
+        insert_query = nullptr;
+        output = {};
+        String{}.swap(input_format);
+        String{}.swap(input_data_delimiter);
+        String{}.swap(output_format);
+        result = GRPCResult{};
+        logs_queue.reset();
         thread_trace_context.reset();
+        query_context.reset();
+        query_scope.reset();
+        /// The responder and received messages were allocated before query accounting started.
+        responder.reset();
         session.reset();
     }
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 #include <chrono>
 #include <type_traits>
 #include <base/types.h>
@@ -170,6 +171,26 @@ public:
     VariableContext level;
 
     void adjustWithUntrackedMemory(Int64 untracked_memory);
+
+    struct ParentLimitExceeded
+    {
+        Int64 size;
+        Int64 would_use;
+        Int64 limit;
+
+        /// Call after releasing the admission lock: diagnostics may allocate and acquire locks.
+        [[noreturn]] void throwException() const;
+    };
+
+    /// Insert a user ancestor below this query's existing parent. Requires no concurrent changes
+    /// to the query tracker. Only already-tracked bytes are transferred; pending thread bytes
+    /// subsequently flush through the new parent using the usual batching rules.
+    /// Returns rejection data without changing the parent, current usage, or peak on failure.
+    [[nodiscard]] std::optional<ParentLimitExceeded> tryInsertParent(MemoryTracker * new_parent) noexcept;
+
+    /// Check retained query setup bytes against this query's limit, without rechecking
+    /// ancestors that have already accounted for those bytes.
+    void checkQueryLimit() const;
 
     Int64 get() const
     {

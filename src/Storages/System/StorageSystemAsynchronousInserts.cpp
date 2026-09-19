@@ -49,7 +49,8 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 
         for (const auto & [first_update, elem] : queue)
         {
-            const auto & [key, data] = elem;
+            const auto & [key_ptr, data] = elem;
+            const auto & key = *key_ptr;
 
             if (!show_all && key.user_id != current_user_id)
                 continue;

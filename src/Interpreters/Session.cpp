@@ -729,7 +729,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     const bool from_session_context = static_cast<bool>(session_context) && !detached;
 
     /// Create a new query context.
-    ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
+    ContextMutablePtr query_context = Context::createCopyForQuery(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
