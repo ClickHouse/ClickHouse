@@ -1,0 +1,16 @@
+no reference to the dotted column (control): the vector column is replaced
+1
+projection on the unrelated dotted column: correct result
+0	1
+projection on the unrelated dotted column: the vector column is replaced
+1
+WHERE on the unrelated dotted column: correct result
+0
+WHERE on the unrelated dotted column: the vector column is replaced
+1
+projection on the search column: the vector column is kept
+1
+row policy on the unrelated dotted column: correct result
+0
+row policy on the unrelated dotted column: the vector column is replaced
+1
