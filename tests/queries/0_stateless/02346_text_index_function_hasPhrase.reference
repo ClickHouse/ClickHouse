@@ -42,6 +42,23 @@
 [1]
 [2]
 [2,3]
+-- Array(String) input columns
+-- index tokens are [quick, brown, fox]
+[1]
+[1]
+-- adjacent across elements
+[1]
+[1]
+[2,3]
+-- Array(Nullable(String)) input columns
+[1]
+[1]
+[1]
+[1]
+-- Array phrase
+[1]
+[1]
+[2]
 -- asciiCJK tokenizer
 [1,4]
 [1]

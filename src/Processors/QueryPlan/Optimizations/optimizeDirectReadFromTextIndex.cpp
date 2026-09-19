@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
@@ -433,6 +434,26 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
     }
 }
 
+/// arrayFlatten(arrayMap(x -> tokens(x, '<tokenizer>'), <col>)) - the tokens a text index stores for an array column.
+ActionsDAG buildArrayElementTokensDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description)
+{
+    const String element_arg = "__text_index_element";
+    ASTPtr expr = makeASTFunction(
+        "arrayFlatten",
+        makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {element_arg},
+                makeASTFunction(
+                    "tokens",
+                    make_intrusive<ASTIdentifier>(element_arg),
+                    make_intrusive<ASTLiteral>(Field(tokenizer_description)))),
+            make_intrusive<ASTIdentifier>(col_name)));
+
+    NamesAndTypesList source_columns{{col_name, col_type}};
+    return buildActionsDAGFromAST(std::move(expr), source_columns);
+}
+
 }
 
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
@@ -819,9 +840,7 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip tokenizer-specific compaction when a postprocessor is applied: these needle tokens
-                /// are postprocessed and deduplicated below instead, because sparseGrams containment
-                /// compaction is unsound after a postprocessor (it can drop a required token).
+                /// Skip compaction when a postprocessor is applied: it is unsound afterwards and can drop a token.
                 if (!apply_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
@@ -845,10 +864,8 @@ private:
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
 
-            /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
-            /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,
-            /// re-splitting tokens the index stores whole (e.g. a postprocessor that emits separators like
-            /// concat(val, ' x')). Match the elements verbatim by switching the tokenizer argument to 'array'.
+            /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
+            /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
             if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
             {
                 chassert(new_children.size() == 3);
@@ -858,11 +875,10 @@ private:
                 new_children[2] = &actions_dag.addColumn(std::move(arg_column), arg_type, quoteString(array_tokenizer_desc));
             }
 
-            /// hasToken and hasPhrase take a String haystack, so rejoin the postprocessed tokens with a
-            /// separator; the function re-tokenizes them. Tokens the postprocessor dropped are empty array
-            /// elements that become adjacent separators and produce no token on re-split, reproducing the
-            /// index's dense position sequence. hasAnyTokens/hasAllTokens accept the Array(String) directly.
-            if (function_name == "hasToken" || function_name == "hasPhrase")
+            /// hasToken takes a String haystack, so rejoin the tokens for it to re-tokenize; dropped tokens are
+            /// empty elements that collapse into adjacent separators, keeping positions dense. Its index
+            /// tokenizer is always splitByNonAlpha, which splits on this space.
+            if (function_name == "hasToken")
             {
                 DataTypePtr separator_type = std::make_shared<DataTypeString>();
                 MutableColumnConstPtr separator_column = separator_type->createColumnConst(0, Field(String(" ")));
@@ -873,24 +889,15 @@ private:
 
             if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
             {
-                /// The needle is a phrase: tokenize it, postprocess each token (dropping empties), and rejoin
-                /// with a space so hasPhrase re-tokenizes it into the same dense postprocessed token sequence
-                /// the index stored.
+                /// Compare token sequences: rejoining into strings assumed the index tokenizer splits on the
+                /// separator used, which is false for e.g. splitByString(['()']). An emptied phrase never matches.
                 const auto & phrase = needles_field.safeGet<String>();
                 VectorWithMemoryTracking<String> tokens;
                 tokenizer->stringToTokens(phrase.data(), phrase.size(), tokens);
                 tokens = postprocessor->processTokens(std::move(tokens));
 
-                String joined;
-                for (const auto & token : tokens)
-                {
-                    if (std::ranges::any_of(token, isTokenSeparator))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", token);
-                    if (!joined.empty())
-                        joined += ' ';
-                    joined += token;
-                }
-                needles_field = joined;
+                needles_field = Array(tokens.begin(), tokens.end());
+                needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
             else if (needles_field.getType() == Field::Types::String)
             {
@@ -915,14 +922,23 @@ private:
                 for (const Field & element : src_array)
                     if (element.getType() == Field::Types::String)
                         tokens.push_back(element.safeGet<String>());
-                /// Postprocess, then deduplicate. Do not run tokenizer-specific compaction: sparseGrams
-                /// containment compaction is unsound after a postprocessor (see stringToTokens) and could
-                /// drop a required token, disagreeing with the materialized index.
+                /// Compaction is unsound after a postprocessor, and the functions collapse duplicates themselves.
                 tokens = postprocessor->processTokens(std::move(tokens));
-                std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
-                needles_field = Array(unique_tokens.begin(), unique_tokens.end());
+                needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
+        }
+
+        /// An Array haystack holds the index's tokens verbatim, so tokenize its elements the way the index does.
+        /// With a postprocessor, getOriginalActionsDAG above already produced the flattened tokens.
+        if (function_name == "hasPhrase" && !apply_postprocessor && isArray(*new_children[0]->result_type))
+        {
+            ActionsDAG::NodeRawConstPtrs merged_outputs;
+            actions_dag.mergeNodes(
+                buildArrayElementTokensDAG(new_children[0]->result_name, new_children[0]->result_type, tokenizer->getDescription()),
+                &merged_outputs);
+            chassert(merged_outputs.size() == 1);
+            new_children[0] = merged_outputs.front();
         }
 
         /// Recreate an argument with needles.
