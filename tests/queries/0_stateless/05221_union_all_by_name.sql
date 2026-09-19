@@ -65,7 +65,8 @@ FROM
     SELECT 'two' AS b, 2 AS a
     UNION ALL
     SELECT 3 AS a, 'three' AS b
-);
+)
+ORDER BY a;
 
 SELECT 'position then name';
 SELECT *
@@ -134,10 +135,7 @@ SELECT 'normalized AST JSON roundtrip';
 SELECT formatQueryFromJSON(
     replace(
         replace(
-            replace(
-                parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
-                '"column_match_mode":"POSITION"',
-                '"column_match_mode":"NAME"'),
+            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
             '"is_normalized":false',
             '"is_normalized":true'),
         '"list_of_column_match_modes":["NAME"]',
