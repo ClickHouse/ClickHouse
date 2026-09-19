@@ -840,3 +840,114 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     node.query("SYSTEM START VIEW child_v")
     node2.query("SYSTEM START VIEW parent_v")
     _drop_sync_objects()
+
+
+def coordination_path(node, database, table):
+    # `default_replica_path` is /clickhouse/tables/{uuid}/{shard}, and both replicas are in shard 1.
+    uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{database}' AND name = '{table}'"
+    ).strip()
+    return f"/clickhouse/tables/{uuid}/1"
+
+
+def requested_znode(zk, path):
+    # The persistent "requested" znode: a `SYSTEM REFRESH VIEW` accepted on some replica and not started yet.
+    zk.sync(path)
+    return zk.exists(f"{path}/requested")
+
+
+def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            # 5 rows, one second each: every refresh takes ~5s and appends 5 rows.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(5) SETTINGS max_block_size = 1, insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+
+    # A request queued behind a running refresh: the wait on another replica must cover both refreshes.
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "10"
+
+    # The same with the waiting replica stopped: the request is still owed on the requesting one.
+    node2.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "20"
+    node2.query("SYSTEM START VIEW test_rmv")
+
+    # The wait reads the coordination state from Keeper first; a Keeper error there must fail it, not hang it.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        assert "KEEPER_EXCEPTION" in node2.query_and_get_error(
+            "SYSTEM WAIT VIEW test_rmv"
+        )
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+
+
+def test_refresh_request_is_shared_and_durable(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            select_query="SELECT now() a FROM numbers(5) SETTINGS insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+    zk = cluster.get_kazoo_client("zoo1")
+    path = coordination_path(node, "default", "test_rmv")
+
+    # Requested on a stopped replica: the other replica runs the refresh once a Keeper session timeout has
+    # passed, and the wait on the stopped one covers that.
+    node.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    assert requested_znode(zk, path).ephemeralOwner == 0
+    assert zk.get(f"{path}/requested")[0] == b"1"
+    node.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    assert node2.query("SELECT count() FROM tgt1").strip() == "5"
+    assert (
+        node2.query(
+            "SELECT last_refresh_replica FROM system.view_refreshes WHERE view = 'test_rmv'"
+        ).strip()
+        == "2"
+    )
+    node.query("SYSTEM START VIEW test_rmv")
+
+    # Stopped cluster-wide: no replica runs the request, so the wait returns. The request survives a restart
+    # of the requesting replica and is run once the view is started again.
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    for n in nodes:
+        n.query("SYSTEM WAIT VIEW test_rmv", timeout=30)
+    node.restart_clickhouse()
+    assert requested_znode(zk, path) is not None
+    node.query("SYSTEM START REPLICATED VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    # Either replica may have run it, and an APPEND wait does not cover the replication of the target.
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "10"
+    assert requested_znode(zk, path) is None
+
+    # Dropped with a request pending: the coordination znode must go all the same.
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
+    zk.sync(path)
+    assert zk.exists(path) is None

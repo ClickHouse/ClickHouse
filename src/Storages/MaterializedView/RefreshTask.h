@@ -188,7 +188,7 @@ public:
     void startReplicated();
     void stopReplicated(const String & reason);
 
-    /// Schedule task immediately
+    /// Schedule task immediately. For a coordinated view, records the request in Keeper first (may throw).
     void run();
     /// Cancel task execution
     void cancel();
@@ -197,6 +197,7 @@ public:
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
     /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+    /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
     /// Wait for background work (refreshing or scheduling) on this replica to complete.
@@ -239,6 +240,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
+        /// ├── ["requested"] (data: the replica whose `SYSTEM REFRESH VIEW` is pending, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -249,6 +251,19 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
+        /// Data and creation zxid of the "requested" znode (the latter only to tell a new request from the last one seen).
+        /// Whether it exists is mirrored into `scheduling.out_of_schedule_refresh_requested`, see `readZnodesIfNeeded`.
+        String requesting_replica;
+        Int64 request_czxid = 0;
+        /// When this replica first saw that request pending with no refresh running; the takeover grace counts from there.
+        std::optional<std::chrono::system_clock::time_point> request_pending_since {};
+        /// `wait` needs a read of the znodes that started after it began, i.e. one that makes
+        /// `znode_reads_finished` exceed the `znode_reads_started` it saw. Or a failed pass, to fail instead of hanging.
+        UInt64 znode_reads_started = 0;
+        UInt64 znode_reads_finished = 0;
+        UInt64 scheduling_keeper_errors = 0;
+        /// Bumped by `wait`: the next completed read must have synced with the Keeper leader first, see `readZnodesIfNeeded`.
+        UInt64 syncs_requested = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -322,6 +337,7 @@ private:
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
+        /// For a coordinated view, whether the "requested" znode exists, i.e. a request made on any replica.
         bool out_of_schedule_refresh_requested = false;
 
         /// Solves this unusual case:
