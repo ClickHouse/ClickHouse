@@ -18,7 +18,7 @@ bool ParserShowTableSettingsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     /// `SHOW CHANGED SETTINGS` is a different statement, about the session's settings, and
     /// `ParserShowTablesQuery` handles it. This one only matches when `TABLE` follows.
-    const bool changed = ParserKeyword(Keyword::CHANGED).ignore(pos, expected);
+    query->changed = ParserKeyword(Keyword::CHANGED).ignore(pos, expected);
 
     /// `TABLE`, not `TABLES`: `SHOW TABLES` is a different statement and its parser rejects the
     /// singular, so the two cannot be confused.
@@ -26,8 +26,6 @@ bool ParserShowTableSettingsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
         return false;
     if (!ParserKeyword(Keyword::SETTINGS).ignore(pos, expected))
         return false;
-
-    query->changed = changed;
 
     if (!ParserKeyword(Keyword::FROM).ignore(pos, expected) && !ParserKeyword(Keyword::IN).ignore(pos, expected))
         return false;
@@ -38,8 +36,9 @@ bool ParserShowTableSettingsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     /// `ParserCompoundIdentifier` yields an `ASTIdentifier`, not an `ASTTableIdentifier`, so read
     /// the parts rather than casting - the same way `ParserShowColumnsQuery` does.
+    /// A name has at most two parts, `db.table`, as in `SHOW CREATE TABLE`; anything more would lose a part.
     const auto * identifier = table_identifier->as<ASTIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->name_parts.size() > 2)
         return false;
 
     query->table = identifier->shortName();

@@ -1,6 +1,4 @@
--- `EXPLAIN AST` of the statement, which prints the node's id. Nothing else reaches
--- `ASTShowTableSettingsQuery::getID`: the tree hash is compared only in debug builds
--- (`executeQuery.cpp`, `#ifndef NDEBUG`), and `clone` is called only by the AST fuzzer.
+-- `EXPLAIN AST` of the statement, which prints the node's id.
 --
 -- `EXPLAIN AST` only parses, so the names below are never resolved and need no table.
 

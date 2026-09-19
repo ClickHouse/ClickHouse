@@ -113,10 +113,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
            explain_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
         || parseShowCreateAccessEntityQuery(pos, query, expected) /// should be before `show_tables_p`
-        /// Before `show_tables_p`, which also begins with `SHOW`: it rejects the singular `TABLE`
-        /// and restores the position, so either order parses, but trying the narrower one first
-        /// keeps the `Expected` diagnostics on a mistyped `SHOW TABLE SETTINGS` about this
-        /// statement rather than about `SHOW TABLES`.
+        /// Before `show_tables_p`, so a mistyped `SHOW TABLE SETTINGS` is diagnosed as this statement.
         || show_table_settings_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
         || show_columns_p.parse(pos, query, expected)

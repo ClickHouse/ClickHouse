@@ -43,10 +43,7 @@ void ASTShowTableSettingsQuery::formatQueryImpl(WriteBuffer & ostr, const Format
 
 void ASTShowTableSettingsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// Every field is a member rather than a child, so the base implementation - which hashes only
-    /// `getID()` - would give the same hash to every `SHOW TABLE SETTINGS` query. Nothing keys off
-    /// this today (the query result cache takes only `SELECT`), which is exactly why it would be
-    /// missed by whoever adds the first consumer.
+    /// Every field is a member rather than a child, which the base implementation does not hash.
     hash_state.update(changed);
     hash_state.update(has_like);
     hash_state.update(not_like);
@@ -99,7 +96,7 @@ void ASTShowTableSettingsQuery::readJSON(const Poco::JSON::Object & json)
     /// neither flag can stand without a pattern - and `formatQueryImpl` would silently drop them.
     if (!has_like && (not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+            "'not_like' and 'case_insensitive_like' require a 'like' field during AST JSON deserialization");
 
     readOutputOptionsJSON(r);
 }

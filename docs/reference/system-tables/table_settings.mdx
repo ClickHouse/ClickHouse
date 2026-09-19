@@ -17,7 +17,7 @@ An engine that keeps no settings of its own reports only what the table's `SETTI
 A setting known only from that clause has an empty `default`, `type` and `description`.
 
 A table is shown to a user who has the `SHOW TABLES` privilege on it.
-The [`SHOW TABLE SETTINGS`](/reference/statements/show) statement reads this table for one table.
+The [`SHOW TABLE SETTINGS`](/reference/statements/show#show-table-settings) statement reads this table for one table.
 
 ## Columns {#columns}
 
@@ -33,4 +33,4 @@ SELECT name, value, source FROM system.table_settings WHERE database = currentDa
 ## See also {#see-also}
 
 - [`system.engine_settings`](/reference/system-tables/engine_settings)
-- [`SHOW TABLE SETTINGS`](/reference/statements/show)
+- [`SHOW TABLE SETTINGS`](/reference/statements/show#show-table-settings)

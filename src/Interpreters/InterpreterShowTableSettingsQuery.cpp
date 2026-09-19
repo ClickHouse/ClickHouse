@@ -27,10 +27,9 @@ String resolveReportedDatabase(const ASTShowTableSettingsQuery & query, const Co
 
 }
 
-String InterpreterShowTableSettingsQuery::getRewrittenQuery()
+String InterpreterShowTableSettingsQuery::getRewrittenQuery(const String & database) const
 {
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
-    const String database = resolveReportedDatabase(query, getContext());
 
     /// `system.table_settings` is the statement's whole implementation; this narrows it to one table and picks
     /// the columns that fit a terminal - `description` runs to paragraphs, so it is left out. Anything more is a
@@ -71,10 +70,7 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    /// `system.table_settings` shows a data lake catalog or a remote database only when the
-    /// corresponding setting allows it, and `show_data_lake_catalogs_in_system_tables` is off by
-    /// default. Naming such a database explicitly is an unambiguous request for it, so enable it
-    /// for this query - the same thing `InterpreterShowTablesQuery` does for `SHOW TABLES`.
+    /// Resolved once: the access check and the rewritten query must name the same table.
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
     const String database = resolveReportedDatabase(query, getContext());
 
@@ -87,12 +83,16 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
         DatabaseCatalog::instance().getTable(StorageID(database, query.table), getContext());
     }
 
+    /// `system.table_settings` shows a data lake catalog or a remote database only when the
+    /// corresponding setting allows it, and `show_data_lake_catalogs_in_system_tables` is off by
+    /// default. Naming such a database explicitly is an unambiguous request for it, so enable it
+    /// for this query - the same thing `InterpreterShowTablesQuery` does for `SHOW TABLES`.
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
         query_context->setSetting("show_remote_databases_in_system_tables", true);
 
-    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(database), query_context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowTableSettingsQuery(InterpreterFactory & factory);
