@@ -50,6 +50,20 @@ SELECT count(_table) FROM m107946 WHERE _table = 'd107946_1' GROUP BY _table;
 SELECT count(_table) FROM m107946 WHERE _table = 'base107946_1' GROUP BY _table;
 SELECT count(_table) FROM m107946 WHERE _table = 'base107946_4' GROUP BY _table;
 
+SYSTEM FLUSH LOGS query_log;
+-- The child plans executed as distributed-plan tasks (`main`, `stage_*`) of the statements above. The outer plan
+-- falls back on `ReadFromMerge` by design, so a lost child distribution shows only here, not in the rows.
+-- Only rows of this run: the test's own `Merge` table is created at the start of the run.
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm107946') AS run_start
+SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
+            AND current_database = currentDatabase() AND query LIKE 'SELECT count(\_table) FROM m107946%')
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE m107946;
 DROP TABLE d107946_1;
 DROP TABLE d107946_4;
