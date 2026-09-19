@@ -11,7 +11,7 @@ mkdir -p "${SAFE_DIR}"
 
 echo "<clickhouse>
     <logger>
-        <level>trace</level>
+        <level>fatal</level>
         <console>true</console>
     </logger>
 
