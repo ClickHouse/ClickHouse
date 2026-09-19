@@ -23,8 +23,17 @@ opts=(
     "--max_bytes_before_external_group_by=0"
     "--max_bytes_ratio_before_external_group_by=0"
 )
-${CLICKHOUSE_CLIENT} "${opts[@]}" -q "SELECT groupArray(repeat('a', if(_shard_num == 2, 100000, 1))), number%100000 k from remote('127.{2,3}', system.numbers) GROUP BY k LIMIT 10e6" |& {
-    # the query should fail earlier on 127.3 and 127.2 should not even go to the memory limit exceeded error.
-    grep -F -q "DB::Exception: Received from 127.3:${CLICKHOUSE_PORT_TCP}. DB::Exception: Query memory limit exceeded:"
-    # while if this will not correctly then it will got the exception from the 127.2:9000 and fail
-}
+LOG="$CLICKHOUSE_TMP/err-$CLICKHOUSE_DATABASE"
+trap 'rm -f "$LOG"' EXIT
+
+${CLICKHOUSE_CLIENT} "${opts[@]}" -q "SELECT groupArray(repeat('a', if(_shard_num == 2, 100000, 1))), number%100000 k from remote('127.{2,3}', system.numbers) GROUP BY k LIMIT 10e6" > "$LOG" 2>&1
+CODE=$?
+
+# the query should fail earlier on 127.3 and 127.2 should not even go to the memory limit exceeded error.
+# while if this will not correctly then it will got the exception from the 127.2:9000 and fail
+if ! grep -F -q "DB::Exception: Received from 127.3:${CLICKHOUSE_PORT_TCP}. DB::Exception: Query memory limit exceeded:" "$LOG"; then
+    # stderr only on the failing path: a test that writes there and exits 0 is a FAIL for the runner.
+    echo "Fail, Code: $CODE, client output:" >&2
+    cat "$LOG" >&2
+    exit 1
+fi
