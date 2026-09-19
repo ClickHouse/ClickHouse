@@ -239,8 +239,10 @@ void initializePipeline(std::string_view name, const int * argc, char *** argv)
     }
 
     if (const char * value = getenv("JSON_AST_FUZZER_STRICT"))
+    {
         strict_mode = std::string_view(value) == "1";
         strict_reparse_mode = strict_mode || std::string_view(value) == "reparse";
+    }
     if (const char * value = getenv("JSON_AST_FUZZER_STATS"))
         print_stats = std::string_view(value) != "0";
     if (const char * value = getenv("JSON_AST_FUZZER_DUMP"); value && *value)
