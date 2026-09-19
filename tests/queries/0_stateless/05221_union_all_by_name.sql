@@ -36,7 +36,8 @@ FROM
     SELECT 1 AS a, 2 AS b
     UNION ALL BY NAME
     SELECT 3 AS b, 4 AS a
-);
+)
+ORDER BY a;
 
 SELECT 'outer projection: b';
 SELECT b
@@ -45,7 +46,8 @@ FROM
     SELECT 1 AS a, 2 AS b
     UNION ALL BY NAME
     SELECT 3 AS b, 4 AS a
-);
+)
+ORDER BY b;
 
 SELECT 'derived table aliases';
 SELECT x
@@ -54,7 +56,8 @@ FROM
     SELECT 1 AS a
     UNION ALL BY NAME
     SELECT 2 AS a
-) AS t(x);
+) AS t(x)
+ORDER BY x;
 
 SELECT 'name then position';
 SELECT *
@@ -86,7 +89,8 @@ FROM
     SELECT 1 AS x, 10 AS y
     UNION ALL BY NAME
     SELECT 1 AS x
-);
+)
+ORDER BY x, isNull(y);
 
 SELECT 'missing LowCardinality Nullable';
 SELECT x, y, toTypeName(x), toTypeName(y)
