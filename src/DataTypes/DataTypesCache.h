@@ -74,8 +74,8 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// wrong results (e.g. DateTime values rendered in another query's timezone).
 ///
 /// `SerializationJSON` can be shared across queries when its child serializations support pooling.
-/// Its parsers and extraction trees are cached per thread in `SerializationJSON.cpp`, with the same
-/// query-context invalidation rule as this cache.
+/// Its parsers and extraction trees are cached per thread in `SerializationJSON.cpp` and cleared
+/// on effective timezone changes, on reaching the schema limit, or after parsing a large object.
 class DataTypesCache
 {
 public:
@@ -110,8 +110,8 @@ private:
 
     std::unordered_map<String, Element> cache;
 
-    /// The query context the cached entries were created under (null for threads
-    /// not attached to any query). Holding a weak_ptr keeps the control block alive,
+    /// The query context, or global client context when no query is attached, that
+    /// created the cached entries. Holding a weak_ptr keeps the control block alive,
     /// which makes the owner-based identity comparison immune to address reuse.
     ContextWeakPtr query_context;
 

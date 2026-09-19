@@ -144,15 +144,17 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name, cons
 void DataTypesCache::clearIfQueryContextChanged()
 {
     ContextPtr current_query_context = CurrentThread::tryGetQueryContext();
+    if (!current_query_context)
+        current_query_context = Context::getGlobalContextInstance();
 
     /// Owner-based identity comparison. It does not lock the weak_ptr, and since we hold
     /// the weak_ptr (keeping the control block alive), an expired context cannot be
     /// confused with a new one allocated at the same address.
     bool same_query_context = !query_context.owner_before(current_query_context) && !current_query_context.owner_before(query_context);
 
-    /// Context identity is not enough: clickhouse-client keeps one long-lived client context
-    /// (attached to the client thread by a single query scope) for the whole session and
-    /// mutates `session_timezone` in place between queries (see `ClientBase::onTimezoneUpdate`),
+    /// Context identity is not enough: `clickhouse-client` keeps one global client context
+    /// without a query scope and mutates `session_timezone` between queries
+    /// (see `ClientBase::onTimezoneUpdate`),
     /// so also track the value of the setting the cached types may have captured.
     const String * current_session_timezone
         = current_query_context ? &current_query_context->getSettingsRef()[Setting::session_timezone].value : nullptr;

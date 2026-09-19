@@ -9,6 +9,7 @@
 #include <Common/setThreadName.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/Context.h>
 
 #include <array>
+#include <base/scope_guard.h>
 
 using namespace DB;
 
@@ -145,10 +147,8 @@ TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
-    /// clickhouse-client keeps one long-lived client context attached to the client thread
-    /// by a single query scope for the whole session, and mutates `session_timezone` on it
-    /// in place between queries (see `ClientBase::onTimezoneUpdate`). The context identity
-    /// never changes here, so the cache must track the setting value itself.
+    /// A setting can change without replacing the query context, so the cache must
+    /// track the setting value as well as the context identity.
     auto client_context = makeQueryContext("data_types_cache_test_client_session", "Asia/Tokyo");
     auto query_scope = QueryScope::create(client_context);
 
@@ -158,6 +158,32 @@ TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)
     client_context->setSetting("session_timezone", String("Europe/Amsterdam"));
 
     ASSERT_EQ(cachedDateTimeTimezone(), "Europe/Amsterdam");
+}
+
+TEST(DataTypesCache, InvalidatedOnClientTimezoneChangeWithoutQueryScope)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    ASSERT_EQ(CurrentThread::tryGetQueryContext(), nullptr);
+    auto context = getContext().context;
+    ASSERT_EQ(Context::getGlobalContextInstance(), context);
+    const auto original_timezone = context->getSettingsRef().get("session_timezone");
+    SCOPE_EXIT(context->setSetting("session_timezone", original_timezone));
+
+    for (const auto * timezone : {"UTC", "Asia/Tokyo", "Europe/Amsterdam", ""})
+    {
+        context->setSetting("session_timezone", String(timezone));
+        EXPECT_EQ(cachedDateTimeTimezone(), DateLUT::instance().getTimeZone());
+        auto serialization = getDataTypesCache().getSerialization("JSON(d DateTime)");
+        EXPECT_EQ(serialization, DataTypeFactory::instance().get("JSON(d DateTime)")->getDefaultSerialization());
+        EXPECT_EQ(serialization, getDataTypesCache().getSerialization("JSON(d DateTime)"));
+        auto type = getDataTypesCache().getType("JSON(d DateTime)");
+        auto column = type->createColumn();
+        ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+        serialization->deserializeWholeText(*column, input, FormatSettings{});
+        EXPECT_EQ(type->getSubcolumn("d", column->getPtr())->getUInt(0),
+            DateLUT::instance().makeDateTime(2024, 1, 1, 12, 0, 0));
+    }
 }
 
 TEST(DataTypesCache, JSONTypedTimezonesRemainDistinct)
