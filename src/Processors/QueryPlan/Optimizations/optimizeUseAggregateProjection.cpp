@@ -1389,6 +1389,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                     *parent_reading_select_result,
                     projection_query_info,
                     reading->getTopKFilterInfo(),
+                    reading->isTopKPrewhereQueryConditionCacheAllowed(),
                     context);
 
                 if (!analyzed)
