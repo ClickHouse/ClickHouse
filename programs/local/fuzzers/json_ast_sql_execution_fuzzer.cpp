@@ -109,6 +109,28 @@ enum class Verdict
     MODIFYING,
 };
 
+/// A fuzzed `SETTINGS` clause can lift the limits the harness runs under (`max_memory_usage = 0` let a
+/// `generateRandom` query ask for 64 GiB at once). Statements that touch a resource limit are not executed.
+bool overridesResourceLimits(const std::string & sql_original)
+{
+    std::string sql = sql_original;
+    for (char & c : sql)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    static const char * limit_settings[] = {
+        "max_memory_usage", "max_untracked_memory", "memory_overcommit", "max_execution_time", "max_estimated_execution_time",
+        "max_rows_to_read", "max_bytes_to_read", "max_result_rows", "max_result_bytes", "read_overflow_mode", "timeout_overflow_mode",
+        "max_rows_to_group_by", "max_bytes_before_external", "max_bytes_ratio_before_external", "max_rows_in_set", "max_bytes_in_set",
+        "max_rows_in_join", "max_bytes_in_join", "max_rows_to_sort", "max_bytes_to_sort", "max_rows_to_transfer", "max_bytes_to_transfer",
+        "max_temporary_columns", "max_temporary_non_const_columns", "max_query_size", "max_parser_depth", "max_parser_backtracks",
+        "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements", "max_network_bandwidth", "max_network_bytes",
+        "priority", "max_threads", "max_insert_threads", "max_final_threads", "max_concurrent_queries_for_user",
+    };
+    for (const char * setting : limit_settings)
+        if (sql.find(setting) != std::string::npos)
+            return true;
+    return false;
+}
+
 Verdict classify(const DB::IAST & ast)
 {
     using namespace DB;
@@ -803,7 +825,7 @@ DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
 
     auto & stats = DB::JSONASTFuzzer::pipelineStats();
     const Verdict verdict = classify(*ast);
-    if (verdict == Verdict::SKIP)
+    if (verdict == Verdict::SKIP || overridesResourceLimits(input.sql))
     {
         ++stats.execution_skipped;
         return;
