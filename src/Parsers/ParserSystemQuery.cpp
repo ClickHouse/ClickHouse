@@ -1960,6 +1960,10 @@ SYSTEM PAUSE VIEWS
 
 Trigger an immediate out-of-schedule refresh of a given view.
 
+<Note>
+In Replicated or Shared databases, the refresh does not run while the view is stopped with `SYSTEM STOP REPLICATED VIEW`. It runs once `SYSTEM START REPLICATED VIEW` resumes it.
+</Note>
+
 ```sql
 SYSTEM REFRESH VIEW [db.]name
 ```
@@ -2041,7 +2045,7 @@ SYSTEM CANCEL ALL BACKGROUND
 
 ### SYSTEM REFRESH {#refresh-background}
 
-Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+Run one extra cycle out of schedule. It runs immediately, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`.
 
 ```sql
 SYSTEM REFRESH [db.]table
