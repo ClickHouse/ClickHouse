@@ -1,0 +1,6 @@
+drop view exact: rejected
+drop view: DROP TABLE is not over-matched
+drop sync exact: rejected
+drop sync: non-SYNC DROP is not over-matched
+drop if exists exact: rejected
+drop if exists: non-IF-EXISTS DROP is not over-matched

@@ -30,6 +30,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsString query_rules;
     extern const SettingsBool skip_unavailable_shards;
 }
 
@@ -222,6 +223,20 @@ void HedgedConnections::sendQuery(
         /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the
         /// overrides below, so all of them are marked changed afterwards and are serialized.
         prepareSecondaryQuerySettings(modified_settings);
+
+        /// Rewrite rules are applied once, on the initiator, before the query is distributed.
+        /// Strip `query_rules` from the settings sent to shards: re-applying rules on a secondary
+        /// query would rewrite/reject it a second time, and a rule named here may not even exist
+        /// on the shard (rule storage is local by default). Stripping it — rather than skipping
+        /// rule application on the shard based on the client-controlled `query_kind` — also means
+        /// a client that spoofs `query_kind = secondary_query` cannot carry its own `query_rules`
+        /// past the initiator to bypass a profile-enforced rule.
+        ///
+        /// Send the empty value as a `changed` override (do not reset `changed`) so it also
+        /// overrides any shard-side profile default for `query_rules`; otherwise a shard with a
+        /// default would re-enable rules for the fragment. An older shard that does not know the
+        /// setting safely ignores the unknown value.
+        modified_settings[Setting::query_rules] = "";
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],

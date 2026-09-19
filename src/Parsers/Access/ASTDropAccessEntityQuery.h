@@ -29,6 +29,14 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+
+    /// `getID` distinguishes only the entity type; the dropped names, `if_exists`, the source
+    /// storage and the `ON CLUSTER` name are plain members, not part of `children` (this AST has
+    /// none). Without folding them into the hash, `DROP USER a` and `DROP USER b` would share one
+    /// tree hash. The rewrite-rule matcher treats an equal tree hash as semantic equality, so a
+    /// rule template for one `DROP` would over-match an unrelated one.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database) const;
