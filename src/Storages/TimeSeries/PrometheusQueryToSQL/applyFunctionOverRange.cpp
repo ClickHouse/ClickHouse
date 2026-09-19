@@ -162,13 +162,8 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
-            /// TODO:
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// mad_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
+            /// TODO: stddev_over_time, stdvar_over_time, mad_over_time,
+            /// ts_of_last_over_time, first_over_time, ts_of_first_over_time.
         };
 
         auto it = impl_map.find(function_name);
@@ -235,18 +230,29 @@ SQLQueryPiece applyFunctionOverRange(
 
     SelectQueryBuilder builder;
 
+    if (argument.select_query)
+    {
+        auto & subqueries = context.subqueries;
+        subqueries.emplace_back(subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE);
+        builder.from_table = subqueries.back().name;
+    }
+
     if (has_group)
     {
         if (can_fuse_drop_metric_name)
         {
             auto remove_tag = makeASTFunction(
-                "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName));
+                "timeSeriesRemoveTag",
+                make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group),
+                make_intrusive<ASTLiteral>(kMetricName));
             remove_tag->setAlias(ColumnNames::Group);
             builder.select_list.push_back(std::move(remove_tag));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group));
         }
         else
         {
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
         }
     }
 
@@ -264,16 +270,6 @@ SQLQueryPiece applyFunctionOverRange(
 
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
-
-    if (has_group)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-    if (argument.select_query)
-    {
-        auto & subqueries = context.subqueries;
-        subqueries.emplace_back(subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE);
-        builder.from_table = subqueries.back().name;
-    }
 
     SQLQueryPiece res = argument;
     res.node = node;

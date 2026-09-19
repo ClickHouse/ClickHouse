@@ -31,10 +31,8 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
 
-/// Checks that the arguments are valid for `predict_linear`:
-///   - exactly 2 arguments
-///   - first argument is a RANGE_VECTOR
-///   - second argument is a SCALAR
+/// Validates arguments for `predict_linear`:
+/// exactly 2 arguments (RANGE_VECTOR, SCALAR).
 void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
 {
     if (arguments.size() != 2)
@@ -70,9 +68,8 @@ struct PredictionOffset
     /// nullptr if the horizon is statically empty, then the result of `predict_linear` is empty too.
     ASTPtr ast;
 
-    /// Whether the horizon is the same at every grid point. Then `ast` is a number: a literal or a reference to a single-row
-    /// scalar subquery. Otherwise (e.g. `time()` in a range query) it varies with the evaluation time and `ast` is an array
-    /// with one value per grid point.
+    /// Whether horizon is constant or varies with evaluation time
+    /// (e.g. `time()` in range query produces an array).
     bool is_constant = true;
 };
 
@@ -121,9 +118,8 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
 }
 
 
-/// How a fixed @ modifier shifts the prediction horizons: the horizon of the grid point `i` becomes
-/// `horizon + (shift_at_start + i * step_in_seconds)`, where `shift_at_start` is the distance in seconds from the frozen
-/// timestamp to the first grid point.
+/// Fixed @ shifts horizons: horizon of grid point i becomes
+/// `horizon + (shift_at_start + i * step_in_seconds)`.
 struct HorizonShift
 {
     Float64 shift_at_start;
@@ -134,10 +130,8 @@ struct HorizonShift
 /// Calculates the predictions `intercept + slope * horizon` from the result of timeSeriesLinearRegressionToGrid.
 ASTPtr makePredictions(ASTPtr && regression, PredictionOffset && prediction_offset, const std::optional<HorizonShift> & horizon_shift)
 {
-    /// The result of timeSeriesLinearRegressionToGrid is the tuple `(intercept, slope)` for every grid point, so:
-    /// arrayMap((r[, t][, i]) -> r.1 + r.2 * <horizon>, <regression>[, <horizons>][, range(<grid_size>)])
-    /// where `t` is the horizon of the grid point if the horizons vary, and `i` is the index of the grid point if the
-    /// horizons are shifted. NULLs (no fit in the window) pass through.
+    /// Computes predictions `intercept + slope * horizon` per grid point.
+    /// Uses arrayMap over regression results and optional horizon shifts.
     Strings lambda_parameters{"r"};
     ASTs arrays{std::move(regression)};
 
@@ -229,18 +223,29 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     SelectQueryBuilder builder;
 
+    if (range_argument.select_query)
+    {
+        auto & subqueries = context.subqueries;
+        subqueries.emplace_back(subqueries.size(), std::move(range_argument.select_query), SQLSubqueryType::TABLE);
+        builder.from_table = subqueries.back().name;
+    }
+
     if (has_group)
     {
         if (can_fuse_drop_metric_name)
         {
             auto remove_tag = makeASTFunction(
-                "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName));
+                "timeSeriesRemoveTag",
+                make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group),
+                make_intrusive<ASTLiteral>(kMetricName));
             remove_tag->setAlias(ColumnNames::Group);
             builder.select_list.push_back(std::move(remove_tag));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group));
         }
         else
         {
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
         }
     }
 
@@ -254,14 +259,11 @@ SQLQueryPiece applyFunctionPredictLinear(
     std::optional<HorizonShift> horizon_shift;
     if (fixed_at_node)
     {
-        /// The line fitted to the frozen window is the same at every step, so the single result of the aggregation
-        /// is repeated over the grid.
+        /// The line fitted to the frozen window is repeated over the grid.
         regression = repeatFixedAtResultOverGrid(std::move(regression), aggregation_range, result_grid_size);
 
-        /// A fixed @ freezes only the sample window, the prediction is still made from the evaluation time: PromQL evaluates
-        /// `predict_linear` at every step even if all its arguments are fixed (see AtModifierUnsafeFunctions in Prometheus).
-        /// The fit is linear, so predicting further ahead by the distance from the frozen timestamp to the step moves the
-        /// origin there exactly.
+        /// Fixed @ freezes sample window; prediction is made from evaluation time.
+        /// Predicting further ahead by distance to step moves origin there.
         horizon_shift = HorizonShift{
             .shift_at_start = DecimalUtils::convertTo<Float64>(
                 DurationType{start_time.value - aggregation_range.start_time.value}, context.timestamp_scale),
@@ -273,16 +275,6 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
-
-    if (has_group)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-    if (range_argument.select_query)
-    {
-        auto & subqueries = context.subqueries;
-        subqueries.emplace_back(subqueries.size(), std::move(range_argument.select_query), SQLSubqueryType::TABLE);
-        builder.from_table = subqueries.back().name;
-    }
 
     SQLQueryPiece res = range_argument;
     res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
