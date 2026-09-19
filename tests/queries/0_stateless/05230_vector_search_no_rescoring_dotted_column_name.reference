@@ -1,0 +1,11 @@
+a filter over the unrelated dotted column returns the exact top-k
+5
+6
+7
+the rewrite applies although the filter mentions the dotted column
+1
+a filter over the vector column itself still disables the rewrite
+0
+5
+6
+7
