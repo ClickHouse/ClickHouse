@@ -1,7 +1,7 @@
 ---
 title: 'Connector overview'
 sidebarTitle: 'Overview'
-description: 'ClickHouse services managed by ClickHouse Cloud in a cluster you operate, with observability and support and no standing access'
+description: 'ClickHouse services managed by ClickHouse Cloud in a cluster you operate, with observability and support, over outbound connections only'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
 doc_type: 'guide'
 ---
@@ -14,7 +14,7 @@ To request access to the private preview, contact your ClickHouse account team.
 
 ## What the connector does {#what-the-connector-does}
 
-The ClickHouse Connector is a component you deploy inside your own environment. It lets ClickHouse Cloud manage, monitor, and support ClickHouse services in a Kubernetes cluster you operate. ClickHouse gets no standing access to your environment. The connector ships as one binary, `clicklink`, which contains the daemons and the `clicklink clctl` tooling you install and operate them with.
+The ClickHouse Connector is a component you deploy inside your own environment. It lets ClickHouse Cloud manage, monitor, and support ClickHouse services in a Kubernetes cluster you operate. ClickHouse Cloud never connects into your environment: the connector makes outbound connections only, and acts under identities scoped to the ClickHouse services. The connector ships as one binary, `clicklink`, which contains the daemons and the `clicklink clctl` tooling you install and operate them with.
 
 The connector has three components:
 

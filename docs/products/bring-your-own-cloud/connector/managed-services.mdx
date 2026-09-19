@@ -161,19 +161,25 @@ The `instances scale`, `instances patch`, and `instances delete` subcommands pos
 
 There is no customer delete command through your connector endpoint: ask your ClickHouse account team to delete the service. ClickHouse Cloud terminates it, and the executor deletes the workload and its namespace (`terminating`, then `terminated`). Nothing in AWS is touched: the buckets, their data, and the IAM role remain until you remove them.
 
-Once the service reports `terminated`, tear down what `prepare` created, on the same host and with the same credentials:
+Once the service reports `terminated`, tear down what `prepare` created. Run it where you ran `prepare`, with the same AWS credentials. On Kubernetes that means the same workstation, the same configuration copy and output directory, and an open port-forward to the executor:
 
+<Tabs>
+<Tab title="Kubernetes" id="teardown-kubernetes">
+```bash
+kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+clicklink clctl executor teardown --instance <name> --config clicklink-config.yaml --output-dir ./clicklink-access
+```
+</Tab>
+<Tab title="Linux VM" id="teardown-vm">
 ```bash
 sudo clicklink clctl executor teardown --instance <name>
 ```
+</Tab>
+</Tabs>
 
 The command reads the executor's record of the service: where its data lives and which role it had. It deletes the IAM role that `prepare` created, removes the local access bundle and registry entry, and makes the executor forget the service, which frees the name.
 
-By default it keeps the service's data and backups. It re-tags a kept bucket from `clicklink:deployed-name` to `clicklink:retained-from=<name>`, so a re-created service with the same name never inherits it, and the summary says where the data is. To delete them, pass the data flags together with `--yes`:
-
-```bash
-sudo clicklink clctl executor teardown --instance <name> --delete-data --delete-backups --yes
-```
+By default it keeps the service's data and backups. It re-tags a kept bucket from `clicklink:deployed-name` to `clicklink:retained-from=<name>`, so a re-created service with the same name never inherits it, and the summary says where the data is. To delete them, add `--delete-data --delete-backups --yes` to the same command.
 
 <Warning>
 `--delete-data` and `--delete-backups` empty and delete the buckets they name; there is no recovery afterwards. Confirm the bucket names in the record step before adding `--yes`.
