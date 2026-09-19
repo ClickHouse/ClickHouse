@@ -1398,10 +1398,6 @@ def _finish_workflow(workflow, job_name):
             ready_for_merge_description = f"Failed: {len(failed_results)}"
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
-    else:
-        # A workflow hook may explain a green status - e.g. why every job was
-        # skipped (see `Info.set_ready_for_merge_description`).
-        ready_for_merge_description = Info().get_ready_for_merge_description()
 
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(
