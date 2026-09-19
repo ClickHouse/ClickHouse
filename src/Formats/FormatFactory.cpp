@@ -19,6 +19,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
@@ -54,6 +55,8 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
+    extern const SettingsBool allow_simdjson;
+    extern const SettingsTimezone session_timezone;
     extern const SettingsBool enable_nullable_tuple_type;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
@@ -97,6 +100,14 @@ FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name
     auto & creators = dict[lower_case];
     creators.name = name;
     return creators;
+}
+
+static void setQueryScopedJSONSettings(FormatSettings & format_settings, const Settings & settings)
+{
+    const String & session_timezone = settings[Setting::session_timezone].value;
+    format_settings.json.session_timezone
+        = session_timezone.empty() ? &DateLUT::serverTimezoneInstance() : &DateLUT::instance(session_timezone);
+    format_settings.json.allow_simdjson = settings[Setting::allow_simdjson];
 }
 
 FormatSettings getFormatSettings(const ContextPtr & context)
@@ -194,6 +205,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
     format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
     format_settings.json_max_string_column_growth_step = settings[Setting::input_format_json_max_string_column_growth_step];
+    setQueryScopedJSONSettings(format_settings, settings);
     format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
     format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
     format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];
@@ -506,8 +518,10 @@ InputFormatPtr FormatFactory::getInputImpl(
     /// This doesn't affect server and clickhouse-local, they initialize threads pools on startup.
     getFormatParsingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
 
-    const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
+    if (_format_settings)
+        setQueryScopedJSONSettings(format_settings, settings);
 
     if (format_filter_info
         && (format_filter_info->prewhere_info || format_filter_info->row_level_filter)

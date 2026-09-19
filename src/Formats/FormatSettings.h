@@ -7,6 +7,8 @@
 
 #include <string_view>
 
+class DateLUTImpl;
+
 namespace DB
 {
 
@@ -314,6 +316,8 @@ struct FormatSettings
 
     struct JSON
     {
+        const DateLUTImpl * session_timezone = nullptr;
+        std::optional<bool> allow_simdjson = std::nullopt;
         size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = false;
