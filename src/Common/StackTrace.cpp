@@ -95,6 +95,11 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     if (sig == SIGTSTP)
         return "This is a signal used for debugging purposes by the user.";
 
+#if defined(si_syscall)
+    if (sig == SIGSYS)
+        return fmt::format("System call number: {}. {}", info.si_syscall, message);
+#endif
+
     return message;
 }
 
@@ -281,6 +286,23 @@ std::string getSignalCodeDescription(int sig, int si_code)
 #if defined(FPE_CONDTRAP)
                 case FPE_CONDTRAP:
                     return "Trap on condition.";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
+        case SIGSYS:
+        {
+            switch (si_code)
+            {
+#if defined(SYS_SECCOMP)
+                case SYS_SECCOMP:
+                    return "The system call is not allowed by the seccomp policy that the server applied to itself. "
+                           "See the `seccomp` server setting.";
+#endif
+#if defined(SYS_USER_DISPATCH)
+                case SYS_USER_DISPATCH:
+                    return "The system call was redirected by syscall user dispatch.";
 #endif
                 default:
                     return fmt::format("Unknown si_code: {}", si_code);
