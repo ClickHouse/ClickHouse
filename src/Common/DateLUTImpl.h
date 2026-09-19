@@ -1088,7 +1088,10 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + (8 - toDayOfWeek(i))) / 7;
+        /// Use floor division (like the out-of-range branch above) so a pre-epoch week number rounds
+        /// towards -inf; otherwise dateDiff('week', ...) undercounts by 1 for ranges crossing 1969-12-29.
+        const Int32 day_num = toDayNum(i + (8 - toDayOfWeek(i)));
+        return day_num >= 0 ? day_num / 7 : -((-day_num + 6) / 7);
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
