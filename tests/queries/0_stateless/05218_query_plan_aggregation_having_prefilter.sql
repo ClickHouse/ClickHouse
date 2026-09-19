@@ -104,6 +104,12 @@ SELECT 'computed output beside the aggregate', count() FROM (EXPLAIN actions = 1
     SELECT a, cnt * 2 AS d FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3)
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 
+-- The control for the side-effecting lambda in the refused section below: a lambda that captures the
+-- aggregate is admitted on its own, so what that cell refuses is the side effect and not the capture.
+SELECT 'pure lambda over the aggregate', count() FROM (EXPLAIN actions = 1
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3 AND arrayExists(x -> x = cnt + 1, [1])
+) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
+
 -- `sleep` is the tree's only function declaring observable side effects, and its argument has to be
 -- constant, so `pushDownFilter` always moves such a conjunct below the aggregation before this pass
 -- looks: what is left above is the bound alone, and how many rows `sleep` runs on does not change.
@@ -185,6 +191,13 @@ SELECT 'stateful conjunct', count() FROM (EXPLAIN actions = 1
 SELECT 'stateful conjunct inside a lambda', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a
     HAVING cnt > 3 AND arrayExists(x -> x = rowNumberInAllBlocks(), [0])
+) WHERE explain LIKE '%HAVING pre-filter%';
+
+-- The capture is what keeps the conjunct above the aggregation, which is where a side-effecting
+-- function could see the shorter input. `sleep` is the tree's only such function.
+SELECT 'side-effecting conjunct inside a lambda over the aggregate', count() FROM (EXPLAIN actions = 1
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a
+    HAVING cnt > 3 AND arrayExists(x -> x = cnt + sleep(0.001), [1])
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
 SELECT 'non-deterministic conjunct', count() FROM (EXPLAIN actions = 1
@@ -467,6 +480,58 @@ SELECT count() FROM (
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND intDiv(1, cnt - 3) > 0
 ) SETTINGS query_plan_aggregation_having_prefilter = 1;
+
+SELECT '--- the pre-filter is applied while dataflow statistics are collected ---';
+
+-- `automatic_parallel_replicas_mode = 2` attaches a dataflow statistics updater to the aggregation and
+-- collects statistics only, never switching the plan to parallel replicas, so the aggregation stays
+-- final and the annotation is still honoured. The conversion keeps skipping the rejected groups and
+-- reports the untruncated key sizes to the estimator, so a query behaves the same whether or not the
+-- statistics cache is being filled.
+-- The three queries are deliberately not wrapped in a subquery: the optimization matches the plan node
+-- of the top-level aggregation, and with a wrapping subquery it skips the plan without attaching an
+-- updater, which would leave every cell below measuring an ordinary run.
+SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
+    parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
+    max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas';
+
+SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_on';
+SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218ap_off';
+SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_throwif';
+
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- `statistics_collected` is what keeps these cells honest: without an attached updater the ordinary
+-- pre-filter would produce the same skipped-group counts and suppress the same exception, and every
+-- cell here would pass while measuring nothing.
+SELECT log_comment,
+       ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] AS groups_skipped,
+       ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS statistics_collected
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 15 MINUTE
+  AND current_database = currentDatabase() AND startsWith(log_comment, '05218ap_')
+ORDER BY log_comment;
+
+-- The keys reported are the whole bucket's, so the estimate of the bytes replicas would ship is the one
+-- the run without the pre-filter reports. Reporting only the materialized groups' keys would lose about
+-- half of it. The bound is not equality because the compression ratio the estimate divides by is sampled
+-- from a subset of the buckets, and which ones depends on the order they are merged in.
+SELECT 'estimate matches the run without the pre-filter',
+       greatest(on_bytes, off_bytes) <= least(on_bytes, off_bytes) * 1.25 AS ok
+FROM
+(
+    SELECT
+        anyIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05218ap_on') AS on_bytes,
+        anyIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05218ap_off') AS off_bytes
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 15 MINUTE
+      AND current_database = currentDatabase() AND log_comment IN ('05218ap_on', '05218ap_off')
+);
 
 SELECT '--- independent per-partition aggregation is refused ---';
 

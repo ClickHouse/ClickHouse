@@ -1141,6 +1141,14 @@ private:
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
+    /// Records the key sizes of the untruncated aggregation output: the runtime dataflow statistics must
+    /// describe every group, because they price the shipping term of the parallel-replicas plan, whose
+    /// partial aggregation materializes all of them. Must run before the conversion, which consumes the
+    /// bucket, and only for a conversion that materializes only some of the bucket's groups.
+    template <typename Method>
+    void recordUntruncatedKeySizes(
+        RuntimeDataflowStatisticsCacheUpdater & updater, Method & method, Arenas & aggregates_pools, Int32 bucket) const;
+
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
     /// upstream receives at most 256 * n candidate rows instead of every group.

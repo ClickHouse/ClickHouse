@@ -2631,6 +2631,43 @@ void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, si
 }
 
 template <typename Method>
+void Aggregator::recordUntruncatedKeySizes(
+    RuntimeDataflowStatisticsCacheUpdater & updater, Method & method, Arenas & aggregates_pools, Int32 bucket) const
+{
+    auto & data = method.data.impls[bucket];
+    auto columns = prepareOutputBlockColumns(
+        params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, /*final=*/true, data.size() + 1);
+    auto shuffled_key_sizes = method.shuffleKeyColumns(columns.raw_key_columns, key_sizes);
+    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+    IColumn::SerializationSettings serialization_settings{
+        .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+
+    /// The NULL group lives outside the cells `forEachValue` visits, and the conversion emits it as a
+    /// default key, so it is materialized the same way here.
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    {
+        if (data.hasNullKeyData())
+            columns.raw_key_columns[0]->insertDefault();
+    }
+
+    /// A set table hands the callback the key alone, a map table the mapped value as well.
+    data.forEachValue([&](const auto & key, auto &&...)
+                      { method.insertKeyIntoColumns(key, columns.raw_key_columns, key_sizes_ref, &serialization_settings); });
+
+    Columns key_columns;
+    key_columns.reserve(params.keys_size);
+    for (auto & column : columns.key_columns)
+        key_columns.emplace_back(std::move(column));
+
+    /// The keys alone, so they sit at their own positions rather than at the output block's.
+    const size_t rows = key_columns.empty() ? 0 : key_columns[0]->size();
+    ColumnNumbers positions(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+        positions[i] = i;
+    updater.recordAggregationKeySizes(Chunk(std::move(key_columns), rows), positions, key_types);
+}
+
+template <typename Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     AggregatedDataVariants & data_variants,
     Method & method,
@@ -2662,9 +2699,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
         return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes);
 
-    /// A filled `topk_full_key_bytes` means dataflow statistics are measuring this conversion, and they need the untruncated output.
-    const bool allow_having_prefilter = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled
-        && topk_full_key_bytes == nullptr;
+    const bool allow_having_prefilter = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled;
 
     auto result = convertToBlockImpl(
         method,
@@ -2859,6 +2894,12 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     /// carries only the kept groups.
     UInt64 topk_full_key_bytes = 0;
 
+    /// The pre-filter leaves the rejected groups out of the chunk, so its keys are recorded from the
+    /// bucket instead. The Top-K conversion takes precedence on a non-empty bucket and accounts for
+    /// the same thing through `topk_full_key_bytes`.
+    const bool having_prefilter_truncates
+        = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled && !params.bucket_top_k;
+
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
@@ -2868,8 +2909,10 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
+        if (updater && having_prefilter_truncates) \
+            recordUntruncatedKeySizes(*updater, *merged_data.NAME, merged_data.aggregates_pools, bucket); \
         agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &topk_full_key_bytes : nullptr, full_group_count); \
-        if (updater) \
+        if (updater && !having_prefilter_truncates) \
         { \
             if (topk_full_key_bytes) \
                 updater->recordAggregationKeySizes(agg_chunk.chunk, keys_positions, key_types, topk_full_key_bytes); \

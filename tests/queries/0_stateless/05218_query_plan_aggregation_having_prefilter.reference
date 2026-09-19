@@ -14,6 +14,7 @@ deterministic within the query beside the bound	1
 count() not in the select list	1
 outer WHERE on a group key, merged	1
 computed output beside the aggregate	1
+pure lambda over the aggregate	1
 side-effecting conjunct pushed below the aggregation	1
 --- refused ---
 setting off	0
@@ -32,6 +33,7 @@ no group by	0
 or of two bounds	0
 stateful conjunct	0
 stateful conjunct inside a lambda	0
+side-effecting conjunct inside a lambda over the aggregate	0
 non-deterministic conjunct	0
 non-deterministic conjunct over the aggregate	0
 array join in having	0
@@ -99,6 +101,11 @@ serialized plan	0
 10000
 10000
 10000
+--- the pre-filter is applied while dataflow statistics are collected ---
+05218ap_off	0	1
+05218ap_on	20000	1
+05218ap_throwif	20000	1
+estimate matches the run without the pre-filter	1
 --- independent per-partition aggregation is refused ---
 skip merging is set	1
 and the pre-filter is not	0
