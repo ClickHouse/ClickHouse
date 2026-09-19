@@ -26,6 +26,7 @@
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
@@ -95,6 +96,7 @@
 #include <Poco/ThreadPool.h>
 
 #include <algorithm>
+#include <thread>
 
 #include "config.h"
 
@@ -1282,7 +1284,22 @@ try
 
     processConfig();
 
+    /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
+    /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
+    /// the checker running while `cleanup()` waits for listener connections to drain.
+    std::thread cancellation_thread;
+
+    SCOPE_EXIT({
+        if (cancellation_thread.joinable())
+        {
+            CancellationChecker::getInstance().terminateThread();
+            cancellation_thread.join();
+        }
+    });
+
     SCOPE_EXIT({ cleanup(); });
+
+    cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
