@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -33,10 +34,12 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_memory_usage;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
+    extern const SettingsBool enable_join_in_memory_compression;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
@@ -87,10 +90,12 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
+    extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
     extern const QueryPlanSerializationSettingsOverflowMode join_overflow_mode;
     extern const QueryPlanSerializationSettingsBool join_any_take_last_row;
     extern const QueryPlanSerializationSettingsUInt64 cross_join_min_rows_to_compress;
     extern const QueryPlanSerializationSettingsUInt64 cross_join_min_bytes_to_compress;
+    extern const QueryPlanSerializationSettingsBool enable_join_in_memory_compression;
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const QueryPlanSerializationSettingsUInt64 join_on_disk_max_files_to_merge;
@@ -144,6 +149,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 
     max_rows_in_join = query_settings[Setting::max_rows_in_join];
     max_bytes_in_join = query_settings[Setting::max_bytes_in_join];
+    max_memory_usage = query_settings[Setting::max_memory_usage];
     default_max_bytes_in_join = query_settings[Setting::default_max_bytes_in_join];
 
     joined_block_split_single_row = query_settings[Setting::joined_block_split_single_row];
@@ -158,6 +164,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 
     cross_join_min_rows_to_compress = query_settings[Setting::cross_join_min_rows_to_compress];
     cross_join_min_bytes_to_compress = query_settings[Setting::cross_join_min_bytes_to_compress];
+    enable_join_in_memory_compression = query_settings[Setting::enable_join_in_memory_compression];
 
     partial_merge_join_left_table_buffer_bytes = query_settings[Setting::partial_merge_join_left_table_buffer_bytes];
     partial_merge_join_rows_in_right_blocks = query_settings[Setting::partial_merge_join_rows_in_right_blocks];
@@ -196,6 +203,19 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
 }
 
+JoinSettings JoinSettings::fromContext(const ContextPtr & context)
+{
+    JoinSettings result(context->getSettingsRef(), context->getJoinAnalyzeMode());
+    if (context->hasQueryContext())
+    {
+        const auto query_context = context->getQueryContext();
+        if (query_context.get() != context.get())
+            result.max_memory_usage_is_step_local
+                = result.max_memory_usage != query_context->getSettingsRef()[Setting::max_memory_usage];
+    }
+    return result;
+}
+
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
@@ -203,12 +223,17 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
     max_bytes_in_join = settings[QueryPlanSerializationSetting::max_bytes_in_join];
+    max_memory_usage = settings[QueryPlanSerializationSetting::max_memory_usage];
+    /// Not on the wire; JoinStepLogical::deserialize recomputes it against the receiver's query
+    /// context so that re-serializing the step for a further hop keeps carrying a step-local value.
+    max_memory_usage_is_step_local = settings.max_memory_usage_is_step_local;
 
     join_overflow_mode = settings[QueryPlanSerializationSetting::join_overflow_mode];
     join_any_take_last_row = settings[QueryPlanSerializationSetting::join_any_take_last_row];
 
     cross_join_min_rows_to_compress = settings[QueryPlanSerializationSetting::cross_join_min_rows_to_compress];
     cross_join_min_bytes_to_compress = settings[QueryPlanSerializationSetting::cross_join_min_bytes_to_compress];
+    enable_join_in_memory_compression = settings[QueryPlanSerializationSetting::enable_join_in_memory_compression];
 
     partial_merge_join_left_table_buffer_bytes = settings[QueryPlanSerializationSetting::partial_merge_join_left_table_buffer_bytes];
     partial_merge_join_rows_in_right_blocks = settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks];
@@ -261,12 +286,15 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;
     settings[QueryPlanSerializationSetting::max_bytes_in_join] = max_bytes_in_join;
+    settings[QueryPlanSerializationSetting::max_memory_usage] = max_memory_usage;
+    settings.max_memory_usage_is_step_local = max_memory_usage_is_step_local;
 
     settings[QueryPlanSerializationSetting::join_overflow_mode] = join_overflow_mode;
     settings[QueryPlanSerializationSetting::join_any_take_last_row] = join_any_take_last_row;
 
     settings[QueryPlanSerializationSetting::cross_join_min_rows_to_compress] = cross_join_min_rows_to_compress;
     settings[QueryPlanSerializationSetting::cross_join_min_bytes_to_compress] = cross_join_min_bytes_to_compress;
+    settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = enable_join_in_memory_compression;
 
     settings[QueryPlanSerializationSetting::partial_merge_join_left_table_buffer_bytes] = partial_merge_join_left_table_buffer_bytes;
     settings[QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks] = partial_merge_join_rows_in_right_blocks;
