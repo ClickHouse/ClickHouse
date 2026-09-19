@@ -961,17 +961,35 @@ void SchemaConverter::processPrimitiveColumn(
     chassert(!out_inferred_type && !out_decoded_type);
     out_decoder.physical_type = type;
 
-    auto get_output_type_index = [&]
+    auto get_output_type = [&]() -> const IDataType &
     {
         chassert(out_inferred_type);
-        return type_hint ? type_hint->getTypeId() : out_inferred_type->getTypeId();
+        return type_hint ? *type_hint : *out_inferred_type;
+    };
+
+    auto get_output_type_index = [&]
+    {
+        return get_output_type().getTypeId();
     };
 
     auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
     {
         WhichDataType which(get_output_type_index());
         if (which.isNativeInteger())
+        {
             converter.field_signed = which.isNativeInt();
+
+            /// Statistics endpoints are ordered as the stored type, so they bound the output column only
+            /// if the cast to it preserves that order for every stored value, not just the ones present.
+            const size_t stored_bits = type == parq::Type::BOOLEAN
+                ? 1 : converter.output_size.value_or(converter.input_size) * 8;
+            const size_t output_bits = get_output_type().getSizeOfValueInMemory() * 8;
+            const bool order_preserved = converter.input_signed == converter.field_signed
+                ? output_bits >= stored_bits
+                : !converter.input_signed && output_bits > stored_bits;
+            if (!order_preserved)
+                return false;
+        }
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
