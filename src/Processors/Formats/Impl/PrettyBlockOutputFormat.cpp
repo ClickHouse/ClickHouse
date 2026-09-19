@@ -141,8 +141,7 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// so the replacement happens here as well: a Control Picture takes one visible position,
             /// while the raw control character takes none.
             if (format_settings.pretty.display_control_characters)
-                serialized_value = replaceControlCharactersWithPictures(
-                    std::move(serialized_value), /*highlight_trailing_whitespace=*/ false, /*keep_line_feeds=*/ true);
+                serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value));
 
             size_t start_from_offset = 0;
             size_t next_offset = 0;
@@ -708,8 +707,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         /// terminal. It has to be done before the value is split into lines and padded, the same way
         /// as in `calculateWidths`, so that the widths calculated there match the printed text.
         if (format_settings.pretty.display_control_characters)
-            serialized_value = replaceControlCharactersWithPictures(
-                std::move(*serialized_value), /*highlight_trailing_whitespace=*/ false, /*keep_line_feeds=*/ true);
+            serialized_value = replaceControlCharactersWithPictures(std::move(*serialized_value));
     }
 
     size_t prefix = row_number_width + (style == Style::Space ? 1 : 2);
@@ -990,9 +988,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test FORMAT PrettyC
 └──────────────────────────────────────┘
 ```
 
-`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
-
-A line feed is another exception: it is never replaced, because it either becomes a new line of the table cell (see [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields)), or is deliberately emitted as is so that multi-line values stay easy to copy-paste.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a line feed keeps breaking the line - inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise.
 
 To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 

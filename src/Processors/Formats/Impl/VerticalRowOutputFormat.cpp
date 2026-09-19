@@ -278,7 +278,7 @@ x: 1
 y: ᴺᵁᴸᴸ
 ```
 
-By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) in values and in column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a tab is shown as `␉` and a line feed as `␊`:
+By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) in values and in column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a tab is shown as `␉`:
 
 ```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
@@ -290,7 +290,7 @@ Row 1:
 test: string with 'quotes' and ␉ with some special ␊ characters
 ```
 
-`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines.
 
 To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 

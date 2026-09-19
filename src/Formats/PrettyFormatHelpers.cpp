@@ -116,16 +116,18 @@ String highlightDigitGroups(String source)
 namespace
 {
 
-/// Non-printable C0 control characters (0x00..0x1F) and DEL (0x7F), except `ESC`. Unlike C-style
-/// escape sequences (\0, \t, ...), the Unicode "Control Pictures" of these bytes cannot be confused
-/// with the literal characters they represent, so the "pretty" formats display them to make the
-/// bytes visible instead of letting the terminal silently swallow them.
-/// `ESC` (0x1B) is excluded on purpose: it introduces the ANSI escape sequences, which have to keep
-/// being interpreted by the terminal, because that is how the data can carry a visualization.
+/// Non-printable C0 control characters (0x00..0x1F) and DEL (0x7F), except the line feed and `ESC`.
+/// Unlike C-style escape sequences (\0, \t, ...), the Unicode "Control Pictures" of these bytes
+/// cannot be confused with the literal characters they represent, so the "pretty" formats display
+/// them to make the bytes visible instead of letting the terminal silently swallow them.
+/// Two bytes are excluded on purpose, because they are interpreted rather than swallowed:
+/// `ESC` (0x1B) introduces the ANSI escape sequences, which have to keep working, because that is
+/// how the data can carry a visualization; and the line feed (0x0A) breaks the line, which is how
+/// a multi-line value is meant to be read and copy-pasted.
 /// See https://en.wikipedia.org/wiki/Control_Pictures
 bool isControlCharacter(unsigned char byte)
 {
-    return (byte < 0x20 && byte != 0x1B) || byte == 0x7F;
+    return (byte < 0x20 && byte != 0x0A && byte != 0x1B) || byte == 0x7F;
 }
 
 /// UTF-8 encoding of the Unicode "Control Picture" for a control byte: the code point is
@@ -147,17 +149,12 @@ size_t trailingWhitespaceStart(const String & source)
 }
 
 
-String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace, bool keep_line_feeds)
+String replaceControlCharactersWithPictures(String source, bool highlight_trailing_whitespace)
 {
-    const auto is_replaced = [keep_line_feeds](unsigned char byte)
-    {
-        return isControlCharacter(byte) && !(keep_line_feeds && byte == '\n');
-    };
-
     bool has_control_characters = false;
     for (char c : source)
     {
-        if (is_replaced(static_cast<unsigned char>(c)))
+        if (isControlCharacter(static_cast<unsigned char>(c)))
         {
             has_control_characters = true;
             break;
@@ -185,7 +182,7 @@ String replaceControlCharactersWithPictures(String source, bool highlight_traili
         }
 
         const auto byte = static_cast<unsigned char>(source[i]);
-        if (is_replaced(byte))
+        if (isControlCharacter(byte))
         {
             const auto picture = controlCharacterPicture(byte);
             result.append(picture.data(), picture.size());
