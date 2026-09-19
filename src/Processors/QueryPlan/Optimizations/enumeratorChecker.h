@@ -41,9 +41,10 @@ class EnumeratorCheckerWithCosts
     using Consumer = EnumeratorCheckerWithCosts;
     using Optimizer = TOptimizer;
 public:
-    EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
-        : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, const SelectivityEstimate & selectivity) const;
+    EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_, UInt64 unknown_relation_rows_)
+        : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_)
+        , unknown_relation_rows(unknown_relation_rows_) {}
+    double computeJoinCost(UInt lhs, UInt rhs, const SelectivityEstimate & selectivity, JoinKind kind, JoinStrictness strictness) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -55,17 +56,28 @@ private:
     DPTable dp_table;
     Optimizer & optimizer;
     const size_t num_relations;
+    const UInt64 unknown_relation_rows;
 };
 
 template <class TDPTable, class TOptimizer>
 double
 EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
                                                                   const UInt rhs,
-                                                                  const SelectivityEstimate & selectivity) const
+                                                                  const SelectivityEstimate & selectivity,
+                                                                  const JoinKind kind,
+                                                                  const JoinStrictness strictness) const
 {
-    double lhs_rows = static_cast<double>(dp_table[lhs].estimated_rows.value_or(1));
-    double rhs_rows = static_cast<double>(dp_table[rhs].estimated_rows.value_or(1));
-    return dp_table[lhs].cost + dp_table[rhs].cost + estimateJoinedRows(selectivity, lhs_rows, rhs_rows);
+    const auto & lhs_estimate = dp_table[lhs].estimated_rows;
+    const auto & rhs_estimate = dp_table[rhs].estimated_rows;
+    const UInt64 lhs_rows = rowsForJoinCost(lhs_estimate, unknown_relation_rows);
+    const UInt64 rhs_rows = rowsForJoinCost(rhs_estimate, unknown_relation_rows);
+    double joined_rows = estimateJoinedRows(selectivity, static_cast<double>(lhs_rows), static_cast<double>(rhs_rows));
+    /// A semi/anti join only filters its preserved side, so it emits at most that side's rows: the
+    /// substituted row count must not make such a join look like it expands to the substituted size.
+    const bool substituted = !lhs_estimate || !rhs_estimate;
+    if (substituted && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti))
+        joined_rows = std::min(joined_rows, static_cast<double>(isRight(kind) ? rhs_rows : lhs_rows));
+    return dp_table[lhs].cost + dp_table[rhs].cost + joined_rows;
 }
 
 
@@ -113,7 +125,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Inner;
 
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
+    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity, kind, strictness);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
              selectivity.value,

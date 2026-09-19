@@ -90,6 +90,9 @@ struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
 
+    /// Rows charged to a relation or partial plan with no cardinality estimate.
+    UInt64 unknown_relation_rows = 1;
+
     std::vector<JoinActionRef> edges;
 
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during

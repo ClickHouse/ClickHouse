@@ -951,10 +951,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    UInt64 max_estimated_rows = 0;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        max_estimated_rows = std::max(max_estimated_rows, rel.estimated_rows.value_or(0));
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
@@ -965,6 +967,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
+    query_graph.unknown_relation_rows = std::max<UInt64>(1, max_estimated_rows);
 
     /// The listed names can be aliases or subquery labels, so no concrete `ALTER` command is suggested.
     if (!relations_without_statistics.empty())
