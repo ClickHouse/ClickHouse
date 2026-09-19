@@ -1,0 +1,14 @@
+-- ON CLUSTER, reads hidden behind a subquery, validation off
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- ON CLUSTER, a UDF body reading an unreadable column, validation off
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- With the grants, the same ON CLUSTER mutations are allowed
+OK
+OK
+OK
+-- The value of the unreadable table never reached a readable column
+0

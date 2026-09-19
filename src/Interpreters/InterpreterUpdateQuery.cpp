@@ -11,6 +11,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MutationPredicateColumnsAccess.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAssignment.h>
@@ -94,7 +95,10 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// Inline the bodies of SQL user-defined functions before the database is filled in, otherwise an
     /// unqualified table inside a body is resolved later, in a context whose current database is not
-    /// the database of the updated table.
+    /// the database of the updated table. This also has to precede the read columns extracted below:
+    /// a UDF body can reference a column of the updated table, which is a read of it that the call
+    /// site alone does not show, and nothing checks access later on this path - a local lightweight
+    /// update goes straight to `updateLightweight`.
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
@@ -105,6 +109,27 @@ BlockIO InterpreterUpdateQuery::execute()
         replaceLegacyToTime(*query_ptr);
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
+
+    /// The WHERE predicate and the assignment expressions read columns, so they require SELECT on
+    /// those columns (virtual columns excluded, as in a plain SELECT). Collected below, from the
+    /// table resolved for the `_row_exists` check, and before any dispatch, so that the initiating
+    /// user's read access is enforced on every path - including ON CLUSTER, where the remote DDL
+    /// worker does not run as the initiating user.
+    AccessRightsElements read_access;
+
+    /// Reads hidden behind a subquery or a `dictGet`/`joinGet` name their own objects, so they are
+    /// required on every path - including the ones where the updated table is not present locally,
+    /// and when `validate_mutation_query` is disabled. The updated table is passed along only to
+    /// tell one of its columns from a table on the right of `IN`.
+    auto add_indirect_reads = [&](const String & database, const String & table, const StorageInMemoryMetadata * metadata)
+    {
+        addExpressionIndirectReadsAccess(
+            read_access, update_query.predicate.get(), getContext(), database, table, metadata);
+        for (const ASTPtr & assignment : update_query.assignments->children)
+            addExpressionIndirectReadsAccess(
+                read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext(),
+                database, table, metadata);
+    };
 
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
     /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by
@@ -124,6 +149,44 @@ BlockIO InterpreterUpdateQuery::execute()
     }
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
+    if (resolved_table_id)
+    {
+        if (table_for_access)
+        {
+            const auto metadata_snapshot = table_for_access->getInMemoryMetadataPtr(getContext(), false);
+            const auto & metadata = *metadata_snapshot;
+            addExpressionColumnsSelectAccess(
+                read_access, update_query.predicate.get(),
+                resolved_table_id.database_name, resolved_table_id.table_name, metadata);
+            for (const ASTPtr & assignment : update_query.assignments->children)
+                addExpressionColumnsSelectAccess(
+                    read_access, assignment->as<const ASTAssignment &>().expression().get(),
+                    resolved_table_id.database_name, resolved_table_id.table_name, metadata);
+
+            add_indirect_reads(resolved_table_id.database_name, resolved_table_id.table_name, &*metadata_snapshot);
+        }
+        else
+        {
+            /// ON CLUSTER from a node without the table: columns cannot be resolved, so fail closed
+            /// by requiring SELECT on the whole table.
+            if (!update_query.cluster.empty())
+                read_access.emplace_back(AccessType::SELECT, resolved_table_id.database_name, resolved_table_id.table_name);
+
+            add_indirect_reads(resolved_table_id.database_name, resolved_table_id.table_name, nullptr);
+        }
+    }
+    else
+    {
+        /// ON CLUSTER with no current database: the id stays unresolved here, but
+        /// executeDDLQueryOnCluster expands empty-database access elements to each host's default
+        /// database. Fail closed with the AST table name and an empty database so the predicate/RHS
+        /// SELECT requirement is expanded together with ALTER_UPDATE instead of being dropped.
+        if (!update_query.cluster.empty())
+            read_access.emplace_back(AccessType::SELECT, update_query.getDatabase(), update_query.getTable());
+
+        add_indirect_reads(update_query.getDatabase(), update_query.getTable(), nullptr);
+    }
+
     bool deletes_via_row_exists = false;
     bool updates_columns = false;
     for (const ASTPtr & assignment_ast : update_query.assignments->children)
@@ -134,6 +197,8 @@ BlockIO InterpreterUpdateQuery::execute()
             updates_columns = true;
     }
 
+    /// Built after `setDatabase` so the ALTER_UPDATE requirement uses the same (resolved) database as
+    /// the dispatched query and the read requirements above.
     AccessRightsElements required_access;
     if (deletes_via_row_exists)
         required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
@@ -155,6 +220,9 @@ BlockIO InterpreterUpdateQuery::execute()
         }
 
         DDLQueryOnClusterParams params;
+        /// Enforce the read (SELECT) requirements on the initiator too, since the remote DDL worker
+        /// may not run as the initiating user.
+        required_access.append_range(read_access);
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -172,6 +240,9 @@ BlockIO InterpreterUpdateQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
+
+    if (!read_access.empty())
+        getContext()->checkAccess(read_access);
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);

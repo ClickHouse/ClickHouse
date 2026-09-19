@@ -1,0 +1,12 @@
+-- ON CLUSTER without SELECT(id): reading id via WHERE or the SET right-hand side must be denied
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- ON CLUSTER reading only the readable column (name) is allowed
+OK
+-- ON CLUSTER with SELECT(id): reading id is allowed
+OK
+OK
+OK

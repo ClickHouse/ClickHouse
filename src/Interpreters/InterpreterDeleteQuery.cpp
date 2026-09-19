@@ -14,7 +14,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
+#include <Interpreters/MutationPredicateColumnsAccess.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
@@ -70,15 +72,18 @@ BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
 
+    /// Inline SQL UDFs before the read columns are extracted below, as `InterpreterAlterQuery` does:
+    /// a UDF body can reference a column of the mutated table, which is a read of it, and the call
+    /// site alone does not show it. There is no later access pass on this path - the rewrite to a
+    /// lightweight update, the replicated enqueue and `ON CLUSTER` all return before one.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
     /// The spelling must be canonical before the query is enqueued for a Replicated database or
     /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
-    /// SQL UDF bodies are inlined first, so a `toTime` hidden in one is canonicalized too.
+    /// A `toTime` hidden in a SQL UDF body is canonicalized too, the bodies having been inlined above.
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-    {
-        if (!UserDefinedSQLFunctionFactory::instance().empty())
-            UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
         replaceLegacyToTime(*query_ptr);
-    }
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
@@ -93,6 +98,21 @@ BlockIO InterpreterDeleteQuery::execute()
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
+
+    /// The WHERE predicate is read to select the rows to delete, so it requires SELECT on its columns
+    /// (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
+    {
+        AccessRightsElements read_access;
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+        addExpressionColumnsSelectAccess(
+            read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
+            *metadata_snapshot);
+        addExpressionIndirectReadsAccess(
+            read_access, delete_query.predicate.get(), getContext(),
+            table_id.database_name, table_id.table_name, &*metadata_snapshot);
+        if (!read_access.empty())
+            getContext()->checkAccess(read_access);
+    }
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
