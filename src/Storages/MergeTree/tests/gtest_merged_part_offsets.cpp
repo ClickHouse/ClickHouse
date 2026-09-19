@@ -305,6 +305,68 @@ TEST(PackedPartOffsetsTest, MemoryAllocation)
     EXPECT_GT(filled_memory, empty_memory);
 }
 
+// Consecutive values spanning several pages: the map is the affine function first_value + i
+TEST(PackedPartOffsetsTest, ConsecutiveValues)
+{
+    PackedPartOffsets offsets;
+
+    constexpr UInt64 first = 12345;
+    const size_t count = (3 * TEST_PAGE_SIZE) + 7;
+
+    for (size_t i = 0; i < count; ++i)
+        offsets.insert(first + i);
+    offsets.flush();
+
+    for (size_t i = 0; i < count; ++i)
+        EXPECT_EQ(offsets[i], first + i);
+}
+
+// A single gap anywhere in the run makes the map non-affine
+TEST(PackedPartOffsetsTest, ConsecutiveWithOneGap)
+{
+    PackedPartOffsets offsets;
+
+    std::vector<UInt64> values = {100, 101, 102, 104, 105, 106};
+
+    for (const auto & val : values)
+        offsets.insert(val);
+    offsets.flush();
+
+    for (size_t i = 0; i < values.size(); ++i)
+        EXPECT_EQ(offsets[i], values[i]);
+}
+
+// The gap is the step across a page boundary, which a per-page notion of consecutiveness misses
+TEST(PackedPartOffsetsTest, GapAtPageBoundary)
+{
+    PackedPartOffsets offsets;
+
+    constexpr UInt64 first = 500;
+    const size_t count = 2 * TEST_PAGE_SIZE;
+
+    std::vector<UInt64> values;
+    values.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+        values.push_back(first + i + (i >= TEST_PAGE_SIZE ? 1 : 0));
+
+    for (const auto & val : values)
+        offsets.insert(val);
+    offsets.flush();
+
+    for (size_t i = 0; i < count; ++i)
+        EXPECT_EQ(offsets[i], values[i]);
+}
+
+TEST(PackedPartOffsetsTest, SingleValueConsecutive)
+{
+    PackedPartOffsets offsets;
+
+    offsets.insert(777);
+    offsets.flush();
+
+    EXPECT_EQ(offsets[0], 777);
+}
+
 //////////////////////////
 // MergedPartOffsets Tests
 //////////////////////////
@@ -368,6 +430,37 @@ TEST(MergedPartOffsetsTest, SizeAndEmpty)
     // Flush should not change size
     merged_offsets.flush();
     EXPECT_EQ(merged_offsets.size(), 5);
+}
+
+// One merge where part 0 is not interleaved while parts 1 and 2 are interleaved with each other,
+// so the parts of a single merge do not agree on whether their maps are affine
+TEST(MergedPartOffsetsTest, MixedContiguousAndInterleavedParts)
+{
+    std::vector<UInt64> part_indices;
+
+    for (size_t i = 0; i < 2000; ++i)
+        part_indices.push_back(0);
+    for (size_t i = 0; i < 2000; ++i)
+    {
+        part_indices.push_back(1);
+        part_indices.push_back(2);
+    }
+    for (size_t i = 0; i < 100; ++i)
+        part_indices.push_back(1);
+
+    MergedPartOffsets merged_offsets(3);
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
+    merged_offsets.flush();
+
+    std::vector<std::vector<UInt64>> expected(3);
+    for (size_t i = 0; i < part_indices.size(); ++i)
+        expected[part_indices[i]].push_back(i);
+
+    for (size_t part = 0; part < expected.size(); ++part)
+    {
+        for (size_t i = 0; i < expected[part].size(); ++i)
+            EXPECT_EQ((merged_offsets[part, i]), expected[part][i]) << "part " << part << ", offset " << i;
+    }
 }
 
 TEST(MergedPartOffsetsTest, ManyValues)
