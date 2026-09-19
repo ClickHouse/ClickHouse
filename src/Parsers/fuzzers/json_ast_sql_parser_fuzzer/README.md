@@ -56,7 +56,9 @@ input:
 while formatting the AST built from JSON, formatted SQL that does not parse back, and an unstable
 format -> parse -> format round trip. These are real defects (the JSON layer accepted a shape the
 formatter or the parser cannot handle, or the formatter is not canonical), but there are known
-cases, so the default mode does not stop on them.
+cases, so the default mode does not stop on them. `JSON_AST_FUZZER_STRICT=reparse` stops only on the
+second outcome (SQL the parser accepted but whose formatted form it rejects), which is rare (18 of
+434k inputs in a three-hour session) and the most likely to be a formatter bug.
 
 ## How the protobuf mutation works {#how-the-protobuf-mutation-works}
 

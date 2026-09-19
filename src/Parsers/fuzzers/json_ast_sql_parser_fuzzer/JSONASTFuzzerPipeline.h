@@ -29,7 +29,9 @@
 ///   reproducing a corpus or crash input; it is far too noisy for a fuzzing session.
 /// - `JSON_AST_FUZZER_STRICT=1` additionally aborts when formatting an AST built from JSON throws an
 ///   otherwise tolerated validation exception, when re-parsing the formatted SQL fails, or when
-///   format -> parse -> format is not stable.
+///   format -> parse -> format is not stable. `JSON_AST_FUZZER_STRICT=reparse` aborts only in the
+///   second case (SQL that the parser accepted, formatted into SQL it rejects), which is the rarest
+///   and the most interesting of the three.
 /// - `JSON_AST_FUZZER_STATS=0` disables the stage statistics printed at exit.
 ///
 /// Command line arguments (after `-ignore_remaining_args=1`, like the other parser fuzzers):
