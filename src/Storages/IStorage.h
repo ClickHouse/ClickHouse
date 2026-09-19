@@ -555,6 +555,10 @@ public:
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
+    /// Checked before `RENAME DATABASE` moves this table into `new_database_name`. Unlike a table rename,
+    /// only the database name changes there: the table name and the table UUID are preserved.
+    virtual void checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const {}
+
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.
