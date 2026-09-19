@@ -4,7 +4,6 @@
 
 #include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -135,7 +134,7 @@ namespace detail
             }
         };
 
-        VectorWithMemoryTracking<Element> data;
+        std::vector<Element> data;
         std::mutex lock;
         /// It's Ok that generator is not seeded.
         pcg64 rng;
@@ -172,8 +171,8 @@ namespace detail
  * Example of usage:
  *
  * class MyDefaulImpl : public IFunction {...};
- * DECLARE_X86_64_V4_SPECIFIC_CODE(
- * class Myv4Impl : public IFunction {...};
+ * DECLARE_X86_64_V3_SPECIFIC_CODE(
+ * class Myv3Impl : public IFunction {...};
  * )
  *
  * /// All methods but execute/executeImpl are usually not bottleneck, so just use them from
@@ -185,7 +184,7 @@ namespace detail
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
  *     #if USE_MULTITARGET_CODE
- *         selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::Myv4Impl>();
+ *         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::Myv3Impl>();
  *     #endif
  *     }
  *
@@ -268,7 +267,7 @@ public:
 
 private:
     const std::string function_implementation;
-    VectorWithMemoryTracking<ImplementationPtr> implementations;
+    std::vector<ImplementationPtr> implementations;
     mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
 };
 

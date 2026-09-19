@@ -45,9 +45,7 @@ select
     if(peak_threads_usage >= 6, 7, peak_threads_usage),
 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() and
-    type = 'QueryFinish' and
-    is_initial_query = 1 and
-    query_kind = 'Insert' and
+    type != 'QueryStart' and
     query_id = '$QUERY_ID'
 order by ALL;
 EOF

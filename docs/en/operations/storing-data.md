@@ -33,10 +33,6 @@ storage configuration for the ClickHouse `MergeTree` family or `Log` family tabl
 family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` (unsupported) using a disk with types `s3`,
 `azure_blob_storage`, `hdfs` (unsupported) respectively.
 
-:::note
-The `s3` disk type can also be used with S3-compatible object storage providers, such as Alibaba Cloud Object Storage Service. Configure `endpoint` with the provider's S3-compatible endpoint and account for any provider-specific compatibility requirements.
-:::
-
 Disk configuration requires:
 
 1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.
@@ -346,7 +342,7 @@ where `web` is from the server configuration file:
 |-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------|
 | `region`                                        | S3 region name.                                                                                                                                                                                                                               | -                                        |
 | `support_batch_delete`                          | Controls whether to check for batch delete support. Set to `false` when using Google Cloud Storage (GCS) as GCS doesn't support batch deletes.                                                                                                | `true`                                   |
-| `use_environment_credentials`                   | Reads AWS credentials from environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` if they exist. Note: environment credentials are shared across all S3 disks. To use different credentials for different disks, specify explicit `access_key_id` and `secret_access_key` per disk instead. | `false`                                  |
+| `use_environment_credentials`                   | Reads AWS credentials from environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` if they exist.                                                                                                        | `false`                                  |
 | `use_insecure_imds_request`                     | If `true`, uses insecure IMDS request when obtaining credentials from Amazon EC2 metadata.                                                                                                                                                    | `false`                                  |
 | `expiration_window_seconds`                     | Grace period (in seconds) for checking if expiration-based credentials have expired.                                                                                                                                                          | `120`                                    |
 | `proxy`                                         | Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.                                                                                                                                      | -                                        |

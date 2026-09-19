@@ -9,7 +9,6 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -21,23 +20,15 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/IParser.h>
-#include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 
@@ -76,10 +67,20 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
+
+/** The handshake response is read before the client is authenticated, so its size has to be bounded.
+  * The fields it carries are a user name, a database name, an authentication plugin name and an
+  * authentication response, so this is generous: a real client sends a few hundred bytes.
+  * Without a bound, a peer can make the server grow memory while sending a response that never ends:
+  * `MySQLPacketPayloadReadBuffer` follows a chain of maximum-size (16 MiB) packets as one logical
+  * message, and the fields inside the response are read up to a terminator.
+  */
+static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -99,7 +100,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    chassert(expr.ok());
+    assert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
@@ -122,137 +123,60 @@ static String selectEmptyReplacementQuery(const String & query)
     return "select ''";
 }
 
-/// Parse `text` as exactly one string literal (and nothing else) and return its unescaped value.
-/// Returns nullopt if `text` is not a single string literal, so callers can reject client input
-/// instead of concatenating it into a query (which would allow SQL injection over the MySQL wire).
-static std::optional<String> tryParseSingleStringLiteral(const String & text)
-{
-    Tokens tokens(text.data(), text.data() + text.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    Expected expected;
-    ASTPtr ast;
-    if (!ParserStringLiteral().parse(pos, ast, expected))
-        return std::nullopt;
-    /// Accept one optional trailing ';' then end-of-stream: executeQuery treats ';' as
-    /// end-of-query, so a benign programmatic client may send "SHOW TABLE STATUS LIKE 'x';".
-    /// A second statement after the ';' leaves pos before end -> rejected, so this stays injection-safe.
-    ParserToken(TokenType::Semicolon).ignore(pos, expected);
-    if (!pos->isEnd())
-        return std::nullopt;
-    return ast->as<ASTLiteral &>().value.safeGet<String>();
-}
-
 /// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
 static String showTableStatusReplacementQuery(const String & query)
 {
     const String prefix = "SHOW TABLE STATUS LIKE ";
-    String pattern;
-    /// The dispatcher matched the key "SHOW TABLE STATUS LIKE" (22 chars, no separator) but we slice
-    /// at prefix.length() (23, includes the space). Require that separator byte to be whitespace,
-    /// else "SHOW TABLE STATUS LIKEx'a'" would skip the stray byte and be coerced into a lookup.
-    if (query.size() > prefix.size() && isWhitespaceASCII(query[prefix.size() - 1]))
+    if (query.size() > prefix.size())
     {
-        /// Parse the LIKE argument as a single string literal and re-quote it. The raw client
-        /// suffix must never be concatenated verbatim: that allowed injecting an arbitrary tail
-        /// (e.g. "" UNION SELECT ... FROM system.users) into the generated query. If the suffix
-        /// is not exactly one string literal, match nothing rather than risk injection.
-        if (auto parsed = tryParseSingleStringLiteral(query.data() + prefix.length()))
-            pattern = *parsed;
+        String suffix = query.data() + prefix.length();
+        return (
+            "SELECT"
+            " name AS Name,"
+            " engine AS Engine,"
+            " '10' AS Version,"
+            " 'Dynamic' AS Row_format,"
+            " 0 AS Rows,"
+            " 0 AS Avg_row_length,"
+            " 0 AS Data_length,"
+            " 0 AS Max_data_length,"
+            " 0 AS Index_length,"
+            " 0 AS Data_free,"
+            " 'NULL' AS Auto_increment,"
+            " metadata_modification_time AS Create_time,"
+            " metadata_modification_time AS Update_time,"
+            " metadata_modification_time AS Check_time,"
+            " 'utf8_bin' AS Collation,"
+            " 'NULL' AS Checksum,"
+            " '' AS Create_options,"
+            " '' AS Comment"
+            " FROM system.tables"
+            " WHERE name LIKE "
+            + suffix);
     }
-    return (
-        "SELECT"
-        " name AS Name,"
-        " engine AS Engine,"
-        " '10' AS Version,"
-        " 'Dynamic' AS Row_format,"
-        " 0 AS Rows,"
-        " 0 AS Avg_row_length,"
-        " 0 AS Data_length,"
-        " 0 AS Max_data_length,"
-        " 0 AS Index_length,"
-        " 0 AS Data_free,"
-        " 'NULL' AS Auto_increment,"
-        " metadata_modification_time AS Create_time,"
-        " metadata_modification_time AS Update_time,"
-        " metadata_modification_time AS Check_time,"
-        " 'utf8_bin' AS Collation,"
-        " 'NULL' AS Checksum,"
-        " '' AS Create_options,"
-        " '' AS Comment"
-        " FROM system.tables"
-        " WHERE name LIKE "
-        + quoteString(pattern));
+    return query;
 }
 
 static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & clickhouse_setting)
 {
     const String prefix = "SET " + mysql_setting;
-    if (!checkShouldReplaceQuery(query, prefix))
-        return std::nullopt;
-
-    /// checkShouldReplaceQuery is only a byte-prefix check, so it also matches a longer variable
-    /// that merely starts with the mapped name (e.g. "SET SQL_SELECT_LIMITED=1" matches the
-    /// "SET SQL_SELECT_LIMIT" prefix). Require a word boundary after the name: the next character
-    /// must not continue an identifier. Otherwise this is a different variable, so leave the query
-    /// untranslated (it passes through and errors safely as an unknown setting) instead of resetting
-    /// the unrelated mapped setting below.
-    if (query.length() > prefix.length() && isWordCharASCII(query[prefix.length()]))
-        return std::nullopt;
-
-    /// Parse the "= <value>" tail and re-serialize the value rather than concatenating the raw
-    /// client suffix. Concatenation let a client smuggle a tail into the generated query
-    /// (e.g. "SET SQL_SELECT_LIMIT=1, max_threads=42" became "SET limit=1, max_threads=42").
-    /// Only translate when the full tail is exactly "= <literal|DEFAULT>" with an optional single
-    /// trailing ';' (executeQuery treats ';' as end-of-query, so a benign programmatic client may
-    /// send "SET SQL_SELECT_LIMIT=2;"). Anything else (a malformed value, or an injected tail such
-    /// as ", max_threads=42" or a second statement after ';') is rejected: throw instead of
-    /// silently resetting the mapped setting to DEFAULT, which would change the caller's session
-    /// state on a malformed input and report success.
-    const String tail = query.data() + prefix.length();
-    Tokens tokens(tail.data(), tail.data() + tail.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    Expected expected;
-
-    if (!ParserToken(TokenType::Equals).ignore(pos, expected))
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected '=' after '{}'", prefix);
-
-    String value;
-    ASTPtr ast;
-    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
-        value = "DEFAULT";
-    else if (ParserLiteral().parse(pos, ast, expected))
-        value = applyVisitor(FieldVisitorToString(), ast->as<ASTLiteral &>().value);
-    else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected a single value after '{} ='", prefix);
-
-    ParserToken(TokenType::Semicolon).ignore(pos, expected);
-    if (!pos->isEnd())
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected trailing tokens after '{} = <value>'", prefix);
-
-    return "SET " + clickhouse_setting + " = " + value;
+    // if (query.length() >= prefix.length() && boost::iequals(std::string_view(prefix), std::string_view(query.data(), 3)))
+    if (checkShouldReplaceQuery(query, prefix))
+        return "SET " + clickhouse_setting + String(query.data() + prefix.length());
+    return std::nullopt;
 }
 
 /// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
 static String killConnectionIdReplacementQuery(const String & query)
 {
     const String prefix = "KILL QUERY ";
-    /// The dispatcher matched the key "KILL QUERY" (10 chars, no separator) but we slice at
-    /// prefix.length() (11, includes the space). Require that separator byte to be whitespace,
-    /// else "KILL QUERY;12"/"KILL QUERYx12" would skip the stray byte and be coerced into a cancel.
-    if (query.size() > prefix.size() && isWhitespaceASCII(query[prefix.size() - 1]))
+    if (query.size() > prefix.size())
     {
         String suffix = query.data() + prefix.length();
-        /// Capture the digits of the connection id and accept one optional trailing ';' plus
-        /// surrounding whitespace: "^[0-9]" accepted only a single digit and silently dropped every
-        /// multi-digit id (e.g. "KILL QUERY 12"), and a benign programmatic client may send
-        /// "KILL QUERY 12;" (executeQuery treats ';' as end-of-query). Only the captured digits are
-        /// substituted, so any other tail (a non-numeric id, or a second statement after ';') fails
-        /// the match and stays injection-safe.
-        static const re2::RE2 expr(R"(^\s*([0-9]+)\s*;?\s*$)");
-        String connection_id_str;
-        if (re2::RE2::FullMatch(suffix, expr, &connection_id_str))
+        static const re2::RE2 expr("^[0-9]");
+        if (re2::RE2::FullMatch(suffix, expr))
         {
-            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", connection_id_str);
+            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;
         }
     }
@@ -367,7 +291,10 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
+        /// Check the actual state of the transport, not the capability bit advertised by the client:
+        /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
+        /// `SSLRequest`, and then the connection stays unencrypted.
+        if (secure_required && !secure_connection)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
@@ -492,6 +419,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+                payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
@@ -553,7 +485,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     /// Check before getTable() so this command does not become a table-existence oracle.
     session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
-    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
@@ -683,7 +615,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement_opt = getPreparedStatement(statement_id);
@@ -695,7 +627,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
@@ -807,7 +739,33 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+
+    /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
+    /// path: read the packet header, reject an oversized declared payload before reading it, and
+    /// then read exactly as many bytes as it declares. The bound has to be applied to the logical
+    /// MySQL payload rather than to the underlying stream: `MySQLPacketPayloadReadBuffer` reports
+    /// end of file as soon as the stream under it ends, so a stream cut off at the limit would make
+    /// a truncated packet look like a complete one.
+    char header[PACKET_HEADER_SIZE];
+    in->readStrict(header, PACKET_HEADER_SIZE);
+
+    size_t payload_size = unalignedLoad<uint32_t>(header) & 0xFFFFFFu;
+    if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+            payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
+    size_t packet_sequence_id = static_cast<uint8_t>(header[3]);
+    if (packet_sequence_id != sequence_id)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Received packet with wrong sequence-id: {}. Expected: {}.",
+            packet_sequence_id, static_cast<unsigned int>(sequence_id));
+
+    WriteBufferFromOwnString buf_for_handshake_response;
+    copyData(*in, buf_for_handshake_response, payload_size);
+    ReadBufferFromString handshake_response_payload(buf_for_handshake_response.str());
+    packet.readPayloadWithUnpacked(handshake_response_payload);
+    packet_endpoint->sequence_id++;
 }
 
 #endif

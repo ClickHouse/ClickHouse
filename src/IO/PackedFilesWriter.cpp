@@ -1,4 +1,3 @@
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
@@ -30,16 +29,7 @@ PackedFilesWriter::writeFile(const String & file_name)
     auto [it, inserted] = written_files.try_emplace(file_name);
 
     if (!inserted)
-    {
-        String existing_files;
-        for (const auto & [name, _] : written_files)
-        {
-            if (!existing_files.empty()) existing_files += ", ";
-            existing_files += name;
-        }
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
-            "File {} already exists in packed archive (existing files: [{}])", file_name, existing_files);
-    }
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_name);
 
     it->second = std::make_shared<Data>();
     return std::make_unique<FakeWriteBufferFromFile>(file_name, it->second);
@@ -67,15 +57,6 @@ void PackedFilesWriter::removeFileIfExists(const String & name)
 {
     metadata_changes.emplace_back(MetadataChange::REMOVE_IF_EXISTS, name, "");
     applyRemoveFile(metadata_changes.back(), written_files);
-}
-
-void PackedFilesWriter::setUncompressedSize(const String & file_name, UInt64 uncompressed_size)
-{
-    auto it = written_files.find(file_name);
-    if (it == written_files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-            "Cannot set uncompressed size for {}. File does not exist in packed archive", file_name);
-    it->second->uncompressed_size = uncompressed_size;
 }
 
 /// Returns the size of string written by @writeStringBinary call.
@@ -133,9 +114,9 @@ void PackedFilesWriter::applyRemoveFile(MetadataChange & change, Map & index_map
 }
 
 
-void PackedFilesWriter::writePackedIndex(WriteBuffer & out, const PackedFilesIO::Index & index, UInt8 version)
+void PackedFilesWriter::writePackedIndex(WriteBuffer & out, const PackedFilesIO::Index & index)
 {
-    writeIntBinary(version, out);
+    writeIntBinary(PackedFilesIO::VERSION, out);
     writeIntBinary(index.size(), out);
 
     for (const auto & [name, offset] : index)
@@ -143,15 +124,13 @@ void PackedFilesWriter::writePackedIndex(WriteBuffer & out, const PackedFilesIO:
         writeStringBinary(name, out);
         writeIntBinary(offset.offset, out);
         writeIntBinary(offset.size, out);
-        if (version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE)
-            writeIntBinary(offset.uncompressed_size, out);
     }
 }
 
-PackedFilesIO::Index PackedFilesWriter::finalize(CommitDataFunc commit_func, const Strings & files_order_hint, UInt8 version)
+PackedFilesIO::Index PackedFilesWriter::finalize(CommitDataFunc commit_func, const Strings & files_order_hint)
 {
     WriteBufferFromOwnString serialized;
-    auto [index, need_sync] = finalize(serialized, files_order_hint, version);
+    auto [index, need_sync] = finalize(serialized, files_order_hint);
 
     serialized.preFinalize();
     serialized.finalize();
@@ -159,9 +138,8 @@ PackedFilesIO::Index PackedFilesWriter::finalize(CommitDataFunc commit_func, con
     return index;
 }
 
-std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version)
+std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & out, const Strings & files_order_hint)
 {
-    const bool with_uncompressed_size = version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE;
     for (auto & change : metadata_changes)
     {
         if (!change.is_applied)
@@ -177,14 +155,14 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
     }
 
     const UInt64 num_files = written_files.size();
-    writeIntBinary(version, out);
+    writeIntBinary(PackedFilesIO::VERSION, out);
     writeIntBinary(num_files, out);
 
-    Strings ordered_file_names;
+    std::vector<String> ordered_file_names;
     ordered_file_names.reserve(num_files);
     /// Order files according to the hint.
     {
-        UnorderedSetWithMemoryTracking<String> already_added_files;
+        std::unordered_set<String> already_added_files;
         for (const auto & hinted_name : files_order_hint)
         {
             std::string found_file_name;
@@ -217,11 +195,12 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
     chassert(ordered_file_names.size() == num_files, "Number of files in ordered list doesn't match the number of written files");
 
     /// Calculate the size of index.
-    /// Per-file fields: file_name, offset, size [, uncompressed_size in v1+].
-    const UInt64 num_size_fields = with_uncompressed_size ? 3 : 2;
     UInt64 data_offset = getSizeOfHeader();
     for (const auto & name : ordered_file_names)
-        data_offset += getLengthOfSerializedString(name) + sizeof(UInt64) * num_size_fields;
+    {
+        /// 3 fields: file_name, offset, size.
+        data_offset += getLengthOfSerializedString(name) + sizeof(UInt64) * 2;
+    }
 
     PackedFilesIO::Index index;
     for (const auto & name : ordered_file_names)
@@ -231,10 +210,8 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
         writeStringBinary(name, out);
         writeIntBinary(data_offset, out);
         writeIntBinary(data_size, out);
-        if (with_uncompressed_size)
-            writeIntBinary(data->uncompressed_size, out);
 
-        index[name] = {data_offset, data_size, data->uncompressed_size};
+        index[name] = {data_offset, data_size};
         data_offset += data_size;
     }
 
@@ -252,8 +229,8 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
 
 size_t PackedFilesWriter::getSizeOfHeader()
 {
-    /// 2 fields: version (UInt8), number of files (UInt64).
-    return sizeof(UInt8) + sizeof(UInt64);
+    /// 2 fields: version, number of files.
+    return sizeof(PackedFilesIO::VERSION) + sizeof(UInt64);
 }
 
 void PackedFilesWriter::FakeWriteBufferFromFile::nextImpl()

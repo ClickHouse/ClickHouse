@@ -64,8 +64,6 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED;
 
     extern const int TIMEOUT_EXCEEDED;
-
-    extern const int UNSUPPORTED_MEDIA_TYPE;
 }
 
 
@@ -131,10 +129,6 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
     if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
     {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
-    }
-    if (exception_code == ErrorCodes::UNSUPPORTED_MEDIA_TYPE)
-    {
-        return HTTPResponse::HTTP_UNSUPPORTED_MEDIA_TYPE;
     }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;

@@ -105,8 +105,6 @@ namespace
 }
 
 
-void registerBackupEnginesFileAndDisk(BackupFactory &);
-
 void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>

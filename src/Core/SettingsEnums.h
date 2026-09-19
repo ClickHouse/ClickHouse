@@ -16,11 +16,9 @@
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
-#include <IO/SnappyMode.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -57,8 +55,8 @@ constexpr auto getEnumValues();
 #define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
     const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
-        static const UnorderedMapWithMemoryTracking<EnumType, String> map = [] { \
-            UnorderedMapWithMemoryTracking<EnumType, String> res; \
+        static const std::unordered_map<EnumType, String> map = [] { \
+            std::unordered_map<EnumType, String> res; \
             for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(val, name); \
             return res; \
@@ -72,8 +70,8 @@ constexpr auto getEnumValues();
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
-        static const UnorderedMapWithMemoryTracking<std::string_view, EnumType> map = [] { \
-            UnorderedMapWithMemoryTracking<std::string_view, EnumType> res; \
+        static const std::unordered_map<std::string_view, EnumType> map = [] { \
+            std::unordered_map<std::string_view, EnumType> res; \
             for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(name, val); \
             return res; \
@@ -226,14 +224,6 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
-enum class TextIndexPostingListApplyMode : uint8_t
-{
-    MATERIALIZE,
-    LAZY,
-};
-
-DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
-
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
 DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
@@ -251,8 +241,7 @@ enum class MySQLDataTypesSupport : uint8_t
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
     DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
     DATE2DATE32, // convert MySQL's date type to ClickHouse Date32
-    DATE2STRING, // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
-    GEOMETRY // convert MySQL's spatial types to the corresponding ClickHouse geometric types (LineString, Polygon, MultiLineString, MultiPolygon); the generic GEOMETRY type maps to the umbrella Geometry type
+    DATE2STRING  // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
 };
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
@@ -283,8 +272,6 @@ DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
-DECLARE_SETTING_ENUM(SnappyMode)
-
 enum class TransactionsWaitCSNMode : uint8_t
 {
     ASYNC,
@@ -299,8 +286,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(CapnProtoEnumComparingMode, FormatSettings::Cap
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSettings::UnsupportedGeometryHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
 
@@ -416,20 +401,11 @@ enum class ObjectStorageQueueBucketingMode : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
 
-enum class QueryRunnerMode : uint8_t
-{
-    SYNCHRONOUS,
-    ASYNCHRONOUS,
-};
-
-DECLARE_SETTING_ENUM(QueryRunnerMode)
-
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
-DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
@@ -455,7 +431,6 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
-    ICEBERG_DELTA_SHARING,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -487,21 +462,6 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
-/// Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled.
-enum class SkipUnavailableShardsMode : uint8_t
-{
-    /// Ignore only connection-related errors.
-    UNAVAILABLE = 0,
-    /// Additionally ignore errors caused by a missing table or database on the shard
-    /// (the historical behavior of `skip_unavailable_shards`, and the default).
-    UNAVAILABLE_OR_TABLE_MISSING,
-    /// Additionally ignore any exception received from the shard before it returned any data block to the initiator.
-    /// Note: a shard performing a blocking computation (aggregation, sort, ...) may process rows and fail before
-    /// emitting a block, so its partial work can still be silently discarded. This is the most permissive mode.
-    UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING,
-};
-
-DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
 
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
@@ -522,26 +482,6 @@ enum class SearchOrphanedPartsDisks : uint8_t
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
-enum class TextIndexPostingListCodec : uint8_t
-{
-    None,
-    Bitpacking
-};
-
-DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
-
-/// NOTE: Part level min-max index depends on strict columns order.
-///       That means if you want to add new columns segment to index - it will not be materialized until
-///       previous segment will be materialized in all data parts via mutation or merge.
-///       This is an upgrade semantics of this index.
-enum class MergeTreePartMinMaxIndexColumns : uint64_t
-{
-    PARTITION_KEY_ONLY = 0,
-    WITH_BLOCK_NUMBER_OFFSET = 1,
-};
-
-DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
-
 enum class DecorrelationJoinKind : uint8_t
 {
     LEFT = 0,
@@ -559,6 +499,7 @@ enum class IcebergMetadataLogLevel : uint8_t
     ManifestFileMetadata = 4,
     ManifestFileEntry = 5,
 };
+
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 
 enum class ObjectStorageGranularityLevel : uint8_t
@@ -595,6 +536,15 @@ enum class DeduplicateInsertMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateInsertMode)
 
+enum class InsertDeduplicationVersions : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFIED_HASHES,
+};
+
+DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
+
 enum class JemallocProfileFormat : uint8_t
 {
     Raw = 0,
@@ -603,28 +553,4 @@ enum class JemallocProfileFormat : uint8_t
 };
 
 DECLARE_SETTING_ENUM(JemallocProfileFormat)
-
-enum class S3UriStyle : uint8_t
-{
-    AUTO,
-    PATH,
-    VIRTUAL_HOSTED,
-};
-
-DECLARE_SETTING_ENUM(S3UriStyle)
-
-enum class ExplainQueryPlanDefault : uint8_t
-{
-    LEGACY,
-    PRETTY,
-};
-DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
-
-enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
-{
-    WILDCARD,
-    HIVE,
-};
-DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
-
 }

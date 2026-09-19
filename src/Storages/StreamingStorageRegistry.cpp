@@ -4,8 +4,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/SipHash.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 

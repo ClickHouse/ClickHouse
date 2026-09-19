@@ -167,7 +167,7 @@ private:
 };
 
 
-class FunctionRepeat final : public IFunction
+class FunctionRepeat : public IFunction
 {
     template <typename F>
     static bool castType(const IDataType * type, F && f)

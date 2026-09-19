@@ -9,14 +9,9 @@
 
 namespace ProfileEvents
 {
-    extern const Event JoinBuildPostProcessingMicroseconds;
     extern const Event JoinBuildTableRowCount;
     extern const Event JoinProbeTableRowCount;
     extern const Event JoinResultRowCount;
-    extern const Event JoinNonJoinedTransformBlockCount;
-    extern const Event JoinNonJoinedTransformRowCount;
-    extern const Event JoinDelayedJoinedTransformBlockCount;
-    extern const Event JoinDelayedJoinedTransformRowCount;
 }
 
 namespace DB
@@ -61,7 +56,7 @@ JoiningTransform::~JoiningTransform() = default;
 
 OutputPort & JoiningTransform::getFinishedSignal()
 {
-    chassert(outputs.size() == 2);
+    assert(outputs.size() == 2);
     return outputs.back();
 }
 
@@ -123,10 +118,7 @@ IProcessor::Status JoiningTransform::prepare()
     auto & input = inputs.front();
     if (input.isFinished())
     {
-        /// There is a big assumption here: if join supports parallel non-joined block processing, then it is
-        /// assumed the query pipeline contains the appropriate `NonJoinedBlocksTransform` processors and we can
-        /// safely skip processing non-joined blocks depending on `isParallelNonJoinedProcessingEnabled()`.
-        if (process_non_joined && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
+        if (process_non_joined)
             return Status::Ready;
 
         output.finish();
@@ -278,12 +270,6 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 {
     auto & output = outputs.front();
 
-    if (post_build_phase)
-    {
-        output.finish();
-        return Status::Finished;
-    }
-
     /// Check can output.
     if (output.isFinished())
     {
@@ -339,14 +325,7 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
     }
 
     if (finish_counter->isLast())
-    {
         join->onBuildPhaseFinish();
-        if (join->hasPostBuildPhase())
-        {
-            post_build_phase = true;
-            return Status::Ready;
-        }
-    }
 
     output.finish();
     return Status::Finished;
@@ -354,13 +333,6 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
-    if (post_build_phase)
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
-        join->runPostBuildPhase();
-        return;
-    }
-
     auto & input = inputs.front();
     auto num_rows = chunk.getNumRows();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
@@ -372,6 +344,9 @@ void FillingRightJoinSideTransform::work()
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
         stop_reading = !join->addBlockToJoin(block, num_rows, true);
     }
+
+    if (input.isFinished() && !join->supportParallelJoin())
+        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
@@ -503,9 +478,7 @@ void DelayedJoinedBlocksWorkerTransform::work()
     }
 
     // Add block to the output
-    const auto rows = block.rows();
-    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformBlockCount);
-    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformRowCount, rows);
+    auto rows = block.rows();
     output_chunk.setColumns(block.getColumns(), rows);
 }
 
@@ -620,9 +593,6 @@ NonJoinedBlocksTransform::NonJoinedBlocksTransform(
 
 Chunk NonJoinedBlocksTransform::generate()
 {
-    if (!join->isParallelNonJoinedProcessingEnabled())
-        return {};
-
     if (!non_joined_blocks)
     {
         non_joined_blocks = join->getNonJoinedBlocks(
@@ -636,11 +606,8 @@ Chunk NonJoinedBlocksTransform::generate()
     if (block.empty())
         return {};
 
-    const auto rows = block.rows();
-    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, rows);
-    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformBlockCount);
-    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformRowCount, rows);
-    return Chunk(block.getColumns(), rows);
+    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
+    return Chunk(block.getColumns(), block.rows());
 }
 
 }

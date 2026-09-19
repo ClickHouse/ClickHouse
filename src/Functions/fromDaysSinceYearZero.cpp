@@ -38,7 +38,7 @@ struct DateTraits32
 };
 
 template <typename Traits>
-class FunctionFromDaysSinceYearZero final : public IFunction
+class FunctionFromDaysSinceYearZero : public IFunction
 {
 public:
     static constexpr auto name = Traits::name;

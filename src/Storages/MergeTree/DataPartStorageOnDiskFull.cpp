@@ -2,13 +2,10 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
-#include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -51,7 +48,7 @@ bool DataPartStorageOnDiskFull::exists() const
     return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
@@ -92,17 +89,9 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
     return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
 }
 
-size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
+size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
-}
-
-std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
-{
-    if (looksLikePackedSkipIndexFile(file_name))
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
-            return reader->getFileUncompressedSize(file_name);
-    return {};
 }
 
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
@@ -133,16 +122,15 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-void DataPartStorageOnDiskFull::prepareReadImpl(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    ReadPipeline & pipeline) const
+    std::optional<size_t> read_hint) const
 {
-    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExistsImpl(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const

@@ -28,16 +28,6 @@ SerializationMapKeyValue::SerializationMapKeyValue(
 {
 }
 
-SerializationPtr SerializationMapKeyValue::create(
-    const SerializationPtr & value_serialization_,
-    const SerializationPtr & map_nested_serialization_,
-    MergeTreeMapSerializationVersion serialization_version_,
-    ColumnPtr key_,
-    const DataTypePtr & nested_type_)
-{
-    return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_));
-}
-
 /// Deserialization state for reading a single key's value from a Map.
 /// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState

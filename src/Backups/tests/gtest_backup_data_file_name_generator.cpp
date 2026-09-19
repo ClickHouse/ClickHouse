@@ -92,14 +92,6 @@ TEST(BackupDataFileNameGeneratorTest, ThrowsOnZeroChecksum)
     auto info = makeFileInfo("test.bin", checksum);
 
     auto prefix_length = 2;
-    try
-    {
-        getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length);
-        FAIL() << "Expected DB::Exception with LOGICAL_ERROR for zero checksum";
-    }
-    catch (Exception & e)
-    {
-        e.markAsLogged();
-    }
+    EXPECT_THROW(getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length), Exception);
 #endif
 }

@@ -98,7 +98,6 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         }
 
         assignment = topic_partitions;
-        waited_for_assignment = 0;
         num_rebalance_assignments++;
     });
 
@@ -128,7 +127,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
-        chassert(!assignment.has_value() || topic_partitions.size() == assignment->size());
+        assert(!assignment.has_value() || topic_partitions.size() == assignment->size());
         cleanAssignment();
         waited_for_assignment = 0;
 
@@ -399,7 +398,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 
 void KafkaConsumer::doPoll()
 {
-    chassert(current == messages.end());
+    assert(current == messages.end());
 
     while (true)
     {

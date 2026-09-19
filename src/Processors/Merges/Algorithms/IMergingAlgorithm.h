@@ -2,6 +2,7 @@
 
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>

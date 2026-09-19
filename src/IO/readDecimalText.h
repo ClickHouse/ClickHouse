@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/intExp.h>
+#include <IO/ReadHelpers.h>
 
 #include <limits>
 
@@ -151,7 +152,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     uint32_t digits = precision;
-    int32_t exponent = 0;
+    int32_t exponent;
     auto ok = readDigits<throw_exception>(buf, x, digits, exponent, digits_only);
 
     if (!throw_exception && !ok)
@@ -183,7 +184,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
 
         /// Too many digits after point. Just cut off excessive digits.
         auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
-        chassert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+        assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
         x.value /= divisor;  /// NOLINT(clang-analyzer-core.DivideZero)
         scale = 0;
         return ReturnType(true);

@@ -1,6 +1,4 @@
-#include <filesystem>
 #include <memory>
-#include <DataTypes/DataTypeArray.h>
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
@@ -25,8 +23,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -104,8 +102,7 @@ public:
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
-        if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
-            throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
+        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
     }
 
     std::unique_ptr<WriteBuffer> write() override
@@ -193,7 +190,7 @@ public:
             buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
 
         auto local_read_settings = read_settings;
-        local_read_settings.remote_fs_settings.buffer_size = buffer_size_;
+        local_read_settings.remote_fs_buffer_size = buffer_size_;
         return std::make_unique<ReadBufferFromDistributedCache>(
             file_key,
             bytes_written,
@@ -285,9 +282,9 @@ public:
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
-        settings.local_fs_settings.buffer_size = buffer_size_;
-        settings.remote_fs_settings.buffer_size = buffer_size_;
-        settings.remote_fs_settings.large_buffer_size = buffer_size_;
+        settings.local_fs_buffer_size = buffer_size_;
+        settings.remote_fs_buffer_size = buffer_size_;
+        settings.prefetch_buffer_size = buffer_size_;
 
         return disk->readFile(path_to_file, settings);
     }

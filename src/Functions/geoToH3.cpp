@@ -36,7 +36,7 @@ namespace
 
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)
 /// and returns h3 index of this point
-class FunctionGeoToH3 final : public IFunction
+class FunctionGeoToH3 : public IFunction
 {
     GeoToH3ArgumentOrder geotoh3_argument_order;
 public:
@@ -147,7 +147,7 @@ public:
             coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
 
-            H3Index hindex = 0;
+            H3Index hindex;
             H3Error err = latLngToCell(&coord, res, &hindex);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lng, err);

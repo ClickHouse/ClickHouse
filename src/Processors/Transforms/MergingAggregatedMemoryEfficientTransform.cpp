@@ -113,7 +113,7 @@ bool GroupingAggregatedTransform::tryPushOverflowData()
     return true;
 }
 
-IProcessor::Status GroupingAggregatedTransform::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &)
+IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers &)
 {
     /// Check can output.
     auto & output = outputs.front();
@@ -135,19 +135,15 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const UpdatedInputPorts 
         index_to_input.resize(num_inputs);
 
         for (size_t i = 0; i < num_inputs; ++i, ++in)
-        {
             index_to_input[i] = in;
-            input_port_to_index[&*in] = i;
-        }
     }
 
     auto need_input = [this](size_t input_num) { return last_bucket_number[input_num] <= current_bucket; };
 
     if (!wait_input_ports_numbers.empty())
     {
-        for (const auto * updated_input_port : updated_input_ports)
+        for (const auto & updated_input_port_number : updated_input_ports)
         {
-            const auto updated_input_port_number = input_port_to_index.at(updated_input_port);
             if (!wait_input_ports_numbers.contains(updated_input_port_number))
                 continue;
 
@@ -342,13 +338,8 @@ void GroupingAggregatedTransform::work()
 
 
 MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
-    AggregatingTransformParamsPtr params_,
-    const SortDescription & required_sort_description_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
-    : ISimpleTransform({}, params_->getHeader(), false)
-    , params(std::move(params_))
-    , required_sort_description(required_sort_description_)
-    , dataflow_cache_updater(std::move(dataflow_cache_updater_))
+    AggregatingTransformParamsPtr params_, const SortDescription & required_sort_description_)
+    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_)), required_sort_description(required_sort_description_)
 {
     setInputNotNeededAfterRead(true);
 }
@@ -391,7 +382,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->chunk_num = chunks_to_merge->chunk_num;
     chunk.getChunkInfos().add(std::move(res_info));
 
-    auto agg_chunk = params->aggregator.mergeBlocks(chunks_list, params->final, is_cancelled, dataflow_cache_updater);
+    auto agg_chunk = params->aggregator.mergeBlocks(chunks_list, params->final, is_cancelled);
 
     if (!required_sort_description.empty() && agg_chunk.chunk)
     {

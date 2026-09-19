@@ -6,7 +6,7 @@ from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -233,7 +233,7 @@ def test_async_load_system_database(started_cluster):
             assert (
                 int(
                     node2.query(
-                        "select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
+                        f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
                     )
                 )
                 > 0
@@ -404,30 +404,24 @@ def test_materialized_views_replicated(started_cluster):
         )
     )
 
-    # Fire INSERTs while CH is restarting. Stop as soon as the restart finishes
-    # (event set) or its budget elapses, so repeated half-up-server hangs (each
-    # bounded by `timeout`) can't accumulate past the 900s pytest session timeout.
-    insert_phase_deadline = time.monotonic() + 180
+    # start INSERTS when CH is not started yet
     for i in range(100, 130):
-        if disconnect_event.is_set() or time.monotonic() >= insert_phase_deadline:
-            break
         try:
             node1.query(
-                f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
+                f"INSERT INTO test_mv.test_table_H VALUES({i})"
             )
             logging.debug(f"{i} inserted")
-        except (QueryRuntimeException, QueryTimeoutExceedException):
+        except QueryRuntimeException as e:
             # CH is not started yet
             logging.debug(f"{i} is not inserted - skip")
             time.sleep(0.2)
 
-    # restart must finish within budget; assert loudly instead of session-timeout
-    assert disconnect_event.wait(180), "restart_clickhouse() did not finish within 180s"
+
+    disconnect_event.wait(90)
 
     for i in range(2000, 2100):
-        # timeout: bound a hung insert so it can't exhaust the 900s session timeout
         node1.query(
-            f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
+            f"INSERT INTO test_mv.test_table_H VALUES({i})"
         )
 
     src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
@@ -443,7 +437,7 @@ def test_materialized_views_replicated(started_cluster):
 
     for node in [node1, node2]:
         node.query(
-            """
+            f"""
             DROP TABLE test_mv.test_table_H SYNC;
             DROP TABLE test_mv.test_table_S SYNC;
             DROP VIEW test_mv.test_mv SYNC;

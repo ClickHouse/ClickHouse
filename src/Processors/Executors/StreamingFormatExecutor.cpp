@@ -3,7 +3,6 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #include <base/scope_guard.h>
-#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -12,12 +11,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int QUERY_WAS_CANCELLED;
-}
-
-namespace FailPoints
-{
-    extern const char async_insert_flush_pause_in_executor[];
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
@@ -26,13 +19,11 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     ErrorCallback on_error_,
     size_t total_bytes_,
     size_t total_chunks_,
-    SimpleTransformPtr adding_defaults_transform_,
-    CancelCallback is_cancelled_)
+    SimpleTransformPtr adding_defaults_transform_)
     : header(header_)
     , format(std::move(format_))
     , on_error(std::move(on_error_))
     , adding_defaults_transform(std::move(adding_defaults_transform_))
-    , is_cancelled(std::move(is_cancelled_))
     , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
@@ -106,11 +97,6 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
         port.setNeeded();
         while (true)
         {
-            FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_in_executor);
-
-            if (is_cancelled && is_cancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Format streaming was cancelled");
-
             auto status = format->prepare();
 
             switch (status)
@@ -129,7 +115,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
 
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
-                case IProcessor::Status::UpdatePipeline:
+                case IProcessor::Status::ExpandPipeline:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Source processor returned status {}", IProcessor::statusToName(status));
             }
         }
@@ -137,9 +123,6 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     catch (Exception & e)
     {
         format->resetParser();
-        /// Cancellation aborts the whole execution; it is not a recoverable per-input parse error.
-        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-            throw;
         return on_error(result_columns, checkpoints, e);
     }
     catch (std::exception & e)

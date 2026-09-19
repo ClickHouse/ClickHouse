@@ -3,9 +3,6 @@
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <filesystem>
 #include <boost/algorithm/string/join.hpp>
@@ -205,14 +202,14 @@ void UpdateAffectedColumns::fromString(const String & str)
 {
     ReadBufferFromString in(str);
 
-    size_t version = 0;
+    size_t version;
     in >> "format version: " >> version >> "\n";
     if (version != VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of affected columns serializaiton: {}", version);
 
     auto read_columns = [&](auto & columns, const char * suffix)
     {
-        size_t count = 0;
+        size_t count;
         in >> count >> " " >> suffix >> "\n";
 
         String column_name;
@@ -311,33 +308,15 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
 
     for (const auto & command : commands)
     {
-        auto alter = command.ast();
-        if (!alter)
-            continue;
-
-        /// The predicate and assignment expressions were re-parsed from the serialized mutation command,
-        /// so their set operations (UNION/INTERSECT/EXCEPT) are not normalized yet. Normalize them before
-        /// building the query tree, as `executeQuery` does, otherwise the analyzer rejects them.
-        ASTPtr predicate(alter->predicate);
-        if (predicate)
-            normalizeSetOperations(predicate, context);
-
-        auto query_tree = buildQueryTree(predicate, context);
+        auto query_tree = buildQueryTree(command.predicate, context);
         auto identifiers = collectIdentifiersFullNames(query_tree);
         std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
 
-        if (!alter->update_assignments)
-            continue;
-
-        for (const auto & child : alter->update_assignments->children)
+        for (const auto & [name, ast] : command.column_to_update_expression)
         {
-            const auto & assignment = child->as<ASTAssignment &>();
-            res.updated.insert(assignment.column_name);
+            res.updated.insert(name);
 
-            ASTPtr assignment_expression = assignment.expression();
-            normalizeSetOperations(assignment_expression, context);
-
-            query_tree = buildQueryTree(assignment_expression, context);
+            query_tree = buildQueryTree(ast, context);
             identifiers = collectIdentifiersFullNames(query_tree);
             std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
         }

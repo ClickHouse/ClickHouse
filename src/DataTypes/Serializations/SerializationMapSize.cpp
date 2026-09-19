@@ -19,22 +19,6 @@ SerializationMapSize::SerializationMapSize(
 {
 }
 
-UInt128 SerializationMapSize::getHash(const SerializationPtr & size_serialization_, MergeTreeMapSerializationVersion serialization_version_)
-{
-    SipHash hash;
-    hash.update("MapSize");
-    hash.update(size_serialization_->getHash());
-    hash.update(static_cast<UInt8>(serialization_version_));
-    return hash.get128();
-}
-
-SerializationPtr SerializationMapSize::create(const SerializationPtr & size_serialization_, MergeTreeMapSerializationVersion serialization_version_)
-{
-    if (!size_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationMapSize(size_serialization_, serialization_version_));
-    return ISerialization::pooled(getHash(size_serialization_, serialization_version_), [&] { return new SerializationMapSize(size_serialization_, serialization_version_); });
-}
-
 /// Deserialization state for the bucketed Map size subcolumn.
 /// Holds the bucket count and per-bucket offset deserialization states.
 struct DeserializeBinaryBulkStateMapSizeWithBuckets : public ISerialization::DeserializeBinaryBulkState
@@ -151,7 +135,7 @@ namespace
 /// Each bucket stores array offsets that were converted to sizes by the nested
 /// `SerializationArrayOffsets`. This function sums them element-wise to produce
 /// the final UInt64 size column.
-void collectMapSizeFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & size_buckets, IColumn & size_column)
+void collectMapSizeFromBuckets(const Columns & size_buckets, IColumn & size_column)
 {
     if (size_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
@@ -203,7 +187,7 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
     /// Multiple buckets. Deserialize sizes from each bucket, then sum them per row.
     else
     {
-        VectorWithMemoryTracking<ColumnPtr> size_buckets(buckets_info_state_concrete->buckets);
+        Columns size_buckets(buckets_info_state_concrete->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state_concrete->buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);

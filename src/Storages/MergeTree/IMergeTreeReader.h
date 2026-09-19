@@ -60,7 +60,11 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    /// `previous_step_columns` names columns produced by earlier reader-chain steps; a subcolumn
+    /// whose parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
+    void fillMissingColumns(
+        Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+        const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -94,18 +98,7 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
-    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
-
 protected:
-    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
-    /// propagated. Used when compiling default or virtual-column expressions at read time.
-    ContextPtr createContextForDefaultExpressions() const;
-
-    /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
-    /// columns that carry a default expression. Required by evaluateMissingDefaults so that it can
-    /// resolve default expressions for virtual columns.
-    ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
-
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
@@ -206,5 +199,5 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    const IndexGranulesMap & index_granules);
+    bool can_skip_mark);
 }

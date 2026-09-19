@@ -25,19 +25,10 @@ void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings 
     /// but `col AS (expr AS alias)` is.
     bool need_parens = !expr->tryGetAlias().empty();
     if (need_parens)
-    {
         ostr << '(';
-        /// We have just emitted `(` around the expression, so suppress the
-        /// child's own `parenthesized` parens (which would otherwise duplicate ours).
-        FormatStateStacked inner_frame = frame;
-        inner_frame.wrapped_in_parens = true;
-        expr->format(ostr, settings, state, inner_frame);
+    expr->format(ostr, settings, state, frame);
+    if (need_parens)
         ostr << ')';
-    }
-    else
-    {
-        expr->format(ostr, settings, state, frame);
-    }
 }
 
 }

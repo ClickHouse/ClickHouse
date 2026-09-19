@@ -16,7 +16,6 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <span>
-#include <Core/UUID.h>
 
 
 namespace DB::ErrorCodes
@@ -147,7 +146,7 @@ namespace DB
 constexpr size_t uuid_bytes_length = 16;
 constexpr size_t uuid_text_length = 36;
 
-class FunctionUUIDNumToString final : public IFunction
+class FunctionUUIDNumToString : public IFunction
 {
 public:
     static constexpr auto name = "UUIDNumToString";
@@ -223,7 +222,7 @@ public:
 };
 
 
-class FunctionUUIDStringToNum final : public IFunction
+class FunctionUUIDStringToNum : public IFunction
 {
 public:
     static constexpr auto name = "UUIDStringToNum";
@@ -329,7 +328,7 @@ public:
 };
 
 
-class FunctionUUIDToNum final : public IFunction
+class FunctionUUIDToNum : public IFunction
 {
 public:
     static constexpr auto name = "UUIDToNum";
@@ -403,7 +402,7 @@ public:
     }
 };
 
-class FunctionUUIDv7ToDateTime final : public IFunction
+class FunctionUUIDv7ToDateTime : public IFunction
 {
 public:
     static constexpr auto name = "UUIDv7ToDateTime";
@@ -640,8 +639,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                              2024-04-22 08:30:29.048 │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+│                                                             2024-04-22 11:30:29.048 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

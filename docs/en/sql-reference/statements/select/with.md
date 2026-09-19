@@ -6,6 +6,8 @@ title: 'WITH Clause'
 doc_type: 'reference'
 ---
 
+# WITH Clause
+
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
 
 ## Common Table Expressions {#common-table-expressions}
@@ -505,15 +507,4 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 ┌─sum(number)─┐
 │        5050 │
 └─────────────┘
-```
-
-## Trailing Comma {#trailing-comma}
-
-A comma is allowed after the last element in the `WITH` clause:
-
-```sql
-WITH
-    (SELECT sum(number) FROM numbers(10)) AS total,
-    total * 2 AS doubled,
-SELECT total, doubled;
 ```

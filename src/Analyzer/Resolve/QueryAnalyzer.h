@@ -213,7 +213,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
-        IdentifierResolveContext identifier_resolve_context = {});
+        IdentifierResolveContext identifier_resolve_settings = {});
 
     /// Resolve query tree nodes functions
 
@@ -230,7 +230,7 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
-    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, IdentifierResolveScope & scope);
+    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -285,19 +285,11 @@ private:
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
-    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
-
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
-    /// Lambdas that are currently in resolve process.
-    /// Keyed by the structural tree hash: a recursive reference to a lambda resolves to a fresh
-    /// clone of the alias node (see tryResolveIdentifierFromAliases), so the guard must detect
-    /// re-entry by structure, not by pointer identity -- otherwise genuine recursion would not be
-    /// caught and would instead run until TOO_DEEP_RECURSION. To keep this cheap, resolveLambda
-    /// computes the hash once per call (a single QueryTreeNodePtrWithHash reused for the
-    /// contains/insert/erase) instead of recomputing the lambda body's full getTreeHash three times.
+    /// Lambdas that are currently in resolve process
     QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
@@ -307,6 +299,9 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    /// Materialized CTEs that are referenced more than once during query analysis and should be materialized to temporary tables.
+    std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;

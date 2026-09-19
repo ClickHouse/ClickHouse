@@ -61,16 +61,18 @@ public:
 private:
     struct Condition
     {
-        explicit Condition(std::vector<RPNBuilderTreeNode> nodes_)
-            : nodes(std::move(nodes_))
+        explicit Condition(RPNBuilderTreeNode node_)
+            : node(std::move(node_))
         {}
 
-        /// One or more conjuncts that share the same required column set and are
-        /// treated as a single unit for PREWHERE reordering and selectivity estimation.
-        std::vector<RPNBuilderTreeNode> nodes;
+        RPNBuilderTreeNode node;
 
         UInt64 columns_size = 0;
         NameSet table_columns;
+        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
+        /// Used for grouping: conditions on subcolumns of the same storage column
+        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
+        NameSet table_storage_columns;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
@@ -79,7 +81,7 @@ private:
         bool good = false;
 
         /// the lower the better
-        UInt64 estimated_row_count = 0;
+        Float64 estimated_row_count = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
@@ -89,17 +91,10 @@ private:
         /// For debugging purposes
         String toString() const
         {
-            String names;
-            for (const auto & n : nodes)
-            {
-                if (!names.empty())
-                    names += " AND ";
-                names += n.getColumnName();
-            }
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
                 "columns_size: {}, table_columns.size: {})",
-                names,
+                node.getColumnName(),
                 viable,
                 good,
                 min_position_in_primary_key,

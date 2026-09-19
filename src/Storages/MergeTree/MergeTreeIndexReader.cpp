@@ -34,12 +34,9 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1,
-        settings.use_streaming_marks_compression);
+        /*num_columns_in_mark=*/ 1);
 
     marks_loader->startAsyncLoad();
-
-    const size_t data_file_size = part->getFileSizeOrZeroResolved(stream_name, extension);
 
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
@@ -49,7 +46,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         all_mark_ranges,
         std::move(settings),
         uncompressed_cache,
-        data_file_size,
+        part->getFileSizeOrZero(stream_name + extension),
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);
@@ -82,7 +79,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (!streams.empty())
         return;
 
-    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName(), &part->getDataPartStorage());
+    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
 
@@ -116,9 +113,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
+void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule)
 {
-    auto load_func = [this, mark, condition, readable_ranges](auto & res)
+    auto load_func = [this, mark, condition](auto & res)
     {
         initStreamIfNeeded();
 
@@ -137,7 +134,6 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .condition = condition,
             .part = *part,
             .index = *index,
-            .readable_ranges = readable_ranges,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
@@ -201,8 +197,8 @@ MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSetti
     /// these substreams. So, it doesn't make sense to read more data in the buffer.
     if (substream == TextIndexDictionary || substream == TextIndexPostings)
     {
-        settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
-        settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
+        settings.read_settings.local_fs_buffer_size = 16 * 1024;
+        settings.read_settings.remote_fs_buffer_size = 16 * 1024;
     }
 
     return settings;

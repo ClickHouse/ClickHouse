@@ -18,7 +18,7 @@ public:
 
     QueryType action;
 
-    UInt64 snapshot{};    /// For SET TRANSACTION SNAPSHOT ...
+    UInt64 snapshot;    /// For SET TRANSACTION SNAPSHOT ...
 
     explicit ASTTransactionControl(QueryType action_) : action(action_) {}
 
