@@ -68,3 +68,30 @@ OPTIMIZE TABLE t_ttl_group_by_set_sorting_key FINAL;
 SELECT count() FROM t_ttl_group_by_set_sorting_key;
 
 DROP TABLE t_ttl_group_by_set_sorting_key;
+
+-- The secondary indices are calculated after the TTL rewrites the data, so they correspond to the new part:
+-- `toYYYYMM(ts)` of every row is the one of the aggregated row, not the one of the source part.
+
+CREATE TABLE t_ttl_group_by_set_sorting_key
+(
+    id String,
+    ts DateTime('UTC'),
+    value String,
+    INDEX idx_month toYYYYMM(ts) TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree PRIMARY KEY id ORDER BY (id, toStartOfDay(ts))
+SETTINGS index_granularity = 1;
+
+SYSTEM STOP TTL MERGES t_ttl_group_by_set_sorting_key;
+
+INSERT INTO t_ttl_group_by_set_sorting_key VALUES ('a', '2000-06-09 10:00:00', 'expired'), ('a', '2000-06-10 10:00:00', 'expired too'), ('a', '2050-01-01 00:00:00', 'not expired');
+ALTER TABLE t_ttl_group_by_set_sorting_key MODIFY TTL ts + toIntervalDay(1) GROUP BY id SET ts = max(ts) + INTERVAL 100 YEAR;
+
+SELECT '-- The data after MATERIALIZE TTL';
+SELECT * FROM t_ttl_group_by_set_sorting_key ORDER BY _part_offset;
+SELECT '-- The skip index corresponds to the data: the rows are found by the rewritten value and not by the old one';
+SELECT count() FROM t_ttl_group_by_set_sorting_key WHERE toYYYYMM(ts) = 210006;
+SELECT count() FROM t_ttl_group_by_set_sorting_key WHERE toYYYYMM(ts) = 200006;
+SELECT count() FROM t_ttl_group_by_set_sorting_key WHERE toYYYYMM(ts) = 205001;
+
+DROP TABLE t_ttl_group_by_set_sorting_key;

@@ -23,3 +23,10 @@ a	2100-06-10 10:00:00	not expired
 0	1	a
 1	1	a
 2
+-- The data after MATERIALIZE TTL
+a	2100-06-10 10:00:00	expired
+a	2100-06-10 10:00:00	not expired
+-- The skip index corresponds to the data: the rows are found by the rewritten value and not by the old one
+2
+0
+0
