@@ -202,6 +202,8 @@ def test_inactive_replica_not_counted(kafka_cluster):
             keeper_path=keeper_path,
             replica_name="r1"
         )
+        # Create the Kafka table first: it registers `r1` in Keeper, but nothing is consumed and no
+        # partition lock is taken until the materialized view is attached.
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.kafka;
@@ -210,31 +212,42 @@ def test_inactive_replica_not_counted(kafka_cluster):
 
             {create_kafka};
             CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
-            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
             """
+        )
+
+        # Simulate a replica that died without cleaning up: a persistent replica znode without the
+        # `is_active` ephemeral node. It is created before the first lock assignment, so the very
+        # first `getActiveReplicasInfo` has to decide whether to count it.
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            zk.create(f"{keeper_path}/replicas/ghost", "0")
+            assert set(zk.ls(f"{keeper_path}/replicas")) >= {"r1", "ghost"}
+
+        # Now start consuming: the first lock assignment happens with the ghost replica present.
+        instance.query(
+            "CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka"
         )
 
         messages = [json.dumps({"key": i, "value": i}) for i in range(2 * num_partitions)]
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
 
-        instance.query_with_retry(
-            "SELECT count() FROM test.view",
-            check_callback=lambda res: int(res.strip()) >= len(messages),
-            retry_count=30,
-            sleep_time=1,
-        )
-
         base = f"{keeper_path}/topic_partition_locks"
         expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
 
-        # Simulate a replica that died without cleaning up: a persistent replica
-        # znode without the is_active ephemeral node
-        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
-            zk.create(f"{keeper_path}/replicas/ghost", "0")
+        # The ghost replica must not be counted as active. If it were, the node quota would be
+        # `num_partitions / 2`, so `r1` would hold only half of the partitions as permanent locks
+        # (plus at most one temporary lock, because `has_replica_without_locks` keeps the temporary
+        # quota at zero every other round) and would never own the whole lock set.
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
 
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # The lock set must stay complete across a refresh round as well.
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
-
-        # The ghost replica must not be counted as active: r1 keeps all locks and consumes everything
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
 
         instance.query_with_retry(
