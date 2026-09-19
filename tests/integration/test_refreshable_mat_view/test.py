@@ -28,6 +28,7 @@ node2 = cluster.add_instance(
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
 )
+STOP_ON_STARTUP_CONFIG = "/etc/clickhouse-server/users.d/stop_rmv_on_startup.xml"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -364,7 +365,8 @@ def get_rmv_info(
 
 
 def parse_ch_datetime(date_str):
-    if date_str is None:
+    # A NULL timestamp arrives as a float nan, not as None, because the column is parsed by pandas.
+    if not isinstance(date_str, str):
         return None
     return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
 
@@ -520,3 +522,107 @@ def test_query_retry(fn3_setup_tables):
     )
     assert rmv["retry"] == 11
     assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in rmv["exception"]
+
+
+def create_daily_rmv(instance, name):
+    """A view that refreshes once now and then not again for a day.
+
+    No EMPTY: an EMPTY view re-runs the constructor's "pretend we just refreshed" branch on every
+    restart, so it never stampedes and cannot show the bug.
+    """
+    instance.query(f"DROP TABLE IF EXISTS {name}")
+    instance.query(
+        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt64) "
+        f"ENGINE = MergeTree ORDER BY tuple() AS SELECT now() a, number b FROM numbers(2)"
+    )
+    return get_rmv_info(
+        instance, name, condition=lambda x: x["last_success_time"] is not None
+    )["last_success_time"]
+
+
+def test_schedule_survives_restart(fn_setup_tables):
+    names = ["test_rmv_restart_a", "test_rmv_restart_b"]
+    before = {name: create_daily_rmv(node, name) for name in names}
+
+    node.restart_clickhouse()
+
+    for name in names:
+        get_rmv_info(node, name, wait_status="Scheduled")
+    # A stampede lands within milliseconds of the server accepting connections, so by now it would
+    # already have moved last_success_time. next_refresh_time is not an oracle here: EVERY 1 DAY
+    # rounds the stampeding refresh onto the same timeslot, so it reads the same either way.
+    time.sleep(3)
+
+    for name in names:
+        info = get_rmv_info(node, name)
+        assert info["last_success_time"] == before[name], f"{name} refreshed at startup"
+        node.query(f"DROP TABLE {name}")
+
+
+def test_incremental_cursor_survives_restart():
+    node.query("DROP TABLE IF EXISTS test_incr_mv")
+    node.query("DROP TABLE IF EXISTS test_incr_src")
+    node.query("DROP TABLE IF EXISTS test_incr_tgt")
+    node.query(
+        "CREATE TABLE test_incr_src (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k "
+        "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    node.query(
+        "CREATE TABLE test_incr_tgt (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"
+    )
+    node.query(
+        "CREATE MATERIALIZED VIEW test_incr_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL "
+        "TO test_incr_tgt EMPTY AS SELECT k, v FROM test_incr_src"
+    )
+
+    node.query("INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5)")
+    node.query("SYSTEM REFRESH VIEW test_incr_mv")
+    node.query("SYSTEM WAIT VIEW test_incr_mv")
+    assert node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "5\t5\n"
+
+    node.restart_clickhouse()
+
+    node.query(
+        "INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5, 5)"
+    )
+    node.query("SYSTEM REFRESH VIEW test_incr_mv")
+    node.query("SYSTEM WAIT VIEW test_incr_mv")
+    # A lost cursor restarts the stream from the beginning and appends rows 0..4 a second time.
+    assert node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "10\t10\n"
+
+    node.query("DROP TABLE test_incr_mv")
+    node.query("DROP TABLE test_incr_src")
+    node.query("DROP TABLE test_incr_tgt")
+
+
+def test_start_views_after_startup_stop_does_not_stampede(fn_setup_tables):
+    name = "test_rmv_startup_stop"
+    before = create_daily_rmv(node, name)
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "printf '%s' '<clickhouse><profiles><default>"
+            "<stop_refreshable_materialized_views_on_startup>1"
+            "</stop_refreshable_materialized_views_on_startup>"
+            f"</default></profiles></clickhouse>' > {STOP_ON_STARTUP_CONFIG}",
+        ]
+    )
+    try:
+        node.restart_clickhouse()
+
+        info = get_rmv_info(node, name, wait_status="Disabled")
+        # Only the znode-derived columns are meaningful while the view is Disabled: doScheduling
+        # returns before it assigns next_refresh_time, so that one reads as the epoch regardless.
+        assert info["last_success_time"] == before
+
+        node.query("SYSTEM START VIEWS")
+        get_rmv_info(node, name, wait_status="Scheduled")
+        time.sleep(3)
+        released = get_rmv_info(node, name)
+        assert released["last_success_time"] == before, "SYSTEM START VIEWS stampeded"
+    finally:
+        node.exec_in_container(["bash", "-c", f"rm -f {STOP_ON_STARTUP_CONFIG}"])
+        node.restart_clickhouse()
+        node.query(f"DROP TABLE IF EXISTS {name}")

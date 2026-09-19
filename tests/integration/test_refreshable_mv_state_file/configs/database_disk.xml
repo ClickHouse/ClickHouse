@@ -1,0 +1,13 @@
+<clickhouse>
+    <database_disk>
+        <disk>db_meta_disk</disk>
+    </database_disk>
+    <storage_configuration>
+        <disks>
+            <db_meta_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/db_meta_disk/</path>
+            </db_meta_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>

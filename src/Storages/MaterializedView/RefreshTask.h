@@ -27,6 +27,9 @@ class QueryStatus;
 class StorageMaterializedView;
 struct OwnedRefreshTask;
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
@@ -337,10 +340,25 @@ private:
         std::atomic<Int64> fake_clock {INT64_MIN};
     };
 
+    /// Outcome of reading the coordination state that an uncoordinated view persisted.
+    struct LoadedLocalState
+    {
+        std::optional<CoordinationZnode> znode;
+        /// Present but unreadable, which is not the same as absent: absent means first start, while
+        /// unreadable means a schedule existed and was lost.
+        bool unusable = false;
+    };
+
     std::mutex logger_mutex;
     LoggerPtr current_logger = nullptr;
 
     StorageMaterializedView * view;
+
+    /// Where an uncoordinated view persists `coordination.root_znode`, standing in for the Keeper
+    /// znode a coordinated view re-reads at startup. Empty disables persistence.
+    /// Assigned only in the constructor, so both are read without holding `mutex`.
+    DiskPtr local_state_disk;
+    String local_state_path;
 
     /// Protects all fields below.
     /// Never locked for blocking operations (e.g. creating the internal table or reading from zookeeper).
@@ -431,6 +449,10 @@ private:
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
+    /// Read/write `local_state_path`. Callers must not hold `mutex`, and pass the context rather
+    /// than letting these touch `view`, which a parallel shutdown() may null. Neither throws.
+    LoadedLocalState loadLocalCoordinationState(const ContextPtr & context);
+    bool saveLocalCoordinationState(const ContextPtr & context, const String & data);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
     /// atomically, conditionally on the root znode version number.
     /// If `only_running_znode`, the root znode is not updated, but its version is still checked.

@@ -3,8 +3,11 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
+#include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabasesCommon.h>
+#include <Disks/IDisk.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -12,6 +15,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Streaming/CursorTree.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -45,6 +49,7 @@ namespace ProfileEvents
 {
     extern const Event RefreshableViewRefreshSuccess;
     extern const Event RefreshableViewRefreshFailed;
+    extern const Event RefreshableViewStatePersistFailed;
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
@@ -55,6 +60,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool fsync_metadata;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -77,6 +83,7 @@ namespace RefreshSetting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int REFRESH_FAILED;
@@ -264,6 +271,22 @@ RefreshTask::RefreshTask(
     {
         if (is_restore_from_backup)
             scheduling.stop_requested = true;
+
+        const UUID view_uuid = view->getStorageID().uuid;
+        /// tryGet, not get: get() throws LOGICAL_ERROR until the server UUID is loaded.
+        const UUID server_uuid = ServerUUID::tryGet();
+        auto db_disk = context->getDatabaseDisk();
+        /// A read-only database disk is a live configuration, not a misconfiguration: DiskLocal
+        /// marks itself read-only without failing startup.
+        if (view_uuid != UUIDHelpers::Nil && server_uuid != UUIDHelpers::Nil
+            && db_disk && !db_disk->isReadOnly() && !db_disk->isWriteOnce())
+        {
+            local_state_disk = std::move(db_disk);
+            /// The database disk may be object storage shared by replicas, which all hold the same
+            /// view UUID, and an uncoordinated view schedules independently on each replica.
+            local_state_path = DatabaseCatalog::getStoreDirPath(view_uuid)
+                / fmt::format("refresh_state.{}.txt", server_uuid);
+        }
     }
 }
 
@@ -326,8 +349,30 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+    auto context = view->getContext();
+
+    /// Must precede RefreshSet::emplace, which notifies dependent views, and those read
+    /// last_completed_timeslot. Reading a file is also not allowed while holding `mutex`.
+    auto loaded = local_state_path.empty() ? LoadedLocalState{} : loadLocalCoordinationState(context);
+
+    if (start_paused || context->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
+
+    if (loaded.znode)
+    {
+        coordination.root_znode = std::move(*loaded.znode);
+        coordination.root_znode.version = -1;
+        /// refresh_running is serialized, so a refresh interrupted by a crash persisted it as true.
+        coordination.root_znode.refresh_running = false;
+    }
+    else if (loaded.unusable)
+    {
+        scheduling.stop_requested = true;
+        scheduling.unexpected_error = fmt::format(
+            "Could not read the persisted refresh state '{}'. Refreshing now could stampede, so the "
+            "view is stopped; SYSTEM START VIEW resumes it.", local_state_path);
+    }
+
     auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
 
@@ -1833,6 +1878,22 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         else
             version = dynamic_cast<Coordination::SetResponse &>(*responses[0]).stat.version;
     }
+    else if (!local_state_path.empty())
+    {
+        const String data = root.toString();
+        /// Taken before unlocking: shutdown() nulls `view` under `mutex`.
+        auto context = view->getContext();
+        lock.unlock();
+        const bool saved = saveLocalCoordinationState(context, data);
+        lock.lock();
+        if (!saved)
+        {
+            /// Same retry cadence the Keeper error path uses for an unavailable state store.
+            ProfileEvents::increment(ProfileEvents::RefreshableViewStatePersistFailed);
+            scheduling_task->scheduleAfter(5000);
+            return false;
+        }
+    }
     coordination.root_znode = root;
     coordination.root_znode.version = version;
     coordination.running_znode_exists = running;
@@ -1841,6 +1902,63 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
     wait_cv.notify_all();
 
     return true;
+}
+
+RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState(const ContextPtr & context)
+{
+    LoadedLocalState result;
+    try
+    {
+        /// existsFileOrDirectory, not existsFile: existsFile is false for a directory, which would
+        /// report a directory at this path as absent and let the view refresh.
+        if (!local_state_disk->existsFileOrDirectory(local_state_path))
+            return result;
+
+        if (local_state_disk->existsFile(local_state_path))
+        {
+            String data;
+            auto in = local_state_disk->readFile(local_state_path, context->getReadSettings());
+            readStringUntilEOF(data, *in);
+
+            CoordinationZnode znode;
+            znode.parse(data, /*running_znode_exists=*/ false, getLogger());
+            result.znode = std::move(znode);
+            return result;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(), fmt::format("Failed to read persisted refresh state '{}'", local_state_path));
+        result.znode.reset();
+    }
+    result.unusable = true;
+    return result;
+}
+
+bool RefreshTask::saveLocalCoordinationState(const ContextPtr & context, const String & data)
+{
+    const String tmp_path = local_state_path + ".tmp";
+    try
+    {
+        local_state_disk->createDirectories(fs::path(local_state_path).parent_path());
+        writeMetadataFile(local_state_disk, tmp_path, data, context->getSettingsRef()[Setting::fsync_metadata]);
+        try
+        {
+            local_state_disk->replaceFile(tmp_path, local_state_path);
+        }
+        catch (...)
+        {
+            local_state_disk->removeFileIfExists(tmp_path);
+            throw;
+        }
+        return true;
+    }
+    catch (...)
+    {
+        /// Throwing here would reach doScheduling's catch-all, which aborts debug builds.
+        tryLogCurrentException(getLogger(), fmt::format("Failed to persist refresh state '{}'", local_state_path));
+        return false;
+    }
 }
 
 void RefreshTask::interruptExecution()
@@ -2221,7 +2339,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
     auto required_field = [&](const char * name, auto & out)
     {
         if (!optional_field(name, out))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RMV coordination znode fields are missing or reordered: not found field '{}'", name);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "RMV coordination znode fields are missing or reordered: not found field '{}'", name);
     };
 
     in >> "format version: 1";
