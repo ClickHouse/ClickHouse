@@ -207,7 +207,7 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
             group->names.push_back(std::move(full_name));
             group->serializations.push_back(subdata.serialization);
         }
-    }, ISerialization::SubstreamData(serialization));
+    }, ISerialization::SubstreamData(serialization).withType(column.type));
 
     /// The group is shared and long-lived: don't keep the growth overshoot of the vectors.
     group->serializations.shrink_to_fit();
