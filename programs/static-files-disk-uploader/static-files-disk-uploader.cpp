@@ -51,8 +51,8 @@ static String joinDestinationPath(const String & base, const String & suffix)
 }
 
 /// In test mode the destination is a URL and `Poco::URI` percent-decodes whatever path it is
-/// given. Physical file names already carry `%XX` produced by `escapeForFileName` - a quoted
-/// column `a-b` is stored as `a%2Db.bin` - so the relative path has to be percent-encoded before
+/// given. Physical file names already carry `%XX` produced by `escapeForFileName` - a hyphen in
+/// a quoted column name becomes `%2D` - so the relative path has to be percent-encoded before
 /// it becomes part of the URL, otherwise the file would be uploaded under its decoded name.
 static String encodeUrlPath(const String & path)
 {
