@@ -333,6 +333,8 @@ private:
         /// generation had been ingested.
         uint64_t bytes_size = StoredObject::UnknownSize;
         String etag;
+        /// S3 object version ID if known from read/listing.
+        String version_id;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

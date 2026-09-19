@@ -675,6 +675,17 @@ ObjectMetadata ReadBufferFromS3::getObjectMetadataFromTheLastRequest() const
     return impl->getObjectMetadata();
 }
 
+std::optional<Field> ReadBufferFromS3::getMetadata(const String & name) const
+{
+    if (name == "version_id")
+    {
+        if (impl)
+            return impl->getObjectMetadata().version_id;
+        return version_id;
+    }
+    return std::nullopt;
+}
+
 }
 
 #endif

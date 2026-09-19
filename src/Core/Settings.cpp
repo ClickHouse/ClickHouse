@@ -601,6 +601,9 @@ The maximum size of object to upload using singlepart upload to Azure blob stora
     DECLARE(UInt64, azure_max_single_part_copy_size, 256*1024*1024, R"(
 The maximum size of object to copy using single part copy to Azure blob storage.
 )", 0) \
+    DECLARE(Bool, azure_use_native_copy, false, R"(
+Use native copy for Azure blob storage.
+)", 0) \
     DECLARE(UInt64, s3_max_single_read_retries, S3::DEFAULT_MAX_SINGLE_READ_TRIES, R"(
 The maximum number of retries during single S3 read.
 )", 0) \

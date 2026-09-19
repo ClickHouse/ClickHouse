@@ -33,6 +33,8 @@ struct StoredObject
     /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
     /// catching an in-place overwrite mid-read. Empty means no validation.
     String etag;
+    /// Version ID from when the object was read; empty if unversioned or unknown.
+    String version_id;
 
     explicit StoredObject(
         const String & remote_path_ = "",

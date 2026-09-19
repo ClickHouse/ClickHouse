@@ -1343,6 +1343,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Remember which generation of the object is being read, for the post-processing.
                 processed_files.back().bytes_size = object_metadata->size_bytes;
                 processed_files.back().etag = object_metadata->etag;
+                processed_files.back().version_id = object_metadata->version_id;
             }
 
             /// Fail closed: a file whose generation is unknown (the listing carried no `ETag`)
@@ -1565,6 +1566,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
         file_status = nullptr;
+        if (auto * read_buf = reader.readBuffer())
+        {
+            if (const auto * provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buf))
+            {
+                if (auto val = provider->getMetadata("version_id"); val.has_value())
+                    processed_files.back().version_id = val->safeGet<String>();
+            }
+        }
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit
@@ -1679,7 +1688,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_, bytes_size, etag] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_, bytes_size, etag, version_id] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1712,6 +1721,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     /// whatever the path holds by then.
                     StoredObject ingested_generation(file_metadata->getPath(), /* local_path */ "", bytes_size);
                     ingested_generation.etag = etag;
+                    ingested_generation.version_id = version_id;
                     successful_files.push_back(std::move(ingested_generation));
                 }
                 else
@@ -1847,7 +1857,7 @@ void ObjectStorageQueueSource::finalizeCommit(
     bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified, bytes_size_, etag_] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified, bytes_size_, etag_, version_id_] : processed_files)
     {
         try
         {

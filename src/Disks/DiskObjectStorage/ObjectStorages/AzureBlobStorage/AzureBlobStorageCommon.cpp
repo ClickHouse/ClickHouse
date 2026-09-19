@@ -669,6 +669,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
 {
     auto settings = std::make_unique<RequestSettings>();
 
+    settings->use_native_copy = query_settings[Setting::azure_use_native_copy];
     settings->max_single_part_upload_size = query_settings[Setting::azure_max_single_part_upload_size];
     settings->max_single_read_retries = query_settings[Setting::azure_max_single_read_retries];
     settings->max_single_download_retries = query_settings[Setting::azure_max_single_read_retries];

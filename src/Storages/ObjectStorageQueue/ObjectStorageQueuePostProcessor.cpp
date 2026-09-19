@@ -639,28 +639,18 @@ bool ObjectStorageQueuePostProcessor::deleteVersionedS3Objects(
     if (!s3_storage)
         return false;
 
-    /// Every version is looked up before anything is deleted, so a bucket that turns out not to be
-    /// versioned is handed over untouched, and a changed object is reported with nothing removed.
-    Strings versions;
-    versions.reserve(objects.size());
+    /// Delete the exact ingested version of each object directly without re-resolving the key.
+    /// If any object has no version_id, fall back to non-versioned batch delete.
     for (const auto & object : objects)
     {
-        auto metadata = object_storage->tryGetObjectMetadata(object.remote_path, /*with_tags=*/false);
-        if (!metadata || metadata->version_id.empty())
+        if (object.version_id.empty())
             return false;
-        /// Only the generation the rows were read from may be deleted.
-        if (!isSameGeneration(ObjectStorageType::S3, metadata->etag, object.etag))
-            throw Exception(
-                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                "Object {} was not deleted: it changed after it was ingested (its `ETag` is {} instead of {})",
-                object.remote_path, metadata->etag, object.etag);
-        versions.push_back(metadata->version_id);
     }
 
-    for (size_t i = 0; i != objects.size(); ++i)
+    for (const auto & object : objects)
     {
-        s3_storage->removeObjectVersionIfExists(objects[i], versions[i]);
-        successful_objects.push_back(objects[i]);
+        s3_storage->removeObjectVersionIfExists(object, object.version_id);
+        successful_objects.push_back(object);
     }
     return true;
 #else
@@ -762,7 +752,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             *src_client,
                             src_bucket,
                             object_from.remote_path,
-                            /*version_id=*/{},
+                            /*version_id=*/object_from.version_id,
                             /*with_metadata=*/true,
                             /*with_tags=*/false);
                         /// Only the generation the rows were read from may be moved. Rethrown once the
@@ -926,7 +916,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
             std::unordered_set<String> destinations;
             ChangedGeneration changed_generation;
-            auto request_settings = azure_storage->getSettings();
+            auto request_settings = std::make_unique<AzureBlobStorage::RequestSettings>(*azure_storage->getSettings());
+            if (settings.use_native_copy)
+                request_settings->use_native_copy = true;
             const auto read_settings = azure_storage->patchSettings(getReadSettings());
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(IObjectStorage::getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
             for (const auto & object_from : objects)

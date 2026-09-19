@@ -1564,6 +1564,94 @@ def test_unguarded_same_storage_move_deletes_only_the_copied_version(started_clu
     assert read_s3_object(started_cluster, bucket, source_key) == data
 
 
+def test_azure_move_source_rewrite_buffered_copy(started_cluster):
+    """Buffered copy must pin read to source ETag and fail if source was rewritten."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"azure_move_rewrite_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    copied = b"1,2,3\n"
+    rewritten = b"7,8,9\n"
+    put_azure_file_content(started_cluster, source_key, copied)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        engine_name="AzureQueue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={"use_native_copy": 0},
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT)
+        client = started_cluster.blob_service_client.get_blob_client(
+            started_cluster.azurite_container, source_key
+        )
+        client.upload_blob(io.BytesIO(rewritten), overwrite=True)
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}"
+        )
+
+    client = started_cluster.blob_service_client.get_blob_client(
+        started_cluster.azurite_container, source_key
+    )
+    wait_until(lambda: client.download_blob().readall() == rewritten)
+    dest_client = started_cluster.blob_service_client.get_blob_client(
+        started_cluster.azurite_container, destination_key
+    )
+    assert not dest_client.exists()
+
+
+def test_azure_move_native_copy_existing_destination(started_cluster):
+    """Guarded native copy must report move collision when destination already exists."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"azure_move_native_collision_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    source_data = b"1,2,3\n"
+    sentinel = b"9,9,9\n"
+    put_azure_file_content(started_cluster, source_key, source_data)
+    put_azure_file_content(started_cluster, destination_key, sentinel)
+    collisions_before = move_collisions(node)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        engine_name="AzureQueue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={"use_native_copy": 1},
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
+    wait_until(lambda: move_collisions(node) > collisions_before)
+    dest_client = started_cluster.blob_service_client.get_blob_client(
+        started_cluster.azurite_container, destination_key
+    )
+    assert dest_client.download_blob().readall() == sentinel
+    src_client = started_cluster.blob_service_client.get_blob_client(
+        started_cluster.azurite_container, source_key
+    )
+    assert src_client.download_blob().readall() == source_data
+
+
 def test_move_after_processing_many_objects(started_cluster):
     """Smoke test for the concurrent move path: every destination must hold its own source's bytes."""
     node = started_cluster.instances["instance"]

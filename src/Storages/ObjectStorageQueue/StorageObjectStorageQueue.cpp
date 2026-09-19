@@ -391,6 +391,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
+    if (settings.use_native_copy)
+        object_storage_context->setSetting("azure_use_native_copy", true);
 
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);

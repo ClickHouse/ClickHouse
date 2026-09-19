@@ -95,6 +95,8 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
     check(context);
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
+    if (auto endpoint_settings = context->getStorageAzureSettings().getSettings(connection_params.getConnectionURL()))
+        settings->use_native_copy = endpoint_settings->use_native_copy;
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
     return std::make_unique<AzureObjectStorage>(

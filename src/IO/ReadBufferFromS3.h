@@ -8,6 +8,7 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -24,7 +25,7 @@ using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public ReadBufferFromFileBase
+class ReadBufferFromS3 : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 private:
     mutable std::shared_ptr<const S3::Client> client_ptr;
@@ -103,6 +104,8 @@ public:
     std::string getStopReason() const { return stop_reason; }
 
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
+
+    std::optional<Field> getMetadata(const String & name) const override;
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);

@@ -40,6 +40,8 @@ namespace DB
 
 bool isAzureDestinationAlreadyExistsError(const Azure::Core::RequestFailedException & exception)
 {
+    if (exception.ErrorCode == "SourceConditionNotMet" || exception.ErrorCode == "CannotVerifyCopySource")
+        return false;
     return exception.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed
         || (exception.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict && exception.ErrorCode == "BlobAlreadyExists");
 }
@@ -505,6 +507,10 @@ void copyAzureBlobStorageFile(
         }
         catch (const Azure::Storage::StorageException & e)
         {
+            if (!dest_if_none_match.empty()
+                && (e.ErrorCode == "ConditionNotMet" || e.ErrorCode == "TargetConditionNotMet" || e.ErrorCode == "BlobAlreadyExists"))
+                throw;
+
             if (!src_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
                 throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
                     "Azure Blob Storage object {} was replaced before it could be copied to {} (If-Match on etag {} failed)",
@@ -533,7 +539,17 @@ void copyAzureBlobStorageFile(
         auto create_read_buffer = [&]
         {
             return std::make_unique<ReadBufferFromAzureBlobStorage>(
-                src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
+                src_client,
+                src_blob,
+                read_settings,
+                settings->max_single_read_retries,
+                settings->max_single_download_retries,
+                /*use_external_buffer=*/false,
+                /*restricted_seek=*/false,
+                /*read_until_position=*/0,
+                blob_storage_log,
+                src_container_for_logging,
+                src_etag);
         };
 
         UploadHelper helper{

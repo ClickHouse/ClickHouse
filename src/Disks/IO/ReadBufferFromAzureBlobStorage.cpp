@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -50,7 +51,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     bool restricted_seek_,
     size_t read_until_position_,
     BlobStorageLogWriterPtr blob_storage_log_,
-    String container_for_logging_)
+    String container_for_logging_,
+    const String & expected_etag_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
@@ -64,6 +66,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , last_object_metadata(std::make_unique<std::optional<ObjectMetadata>>())
     , blob_storage_log(std::move(blob_storage_log_))
     , container_for_logging(std::move(container_for_logging_))
+    , expected_etag(expected_etag_)
 {
     if (!use_external_buffer)
     {
@@ -237,6 +240,8 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
         return;
 
     Azure::Storage::Blobs::DownloadBlobOptions download_options;
+    if (!expected_etag.empty())
+        download_options.AccessConditions.IfMatch = Azure::ETag(AzureBlobStorage::toQuotedETag(expected_etag));
 
     Azure::Nullable<int64_t> length {};
     if (read_until_position != 0)
@@ -287,6 +292,11 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
                     blob_log_watch.elapsedMicroseconds(),
                     static_cast<Int32>(e.StatusCode), e.Message);
             }
+
+            if (!expected_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+                throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                    "Azure Blob Storage object {} was replaced during read (If-Match on etag {} failed)",
+                    path, expected_etag);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
@@ -379,6 +389,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
+            if (!expected_etag.empty())
+                download_options.AccessConditions.IfMatch = Azure::ETag(AzureBlobStorage::toQuotedETag(expected_etag));
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
@@ -414,6 +426,11 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
                     blob_log_watch.elapsedMicroseconds(),
                     static_cast<Int32>(e.StatusCode), e.Message);
             }
+
+            if (!expected_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+                throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                    "Azure Blob Storage object {} was replaced during read (If-Match on etag {} failed)",
+                    path, expected_etag);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
