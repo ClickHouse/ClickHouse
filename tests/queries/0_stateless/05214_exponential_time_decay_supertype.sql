@@ -8,17 +8,17 @@ SELECT toTypeName(if(toUInt8(1), a, b));
 WITH
     CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS a,
     CAST((2., 0., 20.), 'ExponentialTimeDecayingFloat64(20)') AS b
-SELECT if(toUInt8(1), a, b); -- { serverError NO_COMMON_TYPE }
+SELECT if(toUInt8(number % 2), a, b) FROM numbers(2); -- { serverError NO_COMMON_TYPE }
 
 WITH
     CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS a,
     CAST((2., 0., 20.), 'ExponentialTimeDecayingFloat64(20)') AS b
-SELECT multiIf(toUInt8(1), a, b); -- { serverError NO_COMMON_TYPE }
+SELECT multiIf(toUInt8(number % 2), a, b) FROM numbers(2); -- { serverError NO_COMMON_TYPE }
 
 WITH
     CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS a,
     CAST((2., 0., 20.), 'ExponentialTimeDecayingFloat64(20)') AS b
-SELECT coalesce(a, b); -- { serverError NO_COMMON_TYPE }
+SELECT coalesce(toNullable(a), toNullable(b)); -- { serverError NO_COMMON_TYPE }
 
 WITH
     CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS a,
@@ -28,4 +28,4 @@ SELECT array(a, b); -- { serverError NO_COMMON_TYPE }
 WITH
     CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS a,
     CAST((2., 0., 10.), 'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS b
-SELECT if(toUInt8(1), a, b); -- { serverError NO_COMMON_TYPE }
+SELECT if(toUInt8(number % 2), a, b) FROM numbers(2); -- { serverError NO_COMMON_TYPE }
