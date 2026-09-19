@@ -132,6 +132,48 @@ TEST(PromQLParser, DuplicateMetricName)
 }
 
 
+TEST(PromQLParser, SelectorRequiresNonEmptyMatcher)
+{
+    for (const auto * const query : {
+             R"({__name__=~".*"})",
+             R"({job=~".*"})",
+             R"({job!="demo"})",
+             R"({job=""})",
+             R"({job!~".+"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_message, "vector selector must contain at least one non-empty matcher") << query;
+    }
+
+    for (const auto * const query : {
+             R"({job!=""})",
+             R"({job!~".*"})",
+             R"({__name__=~".+"})",
+             R"({__name__=~".+", job=~".*"})",
+             R"(up{job=~".*"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query << ": " << error_message;
+    }
+
+    /// Regex syntax is validated even when another matcher already makes the selector non-empty.
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(R"({__name__=~".+", job=~"(.*"})", 3, &error_message, &error_pos));
+        EXPECT_NE(error_message.find("invalid regular expression in label matcher"), String::npos);
+    }
+}
+
+
 TEST(PromQLParser, CaseInsensitiveAggregationOperators)
 {
     EXPECT_EQ(parse("SuM(up)"), R"(
