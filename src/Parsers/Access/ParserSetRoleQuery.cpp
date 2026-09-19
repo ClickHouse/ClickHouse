@@ -2,6 +2,7 @@
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
@@ -24,6 +25,14 @@ namespace
             roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             roles->allow_users = false;
             return true;
+        });
+    }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 
@@ -63,6 +72,12 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     boost::intrusive_ptr<ASTRolesOrUsersSet> to_users;
+    String cluster;
+
+    /// `SET ROLE` only changes the current session, so it takes no `ON CLUSTER` clause; `SET DEFAULT ROLE`
+    /// changes the user and accepts one either right after the keywords or at the end, like `GRANT` does.
+    if (kind == Kind::SET_DEFAULT_ROLE)
+        parseOnCluster(pos, expected, cluster);
 
     if ((kind == Kind::SET_ROLE) || (kind == Kind::SET_DEFAULT_ROLE))
     {
@@ -73,6 +88,9 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             if (!parseToUsers(pos, expected, to_users))
                 return false;
+
+            if (cluster.empty())
+                parseOnCluster(pos, expected, cluster);
         }
     }
 
@@ -82,6 +100,7 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     query->kind = kind;
     query->roles = std::move(roles);
     query->to_users = std::move(to_users);
+    query->cluster = std::move(cluster);
 
     return true;
 }
@@ -108,8 +127,12 @@ Sets default roles to a user.
 Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn't granted to a user, ClickHouse throws an exception.
 
 ```sql
-SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...] [ON CLUSTER cluster_name]
 ```
+
+`ON CLUSTER` is accepted either right after `SET DEFAULT ROLE` or at the end of the query, and executes it on every
+host of the cluster. `CURRENT_USER` is resolved on the initiator before the query is distributed. `SET ROLE` only
+changes the current session and therefore takes no `ON CLUSTER` clause.
 
 ## Examples {#examples}
 
@@ -136,10 +159,17 @@ Set all the granted roles as default except for specific roles `role1` and `role
 ```sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
+
+Set default roles on every host of a cluster:
+
+```sql
+SET DEFAULT ROLE role1 TO user ON CLUSTER my_cluster
+SET DEFAULT ROLE ON CLUSTER my_cluster role1 TO user
+```
 )DOCS_MD",
         .syntax = R"(
 SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
-SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...] [ON CLUSTER cluster_name]
 )",
         .related = {"CREATE ROLE", "GRANT", "SET", "SHOW"},
     });

@@ -22,7 +22,7 @@ public:
 
 private:
     void setRole(const ASTSetRoleQuery & query);
-    void setDefaultRole(const ASTSetRoleQuery & query);
+    BlockIO setDefaultRole(const ASTPtr & updated_query_ptr, const ASTSetRoleQuery & query);
 
     ASTPtr query_ptr;
 };
