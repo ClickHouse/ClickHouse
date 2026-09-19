@@ -61,13 +61,13 @@ void MySQLSettings::loadFromQuery(const ASTSetQuery & settings_def)
     impl->applyChanges(settings_def.changes);
 }
 
-void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
+void MySQLSettings::loadFromQuery(ASTStorage & storage_def, SettingOrigin origin)
 {
     if (storage_def.settings)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, origin);
         }
         catch (Exception & e)
         {

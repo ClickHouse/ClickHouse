@@ -825,8 +825,9 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
         mysql_settings->loadFromQueryContext(args.context, *engine_define);
+        /// The database's own clause is not the definition of the tables it makes, which report it as `other`.
         if (engine_define->settings)
-            mysql_settings->loadFromQuery(*engine_define);
+            mysql_settings->loadFromQuery(*engine_define, SettingOrigin::Default);
 
         auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 

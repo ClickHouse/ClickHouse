@@ -95,7 +95,6 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
-#include <Storages/TableSettingsHelpers.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -2861,23 +2860,24 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
     return true;
 }
 
-SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_context */) const
 {
     /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
     /// applied over the compiled defaults, which `DistributedSettings::loadFromConfig` records in the settings
-    /// object (a `SettingsWithRecordedOrigin`) and the table's copy keeps, so enumeration reports it - and then
-    /// applies its own `SETTINGS` clause.
+    /// object (a `SettingsWithRecordedOrigin`) and the table's copy keeps - and then applies its own `SETTINGS`
+    /// clause, which `DistributedSettings::loadFromQuery` records as the definition. The engine supports no
+    /// settings `ALTER`, so nothing applies the clause again.
     auto settings = distributed_settings->enumerateSettings();
 
     /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the
     /// ones the definition does not state. Copying a field of the same type copies its changed bit as well,
     /// so a `Milliseconds` one keeps a value that is not its default while still reading as unchanged.
-    /// Whatever set that value, it was not the default.
+    /// Whatever set that value, it was not the default. From the settings object alone, like the rest.
     for (auto & setting : settings)
         if (setting.origin == SettingOrigin::Default && setting.value != setting.default_value)
             setting.origin = SettingOrigin::Other;
 
-    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
+    return settings;
 }
 
 }

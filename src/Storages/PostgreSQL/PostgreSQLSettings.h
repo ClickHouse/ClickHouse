@@ -40,6 +40,7 @@ struct PostgreSQLSettings
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
     void loadFromQuery(const ASTSetQuery & settings_def);
+    /// A table's own `SETTINGS` clause, recorded as the definition.
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
 

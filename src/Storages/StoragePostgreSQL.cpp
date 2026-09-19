@@ -127,19 +127,20 @@ StoragePostgreSQL::StoragePostgreSQL(
     setInMemoryMetadata(storage_metadata);
 }
 
-SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr /* query_context */) const
 {
     /// A setting the definition does not state carries the value the creating session had for it: `default`
     /// where that is the compiled-in default and `other` where it is not - the rule `Join` and `Distributed`
     /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
     /// nothing here and the source has to come from the value.
     ///
-    /// Except for what a named collection supplied, which `loadSettingsFromNamedCollection` records in the
-    /// settings object (a `SettingsWithRecordedOrigin`) and `setOriginByValue` leaves alone: neither the session's
-    /// nor a default, and the value cannot reveal it, since a collection may well state the default.
+    /// Except for what a named collection or the table's own `SETTINGS` clause supplied, which
+    /// `loadSettingsFromNamedCollection` and `PostgreSQLSettings::loadFromQuery` record in the settings object
+    /// (a `SettingsWithRecordedOrigin`) and `setOriginByValue` leaves alone: neither the session's nor a
+    /// default, and the value cannot reveal them, since either may well state the default.
     SettingDescriptions descriptions = settings.enumerateSettings();
     setOriginByValue(descriptions);
-    return withOriginFromDefinition(std::move(descriptions), getStorageID(), query_context);
+    return descriptions;
 }
 
 VirtualColumnsDescription StoragePostgreSQL::createVirtuals()

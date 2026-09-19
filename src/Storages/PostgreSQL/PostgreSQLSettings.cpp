@@ -71,7 +71,7 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {

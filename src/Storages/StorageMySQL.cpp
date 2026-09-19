@@ -35,7 +35,6 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 
 
@@ -958,11 +957,13 @@ ColumnsDescription doQueryResultStructure(
 }
 }
 
-SettingDescriptions StorageMySQL::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageMySQL::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// What a named collection supplied is recorded by `loadSettingsFromNamedCollection` in the settings object
-    /// (a `SettingsWithRecordedOrigin`), so enumeration reports it; the definition wins over it.
-    return withOriginFromDefinition(mysql_settings->enumerateSettings(), getStorageID(), query_context);
+    /// The settings object (a `SettingsWithRecordedOrigin`) records what a named collection supplied, as
+    /// `loadSettingsFromNamedCollection` loads it, and then the table's own `SETTINGS` clause, as
+    /// `MySQLSettings::loadFromQuery` applies it over the collection. A table a `MySQL` database makes records
+    /// neither for the database's clause, which it reports as `other`.
+    return mysql_settings->enumerateSettings();
 }
 
 }
