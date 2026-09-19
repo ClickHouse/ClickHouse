@@ -37,7 +37,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` 테이블 읽기를 기반 `MergeTree` 테이블들에 대한 읽기의 union으로 확장하여, 계획 기반 병렬 레플리카로 `Merge` 테이블을 읽을 수 있도록 허용하는 새로운 설정. `parallel_replicas_plan_based`와 함께 사용할 때만 효과가 있습니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` 테이블 읽기를 기반 `MergeTree` 테이블들에 대한 읽기의 union으로 확장하여, 계획 기반 병렬 레플리카로 `Merge` 테이블을 읽을 수 있도록 허용하는 새로운 설정. `parallel_replicas_plan_based`와 함께 사용할 때만 효과가 있습니다."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` 테이블 읽기를 기반 `MergeTree` 테이블들에 대한 읽기의 union으로 확장하여, 계획 기반 병렬 레플리카로 `Merge` 테이블을 읽을 수 있도록 허용하는 새로운 설정. `parallel_replicas_plan_based`와 함께 사용할 때만 효과가 있습니다."}]}]} />
 
 병렬 레플리카로 `Merge` 테이블을 읽을 수 있도록 허용합니다. [parallel&#95;replicas&#95;plan&#95;based](/ko/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based)와 함께 사용할 때만 유효하며, 이때 `Merge` 테이블 읽기는 기반 `MergeTree` 테이블들에 대한 읽기의 union으로 확장되고, 이후 다른 union과 동일한 방식으로 분산됩니다. 기반 테이블 중 하나라도 이러한 방식으로 읽을 수 없는 경우(`MergeTree`가 아닌 테이블, `FINAL` 읽기)에는 해당 `Merge` 테이블이 단일 레플리카에서만 처리됩니다. 이 기능이 추가되기 이전처럼 모든 `Merge` 테이블을 단일 레플리카에서 읽으려면 `false`로 설정하십시오. 실험적 기능.
 

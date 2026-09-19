@@ -23,6 +23,7 @@ doc_type: 'reference'
 * `active` ([UInt8](/ja/reference/data-types/int-uint)) — データパーツがアクティブかどうかを示すフラグ。アクティブなデータパーツはテーブルで使用されます。アクティブでない場合は、削除予定です。非アクティブなデータパーツは、マージまたは変更操作の後に現れます。
 * `marks` ([UInt64](/ja/reference/data-types/int-uint)) — マーク数。データパーツ内の行数の概算は、マーク数に索引粒度 (通常は8192) を掛けることで求められます (この方法は適応的粒度では使用できません) 。
 * `rows` ([UInt64](/ja/reference/data-types/int-uint)) — 行数。
+* `files` ([UInt64](/ja/reference/data-types/int-uint)) — データパーツ内のファイル数。
 * `bytes_on_disk` ([UInt64](/ja/reference/data-types/int-uint)) — すべてのデータパーツファイルの合計サイズ (バイト) 。
 * `data_compressed_bytes` ([UInt64](/ja/reference/data-types/int-uint)) — データパーツ内の圧縮データの合計サイズ。補助ファイル (マークファイルなど) は含まれません。
 * `data_uncompressed_bytes` ([UInt64](/ja/reference/data-types/int-uint)) — データパーツ内の非圧縮データの合計サイズ。補助ファイル (マークファイルなど) は含まれません。

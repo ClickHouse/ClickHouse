@@ -338,7 +338,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-  Cuando las rutas se almacenan en [datos compartidos](#shared-data-structure) básicos (`map`), la lectura de subcolumnas de subobjetos puede ser ineficiente, ya que requiere recorrer toda la estructura de datos compartidos. Con la serialización de datos compartidos `map_with_buckets` o `advanced`, la lectura de subcolumnas desde datos compartidos está muy optimizada.
+  Cuando las rutas se almacenan en [datos compartidos](#shared-data-structure) básicos (`map`), la lectura de subcolumnas de subobjetos puede ser ineficiente, ya que requiere recorrer toda la estructura de datos compartidos. Con la serialización de datos compartidos `map_with_buckets`, `advanced` o `advanced_chunked`, la lectura de subcolumnas desde datos compartidos está muy optimizada.
 </Note>
 
 ## Lectura de subcolumnas combinadas de JSON {#reading-json-combined-sub-columns}
@@ -392,7 +392,7 @@ FROM test;
 * Fila 3: `a` no está presente en absoluto. Tanto `json.a` como `json.@a` devuelven `NULL`, mientras que `json.^a` devuelve un `{}` vacío.
 
 <Note>
-  Cuando las rutas se almacenan en datos compartidos básicos (`map`) [shared data](#shared-data-structure), la lectura de subcolumnas combinadas puede ser ineficiente, ya que requiere recorrer toda la estructura de datos compartidos. Con la serialización de datos compartidos `map_with_buckets` o `advanced`, la lectura de subcolumnas desde los datos compartidos está muy optimizada.
+  Cuando las rutas se almacenan en datos compartidos básicos (`map`) [datos compartidos](#shared-data-structure), la lectura de subcolumnas combinadas puede ser ineficiente, ya que requiere recorrer toda la estructura de datos compartidos. Con la serialización de datos compartidos `map_with_buckets`, `advanced` o `advanced_chunked`, la lectura de subcolumnas desde los datos compartidos está muy optimizada.
 </Note>
 
 ## Inferencia de tipos para rutas {#type-inference-for-paths}
@@ -862,8 +862,8 @@ Para extraer de ella la subcolumna correspondiente a una ruta, simplemente itera
 ### Estructura de datos compartida en las partes de MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 En las tablas [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree), almacenamos los datos en partes de datos que guardan todo en disco (local o remoto). Los datos en disco pueden almacenarse de forma diferente a como se almacenan en memoria.
-Actualmente, hay 3 serializaciones distintas de la estructura de datos compartida en las partes de datos de MergeTree: `map`, `map_with_buckets`
-y `advanced`.
+Actualmente, hay 4 serializaciones distintas de la estructura de datos compartida en las partes de datos de MergeTree: `map`, `map_with_buckets`,
+`advanced` y `advanced_chunked`.
 
 La versión de serialización se controla mediante los ajustes de MergeTree
 [object&#95;shared&#95;data&#95;serialization&#95;version](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -906,6 +906,16 @@ Nota: debido a que almacena información adicional dentro de la estructura de da
 las serializaciones `map` y `map_with_buckets`.
 
 Para obtener una descripción más detallada de las nuevas serializaciones de datos compartidos y de sus detalles de implementación, consulta la [entrada del blog](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+La serialización `advanced_chunked` es igual que `advanced`, pero admite la división de filas en fragmentos más pequeños durante la serialización.
+Esto reduce el pico de uso de memoria durante las fusiones de columnas JSON con muchas rutas únicas, ya que solo es necesario materializar
+los datos de un fragmento cada vez, en lugar de todo el rango de filas.
+
+El tamaño del fragmento se controla mediante el ajuste de MergeTree [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 de forma predeterminada).
+No se trata de un límite estricto: si el último fragmento resultara menor que la mitad del objetivo, se fusiona con el fragmento anterior,
+por lo que los tamaños reales de los fragmentos van de `target/2` a `1.5 * target`.
 
 ## Control del número de rutas dinámicas dentro de JSON en partes de MergeTree {#controlling-the-number-of-dynamic-paths}
 
@@ -1080,10 +1090,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Indicaciones de tipo diferidas (Experimental) {#lazy-type-hints}
+## Indicaciones de tipo diferidas (Beta) {#lazy-type-hints}
 
 <Note>
-  Esta funcionalidad es experimental y requiere que la configuración `enable_json_lazy_type_hints` esté habilitada.
+  Esta funcionalidad está en beta y requiere que la configuración `enable_json_lazy_type_hints` esté habilitada.
 </Note>
 
 Cuando agregas o modificas indicaciones de tipo en una columna JSON con `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normalmente reescribe todas las partes de datos para materializar las nuevas indicaciones de tipo. En tablas con grandes volúmenes de datos históricos (cientos de terabytes), esto puede resultar extremadamente costoso.
@@ -1109,7 +1119,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -1147,7 +1157,6 @@ Para materializar las indicaciones de tipo en los datos existentes, puedes optar
 
 ### Limitaciones {#lazy-type-hints-limitations}
 
-* Esta funcionalidad es experimental y puede cambiar en futuras versiones
 * La conversión de tipos en tiempo de consulta puede suponer una sobrecarga de rendimiento significativa en comparación con los tipos materializados previamente, especialmente en objetos JSON grandes
 * Esta funcionalidad solo se aplica al modificar `typed_paths` (indicaciones de tipo); otros parámetros de JSON, como `max_dynamic_paths`, `SKIP` o `SKIP REGEXP`, siguen requiriendo mutaciones
 * Modificar una indicación de tipo (o eliminar una ruta tipada) **no** es una operación de solo metadatos, y se rechaza cuando la subcolumna afectada se utiliza en una estructura persistida posicionalmente:

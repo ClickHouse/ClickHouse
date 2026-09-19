@@ -49,7 +49,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-يعيد الصفوف ابتداءً من أول صف تكون فيه `start_expr` صحيحة، أو من بداية التدفق عند حذف `AFTER`، وحتى أول صف تكون فيه `end_expr` صحيحة، دون تضمينه؛ ويحدد `n` طول ذلك النطاق. يفتح `AFTER start_expr ALL` نطاقًا عند كل صف مطابق. راجع [LIMIT ... AFTER ... UNTIL](#limit-after-until) أدناه.
+يعيد الصفوف ابتداءً من أول صف تكون فيه `start_expr` صحيحة، أو من بداية الدفق عند حذف `AFTER`، وحتى أول صف عند تلك البداية أو بعدها تكون فيه `end_expr` صحيحة، دون تضمينه؛ ويحدد `n` طول ذلك النطاق. يفتح `AFTER start_expr ALL` نطاقًا عند كل صف مطابق. راجع [LIMIT ... AFTER ... UNTIL](#limit-after-until) أدناه.
 
 ## الحدود السالبة {#negative-limits}
 
@@ -173,7 +173,7 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 
 يمكن دمج هذا المُعدِّل مع المُعدِّل [`ORDER BY ... WITH FILL`](/ar/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
 
-## LIMIT ... AFTER ... UNTIL (‏نطاق حسب الـ conditions) {#limit-after-until}
+## LIMIT ... AFTER ... UNTIL (‏نطاق حسب الشرط) {#limit-after-until}
 
 يمكنك حصر النتيجة في *نطاق* من الصفوف يقع بين شرطَي boundary:
 
@@ -183,14 +183,18 @@ LIMIT [n] AFTER start_expr ALL [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-* `AFTER start_expr`: ابدأ الإخراج من أول صف تكون فيه `start_expr` صحيحة (ويُضمَّن هذا الصف).
+* `AFTER start_expr`: ابدأ الإخراج من أول صف تكون فيه `start_expr` صحيحة (ويُضمَّن هذا الصف).
 * `AFTER start_expr ALL`: أخرج اتحاد جميع النطاقات المطابقة التي تبدأ عند تحقق `start_expr`، من دون تكرار الصفوف عند تداخل النطاقات.
-* `UNTIL end_expr`: توقّف قبل أول صف تكون فيه `end_expr` صحيحة (ويُستبعد هذا الصف).
-* `n`: عدد صفوف اختياري. من دون `ALL`، يمثّل الحد الأقصى لطول النطاق المفتوح الواحد. مع `AFTER ... ALL`، يمثّل طول *كل* نطاق مفتوح، لذا قد يتجاوز إجمالي النتيجة `n` (على سبيل المثال، قد يعيد `LIMIT 2 AFTER number IN (2, 6) ALL` ما يصل إلى أربعة صفوف). لفرض حد أقصى على إجمالي عدد صفوف النتيجة، استخدم إعداد `limit`، الذي يُطبَّق كحد عام بعد النطاق.
+* `UNTIL end_expr`: أنهِ كل نطاق قبل أول صف عند بدايته أو بعدها تكون فيه `end_expr` صحيحة (ويُستبعد هذا الصف).
+* `n`: عدد صفوف اختياري. من دون `ALL`، يمثّل الحد الأقصى لطول النطاق المفتوح الواحد. مع `AFTER ... ALL`، يمثّل طول *كل* نطاق مفتوح، لذا قد يتجاوز إجمالي النتيجة `n` (على سبيل المثال، قد يعيد `LIMIT 2 AFTER number IN (2, 6) ALL` ما يصل إلى أربعة صفوف). لفرض حد أقصى على إجمالي عدد صفوف النتيجة، استخدم إعداد `limit`، الذي يُطبَّق كحد عام بعد النطاق.
 
-يحدّد ترتيب التدفق (أي ترتيب قراءة الصفوف) المطابقة «الأولى»؛ استخدم `ORDER BY` للتحكم فيه.
+يحدّد ترتيب الدفق (أي ترتيب قراءة الصفوف) المطابقة «الأولى»؛ استخدم `ORDER BY` للتحكم فيه.
 
-من دون `ALL`، إذا ظهرت أول مطابقة لـ `UNTIL` قبل أول مطابقة لـ `AFTER`، تكون النتيجة فارغة. مع `AFTER ... ALL`، يمكن لمطابقات `AFTER` اللاحقة أن تفتح نطاقات جديدة.
+لا أثر لمطابقات `UNTIL` التي تسبق بدء النطاق. وإذا طابق الشرطان الصفَّ الذي يبدأ عنده النطاق، يكون النطاق فارغًا. وإذا لم تحدث أي مطابقة لـ `UNTIL` عند البداية أو بعدها، يستمر النطاق حتى بلوغه عدد صفوفه `n` أو حتى نهاية الدفق. مع `AFTER ... ALL`، يمكن لمطابقات `AFTER` اللاحقة أن تفتح نطاقات جديدة بعد انتهاء نطاق سابق.
+
+مع `AFTER` ومن دون `ALL`، تقيّم خطوة النطاق شرط `AFTER` إلى أن تعثر على مقطع يحتوي على مطابقة بداية. ثم تقيّم `UNTIL` في ذلك المقطع وفي المقاطع التالية ما دام النطاق مفتوحًا. وتُقيَّم التعبيرات على المقاطع بكاملها، لذا قد يظل `UNTIL` يُقيَّم للصفوف السابقة للبداية داخل مقطع البداية.
+
+إذا احتوى `UNTIL` على دوال ذات حالة مثل `rowNumberInAllBlocks`، أو دوال غير حتمية ضمن الاستعلام، فإنه يُقيَّم بدءًا من المقطع الأول للحفاظ على سلوك تلك الدوال. ومن دون `ALL`، يُقيَّم `AFTER` حتى مقطع البداية فقط؛ أما المقاطع التالية فتقيّم `UNTIL` وحده. ويبقى أن مطابقات النهاية السابقة للبداية لا أثر لها.
 
 **أمثلة:**
 
@@ -223,7 +227,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 10 AFTER number >= 2 UNTIL 
 └────────┘
 ```
 
-بدون `n`، تُعاد جميع الصفوف بدءًا من تطابق `AFTER` وحتى نهاية الـ stream (أو حتى `UNTIL`):
+بدون `n`، تُعاد جميع الصفوف بدءًا من تطابق `AFTER` وحتى نهاية الدفق (أو حتى `UNTIL`):
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
@@ -237,7 +241,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-بدون `n` ولكن مع `UNTIL`، يمتد النطاق من أول تطابق لـ `AFTER` حتى أول تطابق لـ `UNTIL`:
+بدون `n` ولكن مع `UNTIL`، يمتد النطاق من أول تطابق لـ `AFTER` حتى أول تطابق لـ `UNTIL` يقع عنده أو بعده:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -246,6 +250,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+يُتجاهل أي تطابق لـ `UNTIL` يسبق البداية؛ فهنا لا أثر لـ `number = 1`، وينتهي النطاق قبل `number = 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -268,7 +286,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 └────────┘
 ```
 
-مع `ALL` و`UNTIL`، ينتهي كل نطاق مفتوح عند بلوغه `n` من الصفوف أو عند أول تطابق تالٍ لـ `UNTIL`، أيهما يحدث أولًا؛ فهنا يُقطع النطاق الذي فُتح عند 6 بفعل `number = 7`:
+مع `ALL` و`UNTIL`، ينتهي كل نطاق مفتوح عند بلوغه `n` من الصفوف أو عند أول تطابق تالٍ لـ `UNTIL`، أيهما أسبق؛ فهنا يُقطع النطاق المفتوح عند 6 بفعل `number = 7`:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL UNTIL number = 7;
@@ -282,7 +300,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) AL
 └────────┘
 ```
 
-بدون `n`، يُغلق تطابق `UNTIL` النطاق الحالي، ويفتح أي تطابق `AFTER` لاحق نطاقًا جديدًا يمتد حتى النهاية إن لم يتبعه تطابق `UNTIL` آخر:
+من دون `n`، يُغلق تطابق `UNTIL` النطاق الحالي، ويفتح تطابق `AFTER` لاحق نطاقًا جديدًا يمتد حتى النهاية إذا لم يتبعه تطابق `UNTIL` آخر:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL UNTIL number = 4;
@@ -299,15 +317,15 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 └────────┘
 ```
 
-من دون `n` و`UNTIL`، يمتد كل نطاق مفتوح حتى نهاية الـ stream، لذا يعيد `AFTER start_expr ALL` الصفوف نفسها التي يعيدها `AFTER start_expr`.
+من دون `n` و`UNTIL`، يمتد كل نطاق مفتوح حتى نهاية الدفق، لذا يعيد `AFTER start_expr ALL` الصفوف نفسها التي يعيدها `AFTER start_expr`.
 
 <Note>
   * لا يمكن استخدام `WITH TIES` أو `LIMIT`/`OFFSET` الكسري أو السالب أو `OFFSET` مع `AFTER`/`UNTIL`.
-  * يُعطَّل pushdown الأولي لـ `LIMIT` عند استخدام `AFTER`/`UNTIL`.
-  * لا يُتعرَّف على `AFTER` و`UNTIL` ككلمات مفتاحية إلا إذا تبعهما تعبير حدّي، لذا يظل المعرّف المسمى `after` أو `until` صالحًا كعدد للصفوف (`LIMIT after`، `LIMIT after BY x`). وعندما يكون التفسيران ممكنين، تكون الأولوية للكلمة المفتاحية: يُفسَّر `LIMIT after(2)` على أنه النطاق `LIMIT AFTER (2)`؛ وللاستدعاء دالة باسم `after`، اكتب `LIMIT (after(2))`.
+  * يُعطَّل pushdown الأولي لـ `LIMIT` عند استخدام `AFTER`/`UNTIL`.
+  * لا يُتعرَّف على `AFTER` و`UNTIL` ككلمات مفتاحية إلا إذا تبعهما تعبير حدّي، لذا يظل المعرّف المسمى `after` أو `until` صالحًا كعدد للصفوف (`LIMIT after`، `LIMIT after BY x`). وعندما يكون التفسيران ممكنين، تكون الأولوية للكلمة المفتاحية: يُفسَّر `LIMIT after(2)` على أنه النطاق `LIMIT AFTER (2)`؛ وللاستدعاء دالة باسم `after`، اكتب `LIMIT (after(2))`.
 </Note>
 
-يعيد `UNTIL` وحده الصفوف من بداية الـ stream حتى أول صف يتحقق فيه الشرط:
+يعيد `UNTIL` وحده الصفوف من بداية الدفق حتى أول صف يتحقق فيه الشرط:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number >= 3;
@@ -321,7 +339,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number >= 3;
 └────────┘
 ```
 
-مع `n`، يُرجع `UNTIL` بمفرده `n` من الصفوف كحدٍّ أقصى بدءًا من بداية الـ stream، مع التوقف عند أول تطابق:
+مع `n`، يُرجع `UNTIL` بمفرده `n` من الصفوف كحدٍّ أقصى بدءًا من بداية الدفق، مع التوقف عند أول تطابق:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 UNTIL number >= 3;

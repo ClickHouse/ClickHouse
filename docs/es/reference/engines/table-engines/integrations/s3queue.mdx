@@ -349,6 +349,14 @@ En caso de una finalización no controlada del servidor, es posible que queden n
 
 Valor predeterminado: `21600` (6 horas).
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+Un archivo cuyo nodo `processing` en Keeper está retenido por otro servidor se registra como `Processing` en la caché en memoria del estado de los archivos, de modo que las siguientes pasadas de enumeración lo omitan sin volver a consultar a Keeper.
+
+A diferencia de `Processed` y `Failed`, este estado no es definitivo: el otro procesador puede liberar el archivo sin hacer commit, por ejemplo si se cae. Esta configuración define durante cuánto tiempo se considera válido el estado `Processing` almacenado en caché; transcurrido ese tiempo, el archivo se vuelve a comprobar en Keeper y se procesa si vuelve a estar libre. Cero significa comprobar siempre en Keeper.
+
+Valor predeterminado: `300` (5 minutos).
+
 ## Ajustes relacionados con S3 {#s3-settings}
 
 El motor admite todos los ajustes relacionados con S3. Para obtener más información sobre los ajustes de S3, consulte [aquí](/es/reference/engines/table-engines/integrations/s3).

@@ -243,15 +243,19 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 **別名**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_json_lazy_type_hints` の別名を追加しました。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_json_lazy_type_hints` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON 型ヒントがベータ版になりました。設定 'allow_experimental_json_lazy_type_hints' の別名です。"}]}]} />
 
-JSON type に対する Lazy Type Hints を有効にします。この機能では、型ヒントの評価を遅延させることで JSON type の型変換を最適化できます。
+[JSON](/ja/reference/data-types/newjson) 型の Lazy 型ヒントを有効にします。
+
+この設定を有効にすると、型ヒントの追加または変更のみを行う `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` は
+メタデータのみの操作になります。既存のパーツでは型ヒントがクエリ時に適用され、
+履歴データを書き換える代わりに、データ挿入時およびバックグラウンドマージ時にマテリアライズされます。
 
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 

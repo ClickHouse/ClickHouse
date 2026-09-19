@@ -91,7 +91,7 @@ doc_type: 'reference'
 * `quota_key` ([String](/zh/reference/data-types/string)) — quotas 设置中指定的配额键 (请参阅 keyed) 。
 * `distributed_depth` ([UInt64](/zh/reference/data-types/int-uint)) — 查询在服务器之间被转发的次数。
 * `revision` ([UInt32](/zh/reference/data-types/int-uint)) — ClickHouse 修订版本。
-* `http_handler_name` ([String](/zh/reference/data-types/string)) — 调用该查询的 SQL 定义 HTTP handler (`CREATE HANDLER`) 的名称。未通过此类 handler 调用查询时为空。
+* `http_handler_name` ([String](/zh/reference/data-types/string)) — 调用该查询的 SQL 定义 HTTP handler (CREATE HANDLER) 的名称。未通过此类 handler 调用查询时为空。
 * `http_request_url` ([String](/zh/reference/data-types/string)) — 调用该查询的 HTTP 请求路径 (不含查询字符串) 。为避免持久化敏感请求参数，省略查询字符串。对于非 HTTP 查询为空。
 * `log_comment` ([String](/zh/reference/data-types/string)) — 日志注释。可设置为长度不超过 max&#95;query&#95;size 的任意字符串。未定义时为空字符串。
 * `thread_ids` ([Array(UInt64)](/zh/reference/data-types/array)) — 参与查询执行的线程 ID。这些线程不一定同时运行。
@@ -112,7 +112,7 @@ doc_type: 'reference'
 * `used_row_policies` ([Array(String)](/zh/reference/data-types/array)) — 查询执行期间使用的行策略名称列表。
 * `used_privileges` ([Array(String)](/zh/reference/data-types/array)) — 查询执行期间成功检查的特权。
 * `missing_privileges` ([Array(String)](/zh/reference/data-types/array)) — 查询执行期间缺少的特权。
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/zh/reference/data-types/tuple)) — 执行此查询的事务标识符。
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/zh/reference/data-types/tuple)) — 执行此查询的事务标识符。
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/zh/reference/data-types/enum)) — 查询执行期间对查询缓存的使用情况。值：&#39;Unknown&#39; = 状态未知，&#39;None&#39; = 查询结果既未写入查询结果缓存，也未从中读取，&#39;Write&#39; = 查询结果已写入查询结果缓存，&#39;Read&#39; = 查询结果已从查询结果缓存读取。
 * `asynchronous_read_counters` ([Map(String, UInt64)](/zh/reference/data-types/map)) — 异步读取指标。
 * `is_internal` ([UInt8](/zh/reference/data-types/int-uint)) — 指示该查询是否为内部执行的辅助查询。

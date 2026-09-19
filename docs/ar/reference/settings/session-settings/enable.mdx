@@ -244,15 +244,17 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 **اسم بديل**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_json_lazy_type_hints`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "أصبحت تلميحات النوع المؤجّلة لـ JSON في مرحلة Beta. اسم بديل للإعداد 'allow_experimental_json_lazy_type_hints'."}]}]} />
 
-تمكين تلميحات النوع المؤجّلة لنوع JSON. تتيح هذه الميزة تحسين تحويلات نوع JSON عبر تأجيل تقييم تلميح النوع.
+يُمكّن تلميحات النوع المؤجّلة لنوع [JSON](/ar/reference/data-types/newjson).
+
+عند تمكين هذا الإعداد، فإن `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` الذي يقتصر على إضافة تلميحات النوع أو تغييرها يكون عملية على البيانات الوصفية فقط: إذ تُطبَّق تلميحات النوع وقت الاستعلام على أجزاء البيانات الموجودة وتُجسَّد أثناء عمليات الإدراج وعمليات الدمج في الخلفية بدلاً من إعادة كتابة البيانات التاريخية.
 
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 

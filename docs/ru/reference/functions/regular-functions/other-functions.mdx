@@ -5873,12 +5873,13 @@ transactionID()
 
 **Возвращаемое значение**
 
-Возвращает кортеж, состоящий из `start_csn`, `local_tid` и `host_id`.
+Возвращает кортеж, состоящий из `start_csn`, `local_tid`, `host_id` и `session_node_version`.
 
 * `start_csn`: Глобальный последовательный номер — самая поздняя временная метка commit, видимая на момент начала этой транзакции.
 * `local_tid`: Локальный последовательный номер, уникальный для каждой транзакции, начатой этим хостом в рамках конкретного start&#95;csn.
 * `host_id`: UUID хоста, который начал эту транзакцию.
-  [`Tuple(UInt64, UInt64, UUID)`](/ru/reference/data-types/tuple)
+* `session_node_version`: Версия znode сеанса хоста на момент начала транзакции; позволяет peer-узлам обнаруживать TID мёртвого сеанса на репликах.
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/ru/reference/data-types/tuple)
 
 **Примеры**
 
@@ -5891,9 +5892,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

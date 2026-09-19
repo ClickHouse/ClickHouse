@@ -146,11 +146,11 @@ Esto genera una nueva instantánea (una operación `replace`) que hace referenci
 
 ### Requisitos y comportamiento {#manifest-compaction-behavior}
 
-* La funcionalidad es experimental y está controlada por la configuración `allow_experimental_iceberg_compaction`. La sentencia lanza una excepción si la configuración no está habilitada.
-* La compactación solo se intenta cuando el número de archivos de manifiesto en la lista de manifiestos de la instantánea actual supera el umbral indicado por la configuración `iceberg_manifest_min_count_to_compact` (valor predeterminado: `30`). Si el recuento actual es menor o igual que el umbral, se omite la compactación y no se crea ninguna instantánea nueva. Establezca un umbral más bajo para que la compactación se intente antes.
+* La funcionalidad es experimental y está controlada por el SETTING `allow_experimental_iceberg_compaction`. La sentencia lanza una excepción si el SETTING no está habilitado.
+* La compactación solo se intenta cuando el número de archivos de manifiesto en la lista de manifiestos de la instantánea actual supera el umbral indicado por el SETTING `iceberg_manifest_min_count_to_compact` (valor predeterminado: `100`, el valor predeterminado documentado de la propiedad de tabla Iceberg `commit.manifest.min-count-to-merge`). Si el recuento actual es menor o igual que el umbral, se omite la compactación y no se crea ninguna instantánea nueva. Establezca un umbral más bajo para que la compactación se intente antes.
 * `OPTIMIZE TABLE ... MANIFEST` solo es compatible con tablas Iceberg. Ejecutarlo sobre cualquier otro motor de tabla lanza una excepción.
 * `OPTIMIZE TABLE ... MANIFEST` solo es compatible con tablas Iceberg de format-version 2. Ejecutarlo sobre una tabla de format-version 1 lanza una excepción, y lo mismo ocurre si se ejecuta sobre una tabla de format-version 3, porque los metadatos `first_row_id` de row-lineage de v3 aún no se preservan al reescribir el manifiesto.
-* `OPTIMIZE TABLE ... MANIFEST` no es compatible con tablas Iceberg cifradas cuyos data files contienen `key_metadata` por archivo. Aún no está implementado preservar estos metadatos de cifrado al reescribir el manifiesto, por lo que la sentencia lanza una excepción `NOT_IMPLEMENTED`.
+* `OPTIMIZE TABLE ... MANIFEST` no es compatible con tablas Iceberg cifradas cuyos archivos de datos contienen `key_metadata` por archivo. Aún no está implementado preservar estos metadatos de cifrado al reescribir el manifiesto, por lo que la sentencia lanza una excepción `NOT_IMPLEMENTED`.
 
 ## Procesamiento de tablas con filas eliminadas {#deleted-rows}
 
@@ -158,10 +158,10 @@ ClickHouse admite la lectura de tablas Iceberg que utilizan los siguientes méto
 
 * [Eliminaciones por posición](https://iceberg.apache.org/spec/#position-delete-files)
 * [Eliminaciones por igualdad](https://iceberg.apache.org/spec/#equality-delete-files) (compatibles a partir de la versión 25.8+)
-
-El siguiente método de eliminación **no es compatible**:
-
 * [Vectores de eliminación](https://iceberg.apache.org/spec/#deletion-vectors) (introducido en la v3)
+
+La compatibilidad con los vectores de eliminación es de solo lectura. ClickHouse no escribe, actualiza ni compacta los vectores de eliminación.
+`ALTER TABLE ... DELETE` y `ALTER TABLE ... UPDATE` no son compatibles con las tablas en formato Iceberg de versión 3.
 
 ### Uso básico {#basic-usage}
 

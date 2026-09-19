@@ -23,6 +23,7 @@ doc_type: 'reference'
 * `active` ([UInt8](/ko/reference/data-types/int-uint)) — 데이터 파트의 활성 상태 여부를 나타내는 플래그입니다. 데이터 파트가 활성 상태이면 테이블에서 사용됩니다. 그렇지 않으면 삭제될 예정입니다. 비활성 데이터 파트는 머지 및 변형 작업 후에 나타납니다.
 * `marks` ([UInt64](/ko/reference/data-types/int-uint)) — 마크 수입니다. 데이터 파트의 대략적인 행 수를 구하려면 마크 수에 인덱스 세분화 수준(일반적으로 8192)을 곱합니다(이 힌트는 적응형 세분화 수준에서는 작동하지 않습니다).
 * `rows` ([UInt64](/ko/reference/data-types/int-uint)) — 행 수입니다.
+* `files` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 파트의 파일 수입니다.
 * `bytes_on_disk` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 데이터 파트 파일의 총 크기(바이트)입니다.
 * `data_compressed_bytes` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 파트 내 압축된 데이터의 총 크기입니다. 마크 파일과 같은 모든 보조 파일은 포함되지 않습니다.
 * `data_uncompressed_bytes` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 파트 내 압축되지 않은 데이터의 총 크기입니다. 마크 파일과 같은 모든 보조 파일은 포함되지 않습니다.

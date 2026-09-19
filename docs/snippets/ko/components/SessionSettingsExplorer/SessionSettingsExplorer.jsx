@@ -1125,16 +1125,17 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 8,
+      count: 9,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
         { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "4" },
-        { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "30" },
+        { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
         { name: "iceberg_orphan_files_older_than_seconds", path: "/iceberg#iceberg_orphan_files_older_than_seconds", default: "259200" },
         { name: "iceberg_snapshot_id", path: "/iceberg#iceberg_snapshot_id", default: "0" },
-        { name: "iceberg_timestamp_ms", path: "/iceberg#iceberg_timestamp_ms", default: "0" }
+        { name: "iceberg_timestamp_ms", path: "/iceberg#iceberg_timestamp_ms", default: "0" },
+        { name: "iceberg_tolerate_conflicting_manifest_schemas", path: "/iceberg#iceberg_tolerate_conflicting_manifest_schemas", default: "1" }
       ],
       children: []
     },
@@ -1145,7 +1146,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "iceberg_compaction_commit_batch_size", path: "/iceberg-compaction#iceberg_compaction_commit_batch_size", default: "100" },
         { name: "iceberg_compaction_data_cleanup", path: "/iceberg-compaction#iceberg_compaction_data_cleanup", default: "10800" },
         { name: "iceberg_compaction_delay_bias", path: "/iceberg-compaction#iceberg_compaction_delay_bias", default: "10800" },
-        { name: "iceberg_compaction_max_bytes_in_data_file", path: "/iceberg-compaction#iceberg_compaction_max_bytes_in_data_file", default: "18446744073709551615" },
+        { name: "iceberg_compaction_max_bytes_in_data_file", path: "/iceberg-compaction#iceberg_compaction_max_bytes_in_data_file", default: "536870912" },
         { name: "iceberg_compaction_max_rows_in_data_file", path: "/iceberg-compaction#iceberg_compaction_max_rows_in_data_file", default: "18446744073709551615" }
       ],
       children: []
@@ -1154,8 +1155,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "iceberg_data_*",
       count: 2,
       settings: [
-        { name: "iceberg_data_file_size_lower_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_lower_threshold_compaction", default: "10485760" },
-        { name: "iceberg_data_file_size_upper_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_upper_threshold_compaction", default: "10737418240" }
+        { name: "iceberg_data_file_size_lower_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_lower_threshold_compaction", default: "402653184" },
+        { name: "iceberg_data_file_size_upper_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_upper_threshold_compaction", default: "966367641" }
       ],
       children: []
     },
@@ -1173,7 +1174,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "iceberg_insert_*",
       count: 3,
       settings: [
-        { name: "iceberg_insert_max_bytes_in_data_file", path: "/iceberg-insert#iceberg_insert_max_bytes_in_data_file", default: "1073741824" },
+        { name: "iceberg_insert_max_bytes_in_data_file", path: "/iceberg-insert#iceberg_insert_max_bytes_in_data_file", default: "536870912" },
         { name: "iceberg_insert_max_partitions", path: "/iceberg-insert#iceberg_insert_max_partitions", default: "100" },
         { name: "iceberg_insert_max_rows_in_data_file", path: "/iceberg-insert#iceberg_insert_max_rows_in_data_file", default: "1000000" }
       ],
@@ -1495,8 +1496,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_bytes_*",
-      count: 15,
+      count: 17,
       settings: [
+        { name: "max_bytes_before_external_distinct", path: "/max-bytes#max_bytes_before_external_distinct", default: "0" },
         { name: "max_bytes_before_external_group_by", path: "/max-bytes#max_bytes_before_external_group_by", default: "0" },
         { name: "max_bytes_before_external_join", path: "/max-bytes#max_bytes_before_external_join", default: "0" },
         { name: "max_bytes_before_external_sort", path: "/max-bytes#max_bytes_before_external_sort", default: "0" },
@@ -1505,6 +1507,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_bytes_in_distinct", path: "/max-bytes#max_bytes_in_distinct", default: "0" },
         { name: "max_bytes_in_join", path: "/max-bytes#max_bytes_in_join", default: "0" },
         { name: "max_bytes_in_set", path: "/max-bytes#max_bytes_in_set", default: "0" },
+        { name: "max_bytes_ratio_before_external_distinct", path: "/max-bytes#max_bytes_ratio_before_external_distinct", default: "0.5" },
         { name: "max_bytes_ratio_before_external_group_by", path: "/max-bytes#max_bytes_ratio_before_external_group_by", default: "0.5" },
         { name: "max_bytes_ratio_before_external_join", path: "/max-bytes#max_bytes_ratio_before_external_join", default: "0.5" },
         { name: "max_bytes_ratio_before_external_sort", path: "/max-bytes#max_bytes_ratio_before_external_sort", default: "0.5" },
@@ -2270,12 +2273,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "prefer_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "prefer_column_name_to_alias", path: "/prefer#prefer_column_name_to_alias", default: "0" },
         { name: "prefer_external_sort_block_bytes", path: "/prefer#prefer_external_sort_block_bytes", default: "16744704" },
         { name: "prefer_global_in_and_join", path: "/prefer#prefer_global_in_and_join", default: "0" },
         { name: "prefer_localhost_replica", path: "/prefer#prefer_localhost_replica", default: "1" },
+        { name: "prefer_optimize_projection", path: "/prefer#prefer_optimize_projection", default: "0" },
         { name: "prefer_warmed_unmerged_parts_seconds", path: "/prefer#prefer_warmed_unmerged_parts_seconds", default: "0" }
       ],
       children: []

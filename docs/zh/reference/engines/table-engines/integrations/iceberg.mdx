@@ -147,7 +147,7 @@ OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compac
 ### 要求与行为 {#manifest-compaction-behavior}
 
 * 该功能为 Experimental，并受 `allow_experimental_iceberg_compaction` 设置控制。如果该设置未启用，该语句会抛出异常。
-* 仅当当前快照的 manifest 列表中的 manifest 文件数量超过 `iceberg_manifest_min_count_to_compact` 设置指定的阈值 (默认值为 `30`) 时，才会尝试执行合并整理。如果当前数量小于或等于该阈值，则会跳过合并整理，且不会创建新的快照。将该阈值调低，可更积极地执行合并整理。
+* 仅当当前快照的 manifest 列表中的 manifest 文件数量超过 `iceberg_manifest_min_count_to_compact` 设置指定的阈值 (默认值为 `100`，即 Iceberg 表属性 `commit.manifest.min-count-to-merge` 所记载的默认值) 时，才会尝试执行合并整理。如果当前数量小于或等于该阈值，则会跳过合并整理，且不会创建新的快照。将该阈值调低，可更积极地执行合并整理。
 * `OPTIMIZE TABLE ... MANIFEST` 仅支持 Iceberg 表。对任何其他表引擎运行它都会抛出异常。
 * `OPTIMIZE TABLE ... MANIFEST` 仅支持 Iceberg format-version 2 表。对 format-version 1 表运行它会抛出异常，对 format-version 3 表运行也会抛出异常，因为 v3 的行血缘 `first_row_id` 元数据尚未能在 manifest 重写过程中完整保留。
 * `OPTIMIZE TABLE ... MANIFEST` 不支持已加密的 Iceberg 表，这类表的数据文件包含按文件存储的 `key_metadata`。目前尚未实现跨 manifest 重写保留此加密元数据，因此该语句会抛出 `NOT_IMPLEMENTED` 异常。
@@ -158,10 +158,10 @@ ClickHouse 支持读取使用以下删除方法的 Iceberg 表：
 
 * [位置删除](https://iceberg.apache.org/spec/#position-delete-files)
 * [等值删除](https://iceberg.apache.org/spec/#equality-delete-files) (自 25.8+ 版本起支持)
-
-以下删除方法**不支持**：
-
 * [删除向量](https://iceberg.apache.org/spec/#deletion-vectors) (在 v3 中引入)
+
+删除向量仅支持读取。ClickHouse 不会写入、更新或压缩删除向量。
+对于 Iceberg 格式版本 3 的表，不支持 `ALTER TABLE ... DELETE` 和 `ALTER TABLE ... UPDATE`。
 
 ### 基本用法 {#basic-usage}
 

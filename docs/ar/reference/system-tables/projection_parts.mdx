@@ -23,6 +23,7 @@ doc_type: 'reference'
 * `active` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان جزء البيانات نشطًا. إذا كان نشطًا، يُستخدم في جدول؛ وإلا فهو على وشك الحذف. تظهر أجزاء البيانات غير النشطة بعد عمليات الدمج والتعديل.
 * `marks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العلامات. للحصول على عدد تقريبي للصفوف في جزء بيانات، اضرب عدد العلامات في دقة الفهرس (عادةً 8192). لا ينطبق هذا التلميح على الدقة التكيفية.
 * `rows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف.
+* `files` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات في جزء البيانات.
 * `bytes_on_disk` ([UInt64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي لجميع ملفات جزء البيانات بالبايت.
 * `data_compressed_bytes` ([UInt64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي للبيانات المضغوطة في جزء البيانات، باستثناء جميع الملفات المساعدة، مثل الملفات التي تحتوي على علامات.
 * `data_uncompressed_bytes` ([UInt64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي للبيانات غير المضغوطة في جزء البيانات، باستثناء جميع الملفات المساعدة، مثل الملفات التي تحتوي على علامات.

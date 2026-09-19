@@ -37,7 +37,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة، وذلك بتوسيع القراءة من `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية. ولا يسري مفعوله إلا مع `parallel_replicas_plan_based`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة، وذلك بتوسيع القراءة من `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية. ولا يسري مفعوله إلا مع `parallel_replicas_plan_based`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة، وذلك بتوسيع القراءة من `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية. ولا يسري مفعوله إلا مع `parallel_replicas_plan_based`."}]}]} />
 
 يتيح القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية. ولا يسري مفعوله إلا مع [parallel&#95;replicas&#95;plan&#95;based](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based)، إذ تُوسَّع القراءة من جدول `Merge` إلى اتحاد للقراءات من جداول `MergeTree` الأساسية، ثم يُوزَّع هذا الاتحاد كأي اتحاد آخر. ويُترك جدول `Merge` على نسخة متماثلة واحدة عند تعذّر قراءة أي من جداوله الأساسية بهذه الطريقة (جدول ليس من نوع `MergeTree`، أو قراءة بـ `FINAL`). اضبطه على `false` لقراءة كل جدول `Merge` على نسخة متماثلة واحدة، كما كان الحال قبل إضافة هذا الدعم. تجريبي.
 

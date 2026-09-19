@@ -49,7 +49,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-返回从 `start_expr` 为 true 的第一行起，到 `end_expr` 为 true 的第一行之前的行；若省略 `AFTER`，则从 stream 的开头起；`n` 限制该范围的长度。`AFTER start_expr ALL` 会在每个匹配行处开启一个范围。请参阅下方的 [LIMIT ... AFTER ... UNTIL](#limit-after-until)。
+返回从 `start_expr` 为 true 的第一行起，到该起始位置或其之后 `end_expr` 为 true 的第一行之前的行；若省略 `AFTER`，则从 stream 的开头起；`n` 限制该范围的长度。`AFTER start_expr ALL` 会在每个匹配行处开启一个范围。请参阅下方的 [LIMIT ... AFTER ... UNTIL](#limit-after-until)。
 
 ## 负数限制 {#negative-limits}
 
@@ -185,12 +185,16 @@ LIMIT [n] UNTIL end_expr
 
 * `AFTER start_expr`：从 `start_expr` 为 true 的第一行开始输出 (包含该行) 。
 * `AFTER start_expr ALL`：输出所有从 `start_expr` 为 true 的位置开始的匹配范围的并集；当范围重叠时，不会重复输出行。
-* `UNTIL end_expr`：在 `end_expr` 为 true 的第一行之前停止输出 (不包含该行) 。
+* `UNTIL end_expr`：每个范围在其起始位置或之后 `end_expr` 为 true 的第一行之前结束 (不包含该行) 。
 * `n`：可选的行数。不使用 `ALL` 时，它表示单个已打开范围的最大长度。使用 `AFTER ... ALL` 时，它表示*每个*已打开范围的长度，因此结果行总数可能超过 `n` (例如，`LIMIT 2 AFTER number IN (2, 6) ALL` 最多可返回四行) 。若要限制结果行总数，请使用 `limit` 设置；该设置会在范围处理后作为全局限制应用。
 
 流顺序 (即读取行的顺序) 决定“第一个”匹配；可使用 `ORDER BY` 对其进行控制。
 
-不使用 `ALL` 时，如果第一个 `UNTIL` 匹配出现在第一个 `AFTER` 匹配之前，结果为空。使用 `AFTER ... ALL` 时，后续的 `AFTER` 匹配仍可打开新的范围。
+在范围开始之前出现的 `UNTIL` 匹配不起作用。如果两个条件都匹配起始行，则该范围为空。如果在起始位置或之后没有出现 `UNTIL` 匹配，该范围会一直延续到其行数 `n` 或 stream 末尾。使用 `AFTER ... ALL` 时，在前一个范围结束后，后续的 `AFTER` 匹配可以打开新的范围。
+
+使用 `AFTER` 且不使用 `ALL` 时，范围步骤会持续对 `AFTER` 求值，直到找到包含起始匹配的 chunk。随后，只要范围仍处于打开状态，就会在该 chunk 及后续 chunk 中对 `UNTIL` 求值。表达式是按整个 chunk 求值的，因此在起始 chunk 内，位于起始位置之前的行仍可能被求值 `UNTIL`。
+
+如果 `UNTIL` 中包含诸如 `rowNumberInAllBlocks` 这类 stateful function，或在查询中具有 non-deterministic 行为的函数，则会从第一个 chunk 开始求值，以保持这些函数的行为。不使用 `ALL` 时，`AFTER` 仅会求值到起始 chunk 为止；后续 chunk 仅求值 `UNTIL`。位于起始位置之前的结束匹配仍然不起作用。
 
 **示例：**
 
@@ -237,7 +241,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-未指定 `n` 但使用 `UNTIL` 时，范围从第一个 `AFTER` 匹配项到第一个 `UNTIL` 匹配项：
+未指定 `n` 但使用 `UNTIL` 时，范围从第一个 `AFTER` 匹配项开始，到位于该匹配项处或其之后的第一个 `UNTIL` 匹配项为止：
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -246,6 +250,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+在起始位置之前出现的 `UNTIL` 匹配会被忽略；此处 `number = 1` 不起作用，范围在 `number = 6` 之前结束：
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -268,7 +286,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 └────────┘
 ```
 
-使用 `ALL` 和 `UNTIL` 时，每个已开启的范围都会在第 `n` 行或下一处 `UNTIL` 匹配处结束，以先到者为准；此处从 6 开启的范围被 `number = 7` 截断：
+同时使用 `ALL` 和 `UNTIL` 时，每个已开启的范围会在达到 `n` 行或遇到下一个 `UNTIL` 匹配时结束，以先到者为准；此处在 6 处开启的范围被 `number = 7` 截断：
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL UNTIL number = 7;
@@ -282,7 +300,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) AL
 └────────┘
 ```
 
-未指定 `n` 时，匹配到 `UNTIL` 会结束当前范围，之后匹配到 `AFTER` 会开启一个新范围；如果之后不再匹配到 `UNTIL`，该范围将延续至末尾：
+不使用 `n` 时，`UNTIL` 匹配会关闭当前范围，随后的 `AFTER` 匹配会开启一个新范围；若之后不再出现 `UNTIL` 匹配，该范围将延伸至末尾：
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL UNTIL number = 4;

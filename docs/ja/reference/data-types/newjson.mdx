@@ -330,7 +330,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-  パスが基本的な (`map`) [共有データ](#shared-data-structure) に格納されている場合、共有データ構造全体をスキャンする必要があるため、サブオブジェクトのサブカラムの読み取りは非効率になることがあります。`map_with_buckets` または `advanced` の共有データシリアライゼーションでは、共有データからサブカラムを読み取る処理が大幅に最適化されています。
+  パスが basic (`map`) [共有データ](#shared-data-structure) に格納されている場合、共有データ構造全体をスキャンする必要があるため、サブオブジェクトのサブカラムの読み取りは非効率になることがあります。`map_with_buckets`、`advanced`、または `advanced_chunked` の共有データシリアライゼーションでは、共有データからサブカラムを読み取る処理が大幅に最適化されています。
 </Note>
 
 ## JSON 結合サブカラムの読み取り {#reading-json-combined-sub-columns}
@@ -384,7 +384,7 @@ FROM test;
 * Row 3: `a` はまったく存在しません。`json.a` と `json.@a` はどちらも `NULL` を返し、`json.^a` は空の `{}` を返します。
 
 <Note>
-  パスが basic (`map`) の[共有データ](#shared-data-structure)に格納されている場合、結合サブカラムの読み取りでは共有データ構造全体をスキャンする必要があるため、非効率になることがあります。`map_with_buckets` または `advanced` の共有データシリアライゼーションでは、共有データからのサブカラムの読み取りは大幅に最適化されています。
+  パスが basic (`map`) の[共有データ](#shared-data-structure)に格納されている場合、結合サブカラムの読み取りでは共有データ構造全体をスキャンする必要があるため、非効率になることがあります。`map_with_buckets`、`advanced`、または `advanced_chunked` の共有データシリアライゼーションでは、共有データからのサブカラムの読み取りは大幅に最適化されています。
 </Note>
 
 ## パスの型推論 {#type-inference-for-paths}
@@ -854,9 +854,9 @@ JSONカラムの内容を調べるために使用する関数の詳細につい�
 
 [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルでは、データはデータパーツに格納され、各パーツがディスク (ローカルまたはリモート) 上にすべての内容を保持します。また、ディスク上のデータはメモリ上とは異なる方法で保存される場合があります。
 現在、MergeTree のデータパーツにおける共有データ構造のシリアライゼーションには、`map`、`map_with_buckets`、
-`advanced` の 3 種類があります。
+`advanced`、`advanced_chunked` の 4 種類があります。
 
-シリアル化バージョンは、MergeTree
+シリアライゼーションバージョンは、MergeTree
 設定 [object&#95;shared&#95;data&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
 および [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
 で制御されます
@@ -895,6 +895,14 @@ JSONカラムの内容を調べるために使用する関数の詳細につい�
 `map` および `map_with_buckets` シリアライゼーションと比べてディスク使用量が大きくなります。
 
 新しい 共有データ シリアライゼーションのより詳しい概要と実装の詳細については、[ブログ記事](https://clickhouse.com/blog/json-data-type-gets-even-better)を参照してください。
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+`advanced_chunked` シリアライゼーションは `advanced` と同じですが、シリアライゼーション時に行をより小さな chunk に分割できる点が異なります。
+これにより、一意なパスを多数含む JSON カラムのマージ時のピークメモリ使用量が削減されます。行範囲全体ではなく、一度に 1 chunk 分のデータのみをマテリアライズすれば済むためです。
+
+chunk のサイズは MergeTree 設定 [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows)(デフォルトは 8192)で制御されます。
+これは厳密な上限ではありません。最後の chunk が目標値の半分より小さくなる場合は直前の chunk とマージされるため、実際の chunk サイズは `target/2` から `1.5 * target` の範囲になります。
 
 ## MergeTree パーツ内の JSON の動的パス数を制御する {#controlling-the-number-of-dynamic-paths}
 
@@ -1069,10 +1077,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy 型ヒント (Experimental) {#lazy-type-hints}
+## Lazy 型ヒント (ベータ) {#lazy-type-hints}
 
 <Note>
-  この機能は実験的な機能であり、設定 `enable_json_lazy_type_hints` を有効にする必要があります。
+  この機能はベータ版であり、設定 `enable_json_lazy_type_hints` を有効にする必要があります。
 </Note>
 
 `ALTER TABLE ... MODIFY COLUMN` を使って JSONカラムに型ヒントを追加または変更すると、ClickHouse は通常、新しい型ヒントをマテリアライズするためにすべてのデータパーツを書き換えます。大量の履歴データ (数百テラバイト) を持つテーブルでは、これは非常に大きなコストになる可能性があります。
@@ -1098,7 +1106,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -1136,7 +1144,6 @@ Lazy 型ヒント を有効にすると、このクエリは1行も返さず、�
 
 ### 制限事項 {#lazy-type-hints-limitations}
 
-* この機能は実験的なものであり、今後のバージョンで変更される可能性があります
 * クエリ時の型変換は、あらかじめマテリアライズされた型と比べて、特に大きな JSON オブジェクトでは大きなパフォーマンスオーバーヘッドが発生する場合があります
 * この機能が適用されるのは `typed_paths` (型ヒント) を変更する場合のみです。`max_dynamic_paths`、`SKIP`、`SKIP REGEXP` などの他の JSON パラメータでは、引き続きミューテーションが必要です
 * 型ヒントの変更 (または型付きパスの削除) は、影響を受けるサブカラムが位置依存で永続化された構造で使用されている場合、**メタデータのみ**の操作にはならず、拒否されます:

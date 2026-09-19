@@ -86,9 +86,9 @@ doc_type: 'reference'
 * `rows_where_ttl_info.max` ([Array(DateTime)](/zh/reference/data-types/array)) — 此数据分区片段中计算出的生存时间 (TTL) 表达式最大值。用于确定是否所有行的生存时间 (TTL) 均已过期。
 * `projections` ([Array(String)](/zh/reference/data-types/array)) — 为此数据分区片段计算的投影名称列表。
 * `visible` ([UInt8](/zh/reference/data-types/int-uint)) — 指示此数据分区片段是否对 SELECT 查询可见的标志。
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/zh/reference/data-types/tuple)) — 创建或正在尝试创建此对象的事务 ID。
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/zh/reference/data-types/tuple)) — 创建或正在尝试创建此对象的事务 ID。
 * `removal_tid_lock` ([UInt64](/zh/reference/data-types/int-uint)) — removal&#95;tid 的哈希，用于锁定对象以进行删除。
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/zh/reference/data-types/tuple)) — 删除或正在尝试删除此对象的事务 ID
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/zh/reference/data-types/tuple)) — 删除或正在尝试删除此对象的事务 ID
 * `creation_csn` ([UInt64](/zh/reference/data-types/int-uint)) — 创建此对象的事务的 CSN
 * `removal_csn` ([UInt64](/zh/reference/data-types/int-uint)) — 删除此对象的事务的 CSN
 * `has_lightweight_delete` ([UInt8](/zh/reference/data-types/int-uint)) — 指示该数据分区片段是否具有轻量级删除掩码的标志。

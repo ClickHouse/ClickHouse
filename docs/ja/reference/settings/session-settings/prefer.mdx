@@ -122,6 +122,21 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   単一の分片と複数のレプリカを持つクラスターで使用する場合、この設定を無効にすると悪影響があります。
 </Note>
 
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定: `force_optimize_projection` と同様に、推定コストに関わらず利用可能な projection を選択します。ただし projection が使用されなかった場合でもクエリは失敗しません。"}]}]} />
+
+projection 最適化が有効な場合 ([optimize&#95;use&#95;projections](/ja/reference/settings/session-settings/optimize-use#optimize_use_projections) 設定を参照) 、`SELECT` クエリにおいて projection 最適化がテーブルよりも [projections](/ja/reference/engines/table-engines/mergetree-family/mergetree#projections) を優先するようにします。
+
+有効にすると、クエリを処理できる projection は、テーブル自体よりも多くの marks を読み取る必要がある場合でも使用されます。これは [force&#95;optimize&#95;projection](/ja/reference/settings/session-settings/force-optimize#force_optimize_projection) と同じ動作ですが、使用可能な projection がない場合でもクエリは失敗しません。
+
+設定可能な値:
+
+* 0 — projection は推定コストに基づいて選択されます。
+* 1 — 推定コストに関わらず、利用可能な projection が選択されます。
+
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />

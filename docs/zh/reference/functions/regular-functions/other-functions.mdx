@@ -5868,16 +5868,17 @@ transactionID()
 
 **返回值**
 
-返回一个由 `start_csn`、`local_tid` 和 `host_id` 组成的 Tuple。
+返回一个由 `start_csn`、`local_tid`、`host_id` 和 `session_node_version` 组成的 Tuple。
 
 * `start_csn`：全局顺序号，即该事务开始时看到的最新提交时间戳。
 * `local_tid`：本地顺序号，对于该主机在特定 start&#95;csn 下启动的每个事务都是唯一的。
 * `host_id`：启动该事务的主机 UUID。
-  [`Tuple(UInt64, UInt64, UUID)`](/zh/reference/data-types/tuple)
+* `session_node_version`：事务开始时该主机 session znode 的版本；可让 peer 在各副本间检测出属于已失效 session 的 TID。
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/zh/reference/data-types/tuple)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 BEGIN TRANSACTION;
@@ -5886,9 +5887,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

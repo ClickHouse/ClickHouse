@@ -49,7 +49,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-`start_expr` が true となる最初の行から、`end_expr` が true となる最初の行の直前までの行を返します。`AFTER` を省略した場合は、ストリームの先頭から開始します。`n` はその範囲の長さの上限を指定します。`AFTER start_expr ALL` は、一致するすべての行で範囲を開始します。以下の [LIMIT ... AFTER ... UNTIL](#limit-after-until) を参照してください。
+`start_expr` が true となる最初の行から、その開始位置以降で `end_expr` が true となる最初の行の直前までの行を返します。`AFTER` を省略した場合は、ストリームの先頭から開始します。`n` はその範囲の長さの上限を指定します。`AFTER start_expr ALL` は、一致するすべての行で範囲を開始します。以下の [LIMIT ... AFTER ... UNTIL](#limit-after-until) を参照してください。
 
 ## 負の LIMIT {#negative-limits}
 
@@ -185,12 +185,16 @@ LIMIT [n] UNTIL end_expr
 
 * `AFTER start_expr`: `start_expr` が true となる最初の行から出力を開始します (その行を含む) 。
 * `AFTER start_expr ALL`: `start_expr` が true となる位置から始まる、すべての一致範囲のユニオンを出力します。範囲が重複しても、行は重複しません。
-* `UNTIL end_expr`: `end_expr` が true となる最初の行の直前で停止します (その行は含まれません) 。
+* `UNTIL end_expr`: 各範囲は、その開始位置以降で `end_expr` が true となる最初の行の直前で終了します (その行は含まれません) 。
 * `n`: 任意の行数。`ALL` を指定しない場合、1 つの開始済み範囲の最大長です。`AFTER ... ALL` を指定した場合は、開始された*各*範囲の長さとなるため、結果の合計は `n` を超えることがあります (たとえば、`LIMIT 2 AFTER number IN (2, 6) ALL` は最大 4 行を返すことがあります) 。結果行の合計数を制限するには、範囲の後にグローバル制限として適用される `limit` 設定を使用します。
 
 ストリーム順序 (行を読み取る順序) によって「最初」の一致が決まります。これを制御するには `ORDER BY` を使用します。
 
-`ALL` を指定しない場合、最初の `UNTIL` 一致が最初の `AFTER` 一致より前に現れると、結果は空になります。`AFTER ... ALL` を指定した場合、後続の `AFTER` 一致でも新しい範囲を開始できます。
+範囲が開始される前の `UNTIL` の一致は影響しません。開始行で両方の条件が一致する場合、その範囲は空になります。開始位置以降に `UNTIL` の一致がない場合、範囲は行数 `n` に達するまで、またはストリームの終端まで続きます。`AFTER ... ALL` を指定した場合、先行する範囲が終了した後、後続の `AFTER` 一致によって新しい範囲を開始できます。
+
+`AFTER` を指定し `ALL` を指定しない場合、範囲ステップは開始一致を含む chunk が見つかるまで `AFTER` を評価します。その後、その chunk および以降の chunk で、範囲が開いている間 `UNTIL` を評価します。式は chunk 全体に対して評価されるため、開始した chunk 内では開始位置より前の行についても `UNTIL` が評価されることがあります。
+
+`UNTIL` に `rowNumberInAllBlocks` のような stateful function や、クエリ内で非決定論的な関数が含まれる場合、それらの関数の動作を保つために最初の chunk から評価されます。`ALL` を指定しない場合、`AFTER` は開始した chunk までしか評価されず、以降の chunk では `UNTIL` のみが評価されます。開始位置より前の終了一致は、やはり影響しません。
 
 **例:**
 
@@ -237,7 +241,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-`n` を指定せず `UNTIL` のみを指定した場合、範囲は最初に `AFTER` に一致した箇所から、最初に `UNTIL` に一致した箇所までとなります:
+`n` を指定せず `UNTIL` のみを指定した場合、範囲は最初に `AFTER` に一致した箇所から、その位置以降で最初に `UNTIL` に一致した箇所までとなります:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -246,6 +250,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+開始位置より前の `UNTIL` 一致は無視されます。ここでは `number = 1` は影響せず、範囲は `number = 6` の直前で終了します:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -268,7 +286,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 └────────┘
 ```
 
-`ALL` と `UNTIL` を使用した場合、開かれた各範囲は `n` 行に達した時点、または次の `UNTIL` に一致した時点のいずれか早い方で終了します。ここでは、6 で開かれた範囲が `number = 7` によって打ち切られます:
+`ALL` と `UNTIL` を併用した場合、開いた各範囲は `n` 行に達した時点、または次に `UNTIL` に一致した時点のいずれか早い方で終了します。ここでは 6 で開いた範囲が `number = 7` によって打ち切られます:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL UNTIL number = 7;
@@ -282,7 +300,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) AL
 └────────┘
 ```
 
-`n` を指定しない場合、`UNTIL` に一致した時点で現在の範囲が閉じられ、その後 `AFTER` に一致すると新しい範囲が開かれます。以降 `UNTIL` に一致しなければ、その範囲は末尾まで続きます:
+`n` を指定しない場合、`UNTIL` の一致により現在の範囲が閉じられ、その後の `AFTER` の一致によって新しい範囲が開かれます。以降に `UNTIL` の一致がなければ、その範囲は終端まで続きます:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL UNTIL number = 4;

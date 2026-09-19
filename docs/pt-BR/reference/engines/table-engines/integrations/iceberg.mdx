@@ -147,10 +147,10 @@ Isso gera um novo snapshot (uma operação `replace`) que faz referência aos me
 ### Requisitos e comportamento {#manifest-compaction-behavior}
 
 * O recurso é experimental e é controlado pela configuração `allow_experimental_iceberg_compaction`. A instrução lança uma exceção se a configuração não estiver habilitada.
-* A compactação só é tentada quando o número de arquivos de manifesto na lista de manifestos do snapshot atual excede o limite definido pela configuração `iceberg_manifest_min_count_to_compact` (padrão `30`). Se a contagem atual for menor ou igual ao limite, a compactação será ignorada e nenhum novo snapshot será criado. Defina um limite menor para compactar de forma mais imediata.
+* A compactação só é tentada quando o número de arquivos de manifesto na lista de manifestos do snapshot atual excede o limite definido pela configuração `iceberg_manifest_min_count_to_compact` (padrão `100`, o padrão documentado da propriedade de tabela do Iceberg `commit.manifest.min-count-to-merge`). Se a contagem atual for menor ou igual ao limite, a compactação será ignorada e nenhum novo snapshot será criado. Defina um limite menor para compactar de forma mais imediata.
 * `OPTIMIZE TABLE ... MANIFEST` é suportado apenas para tabelas Iceberg. Executá-lo em qualquer outro motor de tabela lança uma exceção.
-* `OPTIMIZE TABLE ... MANIFEST` é suportado apenas para tabelas Iceberg com format-version 2. Executá-lo em uma tabela com format-version 1 lança uma exceção, assim como executá-lo em uma tabela com format-version 3, porque os metadados `first_row_id` de row-lineage da v3 ainda não passam por round-trip na reescrita de manifest.
-* `OPTIMIZE TABLE ... MANIFEST` não é suportado para tabelas Iceberg criptografadas cujos arquivos de dados contêm `key_metadata` por arquivo. Preservar esses metadados de criptografia em uma reescrita de manifest ainda não foi implementado, portanto a instrução lança uma exceção `NOT_IMPLEMENTED`.
+* `OPTIMIZE TABLE ... MANIFEST` é suportado apenas para tabelas Iceberg com format-version 2. Executá-lo em uma tabela com format-version 1 lança uma exceção, assim como executá-lo em uma tabela com format-version 3, porque os metadados `first_row_id` de row-lineage da v3 ainda não passam por round-trip na reescrita de manifesto.
+* `OPTIMIZE TABLE ... MANIFEST` não é suportado para tabelas Iceberg criptografadas cujos arquivos de dados contêm `key_metadata` por arquivo. Preservar esses metadados de criptografia em uma reescrita de manifesto ainda não foi implementado, portanto a instrução lança uma exceção `NOT_IMPLEMENTED`.
 
 ## Processamento de tabelas com linhas excluídas {#deleted-rows}
 
@@ -158,10 +158,10 @@ O ClickHouse oferece suporte à leitura de tabelas Iceberg que usam os seguintes
 
 * [Exclusões por posição](https://iceberg.apache.org/spec/#position-delete-files)
 * [Exclusões por igualdade](https://iceberg.apache.org/spec/#equality-delete-files) (suportadas a partir da versão 25.8+)
-
-O método de exclusão a seguir **não é suportado**:
-
 * [Vetores de exclusão](https://iceberg.apache.org/spec/#deletion-vectors) (introduzido na v3)
+
+O suporte a vetores de exclusão é read-only. O ClickHouse não escreve, atualiza nem compacta vetores de exclusão.
+`ALTER TABLE ... DELETE` e `ALTER TABLE ... UPDATE` não são suportados para tabelas Iceberg com format-version 3.
 
 ### Uso básico {#basic-usage}
 

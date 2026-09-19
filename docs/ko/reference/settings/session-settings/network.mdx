@@ -19,11 +19,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "네트워크 트래픽을 줄이기 위해 클라이언트\/서버 및 서버\/서버 간 통신의 기본 압축 방식을 `LZ4`에서 `ZSTD`로 변경했습니다."}]}]} />
 
-native protocol을 통한 클라이언트/서버 및 서버/서버 간 통신과, 동일한 frame format을 사용하는 `compress=1` HTTP request의 응답을 압축할 때 사용하는 코덱입니다.
+native protocol을 통한 클라이언트/서버 및 서버/서버 간 통신, 동일한 frame format을 사용하는 `compress=1` HTTP request의 응답, 그리고 분산 쿼리 계획(`make_distributed_plan`)의 작업 간 스트리밍 exchange를 압축할 때 사용하는 코덱입니다. 임시 파일을 통한 exchange는 서버의 기본 코덱을 사용합니다.
 
-이 설정은 분산 쿼리의 스트리밍 exchange 채널에는 적용되지 않으며, 해당 채널은 항상 서버 기본 코덱을 사용합니다. 압축된 각 frame은 self-describing 형식이므로 수신기가 코덱을 자동으로 감지합니다.
-
-사용 가능한 값:
+가능한 값:
 
 * `NONE` — 압축을 사용하지 않습니다.
 * `LZ4` — LZ4 코덱을 사용합니다.

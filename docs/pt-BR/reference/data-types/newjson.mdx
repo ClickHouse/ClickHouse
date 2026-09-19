@@ -338,7 +338,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-  Quando os caminhos são armazenados em [dados compartilhados](#shared-data-structure) básicos (`map`), a leitura de subcolunas de subobjeto pode ser ineficiente, pois exige a varredura de toda a estrutura de dados compartilhados. Com a serialização de dados compartilhados `map_with_buckets` ou `advanced`, a leitura de subcolunas desses dados compartilhados é altamente otimizada.
+  Quando os caminhos são armazenados em [dados compartilhados](#shared-data-structure) básicos (`map`), a leitura de subcolunas de subobjeto pode ser ineficiente, pois exige a varredura de toda a estrutura de dados compartilhados. Com a serialização de dados compartilhados `map_with_buckets`, `advanced` ou `advanced_chunked`, a leitura de subcolunas desses dados compartilhados é altamente otimizada.
 </Note>
 
 ## Leitura de subcolunas combinadas de JSON {#reading-json-combined-sub-columns}
@@ -392,7 +392,7 @@ FROM test;
 * Linha 3: `a` está completamente ausente. Tanto `json.a` quanto `json.@a` retornam `NULL`, enquanto `json.^a` retorna um `{}` vazio.
 
 <Note>
-  Quando os caminhos são armazenados em [dados compartilhados](#shared-data-structure) básicos (`map`), a leitura de subcolunas combinadas pode ser ineficiente, pois exige varrer toda a estrutura de dados compartilhados. Com a serialização de dados compartilhados `map_with_buckets` ou `advanced`, a leitura de subcolunas a partir de dados compartilhados é altamente otimizada.
+  Quando os caminhos são armazenados em [dados compartilhados](#shared-data-structure) básicos (`map`), a leitura de subcolunas combinadas pode ser ineficiente, pois exige varrer toda a estrutura de dados compartilhados. Com a serialização de dados compartilhados `map_with_buckets`, `advanced` ou `advanced_chunked`, a leitura de subcolunas a partir de dados compartilhados é altamente otimizada.
 </Note>
 
 ## Inferência de tipo para caminhos {#type-inference-for-paths}
@@ -862,8 +862,8 @@ Para extrair dela a subcoluna de um caminho, basta iterar por todas as linhas ne
 ### Estrutura de dados compartilhada em partes do MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 Em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), armazenamos os dados em partes de dados que mantêm tudo em disco (local ou remoto). E os dados em disco podem ser armazenados de uma forma diferente da memória.
-Atualmente, existem 3 serializações diferentes da estrutura de dados compartilhada em partes de dados do MergeTree: `map`, `map_with_buckets`
-e `advanced`.
+Atualmente, existem 4 serializações diferentes da estrutura de dados compartilhada em partes de dados do MergeTree: `map`, `map_with_buckets`,
+`advanced` e `advanced_chunked`.
 
 A versão da serialização é controlada pelas
 configurações do MergeTree [object&#95;shared&#95;data&#95;serialization&#95;version](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -906,6 +906,16 @@ Observação: devido ao armazenamento de algumas informações adicionais dentro
 serializações `map` e `map_with_buckets`.
 
 Para uma visão geral mais detalhada das novas serializações de dados compartilhados e dos detalhes de implementação, leia a [postagem no blog](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+A serialização `advanced_chunked` é igual à `advanced`, mas com suporte à divisão de linhas em fragmentos menores durante a serialização.
+Isso reduz o pico de uso de memória durante mesclagens de colunas JSON com muitos caminhos únicos, porque apenas os dados de um fragmento
+precisam ser materializados por vez, em vez de todo o intervalo de linhas.
+
+O tamanho do fragmento é controlado pela configuração do MergeTree [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/pt-BR/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 por padrão).
+Esse não é um limite rígido: se o último fragmento ficar menor que a metade do valor-alvo, ele é mesclado com o fragmento anterior,
+de modo que os tamanhos reais dos fragmentos variam de `target/2` a `1.5 * target`.
 
 ## Controlando o número de caminhos dinâmicos dentro de JSON em partes do MergeTree {#controlling-the-number-of-dynamic-paths}
 
@@ -1080,10 +1090,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Experimental) {#lazy-type-hints}
+## Lazy Type Hints (Beta) {#lazy-type-hints}
 
 <Note>
-  Este recurso é experimental e exige que a configuração `enable_json_lazy_type_hints` esteja habilitada.
+  Este recurso está em beta e exige que a configuração `enable_json_lazy_type_hints` esteja habilitada.
 </Note>
 
 Quando você adiciona ou modifica type hints em uma coluna JSON usando `ALTER TABLE ... MODIFY COLUMN`, o ClickHouse normalmente reescreve todas as partes de dados para materializar os novos type hints. Em tabelas com grandes volumes de dados históricos (centenas de terabytes), isso pode ser extremamente custoso.
@@ -1109,7 +1119,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -1147,11 +1157,9 @@ Para materializar type hints em dados existentes, você pode:
 
 ### Limitações {#lazy-type-hints-limitations}
 
-* Este recurso é experimental e pode mudar em versões futuras
 * A conversão de tipos no momento da consulta pode ter um impacto significativo no desempenho em comparação com tipos pré-materializados, especialmente para objetos JSON grandes
 * O recurso se aplica apenas à modificação de `typed_paths` (type hints); outros parâmetros de JSON, como `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, ainda exigem mutações
-
-- Modificar uma type hint (ou remover um caminho tipado) **não** é uma operação somente de metadados e é rejeitado quando a subcoluna afetada é usada em uma estrutura persistida por posição:
+* Modificar uma type hint (ou remover um caminho tipado) **não** é uma operação somente de metadados e é rejeitado quando a subcoluna afetada é usada em uma estrutura persistida por posição:
 
   * na **chave primária/de ordenação** ou **chave de partição** — a alteração é proibida, pois os valores do índice primário/da partição em disco não podem ser reconstruídos por um `ALTER` somente de metadados (como ocorre com qualquer outra coluna-chave);
   * em **data skipping indexes** explícitos — primeiro remova o índice ou desative `enable_json_lazy_type_hints` para executar a alteração como uma mutação completa que reconstrói o índice.

@@ -347,6 +347,14 @@ En cas d’arrêt brutal du serveur, il est possible que certains nœuds de trai
 
 Valeur par défaut : `21600` (6 heures).
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+Un fichier dont le nœud `processing` dans Keeper est détenu par un autre serveur est mémorisé avec l&#39;état `Processing` dans le cache en mémoire des statuts de fichiers, afin que les passes d&#39;énumération suivantes l&#39;ignorent sans interroger de nouveau Keeper.
+
+Contrairement à `Processed` et `Failed`, cet état n&#39;est pas définitif : l&#39;autre processor peut libérer le fichier sans le valider (commit), par exemple s&#39;il s&#39;arrête brutalement. Ce paramètre définit pendant combien de temps l&#39;état `Processing` mis en cache reste fiable ; passé ce délai, le fichier est revérifié dans Keeper et traité s&#39;il est de nouveau libre. Zéro signifie que Keeper est systématiquement revérifié.
+
+Valeur par défaut : `300` (5 minutes).
+
 ## Paramètres relatifs à S3 {#s3-settings}
 
 Le moteur prend en charge tous les paramètres relatifs à S3. Pour plus d’informations sur les paramètres S3, consultez [cette page](/fr/reference/engines/table-engines/integrations/s3).

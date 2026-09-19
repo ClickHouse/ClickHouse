@@ -37,6 +37,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncInsertBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期 INSERT クエリのデータサイズ (バイト) 。
 * `ProfileEvent_AsyncInsertRows` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期 INSERT クエリによって挿入された行数。
 * `ProfileEvent_AsyncInsertCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期 INSERT の hash id cache で重複する hash id が見つかった回数。
+* `ProfileEvent_AsyncInsertFlush` ([UInt64](/ja/reference/data-types/int-uint)) — 非同期 INSERT キューの flush 回数。flush のたびに、非同期 INSERT クエリの batch が単一のパーツとして挿入されます。AsyncInsertQuery と比較することで、平均していくつのクエリがまとめて batch 化されているかを確認できます。
 * `ProfileEvent_FailedInternalQuery` ([UInt64](/ja/reference/data-types/int-uint)) — 失敗した内部クエリ数。
 * `ProfileEvent_FailedInternalSelectQuery` ([UInt64](/ja/reference/data-types/int-uint)) — FailedInternalQuery と同じですが、SELECT クエリのみが対象です。
 * `ProfileEvent_FailedInternalInsertQuery` ([UInt64](/ja/reference/data-types/int-uint)) — FailedInternalQuery と同じですが、INSERT クエリのみが対象です。
@@ -297,8 +298,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_QueryBackupThrottlerSleepMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — クエリが &#39;max&#95;backup&#95;bandwidth&#39; のスロットリングに従うために待機していた合計時間。
 * `ProfileEvent_DistrCacheReadThrottlerBytes` ([UInt64](/ja/reference/data-types/int-uint)) — &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39; スロットラーを通過したバイト数。
 * `ProfileEvent_DistrCacheReadThrottlerSleepMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — クエリが &#39;max&#95;distributed&#95;cache&#95;read&#95;bandwidth&#95;for&#95;server&#39; のスロットリングに従うために待機していた合計時間。
-* `ProfileEvent_DistrCacheWriteThrottlerBytes` ([UInt64](/ja/reference/data-types/int-uint)) — `max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server` スロットラーを通過したバイト数。
-* `ProfileEvent_DistrCacheWriteThrottlerSleepMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — `max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server` のスロットリング制限に従うためにクエリがスリープしていた合計時間。
+* `ProfileEvent_DistrCacheWriteThrottlerBytes` ([UInt64](/ja/reference/data-types/int-uint)) — &#39;max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server&#39; スロットラーを通過したバイト数。
+* `ProfileEvent_DistrCacheWriteThrottlerSleepMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — クエリが &#39;max&#95;distributed&#95;cache&#95;write&#95;bandwidth&#95;for&#95;server&#39; のスロットリングに従うために待機していた合計時間。
 * `ProfileEvent_ThrottlerSleepMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — すべてのスロットリング設定に従うためにクエリがスリープしていた合計時間。
 * `ProfileEvent_ReadTasksWithAppliedPatches` ([UInt64](/ja/reference/data-types/int-uint)) — 何らかのパッチパートが適用された読み取りタスクの総数
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/ja/reference/data-types/int-uint)) — すべての読み取りタスクで適用されたパッチパートの総数
@@ -428,6 +429,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinMerge` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでのJOINのために一時ファイルがマージされた回数。
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでのJOINのために書き込まれた圧縮バイト数。
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでのJOINのために書き込まれたデータ量 (非圧縮、圧縮前) 。
+* `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために一時ファイルがディスクに書き込まれた回数。
+* `ProfileEvent_ExternalDistinctMerge` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために一時ファイルがマージされた回数。
+* `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために書き込まれた圧縮バイト数。
+* `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの DISTINCT のために書き込まれたデータ量 (非圧縮、圧縮前) 。
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg のパーティションプルーニングでスキップされたファイル数
 * `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/ja/reference/data-types/int-uint)) — マニフェストリストのパーティションサマリーを使用して、読み取られずにスキップされた Iceberg マニフェストファイル数
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg の読み取り時に単純な count 最適化が適用された回数
@@ -771,6 +776,9 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/ja/reference/data-types/int-uint)) — S3ObjectStorage 用の &#39;plain&#95;rewritable&#39; メタデータストレージで作成されたディレクトリ数。
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/ja/reference/data-types/int-uint)) — S3ObjectStorage の `plain_rewritable` メタデータストレージによって削除されたディレクトリ数。
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/ja/reference/data-types/int-uint)) — レガシーレイアウトの `plain_rewritable` ディスク数。
+* `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/ja/reference/data-types/int-uint)) — 失敗した `plain_rewritable` メタデータトランザクションの取り消しステップが、オブジェクトストレージに拒否されたため再試行された回数。
+* `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/ja/reference/data-types/int-uint)) — コミットに失敗してロールバックされたメタデータトランザクション数。
+* `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/ja/reference/data-types/int-uint)) — 完了しなかったメタデータトランザクションのロールバック数。このため、失敗と報告されたトランザクションの一部がメタデータに残ります。
 * `ProfileEvent_S3Clients` ([UInt64](/ja/reference/data-types/int-uint)) — 作成された S3 クライアント数。
 * `ProfileEvent_TinyS3Clients` ([UInt64](/ja/reference/data-types/int-uint)) — 別のクライアントの既存の認証プロバイダーを再利用する S3 クライアントのコピー数。
 * `ProfileEvent_EngineFileLikeReadFiles` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルを扱うテーブルエンジン (File/S3/URL/HDFS など) で読み取られたファイル数。
@@ -944,6 +952,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ja/reference/data-types/int-uint)) — 中間ハッシュテーブルからも削除され、aggregate states が破棄された追い出し済みグループ化キーの数 (`enable_group_by_top_k_optimization` を参照)。集計メソッドでキーを削除できない場合、またはキーのプレフィックスのみがランク付けされる場合は、`AggregationTopKKeysEvicted` より少なくなります。この場合でもヒープは行をスキップしますが、ハッシュテーブルは受け入れたすべてのグループを保持します。
 * `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ja/reference/data-types/int-uint)) — 通常の集計にフォールバックするためにフリーズされた Top-K 集計ヒープの数。観測ウィンドウ内でヒープがほとんど何も拒否しなかった場合 (例: 個別のグループ化キー数が LIMIT を超えない場合)、または追い出すことのできないヒープ境界の同順位セットがヒープを超過して増大した場合です (`enable_group_by_top_k_optimization` を参照)。
 * `ProfileEvent_DistinctTransformsAbandonedDeduplication` ([UInt64](/ja/reference/data-types/int-uint)) — 入力のほぼすべてが一意であり、かつ下流のコンシューマーがいずれにせよ重複排除を行うため、ハッシュテーブルを破棄して重複排除を停止した重複排除 transform の数。対象は、予備的な `DISTINCT` (`allow_preliminary_distinct_abandoning` を参照) と、`IN` サブクエリの Set 充填前にストリームごとに行われる事前重複排除です。
+* `ProfileEvent_DistinctTransformsSwitchedToPassThrough` ([UInt64](/ja/reference/data-types/int-uint)) — クエリメモリが外部 `DISTINCT` のしきい値を超えたか、予測されるハッシュ割り当て量が残りのしきい値予算を超えるため、ハッシュテーブルを解放してすべての行をそのまま通過させるようになった予備的な `DISTINCT` transform の数 (`max_bytes_before_external_distinct` を参照)。代わりに、ディスクにスピルする最終 `DISTINCT` が重複を解決します。
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ja/reference/data-types/int-uint)) — ハッシュ結合用の hash table で事前割り当てされた要素数。
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求が、Keeper に要求を送らずに cache から処理された回数。
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求を Keeper から取得して処理する必要があった回数。
@@ -1271,7 +1280,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリの実行時に、少なくとも 1 つのタスクが割り当てられた異なるホスト数。
 * `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのストリーミング exchange のソケットに書き込まれたバイト数。`NetworkSendBytes` には含まれません。
 * `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのストリーミング exchange のソケットから読み取られたバイト数。`NetworkReceiveBytes` には含まれません。
-* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange のソケットに完全に書き込まれた Data パケット数。chunk ごとに 1 つ、ストリームごとに終端パケットが 1 つです。送信バッファ内のパケットは、バッファ全体が書き込まれた時点でカウントされます。receiver がそれ以上のデータを必要としないため途中で切り詰められたバッファでは、パケットは一切カウントされません。
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange のソケットに完全に書き込まれた Data パケット数。chunk ごとに 1 つ、ストリームごとに終端パケットが 1 つです。パケットは完全に書き込まれた時点でカウントされます。receiver がそれ以上のデータを必要としないため途中で切り詰められたパケットはカウントされません。
 * `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange から読み取られた Data パケット数。chunk ごとに 1 つ、ストリームごとに終端パケットが 1 つです。
 * `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange パケット内でシリアル化された、圧縮前の Native ブロックのバイト数。シリアル化されるパケットごとに 1 回カウントされます。`StreamingExchangeSendBytes` と比較することで、シャッフルまたは収集の圧縮率が得られます。ブロードキャストでは各パケットが各宛先に送信されるため、`StreamingExchangeSendBytes` は宛先数に応じて増加します。
 * `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — chunk をストリーミング exchange パケットにシリアル化および圧縮するのに費やされた時間。
@@ -1336,7 +1345,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/ja/reference/data-types/int-uint)) — 別のスレッドですでにフェッチまたは生成されていたため重複排除されたパーツフェッチ数
 * `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — scheduleDataProcessingJob における tryUpdateDiskMetadataCacheForPart の所要時間
 * `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — SharedMergeTree でのみ使用される loadColumnsChecksumsIndexes の所要時間
-* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/ja/reference/data-types/int-uint)) — SharedMergeTree の blob-list パーツ間でパス共有されたデータブロブ数 (コミットの複数操作に追加された参照カウントの増分)
+* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/ja/reference/data-types/int-uint)) — SharedMergeTree の blob-list パーツ間でパス共有されたデータブロブ数 (カウンターノードごとに 1 回の更新へ集約される前に、コミットトランザクションでステージングされた参照カウントの増分)
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/ja/reference/data-types/int-uint)) — SnapshotCleanerThread がパーツのクリーンアップを決定した回数
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/ja/reference/data-types/int-uint)) — SnapshotCleanerThread がパーツのクリーンアップを試みた時間
 * `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/ja/reference/data-types/int-uint)) — SnapshotCleanerThread がパーツのクリーンアップに成功した回数
@@ -1663,6 +1672,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `CurrentMetric_TemporaryFilesForSort` ([Int64](/ja/reference/data-types/int-uint)) — 外部ソート用に作成された一時ファイルの数
 * `CurrentMetric_TemporaryFilesForAggregation` ([Int64](/ja/reference/data-types/int-uint)) — 外部集約用に作成された一時ファイルの数
 * `CurrentMetric_TemporaryFilesForJoin` ([Int64](/ja/reference/data-types/int-uint)) — JOIN 用に作成された一時ファイルの数
+* `CurrentMetric_TemporaryFilesForDistinct` ([Int64](/ja/reference/data-types/int-uint)) — 外部 DISTINCT 用に作成された一時ファイルの数
 * `CurrentMetric_TemporaryFilesForMerge` ([Int64](/ja/reference/data-types/int-uint)) — vertical merge 用の一時ファイルの数
 * `CurrentMetric_TemporaryFilesUnknown` ([Int64](/ja/reference/data-types/int-uint)) — 用途不明のまま作成された一時ファイルの数
 * `CurrentMetric_Read` ([Int64](/ja/reference/data-types/int-uint)) — 実行中の read (read、pread、io&#95;getevents など) システムコール数

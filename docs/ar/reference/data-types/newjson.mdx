@@ -308,7 +308,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 
 ## قراءة الكائنات الفرعية في JSON كأعمدة فرعية {#reading-json-sub-objects-as-sub-columns}
 
-يدعم النوع `JSON` قراءة الكائنات المتداخلة كأعمدة فرعية من النوع `JSON` باستخدام الصياغة الخاصة `json.^some.path`:
+يدعم النوع `JSON` قراءة الكائنات المتداخلة كأعمدة فرعية من النوع `JSON` باستخدام صيغة خاصة `json.^some.path`:
 
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
@@ -337,12 +337,12 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-  عندما تُخزَّن المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، فقد لا تكون قراءة الأعمدة الفرعية للكائنات الفرعية فعّالة، لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. أما مع `map_with_buckets` أو تسلسل البيانات المشتركة `advanced`، فتكون قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
+  عندما تُخزَّن المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، فقد لا تكون قراءة الأعمدة الفرعية للكائنات الفرعية فعّالة، لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. أما مع `map_with_buckets` أو `advanced` أو تسلسل البيانات المشتركة `advanced_chunked`، فتكون قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
 </Note>
 
 ## قراءة الأعمدة الفرعية المجمّعة في JSON {#reading-json-combined-sub-columns}
 
-يدعم النوع `JSON` قراءة مسار باعتباره **عمودًا فرعيًا مجمّعًا** باستخدام الصياغة الخاصة `json.@some.path`.
+يدعم النوع `JSON` قراءة مسار باعتباره **عمودًا فرعيًا مجمّعًا** باستخدام صيغة خاصة `json.@some.path`.
 ويُرجع العمود الفرعي المجمّع لمسار معيّن ما يلي:
 
 * القيمة الحرفية المخزّنة في ذلك المسار على أنها `Dynamic`، إذا كان المسار يحتوي على قيمة حرفية.
@@ -388,10 +388,10 @@ FROM test;
 
 * الصف 1: تحتوي `a` على قيمة حرفية `42`. يُرجع `json.a` هذه القيمة بصيغة `Dynamic(Int64)`، ويُرجع `json.^a` كائنًا فرعيًا فارغًا `{}` (لا توجد مفاتيح متداخلة تحت `a`)، ويُرجع `json.@a` القيمة الحرفية `42`.
 * الصف 2: تحتوي `a` على كائن متداخل. يُرجع `json.a` القيمة `NULL` (لا توجد قيمة حرفية في هذا المسار)، ويُرجع `json.^a` الكائن الفرعي بصيغة `JSON`، ويُرجع `json.@a` أيضًا الكائن الفرعي بصيغة `Dynamic(JSON)`.
-* الصف 3: `a` غير موجودة بالكامل. يُرجع كلٌّ من `json.a` و`json.@a` القيمة `NULL`، بينما يُرجع `json.^a` كائنًا فارغًا `{}`.
+* الصف 3: `a` غير موجودة بالكامل. يُرجع كلٌّ من `json.a` و`json.@a` القيمة `NULL`، بينما يُرجع `json.^a` كائنًا فارغًا `{}`.
 
 <Note>
-  عند تخزين المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، قد تكون قراءة الأعمدة الفرعية المجمّعة غير فعّالة لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. ومع `map_with_buckets` أو تسلسل البيانات المشتركة `advanced`، تصبح قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
+  عند تخزين المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، قد تكون قراءة الأعمدة الفرعية المجمّعة غير فعّالة لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. ومع تسلسل البيانات المشتركة `map_with_buckets` أو `advanced` أو `advanced_chunked`، تصبح قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
 </Note>
 
 ## استنتاج الأنواع للمسارات {#type-inference-for-paths}
@@ -861,15 +861,15 @@ ORDER BY _part ASC
 ### بنية البيانات المشتركة في أجزاء MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، نُخزّن البيانات في أجزاء بيانات تحتفظ بكل شيء على القرص (محليًا أو عن بُعد). ويمكن تخزين البيانات على القرص بطريقة تختلف عن تخزينها في الذاكرة.
-يوجد حاليًا 3 تنسيقات serialization مختلفة لبنية البيانات المشتركة في أجزاء بيانات MergeTree: ‏`map` و`map_with_buckets`
-و`advanced`.
+يوجد حاليًا 4 تنسيقات تسلسل مختلفة لبنية البيانات المشتركة في أجزاء بيانات MergeTree: ‏`map` و`map_with_buckets`
+و`advanced` و`advanced_chunked`.
 
-يخضع إصدار serialization للتحكم عبر إعدادات MergeTree
+يخضع إصدار التسلسل للتحكم عبر إعدادات MergeTree
 [object&#95;shared&#95;data&#95;serialization&#95;version](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
 و[object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(جزء المستوى الصفري هو الجزء الذي يُنشأ عند insert البيانات إلى الجدول، وخلال merges تكون الأجزاء ذات مستويات أعلى).
+(جزء المستوى الصفري هو الجزء الذي يُنشأ عند إدراج البيانات إلى الجدول، وخلال دمج تكون الأجزاء ذات مستويات أعلى).
 
-ملاحظة: لا يُدعَم تغيير serialization لبنية البيانات المشتركة إلا
+ملاحظة: لا يُدعَم تغيير تسلسل بنية البيانات المشتركة إلا
 مع `v3` [object serialization version](/ar/reference/settings/merge-tree-settings/other#object_serialization_version)
 
 #### Map {#shared-data-map}
@@ -905,6 +905,16 @@ ORDER BY _part ASC
 بتسلسلي `map` و`map_with_buckets`.
 
 للاطلاع على نظرة عامة أكثر تفصيلًا حول تسلسلات البيانات المشتركة الجديدة وتفاصيل التنفيذ، اقرأ [منشور المدونة](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+تسلسل `advanced_chunked` مماثل لـ `advanced`، لكنه يدعم تقسيم الصفوف إلى مقاطع أصغر أثناء التسلسل.
+ويقلّل ذلك من ذروة استخدام الذاكرة أثناء عمليات دمج أعمدة JSON التي تضم مسارات فريدة كثيرة، إذ لا يلزم سوى تجسيد بيانات مقطع واحد
+في كل مرة بدلاً من نطاق الصفوف بأكمله.
+
+ويُتحكَّم في حجم المقطع عبر إعداد MergeTree [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (‏8192 افتراضيًا).
+وهذا ليس حدًا صارمًا: فإذا كان المقطع الأخير أصغر من نصف القيمة المستهدفة، فسيُدمج مع المقطع السابق،
+وبذلك تتراوح أحجام المقاطع الفعلية بين `target/2` و`1.5 * target`.
 
 ## التحكّم في عدد المسارات الديناميكية داخل JSON في أجزاء MergeTree {#controlling-the-number-of-dynamic-paths}
 
@@ -1079,10 +1089,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## تلميحات الأنواع الكسولة (تجريبية) {#lazy-type-hints}
+## تلميحات الأنواع الكسولة (Beta) {#lazy-type-hints}
 
 <Note>
-  هذه الميزة تجريبية، وتتطلب أن يكون الإعداد `enable_json_lazy_type_hints` مُمكّنًا.
+  هذه الميزة في مرحلة Beta، وتتطلب أن يكون الإعداد `enable_json_lazy_type_hints` مُمكّنًا.
 </Note>
 
 عند إضافة تلميحات الأنواع أو تعديلها في عمود JSON باستخدام `ALTER TABLE ... MODIFY COLUMN`، يعيد ClickHouse عادةً كتابة جميع أجزاء البيانات لتجسيد تلميحات الأنواع الجديدة. وقد تكون هذه العملية باهظة التكلفة جدًا للجداول التي تحتوي على كميات كبيرة من البيانات التاريخية (مئات التيرابايتات).
@@ -1108,7 +1118,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -1146,8 +1156,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 ### القيود {#lazy-type-hints-limitations}
 
-* هذه الميزة تجريبية وقد تتغير في الإصدارات المستقبلية
-* قد يترتب على تحويل الأنواع وقت الاستعلام عبء كبير على الأداء مقارنةً بالأنواع المُخزَّنة مسبقًا، خاصةً مع كائنات JSON الكبيرة
+* قد يترتب على تحويل الأنواع وقت الاستعلام عبء كبير على الأداء مقارنةً بالأنواع المُجسَّدة مسبقًا، خاصةً مع كائنات JSON الكبيرة
 * لا تنطبق هذه الميزة إلا عند تعديل `typed_paths` (تلميحات الأنواع)؛ أما معلمات JSON الأخرى مثل `max_dynamic_paths` أو `SKIP` أو `SKIP REGEXP` فما تزال تتطلب إجراء mutations
 * لا يقتصر تعديل تلميح نوع (أو إزالة مسار محدد النوع) على البيانات الوصفية، ويُرفض، عندما يُستخدم العمود الفرعي المتأثر في بنية محفوظة بحسب الموضع:
 

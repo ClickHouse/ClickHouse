@@ -23,14 +23,14 @@ metric_name2[...] = ...
 <Info>
   Esta es una funcionalidad de vista previa privada que puede cambiar de formas incompatibles con versiones anteriores en futuras versiones.
   Habilite el uso del motor de tabla TimeSeries
-  con el ajuste `enable_time_series_table`.
+  con el SETTING `enable_time_series_table`.
   Ejecute el comando `set enable_time_series_table = 1`.
 </Info>
 
 <Note>
-  El motor de tabla TimeSeries en ClickHouse Cloud también está en vista previa privada.
+  El motor de tabla `TimeSeries` está disponible en ClickHouse Cloud como funcionalidad de vista previa privada.
   Los servicios que participan en la vista previa privada ya tienen configurado el
-  ajuste `enable_time_series_table`. Los demás servicios de ClickHouse Cloud
+  SETTING `enable_time_series_table`. Los demás servicios de ClickHouse Cloud
   no cuentan con esta configuración, y no es posible habilitar el motor por su cuenta en
   dichos servicios.
 </Note>
@@ -174,10 +174,18 @@ La tabla *etiquetas* debe tener las siguientes columnas:
 | -------------------- | ------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                 | [x]           | `Tuple(UInt64, LowCardinality(UUID))` | cualquiera (debe coincidir con el tipo de `id` de la tabla [samples](#samples-table))                                 | Un `id` identifica una combinación de un nombre de métrica y etiquetas. La expresión DEFAULT especifica cómo calcular ese identificador                                                                                                                                                                                                                                                                 |
 | `metric_name`        | [x]           | `LowCardinality(String)`              | `String` o `LowCardinality(String)`                                                                                   | El nombre de una métrica                                                                                                                                                                                                                                                                                                                                                                                |
-| `<tag_value_column>` | [ ]           | `String`                              | `String` o `LowCardinality(String)` o `LowCardinality(Nullable(String))`                                              | El valor de una etiqueta específica; el nombre de la etiqueta y el nombre de la columna correspondiente se especifican en la configuración [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                                         |
-| `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` o `Map(LowCardinality(String), String)` o `Map(LowCardinality(String), LowCardinality(String))` | Mapa de todas las etiquetas, incluida la etiqueta `__name__`, que contiene el nombre de una métrica, y las etiquetas cuyos nombres se enumeran en la configuración [tags&#95;to&#95;columns](#settings). Las tablas creadas por versiones anteriores de ClickHouse almacenaban en esta columna solo las etiquetas sin columnas dedicadas y sin el nombre de la métrica; la lectura gestiona ambos casos |
+| `<tag_value_column>` | [ ]           | `String`                              | `String` o `LowCardinality(String)` o `LowCardinality(Nullable(String))`                                              | El valor de una etiqueta específica; el nombre de la etiqueta y el nombre de la columna correspondiente se especifican en el SETTING [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                                         |
+| `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` o `Map(LowCardinality(String), String)` o `Map(LowCardinality(String), LowCardinality(String))` | Mapa de todas las etiquetas, incluida la etiqueta `__name__`, que contiene el nombre de una métrica, y las etiquetas cuyos nombres se enumeran en el SETTING [tags&#95;to&#95;columns](#settings). Las tablas creadas por versiones anteriores de ClickHouse almacenaban en esta columna solo las etiquetas sin columnas dedicadas y sin el nombre de la métrica; la lectura gestiona ambos casos |
 | `min_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` o `Nullable(DateTime64(X))`                                                                           | Marca de tiempo mínima de la serie temporal con ese `id`. La columna se crea si [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) es `true`                                                                                                                                                                                                                                                  |
 | `max_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` o `Nullable(DateTime64(X))`                                                                           | Marca de tiempo máxima de la serie temporal con ese `id`. La columna se crea si [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) es `true`                                                                                                                                                                                                                                                  |
+
+Las nuevas tablas internas de etiquetas de la [versión](#schema-versioning) 5 y posteriores con un motor de la familia `MergeTree` tienen un índice de texto invertido sobre `tags`:
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. Acelera las coincidencias exactas de etiquetas como
+`{job="api"}` en PromQL al buscar conjuntamente la clave y el valor. Las comparaciones con una cadena vacía también
+coinciden con etiquetas ausentes y no utilizan este índice.
+
+Los índices explícitos declarados en `TAGS INNER COLUMNS` sustituyen al índice predeterminado. Las tablas existentes y las tablas de etiquetas externas
+conservan sus índices; añade y materializa el índice en su tabla de destino de etiquetas para habilitarlo.
 
 ### Tabla de familias de métricas {#metric-families-table}
 
@@ -216,7 +224,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 4, recent_samples_ttl_seconds = 345600
+SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -237,7 +245,8 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
@@ -251,9 +260,9 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 Es decir, las columnas se generaron automáticamente y además hay cuatro tablas internas de destino con sus propias definiciones de columnas
-almacenadas en las cláusulas `INNER COLUMNS`. El ajuste `recent_samples_ttl_seconds` se escribió en la cláusula `SETTINGS`
-con su valor predeterminado: este ajuste define el TTL de la tabla de muestras recientes, por lo que su valor efectivo queda fijado en el momento de la creación.
-Además, la última versión del esquema quedó fijada en el ajuste `version` (véase [Control de versiones del esquema](#schema-versioning)).
+almacenadas en las cláusulas `INNER COLUMNS`. El SETTING `recent_samples_ttl_seconds` se escribió en la cláusula `SETTINGS`
+con su valor predeterminado: este SETTING define el TTL de la tabla de muestras recientes, por lo que su valor efectivo queda fijado en el momento de la creación.
+Además, la última versión del esquema quedó fijada en el SETTING `version` (véase [Control de versiones del esquema](#schema-versioning)).
 
 Las tablas internas de destino tienen nombres como `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
@@ -293,7 +302,8 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -513,16 +523,16 @@ Aquí tienes una lista de configuraciones que se pueden especificar al definir u
 | `recent_samples_partition_by`        | Expression    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Clave de partición de la tabla interna `recent samples`, por ejemplo, `toStartOfHour(timestamp)`. Cuando se establece explícitamente, sobrescribe la clave de partición de la declaración del motor; si no se establece ninguna, se usa una partición por cada 5 horas. Se ignora para una tabla externa de samples recientes. Requiere que `recent_samples_ttl_seconds` sea distinto de cero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `recent_samples_index_granularity`   | UInt64        | 8192                                                          | Establece `index_granularity` de la tabla interna `recent samples`. Cuando se establece explícitamente, sobrescribe `index_granularity` de la declaración del motor. Se ignora para una tabla externa de samples recientes y un motor que no sea MergeTree. Requiere que `recent_samples_ttl_seconds` sea distinto de cero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `tags_index_granularity`             | UInt64        | 8192                                                          | Establece `index_granularity` de la tabla [etiquetas](#tags-table) interna. Cuando se establece explícitamente, sobrescribe `index_granularity` de la declaración del motor. Se ignora para una tabla externa de etiquetas y un motor que no sea MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `version`                            | UInt64        | 4                                                             | La versión de la tabla: identifica el conjunto de tablas de destino y su estructura. La versión se fija automáticamente cuando se crea una tabla y no se puede cambiar posteriormente; normalmente debe omitirse en la consulta `CREATE TABLE` (consulta [Control de versiones del esquema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `version`                            | UInt64        | 5                                                             | La versión de la tabla: identifica el conjunto de tablas de destino y su estructura. La versión se fija automáticamente cuando se crea una tabla y no se puede cambiar posteriormente; normalmente debe omitirse en la consulta `CREATE TABLE` (consulta [Control de versiones del esquema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Control de versiones del esquema {#schema-versioning}
 
 El motor de tabla `TimeSeries` y la capa de ejecución de PromQL están en desarrollo activo:
 el conjunto de tablas de destino y su estructura pueden cambiar entre versiones de ClickHouse.
-Para que dichos cambios sean detectables, cada tabla `TimeSeries` almacena su versión en el ajuste [version](#settings).
-La versión se fija automáticamente en la consulta `CREATE` al crear la tabla —su valor es la última versión conocida por el servidor (actualmente 4)—,
-persiste en los metadatos de la tabla y no puede modificarse mediante `ALTER`. Las tablas creadas antes de que se introdujera el ajuste se consideran de versión 0.
-Lo normal es omitir el ajuste en la consulta `CREATE TABLE`: así la tabla obtiene la última versión.
+Para que dichos cambios sean detectables, cada tabla `TimeSeries` almacena su versión en el SETTING [version](#settings).
+La versión se fija automáticamente en la consulta `CREATE` al crear la tabla —su valor es la última versión conocida por el servidor (actualmente 5)—,
+persiste en los metadatos de la tabla y no puede modificarse mediante `ALTER`. Las tablas creadas antes de que se introdujera el SETTING se consideran de versión 0.
+Lo normal es omitir el SETTING en la consulta `CREATE TABLE`: así la tabla obtiene la última versión.
 Se acepta un valor explícito de `version` siempre que el servidor admita esa versión; en ese caso la tabla se define tal como lo hace esa versión (consulte [Historial de versiones](#version-history)).
 `CREATE TABLE ... AS other_table` no copia la versión de la otra tabla; consulte [Crear una tabla AS una tabla existente](#create-as).
 
@@ -541,11 +551,12 @@ el dialecto `promql` y la API HTTP de consultas de Prometheus):
 
 | Versión | Cambios                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Tablas creadas antes de que se introdujera el ajuste `version`, incluidas las tablas &quot;prealpha&quot; (que declaraban las columnas de las tablas de destino como [columnas externas](#outer-columns)) y las tablas sin la tabla de [muestras recientes](#recent-samples-table)                                                                                                                                                                                     |
-| 1       | Se introdujo el ajuste `version`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2       | Se introdujo el ajuste [`id_type`](#settings): una tabla con una tabla de etiquetas externa registra el tipo de la columna `id` en `id_type` y la expresión que genera los identificadores en [`id_generator`](#settings), de modo que su definición no depende de la tabla externa. `id_type` también se registra cuando se establece `id_generator` (véase [La columna `id`](#id-column))                                                                            |
+| 0       | Tablas creadas antes de que se introdujera el SETTING `version`, incluidas las tablas &quot;prealpha&quot; (que declaraban las columnas de las tablas de destino como [columnas externas](#outer-columns)) y las tablas sin la tabla de [muestras recientes](#recent-samples-table)                                                                                                                                                                                     |
+| 1       | Se introdujo el SETTING `version`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 2       | Se introdujo el SETTING [`id_type`](#settings): una tabla con una tabla de etiquetas externa registra el tipo de la columna `id` en `id_type` y la expresión que genera los identificadores en [`id_generator`](#settings), de modo que su definición no depende de la tabla externa. `id_type` también se registra cuando se establece `id_generator` (véase [La columna `id`](#id-column))                                                                            |
 | 3       | La columna externa `time_series` pasó a llamarse `samples` (véase [Columnas externas](#outer-columns)). Las tablas de versiones anteriores conservan el nombre antiguo de la columna, y las funciones de tabla [prometheusQuery](/es/reference/functions/table-functions/prometheusQuery) y [prometheusQueryRange](/es/reference/functions/table-functions/prometheusQueryRange) devuelven la columna con el nombre que utiliza la tabla. Los datos almacenados no cambiaron |
 | 4       | La tabla de destino `metrics` pasó a llamarse `metric families`: la tabla interna se denomina `.inner_id.metricfamilies.<uuid>` en lugar de `.inner_id.metrics.<uuid>`, y la definición se escribe con la palabra clave `METRIC FAMILIES` en lugar de `METRICS`. Los datos almacenados no cambiaron                                                                                                                                                                    |
+| 5       | Las nuevas tablas de etiquetas internas con un motor de la familia `MergeTree` obtienen de forma predeterminada un índice de texto `keyValuePairs` sobre el mapa `tags` (véase [Tabla de etiquetas](#tags-table))                                                                                                                                                                                                                                                      |
 
 # Funciones {#functions}
 

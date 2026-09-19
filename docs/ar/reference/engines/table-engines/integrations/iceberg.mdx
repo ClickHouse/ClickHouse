@@ -147,10 +147,10 @@ OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compac
 ### المتطلبات والسلوك {#manifest-compaction-behavior}
 
 * هذه الميزة تجريبية، ولا تتاح إلا عند تفعيل الإعداد `allow_experimental_iceberg_compaction`. وتُطلق العبارة استثناءً إذا لم يكن الإعداد مفعّلًا.
-* لا تتم محاولة الدمج إلا عندما يتجاوز عدد ملفات البيان في قائمة البيان الخاصة باللقطة الحالية العتبة التي يحددها الإعداد `iceberg_manifest_min_count_to_compact` (القيمة الافتراضية `30`). وإذا كان العدد الحالي أقل من العتبة أو مساويًا لها، يُتخطى الدمج ولا تُنشأ لقطة جديدة. اضبط العتبة على قيمة أقل لإجراء الدمج بشكل أكثر سرعة.
-* لا يكون `OPTIMIZE TABLE ... MANIFEST` مدعومًا إلا لجداول Iceberg. ويؤدي تشغيله على أي محرك جدول آخر إلى إطلاق استثناء.
+* لا تتم محاولة الدمج إلا عندما يتجاوز عدد ملفات البيان في قائمة البيان الخاصة باللقطة الحالية العتبة التي يحددها الإعداد `iceberg_manifest_min_count_to_compact` (القيمة الافتراضية `100`، وهي القيمة الافتراضية الموثّقة لخاصية جدول Iceberg `commit.manifest.min-count-to-merge`). وإذا كان العدد الحالي أقل من العتبة أو مساويًا لها، يُتخطى الدمج ولا تُنشأ لقطة جديدة. اضبط العتبة على قيمة أقل لإجراء الدمج بشكل أكثر سرعة.
+* لا يكون `OPTIMIZE TABLE ... MANIFEST` مدعومًا إلا لجداول Iceberg. ويؤدي تشغيله على أي محرك الجدول آخر إلى إطلاق استثناء.
 * لا يكون `OPTIMIZE TABLE ... MANIFEST` مدعومًا إلا لجداول Iceberg ذات format-version 2. ويؤدي تشغيله على جدول ذي format-version 1 إلى إطلاق استثناء، وكذلك تشغيله على جدول ذي format-version 3، لأن بيانات `first_row_id` الوصفية الخاصة بـ row-lineage في v3 لا تزال غير مدعومة بشكل صحيح عند إعادة كتابة manifest ذهابًا وإيابًا.
-* لا يكون `OPTIMIZE TABLE ... MANIFEST` مدعومًا لجداول Iceberg المشفّرة التي تحتوي data files فيها على `key_metadata` لكل ملف. ولم يُنفَّذ بعد الحفاظ على بيانات التشفير الوصفية هذه عبر إعادة كتابة manifest، لذا تُطلق العبارة استثناء `NOT_IMPLEMENTED`.
+* لا يكون `OPTIMIZE TABLE ... MANIFEST` مدعومًا لجداول Iceberg المشفّرة التي تحتوي ملفات البيانات فيها على `key_metadata` لكل ملف. ولم يُنفَّذ بعد الحفاظ على بيانات التشفير الوصفية هذه عبر إعادة كتابة manifest، لذا تُطلق العبارة استثناء `NOT_IMPLEMENTED`.
 
 ## معالجة الجداول ذات الصفوف المحذوفة {#deleted-rows}
 
@@ -158,10 +158,10 @@ OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compac
 
 * [الحذف بحسب الموضع](https://iceberg.apache.org/spec/#position-delete-files)
 * [الحذف بحسب المساواة](https://iceberg.apache.org/spec/#equality-delete-files) (مدعوم بدءًا من الإصدار 25.8+)
+* [متجهات الحذف](https://iceberg.apache.org/spec/#deletion-vectors) (أُضيفت في v3)
 
-طريقة الحذف التالية **غير مدعومة**:
-
-* [متجهات الحذف](https://iceberg.apache.org/spec/#deletion-vectors) (طُرحت في v3)
+دعم متجهات الحذف للقراءة فقط؛ إذ لا يكتب ClickHouse متجهات الحذف ولا يحدّثها ولا يضغطها.
+لا تُدعم `ALTER TABLE ... DELETE` و`ALTER TABLE ... UPDATE` لجداول Iceberg ذات إصدار الصيغة 3.
 
 ### الاستخدام الأساسي {#basic-usage}
 

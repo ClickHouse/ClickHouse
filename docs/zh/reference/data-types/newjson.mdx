@@ -335,21 +335,21 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-  当路径存储在基础 (`map`) [共享数据](#shared-data-structure)中时，读取子对象子列的效率可能较低，因为这需要扫描整个共享数据结构。使用 `map_with_buckets` 或 `advanced` 共享数据序列化时，从共享数据中读取子列则经过了高度优化。
+  当路径存储在基础 (`map`) [共享数据](#shared-data-structure)中时，读取子对象子列的效率可能较低，因为这需要扫描整个共享数据结构。使用 `map_with_buckets`、`advanced` 或 `advanced_chunked` 共享数据序列化时，从共享数据中读取子列则经过了高度优化。
 </Note>
 
 ## 读取 JSON 组合子列 {#reading-json-combined-sub-columns}
 
-`JSON` 类型支持使用特殊语法 `json.@some.path` 将某个 path 作为**组合子列**读取。
-给定 path 的组合子列会返回：
+`JSON` 类型支持使用特殊语法 `json.@some.path` 将某个 路径 作为**组合子列**读取。
+给定 路径 的组合子列会返回：
 
-* 如果该 path 具有字面值，则以 `Dynamic` 形式返回存储在该 path 的字面值。
-* 如果该 path 没有字面值，但具有嵌套的子 path，则以 `Dynamic` 形式返回该 path 对应的 JSON 子对象。
-* 如果该 path 既不存在字面值，也不存在任何子 path，则返回 `NULL`。
+* 如果该 路径 具有字面值，则以 `Dynamic` 形式返回存储在该 路径 的字面值。
+* 如果该 路径 没有字面值，但具有嵌套的子 路径，则以 `Dynamic` 形式返回该 路径 对应的 JSON 子对象。
+* 如果该 路径 既不存在字面值，也不存在任何子 路径，则返回 `NULL`。
 
-当某个 path 在不同行中既可能保存标量值，也可能保存嵌套对象时，这种方式非常有用；相比于分别查询字面子列 (`json.a`) 和子对象子列 (`json.^a`) ，也更加方便。
+当某个 路径 在不同行中既可能保存标量值，也可能保存嵌套对象时，这种方式非常有用；相比于分别查询字面子列 (`json.a`) 和子对象子列 (`json.^a`) ，也更加方便。
 
-下面的示例比较了 path `a` 的三种子列类型：
+下面的示例比较了 路径 `a` 的三种子列类型：
 
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
@@ -389,7 +389,7 @@ FROM test;
 * 第 3 行：`a` 完全不存在。`json.a` 和 `json.@a` 都返回 `NULL`，而 `json.^a` 返回空 `{}`。
 
 <Note>
-  当路径存储在基础 (`map`) [共享数据](#shared-data-structure)中时，读取组合子列的效率可能较低，因为这需要扫描整个共享数据结构。使用 `map_with_buckets` 或 `advanced` 共享数据序列化时，从共享数据中读取子列会经过高度优化。
+  当路径存储在基础 (`map`) [共享数据](#shared-data-structure)中时，读取组合子列的效率可能较低，因为这需要扫描整个共享数据结构。使用 `map_with_buckets`、`advanced` 或 `advanced_chunked` 共享数据序列化时，从共享数据中读取子列会经过高度优化。
 </Note>
 
 ## 路径的类型推断 {#type-inference-for-paths}
@@ -859,8 +859,8 @@ ORDER BY _part ASC
 ### MergeTree parts 中的共享数据结构 {#shared-data-structure-in-merge-tree-parts}
 
 在 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表中，数据存储在数据分区片段中，而数据分区片段会将所有内容保存到磁盘 (本地或远程) 上。因此，磁盘上的数据存储方式可能与内存中不同。
-目前，MergeTree 数据分区片段中有 3 种不同的共享数据结构序列化方式：`map`、`map_with_buckets`
-和 `advanced`。
+目前，MergeTree 数据分区片段中有 4 种不同的共享数据结构序列化方式：`map`、`map_with_buckets`、
+`advanced` 和 `advanced_chunked`。
 
 序列化版本由 MergeTree
 settings [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -903,6 +903,16 @@ settings [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/referenc
 `map` 和 `map_with_buckets` 序列化相比，这种序列化占用的磁盘存储空间更大。
 
 如需更详细地了解新的共享数据序列化及其实现细节，请阅读这篇[博客文章](https://clickhouse.com/blog/json-data-type-gets-even-better)。
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+`advanced_chunked` 序列化与 `advanced` 相同，但支持在序列化过程中将行拆分为更小的块。
+这降低了合并包含大量唯一路径的 JSON 列时的峰值内存占用，因为每次只需 materialized 一个块的数据，
+而不是整个行区间。
+
+块大小由 MergeTree 设置 [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (默认值为 8192) 控制。
+这并非硬性限制：如果最后一个块小于目标值的一半，它会与前一个块合并，
+因此实际块大小的范围为 `target/2` 到 `1.5 * target`。
 
 ## 控制 MergeTree parts 中 JSON 内动态路径的数量 {#controlling-the-number-of-dynamic-paths}
 
@@ -1077,19 +1087,19 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## 惰性类型提示 (Experimental) {#lazy-type-hints}
+## 惰性类型提示 (Beta) {#lazy-type-hints}
 
 <Note>
-  此功能为 Experimental 功能，需要启用设置 `enable_json_lazy_type_hints`。
+  此功能处于 Beta 阶段，需要启用设置 `enable_json_lazy_type_hints`。
 </Note>
 
-当你使用 `ALTER TABLE ... MODIFY COLUMN` 为 JSON 列添加或修改类型提示时，ClickHouse 通常会重写所有 parts，以物化新的类型提示。对于包含大量历史数据 (数百 TB) 的表，这一过程的开销可能极其高昂。
+当你使用 `ALTER TABLE ... MODIFY COLUMN` 为 JSON 列添加或修改类型提示时，ClickHouse 通常会重写所有 parts，以 materialized 新的类型提示。对于包含大量历史数据 (数百 TB) 的表，这一过程的开销可能极其高昂。
 
 **惰性类型提示** 允许仅通过元数据操作添加类型提示，而无需重写现有数据：
 
 * **旧 parts**：类型提示会在查询时通过将 `Dynamic` 转换为提示的类型来应用
-* **新 parts**：类型提示会在 `INSERT` 操作期间被物化
-* **合并**：类型提示会在 parts 合并时被物化
+* **新 parts**：类型提示会在 `INSERT` 操作期间被 materialized
+* **合并**：类型提示会在 parts 合并时被 materialized
 
 这意味着你可以立即添加类型提示，而数据会随着正常的后台合并逐步完成转换。
 
@@ -1106,7 +1116,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -1144,16 +1154,15 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 ### 限制 {#lazy-type-hints-limitations}
 
-* 此功能处于 Experimental 阶段，未来版本中可能会发生变化
 * 与预先 materialized 的类型相比，查询时进行类型转换可能会带来显著的性能开销，尤其是在处理大型 JSON 对象 时
 * 该功能仅在修改 `typed_paths` (类型提示) 时适用；其他 JSON 参数 (如 `max_dynamic_paths`、`SKIP` 或 `SKIP REGEXP`) 仍然需要变更
-* 当受影响的子列用于按位置持久化的结构时，修改类型提示 (或移除已类型化路径) **并非**仅元数据操作，并且会被拒绝：
+* 当受影响的子列用于按位置持久化的结构时，修改类型提示 (或移除类型化路径) **并非**仅元数据操作，并且会被拒绝：
 
   * **主键/排序键**或**分区键** — 禁止此更改，因为无法通过仅元数据的 `ALTER` 重建磁盘上的主索引/分区值 (与任何其他键列一样)；
   * 显式的**数据跳过索引** — 请先删除该索引，或者禁用 `enable_json_lazy_type_hints`，以将此更改作为重建索引的完整变更运行。
   * **排序键 (`ORDER BY`) 读取该子列的投影** — 请先删除该投影，因为仅元数据的 `ALTER` 无法重建投影的主索引。
 
-  对未用于任何此类结构的路径添加提示，或不会改变所用子列磁盘上类型的更改 (例如添加不相关的已类型化路径)，仍然是仅元数据操作。
+  对未用于任何此类结构的路径添加提示，或不会改变所用子列磁盘上类型的更改 (例如添加不相关的类型化路径)，仍然是仅元数据操作。
 
 ## JSON 类型的值比较 {#comparison-between-values-of-the-json-type}
 

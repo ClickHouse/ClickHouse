@@ -122,6 +122,21 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   Если она используется в кластере с одним сегментом и несколькими репликами, отключение этой настройки приведёт к нежелательным последствиям.
 </Note>
 
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка: выбирать подходящую проекцию независимо от её оценочной стоимости, как `force_optimize_projection`, но без завершения запроса ошибкой, если ни одна проекция не используется."}]}]} />
+
+Заставляет оптимизацию проекций отдавать предпочтение [проекциям](/ru/reference/engines/table-engines/mergetree-family/mergetree#projections), а не самой таблице, в запросах `SELECT`, если оптимизация проекций включена (см. настройку [optimize&#95;use&#95;projections](/ru/reference/settings/session-settings/optimize-use#optimize_use_projections)).
+
+Если настройка включена, проекция, способная обслужить запрос, используется даже тогда, когда для этого требуется прочитать больше marks, чем при чтении самой таблицы — так же, как при [force&#95;optimize&#95;projection](/ru/reference/settings/session-settings/force-optimize#force_optimize_projection), но запрос не завершается ошибкой, если ни одна проекция не может быть использована.
+
+Возможные значения:
+
+* 0 — проекции выбираются по их оценочной стоимости.
+* 1 — подходящая проекция выбирается независимо от её оценочной стоимости.
+
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />

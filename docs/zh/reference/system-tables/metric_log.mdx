@@ -38,6 +38,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncInsertBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 异步 INSERT 查询的数据大小 (字节) 。
 * `ProfileEvent_AsyncInsertRows` ([UInt64](/zh/reference/data-types/int-uint)) — 通过异步 INSERT 查询插入的行数。
 * `ProfileEvent_AsyncInsertCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在异步 INSERT 哈希 ID 缓存中发现重复哈希 ID 的次数。
+* `ProfileEvent_AsyncInsertFlush` ([UInt64](/zh/reference/data-types/int-uint)) — 异步 INSERT 队列的刷写次数。每次刷写会将一批异步 INSERT 查询作为单个分片插入。与 AsyncInsertQuery 对比可了解平均每批合并了多少个查询。
 * `ProfileEvent_FailedInternalQuery` ([UInt64](/zh/reference/data-types/int-uint)) — 失败的内部查询数。
 * `ProfileEvent_FailedInternalSelectQuery` ([UInt64](/zh/reference/data-types/int-uint)) — 与 FailedInternalQuery 相同，但仅统计 SELECT 查询。
 * `ProfileEvent_FailedInternalInsertQuery` ([UInt64](/zh/reference/data-types/int-uint)) — 与 FailedInternalQuery 相同，但仅统计 INSERT 查询。
@@ -429,6 +430,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinMerge` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 JOIN 时，临时 File 合并的次数。
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 JOIN 时写入的压缩字节数。
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 JOIN 时写入的数据量 (未压缩，即压缩前) 。
+* `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 DISTINCT 时，临时 File 写入磁盘的次数。
+* `ProfileEvent_ExternalDistinctMerge` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 DISTINCT 时，临时 File 合并的次数。
+* `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 DISTINCT 时写入的压缩字节数。
+* `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 DISTINCT 时写入的数据量 (未压缩，即压缩前) 。
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 分区裁剪期间跳过的文件数
 * `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 利用 manifest 列表中的分区摘要跳过而未读取的 Iceberg manifest 文件数量
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Iceberg 读取时应用简单 count 优化
@@ -772,6 +777,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储创建的目录数量。
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — `plain_rewritable` 元数据存储为 S3ObjectStorage 删除的目录数量。
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用旧版布局的 `plain_rewritable` 磁盘数量。
+* `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/zh/reference/data-types/int-uint)) — 因对象存储拒绝操作而必须重复执行撤销失败的 `plain_rewritable` 元数据事务某一步骤的次数。
+* `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/zh/reference/data-types/int-uint)) — 提交失败并已回滚的元数据事务数量。
+* `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 未能完整执行的元数据事务回滚数量，因此元数据中仍保留部分被报告为失败的事务。
 * `ProfileEvent_S3Clients` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的 S3 客户端数量。
 * `ProfileEvent_TinyS3Clients` ([UInt64](/zh/reference/data-types/int-uint)) — 复用其他客户端现有认证提供商的 S3 客户端副本数量。
 * `ProfileEvent_EngineFileLikeReadFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在处理文件的表引擎 (如 File/S3/URL/HDFS) 中读取的文件数量。
@@ -945,6 +953,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/zh/reference/data-types/int-uint)) — 同时从中间哈希表中删除并销毁其聚合状态的已淘汰分组键数量 (参见 `enable_group_by_top_k_optimization`) 。当聚合方法无法删除键，或者仅按键的前缀进行排名时，该值低于 `AggregationTopKKeysEvicted`：此时堆仍会跳过行，但哈希表会保留每个已接纳的组。
 * `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/zh/reference/data-types/int-uint)) — 被冻结并回退到常规聚合的 Top-K 聚合堆数量。原因可能是堆在其观测窗口内几乎未拒绝任何数据 (例如，不同分组键的数量未超过 LIMIT) ，也可能是堆边界处无法淘汰的并列集合过度增长 (参见 `enable_group_by_top_k_optimization`) 。
 * `ProfileEvent_DistinctTransformsAbandonedDeduplication` ([UInt64](/zh/reference/data-types/int-uint)) — 有多少去重转换丢弃了其哈希表并停止去重，原因是观察到的输入几乎完全唯一，且下游消费者本身也会去重：包括预备 `DISTINCT` (参见 `allow_preliminary_distinct_abandoning`) 以及在 `IN` 子查询集合填充之前按流执行的预去重。
+* `ProfileEvent_DistinctTransformsSwitchedToPassThrough` ([UInt64](/zh/reference/data-types/int-uint)) — 有多少预备 `DISTINCT` 转换释放了其哈希表并开始让每一行直接通过，原因是查询内存超过了外部 `DISTINCT` 阈值，或预计的哈希分配将超过剩余阈值预算 (参见 `max_bytes_before_external_distinct`) ：最终会落盘的 `DISTINCT` 将负责处理重复项。
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/zh/reference/data-types/int-uint)) — 为哈希 join 在哈希表中预分配的元素数量。
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/zh/reference/data-types/int-uint)) — 对象存储元数据请求在未向 Keeper 发出请求的情况下直接由缓存响应的次数
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/zh/reference/data-types/int-uint)) — 对象存储元数据请求必须由 Keeper 响应的次数
@@ -1169,7 +1178,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。写入请求期间发生的不可重试分布式缓存错误数量
 * `ProfileEvent_DistrCacheWriteRequestRetriesExhausted` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。可重试写入错误在写入请求重试次数限制内未能成功的次数
 * `ProfileEvent_DistrCacheWriteRequestRetries` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。发生可重试错误后写入请求的重试次数
-* `ProfileEvent_DistrCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在 `WriteBufferFromDistributedCache::writeToFileSegment` 中花费的时间
+* `ProfileEvent_DistrCacheWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。在 WriteBufferFromDistributedCache::writeToFileSegment 中花费的时间
 * `ProfileEvent_DistrCacheWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入分布式缓存的字节数
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入对象存储所花费的时间
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存写入缓冲区事件。写入对象存储的字节数
@@ -1272,7 +1281,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时，至少被分配一个任务的不同主机数量。
 * `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入分布式查询计划中流式 exchange 套接字的字节数。`NetworkSendBytes` 不统计这些字节。
 * `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从分布式查询计划中流式 exchange 套接字读取的字节数。`NetworkReceiveBytes` 不统计这些字节。
-* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 完整写入流式 exchange 套接字的 Data 数据包数：每个 chunk 一个数据包，每个 stream 另有一个流结束数据包。发送缓冲区中的数据包仅在整个缓冲区写入后计数；若接收方不再需要数据而导致缓冲区未完整写入，则其中的数据包均不计数。
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 完整写入流式 exchange 套接字的 Data 数据包数：每个 chunk 一个数据包，每个 stream 另有一个流结束数据包。数据包仅在被完整写入时才计数；若接收方不再需要数据而导致数据包未完整写入，则不予计数。
 * `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 从流式 exchange 读取的 Data 数据包数：每个 chunk 一个数据包，每个 stream 另有一个流结束数据包。
 * `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 流式 exchange 数据包中压缩前 Native 块的字节数，在每个数据包序列化时计数一次。与 `StreamingExchangeSendBytes` 对比可得出 shuffle 或 gather 的压缩率；广播会将每个数据包发送到每个目标端，因此 `StreamingExchangeSendBytes` 会随目标端数量增加而增长。
 * `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将 chunk 序列化并压缩为流式 exchange 数据包所花费的时间。
@@ -1337,7 +1346,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/zh/reference/data-types/int-uint)) — 因 part 已被其他线程拉取或生成而去重的 part 拉取次数
 * `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — scheduleDataProcessingJob 中 tryUpdateDiskMetadataCacheForPart 的耗时
 * `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 仅 SharedMergeTree 使用的 loadColumnsChecksumsIndexes 耗时
-* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/zh/reference/data-types/int-uint)) — 在 SharedMergeTree blob-list parts 之间按路径共享的数据 blob 数量 (追加到提交多操作中的引用计数递增数)
+* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/zh/reference/data-types/int-uint)) — 在 SharedMergeTree blob-list parts 之间按路径共享的数据 blob 数量 (在提交事务中暂存的引用计数递增数，尚未按计数器节点合并为一次更新)
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/zh/reference/data-types/int-uint)) — SnapshotCleanerThread 决定清理某个 part 的次数
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/zh/reference/data-types/int-uint)) — SnapshotCleanerThread 尝试清理某个 part 的耗时
 * `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — SnapshotCleanerThread 成功清理某个 part 的次数
@@ -1664,6 +1673,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_TemporaryFilesForSort` ([Int64](/zh/reference/data-types/int-uint)) — 为外部排序创建的临时 File 数量
 * `CurrentMetric_TemporaryFilesForAggregation` ([Int64](/zh/reference/data-types/int-uint)) — 为外部聚合创建的临时 File 数量
 * `CurrentMetric_TemporaryFilesForJoin` ([Int64](/zh/reference/data-types/int-uint)) — 为 JOIN 创建的临时 File 数量
+* `CurrentMetric_TemporaryFilesForDistinct` ([Int64](/zh/reference/data-types/int-uint)) — 为外部 DISTINCT 创建的临时 File 数量
 * `CurrentMetric_TemporaryFilesForMerge` ([Int64](/zh/reference/data-types/int-uint)) — 用于 vertical merge 的临时 File 数量
 * `CurrentMetric_TemporaryFilesUnknown` ([Int64](/zh/reference/data-types/int-uint)) — 在用途未知的情况下创建的临时 File 数量
 * `CurrentMetric_Read` ([Int64](/zh/reference/data-types/int-uint)) — 正在进行中的读 (read、pread、io&#95;getevents 等) 系统调用数量

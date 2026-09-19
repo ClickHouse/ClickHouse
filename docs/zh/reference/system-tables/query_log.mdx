@@ -149,7 +149,7 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `used_row_policies` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间所使用的行策略名称列表。
 * `used_privileges` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间成功通过校验的权限。
 * `missing_privileges` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间缺少的权限。
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/zh/reference/data-types/tuple)) — 执行该查询时所属事务的标识符。
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/zh/reference/data-types/tuple)) — 执行该查询时所属事务的标识符。
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/zh/reference/data-types/enum)) — 查询执行过程中对查询缓存的使用情况。值：&#39;Unknown&#39; = 状态未知，&#39;None&#39; = 查询结果既未写入查询结果缓存，也未从查询结果缓存中读取，&#39;Write&#39; = 查询结果已写入查询结果缓存，&#39;Read&#39; = 查询结果已从查询结果缓存中读取。
 * `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/zh/reference/data-types/map)) — 异步读取的指标。
 * `is_internal` ([UInt8](/zh/reference/data-types/int-uint)) — 表示该查询是否为内部执行的辅助查询。

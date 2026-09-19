@@ -15,17 +15,13 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 [Apache Arrow](https://arrow.apache.org/)에는 두 가지 기본 제공 열 지향 저장 포맷이 있습니다.
 ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 `Arrow`는 Apache Arrow의 &quot;file mode&quot; 형식이며, 메모리 내에서 임의 접근이 가능하도록 설계되었습니다.
 
-<div id="data-types-matching">
-  ## 데이터 타입 매핑
-</div>
+## 데이터 타입 매핑 {#data-types-matching}
 
 아래 표는 지원되는 데이터 타입과 `INSERT` 및 `SELECT` 쿼리에서 해당 타입이 ClickHouse [데이터 타입](/ko/reference/data-types/index)에 어떻게 매핑되는지를 보여줍니다.
 
@@ -70,15 +66,11 @@ ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 
 ClickHouse 테이블 컬럼의 데이터 타입은 해당 Arrow 데이터 필드와 일치할 필요가 없습니다. 데이터를 삽입할 때 ClickHouse는 먼저 위 표에 따라 데이터 타입을 해석한 다음, 데이터를 ClickHouse 테이블 컬럼에 설정된 데이터 타입으로 [CAST](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)합니다.
 
-<div id="example-usage">
-  ## 사용 예시
-</div>
+## 사용 예시 {#example-usage}
 
 아래 예시에서는 [ClickHouse SQL playground](https://sql.clickhouse.com)에서 제공되는 `forex` 데이터셋을 사용합니다.
 
-<div id="selecting-data">
-  ### 데이터 선택
-</div>
+### 데이터 선택 {#selecting-data}
 
 Playground에서 `EUR/USD` 환율 데이터 1일치를 선택해 로컬 `forex_eurusd.arrow` 파일에 저장합니다. HTTP
 인터페이스를 통해 Playground에 쿼리하며, 이때 host는 `sql-clickhouse.clickhouse.com`이고 user는
@@ -101,9 +93,7 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-<div id="reading-data">
-  ### 파일 다시 읽기
-</div>
+### 파일 다시 읽기 {#reading-data}
 
 이제 [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)과
 [`file`](/ko/reference/functions/table-functions/file) 테이블 함수를 사용해 로컬 Arrow 파일을 다시 읽어올 수 있습니다. 이 파일은
@@ -128,9 +118,7 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-<div id="inserting-data">
-  ### 데이터 삽입
-</div>
+### 데이터 삽입 {#inserting-data}
 
 Arrow 파일을 ClickHouse 테이블에 삽입하려면 `FORMAT Arrow`와 함께 `clickhouse-client`로 파이프하여 전달하십시오:
 
@@ -138,22 +126,23 @@ Arrow 파일을 ClickHouse 테이블에 삽입하려면 `FORMAT Arrow`와 함께
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-<div id="format-settings">
-  ## 포맷 설정
-</div>
+## 포맷 설정 {#format-settings}
 
-| Setting                                                                      | Description                                                                                                 | Default     |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------- |
-| `input_format_arrow_allow_missing_columns`                                   | Arrow 입력 형식을 읽는 동안 누락된 컬럼을 허용합니다                                                                            | `1`         |
-| `input_format_arrow_case_insensitive_column_matching`                        | Arrow 컬럼을 CH 컬럼과 매칭할 때 대소문자를 구분하지 않습니다.                                                                     | `0`         |
-| `input_format_arrow_import_nested`                                           | 더 이상 사용되지 않는 설정이며, 아무 작업도 수행하지 않습니다.                                                                        | `0`         |
-| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Arrow 형식의 스키마 추론 중 지원되지 않는 타입의 컬럼을 건너뜁니다                                                                    | `0`         |
-| `output_format_arrow_compression_method`                                     | Arrow 출력 형식에 사용할 압축 방식입니다. 지원되는 코덱: lz4&#95;frame, zstd, none(비압축)                                          | `lz4_frame` |
-| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | FixedString 컬럼에 Binary 대신 Arrow FIXED&#95;SIZE&#95;BINARY 타입을 사용합니다.                                        | `1`         |
-| `output_format_arrow_low_cardinality_as_dictionary`                          | LowCardinality 타입을 딕셔너리 Arrow 타입으로 출력하도록 설정합니다                                                              | `0`         |
-| `output_format_arrow_string_as_string`                                       | String 컬럼에 Binary 대신 Arrow String 타입을 사용합니다                                                                 | `1`         |
-| `output_format_arrow_unsupported_types_as_binary`                            | Arrow에 해당하는 타입이 없는 경우(예: `BFloat16`, `AggregateFunction`) 원시 바이너리 데이터로 출력합니다. `false`이면 이러한 타입에서 예외가 발생합니다. | `1`         |
-| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Arrow 형식에서 딕셔너리 인덱스에 항상 64비트 정수를 사용합니다                                                                      | `0`         |
-| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Arrow 형식에서 딕셔너리 인덱스에 부호 있는 정수를 사용합니다                                                                        | `1`         |
+| Setting                                                                      | 설명                                                                                                                                                                                                                                                                                                     | Default     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | Arrow 입력 형식을 읽는 동안 누락된 컬럼을 허용합니다                                                                                                                                                                                                                                                                                | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | Arrow 컬럼을 CH 컬럼과 매칭할 때 대소문자를 구분하지 않습니다.                                                                                                                                                                                                                                                                         | `0`         |
+| `input_format_arrow_import_nested`                                           | 더 이상 사용되지 않는 설정이며, 아무 작업도 수행하지 않습니다.                                                                                                                                                                                                                                                                            | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Arrow 형식의 스키마 추론 중 지원되지 않는 타입의 컬럼을 건너뜁니다                                                                                                                                                                                                                                                                        | `0`         |
+| `output_format_arrow_compression_method`                                     | Arrow 출력 형식에 사용할 압축 방식입니다. 지원되는 코덱: lz4&#95;frame, zstd, none(비압축)                                                                                                                                                                                                                                              | `lz4_frame` |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | FixedString 컬럼에 Binary 대신 Arrow FIXED&#95;SIZE&#95;BINARY 타입을 사용합니다.                                                                                                                                                                                                                                            | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | LowCardinality 타입을 딕셔너리 Arrow 타입으로 출력하도록 설정합니다                                                                                                                                                                                                                                                                  | `0`         |
+| `output_format_arrow_record_batch_size`                                      | 작은 블록을 병합할 때 record batch당 목표 행 수입니다. 버퍼링은 메모리 사용량을 증가시키고 쿼리가 완료될 때까지 첫 번째 배치를 지연시킬 수 있습니다. `0`이면 행 목표치를 비활성화합니다.                                                                                                                                                                                               | `0`         |
+| `output_format_arrow_record_batch_size_bytes`                                | record batch당 누적된 블록 데이터의 목표 바이트 수입니다. 버퍼링은 메모리 사용량을 증가시키고 쿼리가 완료될 때까지 첫 번째 배치를 지연시킬 수 있습니다. `0`이면 바이트 목표치를 비활성화합니다.                                                                                                                                                                                            | `0`         |
+| `output_format_arrow_string_as_string`                                       | String 컬럼에 Binary 대신 Arrow String 타입을 사용합니다                                                                                                                                                                                                                                                                     | `1`         |
+| `output_format_arrow_unsupported_types`                                      | Arrow에 해당하는 타입이 없는 경우(예: `JSON`, `Dynamic`, `QBit`, `AggregateFunction`) 무엇을 기록할지 지정합니다: `throw`, `text`(행마다 `serializeText` 값 하나를 `String` 컬럼이 사용하는 Arrow 타입으로 기록), `binary`(행마다 `serializeBinary` 값 하나를 Arrow `Binary`로 기록). `AggregateFunction`은 텍스트 형식이 원시 aggregate state이므로 `text` 모드에서도 `Binary`로 기록됩니다. | `binary`    |
+| `output_format_arrow_unsupported_types_as_binary`                            | `output_format_arrow_unsupported_types`로 대체되었습니다: `0`은 `throw`, `1`은 `binary`를 의미합니다. 해당 설정이 기본값으로 유지된 경우에만 참조됩니다.                                                                                                                                                                                              | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Arrow 형식에서 딕셔너리 인덱스에 항상 64비트 정수를 사용합니다                                                                                                                                                                                                                                                                          | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Arrow 형식에서 딕셔너리 인덱스에 부호 있는 정수를 사용합니다                                                                                                                                                                                                                                                                            | `1`         |
 
 {/*AUTOGENERATED_END*/}

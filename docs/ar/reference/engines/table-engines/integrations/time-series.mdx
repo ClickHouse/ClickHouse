@@ -28,7 +28,7 @@ metric_name2[...] = ...
 </Info>
 
 <Note>
-  محرك الجدول TimeSeries في ClickHouse Cloud هو أيضًا في private preview.
+  محرك الجدول `TimeSeries` متاح في ClickHouse Cloud كميزة في private preview.
   الخدمات المشارِكة في private preview لديها بالفعل الإعداد
   `enable_time_series_table` مهيَّأً. أما خدمات ClickHouse Cloud الأخرى
   فلا تتوفر لديها هذه التهيئة، ولا يمكنك تفعيل المحرك بنفسك على
@@ -174,10 +174,16 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | -------------------- | ---------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                 | [x]        | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table)                                                | يعرّف `id` توليفة من اسم مقياس والوسوم. ويحدّد تعبير DEFAULT كيفية حساب هذا المعرّف                                                                                                                                                                                                                                        |
 | `metric_name`        | [x]        | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | اسم المقياس                                                                                                                                                                                                                                                                                                                |
-| `<tag_value_column>` | [ ]        | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | قيمة وسم معيّن، ويُحدَّد اسم الوسم واسم العمود المقابل له في الإعداد [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                                  |
+| `<tag_value_column>` | [ ]        | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | قيمة وسم معيّن، ويُحدَّد اسم الوسم واسم العمود المقابل له في الإعداد [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                                  |
 | `tags`               | [x]        | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | خريطة لجميع الوسوم، بما فيها الوسم `__name__` الذي يحتوي على اسم المقياس، والوسوم التي أُدرجت أسماؤها في الإعداد [tags&#95;to&#95;columns](#settings). كانت الجداول التي أنشأتها الإصدارات الأقدم من ClickHouse تخزّن في هذا العمود الوسوم التي لا تحتوي على أعمدة مخصصة فقط ودون اسم المقياس؛ وتدعم القراءة كلتا الحالتين |
 | `min_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أدنى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                                                                                                                                                                             |
 | `max_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أقصى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                                                                                                                                                                             |
+
+تحتوي جداول الوسوم الداخلية الجديدة من [version](#schema-versioning) 5 فما بعد، والتي تستخدم محركًا من عائلة `MergeTree`، على فهرس نصي معكوس على `tags`:
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. وهو يسرّع المطابقات التامة للوسوم مثل
+`{job="api"}` في PromQL عبر البحث عن المفتاح والقيمة معًا. أما المقارنات مع سلسلة فارغة فتطابق أيضًا الوسوم المفقودة ولا تستفيد من هذا الفهرس.
+
+تحلّ الفهارس الصريحة المعلَنة في `TAGS INNER COLUMNS` محل الفهرس الافتراضي. أما الجداول الموجودة وجداول الوسوم الخارجية فتحتفظ بفهارسها؛ ولتفعيله عليها، أضف الفهرس وجسّده على جدول الهدف الخاص بوسومها.
 
 ### جدول عائلات المقاييس {#metric-families-table}
 
@@ -216,7 +222,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 4, recent_samples_ttl_seconds = 345600
+SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -237,7 +243,8 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
@@ -293,7 +300,8 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -513,14 +521,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | Expression   | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | مفتاح التقسيم لجدول `recent samples` الداخلي، مثلًا `toStartOfHour(timestamp)`. عند تعيينه صراحةً، فإنه يتجاوز مفتاح التقسيم من تعريف المحرك؛ وإذا لم يُعيّن أي منهما، فسيُستخدم قسم واحد لكل 5 ساعات. يُتجاهل لجدول العينات الحديثة خارجي. يتطلب أن تكون `recent_samples_ttl_seconds` غير صفرية                                                                                                                                                                                                                                                                                                                                                                       |
 | `recent_samples_index_granularity`   | UInt64       | 8192                                                          | يضبط `index_granularity` لجدول `recent samples` الداخلي. عند تعيينه صراحةً، فإنه يتجاوز `index_granularity` من تعريف المحرك. يُتجاهل لجدول العينات الحديثة خارجي ولمحرك غير MergeTree. يتطلب أن تكون `recent_samples_ttl_seconds` غير صفرية                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `tags_index_granularity`             | UInt64       | 8192                                                          | يضبط `index_granularity` لجدول [الوسوم](#tags-table) الداخلي. عند تعيينه صراحةً، فإنه يتجاوز `index_granularity` من تعريف المحرك. يُتجاهل لجدول الوسوم خارجي ولمحرك غير MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `version`                            | UInt64       | 4                                                             | إصدار الجدول: يحدد مجموعة جداول الهدف وبنيتها. يُثبّت الإصدار تلقائيًا عند إنشاء الجدول ولا يمكن تغييره بعد ذلك، وعادةً ينبغي حذفه من استعلام `CREATE TABLE` (راجع [إصدارات المخطط](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `version`                            | UInt64       | 5                                                             | إصدار الجدول: يحدد مجموعة جداول الهدف وبنيتها. يُثبّت الإصدار تلقائيًا عند إنشاء الجدول ولا يمكن تغييره بعد ذلك، وعادةً ينبغي حذفه من استعلام `CREATE TABLE` (راجع [إصدارات المخطط](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ## إصدارات المخطط {#schema-versioning}
 
 لا يزال محرك الجدول `TimeSeries` وطبقة تنفيذ PromQL قيد التطوير النشط:
 فمجموعة الجداول الهدف وبنيتها قد تتغيّر بين إصدارات ClickHouse.
 ولجعل مثل هذه التغييرات قابلة للاكتشاف، يخزّن كل جدول `TimeSeries` إصداره في الإعداد [version](#settings).
-ويُثبَّت الإصدار تلقائيًا في استعلام `CREATE` عند إنشاء الجدول - وقيمته هي أحدث إصدار معروف للخادم (حاليًا 4) -
+ويُثبَّت الإصدار تلقائيًا في استعلام `CREATE` عند إنشاء الجدول - وقيمته هي أحدث إصدار معروف للخادم (حاليًا 5) -
 ويبقى محفوظًا في بيانات الجدول الوصفية، ولا يمكن تغييره باستخدام `ALTER`. أما الجداول التي أُنشئت قبل أن يُضاف هذا الإعداد فتُعدّ من الإصدار 0.
 وفي الأحوال العادية يُستحسن إغفال هذا الإعداد في استعلام `CREATE TABLE`، فيحصل الجدول عندئذٍ على أحدث إصدار.
 ويُقبل تحديد `version` صراحةً إذا كان الخادم يدعم ذلك الإصدار؛ عندئذٍ يُعرَّف الجدول بالطريقة التي يعتمدها ذلك الإصدار (انظر [سجل الإصدارات](#version-history)).
@@ -545,7 +553,8 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | 1       | أُضيف الإعداد `version`                                                                                                                                                                                                                                                                                                                                                                                    |
 | 2       | أُضيف الإعداد [`id_type`](#settings): الجدول الذي له جدول الوسوم الخارجي يسجّل نوع العمود `id` في `id_type`، والتعبير المولِّد للمعرّفات في [`id_generator`](#settings)، بحيث لا يعتمد تعريفه على الجدول الخارجي. ويُسجَّل `id_type` أيضًا عند ضبط `id_generator` (انظر [العمود `id`](#id-column))                                                                                                         |
 | 3       | أُعيدت تسمية العمود الخارجي `time_series` إلى `samples` (انظر [الأعمدة الخارجية](#outer-columns)). تحتفظ جداول الإصدارات الأقدم بالاسم القديم للعمود، وتُعيد دالتا الجداول [prometheusQuery](/ar/reference/functions/table-functions/prometheusQuery) و[prometheusQueryRange](/ar/reference/functions/table-functions/prometheusQueryRange) العمود بالاسم الذي يستخدمه الجدول. أما البيانات المخزَّنة فلم تتغيّر |
-| 4       | أُعيدت تسمية جدول الهدف `metrics` إلى `عائلة المقياس`: يُسمّى الجدول الداخلي `.inner_id.metricfamilies.<uuid>` بدلًا من `.inner_id.metrics.<uuid>`، ويُكتب التعريف بالكلمة المفتاحية `METRIC FAMILIES` بدلًا من `METRICS`. أما البيانات المخزَّنة فلم تتغيّر                                                                                                                                             |
+| 4       | أُعيدت تسمية جدول الهدف `metrics` إلى `عائلة المقياس`: يُسمّى الجدول الداخلي `.inner_id.metricfamilies.<uuid>` بدلًا من `.inner_id.metrics.<uuid>`، ويُكتب التعريف بالكلمة المفتاحية `METRIC FAMILIES` بدلًا من `METRICS`. أما البيانات المخزَّنة فلم تتغيّر                                                                                                                                               |
+| 5       | جداول الوسوم الداخلية الجديدة التي تستخدم محركًا من عائلة `MergeTree` تحصل افتراضيًا على فهرس نصي `keyValuePairs` على الخريطة `tags` (انظر [جدول الوسوم](#tags-table))                                                                                                                                                                                                                                     |
 
 # الدوال {#functions}
 

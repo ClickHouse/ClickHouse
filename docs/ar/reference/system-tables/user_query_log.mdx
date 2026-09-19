@@ -96,7 +96,7 @@ doc_type: 'reference'
 * `log_comment` ([String](/ar/reference/data-types/string)) — تعليق السجل. يمكن ضبطه على سلسلة نصية عشوائية لا تتجاوز max&#95;query&#95;size. تكون القيمة سلسلة فارغة إذا لم يُعرَّف.
 * `thread_ids` ([Array(UInt64)](/ar/reference/data-types/array)) — معرّفات الخيوط المشاركة في تنفيذ الاستعلام. قد لا تكون هذه الخيوط قد عملت بالتزامن.
 * `peak_threads_usage` ([UInt64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد الخيوط التي تنفذ الاستعلام بالتزامن.
-* `ProfileEvents` ([Map(String, UInt64)](/ar/reference/data-types/map)) — أحداث ProfileEvents التي تقيس مقاييس مختلفة. يمكن العثور على وصفها في جدول system.events.
+* `ProfileEvents` ([Map(String, UInt64)](/ar/reference/data-types/map)) — أحداث ProfileEvents التي تقيس مقاييس مختلفة. يمكن العثور على وصفها في جدول system.events
 * `Settings` ([Map(String, String)](/ar/reference/data-types/map)) — الإعدادات التي غُيّرت عند تشغيل العميل للاستعلام. لتمكين تسجيل التغييرات على الإعدادات، اضبط المعلمة log&#95;query&#95;settings على 1.
 * `used_aggregate_functions` ([Array(String)](/ar/reference/data-types/array)) — الأسماء المعيارية لدوال التجميع التي استُخدمت أثناء تنفيذ الاستعلام.
 * `used_aggregate_function_combinators` ([Array(String)](/ar/reference/data-types/array)) — الأسماء المعيارية لمُركِّبات دوال التجميع التي استُخدمت أثناء تنفيذ الاستعلام.
@@ -112,7 +112,7 @@ doc_type: 'reference'
 * `used_row_policies` ([Array(String)](/ar/reference/data-types/array)) — قائمة أسماء سياسات الصفوف المُستخدمة أثناء تنفيذ الاستعلام.
 * `used_privileges` ([Array(String)](/ar/reference/data-types/array)) — الامتيازات التي تم التحقق منها بنجاح أثناء تنفيذ الاستعلام.
 * `missing_privileges` ([Array(String)](/ar/reference/data-types/array)) — الامتيازات المفقودة أثناء تنفيذ الاستعلام.
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي نُفّذ هذا الاستعلام في نطاقها.
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي نُفّذ هذا الاستعلام في نطاقها.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ar/reference/data-types/enum)) — استخدام ذاكرة التخزين المؤقت لنتائج الاستعلامات أثناء تنفيذ الاستعلام. القيم: &#39;Unknown&#39; = الحالة غير معروفة، &#39;None&#39; = لم تُكتب نتيجة الاستعلام إلى ذاكرة التخزين المؤقت لنتائج الاستعلامات ولم تُقرأ منها، &#39;Write&#39; = كُتبت نتيجة الاستعلام إلى ذاكرة التخزين المؤقت لنتائج الاستعلامات، &#39;Read&#39; = قُرئت نتيجة الاستعلام من ذاكرة التخزين المؤقت لنتائج الاستعلامات.
 * `asynchronous_read_counters` ([Map(String, UInt64)](/ar/reference/data-types/map)) — مقاييس القراءة غير المتزامنة.
 * `is_internal` ([UInt8](/ar/reference/data-types/int-uint)) — يشير إلى ما إذا كان الاستعلام مساعدًا ويُنفّذ داخليًا.

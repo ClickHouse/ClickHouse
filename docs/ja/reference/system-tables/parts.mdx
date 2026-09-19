@@ -86,9 +86,9 @@ doc_type: 'reference'
 * `rows_where_ttl_info.max` ([Array(DateTime)](/ja/reference/data-types/array)) — このパート内で計算された TTL 式の最大値。すべての行の有効期限 (TTL) が切れているかどうかの判断に使用します。
 * `projections` ([Array(String)](/ja/reference/data-types/array)) — このパートに対して計算された projection 名のリスト。
 * `visible` ([UInt8](/ja/reference/data-types/int-uint)) — このパートが SELECT クエリから参照可能かどうかを示すフラグ。
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — このオブジェクトを作成した、または作成しようとしている transaction の ID。
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このオブジェクトを作成した、または作成しようとしている transaction の ID。
 * `removal_tid_lock` ([UInt64](/ja/reference/data-types/int-uint)) — removal&#95;tid の hash。削除時にオブジェクトを lock するために使用します。
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — このオブジェクトを削除した、または削除しようとしている transaction の ID。
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このオブジェクトを削除した、または削除しようとしている transaction の ID。
 * `creation_csn` ([UInt64](/ja/reference/data-types/int-uint)) — このオブジェクトを作成した transaction の CSN。
 * `removal_csn` ([UInt64](/ja/reference/data-types/int-uint)) — このオブジェクトを削除した transaction の CSN。
 * `has_lightweight_delete` ([UInt8](/ja/reference/data-types/int-uint)) — このパートに論理削除マスクがあるかどうかを示すフラグ。

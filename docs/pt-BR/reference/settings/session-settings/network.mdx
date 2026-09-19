@@ -19,9 +19,7 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "O método de compressão padrão para a comunicação cliente\/servidor e servidor\/servidor passou de `LZ4` para `ZSTD` a fim de reduzir o network traffic."}]}]} />
 
-O codec usado para comprimir a comunicação cliente/servidor e servidor/servidor pelo native protocol e a resposta de uma requisição HTTP feita com `compress=1`, que usa o mesmo frame format.
-
-A configuração não se aplica ao canal de streaming-exchange das consultas distribuídas, que sempre usa o default codec do servidor: cada frame comprimido é self-describing, portanto o receiver detecta o codec automaticamente.
+O codec usado para comprimir a comunicação cliente/servidor e servidor/servidor pelo native protocol, a resposta de uma requisição HTTP feita com `compress=1`, que usa o mesmo frame format, e o streaming exchange entre as tasks de um distributed query plan (`make_distributed_plan`). Exchanges por meio de temporary files usam o default codec do servidor.
 
 Valores possíveis:
 

@@ -43,6 +43,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AsyncInsertBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 INSERT 쿼리의 데이터 크기(바이트)입니다.
 * `ProfileEvent_AsyncInsertRows` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 INSERT 쿼리로 삽입된 행 수입니다.
 * `ProfileEvent_AsyncInsertCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 INSERT hash id 캐시에서 중복 hash id가 발견된 횟수입니다.
+* `ProfileEvent_AsyncInsertFlush` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 INSERT 큐의 플러시 횟수입니다. 플러시할 때마다 비동기 INSERT 쿼리 배치가 단일 파트로 삽입됩니다. AsyncInsertQuery와 비교하면 평균적으로 몇 개의 쿼리가 배치로 묶이는지 확인할 수 있습니다.
 * `ProfileEvent_FailedInternalQuery` ([UInt64](/ko/reference/data-types/int-uint)) — 실패한 내부 쿼리 수입니다.
 * `ProfileEvent_FailedInternalSelectQuery` ([UInt64](/ko/reference/data-types/int-uint)) — FailedInternalQuery와 동일하지만 SELECT 쿼리에만 적용됩니다.
 * `ProfileEvent_FailedInternalInsertQuery` ([UInt64](/ko/reference/data-types/int-uint)) — FailedInternalQuery와 동일하지만 INSERT 쿼리에만 적용됩니다.
@@ -434,6 +435,10 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinMerge` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 JOIN을 위해 임시 파일을 머지한 횟수입니다.
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 JOIN을 위해 기록된 압축된 바이트 수입니다.
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 JOIN을 위해 기록된 데이터 양(비압축, 압축 전)입니다.
+* `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 임시 파일을 디스크에 기록한 횟수입니다.
+* `ProfileEvent_ExternalDistinctMerge` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 임시 파일을 머지한 횟수입니다.
+* `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 기록된 압축된 바이트 수입니다.
+* `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 DISTINCT를 위해 기록된 데이터 양(비압축, 압축 전)입니다.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 파티션 프루닝 중 건너뛴 파일 수입니다.
 * `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/ko/reference/data-types/int-uint)) — manifest 목록의 파티션 요약을 사용해 읽지 않고 건너뛴 Iceberg manifest 파일 수입니다.
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg에서 읽는 동안 단순 count 최적화가 적용된 횟수입니다.
@@ -777,6 +782,9 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 생성한 디렉터리 수.
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 제거한 디렉터리 수.
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/ko/reference/data-types/int-uint)) — 레거시 레이아웃을 사용하는 &#39;plain&#95;rewritable&#39; 디스크 수.
+* `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 스토리지에서 거부되어 실패한 &#39;plain&#95;rewritable&#39; 메타데이터 트랜잭션을 되돌리는 단계를 재시도한 횟수입니다.
+* `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/ko/reference/data-types/int-uint)) — 커밋에 실패하여 롤백된 메타데이터 트랜잭션 수입니다.
+* `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/ko/reference/data-types/int-uint)) — 완료되지 못한 메타데이터 트랜잭션 롤백 수입니다. 따라서 메타데이터에는 실패로 보고된 트랜잭션의 일부가 남아 있습니다.
 * `ProfileEvent_S3Clients` ([UInt64](/ko/reference/data-types/int-uint)) — 생성된 S3 클라이언트 수입니다.
 * `ProfileEvent_TinyS3Clients` ([UInt64](/ko/reference/data-types/int-uint)) — 다른 클라이언트의 기존 인증 공급자를 재사용하는 S3 클라이언트 복사본 수입니다.
 * `ProfileEvent_EngineFileLikeReadFiles` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 사용하는 테이블 엔진(File/S3/URL/HDFS 등)에서 읽은 파일 수입니다.
@@ -950,6 +958,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ko/reference/data-types/int-uint)) — 축출된 그룹화 키 중 집계 상태가 삭제되면서 중간 해시 테이블에서도 제거된 키 수입니다(`enable_group_by_top_k_optimization` 참조). 집계 메서드가 키를 제거할 수 없거나 키의 접두사만 순위 지정하는 경우에는 `AggregationTopKKeysEvicted`보다 작습니다. 이 경우 힙은 여전히 행을 건너뛰지만 해시 테이블은 허용된 모든 그룹을 유지합니다.
 * `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ko/reference/data-types/int-uint)) — 일반 집계로 폴백하면서 동결된 Top-K 집계 힙 수입니다. 관찰 윈도우 내에서 힙이 거의 아무것도 거부하지 않았거나(예: 고유 그룹화 키 수가 LIMIT를 초과하지 않음), 또는 축출할 수 없는 힙 경계의 동률 집합이 힙보다 커진 경우입니다(`enable_group_by_top_k_optimization` 참조).
 * `ProfileEvent_DistinctTransformsAbandonedDeduplication` ([UInt64](/ko/reference/data-types/int-uint)) — 관측된 입력이 거의 전부 고유하고 하위 consumer가 어차피 중복을 제거하기 때문에, 중복 제거 transform이 해시 테이블을 폐기하고 중복 제거를 중단한 횟수입니다. 대상은 예비 `DISTINCT`(`allow_preliminary_distinct_abandoning` 참조)와 `IN` 서브쿼리 집합 채우기 앞단의 스트림별 사전 중복 제거입니다.
+* `ProfileEvent_DistinctTransformsSwitchedToPassThrough` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 메모리가 외부 `DISTINCT` 임계값을 초과했거나 예상 해싱 할당이 남은 임계값 예산을 초과할 것으로 예상되어, 예비 `DISTINCT` transform이 해시 테이블을 해제하고 모든 행을 그대로 통과시키기 시작한 횟수입니다(`max_bytes_before_external_distinct` 참조). 대신 디스크로 spill하는 최종 `DISTINCT`가 중복을 해결합니다.
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ko/reference/data-types/int-uint)) — 해시 조인을 위해 해시 테이블에 미리 할당된 요소 수입니다.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 스토리지 메타데이터 요청이 Keeper에 요청을 보내지 않고 캐시에서 처리된 횟수입니다.
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 스토리지 메타데이터 요청을 Keeper에서 처리해야 했던 횟수입니다.
@@ -1277,7 +1286,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 하나 이상의 작업이 할당된 고유 호스트 수입니다.
 * `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에 기록된 바이트 수입니다. `NetworkSendBytes`에는 집계되지 않습니다.
 * `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에서 읽은 바이트 수입니다. `NetworkReceiveBytes`에는 집계되지 않습니다.
-* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange의 소켓에 완전히 기록된 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개가 포함됩니다. 전송 버퍼의 패킷은 버퍼 전체가 기록될 때 집계됩니다. 수신기에 더 이상 데이터가 필요하지 않아 버퍼 기록이 중간에 중단된 경우 해당 버퍼의 패킷은 집계되지 않습니다.
+* `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange의 소켓에 완전히 기록된 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개가 포함됩니다. 패킷은 전체가 기록될 때 집계되며, 수신기에 더 이상 데이터가 필요하지 않아 기록이 중간에 중단된 패킷은 집계되지 않습니다.
 * `ProfileEvent_StreamingExchangePacketsReceived` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange에서 읽은 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개가 포함됩니다.
 * `ProfileEvent_StreamingExchangeSerializedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 패킷에서 직렬화된 각 패킷당 한 번 집계한, 압축 전 Native 블록의 바이트 수입니다. `StreamingExchangeSendBytes`와 비교하면 shuffle 또는 gather의 압축률을 구할 수 있습니다. broadcast는 모든 패킷을 각 대상에 전송하므로, 이 경우 `StreamingExchangeSendBytes`는 대상 수에 따라 증가합니다.
 * `ProfileEvent_StreamingExchangeSerializeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 청크를 스트리밍 exchange 패킷으로 직렬화하고 압축하는 데 소요된 시간입니다.
@@ -1342,7 +1351,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/ko/reference/data-types/int-uint)) — 해당 파트를 다른 스레드가 이미 fetch하거나 생성 중이어서 중복 제거된 파트 fetch 수
 * `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — scheduleDataProcessingJob에서 tryUpdateDiskMetadataCacheForPart에 걸린 시간
 * `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — SharedMergeTree에서만 사용하는 loadColumnsChecksumsIndexes 소요 시간
-* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/ko/reference/data-types/int-uint)) — SharedMergeTree blob-list 파트 간에 경로를 공유한 데이터 blob 수(커밋 multi에 추가된 참조 수 증가)
+* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/ko/reference/data-types/int-uint)) — SharedMergeTree blob-list 파트 간에 경로를 공유한 데이터 blob 수(커밋 트랜잭션에 스테이징된 참조 수 증가로, 카운터 노드별 단일 업데이트로 누적되기 전 기준)
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/ko/reference/data-types/int-uint)) — SnapshotCleanerThread가 파트 정리를 결정한 횟수
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/ko/reference/data-types/int-uint)) — SnapshotCleanerThread가 파트 정리를 시도한 시간
 * `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — SnapshotCleanerThread가 파트 정리를 성공적으로 수행한 횟수

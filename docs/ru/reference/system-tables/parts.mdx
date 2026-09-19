@@ -86,9 +86,9 @@ doc_type: 'reference'
 * `rows_where_ttl_info.max` ([Array(DateTime)](/ru/reference/data-types/array)) — Максимальное значение вычисленного TTL-выражения в этой части. Используется, чтобы определить, у всех ли строк истёк TTL.
 * `projections` ([Array(String)](/ru/reference/data-types/array)) — Список имён проекций, вычисленных для этой части.
 * `visible` ([UInt8](/ru/reference/data-types/int-uint)) — Флаг, указывающий, доступна ли эта часть для SELECT-запросов.
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/ru/reference/data-types/tuple)) — ID транзакции, создавшей или пытающейся создать этот объект.
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ru/reference/data-types/tuple)) — ID транзакции, создавшей или пытающейся создать этот объект.
 * `removal_tid_lock` ([UInt64](/ru/reference/data-types/int-uint)) — Хеш removal&#95;tid, используемый для блокировки объекта на время удаления.
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/ru/reference/data-types/tuple)) — ID транзакции, удалившей или пытающейся удалить этот объект
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ru/reference/data-types/tuple)) — ID транзакции, удалившей или пытающейся удалить этот объект
 * `creation_csn` ([UInt64](/ru/reference/data-types/int-uint)) — CSN транзакции, создавшей этот объект
 * `removal_csn` ([UInt64](/ru/reference/data-types/int-uint)) — CSN транзакции, удалившей этот объект
 * `has_lightweight_delete` ([UInt8](/ru/reference/data-types/int-uint)) — Флаг, указывающий, есть ли у части маска легковесного удаления.

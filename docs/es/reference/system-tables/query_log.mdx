@@ -127,7 +127,7 @@ Puede usar la configuración [log&#95;formatted&#95;queries](/es/reference/setti
 * `http_referer` ([String](/es/reference/data-types/string)) — cabecera HTTP Referer incluida en la consulta HTTP (contiene una dirección absoluta o parcial de la página que realiza la consulta).
 * `forwarded_for` ([String](/es/reference/data-types/string)) — encabezado HTTP X-Forwarded-For incluido en la consulta HTTP.
 * `quota_key` ([String](/es/reference/data-types/string)) — La clave de cuota especificada en la configuración de quotas (consulte keyed).
-* `distributed_depth` ([UInt64](/es/reference/data-types/int-uint)) — Cuántas veces se reenviò una consulta entre servidores.
+* `distributed_depth` ([UInt64](/es/reference/data-types/int-uint)) — Cuántas veces se reenvió una consulta entre servidores.
 * `revision` ([UInt32](/es/reference/data-types/int-uint)) — revisión de ClickHouse.
 * `http_handler_name` ([String](/es/reference/data-types/string)) — Nombre del controlador HTTP definido mediante SQL (CREATE HANDLER) que invocó la consulta. Vacío si la consulta no se invocó a través de dicho controlador.
 * `http_request_url` ([String](/es/reference/data-types/string)) — La ruta de la solicitud HTTP (sin la cadena de consulta) que invocó la consulta. La cadena de consulta se omite para que los parámetros sensibles de la solicitud no persistan. Vacío para consultas no HTTP.
@@ -150,7 +150,7 @@ Puede usar la configuración [log&#95;formatted&#95;queries](/es/reference/setti
 * `used_row_policies` ([Array(LowCardinality(String))](/es/reference/data-types/array)) — La lista de nombres de las políticas de fila utilizadas durante la ejecución de la consulta.
 * `used_privileges` ([Array(LowCardinality(String))](/es/reference/data-types/array)) — Privilegios que se verificaron correctamente durante la ejecución de la consulta.
 * `missing_privileges` ([Array(LowCardinality(String))](/es/reference/data-types/array)) — Privilegios ausentes durante la ejecución de la consulta.
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/es/reference/data-types/tuple)) — El identificador de la transacción dentro de la cual se ejecutó esta consulta.
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/es/reference/data-types/tuple)) — El identificador de la transacción dentro de la cual se ejecutó esta consulta.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/es/reference/data-types/enum)) — Uso de la caché de consultas durante la ejecución de la consulta. Valores: &#39;Unknown&#39; = Estado desconocido, &#39;None&#39; = El resultado de la consulta no se escribió ni se leyó en la caché de resultados de consulta, &#39;Write&#39; = El resultado de la consulta se escribió en la caché de resultados de consulta, &#39;Read&#39; = El resultado de la consulta se leyó de la caché de resultados de consulta.
 * `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/es/reference/data-types/map)) — Métricas de lectura asíncrona.
 * `is_internal` ([UInt8](/es/reference/data-types/int-uint)) — Indica si se trata de una consulta auxiliar ejecutada internamente.

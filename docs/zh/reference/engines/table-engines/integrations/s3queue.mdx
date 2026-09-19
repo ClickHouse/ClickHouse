@@ -347,6 +347,14 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
 
 默认值：`21600` (6 小时) 。
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+如果某个文件在 keeper 中的 `processing` 节点被另一台服务器持有，该文件会在内存文件状态缓存中被标记为 `Processing`，这样后续的列举遍历会直接跳过它，而无需再次查询 keeper。
+
+与 `Processed` 和 `Failed` 不同，该状态并非最终状态：另一个处理器可能在未提交该文件的情况下将其释放，例如进程崩溃时。此设置用于指定缓存中的 `Processing` 状态在多长时间内被视为可信；超过该时长后，会重新到 keeper 中检查该文件，若其已再次空闲则进行处理。设为零表示每次都重新检查 keeper。
+
+默认值：`300` (5 分钟) 。
+
 ## S3 相关设置 {#s3-settings}
 
 该引擎支持所有与 S3 相关的设置。有关 S3 设置的更多信息，请参见[这里](/zh/reference/engines/table-engines/integrations/s3)。

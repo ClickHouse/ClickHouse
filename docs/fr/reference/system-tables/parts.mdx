@@ -86,9 +86,9 @@ Chaque ligne décrit une part de données.
 * `rows_where_ttl_info.max` ([Array(DateTime)](/fr/reference/data-types/array)) — Valeur maximale de l&#39;expression TTL calculée dans cette partie. Permet de déterminer si toutes les lignes ont un TTL expiré.
 * `projections` ([Array(String)](/fr/reference/data-types/array)) — Liste des noms des projections calculées pour cette partie.
 * `visible` ([UInt8](/fr/reference/data-types/int-uint)) — Indicateur précisant si cette partie est visible pour les requêtes SELECT.
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/fr/reference/data-types/tuple)) — ID de la transaction qui a créé ou tente de créer cet objet.
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/fr/reference/data-types/tuple)) — ID de la transaction qui a créé ou tente de créer cet objet.
 * `removal_tid_lock` ([UInt64](/fr/reference/data-types/int-uint)) — Hash de removal&#95;tid, utilisé pour verrouiller un objet en vue de sa suppression.
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/fr/reference/data-types/tuple)) — ID de la transaction qui a supprimé ou tente de supprimer cet objet
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/fr/reference/data-types/tuple)) — ID de la transaction qui a supprimé ou tente de supprimer cet objet
 * `creation_csn` ([UInt64](/fr/reference/data-types/int-uint)) — CSN de la transaction qui a créé cet objet
 * `removal_csn` ([UInt64](/fr/reference/data-types/int-uint)) — CSN de la transaction qui a supprimé cet objet
 * `has_lightweight_delete` ([UInt8](/fr/reference/data-types/int-uint)) — Indicateur précisant si la partie possède un masque de suppression légère.

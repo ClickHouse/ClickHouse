@@ -338,7 +338,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-  Lorsque les chemins sont stockés dans des [données partagées](#shared-data-structure) de base (`map`), la lecture des sous-colonnes de sous-objets peut être inefficace, car elle nécessite de parcourir l’ensemble de la structure de données partagées. Avec la sérialisation des données partagées `map_with_buckets` ou `advanced`, la lecture des sous-colonnes à partir des données partagées est fortement optimisée.
+  Lorsque les chemins sont stockés dans des [données partagées](#shared-data-structure) de base (`map`), la lecture des sous-colonnes de sous-objets peut être inefficace, car elle nécessite de parcourir l’ensemble de la structure de données partagées. Avec la sérialisation des données partagées `map_with_buckets`, `advanced` ou `advanced_chunked`, la lecture des sous-colonnes à partir des données partagées est fortement optimisée.
 </Note>
 
 ## Lecture des sous-colonnes combinées JSON {#reading-json-combined-sub-columns}
@@ -392,7 +392,7 @@ FROM test;
 * Ligne 3 : `a` est totalement absent. `json.a` et `json.@a` renvoient tous deux `NULL`, tandis que `json.^a` renvoie un objet vide `{}`.
 
 <Note>
-  Lorsque des chemins sont stockés dans les [données partagées](#shared-data-structure) de base (`map`), la lecture des sous-colonnes combinées peut être inefficace, car elle nécessite de parcourir l’intégralité de la structure de données partagées. Avec la sérialisation des données partagées `map_with_buckets` ou `advanced`, la lecture des sous-colonnes depuis les données partagées est très optimisée.
+  Lorsque des chemins sont stockés dans les [données partagées](#shared-data-structure) de base (`map`), la lecture des sous-colonnes combinées peut être inefficace, car elle nécessite de parcourir l’intégralité de la structure de données partagées. Avec la sérialisation des données partagées `map_with_buckets`, `advanced` ou `advanced_chunked`, la lecture des sous-colonnes depuis les données partagées est très optimisée.
 </Note>
 
 ## Inférence de type pour les chemins {#type-inference-for-paths}
@@ -862,13 +862,13 @@ Pour en extraire une sous-colonne de chemin, il suffit de parcourir toutes les l
 ### Structure de données partagée dans les parts MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 Dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), nous stockons les données dans des parts de données qui stockent tout sur disque (local ou distant). Les données sur disque peuvent être stockées différemment des données en mémoire.
-Actuellement, il existe 3 sérialisations différentes de la structure de données partagée dans les parts de données MergeTree : `map`, `map_with_buckets`
-et `advanced`.
+Actuellement, il existe 4 sérialisations différentes de la structure de données partagée dans les parts de données MergeTree : `map`, `map_with_buckets`,
+`advanced` et `advanced_chunked`.
 
 La version de sérialisation est contrôlée par les paramètres MergeTree
 [object&#95;shared&#95;data&#95;serialization&#95;version](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
 et [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(une part de niveau zéro est la part créée lors de l&#39;insertion de données dans la table ; lors des merges, les parts ont un niveau plus élevé).
+(une part de niveau zéro est la part créée lors de l&#39;insertion de données dans la table ; lors des fusions, les parts ont un niveau plus élevé).
 
 Remarque : la modification de la sérialisation de la structure de données partagée n&#39;est prise en charge que
 pour `v3`, la [version de sérialisation d&#39;objet](/fr/reference/settings/merge-tree-settings/other#object_serialization_version)
@@ -906,6 +906,16 @@ Remarque : comme cette structure de données stocke des informations supplémen
 `map` et `map_with_buckets`.
 
 Pour un aperçu plus détaillé des nouvelles sérialisations de données partagées et de leur implémentation, consultez le [billet de blog](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Avancé avec découpage en fragments {#shared-data-advanced-chunked}
+
+La sérialisation `advanced_chunked` est identique à `advanced`, mais permet de diviser les lignes en fragments plus petits lors de la sérialisation.
+Cela réduit le pic d&#39;utilisation de la mémoire lors des fusions de colonnes JSON comportant de nombreux chemins uniques, car un seul fragment de données
+doit être matérialisé à la fois plutôt que toute la plage de lignes.
+
+La taille des fragments est contrôlée par le paramètre MergeTree [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 par défaut).
+Il ne s&#39;agit pas d&#39;une limite stricte : si le dernier fragment est inférieur à la moitié de la taille cible, il est fusionné avec le fragment précédent,
+de sorte que la taille réelle des fragments varie de `target/2` à `1.5 * target`.
 
 ## Contrôle du nombre de chemins dynamiques dans JSON au sein des parts MergeTree {#controlling-the-number-of-dynamic-paths}
 
@@ -1080,10 +1090,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Expérimental) {#lazy-type-hints}
+## Lazy Type Hints (Bêta) {#lazy-type-hints}
 
 <Note>
-  Cette fonctionnalité est expérimentale et nécessite que le paramètre `enable_json_lazy_type_hints` soit activé.
+  Cette fonctionnalité est en bêta et nécessite que le paramètre `enable_json_lazy_type_hints` soit activé.
 </Note>
 
 Lorsque vous ajoutez ou modifiez des indications de type sur une colonne JSON à l’aide de `ALTER TABLE ... MODIFY COLUMN`, ClickHouse réécrit normalement toutes les parts de données afin de matérialiser les nouvelles indications de type. Pour les tables contenant de grandes quantités de données historiques (des centaines de téraoctets), cela peut être extrêmement coûteux.
@@ -1109,7 +1119,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -1147,7 +1157,6 @@ Pour matérialiser les indications de type dans les données existantes, vous po
 
 ### Limitations {#lazy-type-hints-limitations}
 
-* Cette fonctionnalité est expérimentale et peut évoluer dans de futures versions
 * La conversion de types au moment de la requête peut entraîner un surcoût important en termes de performances par rapport aux types pré-matérialisés, en particulier pour les objets JSON volumineux
 * Cette fonctionnalité s&#39;applique uniquement lors de la modification de `typed_paths` (indications de type) ; les autres paramètres JSON, comme `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, nécessitent toujours des mutations
 

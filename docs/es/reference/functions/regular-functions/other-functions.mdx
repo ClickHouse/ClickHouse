@@ -5843,8 +5843,8 @@ Introducido en: v22.6.0
 Devuelve el ID de una transacción.
 
 <Note>
-  Esta función forma parte de un conjunto de funcionalidades experimentales.
-  Habilite la compatibilidad experimental con transacciones añadiendo este ajuste a su [configuración](/es/concepts/features/configuration/server-config/configuration-files):
+  Esta función forma parte de una característica experimental.
+  Habilite la compatibilidad experimental con transacciones añadiendo este SETTING a su [configuración](/es/concepts/features/configuration/server-config/configuration-files):
 
   ```xml
   <clickhouse>
@@ -5871,12 +5871,13 @@ transactionID()
 
 **Valor devuelto**
 
-Devuelve una tupla formada por `start_csn`, `local_tid` y `host_id`.
+Devuelve una tupla formada por `start_csn`, `local_tid`, `host_id` y `session_node_version`.
 
 * `start_csn`: Número secuencial global; la marca temporal de confirmación más reciente observada al iniciarse esta transacción.
 * `local_tid`: Número secuencial local, único para cada transacción iniciada por este host dentro de un `start&#95;csn` específico.
 * `host_id`: UUID del host que inició esta transacción.
-  [`Tuple(UInt64, UInt64, UUID)`](/es/reference/data-types/tuple)
+* `session_node_version`: Versión del znode de session del host al inicio de la transacción; permite que los peers detecten un TID de sesión terminada entre réplicas.
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/es/reference/data-types/tuple)
 
 **Ejemplos**
 
@@ -5889,9 +5890,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

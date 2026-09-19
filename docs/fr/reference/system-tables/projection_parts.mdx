@@ -23,6 +23,7 @@ Cette table contient des informations sur les parties de projection des tables d
 * `active` ([UInt8](/fr/reference/data-types/int-uint)) — Indicateur précisant si la partie de données est active. Lorsqu’une partie de données est active, elle est utilisée dans une table. Sinon, elle est sur le point d’être supprimée. Des parties de données inactives apparaissent après des opérations de fusion et de mutation.
 * `marks` ([UInt64](/fr/reference/data-types/int-uint)) — Le nombre de marques. Pour obtenir le nombre approximatif de lignes dans une partie de données, multipliez le nombre de marques par la granularité de l’index (généralement 8192). Cette indication ne s’applique pas à la granularité adaptative.
 * `rows` ([UInt64](/fr/reference/data-types/int-uint)) — Le nombre de lignes.
+* `files` ([UInt64](/fr/reference/data-types/int-uint)) — Le nombre de fichiers dans la partie de données.
 * `bytes_on_disk` ([UInt64](/fr/reference/data-types/int-uint)) — La taille totale, en octets, de tous les fichiers de la partie de données.
 * `data_compressed_bytes` ([UInt64](/fr/reference/data-types/int-uint)) — La taille totale des données compressées dans la partie de données. Les fichiers auxiliaires (par exemple, les fichiers de marques) ne sont pas inclus.
 * `data_uncompressed_bytes` ([UInt64](/fr/reference/data-types/int-uint)) — La taille totale des données non compressées dans la partie de données. Les fichiers auxiliaires (par exemple, les fichiers de marques) ne sont pas inclus.

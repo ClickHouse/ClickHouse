@@ -5853,7 +5853,7 @@ SELECT tokenizeQuery('SELECT 1')
 </Note>
 
 <Note>
-  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسائط نفسها.
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسيطة نفسها.
 </Note>
 
 **الصيغة**
@@ -5862,18 +5862,19 @@ SELECT tokenizeQuery('SELECT 1')
 transactionID()
 ```
 
-**الوسائط**
+**الوسيطة**
 
 * لا شيء.
 
 **القيمة المُعادة**
 
-تُرجِع قيمة من النوع `Tuple` تتكوّن من `start_csn` و`local_tid` و`host_id`.
+تُرجِع قيمة من النوع `Tuple` تتكوّن من `start_csn` و`local_tid` و`host_id` و`session_node_version`.
 
 * `start_csn`: رقم تسلسلي عام، وهو أحدث طابع زمني لعملية commit تمت ملاحظته عند بدء هذه المعاملة.
 * `local_tid`: رقم تسلسلي محلي فريد لكل معاملة يبدأها هذا المضيف ضمن `start&#95;csn` محدد.
 * `host_id`: معرّف UUID للمضيف الذي بدأ هذه المعاملة.
-  [`Tuple(UInt64, UInt64, UUID)`](/ar/reference/data-types/tuple)
+* `session_node_version`: إصدار عقدة znode لجلسة المضيف عند بدء المعاملة؛ يتيح للنظراء اكتشاف TID لجلسة ميتة عبر النسخ المتماثلة.
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/ar/reference/data-types/tuple)
 
 **أمثلة**
 
@@ -5886,9 +5887,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

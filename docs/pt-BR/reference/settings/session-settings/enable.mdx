@@ -244,15 +244,19 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 **Aliases**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_experimental_json_lazy_type_hints`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Os Lazy Type Hints para JSON agora são Beta. Um alias para a configuração 'allow_experimental_json_lazy_type_hints'."}]}]} />
 
-Habilita os Lazy Type Hints para o JSON type. Esse recurso permite otimizar as conversões de tipos do JSON, adiando a avaliação dos type hints.
+Habilita os Lazy Type Hints para o tipo [JSON](/pt-BR/reference/data-types/newjson).
+
+Com essa configuração habilitada, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)`, que apenas adiciona ou altera
+type hints, é uma operação somente de metadados: os type hints são aplicados no momento da consulta às partes existentes e
+materializados durante inserções e mesclagens em segundo plano, em vez de regravar os dados históricos.
 
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 

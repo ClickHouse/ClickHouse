@@ -122,6 +122,21 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   أما إذا كان يُستخدم على عنقود يحتوي على جزء واحد وعدة نسخ متماثلة، فسيكون لتعطيل هذا الإعداد آثار سلبية.
 </Note>
 
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد: اختيار PROJECTION قابل للاستخدام بغض النظر عن تكلفته التقديرية، مثل `force_optimize_projection`، ولكن دون إفشال الاستعلام عند عدم استخدام أي PROJECTION."}]}]} />
+
+يجعل تحسين الـ PROJECTION يفضّل استخدام [projections](/ar/reference/engines/table-engines/mergetree-family/mergetree#projections) على الجدول في استعلامات `SELECT`، وذلك عندما يكون تحسين الـ PROJECTION مفعّلاً (انظر الإعداد [optimize&#95;use&#95;projections](/ar/reference/settings/session-settings/optimize-use#optimize_use_projections)).
+
+عند تفعيله، يُستخدم أي PROJECTION قادر على تلبية الاستعلام حتى لو تطلّب قراءة عدد من marks أكبر مما يتطلبه الجدول نفسه، تماماً كما هو الحال مع [force&#95;optimize&#95;projection](/ar/reference/settings/session-settings/force-optimize#force_optimize_projection)، غير أن الاستعلام لا يفشل عندما يتعذّر استخدام أي PROJECTION.
+
+القيم الممكنة:
+
+* 0 — يتم اختيار الـ projections بناءً على تكلفتها التقديرية.
+* 1 — يتم اختيار PROJECTION قابل للاستخدام بغض النظر عن تكلفته التقديرية.
+
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />

@@ -147,10 +147,10 @@ OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compac
 ### 요구 사항 및 동작 {#manifest-compaction-behavior}
 
 * 이 기능은 실험적이며 `allow_experimental_iceberg_compaction` 설정으로 제어됩니다. 이 설정이 활성화되어 있지 않으면 해당 구문은 예외를 발생시킵니다.
-* 컴팩션은 현재 스냅샷의 manifest 목록에 있는 manifest 파일 수가 `iceberg_manifest_min_count_to_compact` 설정(기본값 `30`)으로 지정한 임계값을 초과할 때만 시도됩니다. 현재 개수가 임계값보다 작거나 같으면 컴팩션을 건너뛰고 새 스냅샷도 생성되지 않습니다. 컴팩션을 더 적극적으로 수행하려면 임계값을 더 낮게 설정하십시오.
+* 컴팩션은 현재 스냅샷의 manifest 목록에 있는 manifest 파일 수가 `iceberg_manifest_min_count_to_compact` 설정(기본값 `100`, Iceberg table property `commit.manifest.min-count-to-merge`의 문서화된 기본값)으로 지정한 임계값을 초과할 때만 시도됩니다. 현재 개수가 임계값보다 작거나 같으면 컴팩션을 건너뛰고 새 스냅샷도 생성되지 않습니다. 컴팩션을 더 적극적으로 수행하려면 임계값을 더 낮게 설정하십시오.
 * `OPTIMIZE TABLE ... MANIFEST`는 Iceberg 테이블에서만 지원됩니다. 다른 테이블 엔진에 대해 실행하면 예외가 발생합니다.
-* `OPTIMIZE TABLE ... MANIFEST`는 Iceberg format-version 2 테이블에서만 지원됩니다. format-version 1 테이블에 대해 실행하면 예외가 발생하며, format-version 3 테이블에 대해서도 마찬가지입니다. v3 행 계보(row-lineage) `first_row_id` metadata가 아직 manifest 재작성을 거치는 과정에서 round-trip되지 않기 때문입니다.
-* `OPTIMIZE TABLE ... MANIFEST`는 data files에 파일별 `key_metadata`가 포함된 암호화된 Iceberg 테이블에서는 지원되지 않습니다. manifest 재작성 과정에서 이 암호화 metadata를 보존하는 기능이 아직 구현되지 않았으므로, 해당 구문은 `NOT_IMPLEMENTED` 예외를 발생시킵니다.
+* `OPTIMIZE TABLE ... MANIFEST`는 Iceberg 형식 버전 2 테이블에서만 지원됩니다. 형식 버전 1 테이블에 대해 실행하면 예외가 발생하며, 형식 버전 3 테이블에 대해서도 마찬가지입니다. v3 행 계보(row-lineage) `first_row_id` 메타데이터가 아직 manifest 재작성을 거치는 과정에서 round-trip되지 않기 때문입니다.
+* `OPTIMIZE TABLE ... MANIFEST`는 데이터 파일에 파일별 `key_metadata`가 포함된 암호화된 Iceberg 테이블에서는 지원되지 않습니다. manifest 재작성 과정에서 이 암호화 메타데이터를 보존하는 기능이 아직 구현되지 않았으므로, 해당 구문은 `NOT_IMPLEMENTED` 예외를 발생시킵니다.
 
 ## 삭제된 행이 포함된 테이블 처리 {#deleted-rows}
 
@@ -158,10 +158,10 @@ ClickHouse는 다음 삭제 방식을 사용하는 Iceberg 테이블을 읽을 �
 
 * [위치 삭제](https://iceberg.apache.org/spec/#position-delete-files)
 * [동등성 삭제](https://iceberg.apache.org/spec/#equality-delete-files) (버전 25.8+부터 지원)
-
-다음 삭제 방식은 **지원되지 않습니다**:
-
 * [삭제 벡터](https://iceberg.apache.org/spec/#deletion-vectors) (v3에 도입됨)
+
+삭제 벡터는 읽기 전용으로만 지원됩니다. ClickHouse는 삭제 벡터를 쓰거나, 업데이트하거나, 압축하지 않습니다.
+Iceberg 형식 버전 3 테이블에서는 `ALTER TABLE ... DELETE` 및 `ALTER TABLE ... UPDATE`가 지원되지 않습니다.
 
 ### 기본 사용법 {#basic-usage}
 

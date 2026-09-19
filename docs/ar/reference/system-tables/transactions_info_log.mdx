@@ -1,5 +1,5 @@
 ---
-description: 'يحتوي على معلومات عن جميع المعاملات المنفَّذة على الخادم الحالي.
+description: 'يحتوي على معلومات عن جميع المعاملات المنفَّذة على الخادم الحالي.
 
 من الآمن تنفيذ TRUNCATE أو DROP لهذا الجدول في أي وقت.'
 keywords: ['جدول نظامي', 'transactions_info_log']
@@ -8,7 +8,7 @@ title: 'system.transactions_info_log'
 doc_type: 'reference'
 ---
 
-يحتوي على معلومات عن جميع المعاملات المنفَّذة على الخادم الحالي.
+يحتوي على معلومات عن جميع المعاملات المنفَّذة على الخادم الحالي.
 
 من الآمن تنفيذ TRUNCATE أو DROP لهذا الجدول في أي وقت.
 
@@ -24,7 +24,7 @@ doc_type: 'reference'
 * `event_time` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت الإدخال
 * `thread_id` ([UInt64](/ar/reference/data-types/int-uint)) — معرّف خيط التنفيذ.
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الذي نُفِّذ ضمن نطاق المعاملة.
-* `tid` ([Tuple(UInt64, UInt64, UUID)](/ar/reference/data-types/tuple)) — معرّف المعاملة.
+* `tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ar/reference/data-types/tuple)) — معرّف المعاملة.
 * `tid_hash` ([UInt64](/ar/reference/data-types/int-uint)) — تجزئة المعرّف.
 * `csn` ([UInt64](/ar/reference/data-types/int-uint)) — رقم تسلسل Commit.
 * `database` ([String](/ar/reference/data-types/string)) — اسم قاعدة البيانات التي نُفِّذت عليها المعاملة.

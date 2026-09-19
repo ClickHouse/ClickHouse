@@ -244,15 +244,17 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 **别名**：`allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_json_lazy_type_hints` 添加了别名。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_json_lazy_type_hints` 添加了别名。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "惰性 JSON 类型提示现已进入 Beta 阶段。设置 'allow_experimental_json_lazy_type_hints' 的别名。"}]}]} />
 
-为 JSON 类型启用惰性类型提示。该功能通过延迟类型提示的求值来优化 JSON 类型的类型转换。
+为 [JSON](/zh/reference/data-types/newjson) 类型启用惰性类型提示。
+
+启用该设置后，仅添加或更改类型提示的 `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` 属于仅修改元数据的操作：对于已有 parts，类型提示会在查询时应用，并在插入和后台合并期间被 materialized，而无需重写历史数据。
 
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 

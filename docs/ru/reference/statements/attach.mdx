@@ -20,9 +20,7 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 Если таблица ранее была отсоединена (запрос [DETACH](/ru/reference/statements/detach)), то есть ее структура известна, вы можете использовать сокращенную форму без определения структуры.
 
-<div id="attach-existing-table">
-  ## Присоединение существующей таблицы
-</div>
+## Присоединение существующей таблицы {#attach-existing-table}
 
 **Синтаксис**
 
@@ -34,15 +32,12 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 Если таблица была отсоединена навсегда, при запуске сервера она не будет присоединена снова, поэтому нужно явно выполнить запрос `ATTACH`.
 
-<div id="create-new-table-and-attach-data">
-  ## Создать новую таблицу и присоединить данные
-</div>
+## Создать новую таблицу и присоединить данные {#create-new-table-and-attach-data}
 
-<div id="with-specified-path-to-table-data">
-  ### С указанием пути к данным таблицы
-</div>
+### С указанием пути к данным таблицы {#with-specified-path-to-table-data}
 
 Этот запрос создает новую таблицу с указанной структурой и присоединяет данные таблицы из указанного каталога в `user_files`.
+Для выполнения этого запроса пользователю необходимы привилегии `READ ON FILE` и `WRITE ON FILE`: запрос читает каталог и перемещает его в путь к данным новой таблицы.
 
 **Синтаксис**
 
@@ -65,9 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-<div id="with-specified-table-uuid">
-  ### С указанием UUID таблицы
-</div>
+### С указанием UUID таблицы {#with-specified-table-uuid}
 
 Этот запрос создаёт новую таблицу с указанной структурой и присоединяет данные из таблицы с указанным UUID.
 Поддерживается движком базы данных [Atomic](/ru/reference/engines/database-engines/atomic).
@@ -78,9 +71,7 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-<div id="attach-mergetree-table-as-replicatedmergetree">
-  ## Присоединение таблицы MergeTree как ReplicatedMergeTree
-</div>
+## Присоединение таблицы MergeTree как ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Позволяет присоединить нереплицируемую таблицу MergeTree как ReplicatedMergeTree. Таблица ReplicatedMergeTree будет создана со значениями настроек `default_replica_path` и `default_replica_name`. Также можно присоединить реплицируемую таблицу как обычную MergeTree.
 
@@ -124,9 +115,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-<div id="attach-existing-dictionary">
-  ## Присоединить существующий словарь
-</div>
+## Присоединить существующий словарь {#attach-existing-dictionary}
 
 Присоединяет ранее отключённый словарь.
 
@@ -136,9 +125,7 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-<div id="attach-existing-database">
-  ## Присоединение существующей базы данных
-</div>
+## Присоединение существующей базы данных {#attach-existing-database}
 
 Присоединяет ранее отсоединённую базу данных.
 

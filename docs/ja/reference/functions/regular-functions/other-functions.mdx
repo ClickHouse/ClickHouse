@@ -5866,12 +5866,13 @@ transactionID()
 
 **戻り値**
 
-`start_csn`、`local_tid`、`host_id` で構成されるタプルを返します。
+`start_csn`、`local_tid`、`host_id`、`session_node_version` で構成されるタプルを返します。
 
 * `start_csn`: グローバルな連番。このトランザクションの開始時点で確認されていた最新のコミットタイムスタンプです。
 * `local_tid`: ローカルな連番。特定の start&#95;csn 内で、このホストによって開始された各トランザクションごとに一意です。
 * `host_id`: このトランザクションを開始したホストの UUID。
-  [`Tuple(UInt64, UInt64, UUID)`](/ja/reference/data-types/tuple)
+* `session_node_version`: トランザクション開始時点におけるホストの session znode のバージョン。これにより、ピアはレプリカ間で終了済みセッションの TID を検出できます。
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/ja/reference/data-types/tuple)
 
 **例**
 
@@ -5884,9 +5885,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

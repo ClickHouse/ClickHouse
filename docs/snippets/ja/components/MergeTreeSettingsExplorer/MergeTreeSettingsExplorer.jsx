@@ -606,12 +606,13 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "object_shared_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "object_shared_data_buckets_for_compact_part", path: "/object-shared#object_shared_data_buckets_for_compact_part", default: "8" },
         { name: "object_shared_data_buckets_for_wide_part", path: "/object-shared#object_shared_data_buckets_for_wide_part", default: "32" },
         { name: "object_shared_data_serialization_version", path: "/object-shared#object_shared_data_serialization_version", default: "advanced" },
-        { name: "object_shared_data_serialization_version_for_zero_level_parts", path: "/object-shared#object_shared_data_serialization_version_for_zero_level_parts", default: "map_with_buckets" }
+        { name: "object_shared_data_serialization_version_for_zero_level_parts", path: "/object-shared#object_shared_data_serialization_version_for_zero_level_parts", default: "map_with_buckets" },
+        { name: "object_shared_data_target_chunk_rows", path: "/object-shared#object_shared_data_target_chunk_rows", default: "8192" }
       ],
       children: []
     },

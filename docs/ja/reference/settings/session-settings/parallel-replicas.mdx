@@ -37,7 +37,7 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` の読み取りを基になる `MergeTree` テーブルからの読み取りのユニオンに展開することで、プランベースの並列レプリカによる `Merge` テーブルの読み取りを可能にする新しい設定です。`parallel_replicas_plan_based` と組み合わせた場合にのみ有効です。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` の読み取りを基になる `MergeTree` テーブルからの読み取りのユニオンに展開することで、プランベースの並列レプリカによる `Merge` テーブルの読み取りを可能にする新しい設定です。`parallel_replicas_plan_based` と組み合わせた場合にのみ有効です。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` の読み取りを基になる `MergeTree` テーブルからの読み取りのユニオンに展開することで、プランベースの並列レプリカによる `Merge` テーブルの読み取りを可能にする新しい設定です。`parallel_replicas_plan_based` と組み合わせた場合にのみ有効です。"}]}]} />
 
 並列レプリカによる `Merge` テーブルの読み取りを可能にします。[parallel&#95;replicas&#95;plan&#95;based](/ja/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) と組み合わせた場合にのみ有効です。`Merge` テーブルからの読み取りは、基になる `MergeTree` テーブルからの読み取りのユニオンに展開され、他のユニオンと同様に分散されます。基になるテーブルのいずれかをこの方法で読み取れない場合 (`MergeTree` 以外のテーブル、`FINAL` 読み取り) 、`Merge` テーブルは単一のレプリカで処理されます。サポートが追加される前と同様に、すべての `Merge` テーブルを単一のレプリカで読み取るには、`false` に設定します。実験的機能です。
 

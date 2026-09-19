@@ -350,6 +350,14 @@ ClickHouse が次のポーリング試行を開始するまでに待機する最
 
 デフォルト値: `21600` (6 時間) 。
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+Keeper 内の `processing` ノードを別のサーバーが保持しているファイルは、インメモリのファイルステータスキャッシュに `Processing` として記録されます。これにより、以降の listing パスでは Keeper に再度問い合わせることなく、そのファイルをスキップできます。
+
+`Processed` や `Failed` とは異なり、この状態は最終的なものではありません。たとえばプロセスが停止した場合など、別の processor がコミットせずにファイルを解放することがあるためです。この設定は、キャッシュされた `Processing` 状態をどれだけの期間信頼するかを指定します。その期間を過ぎると、ファイルは Keeper で再確認され、再び空いていれば処理されます。0 を指定した場合は、常に Keeper を再確認します。
+
+デフォルト値: `300` (5 分) 。
+
 ## S3関連の設定 {#s3-settings}
 
 このエンジンは、S3 関連の設定をすべてサポートします。S3 の設定の詳細については、[こちら](/ja/reference/engines/table-engines/integrations/s3)を参照してください。

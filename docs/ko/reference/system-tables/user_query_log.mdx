@@ -112,7 +112,7 @@ doc_type: 'reference'
 * `used_row_policies` ([Array(String)](/ko/reference/data-types/array)) — 쿼리 실행 중 사용된 행 정책 이름 목록입니다.
 * `used_privileges` ([Array(String)](/ko/reference/data-types/array)) — 쿼리 실행 중 확인에 성공한 권한입니다.
 * `missing_privileges` ([Array(String)](/ko/reference/data-types/array)) — 쿼리 실행 중 누락된 권한입니다.
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/ko/reference/data-types/tuple)) — 이 쿼리가 실행된 트랜잭션의 식별자입니다.
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ko/reference/data-types/tuple)) — 이 쿼리가 실행된 트랜잭션의 식별자입니다.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ko/reference/data-types/enum)) — 쿼리 실행 중 쿼리 캐시 사용 상태입니다. 값: &#39;Unknown&#39; = 상태를 알 수 없음, &#39;None&#39; = 쿼리 결과가 쿼리 결과 캐시에 기록되거나 쿼리 결과 캐시에서 읽히지 않음, &#39;Write&#39; = 쿼리 결과가 쿼리 결과 캐시에 기록됨, &#39;Read&#39; = 쿼리 결과가 쿼리 결과 캐시에서 읽힘.
 * `asynchronous_read_counters` ([Map(String, UInt64)](/ko/reference/data-types/map)) — 비동기 읽기 메트릭입니다.
 * `is_internal` ([UInt8](/ko/reference/data-types/int-uint)) — 내부적으로 실행되는 보조 쿼리인지 여부를 나타냅니다.

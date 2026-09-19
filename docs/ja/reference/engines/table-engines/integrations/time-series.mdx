@@ -27,7 +27,7 @@ metric_name2[...] = ...
 </Info>
 
 <Note>
-  ClickHouse Cloud の TimeSeries テーブルエンジンもプライベートプレビューです。
+  `TimeSeries` テーブルエンジンは ClickHouse Cloud でプライベートプレビュー機能として利用できます。
   プライベートプレビューに参加しているサービスでは、すでに
   `enable_time_series_table` 設定が構成されています。その他の ClickHouse Cloud サービス
   ではこの構成は行われておらず、そのようなサービスでご自身でこのエンジンを有効にすることはできません。
@@ -174,6 +174,14 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 | `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` または `Nullable(DateTime64(X))`                                                                             | その `id` を持つ時系列の最小タイムスタンプ。このカラムは [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) が `true` の場合に作成されます                                                                            |
 | `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` または `Nullable(DateTime64(X))`                                                                             | その `id` を持つ時系列の最大タイムスタンプ。このカラムは [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) が `true` の場合に作成されます                                                                            |
 
+[バージョン](#schema-versioning) 5 以降で新しく作成され、`MergeTree` ファミリーのエンジンを使用する内部 tags テーブルには、`tags` に対する転置テキスト索引が作成されます:
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`。これは、キーと値をまとめて検索することで、PromQL における
+`{job="api"}` のような完全一致のラベル照合を高速化します。空文字列との比較は欠落しているラベルにも
+一致するため、この索引は使用されません。
+
+`TAGS INNER COLUMNS` で明示的に宣言された索引は、デフォルトの索引を置き換えます。既存のテーブルおよび外部の
+tags テーブルは、それぞれの索引をそのまま保持します。有効にするには、その tags ターゲットテーブルに索引を追加してマテリアライズしてください。
+
 ### Metric families テーブル {#metric-families-table}
 
 *metric families* テーブルには、収集されるメトリクスファミリーに関する情報、それらのメトリクスファミリーのタイプ、および説明が格納されます。
@@ -211,7 +219,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 4, recent_samples_ttl_seconds = 345600
+SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -232,7 +240,8 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
@@ -286,7 +295,8 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -502,14 +512,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` テーブルのパーティションキー。例: `toStartOfHour(timestamp)`。明示的に設定した場合、エンジン宣言のパーティションキーをオーバーライドします。いずれも設定されていない場合は、5 時間ごとに 1 パーティションが使用されます。外部 recent samples テーブルでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                  |
 | `recent_samples_index_granularity`   | UInt64     | 8192                                                          | 内部 `recent samples` テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 recent samples テーブルおよび MergeTree 以外のエンジンでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                      |
 | `tags_index_granularity`             | UInt64     | 8192                                                          | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 tags テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                           |
-| `version`                            | UInt64     | 4                                                             | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                 |
+| `version`                            | UInt64     | 5                                                             | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                 |
 
 ## スキーマのバージョン管理 {#schema-versioning}
 
 `TimeSeries` テーブルエンジンと PromQL 実行レイヤーは現在も活発に開発されています。
 そのため、ターゲットテーブルのセットや構造は ClickHouse のバージョン間で変更される可能性があります。
 このような変更を検出できるよう、各 `TimeSeries` テーブルでは [version](#settings) SETTINGにバージョンを保存します。
-テーブル作成時には、バージョンが `CREATE` クエリに自動的に固定されます。その値はサーバーが認識している最新バージョン (現在は 4) であり、
+テーブル作成時には、バージョンが `CREATE` クエリに自動的に固定されます。その値はサーバーが認識している最新バージョン (現在は 5) であり、
 テーブルのメタデータに永続化され、`ALTER` では変更できません。このSETTINGの導入前に作成されたテーブルは、バージョン 0 と見なされます。
 通常、このSETTINGは `CREATE TABLE` クエリで省略します。省略した場合、テーブルには最新バージョンが設定されます。
 サーバーがそのバージョンをサポートしている場合は、明示的な `version` も指定できます。その場合、テーブルはそのバージョンの定義方法に従って定義されます ([バージョン履歴](#version-history)を参照)。
@@ -535,6 +545,7 @@ Prometheus remote-write プロトコル、PromQL の評価 ([prometheusQuery](/j
 | 2     | [`id_type`](#settings) 設定が導入された。外部の tags テーブルを持つテーブルは、`id` カラムの型を `id_type` に、識別子を生成する式を [`id_generator`](#settings) に記録するため、その定義が外部テーブルに依存しなくなる。`id_generator` が設定されている場合にも `id_type` が記録される ([`id` カラム](#id-column)を参照)                                                                                             |
 | 3     | 外部カラム `time_series` が `samples` にリネームされた ([外部カラム](#outer-columns)を参照) 。それ以前のバージョンのテーブルはカラムの旧名称をそのまま保持し、[prometheusQuery](/ja/reference/functions/table-functions/prometheusQuery) および [prometheusQueryRange](/ja/reference/functions/table-functions/prometheusQueryRange) テーブル関数は、そのテーブルで使用されている名前でカラムを返す。格納されるデータ自体に変更はない |
 | 4     | `metrics` ターゲットテーブルが `metric families` にリネームされた。内部テーブルの名前は `.inner_id.metrics.<uuid>` ではなく `.inner_id.metricfamilies.<uuid>` となり、定義には `METRICS` ではなく `METRIC FAMILIES` キーワードが使用される。格納されるデータ自体に変更はない                                                                                                                   |
+| 5     | `MergeTree` ファミリーのエンジンを使用する新しい内部 tags テーブルでは、デフォルトで `tags` map に `keyValuePairs` テキスト索引が作成される ([Tags テーブル](#tags-table)を参照)                                                                                                                                                                                           |
 
 # 関数 {#functions}
 

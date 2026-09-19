@@ -244,15 +244,19 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 **Aliases** : `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_json_lazy_type_hints`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Les indications de type JSON différées sont désormais en bêta. Un alias pour le paramètre 'allow_experimental_json_lazy_type_hints'."}]}]} />
 
-Active les Lazy Type Indications pour le type JSON. Cette fonctionnalité permet d&#39;optimiser les conversions du type JSON en différant l&#39;évaluation des indications de type.
+Active les indications de type différées pour le type [JSON](/fr/reference/data-types/newjson).
+
+Lorsque ce paramètre est activé, une requête `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` qui se contente d&#39;ajouter ou de modifier
+des indications de type constitue une opération limitée aux métadonnées : les indications de type sont appliquées au moment de la requête pour les parts existantes et
+matérialisés lors des insertions et des fusions en arrière-plan, plutôt que de réécrire les données historiques.
 
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 

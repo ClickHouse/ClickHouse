@@ -348,6 +348,14 @@ Default value: `0`.
 
 기본값: `21600` (6시간)입니다.
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+Keeper의 `processing` 노드를 다른 서버가 점유하고 있는 파일은 인메모리 파일 상태 캐시에 `Processing`으로 기록되며, 이후의 목록 조회 패스에서는 Keeper에 다시 조회하지 않고 해당 파일을 건너뜁니다.
+
+`Processed` 및 `Failed`와 달리 이 상태는 최종 상태가 아닙니다. 예를 들어 프로세스가 비정상 종료되는 경우처럼, 다른 processor가 파일을 커밋하지 않은 채 해제할 수 있기 때문입니다. 이 설정은 캐시된 `Processing` 상태를 얼마나 오래 신뢰할지 정의합니다. 이 시간이 지나면 Keeper에서 파일을 다시 확인하고, 다시 사용 가능한 상태이면 처리합니다. 0으로 설정하면 항상 Keeper를 다시 확인합니다.
+
+기본값: `300`(5분).
+
 ## S3 관련 설정 {#s3-settings}
 
 이 엔진은 모든 S3 관련 설정을 지원합니다. S3 설정에 대한 자세한 내용은 [여기](/ko/reference/engines/table-engines/integrations/s3)를 참조하십시오.

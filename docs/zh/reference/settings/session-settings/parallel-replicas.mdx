@@ -37,7 +37,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，允许在基于计划的并行副本模式下从 `Merge` 表读取：将对 `Merge` 表的读取展开为对底层 `MergeTree` 表读取的 union。仅在与 `parallel_replicas_plan_based` 配合使用时生效。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，允许在基于计划的并行副本模式下从 `Merge` 表读取：将对 `Merge` 表的读取展开为对底层 `MergeTree` 表读取的 union。仅在与 `parallel_replicas_plan_based` 配合使用时生效。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，允许在基于计划的并行副本模式下从 `Merge` 表读取：将对 `Merge` 表的读取展开为对底层 `MergeTree` 表读取的 union。仅在与 `parallel_replicas_plan_based` 配合使用时生效。"}]}]} />
 
 允许使用并行副本从 `Merge` 表读取。仅在与 [parallel&#95;replicas&#95;plan&#95;based](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) 配合使用时生效：对 `Merge` 表的读取会展开为对底层 `MergeTree` 表读取的 union，随后像其他 union 一样进行分布式执行。若其中任一底层表无法以这种方式读取 (例如非 `MergeTree` 表、`FINAL` 读取) ，则该 `Merge` 表仍只在单个副本上读取。将其设置为 `false`，则每个 `Merge` 表都在单个副本上读取，与新增该支持之前的行为一致。Experimental。
 

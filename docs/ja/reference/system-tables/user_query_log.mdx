@@ -112,7 +112,7 @@ doc_type: 'reference'
 * `used_row_policies` ([Array(String)](/ja/reference/data-types/array)) — クエリ実行時に使用された行ポリシー名の一覧。
 * `used_privileges` ([Array(String)](/ja/reference/data-types/array)) — クエリ実行時に正常に確認された権限。
 * `missing_privileges` ([Array(String)](/ja/reference/data-types/array)) — クエリ実行時に不足している権限。
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — このクエリが実行されたトランザクションの識別子。
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このクエリが実行されたトランザクションの識別子。
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ja/reference/data-types/enum)) — クエリ実行時のクエリキャッシュの使用状況。値: &#39;Unknown&#39; = ステータス不明、&#39;None&#39; = クエリ結果はクエリ結果キャッシュへの書き込みもクエリ結果キャッシュからの読み取りも行われなかった、&#39;Write&#39; = クエリ結果がクエリ結果キャッシュに書き込まれた、&#39;Read&#39; = クエリ結果がクエリ結果キャッシュから読み取られた。
 * `asynchronous_read_counters` ([Map(String, UInt64)](/ja/reference/data-types/map)) — 非同期読み取りのメトリクス。
 * `is_internal` ([UInt8](/ja/reference/data-types/int-uint)) — 内部的に実行される補助クエリかどうかを示します。

@@ -112,7 +112,7 @@ Les conditions sur la partition et les colonnes clés du journal de requêtes (`
 * `used_row_policies` ([Array(String)](/fr/reference/data-types/array)) — Liste des noms des politiques de lignes utilisées lors de l’exécution de la requête.
 * `used_privileges` ([Array(String)](/fr/reference/data-types/array)) — Privilèges dont la vérification a réussi lors de l’exécution de la requête.
 * `missing_privileges` ([Array(String)](/fr/reference/data-types/array)) — Privilèges manquants lors de l’exécution de la requête.
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/fr/reference/data-types/tuple)) — Identifiant de la transaction dans le cadre de laquelle cette requête a été exécutée.
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/fr/reference/data-types/tuple)) — Identifiant de la transaction dans le cadre de laquelle cette requête a été exécutée.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/fr/reference/data-types/enum)) — Utilisation du cache de requêtes lors de l’exécution de la requête. Valeurs : &#39;Unknown&#39; = Statut inconnu, &#39;None&#39; = Le résultat de la requête n’a été ni écrit dans le cache des résultats de requêtes ni lu depuis celui-ci, &#39;Write&#39; = Le résultat de la requête a été écrit dans le cache des résultats de requêtes, &#39;Read&#39; = Le résultat de la requête a été lu depuis le cache des résultats de requêtes.
 * `asynchronous_read_counters` ([Map(String, UInt64)](/fr/reference/data-types/map)) — Métriques de lecture asynchrone.
 * `is_internal` ([UInt8](/fr/reference/data-types/int-uint)) — Indique s’il s’agit d’une requête auxiliaire exécutée en interne.

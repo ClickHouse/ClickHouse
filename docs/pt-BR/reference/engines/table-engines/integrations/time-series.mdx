@@ -28,7 +28,7 @@ metric_name2[...] = ...
 </Info>
 
 <Note>
-  O motor de tabela TimeSeries no ClickHouse Cloud também está em visualização privada.
+  O motor de tabela `TimeSeries` está disponível no ClickHouse Cloud como um recurso em visualização privada.
   Os serviços que participam da visualização privada já possuem a configuração
   `enable_time_series_table` definida. Outros serviços do ClickHouse Cloud
   não têm essa configuração, e você não pode habilitar o motor por conta própria em
@@ -179,6 +179,14 @@ A tabela *tags* deve ter as colunas:
 | `min_time`           | [ ]          | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | timestamp mínimo da série temporal com esse `id`. A coluna é criada se [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) for `true`                                                                                                                                                                                                            |
 | `max_time`           | [ ]          | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | timestamp máximo da série temporal com esse `id`. A coluna é criada se [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) for `true`                                                                                                                                                                                                            |
 
+Novas tabelas internas de tags da [versão](#schema-versioning) 5 e posteriores com um motor da família `MergeTree` têm um índice de texto invertido em `tags`:
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. Ele acelera correspondências exatas de rótulos, como
+`{job="api"}` em PromQL, consultando a chave e o valor em conjunto. Comparações com uma string vazia também
+correspondem a rótulos ausentes e não usam esse índice.
+
+Índices explícitos declarados em `TAGS INNER COLUMNS` substituem o índice padrão. As tabelas existentes e as
+tabelas de tags externas mantêm seus índices; adicione e materialize o índice na tabela de destino das tags para habilitá-lo.
+
 ### Tabela de famílias de métricas {#metric-families-table}
 
 A tabela *metric families* contém algumas informações sobre as famílias de métricas coletadas, os tipos dessas famílias de métricas e suas descrições.
@@ -216,7 +224,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 4, recent_samples_ttl_seconds = 345600
+SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -237,7 +245,8 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
@@ -293,7 +302,8 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -513,14 +523,14 @@ Aqui está uma lista de configurações que podem ser especificadas ao definir u
 | `recent_samples_partition_by`        | Expression   | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Chave de partição da tabela interna `amostras recentes`, por exemplo, `toStartOfHour(timestamp)`. Quando definida explicitamente, substitui a chave de partição da declaração do motor; se nenhuma das duas for definida, é usada uma partição a cada 5 horas. Ignorado para uma tabela externa de amostras recentes. Requer que `recent_samples_ttl_seconds` seja diferente de zero                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `recent_samples_index_granularity`   | UInt64       | 8192                                                          | Define `index_granularity` da tabela interna `amostras recentes`. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela externa de amostras recentes e um motor que não seja MergeTree. Requer que `recent_samples_ttl_seconds` seja diferente de zero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `tags_index_granularity`             | UInt64       | 8192                                                          | Define `index_granularity` da tabela [tags](#tags-table) interna. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela tags externa e um motor que não seja MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `version`                            | UInt64       | 4                                                             | A versão da tabela: identifica o conjunto de tabelas de destino e sua estrutura. A versão é fixada automaticamente quando uma tabela é criada e não pode ser alterada depois; normalmente ela deve ser omitida na consulta `CREATE TABLE` (consulte [Versionamento de schema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `version`                            | UInt64       | 5                                                             | A versão da tabela: identifica o conjunto de tabelas de destino e sua estrutura. A versão é fixada automaticamente quando uma tabela é criada e não pode ser alterada depois; normalmente ela deve ser omitida na consulta `CREATE TABLE` (consulte [Versionamento de schema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Versionamento de schema {#schema-versioning}
 
 O motor de tabela `TimeSeries` e a camada de execução de PromQL estão em desenvolvimento ativo:
 o conjunto de tabelas de destino e sua estrutura podem mudar entre versões do ClickHouse.
 Para tornar essas mudanças detectáveis, cada tabela `TimeSeries` armazena sua versão na configuração [version](#settings).
-A versão é fixada automaticamente na consulta `CREATE` no momento da criação da tabela — seu valor é a versão mais recente conhecida pelo servidor (atualmente 4) —,
+A versão é fixada automaticamente na consulta `CREATE` no momento da criação da tabela — seu valor é a versão mais recente conhecida pelo servidor (atualmente 5) —,
 persiste nos metadados da tabela e não pode ser alterada por `ALTER`. Tabelas criadas antes da introdução dessa configuração são consideradas como versão 0.
 Normalmente, basta omitir a configuração na consulta `CREATE TABLE` — assim a tabela recebe a versão mais recente.
 Um `version` explícito é aceito se o servidor der suporte a essa versão; nesse caso, a tabela é definida da forma como aquela versão a define (consulte [Histórico de versões](#version-history)).
@@ -546,6 +556,7 @@ o dialect `promql` e a API HTTP de consulta do Prometheus):
 | 2      | A configuração [`id_type`](#settings) foi introduzida: uma tabela com uma tabela de tags externa registra o tipo da coluna `id` em `id_type` e a expressão que gera identificadores em [`id_generator`](#settings), de modo que sua definição não dependa da tabela externa. `id_type` também é registrado quando `id_generator` é definido (consulte [A coluna `id`](#id-column))                                                                      |
 | 3      | A coluna externa `time_series` foi renomeada para `samples` (consulte [Colunas externas](#outer-columns)). As tabelas de versões anteriores mantêm o nome antigo da coluna, e as funções de tabela [prometheusQuery](/pt-BR/reference/functions/table-functions/prometheusQuery) e [prometheusQueryRange](/pt-BR/reference/functions/table-functions/prometheusQueryRange) retornam a coluna com o nome usado pela tabela. Os dados armazenados não foram alterados |
 | 4      | A tabela de destino `metrics` foi renomeada para `metric families`: a tabela interna é chamada de `.inner_id.metricfamilies.<uuid>` em vez de `.inner_id.metrics.<uuid>`, e a definição é gravada com a palavra-chave `METRIC FAMILIES` em vez de `METRICS`. Os dados armazenados não foram alterados                                                                                                                                                   |
+| 5      | Novas tabelas internas de tags com um motor da família `MergeTree` recebem, por padrão, um índice de texto `keyValuePairs` no map `tags` (consulte [Tabela de tags](#tags-table))                                                                                                                                                                                                                                                                       |
 
 # Funções {#functions}
 

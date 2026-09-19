@@ -122,6 +122,21 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   如果它用于只有单个 сегмент 但包含多个副本的集群，禁用此设置会带来负面影响。
 </Note>
 
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置：与 `force_optimize_projection` 类似，无论预估代价如何都选用可用的 projection，但在未使用任何 projection 时不会导致查询失败。"}]}]} />
+
+在启用 projection 优化的情况下 (参见 [optimize&#95;use&#95;projections](/zh/reference/settings/session-settings/optimize-use#optimize_use_projections) 设置) ，让 projection 优化在 `SELECT` 查询中优先使用 [projections](/zh/reference/engines/table-engines/mergetree-family/mergetree#projections) 而非表本身。
+
+启用后，只要某个 projection 能够满足该查询，即使读取的 marks 比表本身更多，也会被使用；这一点与 [force&#95;optimize&#95;projection](/zh/reference/settings/session-settings/force-optimize#force_optimize_projection) 相同，但在无可用 projection 时查询不会失败。
+
+可能的取值：
+
+* 0 — 按预估代价选择 projection。
+* 1 — 无论预估代价如何，都选择可用的 projection。
+
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />

@@ -86,9 +86,9 @@ doc_type: '참고'
 * `rows_where_ttl_info.max` ([Array(DateTime)](/ko/reference/data-types/array)) — 이 파트에서 계산된 TTL 표현식의 최댓값입니다. 모든 행의 TTL이 만료되었는지 확인하는 데 사용됩니다.
 * `projections` ([Array(String)](/ko/reference/data-types/array)) — 이 파트에 대해 계산된 프로젝션 이름 목록입니다.
 * `visible` ([UInt8](/ko/reference/data-types/int-uint)) — 이 파트가 SELECT 쿼리에 표시되는지 나타내는 플래그입니다.
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/ko/reference/data-types/tuple)) — 이 객체를 생성했거나 생성하려는 트랜잭션의 ID입니다.
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ko/reference/data-types/tuple)) — 이 객체를 생성했거나 생성하려는 트랜잭션의 ID입니다.
 * `removal_tid_lock` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 제거를 위해 객체를 잠그는 데 사용되는 removal&#95;tid의 해시입니다.
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/ko/reference/data-types/tuple)) — 이 객체를 제거했거나 제거하려는 트랜잭션의 ID입니다.
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ko/reference/data-types/tuple)) — 이 객체를 제거했거나 제거하려는 트랜잭션의 ID입니다.
 * `creation_csn` ([UInt64](/ko/reference/data-types/int-uint)) — 이 객체를 생성한 트랜잭션의 CSN입니다.
 * `removal_csn` ([UInt64](/ko/reference/data-types/int-uint)) — 이 객체를 제거한 트랜잭션의 CSN입니다.
 * `has_lightweight_delete` ([UInt8](/ko/reference/data-types/int-uint)) — 파트에 경량한 삭제 마스크가 있는지 나타내는 플래그입니다.

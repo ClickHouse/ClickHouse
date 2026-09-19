@@ -12,22 +12,20 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="force_optimize_projection">
-  ## force_optimize_projection
-</div>
+## force_optimize_projection {#force_optimize_projection}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita o deshabilita el uso obligatorio de [proyecciones](/es/reference/engines/table-engines/mergetree-family/mergetree#projections) en las consultas `SELECT` cuando la optimización de proyecciones está habilitada (consulta la configuración [optimize&#95;use&#95;projections](/es/reference/settings/session-settings/optimize-use#optimize_use_projections)).
+
+Cuando está habilitada, se utiliza una proyección que pueda atender la consulta incluso si requiere leer más marks que la propia tabla, y la consulta falla con el error `PROJECTION_NOT_USED` cuando no se puede usar ninguna proyección.
 
 Valores posibles:
 
 * 0 — La optimización de proyecciones no es obligatoria.
 * 1 — La optimización de proyecciones es obligatoria.
 
-<div id="force_optimize_projection_name">
-  ## force_optimize_projection_name
-</div>
+## force_optimize_projection_name {#force_optimize_projection_name}
 
 Si se establece como una cadena no vacía, comprueba que esta proyección se utilice al menos una vez en la consulta.
 
@@ -35,9 +33,7 @@ Valores posibles:
 
 * string: nombre de la proyección que se usa en una consulta
 
-<div id="force_optimize_skip_unused_shards">
-  ## force_optimize_skip_unused_shards
-</div>
+## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -49,9 +45,7 @@ Valores posibles:
 * 1 — Habilitado. La ejecución de consultas se deshabilita solo si la tabla tiene una clave de segmentación.
 * 2 — Habilitado. La ejecución de consultas se deshabilita independientemente de si la tabla tiene definida una clave de segmentación.
 
-<div id="force_optimize_skip_unused_shards_nesting">
-  ## force_optimize_skip_unused_shards_nesting
-</div>
+## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

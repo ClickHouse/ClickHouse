@@ -49,7 +49,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-Devuelve las filas desde la primera fila en la que `start_expr` es true, o desde el inicio del stream cuando se omite `AFTER`, hasta la primera fila en la que `end_expr` es true, sin incluirla; `n` limita la longitud de ese rango. `AFTER start_expr ALL` abre un rango en cada fila coincidente. Consulte [LIMIT ... AFTER ... UNTIL](#limit-after-until) más abajo.
+Devuelve las filas desde la primera fila en la que `start_expr` es true, o desde el inicio del stream cuando se omite `AFTER`, hasta la primera fila situada en ese inicio o después de él en la que `end_expr` es true, sin incluirla; `n` limita la longitud de ese rango. `AFTER start_expr ALL` abre un rango en cada fila coincidente. Consulte [LIMIT ... AFTER ... UNTIL](#limit-after-until) más abajo.
 
 ## Límites negativos {#negative-limits}
 
@@ -185,12 +185,16 @@ LIMIT [n] UNTIL end_expr
 
 * `AFTER start_expr`: comienza la salida desde la primera fila en la que `start_expr` es verdadera (esa fila se incluye).
 * `AFTER start_expr ALL`: devuelve la unión de todos los rangos coincidentes que comienzan donde `start_expr` es verdadera, sin duplicar filas cuando los rangos se solapan.
-* `UNTIL end_expr`: detiene la salida antes de la primera fila en la que `end_expr` es verdadera (esa fila se excluye).
+* `UNTIL end_expr`: finaliza cada rango antes de la primera fila situada en su inicio o después de él en la que `end_expr` es verdadera (esa fila se excluye).
 * `n`: recuento opcional de filas. Sin `ALL`, es la longitud máxima del único rango abierto. Con `AFTER ... ALL`, es la longitud de *cada* rango abierto, por lo que el resultado total puede superar `n` (por ejemplo, `LIMIT 2 AFTER number IN (2, 6) ALL` puede devolver hasta cuatro filas). Para limitar el número total de filas del resultado, utiliza el SETTING `limit`, que se aplica como límite global después del rango.
 
 El orden del flujo (el orden en el que se leen las filas) determina cuál es la «primera» coincidencia; usa `ORDER BY` para controlarlo.
 
-Sin `ALL`, si la primera coincidencia de `UNTIL` aparece antes que la primera coincidencia de `AFTER`, el resultado queda vacío. Con `AFTER ... ALL`, las coincidencias posteriores de `AFTER` sí pueden abrir nuevos rangos.
+Las coincidencias de `UNTIL` anteriores al inicio de un rango no tienen efecto. Si ambas condiciones coinciden en la fila inicial, el rango queda vacío. Si no se produce ninguna coincidencia de `UNTIL` en el inicio o después de él, el rango continúa hasta alcanzar su recuento de filas `n` o el final del stream. Con `AFTER ... ALL`, las coincidencias posteriores de `AFTER` pueden abrir nuevos rangos una vez finalizado un rango anterior.
+
+Con `AFTER` y sin `ALL`, el paso de rango evalúa `AFTER` hasta encontrar un fragmento que contenga una coincidencia de inicio. A continuación, evalúa `UNTIL` en ese fragmento y en los fragmentos siguientes mientras el rango permanezca abierto. Las expresiones se evalúan sobre fragmentos completos, por lo que `UNTIL` puede evaluarse incluso para filas anteriores al inicio dentro del fragmento inicial.
+
+Si `UNTIL` contiene funciones con estado como `rowNumberInAllBlocks`, o funciones no deterministas dentro de la consulta, se evalúa desde el primer fragmento para preservar el comportamiento de dichas funciones. Sin `ALL`, `AFTER` se evalúa únicamente hasta el fragmento inicial; en los fragmentos siguientes solo se evalúa `UNTIL`. Las coincidencias de fin anteriores al inicio siguen sin tener efecto.
 
 **Ejemplos:**
 
@@ -237,7 +241,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-Sin `n` pero con `UNTIL`, el rango se extiende desde la primera coincidencia de `AFTER` hasta la primera coincidencia de `UNTIL`:
+Sin `n` pero con `UNTIL`, el rango se extiende desde la primera coincidencia de `AFTER` hasta la primera coincidencia de `UNTIL` que se produzca en esa misma posición o después de ella:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -246,6 +250,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Una coincidencia de `UNTIL` anterior al inicio se ignora; aquí `number = 1` no tiene efecto y el rango termina antes de `number = 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -268,7 +286,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 └────────┘
 ```
 
-Con `ALL` y `UNTIL`, cada rango abierto termina al alcanzar sus `n` filas o en la siguiente coincidencia de `UNTIL`, según lo que ocurra primero; aquí el rango abierto en 6 queda cortado por `number = 7`:
+Con `ALL` y `UNTIL`, cada rango abierto termina al alcanzar sus `n` filas o en la siguiente coincidencia de `UNTIL`, lo que ocurra primero; aquí el rango abierto en 6 queda cortado por `number = 7`:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL UNTIL number = 7;
@@ -282,7 +300,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) AL
 └────────┘
 ```
 
-Sin `n`, una coincidencia de `UNTIL` cierra el range actual y una coincidencia posterior de `AFTER` abre uno nuevo, que se extiende hasta el final si no le sigue ninguna otra coincidencia de `UNTIL`:
+Sin `n`, una coincidencia de `UNTIL` cierra el rango actual y una coincidencia posterior de `AFTER` abre uno nuevo, que se extiende hasta el final cuando no le sigue ninguna otra coincidencia de `UNTIL`:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL UNTIL number = 4;

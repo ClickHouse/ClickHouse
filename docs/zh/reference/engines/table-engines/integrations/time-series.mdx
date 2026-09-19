@@ -27,7 +27,7 @@ metric_name2[...] = ...
 </Info>
 
 <Note>
-  ClickHouse Cloud 中的 TimeSeries 表引擎也处于私有预览阶段。
+  `TimeSeries` 表引擎在 ClickHouse Cloud 中作为私有预览功能提供。
   已参与私有预览的服务已配置
   `enable_time_series_table` 设置。其他 ClickHouse Cloud 服务
   没有此配置，且您无法自行在此类服务上启用该引擎。
@@ -175,6 +175,12 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最小时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列                                    |
 | `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最大时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列                                    |
 
+[版本](#schema-versioning) 5 及更高版本中，使用 `MergeTree` 家族引擎新建的内部 tags 表会在 `tags` 上建立倒排文本索引：
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`。它通过同时查找键和值来加速 PromQL 中诸如
+`{job="api"}` 这样的精确标记匹配。与空字符串的比较也会匹配缺失的标记，并且不会使用该索引。
+
+在 `TAGS INNER COLUMNS` 中显式声明的索引会替换默认索引。已有的表以及外部 tags 表会保留其原有索引；可在其 tags target table 上添加并 materialize 该索引以启用它。
+
 ### 指标族表 {#metric-families-table}
 
 *指标族* 表包含有关正在采集的指标族、这些指标族的类型及其描述的信息。
@@ -212,7 +218,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 4, recent_samples_ttl_seconds = 345600
+SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -233,7 +239,8 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
@@ -288,7 +295,8 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -508,14 +516,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `最近样本` 表的分区键，例如 `toStartOfHour(timestamp)`。显式设置时，会覆盖引擎声明中的分区键；如果两者均未设置，则每 5 小时使用一个分区。对于外部最近样本表，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                   |
 | `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 设置内部 `最近样本` 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部最近样本表和非 MergeTree 引擎，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                     |
 | `tags_index_granularity`             | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                               |
-| `version`                            | UInt64 | 4                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
+| `version`                            | UInt64 | 5                                                             | 表的版本：它标识目标端表的集合及其结构。版本会在创建表时自动固定，之后无法更改，通常应在 `CREATE TABLE` 查询中省略 (请参阅 [Schema 版本控制](#schema-versioning))                                                                                                                                                                                                                      |
 
 ## Schema 版本控制 {#schema-versioning}
 
 `TimeSeries` 表引擎与 PromQL 执行层仍处于活跃开发阶段：
 目标端表的集合及其结构可能在不同 ClickHouse 版本之间发生变化。
 为了让此类变化可被检测，每个 `TimeSeries` 表都会将自身版本记录在 [version](#settings) 设置中。
-建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 4) ——
+建表时，该版本会自动固化到 `CREATE` 查询中——其取值为服务器已知的最新版本 (当前为 5) ——
 并持久化在表的元数据中，且无法通过 `ALTER` 修改。在该设置引入之前创建的表被视为版本 0。
 通常在 `CREATE TABLE` 查询中省略该设置即可——此时表会自动采用最新版本。
 如果服务器支持所指定的版本，也可以显式指定 `version`；此时该表会按照该版本的方式来定义 (请参阅[版本历史](#version-history)) 。
@@ -541,6 +549,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | 2  | 引入了 [`id_type`](#settings) 设置：使用外部标签表的表会在 `id_type` 中记录 `id` 列的类型，并在 [`id_generator`](#settings) 中记录生成标识符的表达式，因此其定义不再依赖于外部表。设置了 `id_generator` 时同样会记录 `id_type` (参见 [`id` 列](#id-column))                                                                          |
 | 3  | 外部列 `time_series` 更名为 `samples` (参见[外部列](#outer-columns)) 。早期版本的表仍沿用该列的旧名称，[prometheusQuery](/zh/reference/functions/table-functions/prometheusQuery) 与 [prometheusQueryRange](/zh/reference/functions/table-functions/prometheusQueryRange) 表函数也会按表所使用的名称返回该列。存储的数据没有变化 |
 | 4  | `metrics` 目标端表更名为 `metric families`：内部表命名为 `.inner_id.metricfamilies.<uuid>`，而非 `.inner_id.metrics.<uuid>`，并且定义使用关键字 `METRIC FAMILIES` 而非 `METRICS` 编写。存储的数据没有变化                                                                                                   |
+| 5  | 使用 `MergeTree` 家族引擎的新建内部标签表，默认会在 `tags` map 上创建 `keyValuePairs` 文本索引 (参见 [Tags table](#tags-table))                                                                                                                                                                |
 
 # 函数 {#functions}
 

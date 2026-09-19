@@ -150,7 +150,7 @@ ClickHouse не удаляет данные из таблицы автомати
 * `used_row_policies` ([Array(LowCardinality(String))](/ru/reference/data-types/array)) — Список имён политик доступа на уровне строк, использованных при выполнении запроса.
 * `used_privileges` ([Array(LowCardinality(String))](/ru/reference/data-types/array)) — привилегии, которые успешно прошли проверку при выполнении запроса.
 * `missing_privileges` ([Array(LowCardinality(String))](/ru/reference/data-types/array)) — Отсутствующие привилегии при выполнении запроса.
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/ru/reference/data-types/tuple)) — Идентификатор транзакции, в рамках которой был выполнен этот запрос.
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ru/reference/data-types/tuple)) — Идентификатор транзакции, в рамках которой был выполнен этот запрос.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ru/reference/data-types/enum)) — Использование кэша запросов при выполнении запроса. Значения: &#39;Unknown&#39; = Статус неизвестен, &#39;None&#39; = Результат запроса не был ни записан в кэш результатов запросов, ни прочитан из него, &#39;Write&#39; = Результат запроса был записан в кэш результатов запросов, &#39;Read&#39; = Результат запроса был прочитан из кэша результатов запросов.
 * `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ru/reference/data-types/map)) — метрики асинхронного чтения.
 * `is_internal` ([UInt8](/ru/reference/data-types/int-uint)) — Указывает, является ли это внутренним вспомогательным запросом.

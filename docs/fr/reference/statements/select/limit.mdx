@@ -49,7 +49,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-Renvoie les lignes à partir de la première ligne où `start_expr` est vrai, ou depuis le début du stream lorsque `AFTER` est omis, jusqu&#39;à la première ligne où `end_expr` est vrai, celle-ci étant exclue ; `n` limite la longueur de cette plage. `AFTER start_expr ALL` ouvre une plage à chaque ligne correspondante. Voir [LIMIT ... AFTER ... UNTIL](#limit-after-until) ci-dessous.
+Renvoie les lignes à partir de la première ligne où `start_expr` est vrai, ou depuis le début du stream lorsque `AFTER` est omis, jusqu&#39;à la première ligne, à ce début ou après celui-ci, où `end_expr` est vrai, celle-ci étant exclue ; `n` limite la longueur de cette plage. `AFTER start_expr ALL` ouvre une plage à chaque ligne correspondante. Voir [LIMIT ... AFTER ... UNTIL](#limit-after-until) ci-dessous.
 
 ## Limites négatives {#negative-limits}
 
@@ -185,12 +185,16 @@ LIMIT [n] UNTIL end_expr
 
 * `AFTER start_expr` : commence la sortie à la première ligne où `start_expr` est vraie (cette ligne est incluse).
 * `AFTER start_expr ALL` : renvoie l&#39;union de toutes les plages correspondantes qui débutent là où `start_expr` est vraie, sans dupliquer les lignes lorsque les plages se chevauchent.
-* `UNTIL end_expr` : s&#39;arrête avant la première ligne où `end_expr` est vraie (cette ligne est exclue).
+* `UNTIL end_expr` : termine chaque plage avant la première ligne, située à son début ou après, où `end_expr` est vraie (cette ligne est exclue).
 * `n` : nombre de lignes facultatif. Sans `ALL`, il correspond à la longueur maximale de l&#39;unique plage ouverte. Avec `AFTER ... ALL`, il correspond à la longueur de *chaque* plage ouverte, si bien que le résultat total peut dépasser `n` (par exemple, `LIMIT 2 AFTER number IN (2, 6) ALL` peut renvoyer jusqu&#39;à quatre lignes). Pour plafonner le nombre total de lignes de résultat, utilisez le paramètre `limit`, appliqué comme limite globale après la plage.
 
 L&#39;ordre du flux (l&#39;ordre dans lequel les lignes sont lues) détermine la « première » correspondance ; utilisez `ORDER BY` pour le contrôler.
 
-Sans `ALL`, si la première correspondance `UNTIL` apparaît avant la première correspondance `AFTER`, le résultat est vide. Avec `AFTER ... ALL`, les correspondances `AFTER` suivantes peuvent encore ouvrir de nouvelles plages.
+Les correspondances `UNTIL` antérieures au début d&#39;une plage n&#39;ont aucun effet. Si les deux conditions correspondent à la ligne de départ, la plage est vide. Si aucune correspondance `UNTIL` ne survient au début ou après, la plage se poursuit jusqu&#39;à son nombre de lignes `n` ou jusqu&#39;à la fin du stream. Avec `AFTER ... ALL`, les correspondances `AFTER` ultérieures peuvent ouvrir de nouvelles plages après la fin d&#39;une plage précédente.
+
+Avec `AFTER` et sans `ALL`, l&#39;étape de plage évalue `AFTER` jusqu&#39;à trouver un fragment contenant une correspondance de début. Elle évalue ensuite `UNTIL` dans ce fragment et dans les fragments suivants tant que la plage reste ouverte. Les expressions sont évaluées sur des fragments entiers, si bien que `UNTIL` peut tout de même être évaluée pour des lignes situées avant le début à l&#39;intérieur du fragment de départ.
+
+Si `UNTIL` contient des fonctions à état telles que `rowNumberInAllBlocks`, ou des fonctions non déterministes au sein de la requête, elle est évaluée dès le premier fragment afin de préserver le comportement de ces fonctions. Sans `ALL`, `AFTER` n&#39;est évaluée que jusqu&#39;au fragment de départ inclus ; les fragments suivants n&#39;évaluent que `UNTIL`. Les correspondances de fin antérieures au début n&#39;ont toujours aucun effet.
 
 **Exemples :**
 
@@ -237,7 +241,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-Sans `n` mais avec `UNTIL`, la plage s&#39;étend de la première correspondance `AFTER` jusqu&#39;à la première correspondance `UNTIL` :
+Sans `n` mais avec `UNTIL`, la plage s&#39;étend de la première correspondance `AFTER` jusqu&#39;à la première correspondance `UNTIL` située à cette position ou après :
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -246,6 +250,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Une correspondance `UNTIL` située avant le début est ignorée ; ici, `number = 1` n&#39;a aucun effet, et la plage se termine avant `number = 6` :
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -268,7 +286,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 └────────┘
 ```
 
-Avec `ALL` et `UNTIL`, chaque plage ouverte se termine à ses `n` ligne ou à la correspondance `UNTIL` suivante, selon ce qui se produit en premier ; ici, la plage ouverte à 6 est interrompue par `number = 7` :
+Avec `ALL` et `UNTIL`, chaque plage ouverte se termine à ses `n` lignes ou à la correspondance `UNTIL` suivante, selon ce qui survient en premier ; ici, la plage ouverte à 6 est coupée par `number = 7` :
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL UNTIL number = 7;
@@ -282,7 +300,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) AL
 └────────┘
 ```
 
-Sans `n`, une correspondance `UNTIL` ferme la plage en cours et une correspondance `AFTER` ultérieure en ouvre une nouvelle, qui s&#39;étend jusqu&#39;à la fin si aucune autre correspondance `UNTIL` ne suit :
+Sans `n`, une correspondance `UNTIL` ferme la plage courante et une correspondance `AFTER` ultérieure en ouvre une nouvelle, qui s&#39;étend jusqu&#39;à la fin si aucune autre correspondance `UNTIL` ne suit :
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL UNTIL number = 4;

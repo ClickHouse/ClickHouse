@@ -24,7 +24,7 @@ doc_type: 'reference'
 * `event_time` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 记录的时间
 * `thread_id` ([UInt64](/zh/reference/data-types/int-uint)) — 线程标识符。
 * `query_id` ([String](/zh/reference/data-types/string)) — 在事务范围内执行的查询 ID。
-* `tid` ([Tuple(UInt64, UInt64, UUID)](/zh/reference/data-types/tuple)) — 事务标识符。
+* `tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/zh/reference/data-types/tuple)) — 事务标识符。
 * `tid_hash` ([UInt64](/zh/reference/data-types/int-uint)) — 该标识符的哈希值。
 * `csn` ([UInt64](/zh/reference/data-types/int-uint)) — 提交序列号
 * `database` ([String](/zh/reference/data-types/string)) — 执行该事务所针对的数据库名称。

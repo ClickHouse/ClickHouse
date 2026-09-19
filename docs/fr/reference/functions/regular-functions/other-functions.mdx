@@ -5836,7 +5836,7 @@ SELECT tokenizeQuery('SELECT 1')
 
 ## transactionID {#transactionID}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 <ExperimentalBadge />
 
@@ -5846,7 +5846,7 @@ Renvoie l’ID d’une transaction.
 
 <Note>
   Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales.
-  Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre [configuration](/fr/concepts/features/configuration/server-config/configuration-files) :
+  Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre [configuration](/fr/concepts/features/configuration/server-config/configuration-files) :
 
   ```xml
   <clickhouse>
@@ -5858,7 +5858,7 @@ Renvoie l’ID d’une transaction.
 </Note>
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -5873,12 +5873,13 @@ transactionID()
 
 **Valeur renvoyée**
 
-Renvoie un tuple composé de `start_csn`, `local_tid` et `host_id`.
+Renvoie un tuple composé de `start_csn`, `local_tid`, `host_id` et `session_node_version`.
 
-* `start_csn` : Numéro séquentiel global, correspondant au timestamp de commit le plus récent observé au moment où cette transaction a commencé.
-* `local_tid` : Numéro séquentiel local, unique pour chaque transaction lancée par cet hôte pour un `start&#95;csn` donné.
-* `host_id` : UUID de l&#39;hôte qui a lancé cette transaction.
-  [`Tuple(UInt64, UInt64, UUID)`](/fr/reference/data-types/tuple)
+* `start_csn` : Numéro séquentiel global, correspondant au timestamp de commit le plus récent observé au moment où cette transaction a commencé.
+* `local_tid` : Numéro séquentiel local, unique pour chaque transaction lancée par cet hôte pour un `start&#95;csn` donné.
+* `host_id` : UUID de l&#39;hôte qui a lancé cette transaction.
+* `session_node_version` : Version du znode de session de l&#39;hôte au démarrage de la transaction ; permet aux peers de détecter un TID de session morte entre les répliques.
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 
@@ -5891,9 +5892,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

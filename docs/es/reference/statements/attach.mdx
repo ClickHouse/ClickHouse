@@ -20,9 +20,7 @@ La consulta no crea datos en disco, sino que asume que los datos ya se encuentra
 
 Si una tabla se desvinculó previamente (consulta [DETACH](/es/reference/statements/detach)), es decir, si se conoce su estructura, puede usar la forma abreviada sin definirla.
 
-<div id="attach-existing-table">
-  ## Adjuntar una tabla existente
-</div>
+## Adjuntar una tabla existente {#attach-existing-table}
 
 **Sintaxis**
 
@@ -34,15 +32,12 @@ Esta consulta se utiliza al iniciar el servidor. El servidor almacena los metada
 
 Si la tabla se desvinculó de forma permanente, no volverá a adjuntarse al iniciar el servidor, por lo que debe usar la consulta `ATTACH` explícitamente.
 
-<div id="create-new-table-and-attach-data">
-  ## Crear una nueva tabla y adjuntar los datos
-</div>
+## Crear una nueva tabla y adjuntar los datos {#create-new-table-and-attach-data}
 
-<div id="with-specified-path-to-table-data">
-  ### Con una ruta especificada para los datos de la tabla
-</div>
+### Con una ruta especificada para los datos de la tabla {#with-specified-path-to-table-data}
 
 La consulta crea una tabla nueva con la estructura indicada y adjunta los datos de la tabla desde el directorio especificado en `user_files`.
+El usuario necesita los privilegios `READ ON FILE` y `WRITE ON FILE` para esta consulta: lee el directorio y lo mueve a la ruta de datos de la nueva tabla.
 
 **Sintaxis**
 
@@ -65,9 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-<div id="with-specified-table-uuid">
-  ### Con un UUID de tabla especificado
-</div>
+### Con un UUID de tabla especificado {#with-specified-table-uuid}
 
 Esta consulta crea una tabla nueva con la estructura proporcionada y adjunta los datos de la tabla con el UUID especificado.
 Es compatible con el motor de base de datos [Atomic](/es/reference/engines/database-engines/atomic).
@@ -78,9 +71,7 @@ Es compatible con el motor de base de datos [Atomic](/es/reference/engines/datab
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-<div id="attach-mergetree-table-as-replicatedmergetree">
-  ## Adjuntar una tabla MergeTree como ReplicatedMergeTree
-</div>
+## Adjuntar una tabla MergeTree como ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Permite adjuntar una tabla MergeTree no replicada como ReplicatedMergeTree. La tabla ReplicatedMergeTree se creará con los valores de los ajustes `default_replica_path` y `default_replica_name`. También es posible adjuntar una tabla replicada como una tabla MergeTree normal.
 
@@ -124,9 +115,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-<div id="attach-existing-dictionary">
-  ## Adjuntar un diccionario existente
-</div>
+## Adjuntar un diccionario existente {#attach-existing-dictionary}
 
 Adjunta un diccionario previamente desvinculado.
 
@@ -136,9 +125,7 @@ Adjunta un diccionario previamente desvinculado.
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-<div id="attach-existing-database">
-  ## Adjuntar una base de datos existente
-</div>
+## Adjuntar una base de datos existente {#attach-existing-database}
 
 Adjunta una base de datos que se había desvinculado previamente.
 

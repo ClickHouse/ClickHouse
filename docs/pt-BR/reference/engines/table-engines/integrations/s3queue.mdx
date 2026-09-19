@@ -350,6 +350,14 @@ Em caso de encerramento não gracioso do servidor, é possível que haja nós de
 
 Valor padrão: `21600` (6 horas).
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+Um arquivo cujo nó `processing` no Keeper está retido por outro servidor é registrado como `Processing` no cache de status de arquivos em memória, de modo que as passagens de listagem seguintes o ignorem sem consultar o Keeper novamente.
+
+Diferentemente de `Processed` e `Failed`, esse estado não é final: o outro processor pode liberar o arquivo sem fazer commit dele, por exemplo, caso ele seja encerrado. Esta configuração define por quanto tempo o estado `Processing` em cache é considerado confiável; após esse período, o arquivo é verificado novamente no Keeper e processado caso esteja livre de novo. Zero significa verificar o Keeper sempre.
+
+Valor default: `300` (5 minutos).
+
 ## Configurações relacionadas ao S3 {#s3-settings}
 
 O motor oferece suporte a todas as configurações relacionadas ao S3. Para mais informações sobre as configurações do S3, consulte [aqui](/pt-BR/reference/engines/table-engines/integrations/s3).

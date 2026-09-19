@@ -19,9 +19,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "تم تغيير طريقة الضغط الافتراضية لاتصالات client\/server وserver\/server من `LZ4` إلى `ZSTD` لتقليل حركة مرور الشبكة."}]}]} />
 
-ترميز الضغط المستخدم لاتصالات client/server وserver/server عبر native protocol، ولاستجابة HTTP request المُنفَّذ باستخدام `compress=1`، والذي يستخدم صيغة الـ frame نفسها.
-
-لا ينطبق هذا الإعداد على قناة التبادل التدفقي الخاصة بـ distributed queries، إذ تستخدم دائمًا ترميز الـ server الافتراضي: فكل frame مضغوط هو self-describing، ومن ثمّ يكتشف الـ receiver الترميز تلقائيًا.
+ترميز الضغط المستخدم لاتصالات client/server وserver/server عبر native protocol، ولاستجابة HTTP request المُنفَّذ باستخدام `compress=1`، والذي يستخدم صيغة الـ frame نفسها، وللتبادل التدفقي بين مهام distributed query plan (`make_distributed_plan`). تستخدم عمليات التبادل عبر temporary files ترميز الـ server الافتراضي.
 
 القيم الممكنة:
 

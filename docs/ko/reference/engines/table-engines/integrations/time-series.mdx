@@ -27,7 +27,7 @@ metric_name2[...] = ...
 </Info>
 
 <Note>
-  ClickHouse Cloud의 TimeSeries 테이블 엔진도 비공개 프리뷰 상태입니다.
+  `TimeSeries` 테이블 엔진은 ClickHouse Cloud에서 비공개 프리뷰 기능으로 제공됩니다.
   비공개 프리뷰에 참여하는 서비스에는 이미 `enable_time_series_table` 설정이
   구성되어 있습니다. 그 외의 ClickHouse Cloud 서비스에는 이 구성이
   적용되어 있지 않으며, 해당 서비스에서는 사용자가 직접 이 엔진을
@@ -175,6 +175,14 @@ target table은 다음과 같습니다:
 | `min_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | 해당 `id`를 가진 시계열의 최소 타임스탬프입니다. [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings)가 `true`이면 이 컬럼이 생성됩니다                                                                               |
 | `max_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | 해당 `id`를 가진 시계열의 최대 타임스탬프입니다. [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings)가 `true`이면 이 컬럼이 생성됩니다                                                                               |
 
+[version](#schema-versioning) 5 이상에서 `MergeTree` 엔진 계열을 사용하는 새 내부 tags 테이블에는 `tags`에 대한 역텍스트 인덱스가 있습니다:
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. 키와 값을 함께 조회하여 PromQL의
+`{job="api"}`와 같은 정확한 레이블 일치를 가속합니다. 빈 문자열과의 비교도
+누락된 레이블과 일치하며 이 인덱스를 사용하지 않습니다.
+
+`TAGS INNER COLUMNS`에 명시적으로 선언된 인덱스는 기본 인덱스를 대체합니다. 기존 테이블과 외부
+tags 테이블은 기존 인덱스를 유지합니다. 이 기능을 활성화하려면 해당 tags target table에 인덱스를 추가하고 구체화하십시오.
+
 ### 메트릭 패밀리 테이블 {#metric-families-table}
 
 *metric families* 테이블에는 수집 중인 메트릭 패밀리, 해당 메트릭 패밀리의 타입, 그리고 설명에 대한 정보가 포함됩니다.
@@ -212,7 +220,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 4, recent_samples_ttl_seconds = 345600
+SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -233,7 +241,8 @@ TAGS INNER COLUMNS
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRIC FAMILIES INNER COLUMNS
@@ -247,14 +256,14 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 따라서 컬럼은 자동으로 생성되며, 각 테이블의 컬럼 정의는 `INNER COLUMNS` 절에
-저장된 4개의 내부 대상 테이블도 생성됩니다. `recent_samples_ttl_seconds` 설정은 기본값과 함께 `SETTINGS` 절에
+저장된 4개의 내부 target table도 생성됩니다. `recent_samples_ttl_seconds` 설정은 기본값과 함께 `SETTINGS` 절에
 기록됩니다. 이 설정은 최근 샘플 테이블의 TTL을 정의하므로, 실제 값은 생성 시점에 고정됩니다.
 또한 최신 스키마 버전이 `version` 설정에 고정됩니다([스키마 버전 관리](#schema-versioning) 참조).
 
-내부 대상 테이블의 이름은 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+내부 target table의 이름은 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-와 같으며, 각 대상 테이블에는 자체 컬럼 집합이 있습니다:
+와 같으며, 각 target table에는 자체 컬럼 집합이 있습니다:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
@@ -289,7 +298,8 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+    INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
@@ -504,14 +514,14 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `recent_samples_partition_by`        | 표현식    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 내부 `recent samples` 테이블의 파티션 키입니다. 예: `toStartOfHour(timestamp)`. 명시적으로 설정하면 엔진 선언의 파티션 키를 재정의하며, 둘 다 설정되지 않은 경우 5시간마다 하나의 파티션이 사용됩니다. 외부 최근 샘플 테이블에서는 무시됩니다. `recent_samples_ttl_seconds`가 0이 아니어야 합니다                                                                                                                                                                                                                            |
 | `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 내부 `recent samples` 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 최근 샘플 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다. `recent_samples_ttl_seconds`가 0이 아니어야 합니다                                                                                                                                                                                                                                            |
 | `tags_index_granularity`             | UInt64 | 8192                                                          | 내부 [tags](#tags-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 tags 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                                                                                                                                                                                                                                                                                     |
-| `version`                            | UInt64 | 4                                                             | 테이블의 버전입니다. 대상 테이블의 집합과 그 구조를 식별합니다. 버전은 테이블이 생성될 때 자동으로 고정되며 이후에는 변경할 수 없습니다. 일반적으로 `CREATE TABLE` 쿼리에서는 생략해야 합니다([스키마 버전 관리](#schema-versioning) 참조)                                                                                                                                                                                                                                                                             |
+| `version`                            | UInt64 | 5                                                             | 테이블의 버전입니다. 대상 테이블의 집합과 그 구조를 식별합니다. 버전은 테이블이 생성될 때 자동으로 고정되며 이후에는 변경할 수 없습니다. 일반적으로 `CREATE TABLE` 쿼리에서는 생략해야 합니다([스키마 버전 관리](#schema-versioning) 참조)                                                                                                                                                                                                                                                                             |
 
 ## 스키마 버전 관리 {#schema-versioning}
 
 `TimeSeries` 테이블 엔진과 PromQL 실행 계층은 활발히 개발이 진행 중입니다.
 대상 테이블의 집합과 그 구조는 ClickHouse 버전에 따라 달라질 수 있습니다.
 이러한 변경을 감지할 수 있도록, 모든 `TimeSeries` 테이블은 자신의 버전을 [version](#settings) 설정에 저장합니다.
-버전은 테이블이 생성될 때 `CREATE` 쿼리에 자동으로 고정되며(그 값은 서버가 알고 있는 최신 버전, 현재는 4입니다),
+버전은 테이블이 생성될 때 `CREATE` 쿼리에 자동으로 고정되며(그 값은 서버가 알고 있는 최신 버전, 현재는 5입니다),
 테이블 메타데이터에 유지되고 `ALTER`로 변경할 수 없습니다. 이 설정이 도입되기 전에 생성된 테이블은 버전 0으로 간주됩니다.
 일반적으로 이 설정은 `CREATE TABLE` 쿼리에서 생략하면 되며, 그러면 테이블은 최신 버전을 갖게 됩니다.
 서버가 해당 버전을 지원한다면 `version`을 명시적으로 지정할 수도 있습니다. 이 경우 테이블은 해당 버전의 방식대로 정의됩니다([버전 이력](#version-history) 참고).
@@ -536,7 +546,8 @@ PromQL을 평가하는 경우([prometheusQuery](/ko/reference/functions/table-fu
 | 1  | `version` 설정이 도입되었습니다                                                                                                                                                                                                                                                                                                     |
 | 2  | [`id_type`](#settings) 설정이 도입되었습니다. 외부 Tags 테이블을 사용하는 테이블은 `id` 컬럼의 유형을 `id_type`에, 식별자를 생성하는 표현식을 [`id_generator`](#settings)에 기록하므로, 테이블 정의가 외부 테이블에 의존하지 않습니다. `id_generator`가 설정된 경우에도 `id_type`이 기록됩니다([`id` 컬럼](#id-column) 참조)                                                                                     |
 | 3  | 외부 컬럼 `time_series`의 이름이 `samples`로 변경되었습니다([외부 컬럼](#outer-columns) 참조). 이전 버전의 테이블은 기존 컬럼 이름을 유지하며, [prometheusQuery](/ko/reference/functions/table-functions/prometheusQuery) 및 [prometheusQueryRange](/ko/reference/functions/table-functions/prometheusQueryRange) 테이블 함수는 해당 테이블이 사용하는 이름으로 컬럼을 반환합니다. 저장된 데이터는 변경되지 않았습니다 |
-| 4  | `metrics` target table의 이름이 `메트릭 패밀리`로 변경되었습니다. 내부 테이블 이름이 `.inner_id.metrics.<uuid>` 대신 `.inner_id.metricfamilies.<uuid>`가 되고, 정의는 `METRICS` 대신 `METRIC FAMILIES` keyword로 작성됩니다. 저장된 데이터는 변경되지 않았습니다                                                                                                            |
+| 4  | `metrics` target table의 이름이 `메트릭 패밀리`로 변경되었습니다. 내부 테이블 이름이 `.inner_id.metrics.<uuid>` 대신 `.inner_id.metricfamilies.<uuid>`가 되고, 정의는 `METRICS` 대신 `METRIC FAMILIES` keyword로 작성됩니다. 저장된 데이터는 변경되지 않았습니다                                                                                                                    |
+| 5  | `MergeTree` 엔진 계열을 사용하는 새 내부 Tags 테이블에는 기본적으로 `tags` 맵에 `keyValuePairs` 텍스트 인덱스가 생성됩니다([Tags 테이블](#tags-table) 참조)                                                                                                                                                                                                        |
 
 # 함수 {#functions}
 

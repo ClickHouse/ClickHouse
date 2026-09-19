@@ -122,6 +122,21 @@ Valores posibles:
   Si se usa en un clúster con un solo segmento y varias réplicas, desactivar este SETTING tendrá efectos negativos.
 </Note>
 
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva SETTING: elige una projection utilizable sin importar su costo estimado, al igual que `force_optimize_projection`, pero sin que la consulta falle cuando no se usa ninguna projection."}]}]} />
+
+Hace que la optimización por projections prefiera las [projections](/es/reference/engines/table-engines/mergetree-family/mergetree#projections) frente a la tabla en las consultas `SELECT`, cuando dicha optimización está habilitada (consulte la SETTING [optimize&#95;use&#95;projections](/es/reference/settings/session-settings/optimize-use#optimize_use_projections)).
+
+Cuando está habilitada, se utiliza una projection capaz de resolver la consulta aunque requiera leer más marks que la propia tabla, igual que con [force&#95;optimize&#95;projection](/es/reference/settings/session-settings/force-optimize#force_optimize_projection), pero la consulta no falla cuando no puede usarse ninguna projection.
+
+Valores posibles:
+
+* 0 — Las projections se eligen según su costo estimado.
+* 1 — Se elige una projection utilizable sin importar su costo estimado.
+
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />

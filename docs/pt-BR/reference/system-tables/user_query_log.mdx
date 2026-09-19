@@ -112,7 +112,7 @@ As condições nas colunas de partição e de chave do log de consultas (`event_
 * `used_row_policies` ([Array(String)](/pt-BR/reference/data-types/array)) — Lista dos nomes das políticas de linha usadas durante a execução da consulta.
 * `used_privileges` ([Array(String)](/pt-BR/reference/data-types/array)) — Privilégios verificados com sucesso durante a execução da consulta.
 * `missing_privileges` ([Array(String)](/pt-BR/reference/data-types/array)) — Privilégios ausentes durante a execução da consulta.
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/pt-BR/reference/data-types/tuple)) — Identificador da transação no escopo da qual esta consulta foi executada.
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/pt-BR/reference/data-types/tuple)) — Identificador da transação no escopo da qual esta consulta foi executada.
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/pt-BR/reference/data-types/enum)) — Uso do cache de consultas durante a execução da consulta. Valores: &#39;Unknown&#39; = Status desconhecido, &#39;None&#39; = O resultado da consulta não foi gravado nem lido do cache de resultados de consultas, &#39;Write&#39; = O resultado da consulta foi gravado no cache de resultados de consultas, &#39;Read&#39; = O resultado da consulta foi lido do cache de resultados de consultas.
 * `asynchronous_read_counters` ([Map(String, UInt64)](/pt-BR/reference/data-types/map)) — Métricas de leitura assíncrona.
 * `is_internal` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Indica se é uma consulta auxiliar executada internamente.

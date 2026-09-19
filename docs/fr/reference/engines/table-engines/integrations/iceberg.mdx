@@ -147,21 +147,21 @@ Cela produit un nouvel instantané (une opération `replace`) qui pointe vers le
 ### Exigences et comportement {#manifest-compaction-behavior}
 
 * Cette fonctionnalité est expérimentale et protégée par le paramètre `allow_experimental_iceberg_compaction`. L&#39;instruction lève une exception si ce paramètre n&#39;est pas activé.
-* La compaction n&#39;est tentée que lorsque le nombre de fichiers manifest dans la liste de manifestes de l&#39;instantané actuel dépasse le seuil défini par le paramètre `iceberg_manifest_min_count_to_compact` (valeur par défaut : `30`). Si ce nombre est inférieur ou égal au seuil, la compaction est ignorée et aucun nouveau instantané n&#39;est créé. Abaissez ce seuil pour déclencher la compaction plus tôt.
+* La compaction n&#39;est tentée que lorsque le nombre de manifestes dans la liste de manifestes de l&#39;instantané actuel dépasse le seuil défini par le paramètre `iceberg_manifest_min_count_to_compact` (valeur par défaut : `100`, la valeur par défaut documentée de la propriété de table Iceberg `commit.manifest.min-count-to-merge`). Si ce nombre est inférieur ou égal au seuil, la compaction est ignorée et aucun nouveau instantané n&#39;est créé. Abaissez ce seuil pour déclencher la compaction plus tôt.
 * `OPTIMIZE TABLE ... MANIFEST` est pris en charge uniquement pour les tables Iceberg. Son exécution sur tout autre moteur de table lève une exception.
-* `OPTIMIZE TABLE ... MANIFEST` est pris en charge uniquement pour les tables Iceberg au format version 2. Son exécution sur une table au format version 1 lève une exception, de même que son exécution sur une table au format version 3, car les métadonnées v3 `first_row_id` de lignée de lignes ne sont pas encore restituées à l&#39;identique lors de la réécriture du manifeste.
-* `OPTIMIZE TABLE ... MANIFEST` n&#39;est pas pris en charge pour les tables Iceberg chiffrées dont les fichiers de données contiennent un `key_metadata` par fichier. La préservation de ces métadonnées de chiffrement lors d&#39;une réécriture du manifeste n&#39;est pas encore implémentée ; l&#39;instruction lève donc une exception `NOT_IMPLEMENTED`.
+* `OPTIMIZE TABLE ... MANIFEST` est pris en charge uniquement pour les tables Iceberg au format version 2. Son exécution sur une table au format version 1 lève une exception, de même que son exécution sur une table au format version 3, car les métadonnées v3 `first_row_id` de lignée de lignes ne sont pas encore restituées à l&#39;identique lors de la réécriture du manifeste.
+* `OPTIMIZE TABLE ... MANIFEST` n&#39;est pas pris en charge pour les tables Iceberg chiffrées dont les fichiers de données contiennent un `key_metadata` par fichier. La préservation de ces métadonnées de chiffrement lors d&#39;une réécriture du manifeste n&#39;est pas encore implémentée ; l&#39;instruction lève donc une exception `NOT_IMPLEMENTED`.
 
 ## Traitement des tables avec des lignes supprimées {#deleted-rows}
 
-ClickHouse prend en charge la lecture des tables Iceberg utilisant les méthodes de suppression suivantes :
+ClickHouse prend en charge la lecture des tables Iceberg utilisant les méthodes de suppression suivantes :
 
 * [Suppressions par position](https://iceberg.apache.org/spec/#position-delete-files)
 * [Suppressions par égalité](https://iceberg.apache.org/spec/#equality-delete-files) (prises en charge à partir de la version 25.8+)
-
-La méthode de suppression suivante n’est **pas prise en charge** :
-
 * [Vecteurs de suppression](https://iceberg.apache.org/spec/#deletion-vectors) (introduits dans la version 3)
+
+La prise en charge des vecteurs de suppression est en lecture seule. ClickHouse n&#39;écrit, ne met à jour ni ne compacte les vecteurs de suppression.
+`ALTER TABLE ... DELETE` et `ALTER TABLE ... UPDATE` ne sont pas pris en charge pour les tables Iceberg au format version 3.
 
 ### Utilisation de base {#basic-usage}
 

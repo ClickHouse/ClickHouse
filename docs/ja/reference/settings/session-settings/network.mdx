@@ -19,9 +19,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "ネットワークトラフィックを削減するため、client/server 間および server/server 間の通信における既定の圧縮方式を `LZ4` から `ZSTD` に変更しました。"}]}]} />
 
-ネイティブプロトコル経由の client/server 間および server/server 間の通信、および同じフレームフォーマットを使用する `compress=1` 付きの HTTP リクエストのレスポンスを圧縮するためのコーデックです。
-
-この設定は distributed queries のストリーミング交換チャネルには適用されません。このチャネルでは常にサーバーの default コーデックが使用されます。圧縮された各 frame は self-describing であるため、receiver がコーデックを自動的に検出します。
+ネイティブプロトコル経由の client/server 間および server/server 間の通信、同じフレームフォーマットを使用する `compress=1` 付きの HTTP リクエストのレスポンス、および distributed query plan (`make_distributed_plan`) のタスク間のストリーミング交換を圧縮するためのコーデックです。temporary files を介した交換では、サーバーのデフォルト コーデックが使用されます。
 
 設定可能な値:
 

@@ -49,7 +49,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-Retorna as linhas a partir da primeira linha em que `start_expr` é true, ou desde o início do stream quando `AFTER` é omitido, até a primeira linha em que `end_expr` é true, sem incluí-la; `n` limita o tamanho desse range. `AFTER start_expr ALL` abre um range em cada linha correspondente. Veja [LIMIT ... AFTER ... UNTIL](#limit-after-until) abaixo.
+Retorna as linhas a partir da primeira linha em que `start_expr` é true, ou desde o início do stream quando `AFTER` é omitido, até a primeira linha em ou após esse início em que `end_expr` é true, sem incluí-la; `n` limita o tamanho desse range. `AFTER start_expr ALL` abre um range em cada linha correspondente. Veja [LIMIT ... AFTER ... UNTIL](#limit-after-until) abaixo.
 
 ## Limites negativos {#negative-limits}
 
@@ -185,12 +185,16 @@ LIMIT [n] UNTIL end_expr
 
 * `AFTER start_expr`: Inicia a saída a partir da primeira linha em que `start_expr` é true (essa linha é incluída).
 * `AFTER start_expr ALL`: Gera a união de todos os intervalos correspondentes que começam onde `start_expr` é true, sem duplicar linhas quando os intervalos se sobrepõem.
-* `UNTIL end_expr`: Para antes da primeira linha em que `end_expr` é true (essa linha é excluída).
-* `n`: Contagem opcional de linhas. Sem `ALL`, é o comprimento máximo do único intervalo aberto. Com `AFTER ... ALL`, é o comprimento de *cada* intervalo aberto, de modo que o resultado total pode exceder `n` (por exemplo, `LIMIT 2 AFTER number IN (2, 6) ALL` pode retornar até quatro linhas). Para limitar o número total de linhas do resultado, use o setting `limit`, que é aplicado como um limite global após o intervalo.
+* `UNTIL end_expr`: Encerra cada intervalo antes da primeira linha, no início dele ou após ele, em que `end_expr` é true (essa linha é excluída).
+* `n`: Contagem opcional de linhas. Sem `ALL`, é o comprimento máximo do único intervalo aberto. Com `AFTER ... ALL`, é o comprimento de *cada* intervalo aberto, de modo que o resultado total pode exceder `n` (por exemplo, `LIMIT 2 AFTER number IN (2, 6) ALL` pode retornar até quatro linhas). Para limitar o número total de linhas do resultado, use o SETTING `limit`, que é aplicado como um limite global após o intervalo.
 
 A ordem do stream (a ordem em que as linhas são lidas) define qual é a &quot;primeira&quot; correspondência; use `ORDER BY` para controlá-la.
 
-Sem `ALL`, se a primeira correspondência de `UNTIL` ocorrer antes da primeira correspondência de `AFTER`, o resultado é vazio. Com `AFTER ... ALL`, correspondências posteriores de `AFTER` ainda podem abrir novos intervalos.
+Correspondências de `UNTIL` anteriores ao início de um intervalo não têm efeito. Se ambas as condições corresponderem à linha inicial, o intervalo fica vazio. Se nenhuma correspondência de `UNTIL` ocorrer no início ou após ele, o intervalo continua até atingir sua contagem de linhas `n` ou o fim do stream. Com `AFTER ... ALL`, correspondências posteriores de `AFTER` podem abrir novos intervalos depois que um intervalo anterior é encerrado.
+
+Com `AFTER` e sem `ALL`, o passo de intervalo avalia `AFTER` até encontrar um fragmento que contenha uma correspondência inicial. Em seguida, avalia `UNTIL` nesse fragmento e nos fragmentos subsequentes enquanto o intervalo permanecer aberto. As expressões são avaliadas sobre fragmentos inteiros, portanto `UNTIL` ainda pode ser avaliado para linhas anteriores ao início dentro do fragmento inicial.
+
+Se `UNTIL` contiver funções stateful como `rowNumberInAllBlocks`, ou funções que sejam não determinísticas dentro da consulta, ele é avaliado a partir do primeiro fragmento para preservar o comportamento dessas funções. Sem `ALL`, `AFTER` é avaliado apenas até o fragmento inicial; os fragmentos subsequentes avaliam somente `UNTIL`. Correspondências de fim anteriores ao início continuam sem efeito.
 
 **Exemplos:**
 
@@ -237,7 +241,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-Sem `n`, mas com `UNTIL`, o intervalo vai da primeira correspondência de `AFTER` até a primeira correspondência de `UNTIL`:
+Sem `n`, mas com `UNTIL`, o intervalo vai da primeira correspondência de `AFTER` até a primeira correspondência de `UNTIL` nela ou após ela:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -246,6 +250,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+Uma correspondência de `UNTIL` anterior ao início é ignorada; aqui, `number = 1` não tem efeito, e o intervalo termina antes de `number = 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -268,7 +286,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 └────────┘
 ```
 
-Com `ALL` e `UNTIL`, todo intervalo aberto termina ao atingir suas `n` linhas ou na próxima correspondência de `UNTIL`, o que ocorrer primeiro; aqui, o intervalo aberto em 6 é interrompido por `number = 7`:
+Com `ALL` e `UNTIL`, todo intervalo aberto termina após `n` linhas ou na próxima correspondência de `UNTIL`, o que ocorrer primeiro; aqui o intervalo aberto em 6 é interrompido por `number = 7`:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) ALL UNTIL number = 7;
@@ -282,7 +300,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 6) AL
 └────────┘
 ```
 
-Sem `n`, uma correspondência de `UNTIL` encerra o intervalo atual e uma correspondência posterior de `AFTER` abre um novo, que se estende até o fim caso nenhuma outra correspondência de `UNTIL` ocorra:
+Sem `n`, uma correspondência de `UNTIL` fecha o intervalo atual e uma correspondência posterior de `AFTER` abre um novo, que se estende até o fim quando nenhuma outra correspondência de `UNTIL` ocorre:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL UNTIL number = 4;

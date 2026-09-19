@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) から自動生成されています。
 
-<div id="output_format_always_write_decimal_point_in_float_and_decimal">
-  ## output_format_always_write_decimal_point_in_float_and_decimal
-</div>
+## output_format_always_write_decimal_point_in_float_and_decimal {#output_format_always_write_decimal_point_in_float_and_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 デフォルトでは無効です。
 
-<div id="output_format_arrow_compression_method">
-  ## output_format_arrow_compression_method
-</div>
+## output_format_arrow_compression_method {#output_format_arrow_compression_method}
 
 <SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 Arrow 出力フォーマットの圧縮方式。サポートされているコーデック: lz4&#95;frame、zstd、none (非圧縮)
 
-<div id="output_format_arrow_date_as_uint16">
-  ## output_format_arrow_date_as_uint16
-</div>
+## output_format_arrow_date_as_uint16 {#output_format_arrow_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +39,7 @@ Arrow 出力フォーマットの圧縮方式。サポートされているコ�
 
 Date の値を、32 ビットの Arrow DATE32 型 (読み戻し時は Date32) に変換する代わりに、通常の 16 ビット数値 (読み戻し時は UInt16) として書き込みます。
 
-<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
-  ## output_format_arrow_fixed_string_as_fixed_byte_array
-</div>
+## output_format_arrow_fixed_string_as_fixed_byte_array {#output_format_arrow_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,17 +47,41 @@ Date の値を、32 ビットの Arrow DATE32 型 (読み戻し時は Date32) �
 
 FixedString 型のカラムでは、Binary ではなく Arrow FIXED&#95;SIZE&#95;BINARY 型を使用します。
 
-<div id="output_format_arrow_low_cardinality_as_dictionary">
-  ## output_format_arrow_low_cardinality_as_dictionary
-</div>
+## output_format_arrow_low_cardinality_as_dictionary {#output_format_arrow_low_cardinality_as_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 出力時に LowCardinality 型を Dictionary Arrow 型として有効にします
 
-<div id="output_format_arrow_string_as_string">
-  ## output_format_arrow_string_as_string
-</div>
+## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Arrow` および `ArrowStream` 出力で、小さなブロックを目標行数に基づいて結合する新しい設定。デフォルトの `0` では、ブロックごとに1つのレコードバッチが保持されます。"}]}]} />
+
+`Arrow` および `ArrowStream` 出力フォーマットにおけるレコードバッチあたりの目標行数です。小さなブロックを結合することで、特に選択性の高いフィルタを含むクエリで、メタデータおよびバッファのパディングに伴うオーバーヘッドを削減できます。
+
+この目標値または [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/ja/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes) に達するまで、ブロックは蓄積されます。すでに行数またはバイト数の目標を満たしているブロックは、分割せずに個別に書き込まれます。行数の目標を設定した場合、結合後のbatchの行数はその値の2倍未満になりますが、単一の入力ブロックがそれを超える場合があります。
+
+ブロックをバッファリングすると、メモリ使用量が増加し、出力が遅延する場合があります。結果がどちらの目標にも達しない場合、`ArrowStream` はクエリの完了時まで最初のレコードバッチを書き込みませんが、スキーマはそれより前に書き込むことができます。ブロックの到着時にレコードバッチを書き込むには、両方の目標を `0` のままにしてください。
+
+`0` (デフォルト) は行数の目標を無効にします。まずは `65409` を試してください。
+
+## output_format_arrow_record_batch_size_bytes {#output_format_arrow_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Arrow` および `ArrowStream` 出力で、小さなブロックを蓄積データのバイト単位の目標サイズに基づいて結合するための新しい設定。デフォルトの `0` では、ブロックごとに 1 つのレコードバッチが維持されます。"}]}]} />
+
+`Arrow` および `ArrowStream` 出力フォーマットにおけるレコードバッチの目標サイズ。蓄積されたブロックデータのバイト数で指定します。[min&#95;insert&#95;block&#95;size&#95;bytes](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) と同じ基準で測定されます。この目標値または [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/ja/reference/settings/formats/output-format#output_format_arrow_record_batch_size) のいずれかに達すると、バッチが書き込まれます。
+
+`LowCardinality` カラムでは、このバイト数の目標値を大幅に上回る、または下回る Arrow バッチが生成される場合があります。[output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/ja/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) が有効でない限り、繰り返し値は出力時に展開されます。フィルタされたブロックにも大きな辞書が保持されることがあるため、行数がごく少ないブロックでも目標値に達し、個別に書き込まれる場合があります。これらのカラムでは、[output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/ja/reference/settings/formats/output-format#output_format_arrow_record_batch_size) で行数を制御し、バイト数の目標値を `0` に設定してください。
+
+ブロックをバッファリングすると、メモリ使用量が増加し、クエリが完了するまで最初のレコードバッチの書き込みが遅れる場合があります。ブロックの到着に合わせてレコードバッチを書き込むには、両方の目標値を `0` のままにしてください。
+
+`0` (デフォルト) を指定すると、バイト数の目標値は無効になります。まずは `1048576` (1 MiB) を試してください。
+
+## output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,19 +89,43 @@ FixedString 型のカラムでは、Binary ではなく Arrow FIXED&#95;SIZE&#95
 
 String 型のカラムには、Binary ではなく Arrow String 型を使用します
 
-<div id="output_format_arrow_unsupported_types_as_binary">
-  ## output_format_arrow_unsupported_types_as_binary
-</div>
+## output_format_arrow_unsupported_types {#output_format_arrow_unsupported_types}
+
+<SettingsInfoBlock type="ArrowUnsupportedTypes" default_value="binary" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "binary"},{"label": "`output_format_arrow_unsupported_types_as_binary` に代わる新しい設定で、`text` モードを追加します。デフォルトは従来の動作と同じであるため、`compatibility` で変更してはなりません。"}]}]} />
+
+ファーストクラスの Arrow マッピングがない型 (例: `JSON`、`Dynamic`、`QBit`、`AggregateFunction`) のカラムに何を書き込むかを指定します。
+
+* `throw` — クエリを拒否します。
+* `text` — 行ごとに 1 つのテキスト形式の値 (`CAST(col AS String)` が生成する値) を、Arrow の `Utf8` カラムとして出力します。
+* `binary` — 各値のバイナリ表現を、Arrow の `Binary` カラムとして出力します (値ごとのエンコーディングは `RowBinary` と同じです) 。
+
+`AggregateFunction` カラムは、`text` モードでも `Binary` になります。テキスト形式がテキストではなく生の集約状態であり、Arrow の `Utf8` カラムには有効な UTF-8 を格納する必要があるためです。読み取り可能な値を取得するには、`finalizeAggregation` を使用してください。
+
+`Utf8` カラムに書き込まれる値は、有効な UTF-8 になるように処理され、無効なシーケンスはそれぞれ U+FFFD に置換されます。これは、いずれにせよリーダーがテキストとして解釈できないテキストにのみ影響します。たとえば、任意のバイト列を含む `String` を保持する `Dynamic` が該当します。バイト列を完全に保持する必要がある場合は、`binary` モードを使用してください。
+
+`output_format_arrow_string_as_string` はこれらのカラムには適用されず、実際の `String` および `FixedString` カラムにのみ適用されます。これにより、不透明なカラムの Arrow 型は保持するエンコーディングを示します。つまり、その設定の値にかかわらず、`Utf8` はテキスト形式、`Binary` はバイナリ形式を表します。
+
+同じことが `Dynamic` に保持された集約状態にも当てはまります。カラムの型は `Dynamic` に基づきますが、`Dynamic` は各行が何を保持しているかを示しません。また、Arrow スキーマは値を確認する前に固定されるため、`AggregateFunction` カラムのように、その状態専用の `Binary` カラムを与えることはできません。したがって、`text` モードでは情報が失われます。`binary` モードでは保持されます。`Variant` は影響を受けません。代替型が列挙されるため、その中の `AggregateFunction` には専用の `Binary` 子カラムが割り当てられます。
+
+`text` と `binary` のどちらでも、フィールドには Arrow スキーマ内で `clickhouse.opaque` 拡張名と元の ClickHouse 型名のタグが付与されます。これにより、リーダーは本物の文字列カラムやバイナリカラムと区別できます。
+
+ClickHouse がこのようなカラムをタグで指定された型に読み戻すのは、読み取り側がすでにその型を認識している場合に限られます。たとえば、テーブルでその型が宣言されている場合や、`file` および `s3` が受け取る structure argument でその型が指定されている場合です。この処理は、`Array`、`Tuple`、`Map`、`Nullable` 内でも行われます。スキーマ推論ではタグを参照しないため、型名を指定せずに読み取ったカラムは、生の payload を保持する `String` として読み込まれます。`Variant` の代替型は、型名を指定しても読み戻されません。代替型から構成される Arrow union は、タグを参照せずにデコードされるためです。書き込まれるデータは、いずれの場合も他の Arrow リーダーにとって正しい形式です。
+
+古い `output_format_arrow_unsupported_types_as_binary` より優先されます。この古い設定は、この設定がデフォルトのままの場合にのみ参照されます。
+
+## output_format_arrow_unsupported_types_as_binary {#output_format_arrow_unsupported_types_as_binary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "サポートされていない CH 型を、UNKNOWN_TYPE exception ではなく Arrow の binary に変換するための新しい設定。"}]}]} />
 
-変換できない出力型を、生の binary data として出力します。false の場合、そのような型では UNKNOWN&#95;TYPE exception が発生します。
+変換できない出力型を、生の binary data として出力します。false の場合、そのような型では例外が発生します。
 
-<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
-  ## output_format_arrow_use_64_bit_indexes_for_dictionary
-</div>
+`output_format_arrow_unsupported_types` により置き換えられました。`0` は `throw` を、`1` は `binary` を意味します。`output_format_arrow_unsupported_types` が明示的に設定されていない場合にのみ参照されます。
+
+## output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -93,9 +133,7 @@ String 型のカラムには、Binary ではなく Arrow String 型を使用し�
 
 Arrow フォーマットの辞書索引には、常に 64 ビット整数を使用します
 
-<div id="output_format_arrow_use_signed_indexes_for_dictionary">
-  ## output_format_arrow_use_signed_indexes_for_dictionary
-</div>
+## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,45 +141,33 @@ Arrow フォーマットの辞書索引には、常に 64 ビット整数を使�
 
 Arrow format の辞書の索引に符号付き整数を使用します
 
-<div id="output_format_avro_codec">
-  ## output_format_avro_codec
-</div>
+## output_format_avro_codec {#output_format_avro_codec}
 
 出力時に使用する圧縮コーデック。設定可能な値: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;。
 
-<div id="output_format_avro_confluent_subject">
-  ## output_format_avro_confluent_subject
-</div>
+## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "AvroConfluent 形式で出力する際に、Confluent スキーマレジストリでのスキーマ登録に使用する subject 名を指定するための新しい設定。"}]}]} />
 
 AvroConfluent 出力フォーマット用: Confluent スキーマレジストリでスキーマを登録する際の subject 名です。AvroConfluent 形式で出力する場合に必須です。
 
-<div id="output_format_avro_rows_in_file">
-  ## output_format_avro_rows_in_file
-</div>
+## output_format_avro_rows_in_file {#output_format_avro_rows_in_file}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 1ファイルあたりの最大行数 (ストレージが許可している場合)
 
-<div id="output_format_avro_string_column_pattern">
-  ## output_format_avro_string_column_pattern
-</div>
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
 
 Avro フォーマットの場合: AVRO 文字列として選択する String 型のカラムを指定する正規表現。
 
-<div id="output_format_avro_sync_interval">
-  ## output_format_avro_sync_interval
-</div>
+## output_format_avro_sync_interval {#output_format_avro_sync_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 バイト単位で指定する同期間隔。
 
-<div id="output_format_binary_encode_types_in_binary_format">
-  ## output_format_binary_encode_types_in_binary_format
-</div>
+## output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -149,9 +175,7 @@ Avro フォーマットの場合: AVRO 文字列として選択する String 型
 
 RowBinaryWithNamesAndTypes 出力フォーマットで、型名の代わりにデータ型をバイナリ形式で書き込みます
 
-<div id="output_format_binary_write_json_as_string">
-  ## output_format_binary_write_json_as_string
-</div>
+## output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -159,17 +183,13 @@ RowBinaryWithNamesAndTypes 出力フォーマットで、型名の代わりに�
 
 [JSON](/ja/reference/data-types/newjson) 型の値を、RowBinary 出力フォーマットでは JSON [String](/ja/reference/data-types/string) 値として書き込みます。
 
-<div id="output_format_bson_string_as_string">
-  ## output_format_bson_string_as_string
-</div>
+## output_format_bson_string_as_string {#output_format_bson_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 String 型のカラムでは、Binary ではなく BSON String 型を使用します。
 
-<div id="output_format_compression_level">
-  ## output_format_compression_level
-</div>
+## output_format_compression_level {#output_format_compression_level}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -179,9 +199,7 @@ String 型のカラムでは、Binary ではなく BSON String 型を使用し�
 
 設定可能な値: `1` ～ `22`
 
-<div id="output_format_compression_zstd_window_log">
-  ## output_format_compression_zstd_window_log
-</div>
+## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -191,17 +209,13 @@ String 型のカラムでは、Binary ではなく BSON String 型を使用し�
 
 設定可能な値: 0 以上の数値。値が小さすぎたり大きすぎたりすると、`zstdlib` は例外をスローします。一般的な値は `20` (window size = `1MB`) から `30` (window size = `1GB`) です。
 
-<div id="output_format_csv_crlf_end_of_line">
-  ## output_format_csv_crlf_end_of_line
-</div>
+## output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 これを true に設定すると、CSV フォーマットの行末は \n ではなく \r\n になります。
 
-<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
-  ## output_format_csv_header_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_header_serialize_tuple_into_separate_columns {#output_format_csv_header_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +225,7 @@ String 型のカラムでは、Binary ではなく BSON String 型を使用し�
 
 注意: `input_format_with_names_use_header = 1` の場合、フラット化されたヘッダーは名前に基づいて Tuple に読み戻されません。このようなデータを Tuple に読み戻すには、出力時にこの設定を `0` にするか、`input_format_with_names_use_header = 0` を指定して読み込んでください (さらに、`*WithNamesAndTypes` フォーマットである `CSVWithNamesAndTypes` と `CustomSeparatedWithNamesAndTypes` では、`input_format_with_types_use_header = 0` も必要です。これを設定しないと、フラット化された型の行が単一のトップレベル Tuple 入力フィールドに対して検証され、拒否されます) 。
 
-<div id="output_format_csv_serialize_tuple_into_separate_columns">
-  ## output_format_csv_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_serialize_tuple_into_separate_columns {#output_format_csv_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -223,9 +235,7 @@ true に設定すると、CSVフォーマットの単体の `Tuple` カラムは
 
 このフラット化は、単体の `Tuple` にのみ適用されます。`Nullable(Tuple)` は、この設定に関係なく、常に 1 つの CSV フィールドとしてシリアライズされます (そのため、NULL の行と非 NULL の行でフィールド数は常に同じになります)。
 
-<div id="output_format_decimal_trailing_zeros">
-  ## output_format_decimal_trailing_zeros
-</div>
+## output_format_decimal_trailing_zeros {#output_format_decimal_trailing_zeros}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -235,9 +245,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 既定では無効です。
 
-<div id="output_format_float_precision">
-  ## output_format_float_precision
-</div>
+## output_format_float_precision {#output_format_float_precision}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -250,9 +258,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 有効範囲: 0 から 100。
 
-<div id="output_format_image_height">
-  ## output_format_image_height
-</div>
+## output_format_image_height {#output_format_image_height}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -262,9 +268,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: 1024。
 
-<div id="output_format_image_streaming_animation">
-  ## output_format_image_streaming_animation
-</div>
+## output_format_image_streaming_animation {#output_format_image_streaming_animation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -276,9 +280,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: `false`。
 
-<div id="output_format_image_terminal_mode">
-  ## output_format_image_terminal_mode
-</div>
+## output_format_image_terminal_mode {#output_format_image_terminal_mode}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "PNG などの画像出力フォーマットを、生の画像バイト列を書き出す代わりにインライン画像プロトコルを使って端末に直接描画するかどうかを制御する新しい設定。"}]}]} />
 
@@ -294,9 +296,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: &#96;&#96; (空)。
 
-<div id="output_format_image_time_divisor_seconds">
-  ## output_format_image_time_divisor_seconds
-</div>
+## output_format_image_time_divisor_seconds {#output_format_image_time_divisor_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -308,9 +308,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: 60。
 
-<div id="output_format_image_time_multiplier_seconds">
-  ## output_format_image_time_multiplier_seconds
-</div>
+## output_format_image_time_multiplier_seconds {#output_format_image_time_multiplier_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -324,9 +322,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: 1。
 
-<div id="output_format_image_width">
-  ## output_format_image_width
-</div>
+## output_format_image_width {#output_format_image_width}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -336,9 +332,7 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: 1024。
 
-<div id="output_format_json_array_of_rows">
-  ## output_format_json_array_of_rows
-</div>
+## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -385,9 +379,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 {"number":"2"}
 ```
 
-<div id="output_format_json_escape_forward_slashes">
-  ## output_format_json_escape_forward_slashes
-</div>
+## output_format_json_escape_forward_slashes {#output_format_json_escape_forward_slashes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -395,9 +387,7 @@ JSON出力フォーマットで文字列を出力する際に、スラッシュ�
 
 デフォルトで有効です。
 
-<div id="output_format_json_map_as_array_of_tuples">
-  ## output_format_json_map_as_array_of_tuples
-</div>
+## output_format_json_map_as_array_of_tuples {#output_format_json_map_as_array_of_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -407,9 +397,7 @@ Map型のカラムを、TupleのJSON配列としてシリアライズします�
 
 デフォルトでは無効です。
 
-<div id="output_format_json_named_tuples_as_objects">
-  ## output_format_json_named_tuples_as_objects
-</div>
+## output_format_json_named_tuples_as_objects {#output_format_json_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -419,9 +407,7 @@ Map型のカラムを、TupleのJSON配列としてシリアライズします�
 
 デフォルトで有効です。
 
-<div id="output_format_json_pretty_print">
-  ## output_format_json_pretty_print
-</div>
+## output_format_json_pretty_print {#output_format_json_pretty_print}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -469,9 +455,7 @@ Map型のカラムを、TupleのJSON配列としてシリアライズします�
 
 デフォルトで有効です。
 
-<div id="output_format_json_quote_64bit_floats">
-  ## output_format_json_quote_64bit_floats
-</div>
+## output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -479,9 +463,7 @@ JSON* フォーマットで出力する際に、64 ビットの[floats](/ja/refe
 
 デフォルトでは無効です。
 
-<div id="output_format_json_quote_64bit_integers">
-  ## output_format_json_quote_64bit_integers
-</div>
+## output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -495,9 +477,7 @@ JSON* フォーマットで出力する際に、64 ビットの[floats](/ja/refe
 * 0 — 整数はクォートなしで出力されます。
 * 1 — 整数はクォートで囲まれて出力されます。
 
-<div id="output_format_json_quote_decimals">
-  ## output_format_json_quote_decimals
-</div>
+## output_format_json_quote_decimals {#output_format_json_quote_decimals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -505,9 +485,7 @@ JSON出力フォーマットで decimal 値を引用符で囲むかどうかを�
 
 デフォルトでは無効です。
 
-<div id="output_format_json_quote_denormals">
-  ## output_format_json_quote_denormals
-</div>
+## output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -606,17 +584,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 }
 ```
 
-<div id="output_format_json_skip_null_value_in_named_tuples">
-  ## output_format_json_skip_null_value_in_named_tuples
-</div>
+## output_format_json_skip_null_value_in_named_tuples {#output_format_json_skip_null_value_in_named_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 名前付きタプルのカラムを JSON オブジェクトとしてシリアライズする際に、NULL 値を含むキーと値のペアをスキップします。これは output&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects が true の場合にのみ有効です。
 
-<div id="output_format_json_validate_utf8">
-  ## output_format_json_validate_utf8
-</div>
+## output_format_json_validate_utf8 {#output_format_json_validate_utf8}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -624,9 +598,7 @@ JSON 出力フォーマットにおける UTF-8 シーケンスの検証を制�
 
 デフォルトでは無効です。
 
-<div id="output_format_markdown_escape_special_characters">
-  ## output_format_markdown_escape_special_characters
-</div>
+## output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -643,17 +615,13 @@ JSON 出力フォーマットにおける UTF-8 シーケンスの検証を制�
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="output_format_msgpack_uuid_representation">
-  ## output_format_msgpack_uuid_representation
-</div>
+## output_format_msgpack_uuid_representation {#output_format_msgpack_uuid_representation}
 
 <SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
 
 MsgPackフォーマットでUUIDを出力する際の形式。
 
-<div id="output_format_native_encode_types_in_binary_format">
-  ## output_format_native_encode_types_in_binary_format
-</div>
+## output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -661,9 +629,7 @@ MsgPackフォーマットでUUIDを出力する際の形式。
 
 Native 出力フォーマットでは、型名の代わりにデータ型をバイナリ形式で書き込みます
 
-<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
-  ## output_format_native_use_flattened_dynamic_and_json_serialization
-</div>
+## output_format_native_use_flattened_dynamic_and_json_serialization {#output_format_native_use_flattened_dynamic_and_json_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -671,9 +637,7 @@ Native 出力フォーマットでは、型名の代わりにデータ型をバ�
 
 [JSON](/ja/reference/data-types/newjson) および [Dynamic](/ja/reference/data-types/dynamic) カラムのデータを、フラット化されたフォーマット (すべての型/パスを個別のサブカラムとして扱う) で書き込みます。
 
-<div id="output_format_native_write_json_as_string">
-  ## output_format_native_write_json_as_string
-</div>
+## output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -681,9 +645,7 @@ Native 出力フォーマットでは、型名の代わりにデータ型をバ�
 
 [JSON](/ja/reference/data-types/newjson)カラムのデータを、デフォルトのネイティブJSONシリアライゼーションではなく、JSON文字列を含む[String](/ja/reference/data-types/string)カラムとして書き込みます。
 
-<div id="output_format_orc_compression_block_size">
-  ## output_format_orc_compression_block_size
-</div>
+## output_format_orc_compression_block_size {#output_format_orc_compression_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -691,9 +653,7 @@ Native 出力フォーマットでは、型名の代わりにデータ型をバ�
 
 ORC出力フォーマットにおける圧縮ブロックのサイズ (バイト単位) 。
 
-<div id="output_format_orc_compression_method">
-  ## output_format_orc_compression_method
-</div>
+## output_format_orc_compression_method {#output_format_orc_compression_method}
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
@@ -701,9 +661,7 @@ ORC出力フォーマットにおける圧縮ブロックのサイズ (バイト
 
 ORC 出力フォーマットの圧縮方式。サポートされているコーデック: lz4, snappy, zlib, zstd, none (非圧縮)
 
-<div id="output_format_orc_dictionary_key_size_threshold">
-  ## output_format_orc_dictionary_key_size_threshold
-</div>
+## output_format_orc_dictionary_key_size_threshold {#output_format_orc_dictionary_key_size_threshold}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -711,17 +669,13 @@ ORC 出力フォーマットの圧縮方式。サポートされているコー�
 
 ORC 出力フォーマットの文字列カラムで、一意な値の数が非 NULL 行の総数に対するこの割合を超える場合、dictionary encoding は無効になります。そうでない場合は有効になります
 
-<div id="output_format_orc_row_index_stride">
-  ## output_format_orc_row_index_stride
-</div>
+## output_format_orc_row_index_stride {#output_format_orc_row_index_stride}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 ORC出力フォーマットでの目標行索引ストライド
 
-<div id="output_format_orc_string_as_string">
-  ## output_format_orc_string_as_string
-</div>
+## output_format_orc_string_as_string {#output_format_orc_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -729,9 +683,7 @@ ORC出力フォーマットでの目標行索引ストライド
 
 String 型のカラムでは、Binary ではなく ORC String 型を使用します
 
-<div id="output_format_orc_writer_time_zone_name">
-  ## output_format_orc_writer_time_zone_name
-</div>
+## output_format_orc_writer_time_zone_name {#output_format_orc_writer_time_zone_name}
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -739,9 +691,7 @@ String 型のカラムでは、Binary ではなく ORC String 型を使用しま
 
 ORC ライター のタイムゾーン名を指定します。デフォルトの ORC ライター のタイムゾーンは GMT です。
 
-<div id="output_format_parallel_formatting">
-  ## output_format_parallel_formatting
-</div>
+## output_format_parallel_formatting {#output_format_parallel_formatting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -752,17 +702,13 @@ ORC ライター のタイムゾーン名を指定します。デフォルトの
 * 1 — 有効。
 * 0 — 無効。
 
-<div id="output_format_parquet_batch_size">
-  ## output_format_parquet_batch_size
-</div>
+## output_format_parquet_batch_size {#output_format_parquet_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 この行数ごとにページサイズを確認します。平均的な値のサイズが数 KB を超えるカラムがある場合は、設定値を小さくすることを検討してください。
 
-<div id="output_format_parquet_bloom_filter_bits_per_value">
-  ## output_format_parquet_bloom_filter_bits_per_value
-</div>
+## output_format_parquet_bloom_filter_bits_per_value {#output_format_parquet_bloom_filter_bits_per_value}
 
 <SettingsInfoBlock type="Double" default_value="10.5" />
 
@@ -776,9 +722,7 @@ Parquet ブルームフィルタで、個々の一意な値に使用するビッ
 * 26.4 ビット -  0.01%
 * 41   ビット -  0.001%
 
-<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
-  ## output_format_parquet_bloom_filter_flush_threshold_bytes
-</div>
+## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
@@ -790,9 +734,7 @@ Parquetファイル内でブルームフィルタをどこに配置するかを�
   * すべてのブルームフィルタの合計サイズより大きい場合、すべての行グループのブルームフィルタはメモリ内に蓄積され、その後ファイル末尾付近にまとめて書き込まれます。
   * それ以外の場合、ブルームフィルタはメモリ内に蓄積され、合計サイズがこの値を超えるたびに書き出されます。
 
-<div id="output_format_parquet_compression_method">
-  ## output_format_parquet_compression_method
-</div>
+## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
 <SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
 
@@ -800,17 +742,13 @@ Parquetファイル内でブルームフィルタをどこに配置するかを�
 
 Parquet 出力フォーマットの圧縮方式。サポートされるコーデック: snappy, lz4, brotli, zstd, gzip, none (非圧縮)
 
-<div id="output_format_parquet_data_page_size">
-  ## output_format_parquet_data_page_size
-</div>
+## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 圧縮前の目標ページサイズ (バイト単位) 。
 
-<div id="output_format_parquet_date_as_uint16">
-  ## output_format_parquet_date_as_uint16
-</div>
+## output_format_parquet_date_as_uint16 {#output_format_parquet_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -818,9 +756,7 @@ Parquet 出力フォーマットの圧縮方式。サポートされるコーデ
 
 Date の値は、32 ビットの Parquet DATE 型に変換して書き込む (読み戻すと Date32) 代わりに、単純な 16 ビット数値として書き込みます (読み戻すと UInt16) 。
 
-<div id="output_format_parquet_datetime_as_uint32">
-  ## output_format_parquet_datetime_as_uint32
-</div>
+## output_format_parquet_datetime_as_uint32 {#output_format_parquet_datetime_as_uint32}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -828,9 +764,7 @@ Date の値は、32 ビットの Parquet DATE 型に変換して書き込む (�
 
 DateTime の値をミリ秒に変換して書き込む (読み戻し時は DateTime64(3)) 代わりに、生の Unix timestamp として書き込みます (読み戻し時は UInt32) 。
 
-<div id="output_format_parquet_enum_as_byte_array">
-  ## output_format_parquet_enum_as_byte_array
-</div>
+## output_format_parquet_enum_as_byte_array {#output_format_parquet_enum_as_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -838,9 +772,7 @@ DateTime の値をミリ秒に変換して書き込む (読み戻し時は DateT
 
 Parquet の物理型 BYTE&#95;ARRAY および論理型 ENUM を使用して Enum を書き込む
 
-<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
-  ## output_format_parquet_fixed_string_as_fixed_byte_array
-</div>
+## output_format_parquet_fixed_string_as_fixed_byte_array {#output_format_parquet_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -848,9 +780,7 @@ Parquet の物理型 BYTE&#95;ARRAY および論理型 ENUM を使用して Enum
 
 FixedString 型のカラムでは、Binary ではなく Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY 型を使用します。
 
-<div id="output_format_parquet_geometadata">
-  ## output_format_parquet_geometadata
-</div>
+## output_format_parquet_geometadata {#output_format_parquet_geometadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -858,9 +788,7 @@ FixedString 型のカラムでは、Binary ではなく Parquet FIXED&#95;LEN&#9
 
 Geoカラムの情報をParquetメタデータに書き込み、カラムをWKB形式でエンコードできるようにします。
 
-<div id="output_format_parquet_max_dictionary_size">
-  ## output_format_parquet_max_dictionary_size
-</div>
+## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -868,33 +796,25 @@ Geoカラムの情報をParquetメタデータに書き込み、カラムをWKB�
 
 Dictionary のサイズがこのバイト数を超えた場合、Dictionary を使用しないエンコーディングに切り替えます。dictionary encoding を無効にするには、0 に設定します。
 
-<div id="output_format_parquet_parallel_encoding">
-  ## output_format_parquet_parallel_encoding
-</div>
+## output_format_parquet_parallel_encoding {#output_format_parquet_parallel_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Parquetのエンコードを複数スレッドで行います。
 
-<div id="output_format_parquet_row_group_size">
-  ## output_format_parquet_row_group_size
-</div>
+## output_format_parquet_row_group_size {#output_format_parquet_row_group_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 行数で指定する目標の行グループサイズ。
 
-<div id="output_format_parquet_row_group_size_bytes">
-  ## output_format_parquet_row_group_size_bytes
-</div>
+## output_format_parquet_row_group_size_bytes {#output_format_parquet_row_group_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
 圧縮前の目標行グループサイズ (バイト単位) 。
 
-<div id="output_format_parquet_string_as_string">
-  ## output_format_parquet_string_as_string
-</div>
+## output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -902,9 +822,7 @@ Parquetのエンコードを複数スレッドで行います。
 
 String 型のカラムでは、Binary ではなく Parquet String 型を使用します。
 
-<div id="output_format_parquet_wide_integer_as_decimal">
-  ## output_format_parquet_wide_integer_as_decimal
-</div>
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -912,9 +830,7 @@ String 型のカラムでは、Binary ではなく Parquet String 型を使用�
 
 `Int128`、`UInt128`、`Int256`、`UInt256` の値を、ビッグエンディアンのバイト順で標準準拠の Parquet `DECIMAL` 値として書き込みます。デフォルトでは、古い ClickHouse バージョンとの互換性のため、注釈のないレガシーなリトルエンディアン `FIXED_LEN_BYTE_ARRAY` 表現が維持されます。10 進表現により相互運用可能な数値統計を利用できますが、一部の Parquet リーダーは 38 または 76 を超える精度をサポートしていません。
 
-<div id="output_format_parquet_write_bloom_filter">
-  ## output_format_parquet_write_bloom_filter
-</div>
+## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -922,9 +838,7 @@ String 型のカラムでは、Binary ではなく Parquet String 型を使用�
 
 Parquet ファイルにブルームフィルタを書き込みます。
 
-<div id="output_format_parquet_write_checksums">
-  ## output_format_parquet_write_checksums
-</div>
+## output_format_parquet_write_checksums {#output_format_parquet_write_checksums}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -932,9 +846,7 @@ Parquet ファイルにブルームフィルタを書き込みます。
 
 Parquet のページヘッダーに crc32 チェックサムを書き込みます。
 
-<div id="output_format_parquet_write_page_index">
-  ## output_format_parquet_write_page_index
-</div>
+## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -942,9 +854,7 @@ Parquet のページヘッダーに crc32 チェックサムを書き込みま�
 
 Parquet ファイル にカラムインデックスとオフセットインデックス (つまり、各データページに関する統計情報であり、読み取り時の filter pushdown に利用される場合があります) を書き込みます。
 
-<div id="output_format_pretty_color">
-  ## output_format_pretty_color
-</div>
+## output_format_pretty_color {#output_format_pretty_color}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -952,9 +862,7 @@ Parquet ファイル にカラムインデックスとオフセットインデ�
 
 Pretty フォーマットで ANSI エスケープシーケンスを使用します。0 - 無効、1 - 有効、&#39;auto&#39; - 端末出力の場合に有効。
 
-<div id="output_format_pretty_display_footer_column_names">
-  ## output_format_pretty_display_footer_column_names
-</div>
+## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -988,9 +896,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
       └─number─┴─toTypeName(number)─┘
 ```
 
-<div id="output_format_pretty_display_footer_column_names_min_rows">
-  ## output_format_pretty_display_footer_column_names_min_rows
-</div>
+## output_format_pretty_display_footer_column_names_min_rows {#output_format_pretty_display_footer_column_names_min_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -998,9 +904,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 設定 [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](/ja/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names) が有効な場合に、カラム名付きのフッターを表示する最小行数を設定します。
 
-<div id="output_format_pretty_fallback_to_vertical">
-  ## output_format_pretty_fallback_to_vertical
-</div>
+## output_format_pretty_fallback_to_vertical {#output_format_pretty_fallback_to_vertical}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1009,9 +913,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 有効な場合、テーブルの幅が広く行数が少ないと、Pretty フォーマットは Vertical フォーマットと同様の形式で出力します。
 この動作の詳細な調整については、`output_format_pretty_fallback_to_vertical_max_rows_per_chunk` および `output_format_pretty_fallback_to_vertical_min_table_width` を参照してください。
 
-<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
-  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
-</div>
+## output_format_pretty_fallback_to_vertical_max_rows_per_chunk {#output_format_pretty_fallback_to_vertical_max_rows_per_chunk}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1019,9 +921,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Vertical フォーマット へのフォールバック (`output_format_pretty_fallback_to_vertical`を参照) は、chunk内のレコード数が指定した値を超えない場合にのみ有効になります。
 
-<div id="output_format_pretty_fallback_to_vertical_min_columns">
-  ## output_format_pretty_fallback_to_vertical_min_columns
-</div>
+## output_format_pretty_fallback_to_vertical_min_columns {#output_format_pretty_fallback_to_vertical_min_columns}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -1029,9 +929,7 @@ Vertical フォーマット へのフォールバック (`output_format_pretty_f
 
 Verticalフォーマットへのフォールバック (`output_format_pretty_fallback_to_vertical` を参照) は、カラム数が指定した値より大きい場合にのみ有効になります。
 
-<div id="output_format_pretty_fallback_to_vertical_min_table_width">
-  ## output_format_pretty_fallback_to_vertical_min_table_width
-</div>
+## output_format_pretty_fallback_to_vertical_min_table_width {#output_format_pretty_fallback_to_vertical_min_table_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
@@ -1039,9 +937,7 @@ Verticalフォーマットへのフォールバック (`output_format_pretty_fal
 
 Vertical フォーマットへのフォールバック (`output_format_pretty_fallback_to_vertical` を参照) は、テーブル内のカラム長の合計が指定された値以上である場合、またはいずれかの値に改行文字が含まれている場合にのみ有効になります。
 
-<div id="output_format_pretty_glue_chunks">
-  ## output_format_pretty_glue_chunks
-</div>
+## output_format_pretty_glue_chunks {#output_format_pretty_glue_chunks}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -1051,9 +947,7 @@ Pretty フォーマットで表示されるデータが複数の chunk に分か
 
 0 - 無効、1 - 有効、&#39;auto&#39; - 端末使用時に有効。
 
-<div id="output_format_pretty_grid_charset">
-  ## output_format_pretty_grid_charset
-</div>
+## output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
 <SettingsInfoBlock type="String" default_value="UTF-8" />
 
@@ -1061,9 +955,7 @@ Pretty フォーマットで表示されるデータが複数の chunk に分か
 
 対話型モードでは、この設定が明示的に指定されていない限り、端末が UTF-8 をサポートしていない場合 (`LC_ALL`、`LC_CTYPE`、`LANG` 環境変数に基づいて判定) 、`clickhouse-client` は自動的に `ASCII` に切り替えます。
 
-<div id="output_format_pretty_highlight_digit_groups">
-  ## output_format_pretty_highlight_digit_groups
-</div>
+## output_format_pretty_highlight_digit_groups {#output_format_pretty_highlight_digit_groups}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1071,9 +963,7 @@ Pretty フォーマットで表示されるデータが複数の chunk に分か
 
 有効で、かつ出力先が端末の場合、千、百万などの単位に対応する各桁を下線で強調表示します。
 
-<div id="output_format_pretty_highlight_trailing_spaces">
-  ## output_format_pretty_highlight_trailing_spaces
-</div>
+## output_format_pretty_highlight_trailing_spaces {#output_format_pretty_highlight_trailing_spaces}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1081,9 +971,7 @@ Pretty フォーマットで表示されるデータが複数の chunk に分か
 
 有効で、かつ出力先がターミナルの場合、行末の空白を灰色の下線で強調表示します。
 
-<div id="output_format_pretty_max_column_name_width_cut_to">
-  ## output_format_pretty_max_column_name_width_cut_to
-</div>
+## output_format_pretty_max_column_name_width_cut_to {#output_format_pretty_max_column_name_width_cut_to}
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -1092,9 +980,7 @@ Pretty フォーマットで表示されるデータが複数の chunk に分か
 カラム名が長すぎる場合は、この長さに切り詰めます。
 カラム名は、`output_format_pretty_max_column_name_width_cut_to` と `output_format_pretty_max_column_name_width_min_chars_to_cut` の合計より長い場合に切り詰められます。
 
-<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
-  ## output_format_pretty_max_column_name_width_min_chars_to_cut
-</div>
+## output_format_pretty_max_column_name_width_min_chars_to_cut {#output_format_pretty_max_column_name_width_min_chars_to_cut}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -1103,17 +989,13 @@ Pretty フォーマットで表示されるデータが複数の chunk に分か
 カラム名が長すぎる場合に切り詰める最小文字数です。
 カラム名は、`output_format_pretty_max_column_name_width_cut_to` に `output_format_pretty_max_column_name_width_min_chars_to_cut` を加えた長さを超える場合に切り詰められます。
 
-<div id="output_format_pretty_max_column_pad_width">
-  ## output_format_pretty_max_column_pad_width
-</div>
+## output_format_pretty_max_column_pad_width {#output_format_pretty_max_column_pad_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
 Prettyフォーマットで、カラム内のすべての値に適用するパディングの最大幅です。
 
-<div id="output_format_pretty_max_rows">
-  ## output_format_pretty_max_rows
-</div>
+## output_format_pretty_max_rows {#output_format_pretty_max_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1121,18 +1003,14 @@ Prettyフォーマットで、カラム内のすべての値に適用するパ�
 
 Pretty フォーマットの行数上限。
 
-<div id="output_format_pretty_max_value_width">
-  ## output_format_pretty_max_value_width
-</div>
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Pretty フォーマットで表示する値の最大表示幅です。これを超える場合は切り詰められます。
 値が 0 の場合は、切り詰められません。
 
-<div id="output_format_pretty_max_value_width_apply_for_single_value">
-  ## output_format_pretty_max_value_width_apply_for_single_value
-</div>
+## output_format_pretty_max_value_width_apply_for_single_value {#output_format_pretty_max_value_width_apply_for_single_value}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1140,9 +1018,7 @@ Pretty フォーマットで表示する値の最大表示幅です。これを�
 
 値を切り詰める (`output_format_pretty_max_value_width` 設定を参照) のは、block 内の単一の値でない場合に限られます。それ以外の場合は値全体が出力されます。これは `SHOW CREATE TABLE` クエリで便利です。
 
-<div id="output_format_pretty_multiline_fields">
-  ## output_format_pretty_multiline_fields
-</div>
+## output_format_pretty_multiline_fields {#output_format_pretty_multiline_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1151,9 +1027,7 @@ Pretty フォーマットで表示する値の最大表示幅です。これを�
 有効な場合、Prettyフォーマットでは、表のセル内の複数行フィールドが複数行のまま表示されるため、表の枠線が維持されます。
 無効な場合はそのまま表示されるため、表のレイアウトが崩れる可能性があります (無効のままにしておく利点の 1 つは、複数行の値をコピー＆ペーストしやすくなることです) 。
 
-<div id="output_format_pretty_named_tuples_as_json">
-  ## output_format_pretty_named_tuples_as_json
-</div>
+## output_format_pretty_named_tuples_as_json {#output_format_pretty_named_tuples_as_json}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1161,9 +1035,7 @@ Pretty フォーマットで表示する値の最大表示幅です。これを�
 
 Prettyフォーマットで名前付きタプルを整形されたJSON オブジェクトとして出力するかどうかを制御します。
 
-<div id="output_format_pretty_row_numbers">
-  ## output_format_pretty_row_numbers
-</div>
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1171,9 +1043,7 @@ Prettyフォーマットで名前付きタプルを整形されたJSON オブジ
 
 Pretty 出力フォーマットでは、各行の前に行番号を追加します
 
-<div id="output_format_pretty_single_large_number_tip_threshold">
-  ## output_format_pretty_single_large_number_tip_threshold
-</div>
+## output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -1181,9 +1051,7 @@ Pretty 出力フォーマットでは、各行の前に行番号を追加しま�
 
 ブロックがこの値を超える単一の数値 (0 を除く) のみで構成されている場合、テーブルの右側に読みやすい数値のヒントを表示します
 
-<div id="output_format_pretty_squash_consecutive_ms">
-  ## output_format_pretty_squash_consecutive_ms
-</div>
+## output_format_pretty_squash_consecutive_ms {#output_format_pretty_squash_consecutive_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -1192,9 +1060,7 @@ Pretty 出力フォーマットでは、各行の前に行番号を追加しま�
 次のブロックを指定したミリ秒数まで待機し、書き込む前に前のブロックとまとめます。
 これにより、小さすぎるブロックが頻繁に出力されるのを防ぎつつ、データをストリーミング形式で表示できます。
 
-<div id="output_format_pretty_squash_max_wait_ms">
-  ## output_format_pretty_squash_max_wait_ms
-</div>
+## output_format_pretty_squash_max_wait_ms {#output_format_pretty_squash_max_wait_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1202,9 +1068,7 @@ Pretty 出力フォーマットでは、各行の前に行番号を追加しま�
 
 前回の出力から指定したミリ秒数を超えて経過した場合、保留中のブロックをPrettyフォーマットで出力します。
 
-<div id="output_format_pretty_use_nbsp_for_padding">
-  ## output_format_pretty_use_nbsp_for_padding
-</div>
+## output_format_pretty_use_nbsp_for_padding {#output_format_pretty_use_nbsp_for_padding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1214,63 +1078,47 @@ Pretty 出力フォーマットでは、各行の前に行番号を追加しま�
 出力は等幅フォントでは見た目は変わりませんが、通常のスペースの連続を圧縮または削除するツールを通しても、パディングは保持されます。
 `output_format_pretty_grid_charset` が `UTF-8` の場合にのみ有効です。
 
-<div id="output_format_protobuf_nullables_with_google_wrappers">
-  ## output_format_protobuf_nullables_with_google_wrappers
-</div>
+## output_format_protobuf_nullables_with_google_wrappers {#output_format_protobuf_nullables_with_google_wrappers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Google ラッパーを使用して Nullable カラムをシリアライズする際、デフォルト値を空のラッパーとしてシリアライズします。オフにすると、デフォルト値と NULL 値はシリアライズされません
 
-<div id="output_format_schema">
-  ## output_format_schema
-</div>
+## output_format_schema {#output_format_schema}
 
 [Cap&#39;n Proto](/ja/reference/formats/CapnProto) または [Protobuf](/ja/reference/formats/Protobuf/Protobuf) フォーマットで自動生成されたスキーマを保存するファイルのパスです。
 
-<div id="output_format_sql_insert_include_column_names">
-  ## output_format_sql_insert_include_column_names
-</div>
+## output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 INSERT クエリにカラム名を含めます
 
-<div id="output_format_sql_insert_max_batch_size">
-  ## output_format_sql_insert_max_batch_size
-</div>
+## output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65409" />
 
 1 つの INSERT ステートメントに含められる最大行数。
 
-<div id="output_format_sql_insert_quote_names">
-  ## output_format_sql_insert_quote_names
-</div>
+## output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 カラム名を &#39;&#96;&#39; 文字で囲みます
 
-<div id="output_format_sql_insert_table_name">
-  ## output_format_sql_insert_table_name
-</div>
+## output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
 
 <SettingsInfoBlock type="String" default_value="table" />
 
 出力される INSERT クエリ内のテーブル名
 
-<div id="output_format_sql_insert_use_replace">
-  ## output_format_sql_insert_use_replace
-</div>
+## output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 INSERTではなくREPLACEステートメントを使用する
 
-<div id="output_format_trim_fixed_string">
-  ## output_format_trim_fixed_string
-</div>
+## output_format_trim_fixed_string {#output_format_trim_fixed_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1278,17 +1126,13 @@ INSERTではなくREPLACEステートメントを使用する
 
 テキスト出力フォーマットで、FixedString の値の末尾にあるヌルバイトを削除します。たとえば、`toFixedString('John', 8)` は `John\0\0\0\0` ではなく `John` として出力されます。
 
-<div id="output_format_tsv_crlf_end_of_line">
-  ## output_format_tsv_crlf_end_of_line
-</div>
+## output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true に設定すると、TSV フォーマットの行末は \n ではなく \r\n になります。
 
-<div id="output_format_values_escape_quote_with_quote">
-  ## output_format_values_escape_quote_with_quote
-</div>
+## output_format_values_escape_quote_with_quote {#output_format_values_escape_quote_with_quote}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1296,9 +1140,7 @@ true に設定すると、TSV フォーマットの行末は \n ではなく \r\
 
 true の場合は &#39; を &#39;&#39; にエスケープし、そうでない場合は &#92;&#39; でクォートします
 
-<div id="output_format_write_statistics">
-  ## output_format_write_statistics
-</div>
+## output_format_write_statistics {#output_format_write_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

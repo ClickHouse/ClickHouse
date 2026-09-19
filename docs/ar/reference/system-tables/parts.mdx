@@ -86,9 +86,9 @@ doc_type: 'reference'
 * `rows_where_ttl_info.max` ([Array(DateTime)](/ar/reference/data-types/array)) — القيمة القصوى لتعبير TTL المحسوب ضمن هذا الجزء. تُستخدم لمعرفة ما إذا كانت مدة TTL قد انتهت لجميع الصفوف.
 * `projections` ([Array(String)](/ar/reference/data-types/array)) — قائمة أسماء الإسقاطات المحسوبة لهذا الجزء.
 * `visible` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان هذا الجزء مرئيًا لاستعلامات SELECT.
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي أنشأت هذا الكائن أو تحاول إنشاءه.
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي أنشأت هذا الكائن أو تحاول إنشاءه.
 * `removal_tid_lock` ([UInt64](/ar/reference/data-types/int-uint)) — تجزئة `removal&#95;tid`، تُستخدم لقفل كائن بغرض إزالته.
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي أزالت هذا الكائن أو تحاول إزالته
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ar/reference/data-types/tuple)) — معرّف المعاملة التي أزالت هذا الكائن أو تحاول إزالته
 * `creation_csn` ([UInt64](/ar/reference/data-types/int-uint)) — CSN للمعاملة التي أنشأت هذا الكائن
 * `removal_csn` ([UInt64](/ar/reference/data-types/int-uint)) — CSN للمعاملة التي أزالت هذا الكائن
 * `has_lightweight_delete` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان الجزء يحتوي على قناع حذف خفيف.

@@ -150,7 +150,7 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 * `used_row_policies` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された行ポリシー名の一覧。
 * `used_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に正常にチェックされた権限。
 * `missing_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に不足している権限。
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — このクエリが属するトランザクションの識別子。
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このクエリが属するトランザクションの識別子。
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ja/reference/data-types/enum)) — クエリ実行時のクエリキャッシュの使用状況。値: &#39;Unknown&#39; = 状態不明、&#39;None&#39; = クエリ結果はクエリ結果キャッシュに書き込まれず、クエリ結果キャッシュからも読み出されませんでした、&#39;Write&#39; = クエリ結果はクエリ結果キャッシュに書き込まれました、&#39;Read&#39; = クエリ結果はクエリ結果キャッシュから読み出されました。
 * `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — 非同期読み込みのメトリクス。
 * `is_internal` ([UInt8](/ja/reference/data-types/int-uint)) — 内部で実行される補助クエリかどうかを示します。

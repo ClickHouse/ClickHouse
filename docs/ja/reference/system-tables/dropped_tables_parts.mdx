@@ -86,9 +86,9 @@ doc_type: 'reference'
 * `rows_where_ttl_info.max` ([Array(DateTime)](/ja/reference/data-types/array)) — このパート内で計算された有効期限 (TTL) 式の最大値。すべての行の有効期限 (TTL) が切れているかどうかの判定に使用します。
 * `projections` ([Array(String)](/ja/reference/data-types/array)) — このパートに対して計算されたプロジェクション名のリスト。
 * `visible` ([UInt8](/ja/reference/data-types/int-uint)) — このパートがSELECTクエリから参照可能かどうかを示すフラグ。
-* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — このオブジェクトを作成した、または作成しようとしているトランザクションのID。
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このオブジェクトを作成した、または作成しようとしているトランザクションのID。
 * `removal_tid_lock` ([UInt64](/ja/reference/data-types/int-uint)) — removal&#95;tidのハッシュ。削除対象のオブジェクトをロックするために使用します。
-* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — このオブジェクトを削除した、または削除しようとしているトランザクションのID。
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このオブジェクトを削除した、または削除しようとしているトランザクションのID。
 * `creation_csn` ([UInt64](/ja/reference/data-types/int-uint)) — このオブジェクトを作成したトランザクションのCSN。
 * `removal_csn` ([UInt64](/ja/reference/data-types/int-uint)) — このオブジェクトを削除したトランザクションのCSN。
 * `has_lightweight_delete` ([UInt8](/ja/reference/data-types/int-uint)) — このパートに論理削除マスクがあるかどうかを示すフラグ。

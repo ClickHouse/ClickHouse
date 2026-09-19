@@ -5866,12 +5866,13 @@ transactionID()
 
 **반환 값**
 
-`start_csn`, `local_tid`, `host_id`로 구성된 튜플을 반환합니다.
+`start_csn`, `local_tid`, `host_id`, `session_node_version`로 구성된 튜플을 반환합니다.
 
 * `start_csn`: 전역 순차 번호이며, 이 트랜잭션이 시작될 때 확인된 가장 최신 커밋 타임스탬프입니다.
 * `local_tid`: 특정 start&#95;csn 내에서 이 호스트가 시작한 각 트랜잭션마다 고유한 로컬 순차 번호입니다.
 * `host_id`: 이 트랜잭션을 시작한 호스트의 UUID입니다.
-  [`Tuple(UInt64, UInt64, UUID)`](/ko/reference/data-types/tuple)
+* `session_node_version`: 트랜잭션 시작 시점의 호스트 세션 znode 버전이며, 이를 통해 peer가 레플리카 전반에서 종료된 세션의 TID를 감지할 수 있습니다.
+  [`Tuple(UInt64, UInt64, UUID, Int64)`](/ko/reference/data-types/tuple)
 
 **예시**
 
@@ -5884,9 +5885,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

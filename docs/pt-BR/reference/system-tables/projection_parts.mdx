@@ -23,6 +23,7 @@ Esta tabela contém informações sobre as partes de projeção de tabelas da fa
 * `active` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Sinalizador que indica se a parte de dados está ativa. Se estiver ativa, ela será usada em uma tabela. Caso contrário, está prestes a ser excluída. Partes de dados inativas aparecem após operações de mesclagem e mutação.
 * `marks` ([UInt64](/pt-BR/reference/data-types/int-uint)) — O número de marcas. Para obter o número aproximado de linhas em uma parte de dados, multiplique o número de marcas pela granularidade do índice (geralmente 8192). Essa indicação não funciona com granularidade adaptativa.
 * `rows` ([UInt64](/pt-BR/reference/data-types/int-uint)) — O número de linhas.
+* `files` ([UInt64](/pt-BR/reference/data-types/int-uint)) — O número de arquivos na parte de dados.
 * `bytes_on_disk` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tamanho total de todos os arquivos da parte de dados, em bytes.
 * `data_compressed_bytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tamanho total dos dados comprimidos na parte de dados. Arquivos auxiliares, como arquivos com marcas, não são incluídos.
 * `data_uncompressed_bytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tamanho total dos dados não comprimidos na parte de dados. Arquivos auxiliares, como arquivos com marcas, não são incluídos.

@@ -147,10 +147,10 @@ OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compac
 ### 要件と動作 {#manifest-compaction-behavior}
 
 * この機能は Experimental であり、`allow_experimental_iceberg_compaction` 設定で制御されます。設定が有効になっていない場合、このステートメントは例外をスローします。
-* コンパクション は、current スナップショット のマニフェストリスト内のマニフェストファイル数が `iceberg_manifest_min_count_to_compact` 設定で指定された threshold (デフォルトは `30`) を超えた場合にのみ試行されます。現在の数が threshold 以下の場合、コンパクション はスキップされ、新しい スナップショット は作成されません。より積極的に コンパクション を行うには、threshold を低く設定してください。
-* `OPTIMIZE TABLE ... MANIFEST` は Iceberg tables でのみサポートされています。これを他の テーブルエンジン に対して実行すると、例外をスローします。
+* コンパクション は、現在のスナップショット のマニフェストリスト内のマニフェストファイル数が `iceberg_manifest_min_count_to_compact` 設定で指定された threshold (デフォルトは `100`。これは Iceberg table property `commit.manifest.min-count-to-merge` のドキュメントに記載されたデフォルト値です) を超えた場合にのみ試行されます。現在の数が threshold 以下の場合、コンパクション はスキップされ、新しい スナップショット は作成されません。より積極的に コンパクション を行うには、threshold を低く設定してください。
+* `OPTIMIZE TABLE ... MANIFEST` は Iceberg テーブル でのみサポートされています。これを他の テーブルエンジン に対して実行すると、例外をスローします。
 * `OPTIMIZE TABLE ... MANIFEST` は Iceberg format-version 2 の table でのみサポートされています。これを format-version 1 の table に対して実行すると例外をスローし、format-version 3 の table に対して実行した場合も同様です。これは、v3 の row-lineage `first_row_id` メタデータが manifest rewrite を通じてまだ往復変換されないためです。
-* `OPTIMIZE TABLE ... MANIFEST` は、data files にファイルごとの `key_metadata` を含む暗号化された Iceberg tables ではサポートされていません。manifest rewrite の過程でこの暗号化メタデータを保持する機能はまだ実装されていないため、このステートメントは `NOT_IMPLEMENTED` 例外をスローします。
+* `OPTIMIZE TABLE ... MANIFEST` は、データファイル にファイルごとの `key_metadata` を含む暗号化された Iceberg テーブル ではサポートされていません。manifest rewrite の過程でこの暗号化メタデータを保持する機能はまだ実装されていないため、このステートメントは `NOT_IMPLEMENTED` 例外をスローします。
 
 ## 削除された行があるテーブルの処理 {#deleted-rows}
 
@@ -158,10 +158,10 @@ ClickHouse は、以下の削除方式を使用する Iceberg テーブルの読
 
 * [位置削除](https://iceberg.apache.org/spec/#position-delete-files)
 * [等価削除](https://iceberg.apache.org/spec/#equality-delete-files) (バージョン 25.8+ でサポート)
+* [削除ベクター](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
 
-以下の削除方式は **サポートされていません**。
-
-* [削除ベクトル](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
+削除ベクターのサポートは読み取り専用です。ClickHouse は削除ベクターの書き込み、更新、コンパクションを行いません。
+Iceberg フォーマットバージョン 3 のテーブルでは、`ALTER TABLE ... DELETE` および `ALTER TABLE ... UPDATE` はサポートされていません。
 
 ### 基本的な使い方 {#basic-usage}
 

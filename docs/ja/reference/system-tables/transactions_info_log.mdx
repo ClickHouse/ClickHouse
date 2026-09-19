@@ -24,7 +24,7 @@ doc_type: 'reference'
 * `event_time` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — エントリの時刻
 * `thread_id` ([UInt64](/ja/reference/data-types/int-uint)) — スレッドの識別子。
 * `query_id` ([String](/ja/reference/data-types/string)) — トランザクションのスコープ内で実行されたクエリの ID。
-* `tid` ([Tuple(UInt64, UInt64, UUID)](/ja/reference/data-types/tuple)) — トランザクションの識別子。
+* `tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — トランザクションの識別子。
 * `tid_hash` ([UInt64](/ja/reference/data-types/int-uint)) — 識別子のハッシュ値。
 * `csn` ([UInt64](/ja/reference/data-types/int-uint)) — コミットシーケンス番号
 * `database` ([String](/ja/reference/data-types/string)) — トランザクションの実行対象となったデータベースの名前。

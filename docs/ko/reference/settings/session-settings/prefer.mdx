@@ -122,6 +122,21 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   단일 세그먼트와 여러 레플리카가 있는 클러스터에서 이 설정을 비활성화하면 부정적인 영향이 발생합니다.
 </Note>
 
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "새로운 설정: `force_optimize_projection`처럼 예상 비용과 관계없이 사용할 수 있는 프로젝션을 선택하지만, 프로젝션을 사용하지 못해도 쿼리가 실패하지 않습니다."}]}]} />
+
+프로젝션 최적화가 활성화된 경우([optimize&#95;use&#95;projections](/ko/reference/settings/session-settings/optimize-use#optimize_use_projections) 설정 참조), `SELECT` 쿼리에서 테이블보다 [프로젝션](/ko/reference/engines/table-engines/mergetree-family/mergetree#projections)을 우선적으로 사용하도록 합니다.
+
+활성화하면 테이블 자체보다 더 많은 마크를 읽어야 하더라도 쿼리를 처리할 수 있는 프로젝션을 사용합니다. 이는 [force&#95;optimize&#95;projection](/ko/reference/settings/session-settings/force-optimize#force_optimize_projection)과 동일하지만, 사용할 수 있는 프로젝션이 없어도 쿼리가 실패하지 않습니다.
+
+가능한 값:
+
+* 0 — 예상 비용을 기준으로 프로젝션을 선택합니다.
+* 1 — 예상 비용과 관계없이 사용할 수 있는 프로젝션을 선택합니다.
+
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
