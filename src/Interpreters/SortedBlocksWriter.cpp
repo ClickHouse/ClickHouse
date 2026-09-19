@@ -1,5 +1,7 @@
 #include <Core/SortCursor.h>
 #include <Interpreters/SortedBlocksWriter.h>
+
+#include <chrono>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -31,7 +33,11 @@ TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & 
 }
 
 
-TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & header, QueryPipelineBuilder pipeline)
+TemporaryBlockStreamHolder flushToFile(
+    const TemporaryDataOnDiskScopePtr & tmp_data,
+    const Block & header,
+    QueryPipelineBuilder pipeline,
+    const std::function<void()> & throw_if_cancelled = {})
 {
     TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(header), tmp_data);
 
@@ -39,9 +45,19 @@ TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_d
     PullingPipelineExecutor executor(exec_pipeline);
 
     Block block;
-    while (executor.pull(block))
+    while (true)
+    {
+        if (throw_if_cancelled)
+            throw_if_cancelled();
+        if (!executor.pull(block))
+            break;
+        if (throw_if_cancelled)
+            throw_if_cancelled();
         stream_holder->write(block);
+    }
 
+    if (throw_if_cancelled)
+        throw_if_cancelled();
     stream_holder.finishWriting();
     return stream_holder;
 }
@@ -133,7 +149,9 @@ void SortedBlocksWriter::insert(Block && block)
     }
 }
 
-TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) const
+TemporaryBlockStreamHolder SortedBlocksWriter::flush(
+    const BlocksList & blocks,
+    const std::function<void()> & throw_if_cancelled) const
 {
     Pipes pipes;
     pipes.reserve(blocks.size());
@@ -155,13 +173,13 @@ TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) 
             sort_description,
             rows_in_block,
             /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns=*/std::nullopt,
+            max_dynamic_subcolumns,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
     }
 
-    return flushToFile(tmp_data, sample_block, std::move(pipeline));
+    return flushToFile(tmp_data, sample_block, std::move(pipeline), throw_if_cancelled);
 }
 
 class TemporaryFileLazySource final : public ISource
@@ -200,10 +218,13 @@ static Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
     return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
 }
 
-SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
+SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge(std::function<void()> throw_if_cancelled)
 {
     SortedFiles files;
     BlocksList blocks;
+
+    if (throw_if_cancelled)
+        throw_if_cancelled();
 
     /// wait other flushes if any
     {
@@ -213,12 +234,22 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
         blocks.swap(inserted_blocks.blocks);
         inserted_blocks.clear();
 
-        flush_condvar.wait(lock, [&]{ return !flush_inflight; });
+        while (flush_inflight)
+        {
+            flush_condvar.wait_for(lock, std::chrono::milliseconds(10));
+            lock.unlock();
+            if (throw_if_cancelled)
+                throw_if_cancelled();
+            lock.lock();
+        }
     }
+
+    if (throw_if_cancelled)
+        throw_if_cancelled();
 
     /// flush not flushed
     if (!blocks.empty())
-        files.emplace_back(flush(blocks));
+        files.emplace_back(flush(blocks, throw_if_cancelled));
 
     Pipes pipes;
     pipes.reserve(std::min(num_files_for_merge, files.size()));
@@ -230,8 +261,13 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
 
         while (files.size() > num_files_for_merge)
         {
+            if (throw_if_cancelled)
+                throw_if_cancelled();
+
             for (const auto & file : files)
             {
+                if (throw_if_cancelled)
+                    throw_if_cancelled();
                 pipes.emplace_back(streamFromFile(file));
 
                 if (pipes.size() == num_files_for_merge || &file == &files.back())
@@ -248,24 +284,32 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             sort_description,
                             rows_in_block,
                             /*max_block_size_bytes=*/0,
-                            /*max_dynamic_subcolumns=*/std::nullopt,
+                            max_dynamic_subcolumns,
                             SortingQueueStrategy::Default);
 
                         pipeline.addTransform(std::move(transform));
                     }
 
-                    new_files.emplace_back(flushToFile(tmp_data, sample_block, std::move(pipeline)));
+                    new_files.emplace_back(flushToFile(tmp_data, sample_block, std::move(pipeline), throw_if_cancelled));
                 }
             }
 
+            if (throw_if_cancelled)
+                throw_if_cancelled();
             files.clear();
             files.swap(new_files);
         }
 
         for (const auto & file : files)
+        {
+            if (throw_if_cancelled)
+                throw_if_cancelled();
             pipes.emplace_back(streamFromFile(file));
+        }
     }
 
+    if (throw_if_cancelled)
+        throw_if_cancelled();
     return PremergedFiles{std::move(files), Pipe::unitePipes(std::move(pipes))};
 }
 
@@ -284,7 +328,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             sort_description,
             rows_in_block,
             /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns=*/std::nullopt,
+            max_dynamic_subcolumns,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
