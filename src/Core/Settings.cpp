@@ -4889,9 +4889,23 @@ credentials stay out of the query text, and use of each collection is controlled
 exposing the server's own identity.
 
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0`
-and marking it `readonly`, exactly as documented for `s3_allow_server_credentials_in_user_queries` (the
-explicit value is required so that `compatibility` with a version before this setting existed cannot restore
-the old, allowing default).
+and marking it `readonly`:
+
+```xml
+<profiles>
+    <untrusted>
+        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
+             but `compatibility` with a version before this setting was introduced would otherwise
+             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
+        <azure_allow_server_credentials_in_user_queries>0</azure_allow_server_credentials_in_user_queries>
+        <constraints>
+            <azure_allow_server_credentials_in_user_queries>
+                <readonly/>
+            </azure_allow_server_credentials_in_user_queries>
+        </constraints>
+    </untrusted>
+</profiles>
+```
 
 This setting has no effect in `clickhouse-local`, where the user is the operator.
 )", 0) \
