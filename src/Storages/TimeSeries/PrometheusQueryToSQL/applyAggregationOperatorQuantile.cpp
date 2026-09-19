@@ -134,6 +134,9 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         ASTPtr new_group = transformGroupASTForAggregationOperator(
             operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
 
+        if (res.metric_name_dropped)
+            res.metric_name_is_constant = false;
+
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 

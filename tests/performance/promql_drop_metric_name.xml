@@ -1,0 +1,26 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE promql_drop_metric_name ENGINE = TimeSeries
+    </create_query>
+
+    <fill_query>
+        INSERT INTO promql_drop_metric_name (metric_name, tags, time_series)
+        SELECT
+            'promql_drop_metric_name_metric',
+            map('instance', toString(number)),
+            arrayMap(step -> (toDateTime64(999700 + step * 15, 3), (sipHash64(number, step) % 1000000) / 1000), range(276))
+        FROM numbers_mt(100000)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQuery('promql_drop_metric_name', 'abs(promql_drop_metric_name_metric)', 1003825) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_drop_metric_name', 'abs({{__name__=~"promql_drop_metric_name_metric"}})', 1003825) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_drop_metric_name', 'rate(promql_drop_metric_name_metric[5m])', 1000000, 1003825, 15) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_drop_metric_name', 'rate({{__name__=~"promql_drop_metric_name_metric"}}[5m])', 1000000, 1003825, 15) SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_drop_metric_name</drop_query>
+</test>
