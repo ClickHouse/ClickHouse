@@ -156,6 +156,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
+    extern const Event ASTFuzzerSkippedCollaborativeWorker;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -3495,6 +3496,16 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         return;
     }
 
+    /// The fuzz context copies this worker's borrowed replica number and the coordination channel of
+    /// the initiator's in-flight read (merge_tree_all_ranges_callback, or next_task_callback for a
+    /// cluster function worker), so fuzzing here re-enters that channel under another query's replica
+    /// number. The initiator still fuzzes its own client query.
+    if (context->getClientInfo().collaborate_with_initiator)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -3535,14 +3546,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             break;
         }
 
+        /// A mutation that throws costs only its own run: the remaining runs re-fuzz `base_ast`,
+        /// the last AST that executed.
         ASTPtr fuzzed_ast;
         NameToNameMap fuzzed_query_params;
+        try
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->oracle_mode = context->getSettingsRef()[Setting::ast_fuzzer_oracle];
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
             fuzzed_query_params = fuzzer->getLastQueryParameters();
+        }
+        catch (...) // Ok: skip a run whose mutation failed
+        {
+            tryLogCurrentException(logger, "Fuzzing the query failed");
+            continue;
         }
 
         /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
@@ -3767,6 +3786,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             finish_iteration(/*succeeded=*/false);
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        }
+        catch (...)
+        {
+            /// A fuzzed copy can also fail with a Poco::Exception (a mutated URI argument reaching
+            /// Poco::URI) or a std::exception, and this runs after the client's query has already
+            /// returned its result.
+            finish_iteration(/*succeeded=*/false);
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
     }
