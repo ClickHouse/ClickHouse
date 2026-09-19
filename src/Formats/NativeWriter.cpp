@@ -11,8 +11,12 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -26,6 +30,59 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
+{
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        return ColumnReplicated::create(
+            materializeObjectTypedPaths(replicated->getNestedColumn()),
+            replicated->getIndexesColumn());
+    }
+
+    if (const auto * array = typeid_cast<const ColumnArray *>(column.get()))
+    {
+        auto nested = recursiveRemoveSparse(materializeObjectTypedPaths(array->getDataPtr()));
+        if (nested.get() == array->getDataPtr().get())
+            return column;
+        return ColumnArray::create(nested, array->getOffsetsPtr());
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        if (tuple->tupleSize() == 0)
+            return column;
+
+        auto columns = tuple->getColumnsCopy();
+        bool changed = false;
+        for (auto & element : columns)
+        {
+            auto materialized = materializeObjectTypedPaths(element);
+            changed |= materialized.get() != element.get();
+            element = std::move(materialized);
+        }
+        if (!changed)
+            return column;
+        return ColumnTuple::create(columns);
+    }
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
+        if (nested.get() == nullable->getNestedColumnPtr().get())
+            return column;
+        return ColumnNullable::create(recursiveRemoveSparse(nested), nullable->getNullMapColumnPtr());
+    }
+
+    if (typeid_cast<const ColumnObject *>(column.get()))
+        return recursiveRemoveSparse(column);
+
+    return column;
+}
+
+}
 
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
@@ -97,11 +154,12 @@ void NativeWriter::flush()
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
+    ColumnPtr result_column = column.column->convertToFullColumnIfConst()->decompress();
+    if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
+        result_column = result_column->convertToFullColumnIfReplicated();
+
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
-        ColumnPtr result_column = column.column;
-        if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
-            result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
@@ -110,15 +168,18 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
-        auto info = column.type->getSerializationInfo(
-            *result_column,
-            SerializationInfoSettings::enableAllSupportedSerializations(
-                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        /// Typed paths in `JSON` are materialized because the `Native` wire format has no
+        /// recursive serialization-info entry for them.
+        result_column = materializeObjectTypedPaths(result_column);
+
+        auto info_settings = SerializationInfoSettings::enableAllSupportedSerializations(
+            client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+
+        auto info = column.type->getSerializationInfo(*result_column, info_settings);
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(result_column)};
 }
 
 size_t NativeWriter::write(const Block & block)

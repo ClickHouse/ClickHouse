@@ -69,6 +69,13 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    using IDataType::getSerializationInfo;
+    bool hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const override;
+
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }

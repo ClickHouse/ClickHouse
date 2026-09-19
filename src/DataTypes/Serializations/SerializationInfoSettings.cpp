@@ -26,7 +26,7 @@ SerializationInfoSettings::SerializationInfoSettings(
     , map_serialization_version(map_serialization_version_)
     , propagate_types_serialization_versions_to_nested_types(propagate_types_serialization_versions_to_nested_types_)
 {
-    /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
+    /// New type specialized serialization versions require at least `MergeTreeSerializationInfoVersion::WITH_TYPES`.
     /// For older versions, it is automatically defaulted to preserve compatibility.
     /// This includes `propagate_types_serialization_versions_to_nested_types`, which older versions cannot persist.
     if (version < MergeTreeSerializationInfoVersion::WITH_TYPES)
@@ -70,6 +70,12 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     }
 
     return type.supportsSparseSerialization();
+}
+
+bool SerializationInfoSettings::shouldCollectSerializationInfo(const IDataType & type) const
+{
+    return canUseSparseSerialization(type)
+        || (version >= MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS && type.hasSparseSerializationSubcolumns(*this));
 }
 
 void SerializationInfoSettings::updateHash(SipHash & hash) const

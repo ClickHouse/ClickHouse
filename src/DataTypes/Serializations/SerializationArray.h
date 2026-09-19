@@ -16,6 +16,7 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_);
     static SerializationPtr create(const SerializationPtr & nested_);
     bool supportsPooling() const override { return nested->supportsPooling(); }
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
     /// `Map` sizes are the same substream, so this covers them too.
