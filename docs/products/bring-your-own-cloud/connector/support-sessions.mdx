@@ -15,7 +15,9 @@ Support sessions are how you grant ClickHouse temporary diagnostic access throug
 
 ## What a support session is {#what-a-support-session-is}
 
-A support session is a time-boxed window during which the troubleshooter accepts commands from ClickHouse support engineers. When no session is active, the troubleshooter refuses all commands, even while its outbound WebSocket is connected. There is no other execution path: nothing runs without a session, and ClickHouse cannot open one for you. ClickHouse's control plane never connects into your environment; it only receives what the troubleshooter sends over its outbound channel, and that channel carries commands only while your session state allows it.
+A support session is a time-boxed window during which the troubleshooter accepts commands from ClickHouse support engineers. When no session is active, the troubleshooter refuses all commands, even while its outbound WebSocket is connected. There is no other execution path through the troubleshooter: it runs nothing without a session, and ClickHouse cannot open one for you. ClickHouse's control plane never connects into your environment; it only receives what the troubleshooter sends over its outbound channel, and that channel carries commands only while your session state allows it.
+
+Sessions govern diagnostics only. Lifecycle commands for services in managed mode travel over the executor's separate channel, which a support session neither opens nor gates; see [managed services](/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
 <Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector support session trust flow" />
 
@@ -31,7 +33,7 @@ You choose your session posture, including the operator allowlist, during `click
 ## Enabling and disabling sessions {#enabling-and-disabling-sessions}
 
 <Tabs>
-<Tab title="Kubernetes">
+<Tab title="Kubernetes" id="sessions-kubernetes">
 
 The gateway listens on port 8443 of the troubleshooter pod. If you have cluster access, reach it over a port-forward; the tunnel rides the Kubernetes API server's TLS:
 
@@ -59,7 +61,7 @@ clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
 The caller's OIDC identity must be on the operator allowlist; unauthenticated or unlisted callers get a 401 or 403 and the attempt is logged. If you prefer not to require cluster credentials, the chart can expose the gateway through an opt-in Ingress that terminates TLS with a CA-issued certificate; see [configuration](/products/bring-your-own-cloud/connector/configuration).
 
 </Tab>
-<Tab title="Linux VM">
+<Tab title="Linux VM" id="sessions-vm">
 
 With root access on the host, manage the session directly. State is persisted to `/var/lib/clicklink/session.json`, which the daemon and the CLI read and write atomically:
 
@@ -100,7 +102,7 @@ While a session is active, ClickHouse support engineers can run:
 - **Read-only SQL** against your clusters as the `pcm_troubleshooter` user, restricted to an explicit table allowlist. The default allowlist covers ClickHouse `system` tables such as `system.parts`, `system.merges`, `system.replicas`, `system.metrics`, and `system.settings`; `system.query_log` and `system.text_log` are denied unconditionally, so query history never leaves. The default allowlist does include `system.processes`, whose `query` column shows the text of statements running at that moment; remove it from the session table allowlist (`troubleshooter.allowedTables` in the Helm overlay, `troubleshooter.allowed_tables` in the VM configuration file) if live query text must never be visible in a session. The user holds per-table `SELECT` grants only, with no write, DDL, or admin privileges.
 - **Read-only Kubernetes views** on every provisioned deployment (access bundles are anchored to Kubernetes ServiceAccounts on both install targets): `get`, `list`, and `watch` on pods, pod logs, services, configmaps, events, PersistentVolumeClaims, deployments, statefulsets, and replicasets in the granted namespaces. Without a provisioned bundle, the troubleshooter refuses kubectl-type commands outright.
 
-The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, so operators cannot open a shell in your pods or change anything through the connector. The full grant and RBAC listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference.
+The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, so operators cannot open a shell in your pods or change anything through a session. The full grant and RBAC listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference.
 
 ## Audit log {#audit-log}
 
