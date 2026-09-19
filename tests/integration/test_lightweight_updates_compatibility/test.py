@@ -6,7 +6,7 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 
 # 26.4 supports lightweight updates and writes patch parts
-# in v1 format (v2 format was introduced in 26.9).
+# in v1 format (v2 format was introduced in 26.8).
 OLD_VERSION = "26.4"
 
 node = cluster.add_instance(
@@ -22,6 +22,20 @@ node = cluster.add_instance(
 node_compat = cluster.add_instance(
     "node_compat",
     user_configs=["configs/compatibility.xml"],
+)
+
+# Nodes with the latest version pinned to the releases on both sides of the
+# boundary at which the default of `patch_parts_version` changed: 26.8 shipped
+# `v2`, so a `26.8` pin has to keep writing v2 patches while a `26.7` pin has
+# to write v1 patches.
+node_compat_26_7 = cluster.add_instance(
+    "node_compat_26_7",
+    user_configs=["configs/compatibility_26_7.xml"],
+)
+
+node_compat_26_8 = cluster.add_instance(
+    "node_compat_26_8",
+    user_configs=["configs/compatibility_26_8.xml"],
 )
 
 
@@ -214,3 +228,48 @@ def test_patch_parts_compatibility_setting(started_cluster):
     # and goes to its own partition.
     assert get_patch_columns(node_compat) == [PATCH_COLUMNS_V1, PATCH_COLUMNS_V2]
     assert sorted(get_patch_partitions(node_compat).values()) == [1, 1]
+
+
+@pytest.mark.parametrize(
+    "compat_node, expected_columns, expected_modes",
+    [
+        pytest.param(node_compat_26_7, PATCH_COLUMNS_V1, (1, 0, 0), id="26.7"),
+        pytest.param(node_compat_26_8, PATCH_COLUMNS_V2, (0, 0, 1), id="26.8"),
+    ],
+)
+def test_patch_parts_version_compatibility_boundary(
+    started_cluster, compat_node, expected_columns, expected_modes
+):
+    """
+    `patch_parts_version` got the default `v2` in 26.8, and the entry in
+    `SettingsChangesHistory` has to live in the 26.8 block: a `26.8` pin must
+    write v2 patches (the release shipped them) and a `26.7` pin v1 patches.
+    An entry recorded in the 26.9 block would make a `26.8` pin write v1.
+    """
+    compat_node.query("DROP TABLE IF EXISTS t_lwu_compat SYNC")
+
+    compat_node.query("""
+        CREATE TABLE t_lwu_compat (id UInt64, v UInt64)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            apply_patches_on_merge = 0,
+            max_bytes_to_merge_at_max_space_in_pool = 1
+        """)
+
+    # The default of `patch_parts_version` comes from `compatibility`
+    # in the default profile, it is not persisted in the table definition.
+    assert "patch_parts_version" not in compat_node.query(
+        "SHOW CREATE TABLE t_lwu_compat"
+    )
+
+    compat_node.query("INSERT INTO t_lwu_compat SELECT number, 0 FROM numbers(10000)")
+    compat_node.query("UPDATE t_lwu_compat SET v = v + 1 WHERE id < 6000")
+
+    check_patches_applied(
+        compat_node, "compatibility_boundary_patch", 6000, expected_modes
+    )
+    assert get_patch_columns(compat_node) == [expected_columns]
+
+    compat_node.query("DROP TABLE t_lwu_compat SYNC")
