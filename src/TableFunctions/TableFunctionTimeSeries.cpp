@@ -39,7 +39,7 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
     if (args.size() == 1)
     {
-        /// timeSeriesMetrics( [my_db.]my_time_series_table )
+        /// timeSeriesMetricFamilies( [my_db.]my_time_series_table )
         if (const auto * id = args[0]->as<ASTIdentifier>())
         {
             if (auto table_id = id->createTable())
@@ -54,12 +54,12 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
         if (args.size() == 1)
         {
-            /// timeSeriesMetrics( 'my_time_series_table' )
+            /// timeSeriesMetricFamilies( 'my_time_series_table' )
             time_series_storage_id.table_name = checkAndGetLiteralArgument<String>(args[0], "table_name");
         }
         else
         {
-            /// timeSeriesMetrics( 'mydb', 'my_time_series_table' )
+            /// timeSeriesMetricFamilies( 'mydb', 'my_time_series_table' )
             time_series_storage_id.database_name = checkAndGetLiteralArgument<String>(args[0], "database_name");
             time_series_storage_id.table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
         }
@@ -163,29 +163,35 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 
-    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
-`timeSeriesMetrics(db_name.time_series_table)` - Returns the [metrics](/reference/engines/table-engines/integrations/time-series#metrics-table) table
+`timeSeriesMetricFamilies(db_name.time_series_table)` - Returns the [metric families](/reference/engines/table-engines/integrations/time-series#metric-families-table) table
 used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
 
 ```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS metrics_table
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES metric_families_table
 ```
 
-The function also works if the _metrics_ table is inner:
+The function also works if the _metric families_ table is inner:
 
 ```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
 ```
 
 The following queries are equivalent:
 
 ```sql
-SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
-SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
-SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
+SELECT * FROM timeSeriesMetricFamilies(db_name.time_series_table);
+SELECT * FROM timeSeriesMetricFamilies('db_name.time_series_table');
+SELECT * FROM timeSeriesMetricFamilies('db_name', 'time_series_table');
 ```
+
+<Note>
+The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which is kept for backwards compatibility.
+</Note>
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+    factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
@@ -266,7 +272,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -293,7 +299,7 @@ Unary operators `+` and `-`.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `predict_linear`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
 ## Example {#example}
 
@@ -345,7 +351,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -372,7 +378,7 @@ Unary operators `+` and `-`.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `predict_linear`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
 ## Example {#example}
 
