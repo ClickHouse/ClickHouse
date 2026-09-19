@@ -30,6 +30,7 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
+#include <Poco/String.h>
 
 namespace CurrentMetrics
 {
@@ -119,6 +120,24 @@ std::optional<size_t> extractDeltaLakeSnapshotVersionFromMetadata(StorageMetadat
 
     const auto & state = std::get<DeltaLake::TableStateSnapshot>(storage_metadata->datalake_table_state.value());
     return state.version;
+}
+
+/// A Delta table may only hold Parquet data files: the initial commit records `format.provider = "parquet"`.
+void validateWriteFormat(const StorageObjectStorageConfiguration & configuration)
+{
+    if (Poco::toLower(configuration.format) != "parquet")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "DeltaLake tables can only contain Parquet data files, got format `{}`",
+            configuration.format);
+
+    /// The spellings `chooseCompressionMethod` maps to `CompressionMethod::None` for a `.parquet` path.
+    const auto compression_method = Poco::toLower(configuration.compression_method);
+    if (!compression_method.empty() && compression_method != "auto" && compression_method != "none")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "DeltaLake tables can only contain Parquet data files, got compression method `{}`",
+            configuration.compression_method);
 }
 
 }
@@ -641,6 +660,9 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "To enable them, set allow_delta_lake_writes = 1");
     }
 
+    /// Reject before any data file is written, which also closes the attach-then-INSERT path.
+    validateWriteFormat(*configuration);
+
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
@@ -724,6 +746,9 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
         return false;
     }
+
+    /// Fresh CREATE only: on the attach path above the format affects reads, which fail loudly on their own.
+    validateWriteFormat(*configuration_ptr);
 
     /// A fresh CREATE must write the initial commit, which requires delta lake writes; fail when they are off.
     if (!local_context->getSettingsRef()[Setting::allow_delta_lake_writes])

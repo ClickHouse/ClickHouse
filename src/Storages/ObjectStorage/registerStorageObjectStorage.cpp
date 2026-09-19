@@ -2352,6 +2352,8 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 
 Delta Lake writes are a Beta feature disabled by default and must be enabled with `SET allow_delta_lake_writes = 1;` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1;`).
 
+A Delta Lake table may only contain `Parquet` data files, so a table that is written to must be declared with the default `format` and no `compression` argument. Any other value is rejected, both when a new table is created and when data is inserted.
+
 <Note>
 Writing using the table engine is supported only through delta kernel.
 Writes work for S3 and GCS, and for Azure from version 26.9.
