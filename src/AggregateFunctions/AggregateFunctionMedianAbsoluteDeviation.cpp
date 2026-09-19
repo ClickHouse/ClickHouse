@@ -319,11 +319,13 @@ AggregateFunctionPtr createAggregateFunctionMedianAbsoluteDeviation(
 
     const DataTypePtr & argument_type = argument_types[0];
 
+// NOLINTBEGIN(bugprone-macro-parentheses) -- TYPE is a type used as a template argument.
 #define DISPATCH(TYPE) \
     if (WhichDataType(argument_type).idx == TypeIndex::TYPE) \
         return std::make_shared<AggregateFunctionMedianAbsoluteDeviation<TYPE>>(argument_type);
     FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+// NOLINTEND(bugprone-macro-parentheses)
 
     throw Exception(
         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
