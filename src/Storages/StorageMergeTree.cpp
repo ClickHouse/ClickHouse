@@ -24,7 +24,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -176,7 +176,7 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     if (mutation.tid.isNonTransactional())
         return {};
 
-    auto txn = TransactionLog::instance().tryGetRunningTransaction(mutation.tid.getHash());
+    auto txn = TransactionManager::instance().tryGetRunningTransaction(mutation.tid.getHash());
     if (txn)
         return txn;
 
@@ -470,7 +470,8 @@ void StorageMergeTree::drop()
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder,
+    DDLGuardPtr & ddl_guard)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
 
@@ -521,8 +522,19 @@ void StorageMergeTree::alter(
             setInMemoryMetadata(new_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            if (statistics_changed)
+                setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else if (commands.isCommentAlter())
     {
@@ -531,8 +543,16 @@ void StorageMergeTree::alter(
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
         }
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            setInMemoryMetadata(old_metadata);
+            throw;
+        }
     }
     else
     {
@@ -552,6 +572,21 @@ void StorageMergeTree::alter(
             applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
         }
 
+        /// Waiting for a mutation takes as long as the mutation runs, so the guard is not held for it.
+        /// It is re-acquired under the table locks and re-resolves the table, a concurrent DROP can win.
+        auto wait_for_mutation_unguarded = [&](Int64 version_to_wait)
+        {
+            const bool reacquire = ddl_guard != nullptr;
+            ddl_guard.reset();
+            waitForMutation(version_to_wait, /* from_another_mutation */ true);
+            if (reacquire)
+            {
+                ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+                    shared_from_this(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                table_id = getStorageID();
+            }
+        };
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
@@ -567,7 +602,7 @@ void StorageMergeTree::alter(
             if (prev_mutation != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                waitForMutation(prev_mutation, /* from_another_mutation */ true);
+                wait_for_mutation_unguarded(prev_mutation);
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
             }
         }
@@ -589,7 +624,7 @@ void StorageMergeTree::alter(
             if (mutation_to_wait != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
-                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
+                wait_for_mutation_unguarded(mutation_to_wait);
                 LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
             }
         }
@@ -801,6 +836,11 @@ void StorageMergeTree::alter(
                 throw;
             }
         }
+
+        /// Schema is committed and the mutation (if any) is queued; don't hold DDLGuard across
+        /// the wait, otherwise a blocked mutation (e.g. after SYSTEM STOP MERGES) would block
+        /// any concurrent DROP/RENAME on this table.
+        ddl_guard.reset();
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
             waitForMutation(mutation_version, false);
@@ -1395,6 +1435,20 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                     result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::PART_IS_LOCKED);
                     result.latest_fail_time = time(nullptr);
                 }
+
+                LOG_DEBUG(
+                    log,
+                    "Mutation {} of {} waits on part {} (data_version {} < {}), state {}, removal_tid {}, "
+                    "lock hash {}, fail reason {}",
+                    mutation_entry.file_name,
+                    mutation_entry.tid,
+                    data_part->name,
+                    data_version,
+                    mutation_version,
+                    data_part->stateString(),
+                    data_part->version->getInfo().removal_tid,
+                    part_locked,
+                    result.latest_fail_reason.empty() ? "none, still waiting" : result.latest_fail_reason);
             }
 
             return result;
@@ -1542,7 +1596,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (auto txn = tryGetTransactionForMutation(*to_kill, log.load()))
     {
         LOG_TRACE(log, "Cancelling transaction {} which had started mutation {}", to_kill->tid, mutation_id);
-        TransactionLog::instance().rollbackTransaction(txn);
+        TransactionManager::instance().rollbackTransaction(txn);
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
@@ -1599,7 +1653,7 @@ void StorageMergeTree::loadMutations()
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
-                    if (auto csn = TransactionLog::getCSN(entry.tid))
+                    if (auto csn = TransactionManager::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
                         entry.writeCSN(csn);
@@ -2183,7 +2237,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (transactions_enabled.load(std::memory_order_relaxed))
     {
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
-        txn = TransactionLog::instance().beginTransaction();
+        txn = TransactionManager::instance().beginTransaction();
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
@@ -2512,7 +2566,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            if (!tid.isNonTransactional() && !TransactionLog::getCSN(tid))
+            if (!tid.isNonTransactional() && !TransactionManager::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 
