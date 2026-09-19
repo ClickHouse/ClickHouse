@@ -1,0 +1,10 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <checked_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/checked_disk/</path>
+            </checked_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>

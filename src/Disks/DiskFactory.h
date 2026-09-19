@@ -16,6 +16,8 @@
 namespace DB
 {
 
+class ConfigurationWithUsageTracking;
+
 using DisksMap = std::map<String, DiskPtr, std::less<>>;
 /**
  * Disk factory. Responsible for creating new disk objects.
@@ -52,9 +54,28 @@ public:
         bool custom_disk = false,
         const std::unordered_set<String> & skip_types = {}) const;
 
+    /// Apply a reloaded configuration to a disk that already exists, and report the elements of its
+    /// definition that nothing reads. The reload does not go through `create`, so the check is done
+    /// here, over the keys read while the disk was created plus the keys read by `applyNewSettings`.
+    void applyNewSettings(
+        const DiskPtr & disk,
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & map) const;
+
     void clearRegistry();
 
 private:
+    /// Report the elements of the disk definition that nothing has read while the disk was created.
+    static void checkForUnknownKeys(
+        const ConfigurationWithUsageTracking & tracked_config,
+        const String & name,
+        const String & disk_type,
+        const String & config_prefix,
+        const ContextPtr & context);
+
     using DiskTypeRegistry = std::unordered_map<String, Creator>;
     DiskTypeRegistry registry;
 
