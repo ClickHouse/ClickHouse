@@ -12,9 +12,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 为存储在 Amazon S3、Azure、HDFS 或本地的 Apache [Iceberg](https://iceberg.apache.org/) 表提供表式接口。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
@@ -30,36 +28,28 @@ icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 这些参数的说明分别与表函数 `s3`、`azureBlobStorage`、`HDFS` 和 `file` 中对应参数的说明一致。
 `format` 表示 Iceberg 表中数据文件的格式。
 
 对于 `icebergS3`，可使用可选参数 `extra_credentials` 传入 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。有关配置步骤，请参见 [安全访问 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
-<div id="returned-value">
-  ### 返回值
-</div>
+### 返回值 {#returned-value}
 
 一个具有指定结构的表，用于读取指定 Iceberg 表中的数据。
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example}
 
 ```sql
 SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
 <Warning>
-  ClickHouse 支持通过 `icebergS3`、`icebergAzure`、`icebergHDFS` 和 `icebergLocal` 表函数，以及 `IcebergS3`、`IcebergAzure`、`IcebergHDFS` 和 `IcebergLocal` 表引擎，读取 Iceberg 格式的 v1 和 v2 版本。对 v3 的支持不完整；不支持删除向量和清单合并整理。
+  ClickHouse 支持通过 `icebergS3`、`icebergAzure`、`icebergHDFS` 和 `icebergLocal` 表函数，以及 `IcebergS3`、`IcebergAzure`、`IcebergHDFS` 和 `IcebergLocal` 表引擎，读取 Iceberg 格式的 v1 和 v2 版本。对 v3 的支持不完整：支持读取删除向量；不支持清单合并整理。
 </Warning>
 
-<div id="defining-a-named-collection">
-  ## 定义命名集合
-</div>
+## 定义命名集合 {#defining-a-named-collection}
 
 下面是一个用于存储 URL 和凭据的命名集合配置示例：
 
@@ -82,9 +72,7 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
-<div id="iceberg-writes-catalogs">
-  ## 使用数据目录
-</div>
+## 使用数据目录 {#iceberg-writes-catalogs}
 
 Iceberg 表也可以配合多种数据目录使用，例如 [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/)、[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) 和 [Unity Catalog](https://www.unitycatalog.io/)。
 
@@ -116,9 +104,7 @@ ENGINE = IcebergS3(
 )
 ```
 
-<div id="schema-evolution">
-  ## Schema 演进
-</div>
+## Schema 演进 {#schema-evolution}
 
 目前，借助 CH，你可以读取 schema 会随时间演变的 Iceberg 表。当前支持读取以下这类表：列被添加或删除，以及列顺序发生变化。你还可以将某一列从必须有值改为允许 NULL。此外，我们还支持简单类型之间允许的类型转换，即：  
 
@@ -128,31 +114,21 @@ ENGINE = IcebergS3(
 
 目前，尚不支持更改嵌套结构，或更改数组和 Map 中元素的类型。
 
-<div id="partition-pruning">
-  ## 分区裁剪
-</div>
+## 分区裁剪 {#partition-pruning}
 
 ClickHouse 支持在对 Iceberg 表执行 SELECT 查询时进行分区裁剪，这有助于通过跳过不相关的数据文件来优化查询性能。要启用分区裁剪，请设置 `use_iceberg_partition_pruning = 1`。有关 Iceberg 分区裁剪的更多信息，请参见 https://iceberg.apache.org/spec/#partitioning
 
-<div id="time-travel">
-  ## 时间旅行
-</div>
+## 时间旅行 {#time-travel}
 
 ClickHouse 支持 Iceberg 表的时间旅行功能，让您可以使用特定的时间戳或快照 ID 查询历史数据。
 
-<div id="deleted-rows">
-  ## 处理含已删除行的表
-</div>
+## 处理含已删除行的表 {#deleted-rows}
 
 ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-delete-files)和[等值删除](https://iceberg.apache.org/spec/#equality-delete-files)的 Iceberg 表。自 v25.8 起支持等值删除。
 
-以下删除方法**暂不支持**：
+ClickHouse 还支持读取[删除向量](https://iceberg.apache.org/spec/#deletion-vectors) (在 v3 中引入) 。该支持仅限只读：ClickHouse 不会写入、更新或压缩删除向量，且 Iceberg 格式版本 3 的表不支持 `ALTER TABLE ... DELETE` 和 `ALTER TABLE ... UPDATE`。
 
-* [删除向量](https://iceberg.apache.org/spec/#deletion-vectors) (在 v3 中引入)
-
-<div id="basic-usage">
-  ### 基本用法
-</div>
+### 基本用法 {#basic-usage}
 
 ```sql
  SELECT * FROM example_table ORDER BY 1 
@@ -166,9 +142,7 @@ ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-
 
 注意：不能在同一查询中同时指定 `iceberg_timestamp_ms` 和 `iceberg_snapshot_id` 参数。
 
-<div id="important-considerations">
-  ### 重要注意事项
-</div>
+### 重要注意事项 {#important-considerations}
 
 * **快照**通常会在以下情况下创建：
 
@@ -178,15 +152,11 @@ ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-
 
 * **schema 变更通常不会创建快照**——这会在对经历过 schema 演进的表使用时间旅行时带来一些重要行为。
 
-<div id="example-scenarios">
-  ### 示例场景
-</div>
+### 示例场景 {#example-scenarios}
 
 这些场景使用 Spark 来演示外部 Iceberg 写入器进行的 schema 变更。
 
-<div id="scenario-1">
-  #### 场景 1：无新增快照时的 schema 变更
-</div>
+#### 场景 1：无新增快照时的 schema 变更 {#scenario-1}
 
 考虑以下操作顺序：
 
@@ -246,9 +216,7 @@ ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-
 * 在 ts1 和 ts2：仅显示最初的两列
 * 在 ts3：显示全部三列，其中第一行的 price 为 NULL
 
-<div id="scenario-2">
-  #### 场景 2：历史 schema 与当前 schema 的差异
-</div>
+#### 场景 2：历史 schema 与当前 schema 的差异 {#scenario-2}
 
 在当前时刻执行时间旅行查询时，显示的 schema 可能与当前表的 schema 不同：
 
@@ -290,9 +258,7 @@ ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-
 
 出现这种情况，是因为 `ALTER TABLE` 不会创建新的 快照；对于当前表，Spark 读取的是最新元数据文件中的 `schema_id` 值，而不是从某个 快照 中获取。
 
-<div id="scenario-3">
-  #### 场景 3：历史 schema 与当前 schema 的差异
-</div>
+#### 场景 3：历史 schema 与当前 schema 的差异 {#scenario-3}
 
 第二点是，进行时间旅行时，你无法获取表在写入任何数据之前的状态：
 
@@ -313,15 +279,11 @@ ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-
 
 在 ClickHouse 中，这种行为与 Spark 保持一致。你可以直接将 Spark 的 Select 查询理解为 ClickHouse 的 Select 查询，两者的工作方式相同。
 
-<div id="metadata-file-resolution">
-  ## 元数据文件定位
-</div>
+## 元数据文件定位 {#metadata-file-resolution}
 
 在 ClickHouse 中使用 `iceberg` 表函数时，系统需要找到正确的 metadata.json 文件，该文件用于描述 Iceberg 表的结构。下面介绍这一定位过程的工作方式：
 
-<div id="candidate-search">
-  ### 候选项搜索 (按优先顺序)
-</div>
+### 候选项搜索 (按优先顺序) {#candidate-search}
 
 1. **直接指定路径**：
    *如果设置了 `iceberg_metadata_file_path`，系统会将其与 Iceberg 表目录路径拼接，使用该精确路径。
@@ -336,9 +298,7 @@ ClickHouse 支持带有[位置删除](https://iceberg.apache.org/spec/#position-
 3. **默认搜索**：
    *如果以上两个设置都未提供，`metadata` 目录中的所有 `.metadata.json` 文件都会成为候选项
 
-<div id="most-recent-file">
-  ### 选择最新文件
-</div>
+### 选择最新文件 {#most-recent-file}
 
 根据上述规则识别出候选文件后，系统会进一步确定其中哪个是最新的：
 
@@ -361,21 +321,15 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 
 **注意**：虽然 Iceberg 目录通常负责处理元数据解析，但 ClickHouse 中的 `iceberg` 表函数 会直接将存储在 S3 中的文件识别为 Iceberg 表，因此理解这些解析规则很重要。
 
-<div id="metadata-cache">
-  ## 元数据缓存
-</div>
+## 元数据缓存 {#metadata-cache}
 
 `Iceberg` 表引擎和表函数支持元数据缓存，可存储 manifest 文件、manifest 列表以及元数据 json 的相关信息。该缓存存储在内存中。此功能由设置 `use_iceberg_metadata_files_cache` 控制，且默认启用。
 
-<div id="aliases">
-  ## 别名
-</div>
+## 别名 {#aliases}
 
 表函数 `iceberg` 现为 `icebergS3` 的别名。
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -383,9 +337,7 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_etag` — 文件的 etag。类型：`LowCardinality(String)`。如果 etag 未知，则值为 `NULL`。
 
-<div id="writes-into-iceberg-table">
-  ## 写入 Iceberg 表
-</div>
+## 写入 Iceberg 表 {#writes-into-iceberg-table}
 
 从 25.7 版本开始，ClickHouse 支持修改位于可写存储后端上的 Iceberg 表。
 
@@ -395,16 +347,12 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 SET allow_insert_into_iceberg = 1;
 ```
 
-<div id="create-iceberg-table">
-  ### 创建表
-</div>
+### 创建表 {#create-iceberg-table}
 
 要在可写 backend 上创建新的独立 Iceberg 表，请使用 Iceberg 表引擎，并显式指定 schema。
 写入支持 Iceberg 规范中的所有数据格式，例如 Parquet、Avro、ORC。
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example-iceberg-writes-create}
 
 ```sql
 CREATE TABLE iceberg_writes_example
@@ -418,17 +366,13 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 注意：如需创建 version hint 文件，请启用 `iceberg_use_version_hint` 设置。
 如果要压缩 metadata.json 文件，请在 `iceberg_metadata_compression_method` 设置中指定编解码器名称。
 
-<div id="writes-inserts">
-  ### INSERT
-</div>
+### INSERT {#writes-inserts}
 
 <BetaBadge />
 
 创建新表后，您可以使用标准的 ClickHouse 语法插入数据。
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example-iceberg-writes-insert}
 
 ```sql
 INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
@@ -448,16 +392,12 @@ x: Ivanov
 y: 993
 ```
 
-<div id="iceberg-writes-delete">
-  ### DELETE
-</div>
+### DELETE {#iceberg-writes-delete}
 
 ClickHouse 也支持在 merge-on-read 格式下删除多余的行。
 该查询会创建一个包含位置删除文件的新快照。
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example-iceberg-writes-delete}
 
 ```sql
 ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
@@ -472,15 +412,11 @@ x: Ivanov
 y: 993
 ```
 
-<div id="iceberg-writes-schema-evolution">
-  ### Schema 演进
-</div>
+### Schema 演进 {#iceberg-writes-schema-evolution}
 
 ClickHouse 允许你对简单类型 (不包括 Tuple、Array 和 Map) 的列进行添加、删除、修改或重命名。
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example-iceberg-writes-evolution}
 
 ```sql
 ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
@@ -560,9 +496,7 @@ x: Ivanov
 value: 993
 ```
 
-<div id="iceberg-writes-compaction">
-  ### 合并整理
-</div>
+### 合并整理 {#iceberg-writes-compaction}
 
 ClickHouse 支持对 Iceberg 表执行合并整理。目前，它可以在更新元数据的同时，将位置删除文件合并到数据文件中。此前的快照 ID 和时间戳保持不变，因此仍可使用相同的值进行时间旅行查询。
 
@@ -583,9 +517,7 @@ x: Ivanov
 y: 993
 ```
 
-<div id="iceberg-expire-snapshots">
-  ### 过期快照
-</div>
+### 过期快照 {#iceberg-expire-snapshots}
 
 Iceberg 表会在每次 INSERT、DELETE 或 UPDATE 操作时累积快照。随着时间推移，这可能会产生大量快照及其关联的数据文件。`expire_snapshots` 命令会删除旧快照，并清理不再被任何保留快照引用的数据文件。
 
@@ -669,9 +601,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 6. 在正常模式下：物理删除不可达的 manifest 列表、manifest 文件和数据文件
 7. 在 `dry_run = 1` 模式下：跳过步骤 5 和 6，仅返回计算出的指标
 
-<div id="iceberg-snapshot-retention-policy">
-  #### 快照保留策略
-</div>
+#### 快照保留策略 {#iceberg-snapshot-retention-policy}
 
 `expire_snapshots` 命令遵循 [Iceberg 快照保留策略](https://iceberg.apache.org/spec/#snapshot-retention-policy)。保留策略通过 Iceberg 表属性以及按引用的覆盖设置进行配置：
 
@@ -713,9 +643,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * 当 ClickHouse 更新元数据时，目录 自身的授权 (REST catalog auth、AWS Glue IAM 等) 仍会独立执行
 </Note>
 
-<div id="iceberg-remove-orphan-files">
-  ### 删除孤立文件
-</div>
+### 删除孤立文件 {#iceberg-remove-orphan-files}
 
 孤立文件是指存储中存在、但未被 Iceberg 表元数据中的任何快照引用的文件。它们会因写入失败、合并整理后的清理不完整以及操作中断而不断累积，导致存储空间持续增长且无上限。`remove_orphan_files` 命令可用于识别并删除这些孤立文件。
 
@@ -797,9 +725,7 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
   * `older_than` 阈值可防止删除仍在写入中的文件——默认 3 天的阈值提供了较为充足的安全余量
 </Note>
 
-<div id="see-also">
-  ## 另请参见
-</div>
+## 另请参见 {#see-also}
 
 * [Iceberg 引擎](/zh/reference/engines/table-engines/integrations/iceberg)
 * [Iceberg cluster 表函数](/zh/reference/functions/table-functions/icebergCluster)

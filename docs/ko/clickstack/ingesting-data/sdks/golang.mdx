@@ -3,32 +3,20 @@ slug: /use-cases/observability/clickstack/sdks/golang
 description: 'ClickStack용 Golang SDK - ClickHouse 관측성 스택'
 title: 'Golang'
 doc_type: 'guide'
-keywords: ['Golang ClickStack SDK', 'Go OpenTelemetry 통합', 'Golang 관측성', 'Go 트레이싱 인스트루먼테이션', 'ClickStack Go SDK']
+keywords: ['Golang ClickStack SDK', 'Go OpenTelemetry 통합', 'Golang 관측성', 'Go 트레이싱 instrumentation', 'ClickStack Go SDK']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack은 텔레메트리 데이터(로그 및
-트레이스) 수집에 OpenTelemetry 표준을 사용합니다. 트레이스는 자동 인스트루먼테이션으로 생성되므로, 트레이싱을 활용하기 위해 수동
-인스트루먼테이션을 할 필요는 없습니다.
+트레이스) 수집에 OpenTelemetry 표준을 사용합니다. 트레이스는 자동 instrumentation으로 생성되므로, 트레이싱을 활용하기 위해 수동
+instrumentation을 할 필요는 없습니다.
 
-**이 가이드에서 통합하는 항목:**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ 로그</td>
-      <td className="pe-2">✅ 메트릭</td>
-      <td className="pe-2">✅ 트레이스</td>
-    </tr>
-  </tbody>
-</table>
+## 시작하기 {#getting-started}
 
-<div id="getting-started">
-  ## 시작하기
-</div>
-
-<div id="install-opentelemetry">
-  ### OpenTelemetry instrumentation 패키지 설치
-</div>
+### OpenTelemetry instrumentation 패키지 설치 {#install-opentelemetry}
 
 OpenTelemetry 및 HyperDX Go 패키지를 설치하려면 아래 명령을 사용하세요. 추적 정보가 올바르게 추가되도록 [현재 제공되는 instrumentation 패키지](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages)를 확인하고 필요한 패키지를 설치하는 것이 좋습니다.
 
@@ -39,9 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-<div id="native-http-server-example">
-  ### 네이티브 HTTP server 예시 (net/http)
-</div>
+### 네이티브 HTTP server 예시 (net/http) {#native-http-server-example}
 
 이 예시에서는 `net/http/otelhttp`를 사용하겠습니다.
 
@@ -149,9 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-<div id="gin-application-example">
-  ### Gin 애플리케이션 예시
-</div>
+### Gin 애플리케이션 예시 {#gin-application-example}
 
 이 예시에서는 `gin-gonic/gin`을 사용하겠습니다.
 
@@ -235,26 +219,24 @@ func main() {
 }
 ```
 
-<div id="configure-environment-variables">
-  ### 환경 변수 설정
-</div>
+### 환경 변수 설정 {#configure-environment-variables}
 
 그런 다음 셸에서 다음 환경 변수를 설정하여 OpenTelemetry collector를 통해 텔레메트리를 ClickStack으로 전송하십시오:
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

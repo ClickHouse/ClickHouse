@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で利用でき、ClickHouse のソースコードから自動生成されています。
 
-<div id="max_replicated_fetches_network_bandwidth">
-  ## max_replicated_fetches_network_bandwidth
-</div>
+## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -44,11 +42,9 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 新しいノードの追加や置き換えのためにデータをレプリケートする際の
 速度制限に使用できます。
 
-<div id="max_replicated_logs_to_keep">
-  ## max_replicated_logs_to_keep
-</div>
+## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 非アクティブなレプリカが存在する場合に、ClickHouse Keeper のログに保持できるレコード数。非アクティブなレプリカは、この数を超えると失われたものと見なされます。
 
@@ -56,33 +52,25 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 * 任意の正の整数。
 
-<div id="max_replicated_merges_in_queue">
-  ## max_replicated_merges_in_queue
-</div>
+## max_replicated_merges_in_queue {#max_replicated_merges_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ReplicatedMergeTree queue で、パーツのマージおよびミューテーションのタスクを同時にいくつまで許可するか。
 
-<div id="max_replicated_merges_with_ttl_in_queue">
-  ## max_replicated_merges_with_ttl_in_queue
-</div>
+## max_replicated_merges_with_ttl_in_queue {#max_replicated_merges_with_ttl_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 ReplicatedMergeTree queue で、有効期限 (TTL) 付きパーツのマージタスクを同時にいくつまで許可するか。
 
-<div id="max_replicated_mutations_in_queue">
-  ## max_replicated_mutations_in_queue
-</div>
+## max_replicated_mutations_in_queue {#max_replicated_mutations_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
 ReplicatedMergeTree queue 内で同時に許可される、ミューテーションのタスク数。
 
-<div id="max_replicated_sends_network_bandwidth">
-  ## max_replicated_sends_network_bandwidth
-</div>
+## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

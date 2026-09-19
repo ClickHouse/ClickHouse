@@ -6,21 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'التسجيل', 'التكامل', 'مراقبة التطبيقات']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 تتيح لك حزمة SDK الخاصة بـ ClickStack لـ React Native إضافة إمكانات الرصد إلى
 تطبيق React Native لإرسال الأحداث إلى ClickStack. ويتيح لك ذلك عرض طلبات
 شبكة تطبيقات الجوال والاستثناءات إلى جانب أحداث الخادم الخلفي ضمن مخطط زمني واحد.
 
-يدمج هذا الدليل:
+<ClickStackIntegrates signals={['traces']} />
 
-* **طلبات XHR/Fetch**
+## البدء {#getting-started}
 
-<div id="getting-started">
-  ## البدء
-</div>
-
-<div id="install-via-npm">
-  ### التثبيت باستخدام NPM
-</div>
+### التثبيت باستخدام NPM {#install-via-npm}
 
 استخدم الأمر التالي لتثبيت [حزمة ClickStack لـ React Native](https://www.npmjs.com/package/@hyperdx/otel-react-native).
 
@@ -28,9 +24,7 @@ keywords: ['clickstack', 'sdk', 'التسجيل', 'التكامل', 'مراقب�
 npm install @hyperdx/otel-react-native
 ```
 
-<div id="initialize-clickstack">
-  ### تهيئة ClickStack
-</div>
+### تهيئة ClickStack {#initialize-clickstack}
 
 هيّئ المكتبة في أقرب مرحلة ممكنة من دورة حياة تطبيقك:
 
@@ -38,16 +32,14 @@ npm install @hyperdx/otel-react-native
 import { HyperDXRum } from '@hyperdx/otel-react-native';
 
 HyperDXRum.init({
-  url: 'http://your-otel-collector:4318',
+  url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
   apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
   tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
 
-<div id="attach-user-information-metadata">
-  ### إرفاق معلومات المستخدم أو البيانات الوصفية (اختياري)
-</div>
+### إرفاق معلومات المستخدم أو البيانات الوصفية (اختياري) {#attach-user-information-metadata}
 
 يتيح لك إرفاق معلومات المستخدم البحث في الجلسات والأحداث وتصفيتها
 في HyperDX. يمكن استدعاء ذلك في أي وقت أثناء جلسة العميل. وسترتبط
@@ -68,9 +60,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-<div id="instrument-lower-versions">
-  ### إضافة الرصد إلى الإصدارات الأقدم
-</div>
+### إضافة الرصد إلى الإصدارات الأقدم {#instrument-lower-versions}
 
 لإضافة الرصد إلى التطبيقات التي تعمل على إصدارات React Native الأقدم من 0.68،
 حرّر ملف `metro.config.js` لإجبار metro على استخدام
@@ -116,9 +106,7 @@ module.exports = {
 };
 ```
 
-<div id="view-navigation">
-  ## التنقّل بين الشاشات
-</div>
+## التنقّل بين الشاشات {#view-navigation}
 
 الإصداران 5 و6 من [react-navigation](https://github.com/react-navigation/react-navigation) مدعومان.
 

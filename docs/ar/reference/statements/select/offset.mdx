@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+لا يمكن الجمع بين صيَغ `OFFSET ... FETCH` وفق معيار SQL وصيغة النطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until).
+
 يمكن أن تكون قيمة `offset_row_count` أو `fetch_row_count` رقمًا أو ثابتًا حرفيًا. ويمكنك حذف `fetch_row_count`؛ إذ تكون قيمته افتراضيًا 1.
 
 يحدد `OFFSET` عدد الصفوف التي يجب تخطيها قبل بدء إرجاع الصفوف من مجموعة نتائج الاستعلام. ويؤدي `OFFSET n` إلى تخطي أول `n` صفوف من النتيجة.
@@ -57,9 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   قد تعتمد الإزاحة الفعلية أيضًا على إعداد [offset](/ar/reference/settings/session-settings/other#offset).
 </Note>
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 جدول الإدخال:
 

@@ -12,9 +12,7 @@ doc_type: 'reference'
 该引擎以只读方式集成现有 Apache [Paimon](https://paimon.apache.org/) 表，这些表可存储在亚马逊 S3、Azure、HDFS 或本地。
 它支持快照读取、增量读取，以及由该引擎提供的基础分区裁剪。
 
-<div id="create-table">
-  ## 创建表
-</div>
+## 创建表 {#create-table}
 
 请注意，Paimon 表必须已存在于存储中；此命令不接受用于创建新表的 DDL 参数。
 创建 `Paimon*` 表受 `allow_experimental_paimon_storage_engine` 控制 (默认禁用) ，因此请先启用它，再运行 `CREATE TABLE`。
@@ -35,18 +33,14 @@ CREATE TABLE paimon_table_local
     ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="engine-arguments">
-  ## 引擎参数
-</div>
+## 引擎参数 {#engine-arguments}
 
 这些参数的说明分别与 `S3`、`AzureBlobStorage`、`HDFS` 和 `File` 表引擎中的参数说明一致。
 `format` 表示 Paimon 表中数据文件的格式。
 
 可以通过 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 指定引擎参数
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example}
 
 ```sql
 CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -70,9 +64,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhou
 CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="capabilities">
-  ## 功能
-</div>
+## 功能 {#capabilities}
 
 * 从最新的表快照读取。
 * 启用时，可基于已提交的快照 ID 进行增量读取。
@@ -80,9 +72,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * 配置后可选择在后台刷新元数据。
 * 使用 Atomic/Replicated 数据库时，表 UUID 会保持稳定，因此可在 Keeper 路径中使用 `{uuid}` 宏。
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 该引擎使用与相应对象存储引擎相同的设置，并额外提供了 Paimon 特有的设置：
 
@@ -103,20 +93,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-  **`use_paimon_metadata_files_cache` 的生命周期**
-
+<Note title="`use_paimon_metadata_files_cache` 的生命周期">
   `use_paimon_metadata_files_cache` 的生效方式取决于访问 Paimon 表的方式：
 
   * **表函数** (例如 `SELECT ... FROM paimonS3(...)`) ：缓存决策会按每个查询分别评估，因此你可以直接在 `SELECT` 中传入 `SETTINGS use_paimon_metadata_files_cache = 1`。
   * **持久表引擎** (`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` 以及 `Paimon` 别名) ：缓存决策只会在表元数据初始化时锁定一次，并存储在不可变的持久组件中；元数据更新路径刻意不会重新读取该设置。因此，对于已初始化的持久表，在 `SELECT` 中传入 `SETTINGS use_paimon_metadata_files_cache = 1` 不会产生任何效果——系统仍会继续使用先前锁定的决策。要更改它，请在表元数据初始化之前设置 `use_paimon_metadata_files_cache`，或者先对该表执行 `DROP`，再使用所需值重新 `CREATE`。
 
   服务器级缓存容量 (`paimon_metadata_files_cache_size`) *不会*被锁定：它是一个运行时设置，可以通过 `SYSTEM RELOAD CONFIG` 更改，并且即使对于已初始化的表也会立即生效。
-</Info>
+</Note>
 
-<div id="incremental-read-examples">
-  ## 增量读取示例
-</div>
+## 增量读取示例 {#incremental-read-examples}
 
 基于 Keeper 状态的增量读取：
 
@@ -129,9 +115,7 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-<div id="query-level-settings-for-incremental-read">
-  ### 增量读取的查询级设置
-</div>
+### 增量读取的查询级设置 {#query-level-settings-for-incremental-read}
 
 以下设置属于**查询级** (通过 `SELECT ... SETTINGS` 传递，而不是在 `CREATE TABLE` 中设置) 。它们用于控制增量读取在每次查询中的行为：
 
@@ -154,9 +138,7 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
-<div id="paimon-to-mergetree-via-refresh-mv">
-  ## 通过可刷新materialized view 将 Paimon 同步到 MergeTree
-</div>
+## 通过可刷新materialized view 将 Paimon 同步到 MergeTree {#paimon-to-mergetree-via-refresh-mv}
 
 你可以构建一条端到端管道，使用 `APPEND` 模式的可刷新materialized view，持续将数据从 Paimon 表同步到 MergeTree 表。每个刷新周期只会从 Paimon 读取新增的增量数据，并将其追加到目标表。
 
@@ -221,9 +203,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
   删除 MV 前请先将其停止，以免后台刷新阻塞 DDL 操作。
 </Note>
 
-<div id="limitations">
-  ## 限制
-</div>
+## 限制 {#limitations}
 
 * 增量读取要求已配置 Keeper (ZooKeeper) 。
 * 增量读取要求设置 `paimon_keeper_path`，且每个表的该值必须唯一。
@@ -233,15 +213,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * 增量读取不会处理来自 Paimon 源端的历史数据删除。如果上游 Paimon 数据被删除或更新，已写入 ClickHouse MergeTree 目标表的对应行不会被自动删除。你必须在 MergeTree 表上手动执行 `ALTER TABLE ... DELETE` 来清理过时数据。
 * 如果底层 Paimon 表在同一对象存储路径下被删除并重新创建 (例如通过 Flink 或 Spark) ，你必须对相应的 ClickHouse 表执行 `DROP` 并重新 `CREATE`。ClickHouse 会通过比较 schema-0 的创建时间戳来检测这种重建，并报错；在重新创建之前，这个过时的 ClickHouse 表无法使用。
 
-<div id="aliases">
-  ## 别名
-</div>
+## 别名 {#aliases}
 
 `Paimon` 表引擎会根据 `disk` 设置自动检测存储后端，并相应分派到 `PaimonS3`、`PaimonAzure` 或 `PaimonLocal`。如果未指定 `disk`，则默认使用 `PaimonS3` 实现。
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -249,9 +225,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_etag` — 文件的 etag。类型：`LowCardinality(String)`。如果 etag 未知，则值为 `NULL`。
 
-<div id="data-types-supported">
-  ## 支持的数据类型
-</div>
+## 支持的数据类型 {#data-types-supported}
 
 | Paimon 数据类型                       | ClickHouse 数据类型           |
 | --------------------------------- | ------------------------- |
@@ -273,9 +247,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
 
-<div id="partition-supported">
-  ## 支持的分区键
-</div>
+## 支持的分区键 {#partition-supported}
 
 Paimon 分区键支持的数据类型：
 

@@ -15,15 +15,11 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 [Apache Parquet](https://parquet.apache.org/)은 Hadoop 생태계에서 널리 사용되는 열 지향 저장 포맷입니다. ClickHouse는 이 포맷의 읽기 및 쓰기를 지원합니다.
 
-<div id="data-types-matching-parquet">
-  ## 데이터 타입 매핑
-</div>
+## 데이터 타입 매핑 {#data-types-matching-parquet}
 
 아래 표는 Parquet 데이터 타입이 ClickHouse [데이터 타입](/ko/reference/data-types/index)과 어떻게 매핑되는지 보여줍니다.
 
@@ -39,7 +35,8 @@ doc_type: 'reference'
 | `UINT_64`                            | [UInt64](/ko/reference/data-types/int-uint)                                     |
 | `INT_64`                             | [Int64](/ko/reference/data-types/int-uint)                                      |
 | `DATE`                               | [Date32](/ko/reference/data-types/date)                                         |
-| `TIMESTAMP`, `TIME`                  | [DateTime64](/ko/reference/data-types/datetime64)                               |
+| `TIMESTAMP`                          | [DateTime64](/ko/reference/data-types/datetime64)                               |
+| `TIME`                               | [Time64](/ko/reference/data-types/time64)                                       |
 | `FLOAT`                              | [Float32](/ko/reference/data-types/float)                                       |
 | `DOUBLE`                             | [Float64](/ko/reference/data-types/float)                                       |
 | `INT96`                              | [DateTime64(9, &#39;UTC&#39;)](/ko/reference/data-types/datetime64)             |
@@ -47,7 +44,7 @@ doc_type: 'reference'
 | `JSON`                               | [JSON](/ko/reference/data-types/newjson)                                        |
 | `FIXED_LEN_BYTE_ARRAY`               | [FixedString](/ko/reference/data-types/fixedstring)                             |
 | `DECIMAL`                            | [Decimal](/ko/reference/data-types/decimal)                                     |
-| `LIST`                               | [배열](/ko/reference/data-types/array)                                         |
+| `LIST`                               | [배열](/ko/reference/data-types/array)                                            |
 | `MAP`                                | [Map](/ko/reference/data-types/map)                                             |
 | struct                               | [Tuple](/ko/reference/data-types/tuple)                                         |
 | `FLOAT16`                            | [Float32](/ko/reference/data-types/float)                                       |
@@ -79,9 +76,7 @@ Parquet 파일을 쓸 때 대응되는 Parquet 타입이 없는 데이터 타입
 
 배열은 중첩될 수 있으며, 인수로 `Nullable` 타입 값을 가질 수 있습니다. `Tuple` 및 `Map` 타입도 중첩될 수 있습니다.
 
-<div id="wide-integers">
-  ### 와이드 정수
-</div>
+### 와이드 정수 {#wide-integers}
 
 기본적으로 ClickHouse는 `Int128`, `UInt128`, `Int256`, `UInt256`을 리틀 엔디언 순서의 주석 없는 `FIXED_LEN_BYTE_ARRAY(16/32)` 값으로 기록합니다. 이전 ClickHouse 버전에서 파일을 읽을 수 있도록 이 레거시 표현은 기본값으로 유지됩니다.
 
@@ -102,19 +97,14 @@ ClickHouse 테이블 컬럼의 데이터 타입은 삽입된 Parquet 데이터�
 
 일부 Parquet 타입에는 밀접하게 대응되는 ClickHouse 타입이 없습니다. 이러한 타입은 다음과 같이 읽습니다.
 
-* `TIME`(하루 중 시간)은 타임스탬프로 읽습니다. 예: `10:23:13.000`은 `1970-01-01 10:23:13.000`이 됩니다.
-* `isAdjustedToUTC=false`인 `TIMESTAMP`/`TIME`은 로컬 wall-clock time입니다(어떤 시간대를 로컬로 간주하는지와 관계없이, 로컬 시간대 기준의 연, 월, 일, 시, 분, 초 및 소수 초 필드). 이는 SQL `TIMESTAMP WITHOUT TIME ZONE`과 같습니다. 하지만 ClickHouse는 이를 UTC 타임스탬프인 것처럼 읽습니다. 예: `2025-09-29 18:42:13.000`(로컬 시계의 표시값을 나타냄)은 `2025-09-29 18:42:13.000`(시점을 나타내는 `DateTime64(3, 'UTC')`)이 됩니다. 이를 String으로 변환하면 올바른 연, 월, 일, 시, 분, 초 및 소수 초가 표시되며, 이후 이를 UTC가 아닌 어떤 로컬 시간대의 값으로 해석할 수 있습니다. 직관과 달리 타입을 `DateTime64(3, 'UTC')`에서 `DateTime64(3)`로 변경해도 도움이 되지 않습니다. 두 타입 모두 시계의 표시값이 아니라 시점을 나타내기 때문입니다. 다만 `DateTime64(3)`는 로컬 시간대를 사용해 잘못 포맷됩니다.
+* `isAdjustedToUTC=false`인 `TIMESTAMP`는 로컬 wall-clock time입니다(어떤 시간대를 로컬로 간주하는지와 관계없이, 로컬 시간대 기준의 연, 월, 일, 시, 분, 초 및 소수 초 필드). 이는 SQL `TIMESTAMP WITHOUT TIME ZONE`과 같습니다. 하지만 ClickHouse는 이를 UTC 타임스탬프인 것처럼 읽습니다. 예: `2025-09-29 18:42:13.000`(로컬 시계의 표시값을 나타냄)은 `2025-09-29 18:42:13.000`(시점을 나타내는 `DateTime64(3, 'UTC')`)이 됩니다. 이를 String으로 변환하면 올바른 연, 월, 일, 시, 분, 초 및 소수 초가 표시되며, 이후 이를 UTC가 아닌 어떤 로컬 시간대의 값으로 해석할 수 있습니다. 직관과 달리 타입을 `DateTime64(3, 'UTC')`에서 `DateTime64(3)`로 변경해도 도움이 되지 않습니다. 두 타입 모두 시계의 표시값이 아니라 시점을 나타내기 때문입니다. 다만 `DateTime64(3)`는 로컬 시간대를 사용해 잘못 포맷됩니다.
 * `INTERVAL`은 현재 Parquet 파일에 인코딩된 시간 인터벌의 원시 바이너리 표현이 담긴 `FixedString(12)`로 읽습니다。
 
-<div id="geo-types">
-  ## Geo 타입 (GeoParquet)
-</div>
+## Geo 타입 (GeoParquet) {#geo-types}
 
 ClickHouse는 [GeoParquet](https://geoparquet.org/) 사양에 따라 지오메트리 컬럼의 읽기 및 쓰기를 지원합니다. 지오메트리 컬럼은 [WKB](https://libgeos.org/specifications/wkb/)로 인코딩된 `BYTE_ARRAY` 페이로드로 저장되며(읽을 때는 WKT), 파일 수준 Parquet 메타데이터의 JSON `geo` 키에는 각 지오메트리 컬럼의 인코딩, 지오메트리 타입, CRS가 설명되어 있습니다.
 
-<div id="read">
-  ### 읽기 동작
-</div>
+### 읽기 동작 {#read}
 
 읽을 때 지오메트리 컬럼은 해당하는 ClickHouse [geo 데이터 타입](/ko/reference/data-types/geo)으로 매핑됩니다.
 
@@ -122,21 +112,15 @@ ClickHouse는 [GeoParquet](https://geoparquet.org/) 사양에 따라 지오메�
 * 여러 지오메트리 타입을 포함하거나 타입을 알 수 없는 컬럼은 지원되는 모든 geo 타입을 포괄하는 `Variant`인 [`Geometry`](/ko/reference/data-types/geo#geometry) 타입으로 읽어들입니다.
 * 요청한 컬럼 타입이 `String`이면 GeoParquet 메타데이터는 무시되며, 원시 인코딩된 지오메트리 페이로드를 그대로 반환합니다. 즉, GeoParquet 컬럼에 선언된 인코딩에 따라 WKB 또는 WKT 바이트를 반환합니다. 이는 설정 [`input_format_parquet_allow_geoparquet_parser`](/ko/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser)가 `0`으로 설정된 경우에도 마찬가지입니다.
 
-<div id="write">
-  ### 쓰기 동작
-</div>
+### 쓰기 동작 {#write}
 
 쓰기 시 `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` 또는 `MultiPolygon` 타입의 최상위 컬럼은 `BYTE_ARRAY`(WKB)로 인코딩되며, 적절한 `geo` JSON 메타데이터가 Parquet 파일 footer에 추가됩니다. 최상위 [`Geometry`](/ko/reference/data-types/geo#geometry) `Variant`도 WKB `BYTE_ARRAY` 페이로드로 인코딩되지만(하위 값은 WKB로 변환되어 `Nullable(String)` 컬럼에 저장됨), 이에 대해서는 `geo` 메타데이터가 출력되지 않으므로 읽을 때 GeoParquet 지오메트리 컬럼으로 인식되지 않습니다. [`Ring`](/ko/reference/data-types/geo#ring)과 같은 다른 geo 관련 타입은 GeoParquet 메타데이터 없이 해당 네이티브 내부 표현으로 기록됩니다. 이 동작은 [`output_format_parquet_geometadata`](/ko/reference/settings/formats/output-format#output_format_parquet_geometadata)를 `0`으로 설정해 완전히 비활성화할 수 있으며, 이 경우 지원되는 geo 타입도 네이티브 내부 표현(`Point`는 `Tuple(Float64, Float64)`, `LineString`은 `배열(Point)`, `Polygon`은 `배열(배열(Point))` 등)으로 기록되고 GeoParquet 메타데이터도 출력되지 않습니다.
 
 지오메트리 컬럼은 스키마 루트에 있거나 `Tuple`(`struct`) 내부에 중첩되어 있어야 하며, `배열` 또는 `Map` 내부에 중첩하는 것은 지원되지 않습니다. geo 컬럼에는 `Nullable`도 지원되지 않습니다.
 
-<div id="example-usage">
-  ## 사용 예시
-</div>
+## 사용 예시 {#example-usage}
 
-<div id="inserting-data">
-  ### 데이터 삽입
-</div>
+### 데이터 삽입 {#inserting-data}
 
 다음 데이터가 들어 있는 `football.parquet`라는 Parquet 파일을 사용합니다:
 
@@ -168,9 +152,7 @@ ClickHouse는 [GeoParquet](https://geoparquet.org/) 사양에 따라 지오메�
 INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
 
-<div id="reading-data">
-  ### 데이터 읽기
-</div>
+### 데이터 읽기 {#reading-data}
 
 다음과 같이 `Parquet` 포맷을 사용해 데이터를 읽습니다:
 
@@ -187,9 +169,7 @@ FORMAT Parquet
 
 Hadoop과 데이터를 주고받으려면 [`HDFS 테이블 엔진`](/ko/reference/engines/table-engines/integrations/hdfs)을 사용할 수 있습니다.
 
-<div id="format-settings">
-  ## 포맷 설정
-</div>
+## 포맷 설정 {#format-settings}
 
 | 설정                                                                             | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 기본값                                                                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

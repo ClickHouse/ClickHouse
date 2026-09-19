@@ -33,9 +33,7 @@ Maintenant que nous avons des données dans ClickHouse, nous voulons exécuter q
 
 Voyons maintenant chaque composant à l’œuvre lors de l’exécution d’une requête. Nous allons prendre quelques requêtes, puis les examiner à l’aide de l’instruction `EXPLAIN`.
 
-<div id="parser">
-  ## Analyseur syntaxique
-</div>
+## Analyseur syntaxique {#parser}
 
 L’objectif d’un analyseur syntaxique est de transformer le texte de la requête en un AST (arbre syntaxique abstrait). Cette étape peut être visualisée à l’aide de `EXPLAIN AST` :
 
@@ -80,22 +78,21 @@ graph TD
     tisqe --> te["TableExpression"]
     te --> ti["TableIdentifier session_events"]
 ```
+
 Chaque nœud a des nœuds enfants, et l’ensemble de l’arbre représente la structure globale de votre requête. Il s’agit d’une structure logique qui facilite le traitement d’une requête. Du point de vue de l’utilisateur final (sauf s’il s’intéresse à l’exécution des requêtes), ce n’est pas très utile ; cet outil est principalement destiné aux développeurs.
 
-<div id="analyzer">
-  ## Analyseur
-</div>
+## Analyseur {#analyzer}
 
-ClickHouse dispose actuellement de deux architectures pour l’analyseur. Vous pouvez utiliser l’ancienne architecture en définissant : `enable_analyzer=0`. L’architecture actuelle est activée par défaut depuis ClickHouse `24.3`. Nous ne décrirons ici que l’architecture actuelle, puisque l’ancienne est dépréciée et n’est conservée que pour la compatibilité descendante.
+L’analyseur est activé par défaut depuis ClickHouse `24.3` et constitue le seul mode d’analyse de requête depuis la version `26.9`, où `enable_analyzer` est devenu un paramètre obsolète qui ne peut plus être désactivé.
 
 <Note>
-  L’architecture actuelle devrait nous offrir un meilleur cadre pour améliorer les performances de ClickHouse. Cependant, comme il s’agit d’un composant fondamental du traitement des requêtes, elle peut aussi avoir un impact négatif sur certaines requêtes, et il existe des [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Vous pouvez revenir à l’ancienne architecture en modifiant le paramètre `enable_analyzer` au niveau de la requête ou de l’utilisateur.
+  L’analyseur est un composant fondamental du traitement des requêtes, et il peut avoir un impact négatif sur certaines requêtes : consultez les [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) pour connaître les requêtes qui doivent être adaptées.
 </Note>
 
-L’analyseur est une étape importante de l’exécution des requêtes. Il prend un AST et le transforme en arbre de requête. Le principal avantage d’un arbre de requête par rapport à un AST est que de nombreux composants y sont résolus, comme le stockage, par exemple. On sait également dans quelle table lire, les alias sont aussi résolus, et l’arbre connaît les différents types de données utilisés. Grâce à tout cela, l’analyseur peut appliquer des optimisations. Ces optimisations fonctionnent au moyen de « passes ». Chaque passe recherche différents types d’optimisation. Vous pouvez voir toutes les passes [ici](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) ; voyons cela en pratique avec notre requête précédente :
+L’analyseur est une étape importante de l’exécution des requêtes. Il prend un AST et le transforme en arbre de requête. Le principal avantage d’un arbre de requête par rapport à un AST est que de nombreux composants y sont résolus, comme le stockage, par exemple. On sait également dans quelle table lire, les alias sont aussi résolus, et l’arbre connaît les différents types de données utilisés. Grâce à tout cela, l’analyseur peut appliquer des optimisations. Ces optimisations fonctionnent au moyen de « passes ». Chaque passe recherche différents types d’optimisation. Vous pouvez voir toutes les passes [ici](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) ; voyons cela en pratique avec notre requête précédente :
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -113,12 +110,11 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
-│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -139,14 +135,13 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
-│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Entre les deux exécutions, vous pouvez voir comment les alias et les projections sont résolus.
 
 <div id="planner">
-  ## Planificateur
+  ## Planificateur {#planner}
 </div>
 
 Le planificateur prend un arbre de requête et en construit un plan de requête. L&#39;arbre de requête indique ce que l&#39;on veut faire avec une requête donnée, tandis que le plan de requête indique comment cela sera fait. Des optimisations supplémentaires sont également effectuées au niveau du plan de requête. Vous pouvez utiliser `EXPLAIN PLAN` ou `EXPLAIN` pour afficher le plan de requête (`EXPLAIN` exécutera `EXPLAIN PLAN`).
@@ -266,7 +261,7 @@ GROUP BY type
 Vous pouvez maintenant voir toutes les entrées, fonctions, alias et types de données utilisés. Vous pouvez également voir [ici](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h) certaines des optimisations que le planificateur va appliquer.
 
 <div id="query-pipeline">
-  ## Pipeline d’exécution de la requête
+  ## Pipeline d’exécution de la requête {#query-pipeline}
 </div>
 
 Un pipeline d’exécution de la requête est généré à partir du plan de requête. Il est très similaire à ce dernier, à la différence qu&#39;il ne s&#39;agit pas d&#39;un arbre, mais d&#39;un graphe. Il montre comment ClickHouse va exécuter une requête et quelles ressources seront utilisées. L&#39;analyse du pipeline d’exécution de la requête est très utile pour identifier le goulot d’étranglement au niveau des entrées/sorties. Reprenons notre requête précédente et examinons l’exécution du pipeline d’exécution de la requête :
@@ -467,7 +462,7 @@ digraph
 L’Executor a donc décidé de ne pas paralléliser les opérations, car le volume de données n&#39;était pas suffisant. En ajoutant davantage de lignes, l’Executor a ensuite décidé d’utiliser plusieurs threads, comme le montre le graphe.
 
 <div id="executor">
-  ## Executor
+  ## Executor {#executor}
 </div>
 
 Enfin, la dernière étape de l&#39;exécution de la requête est prise en charge par l&#39;executor. Celui-ci récupère le pipeline d’exécution de la requête et l&#39;exécute. Il existe différents types d&#39;executors, selon que vous effectuez un `SELECT`, un `INSERT` ou un `INSERT SELECT`.

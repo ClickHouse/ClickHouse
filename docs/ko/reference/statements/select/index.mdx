@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 `SELECT` 쿼리는 데이터를 조회합니다. 기본적으로 요청한 데이터는 클라이언트에 반환되며, [INSERT INTO](/ko/reference/statements/insert-into)와 함께 사용하면 다른 테이블로 전달할 수도 있습니다.
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 [WITH expr_list(subquery)]
@@ -30,6 +28,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
+[LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -73,17 +72,13 @@ FROM table
 |> ORDER BY c DESC
 ```
 
-<div id="select-clause">
-  ## SELECT 절
-</div>
+## SELECT 절 {#select-clause}
 
 `SELECT` 절에 지정된 [표현식](/ko/reference/syntax#expressions)은 위에서 설명한 절의 모든 작업이 끝난 후 계산됩니다. 이러한 표현식은 결과의 각 행에 개별적으로 적용되는 것처럼 동작합니다. `SELECT` 절의 표현식에 집계 함수가 포함된 경우, ClickHouse는 [GROUP BY](/ko/reference/statements/select/group-by) 집계 과정에서 집계 함수와 그 인수로 사용된 표현식을 처리합니다.
 
 결과에 모든 컬럼을 포함하려면 별표(`*`) 기호를 사용하십시오. 예를 들어 `SELECT * FROM ...`와 같습니다.
 
-<div id="dynamic-column-selection">
-  ### 동적 컬럼 선택
-</div>
+### 동적 컬럼 선택 {#dynamic-column-selection}
 
 동적 컬럼 선택(또는 COLUMNS 표현식)은 [re2](https://en.wikipedia.org/wiki/RE2_\(software\)) 정규식을 사용해 결과의 일부 컬럼을 선택할 수 있게 해줍니다.
 
@@ -142,9 +137,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 `COLUMNS` 표현식과 일치하는 컬럼은 서로 다른 데이터 타입일 수 있습니다. `COLUMNS`가 어떤 컬럼과도 일치하지 않고 `SELECT`의 유일한 표현식인 경우 ClickHouse는 예외를 발생시킵니다.
 
-<div id="select-columns-with-like-or-ilike">
-  #### `LIKE` 또는 `ILIKE`를 사용한 컬럼 선택
-</div>
+#### `LIKE` 또는 `ILIKE`를 사용한 컬럼 선택 {#select-columns-with-like-or-ilike}
 
 대소문자를 구분하는 `LIKE` 또는 대소문자를 구분하지 않는 `ILIKE`를 사용해 `*` 뒤에서 이름이 패턴과 일치하는 컬럼을 선택할 수도 있습니다:
 
@@ -178,9 +171,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 └────┘
 ```
 
-<div id="asterisk">
-  ### 별표
-</div>
+### 별표 {#asterisk}
 
 쿼리의 어느 부분에서든 표현식 대신 별표를 사용할 수 있습니다. 쿼리를 분석할 때 별표는 모든 테이블 컬럼의 목록으로 확장됩니다(`MATERIALIZED` 및 `ALIAS` 컬럼 제외). 별표 사용이 적절한 경우는 몇 가지뿐입니다.
 
@@ -192,9 +183,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 그 밖의 모든 경우에는 별표 사용을 권장하지 않습니다. 별표를 사용하면 열 지향 DBMS의 장점은 살리지 못하고 단점만 초래하기 때문입니다. 다시 말해, 별표 사용은 권장되지 않습니다.
 
-<div id="extreme-values">
-  ### 극값
-</div>
+### 극값 {#extreme-values}
 
 결과뿐 아니라 결과 컬럼의 최솟값과 최댓값도 확인할 수 있습니다. 이를 위해 **extremes** 설정을 1로 지정합니다. 최솟값과 최댓값은 숫자 타입, 날짜, 날짜-시간 타입에 대해 계산됩니다. 다른 컬럼에는 기본값이 출력됩니다.
 
@@ -202,19 +191,15 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 `JSON*` 및 `XML` 포맷에서는 극값이 별도의 &#39;extremes&#39; 필드에 출력됩니다. `TabSeparated*`, `CSV*`, `Vertical` 포맷에서는 이 행이 기본 결과 뒤에 출력되며, `totals`가 있으면 그 뒤에 출력됩니다. 또한 그 앞에는 빈 행이 하나 추가됩니다(다른 데이터 뒤). `Pretty*` 포맷에서는 이 행이 기본 결과 뒤에, `totals`가 있으면 그 뒤에 별도의 테이블로 출력됩니다. `Template` 포맷에서는 지정된 템플릿에 따라 극값이 출력됩니다.
 
-극값은 `LIMIT` 이전의 행을 기준으로 계산되지만, `LIMIT BY`는 적용된 이후입니다. 하지만 `LIMIT offset, size`를 사용할 경우 `offset` 이전의 행도 `extremes`에 포함됩니다. 스트림 요청에서는 `LIMIT`를 거친 소수의 행이 결과에 추가로 포함될 수도 있습니다.
+극값은 `LIMIT` 이전의 행을 기준으로 계산되지만, `LIMIT BY`는 적용된 이후입니다. 하지만 `LIMIT offset, size`를 사용할 경우 `offset` 이전의 행도 `extremes`에 포함됩니다. [`LIMIT ... AFTER ... UNTIL`](/ko/reference/statements/select/limit#limit-after-until) 범위는 여기서 `LIMIT`와 동일하게 동작합니다. 즉, 극값은 해당 범위가 적용되기 전에 읽은 행을 기준으로 계산됩니다. 스트림 요청에서는 `LIMIT`를 거친 소수의 행이 결과에 추가로 포함될 수도 있습니다.
 
-<div id="notes">
-  ### 참고 사항
-</div>
+### 참고 사항 {#notes}
 
 쿼리의 모든 부분에서 동의어(`AS` 별칭)를 사용할 수 있습니다.
 
 `GROUP BY`, `ORDER BY`, `LIMIT BY` 절은 위치 인수를 지원합니다. 이를 사용하려면 [enable&#95;positional&#95;arguments](/ko/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 설정을 켜십시오. 그러면 예를 들어 `ORDER BY 1,2`는 테이블을 첫 번째 컬럼, 그다음 두 번째 컬럼 기준으로 행을 정렬합니다.
 
-<div id="implementation-details">
-  ## 구현 세부 사항
-</div>
+## 구현 세부 사항 {#implementation-details}
 
 쿼리에서 `DISTINCT`, `GROUP BY`, `ORDER BY` 절과 `IN`, `JOIN` 서브쿼리를 생략하면, O(1) 크기의 RAM만 사용하여 전체 쿼리를 완전히 스트림 방식으로 처리할 수 있습니다. 그렇지 않으면 적절한 제한을 지정하지 않은 경우 쿼리가 많은 RAM을 사용할 수 있습니다.
 
@@ -234,9 +219,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 자세한 내용은 &quot;설정&quot; 섹션을 참조하십시오. 외부 정렬(임시 테이블을 디스크에 저장하는 방식)과 외부 집계를 사용할 수 있습니다.
 
-<div id="select-modifiers">
-  ## SELECT 수정자
-</div>
+## SELECT 수정자 {#select-modifiers}
 
 `SELECT` 쿼리에서 다음 수정자를 사용할 수 있습니다.
 
@@ -246,9 +229,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 | [`EXCEPT`](/ko/reference/statements/select/except_modifier)   | 결과에서 제외할 하나 이상의 컬럼 이름을 지정합니다. 일치하는 모든 컬럼 이름은 출력에서 생략됩니다.                                                                                                                                                              |
 | [`REPLACE`](/ko/reference/statements/select/replace_modifier) | 하나 이상의 [표현식 별칭](/ko/reference/syntax#expression-aliases)을 지정합니다. 각 별칭은 `SELECT *` SQL 문의 컬럼 이름과 일치해야 합니다. 출력 컬럼 목록에서는 해당 별칭과 일치하는 컬럼이 그 `REPLACE`의 표현식으로 대체됩니다. 이 수정자는 컬럼의 이름이나 순서는 변경하지 않습니다. 하지만 값과 값의 유형은 변경할 수 있습니다. |
 
-<div id="modifier-combinations">
-  ### 수정자 조합
-</div>
+### 수정자 조합 {#modifier-combinations}
 
 각 수정자는 개별적으로 사용할 수도 있고, 함께 조합해 사용할 수도 있습니다.
 
@@ -278,9 +259,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 └─────────────────┴────────┘
 ```
 
-<div id="settings-in-select-query">
-  ## SELECT 쿼리의 SETTINGS
-</div>
+## SELECT 쿼리의 SETTINGS {#settings-in-select-query}
 
 필요한 설정을 `SELECT` 쿼리 안에 직접 지정할 수 있습니다. 설정 값은 이 쿼리에만 적용되며, 쿼리 실행 후에는 기본값 또는 이전 값으로 다시 설정됩니다.
 

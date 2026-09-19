@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 يوفّر هذا المحرك تكاملًا مع منظومة [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs)، ما يتيح استيراد البيانات المتدفقة.
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE test (name String, value UInt32)
@@ -43,18 +41,14 @@ ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;
 SETTINGS mode = 'unordered'
 ```
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 مجموعة الإعدادات المدعومة هي إلى حدّ كبير نفسها الخاصة بمحرك الجدول `S3Queue`، ولكن من دون البادئة `s3queue_`. راجع [القائمة الكاملة للإعدادات](/ar/reference/engines/table-engines/integrations/s3queue#settings).
 للحصول على قائمة بالإعدادات المهيأة للجدول، استخدم الجدول `system.azure_queue_settings`. هذا متاح بدءًا من `24.10`.
 
 فيما يلي الإعدادات المتوافقة فقط مع AzureQueue ولا تنطبق على S3Queue.
 
-<div id="after_processing_move_connection_string">
-  ### `after_processing_move_connection_string`
-</div>
+### `after_processing_move_connection_string` {#after_processing_move_connection_string}
 
 سلسلة الاتصال الخاصة بـ Azure Blob Storage لنقل الملفات التي تمت معالجتها بنجاح إليها، إذا كانت الوجهة حاوية Azure أخرى.
 
@@ -64,9 +58,7 @@ SETTINGS mode = 'unordered'
 
 القيمة الافتراضية: سلسلة فارغة.
 
-<div id="after_processing_move_container">
-  ### `after_processing_move_container`
-</div>
+### `after_processing_move_container` {#after_processing_move_container}
 
 اسم الحاوية التي تُنقل إليها الملفات التي تمت معالجتها بنجاح، إذا كانت الوجهة حاوية Azure أخرى.
 
@@ -92,17 +84,13 @@ SETTINGS
     after_processing_move_container = 'dst-container';
 ```
 
-<div id="select">
-  ## SELECT من محرك الجدول AzureQueue
-</div>
+## SELECT من محرك الجدول AzureQueue {#select}
 
 تكون استعلامات SELECT محظورة افتراضيًا على جداول AzureQueue. ويتبع ذلك نمط قائمة الانتظار الشائع، حيث تُقرأ البيانات مرة واحدة ثم تُزال من قائمة الانتظار. ويُحظر SELECT لمنع فقدان البيانات عن طريق الخطأ.
 ومع ذلك، قد يكون هذا مفيدًا أحيانًا. وللقيام بذلك، تحتاج إلى تعيين الإعداد `stream_like_engine_allow_direct_select` إلى `True`.
-يحتوي محرك AzureQueue على إعداد خاص لاستعلامات SELECT: `commit_on_select`. عيّنه إلى `False` للاحتفاظ بالبيانات في قائمة الانتظار بعد قراءتها، أو إلى `True` لإزالتها.
+يحتوي محرك AzureQueue على إعداد خاص لاستعلامات SELECT: `commit_on_select`. عيّنه إلى `False` للاحتفاظ بالبيانات في قائمة الانتظار بعد قراءتها، أو إلى `True` لإزالتها. (ملاحظة: لا يكون لهذا الإعداد معنى في وضع `exclusive` ويتم تجاهله؛ إذ يتصرف وضع `exclusive` دائمًا كما لو أن `commit_on_select` هو `True`.)
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
 لا يُعد `SELECT` مفيدًا كثيرًا في `استيراد البيانات المتدفقة` (إلا لأغراض `debugging`)، لأن كل ملف لا يمكن استيراده إلا مرة واحدة. ومن العملي أكثر إنشاء مسارات معالجة آنية باستخدام [العروض المادية](/ar/reference/statements/create/view). وللقيام بذلك:
 
@@ -131,18 +119,14 @@ AS SELECT key, data FROM azure_queue_engine_table;
 SELECT * FROM stats ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف.
 * `_file` — اسم الملف.
 
 لمزيد من المعلومات عن الأعمدة الافتراضية، راجع [هنا](/ar/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-<div id="introspection">
-  ## الاستقصاء الداخلي
-</div>
+## الاستقصاء الداخلي {#introspection}
 
 فعِّل التسجيل للجدول عبر إعداد الجدول `enable_logging_to_queue_log=1`.
 
@@ -214,9 +198,7 @@ exception:
 
 ```
 
-<div id="limitations">
-  ## القيود
-</div>
+## القيود {#limitations}
 
 يستخدم `AzureQueue` التنفيذ نفسه الذي يستخدمه `S3Queue`، وتَنطبق عليه [القيود](/ar/reference/engines/table-engines/integrations/s3queue#limitations) نفسها. وبوجه خاص، قد يؤدي انقطاع الطاقة عن جهاز عقدة ClickHouse إلى فقدان الصفوف المُستهلكة بصمت: إذ يُسجَّل الملف على أنه مُعالَج في Keeper (ومع `after_processing = 'delete'`، تُحذف blob المصدر الخاصة به) فور اكتمال عملية الإدراج، لكن الصفوف المُدرجة لا تصبح ثابتة على القرص إلا بعد تنفيذ fsync للـpart الهدف، وهذا لا يحدث افتراضيًا بشكل متزامن (`fsync_after_insert = 0`). بالنسبة إلى مسار الاستهلاك الموصى به عبر العرض المادي، يؤدي ضبط `fsync_after_insert = 1` (و`fsync_part_directory = 1`) على جدول `MergeTree` الهدف إلى تقليص هذه الفترة بدرجة كبيرة.
 

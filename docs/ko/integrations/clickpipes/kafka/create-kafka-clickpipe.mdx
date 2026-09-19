@@ -37,6 +37,8 @@ Kafka ClickPipes는 ClickPipes UI를 사용해 수동으로 배포 및 관리할
 
   <Step title="스키마 레지스트리 구성(선택 사항)" id="4-configure-your-schema-registry">
     Avro 및 Protobuf 토픽에는 유효한 스키마가 필요합니다. 스키마 레지스트리 구성 방법에 대한 자세한 내용은 [스키마 레지스트리](/ko/integrations/clickpipes/kafka/schema-registries)를 참조하십시오.
+
+    Protobuf의 경우 **Schema registry**를 비활성화 상태로 두고 [토픽을 선택할 때 스키마를 업로드](#7-select-your-topic)할 수도 있습니다.
   </Step>
 
   <Step title="Reverse Private Endpoint 구성(선택 사항)" id="5-configure-reverse-private-endpoint">
@@ -64,7 +66,9 @@ Kafka ClickPipes는 ClickPipes UI를 사용해 수동으로 배포 및 관리할
   </Step>
 
   <Step title="토픽을 선택하세요" id="7-select-your-topic">
-    토픽을 선택하면 UI에 해당 토픽의 샘플 문서가 표시됩니다.
+    토픽을 선택하세요. 스키마 레지스트리를 사용하지 않는 경우 **Schema format**에서 데이터 포맷을 선택하십시오. `Protobuf`의 경우 `.proto` 파일 또는 직렬화된 `FileDescriptorSet`(최대 768 KiB)을 업로드하십시오.
+
+    그러면 UI에 해당 토픽의 샘플 문서가 표시됩니다.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="토픽 선택" size="md" />
   </Step>

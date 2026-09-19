@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки относятся к серверу ClickHouse и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="shutdown_wait_backups_and_restores">
-  ## shutdown_wait_backups_and_restores
-</div>
+## shutdown_wait_backups_and_restores {#shutdown_wait_backups_and_restores}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Если задано значение true, ClickHouse будет ждать завершения выполняющихся резервных копий и восстановления перед остановкой.
 
-<div id="shutdown_wait_unfinished">
-  ## shutdown_wait_unfinished
-</div>
+## shutdown_wait_unfinished {#shutdown_wait_unfinished}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />Время задержки в секундах перед ожиданием завершения незавершённых запросов
+<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />Время задержки в секундах перед ожиданием завершения незавершённых запросов при остановке сервера. Также ограничивает время ожидания выполняющихся резервных копий и восстановлений, когда параметр `shutdown_wait_backups_and_restores` отключён.
 
-<div id="shutdown_wait_unfinished_queries">
-  ## shutdown_wait_unfinished_queries
-</div>
+## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Если установить значение `true`, ClickHouse перед завершением работы будет ждать окончания выполняющихся запросов.
 

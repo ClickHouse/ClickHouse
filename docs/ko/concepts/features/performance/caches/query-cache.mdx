@@ -10,7 +10,7 @@ doc_type: 'guide'
 쿼리 유형에 따라 ClickHouse 서버의 지연 시간과 리소스 사용량을 크게 줄일 수 있습니다.
 
 <div id="background-design-and-limitations">
-  ## 배경, 설계 및 제한 사항
+  ## 배경, 설계 및 제한 사항 {#background-design-and-limitations}
 </div>
 
 쿼리 캐시는 일반적으로 트랜잭션 일관성을 보장하는 방식과 그렇지 않은 방식으로 나눌 수 있습니다.
@@ -33,7 +33,7 @@ doc_type: 'guide'
 부담을 줄이고 중복을 피할 수 있습니다.
 
 <div id="configuration-settings-and-usage">
-  ## 구성 설정 및 사용
+  ## 구성 설정 및 사용 {#configuration-settings-and-usage}
 </div>
 
 <Note>
@@ -111,7 +111,7 @@ use_query_cache = true`), 이 경우 모든 `SELECT` 쿼리가 캐시된 결과�
 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 사용해 제한할 수 있습니다. 구체적으로는 사용자가
 쿼리 캐시에서 할당할 수 있는 최대 메모리 양(바이트)과 저장할 수 있는 쿼리 결과의 최대 개수를 제한할 수 있습니다. 이를 위해 먼저
 `users.xml`의 사용자 프로필에 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ko/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) 및
-[query&#95;cache&#95;max&#95;entries](/ko/reference/settings/session-settings/query-cache#query_cache_max_entries) 설정을 지정한 다음, 두 설정을 모두
+[query&#95;cache&#95;max&#95;entries](/ko/reference/settings/session-settings/query-cache#query_cache_max_entries) 구성을 지정한 다음, 두 설정을 모두
 읽기 전용으로 설정합니다:
 
 ```xml
@@ -170,7 +170,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 쿼리 캐시에서 태그 `tag`가 있는 엔트리만 제거하려면 `SYSTEM CLEAR QUERY CACHE TAG 'tag'` 문을 사용할 수 있습니다.
 
 <div id="subquery-caching">
-  ## 서브쿼리 캐싱
+  ## 서브쿼리 캐싱 {#subquery-caching}
 </div>
 
 기본적으로 외부 쿼리의 `use_query_cache`는 서브쿼리에 전파되지 않습니다. 즉, 각 서브쿼리에서 캐시 사용을 명시적으로 설정해야 합니다:
@@ -246,7 +246,7 @@ ClickHouse는 테이블 데이터를 [max&#95;block&#95;size](/ko/reference/sett
 다른 사용자가 접근할 수 있도록(즉, 공유되도록) 표시할 수 있습니다.
 
 <div id="related-content">
-  ## 관련 콘텐츠
+  ## 관련 콘텐츠 {#related-content}
 </div>
 
 * 블로그: [ClickHouse 쿼리 캐시를 소개합니다](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

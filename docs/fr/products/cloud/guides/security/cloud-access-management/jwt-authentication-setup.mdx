@@ -13,10 +13,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePl
 
 import { VersionBadge } from "/snippets/fr/components/VersionBadge/VersionBadge.jsx";
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Authentification JWT avec un fournisseur d'identité personnalisé" />
@@ -30,7 +26,7 @@ ClickHouse Cloud vous permet d&#39;authentifier les connexions à un service à 
 Vous pouvez configurer vous-même ces fournisseurs JWKS pour chaque service, depuis **Paramètres → Sécurité** dans la console ClickHouse Cloud.
 
 <div id="before-you-begin">
-  ## Avant de commencer
+  ## Avant de commencer {#before-you-begin}
 </div>
 
 Pour configurer des fournisseurs JWT pour un service, vous devez disposer des éléments suivants :
@@ -45,7 +41,7 @@ Pour configurer des fournisseurs JWT pour un service, vous devez disposer des é
 </Note>
 
 <div id="how-it-works">
-  ## Fonctionnement
+  ## Fonctionnement {#how-it-works}
 </div>
 
 Le client (votre fournisseur d’identité ou votre application) génère un JWT et le signe avec sa **clé privée**. Le jeton doit respecter le [format de jeton](/fr/concepts/features/security/external-authenticators/jwt#token-claims) attendu. ClickHouse le vérifie ensuite à l’aide des clés **publiques** publiées à l’URL de votre JWKS :
@@ -57,7 +53,7 @@ Le client (votre fournisseur d’identité ou votre application) génère un JWT
 ClickHouse valide et récupère l’URL JWKS lorsque vous ajoutez ou mettez à jour un fournisseur ; une URL mal configurée ou inaccessible est donc rejetée immédiatement.
 
 <div id="add-a-jwt-provider">
-  ## Ajouter un fournisseur JWT
+  ## Ajouter un fournisseur JWT {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -93,7 +89,7 @@ ClickHouse valide et récupère l’URL JWKS lorsque vous ajoutez ou mettez à j
 </Warning>
 
 <div id="limits">
-  ## Limites
+  ## Limites {#limits}
 </div>
 
 * Au maximum **cinq** fournisseurs JWT par service.
@@ -101,7 +97,7 @@ ClickHouse valide et récupère l’URL JWKS lorsque vous ajoutez ou mettez à j
 * L’URL JWKS doit être un endpoint HTTPS public. Les adresses privées, internes ou link-local sont rejetées.
 
 <div id="related">
-  ## Voir aussi
+  ## Voir aussi {#related}
 </div>
 
 * [Authentification JWT](/fr/concepts/features/security/external-authenticators/jwt) — claims du jeton, utilisateurs éphémères et utilisation du client.

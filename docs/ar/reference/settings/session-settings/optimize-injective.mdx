@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_injective_functions_in_group_by">
-  ## optimize_injective_functions_in_group_by
-</div>
+## optimize_injective_functions_in_group_by {#optimize_injective_functions_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يستبدل الدوال الحقنية بوسائطها في قسم `GROUP BY`.
 
-<div id="optimize_injective_functions_in_limit_by">
-  ## optimize_injective_functions_in_limit_by
-</div>
+## optimize_injective_functions_in_limit_by {#optimize_injective_functions_in_limit_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 مثال: `LIMIT 5 BY toString(x)` يصبح `LIMIT 5 BY x`.
 
-<div id="optimize_injective_functions_inside_uniq">
-  ## optimize_injective_functions_inside_uniq
-</div>
+## optimize_injective_functions_inside_uniq {#optimize_injective_functions_inside_uniq}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

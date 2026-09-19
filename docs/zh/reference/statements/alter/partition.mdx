@@ -30,9 +30,7 @@ doc_type: 'reference'
 
 {/* */}
 
-<div id="detach-partitionpart">
-  ## DETACH PARTITION|PART
-</div>
+## DETACH PARTITION|PART {#detach-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
@@ -53,9 +51,7 @@ ALTER TABLE mt DETACH PART 'all_2_2_0';
 
 此查询是复制的——它会将所有副本上的数据移动到 `detached` 目录。请注意，你只能在 leader 副本上执行此查询。要判断某个副本是否为 leader，请对 [system.replicas](/zh/reference/system-tables/replicas) 表执行 `SELECT` 查询。或者，更简单的做法是，在所有副本上执行 `DETACH` 查询——除 leader 副本外，其他所有副本都会抛出异常 (因为允许存在多个 leader) 。
 
-<div id="drop-partitionpart">
-  ## DROP PARTITION|PART
-</div>
+## DROP PARTITION|PART {#drop-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
@@ -74,9 +70,7 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-<div id="drop-detached-partitionpart">
-  ## DROP DETACHED PARTITION|PART
-</div>
+## DROP DETACHED PARTITION|PART {#drop-detached-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
@@ -85,9 +79,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 从 `detached` 中移除指定的 part，或移除指定分区中的所有 parts。
 有关如何设置分区表达式的更多信息，请参阅[如何设置分区表达式](#how-to-set-partition-expression)一节。
 
-<div id="forget-partition">
-  ## FORGET PARTITION
-</div>
+## FORGET PARTITION {#forget-partition}
 
 ```sql
 ALTER TABLE table_name FORGET PARTITION partition_expr
@@ -103,9 +95,7 @@ ALTER TABLE table_name FORGET PARTITION partition_expr
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-<div id="attach-partitionpart">
-  ## ATTACH PARTITION|PART
-</div>
+## ATTACH PARTITION|PART {#attach-partitionpart}
 
 ```sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -128,9 +118,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 你可以将数据放到某个副本上的 `detached` 目录中，并使用 `ALTER ... ATTACH` 查询将其添加到所有副本上的表中。
 
-<div id="attach-partition-from">
-  ## ATTACH PARTITION FROM
-</div>
+## ATTACH PARTITION FROM {#attach-partition-from}
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
@@ -148,11 +136,10 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 * 两个表必须具有相同的结构。
 * 两个表必须具有相同的分区键、相同的 ORDER BY 键和相同的主键。
 * 两个表必须具有相同的存储策略。
+* 如果源分片使用非自适应索引粒度，则两个表必须具有相同的 `index_granularity`：此类分片不存储每个标记对应的行数，因此需要使用目标表的该值来解释其标记。
 * 目标表必须包含源表中的所有索引和投影。如果目标表启用了 `enforce_index_structure_match_on_partition_manipulation` 设置，则索引和投影必须完全一致。否则，目标表中的索引和投影可以是源表的超集。
 
-<div id="replace-partition">
-  ## REPLACE PARTITION
-</div>
+## REPLACE PARTITION {#replace-partition}
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
@@ -170,11 +157,10 @@ ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM ta
 * 两个表必须具有相同的结构。
 * 两个表必须具有相同的分区键、相同的 ORDER BY 键，以及相同的主键。
 * 两个表必须具有相同的存储策略。
+* 如果源分片使用的是非自适应索引粒度，则两个表必须具有相同的 `index_granularity`：此类分片不存储每个标记对应的行数，因此需要使用目标表的取值来解释其标记。
 * 目标表必须包含源表中的所有索引和投影。如果在目标表中启用了 `enforce_index_structure_match_on_partition_manipulation` 设置，则索引和投影必须完全一致。否则，目标表中的索引和投影可以是源表的超集。
 
-<div id="move-partition-to-table">
-  ## MOVE PARTITION TO TABLE
-</div>
+## MOVE PARTITION TO TABLE {#move-partition-to-table}
 
 ```sql
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
@@ -188,11 +174,10 @@ ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO T
 * 两个表必须具有相同的分区键、相同的 ORDER BY 键以及相同的主键。
 * 两个表必须具有相同的存储策略。
 * 两个表必须属于同一引擎家族 (复制型或非复制型) 。
+* 如果源分片使用非自适应索引粒度，则两个表必须具有相同的 `index_granularity`：此类分片不存储每个标记对应的行数，因此需要使用目标表的取值来解释其标记。
 * 目标表必须包含源表中的所有索引和投影。如果在目标表中启用了 `enforce_index_structure_match_on_partition_manipulation` 设置，则索引和投影必须完全一致。否则，目标表中的索引和投影可以是源表的超集。
 
-<div id="clear-column-in-partition">
-  ## CLEAR COLUMN IN PARTITION
-</div>
+## CLEAR COLUMN IN PARTITION {#clear-column-in-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -206,9 +191,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITIO
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-<div id="freeze-partition">
-  ## FREEZE PARTITION
-</div>
+## FREEZE PARTITION {#freeze-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
@@ -252,9 +235,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 
 有关备份和恢复数据的更多信息，请参见[&quot;ClickHouse 中的备份与恢复&quot;](/zh/concepts/features/backup-restore/overview)一节。
 
-<div id="unfreeze-partition">
-  ## UNFREEZE PARTITION
-</div>
+## UNFREEZE PARTITION {#unfreeze-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
@@ -262,9 +243,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WIT
 
 从磁盘中移除名称指定的 `frozen` 分区。如果省略 `PARTITION` 子句，则该查询会一次性移除所有分区的备份。
 
-<div id="clear-index-in-partition">
-  ## CLEAR INDEX IN PARTITION
-</div>
+## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
@@ -272,9 +251,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION 
 
 该查询的作用方式与 `CLEAR COLUMN` 类似，但它重置的是索引，而不是列数据。
 
-<div id="fetch-partitionpart">
-  ## FETCH PARTITION|PART
-</div>
+## FETCH PARTITION|PART {#fetch-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
@@ -312,9 +289,7 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 
 尽管该查询名为 `ALTER TABLE`，但它不会更改表结构，也不会立即更改表中的可用数据。
 
-<div id="move-partitionpart">
-  ## MOVE PARTITION|PART
-</div>
+## MOVE PARTITION|PART {#move-partitionpart}
 
 用于 `MergeTree` 引擎家族的表，将分区或数据 parts 移动到其他卷或磁盘。请参阅 [使用多个块设备进行数据存储](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)。
 
@@ -335,9 +310,7 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-<div id="update-in-partition">
-  ## UPDATE IN PARTITION
-</div>
+## UPDATE IN PARTITION {#update-in-partition}
 
 用于操作指定分区中与指定过滤表达式匹配的数据。它作为一种[变更](/zh/reference/statements/alter/index#mutations)来实现。
 
@@ -347,9 +320,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example}
 
 ```sql
 -- 使用分区名称
@@ -359,15 +330,11 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
-<div id="see-also">
-  ### 另见
-</div>
+### 另见 {#see-also}
 
 * [UPDATE](/zh/reference/statements/alter/partition#update-in-partition)
 
-<div id="delete-in-partition">
-  ## DELETE IN PARTITION
-</div>
+## DELETE IN PARTITION {#delete-in-partition}
 
 删除指定分区中与指定过滤表达式匹配的数据。该操作通过[变更](/zh/reference/statements/alter/index#mutations)实现。
 
@@ -377,9 +344,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example-1}
 
 ```sql
 -- 使用分区名称
@@ -389,30 +354,22 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
-<div id="rewrite-parts">
-  ## 重写 parts
-</div>
+## 重写 parts {#rewrite-parts}
 
 这会使用所有新设置从头重写这些 parts。这样做是合理的，因为默认情况下，像 `use_const_adaptive_granularity` 这样的表级设置只会应用到新写入的 parts。
 
-<div id="example">
-  ### 示例
-</div>
+### 示例 {#example-rewrite-parts}
 
 ```sql
 ALTER TABLE mt REWRITE PARTS;
 ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
 ```
 
-<div id="see-also-1">
-  ### 另请参阅
-</div>
+### 另请参阅 {#see-also-1}
 
 * [DELETE](/zh/reference/statements/alter/delete)
 
-<div id="how-to-set-partition-expression">
-  ## 如何设置分区表达式
-</div>
+## 如何设置分区表达式 {#how-to-set-partition-expression}
 
 你可以在 `ALTER ... PARTITION` 查询中通过以下不同方式指定分区表达式：
 

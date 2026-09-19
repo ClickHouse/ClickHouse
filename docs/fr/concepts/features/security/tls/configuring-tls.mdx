@@ -513,7 +513,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## Configurer OpenSSL pour un ClickHouse Keeper autonome
+  ## Configurer OpenSSL pour un ClickHouse Keeper autonome {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 Lorsque ClickHouse Keeper s’exécute en tant que processus autonome (au lieu d’être intégré à ClickHouse server), les certificats et paramètres OpenSSL doivent être configurés séparément dans le fichier de configuration de Keeper. Sans cela, Keeper ne pourra pas établir de connexions sécurisées pour les communications client (`tcp_port_secure`) ni pour la réplication Raft entre les nœuds Keeper.
@@ -557,13 +557,13 @@ La section `<server>` est utilisée pour les connexions clientes entrantes sur l
 </Note>
 
 <div id="openssl-verification-modes">
-  ## Modes de vérification d’OpenSSL et gestionnaires de certificats
+  ## Modes de vérification d’OpenSSL et gestionnaires de certificats {#openssl-verification-modes}
 </div>
 
 La configuration `<openSSL>` prend en charge plusieurs options pour `<verificationMode>` et `<invalidCertificateHandler>`, qui déterminent la manière dont ClickHouse valide les certificats TLS. Ces paramètres s’appliquent à clickhouse-server, clickhouse-client et à ClickHouse Keeper autonome.
 
 <div id="verification-modes">
-  ### Modes de vérification
+  ### Modes de vérification {#verification-modes}
 </div>
 
 Définissez `<verificationMode>` dans la section `<server>` ou `<client>` de `<openSSL>` :
@@ -576,7 +576,7 @@ Définissez `<verificationMode>` dans la section `<server>` ou `<client>` de `<o
 | `strict`  | Exige le certificat du pair et le vérifie intégralement. La connexion échoue si le certificat est absent, expiré ou non signé par une CA de confiance. Recommandé pour la production. |
 
 <div id="invalid-certificate-handlers">
-  ### Gestionnaires de certificats invalides
+  ### Gestionnaires de certificats invalides {#invalid-certificate-handlers}
 </div>
 
 Définissez `<invalidCertificateHandler>` dans la section `<server>` ou `<client>` de `<openSSL>`. Ce gestionnaire détermine le comportement à adopter lorsque la vérification du certificat échoue. Côté serveur, il contrôle la réponse aux certificats client invalides. Côté client, il contrôle la réponse aux certificats serveur invalides.
@@ -587,7 +587,7 @@ Définissez `<invalidCertificateHandler>` dans la section `<server>` ou `<client
 | `AcceptCertificateHandler` | Accepte la connexion même si le certificat est invalide. À utiliser uniquement pour les tests.                             |
 
 <div id="disabling-certificate-verification">
-  ### Exemple : désactiver la vérification des certificats
+  ### Exemple : désactiver la vérification des certificats {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -667,8 +667,21 @@ Pour `clickhouse-client`, vous pouvez également utiliser l’option de CLI `--a
 </openSSL>
 ```
 
+## Rotation des certificats et des certificats CA sans redémarrage {#rotating-certificates-without-restart}
+
+Le ClickHouse server et ClickHouse Keeper surveillent les fichiers référencés par `certificateFile`, `privateKeyFile` et `caConfig`
+dans les sections `openSSL.server` et `openSSL.client` (ainsi que dans `protocols.*` pour les composable protocols), ou les fichiers du
+répertoire si `caConfig` désigne un répertoire. Lorsque l&#39;un de ces fichiers change, ou lorsque `SYSTEM RELOAD CONFIG` est exécuté, les
+certificats sont rechargés et utilisés pour toutes les nouvelles connexions TLS, y compris HTTPS, le native protocol sécurisé, les
+connexions interserveur, les connexions vers Keeper et les connexions Raft entre les nœuds Keeper. Les connexions déjà établies continuent d&#39;utiliser les
+certificats avec lesquels elles ont été ouvertes.
+
+Pour effectuer la rotation d&#39;un CA sans interruption de service, remplacez d&#39;abord le fichier `caConfig` par un bundle contenant à la fois l&#39;ancien et le nouveau
+certificat CA, puis basculez les certificats de node et de client vers ceux émis par le nouveau CA, et enfin remplacez le bundle
+par le nouveau certificat CA uniquement.
+
 <div id="summary">
-  ## Résumé
+  ## Résumé {#summary}
 </div>
 
 Cet article a porté sur la configuration d’un environnement ClickHouse avec TLS. Les paramètres varient selon les exigences des environnements de production ; par exemple, les niveaux de vérification des certificats, les protocoles, les suites de chiffrement, etc. Vous devriez désormais avoir une bonne compréhension des étapes à suivre pour configurer et mettre en œuvre des connexions sécurisées.

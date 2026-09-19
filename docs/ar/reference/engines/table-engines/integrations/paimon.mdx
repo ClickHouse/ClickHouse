@@ -12,9 +12,7 @@ doc_type: 'مرجع'
 يوفّر هذا المحرك تكاملًا للقراءة فقط مع جداول Apache [Paimon](https://paimon.apache.org/) الموجودة في Amazon S3 وAzure وHDFS والجداول المخزّنة محليًا.
 ويدعم قراءات اللقطات وعمليات القراءة التزايدية واستبعاد الأقسام الأساسي الذي يوفّره المحرك.
 
-<div id="create-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#create-table}
 
 لاحظ أن جدول Paimon يجب أن يكون موجودًا بالفعل في التخزين، إذ لا يدعم هذا الأمر معلمات DDL لإنشاء جدول جديد.
 يتطلب إنشاء جداول `Paimon*` تفعيل `allow_experimental_paimon_storage_engine` (وهو معطّل افتراضيًا)، لذا قم بتمكينه قبل تشغيل `CREATE TABLE`.
@@ -35,18 +33,14 @@ CREATE TABLE paimon_table_local
     ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="engine-arguments">
-  ## وسائط المحرك
-</div>
+## وسائط المحرك {#engine-arguments}
 
 يتوافق وصف هذه الوسائط مع وصف الوسائط في المحركات `S3` و`AzureBlobStorage` و`HDFS` و`File`، كلٌّ بحسبه.
 يشير `format` إلى تنسيق ملفات البيانات في جدول Paimon.
 
 يمكن تحديد معلمات المحرك باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections)
 
-<div id="example">
-  ### مثال
-</div>
+### مثال {#example}
 
 ```sql
 CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -70,9 +64,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhou
 CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="capabilities">
-  ## الإمكانات
-</div>
+## الإمكانات {#capabilities}
 
 * تتم عمليات قراءة اللقطات من أحدث لقطة للجدول.
 * تتم عمليات القراءة التزايدية استنادًا إلى معرّف اللقطة المُعتمدة عند تفعيلها.
@@ -80,9 +72,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * تحديث اختياري للبيانات الوصفية في الخلفية عند ضبطه.
 * معرّف UUID ثابت للجدول عند استخدام قواعد بيانات Atomic/Replicated، مما يتيح وحدات الماكرو `{uuid}` في مسارات Keeper.
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 يستخدم هذا المحرك الإعدادات نفسها المستخدمة في محركات تخزين الكائنات المقابلة، ويضيف إعدادات خاصة بـ Paimon:
 
@@ -103,20 +93,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-  **دورة حياة `use_paimon_metadata_files_cache`**
-
+<Note title="دورة حياة `use_paimon_metadata_files_cache`">
   تعتمد كيفية تطبيق `use_paimon_metadata_files_cache` على طريقة الوصول إلى جدول Paimon:
 
-  * **دوال الجداول** (مثل `SELECT ... FROM paimonS3(...)`): يُقيَّم قرار استخدام الذاكرة المؤقتة لكل query، لذلك يمكنك تمرير `SETTINGS use_paimon_metadata_files_cache = 1` مباشرةً في عبارة `SELECT`.
-  * **محركات الجداول الدائمة** (`PaimonS3` و`PaimonAzure` و`PaimonHDFS` و`PaimonLocal` والاسم المستعار `Paimon`): يُثبَّت قرار استخدام الذاكرة المؤقتة مرةً واحدة عند تهيئة البيانات الوصفية للجدول، ويُخزَّن في مكونات دائمة غير قابلة للتغيير؛ كما أن مسار تحديث البيانات الوصفية لا يعيد عمدًا قراءة هذا الإعداد. لذلك، فإن تمرير `SETTINGS use_paimon_metadata_files_cache = 1` ضمن عبارة `SELECT` على جدول دائم جرت تهيئته بالفعل لا يكون له أي تأثير — إذ يستمر استخدام القرار الذي جرى تثبيته سابقًا. ولتغييره، اضبط `use_paimon_metadata_files_cache` قبل تهيئة البيانات الوصفية للجدول، أو نفّذ `DROP` ثم أعد `CREATE` الجدول بالقيمة المطلوبة.
+  * **دوال الجداول** (مثل `SELECT ... FROM paimonS3(...)`): يُقيَّم قرار استخدام ذاكرة التخزين المؤقت لكل استعلام، لذلك يمكنك تمرير `SETTINGS use_paimon_metadata_files_cache = 1` مباشرةً في عبارة `SELECT`.
+  * **محركات الجداول الدائمة** (`PaimonS3` و`PaimonAzure` و`PaimonHDFS` و`PaimonLocal` والاسم المستعار `Paimon`): يُثبَّت قرار استخدام ذاكرة التخزين المؤقت مرةً واحدة عند تهيئة البيانات الوصفية للجدول، ويُخزَّن في مكونات دائمة غير قابلة للتغيير؛ كما أن مسار تحديث البيانات الوصفية لا يعيد عمدًا قراءة هذا الإعداد. لذلك، فإن تمرير `SETTINGS use_paimon_metadata_files_cache = 1` ضمن عبارة `SELECT` على جدول دائم جرت تهيئته بالفعل لا يكون له أي تأثير — إذ يستمر استخدام القرار الذي جرى تثبيته سابقًا. ولتغييره، اضبط `use_paimon_metadata_files_cache` قبل تهيئة البيانات الوصفية للجدول، أو نفّذ `DROP` ثم أعد `CREATE` الجدول بالقيمة المطلوبة.
 
-  سعة الذاكرة المؤقتة على مستوى الخادم (`paimon_metadata_files_cache_size`) *ليست* مُثبَّتة: فهي إعداد runtime يمكن تغييره عبر `SYSTEM RELOAD CONFIG`، ويسري مفعوله فورًا حتى على الجداول التي جرت تهيئتها بالفعل.
-</Info>
+  سعة ذاكرة التخزين المؤقت على مستوى الخادم (`paimon_metadata_files_cache_size`) *ليست* مُثبَّتة: فهي إعداد runtime يمكن تغييره عبر `SYSTEM RELOAD CONFIG`، ويسري مفعوله فورًا حتى على الجداول التي جرت تهيئتها بالفعل.
+</Note>
 
-<div id="incremental-read-examples">
-  ## أمثلة على القراءة التزايدية
-</div>
+## أمثلة على القراءة التزايدية {#incremental-read-examples}
 
 القراءة التزايدية باستخدام حالة Keeper:
 
@@ -129,9 +115,7 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-<div id="query-level-settings-for-incremental-read">
-  ### إعدادات على مستوى الاستعلام للقراءة التزايدية
-</div>
+### إعدادات على مستوى الاستعلام للقراءة التزايدية {#query-level-settings-for-incremental-read}
 
 الإعدادات التالية هي **على مستوى الاستعلام** (تُمرَّر عبر `SELECT ... SETTINGS`، وليس ضمن `CREATE TABLE`). وهي تتحكم في سلوك كل استعلام على حدة لعمليات القراءة التزايدية:
 
@@ -154,9 +138,7 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
-<div id="paimon-to-mergetree-via-refresh-mv">
-  ## من Paimon إلى MergeTree عبر عرض مادي قابل للتحديث
-</div>
+## من Paimon إلى MergeTree عبر عرض مادي قابل للتحديث {#paimon-to-mergetree-via-refresh-mv}
 
 يمكنك إنشاء مسار متكامل من المصدر إلى الوجهة يزامن البيانات باستمرار من جدول Paimon إلى جدول MergeTree باستخدام عرض مادي قابل للتحديث في وضع `APPEND`. في كل دورة تحديث، لا تُقرأ من Paimon إلا البيانات التزايدية الجديدة، ثم تُلحَق بجدول الوجهة.
 
@@ -221,9 +203,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
   أوقِف الـ MV قبل حذفها لمنع التحديث في الخلفية من تعطيل عمليات DDL.
 </Note>
 
-<div id="limitations">
-  ## القيود
-</div>
+## القيود {#limitations}
 
 * تتطلب القراءة التزايدية تهيئة Keeper ‏(ZooKeeper).
 * تتطلب القراءة التزايدية ضبط `paimon_keeper_path` بحيث يكون فريدًا لكل جدول.
@@ -233,15 +213,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * لا تتعامل القراءة التزايدية مع حذف البيانات التاريخية من مصدر Paimon. إذا حُذفت بيانات Paimon من المصدر الأصلي أو جرى تحديثها، فلن تُزال تلقائيًا الصفوف المقابلة التي كُتبت بالفعل إلى جدول وجهة من نوع ClickHouse MergeTree. يجب عليك إصدار `ALTER TABLE ... DELETE` يدويًا على جدول MergeTree لتنظيف البيانات القديمة.
 * إذا أُسقِط جدول Paimon الأساسي ثم أُعيد إنشاؤه على مسار تخزين الكائنات نفسه (مثلًا عبر Flink أو Spark)، فيجب عليك تنفيذ `DROP` ثم إعادة `CREATE` لجدول ClickHouse المقابل. يكتشف ClickHouse إعادة الإنشاء عبر مقارنة الطابع الزمني لإنشاء schema-0 ويُصدر خطأً؛ ولا يمكن استخدام جدول ClickHouse القديم حتى يُعاد إنشاؤه.
 
-<div id="aliases">
-  ## الأسماء البديلة
-</div>
+## الأسماء البديلة {#aliases}
 
 يكتشف محرك الجدول `Paimon` تلقائيًا الواجهة الخلفية للتخزين من إعداد `disk`، ثم يوجّه إلى `PaimonS3` أو `PaimonAzure` أو `PaimonLocal` وفقًا لذلك. وعند عدم تحديد `disk`، يُستخدَم `PaimonS3` افتراضيًا.
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -249,9 +225,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 * `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، تكون القيمة `NULL`.
 
-<div id="data-types-supported">
-  ## أنواع البيانات المدعومة
-</div>
+## أنواع البيانات المدعومة {#data-types-supported}
 
 | نوع البيانات في Paimon            | نوع البيانات في ClickHouse |
 | --------------------------------- | -------------------------- |
@@ -273,9 +247,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
 
-<div id="partition-supported">
-  ## التقسيم المدعوم
-</div>
+## التقسيم المدعوم {#partition-supported}
 
 أنواع البيانات المدعومة في مفاتيح التقسيم في Paimon:
 

@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/telflo
+title: '使用 Telflo 将 OpenTelemetry 数据发送到 ClickStack'
+sidebarTitle: 'Telflo'
+description: '构建并下发 OpenTelemetry Collector 配置，将遥测数据发送到 ClickStack 或直接写入 ClickHouse，同时由 Telflo 统一管理 collector 机群'
+doc_type: 'guide'
+keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **摘要**
+
+  本指南介绍如何将遥测数据从由 Telflo 管理的 OpenTelemetry Collectors 发送到 ClickStack。您将学习如何：
+
+  * 在 Telflo 的可视化编辑器中或通过命令行客户端构建 collector 配置
+  * 将遥测数据发送到开源版或托管 ClickStack，或直接写入 ClickHouse
+  * 将配置远程部署到 collector 机群
+  * 确认遥测数据已进入 ClickStack 或您的 ClickHouse 表
+
+  预计耗时：15–20 分钟
+</Info>
+
+{/* vale off */}
+
+## 什么是 Telflo？ {#what-is-telflo}
+
+{/* vale on */}
+
+Telflo 是面向 OpenTelemetry Collectors 的厂商中立 control plane，可对整个 collector 机群的 collector 配置进行集中管理。它通过可视化编辑器、管道 测试以及 configuration 的远程部署，让大规模机群也易于管理。Telflo 管理的是标准的 upstream OpenTelemetry collector builds，既没有 Telflo 专属的 distribution，也没有私有 agent，因此团队现有的 collectors 无需更换 build 即可继续运行。
+
+除浏览器外，Telflo 还可通过[命令行客户端](https://docs.telflo.com/docs/cli/)使用。将其与 [ClickStack MCP 服务器](/zh/clickstack/mcp)搭配，查询遥测数据 的同一个 agent 即可直接修复生成这些数据的管道。
+
+{/* vale off */}
+
+## 为什么选择 Telflo + ClickStack？ {#why-telflo-clickstack}
+
+{/* vale on */}
+
+ClickStack 负责大规模的摄取、存储和分析查询。Telflo 则集中运维为其供给数据的 OpenTelemetry Collector 机群，覆盖各类主机、集群和区域。
+
+Telflo 提供：
+
+* 跨主机、容器和 Kubernetes 集中管理 OpenTelemetry Collector
+* 可视化管道编辑，并支持面向整个机群或单个分组的受控滚动发布
+* 变更在下发到生产环境 collector 之前，先基于样本遥测数据进行验证
+* 将同一份遥测数据同时路由到 ClickStack 和其他目标端
+* 机群可见性：哪些 collector 在线、各自运行的是什么配置，以及哪些已发生配置漂移
+
+<Tip>
+  **要点总结**
+
+  * **ClickStack 负责大规模摄取、存储和查询**
+  * **Telflo 负责运维为其供给数据的 collector 机群**
+</Tip>
+
+## 前置条件 {#prerequisites}
+
+* 一个目标端：[开源 ClickStack](/zh/clickstack/getting-started/oss)、[托管 ClickStack](/zh/clickstack/getting-started/managed)，或自管理的 ClickHouse 实例
+* Telflo 账户 ([在 telflo.com 创建账户](https://telflo.com))
+* 运行 collector 的环境：一台 VM 或一个 Kubernetes 集群
+* **开源 ClickStack**：你的 ClickStack OTLP 端点 (HTTP 为 `4318`，gRPC 为 `4317`) 以及摄取 API key，可在 HyperDX 的 **Team Settings → API Keys** 中找到 ([参考文档见此](/zh/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* **托管 ClickStack**：你的 ClickHouse Cloud 服务端点 (端口 `8443`) 以及一个摄取用户 (参见[创建摄取用户](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user))
+* **自管理 ClickHouse**：你的 ClickHouse 端点、用于存放 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)的数据库，以及具备创建和写入这些表权限的用户 (参见[创建摄取用户](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss))
+* 从 collector 到你的 ClickStack 或 ClickHouse 端点的网络连通性
+
+{/* vale off */}
+
+## 将 ClickStack 与 Telflo 集成 {#integrate-telflo-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="创建 collector 配置" id="build-configuration">
+    1. 登录 Telflo。在 **Configurations** 列表中，点击 **New Configuration**，然后点击 **Blank configuration**。
+    2. 在 **Name Your Configuration** 中输入名称并点击 **Create**。
+    3. 添加 receivers：针对采集的每一类 telemetry，从组件面板中拖拽一个 receiver 到画布上。
+    4. 添加 processors：**Memory Limiter** 和 **Batch**，以及在数据离开 collector 之前用于调整数据形态所需的其他 processors。参见 [Telflo 支持的 processors 完整列表](https://docs.telflo.com/docs/build/components#processors)。
+  </Step>
+
+  <Step title="添加 exporter" id="add-exporter">
+    三种方式使用相同的编辑器、相同的发布步骤和相同的 fleet，唯一的区别在于 exporter。请选择与你的部署相对应的选项卡：开源 ClickStack 通过 OTLP 并配合摄取密钥接收数据；托管 ClickStack 和自管理 ClickHouse 则直接写入 ClickStack 表。
+
+    <Tabs>
+      <Tab title="开源 ClickStack">
+        1. 将 **OTLP/HTTP** exporter 拖到画布上。
+        2. 将 **Endpoint** 设置为你的 ClickStack OTLP HTTP 端点，例如 `http://clickstack.example.com:4318`。
+        3. 在 **HTTP Headers** 下点击 **Add header**，然后在 **Header name** 中填入 `authorization`，在 **Header value** 中填入 `${env:CLICKSTACK_INGESTION_KEY}`。Telflo 会在你安装 collector 时提示输入该值，因此密钥不会存储在配置中。
+
+        如需使用 gRPC，请在端口 `4317` 上使用 **OTLP** exporter，并在 **gRPC Metadata Headers** 下设置相同的请求头。
+      </Tab>
+
+      <Tab title="托管 ClickStack">
+        托管 ClickStack 不附带 gateway collector，因此没有托管的 OTLP 端点可供发送 telemetry。你在此处配置的 collector 即充当该 [gateway](/zh/clickstack/ingesting-data/collector#collector-roles)：为其配置一个 **OTLP** receiver 以及 ClickHouse exporter，它便会写入你的 ClickHouse Cloud 服务。随后，你的 SDK 和 agent collector 通过 `4318` (HTTP) 或 `4317` (gRPC) 向其发送 OTLP 数据。
+
+        1. 将 **ClickHouse** exporter 拖到画布上。
+        2. 在 **Endpoint** 中填入你的 ClickHouse Cloud 服务端点 (端口 `8443`) ，将 **Database** 设置为 `default`，并将 **Username** 设置为你的摄取用户。
+        3. 将 **Password** 设置为 `${env:CLICKHOUSE_PASSWORD}`。Telflo 会在你安装 collector 时提示输入该值，因此该 credential 不会存储在配置中。
+        4. 在 **Schema &amp; Tables** 下：如果 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)尚不存在，请保持 **Create Schema on Startup** 为开启状态，exporter 会自动创建这些表。表创建完成后再将其关闭。
+
+        请在 exporter 上游保留 **Batch**：ClickHouse 在批量 insert 时性能最佳。如果你已经运行了一个 [ClickStack collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector) 作为 OTLP gateway，也可以改为按照开源 ClickStack 的步骤操作，将你在该 collector 上设置的 [`OTLP_AUTH_TOKEN`](/zh/clickstack/ingesting-data/collector#securing-the-collector) 作为请求头的值。
+      </Tab>
+
+      <Tab title="自管理 ClickHouse">
+        你在此处配置的 collector 充当你的 [gateway](/zh/clickstack/ingesting-data/collector#collector-roles)：为其配置一个 **OTLP** receiver 以及 ClickHouse exporter。你的 SDK 和 agent collector 向其发送 OTLP 数据，再由它写入 ClickHouse。
+
+        1. 将 **ClickHouse** exporter 拖到画布上。
+        2. 填写 **Endpoint** (例如 `https://clickhouse.example.com:8443`) 、**Database** 和 **Username**，并将 **Database** 指向 ClickStack 表所在的数据库。
+        3. 将 **Password** 设置为 `${env:CLICKHOUSE_PASSWORD}`。Telflo 会在你安装 collector 时提示输入该值，因此该 credential 不会存储在配置中。
+        4. 在 **Schema &amp; Tables** 下：如果 ClickStack 表尚不存在，请保持 **Create Schema on Startup** 为开启状态，exporter 会自动创建这些表。表创建完成后再将其关闭。
+
+        请在 exporter 上游保留 **Batch**：ClickHouse 在批量 insert 时性能最佳。如果你已经运行了一个 [ClickStack collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector) 作为 OTLP gateway，也可以改为按照开源 ClickStack 的步骤操作，将你在该 collector 上设置的 [`OTLP_AUTH_TOKEN`](/zh/clickstack/ingesting-data/collector#securing-the-collector) 作为请求头的值。
+      </Tab>
+    </Tabs>
+
+    从 receivers 出发，经处理器连线至 exporter，每种信号对应一条管道。status 行会显示 **config valid**，或提示待修复的错误数量；**YAML** 选项卡则展示生成的配置。
+
+    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="Telflo 编辑器中已配置 ClickHouse exporter 的 collector pipeline" size="lg" />
+
+    在正式上线之前，你可以让样本遥测数据流经该配置，查看最终的输出结果。请参阅 [Telflo 中的测试](https://docs.telflo.com/docs/testing/overview)。或者，你只需描述想要实现的目标，由 Telflo AI 助手 (点击工具栏中的 **AI** 按钮打开) 为你构建、校验并测试配置。你自己的 agent 也可以通过 [Telflo 命令行客户端](https://docs.telflo.com/docs/cli/)完成同样的操作。
+  </Step>
+
+  <Step title="发布版本" id="publish-version">
+    在工具栏中点击 **Publish**。已发布的版本为只读；如需继续迭代，请点击 **Create New Version**。
+  </Step>
+
+  <Step title="创建并部署 Fleet" id="deploy-collectors">
+    1. 进入 **Fleet**，点击 **New Fleet**，选择 collector 的运行位置：VM 上或 Kubernetes 中。填写 **Name** 后点击 **Create fleet**。
+    2. 在该 fleet 的 **Deploy Groups** 选项卡中，点击 **Default** 组的 **Assign**，然后选择已发布的 configuration 及 version。
+    3. 点击该组的 **Install**，为 configuration 引用的每个环境变量填入值；Telflo 会将它们加入安装命令。请按照 [Telflo 的安装说明](https://docs.telflo.com/docs/fleet-management/install-collectors)，在 collector 需要运行的位置执行该命令。该命令中包含 fleet 的安装 token 以及你填入的值，因此应将其视为敏感信息。
+    4. 在 **Collectors** 选项卡中，collector 的状态会依次显示为 **Pending pickup**、**Applying**，最后是 **In sync**。
+
+    如需滚动发布变更，请发布新的 version 并将其分配给该组；如需回滚，则分配此前部署过的 version。
+
+    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="滚动发布完成后所有 collector 均已同步的 Telflo fleet" size="lg" />
+  </Step>
+
+  <Step title="验证遥测数据" id="verify-telemetry">
+    打开 HyperDX，在 **搜索** 视图中搜索你的某个服务；查看指标请使用 **Chart Explorer**。若使用托管 ClickStack，请在 ClickHouse Cloud 控制台中打开你的服务并点击 **Launch ClickStack**。若使用自管理 ClickHouse，则可直接查询 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)，例如 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`。
+  </Step>
+</Steps>
+
+## 高级配置 {#advanced-configuration}
+
+### 扇出路由 {#fan-out-routing}
+
+同一份遥测数据可以同时发往 ClickStack 用于长期存储、在迁移期间发往另一个平台，并发往 SIEM 进行安全分析。在画布上添加导出器，将其连接到需要向其输送数据的管道，或者直接从 [Telflo 流程库](https://telflo.com/flows)中的预置管道入手。
+
+### 压缩与性能 {#compression-and-performance}
+
+* **OTLP/HTTP 与 OTLP 导出器**：**Compression** 保持为 gzip。
+* **ClickHouse 导出器**：保持 **Async Insert** 开启，**Compression** 保持为 lz4，并在其上游添加 **Batch** 处理器。参见[优化 insert](/zh/clickstack/ingesting-data/collector#optimizing-inserts)。
+
+## 后续步骤 {#next-steps}
+
+* **构建仪表盘**：在 HyperDX 中为日志、指标和链路追踪创建可视化图表
+* **设置告警**：在 ClickStack 中针对关键状况配置告警
+* **借助 AI assistant 优化**：让它调整管道或给出测试建议
+* **从其他厂商迁移**：[flows](https://telflo.com/flows) 可覆盖整个 cutover 过程，替换机群上已有的 agent，并在你对比两者期间同时向两个后端双写数据
+
+## 延伸阅读 {#read-more}
+
+* [Telflo 文档](https://docs.telflo.com/docs)
+* [快速入门：从空白画布到部署 collector](https://docs.telflo.com/docs/getting-started/quickstart)
+* [测试 collector 配置](https://docs.telflo.com/docs/testing/overview)
+* [Telflo 中的机群管理](https://docs.telflo.com/docs/fleet-management/overview)
+* [安装 collector](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)
+* [ClickStack 表 schema](/zh/clickstack/ingesting-data/schemas)

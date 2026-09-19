@@ -1,0 +1,140 @@
+---
+sidebarTitle: 'dbt OSS、v2、Platform（ベータ）'
+slug: /integrations/dbt/dbt-core-v2-fusion-and-platform
+description: 'dbt OSS、dbt v2、dbt platform における ClickHouse アダプターのステータス'
+keywords: ['dbt', 'dbt v2', 'dbt platform', 'dbt oss', 'dbt fusion', 'dbt core v2']
+title: 'dbt OSS、v2、Platform（ベータ）'
+doc_type: 'reference'
+---
+
+import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<ClickHouseSupportedBadge />
+
+<BetaBadge link="https://github.com/ClickHouse/dbt-clickhouse/issues/660" />
+
+dbt は新しいエンジン上で再構築されており、ClickHouse は当初からその一部です。ClickHouse は dbt OSS と dbt v2 の両方で、新しい Rust ベースの dbt エンジンに対応しました。さらに、dbt プラットフォームから ClickHouse に接続できるようにもなりました。プロジェクト側の変更は不要です。現在 dbt Core 1.x で動作しているモデル、テスト、profiles はそのまま新しいエンジンでも動作し、異なるのは バイナリ だけです。
+
+ClickHouse は、dbt OSS、dbt v2、および dbt プラットフォームにおける最初のコミュニティアダプターです。dbt 自身のファーストパーティアダプターも同時に提供が始まりますが、dbt Labs 以外からの提供としては当社が最初です。dbt Core 1.x 向けの Python アダプター `dbt-clickhouse` が廃止されることはありません。dbt 1.x の リリース に追随して最新の状態を保ち、両方のアダプターを並列に保守していきます。
+
+<Warning>
+  **production での利用には適していません。** dbt OSS および dbt v2 向けの ClickHouse アダプター、ならびに dbt プラットフォーム接続は、まだ generally available (GA) ではありません。development または staging のプロジェクトでのみ使用してください。
+</Warning>
+
+<Note>
+  **dbt Core 1.x のドキュメントは dbt OSS および dbt v2 にも当てはまります。** アダプターの挙動は両方のエンジンで同じです。他の dbt ページで説明されている profiles、model configs、materializations、macros は、dbt OSS、dbt v2、dbt プラットフォームでもそのまま動作します。例外については、以下の [v1 と v2 の 互換性](#parity) の表に記載しています。
+</Note>
+
+<Note>
+  **dbt OSS** は、v2 エンジンの open-source (Apache 2.0) build です。dbt v2 および dbt プラットフォームとの関係については、[用語と availability](#terminology) を参照してください。
+</Note>
+
+最新の状況は [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (v1 に対する v2 の 互換性。領域ごとに 1 つのサブ issue) および [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2) で追跡しています。
+
+#### dbt プラットフォームで ClickHouse を試す {#request-access}
+
+プライベートベータを試してみたい場合は、[dbt Labs のプライベートベータ申込フォーム](https://docs.google.com/forms/d/e/1FAIpQLScjHwRchnKarq_RpNM7hATjphNFxqBEePmAwRtSpMWG1snGHA/viewform)から登録してください。このフォームは dbt Labs が管理しているため、送信された情報は ClickHouse ではなく dbt Labs に送られます。利用が有効化されたら、dbt ドキュメントの [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) に従って接続を設定してください。
+
+## 用語と提供状況 {#terminology}
+
+dbt にはいくつかの形態があり、同じアダプターが複数の形態で動作する場合もあります。次の表では、それぞれの名称と現時点での ClickHouse のサポート状況を説明します。
+
+| 用語               | 概要                                                                                                                                                                                                 | ClickHouse のステータスと入手方法                                                                                                                                                                                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **dbt Core 1.x** | Python ベースの dbt エンジンで、open source(Apache 2.0)。ClickHouse が提供するアダプターは `dbt-clickhouse` で、[ClickHouse GitHub 組織](https://github.com/ClickHouse/dbt-clickhouse)でメンテナンスされており、`dbt-core` と併せてインストールします。 | **GA、メンテナンス中。** dbt v2 と並列にリリースが継続されています。                                                                                                                                                                                                                                                                               |
+| **dbt OSS**      | dbt エンジンを Rust で全面的に書き換えたもので、open source(Apache 2.0)。この新バージョンには、v1 のすべての機能に加えていくつかのパフォーマンス改善が含まれます。                                                                                                | **ベータ。** dbt ドキュメントの [dbt v2 upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) および [ClickHouse setup page for v2](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2) を参照してください。ClickHouse アダプターは dbt のバイナリに同梱されているため、個別にインストールする package はありません。 |
+| **dbt v2**       | dbt OSS に、dbt Labs による追加機能(SQL の解釈、静的解析、LSP、VS Code 拡張機能、カラム認識)を加えたもの。クローズドソースであり、[dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement) に基づいてライセンスされます。    | **ベータ。** アダプターは v2 のバイナリ上で動作しますが、新しい SQL 機能は ClickHouse ではまだ利用できません。                                                                                                                                                                                                                                                    |
+| **dbt platform** | ホスト型の dbt(旧 dbt Cloud)。Studio IDE、スケジュール実行される job、環境、Catalog、Semantic Layer を提供します。このプラットフォームで動作するのは dbt v2 のみであるため、プラットフォーム上の ClickHouse は v2 アダプターを指します。                                         | **プライベートベータ。** [アクセスをリクエストする方法](#request-access)を参照してください。セットアップについては、dbt ドキュメントの [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) を参照してください。                                                                                                                    |
+
+## ベータ状態 {#beta-status}
+
+dbt v2 アダプターは、`dbt-clickhouse` の dbt Core 1.x インテグレーションテストスイートを基準に評価しています。ベータとは、主要な dbt ワークフローと ClickHouse Cloud の機能セットが、文書化された制約の範囲内で動作することを意味します。v1 との完全な互換性とセルフマネージドクラスターのサポートは、その後の対応となります。
+
+**現時点で、**アダプターは v1 スイート全体の 81% 以上、ClickHouse Cloud に該当するテストの 92% に合格しています。すべての materialization (`view`、`table`、`incremental`、`materialized_view`、`dictionary`、`snapshot`、`seed`、`ephemeral`) が同等の水準に達しており、テーブル設定の全セット、model contracts、データテストおよび単体テスト、ドキュメントの永続化、`clickhouse_s3source()`、dbt Core 1.x の接続設定にも対応しています。残る不合格項目は、以下に挙げるセルフマネージドクラスター関連の作業と、わずかな engine 側の差異に起因するものです。機能ごとの状況については [v1 と v2 の互換性](#parity) を参照してください。
+
+**次のステップ**: セルフマネージドクラスター向けの `ON CLUSTER` DDL と Distributed materializations、grants、`dbt clone`、テーブルの metadata に基づく `dbt source freshness`、残存するバグの修正、そして完全な互換性を確保するための v1 テストスイート全体の合格です。これらの進捗はすべて [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) で追跡しており、領域ごとにサブ issue を設けています。
+
+GA はロードマップに含まれており、近日中に対応予定です。準備が整い次第、ドキュメントを更新します。
+
+### ベータの対象外 {#out-of-scope}
+
+以下に挙げる v1 とのパリティギャップに加えて、v2 固有の機能のうちいくつかは現時点ではスコープ外ですが、近日対応予定です。
+
+* **Semantic Layer / MetricFlow**: ClickHouse のサポートはまだ追加されていません。[dbt-labs/metricflow#2124](https://github.com/dbt-labs/metricflow/pull/2124) で追跡されています。
+* **dbt v2 における ClickHouse SQL インテリジェンス** (ダイアレクトを認識したバリデーション、静的解析、LSP、VS Code 拡張機能でのカラム認識) 。現時点でアダプターは dbt v2 のバイナリ上で動作しますが、これらの機能はまだ含まれていません。それまでの間、ClickHouse プロジェクトでは静的解析は強制的に `off` となり、エンジンはカラムレベルのリネージを書き出しません。[#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736) で追跡されています。
+* dbt プラットフォームにおける、ユーザー名とパスワード以外の**追加の認証方式**。
+
+## v1 と v2 の互換性 {#parity}
+
+以下の表は、`dbt-clickhouse`(v1)で利用できる機能と、dbt v2 アダプターでのステータスを比較したものです。注記がない限り、記載されているすべての機能は v1 でサポートされています。ステータス列は dbt v2 についての情報であり、dbt OSS にも同様に適用されます。未対応の各項目の進捗は [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) で追跡されています。
+
+<Badge color="green">サポート済み</Badge> 現在利用可能 · <Badge color="yellow">部分的</Badge> 制限付きで利用可能 · <Badge color="red">未対応</Badge> 実装待ち。
+
+### Materializations {#parity-materializations}
+
+| 機能                                       | 機能の内容                                          | dbt v2                              | Notes                                                                                            |
+| --------------------------------------------- | ---------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `view`                                        | 標準的な dbt の view。                               | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `table`                                       | engine および DDL オプションを指定したフルリビルド。               | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `incremental`                                 | 新しい行を append または merge する。                     | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `materialized_view`                           | insert time に変換を行う ClickHouse の MV。            | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `dictionary`                                  | キーのルックアップや join に使用する ClickHouse の Dictionary。 | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `snapshot`                                    | Type 2 の緩やかに変化する次元。                            | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `seed`                                        | CSV を table として読み込む。                           | <Badge color="green">サポート済み</Badge> | 数値のカラム型は `Int32`/`Float32` ではなく `Int64`/`Float64` として推論されます。明示的に指定するには `column_types` を使用してください。 |
+| `ephemeral`                                   | インラインの CTE で、object は作成されません。                  | <Badge color="green">サポート済み</Badge> |                                                                                                  |
+| `distributed_table`、`distributed_incremental` | Distributed engine の背後に配置された分片化された table。      | <Badge color="red">未対応</Badge>      |                                                                                                  |
+
+### モデル設定 {#parity-model-configuration}
+
+| Feature                                      | 機能の内容                              | dbt v2                              | Notes |
+| -------------------------------------------- | ---------------------------------- | ----------------------------------- | ----- |
+| エンジン、`ORDER BY`、`PARTITION BY`、`PRIMARY KEY` | MergeTree の中核的な DDL 制御。            | <Badge color="green">サポート済み</Badge> |       |
+| 有効期限 (TTL)                                   | 行およびカラムの有効期限。                      | <Badge color="green">サポート済み</Badge> |       |
+| テーブル設定とクエリ設定                                 | DDL および挿入時に適用されるモデルごとの `SETTINGS`。 | <Badge color="green">サポート済み</Badge> |       |
+| PROJECTION、索引、`sql_header`                   | セカンダリ構造と前置 SQL。                    | <Badge color="green">サポート済み</Badge> |       |
+| モデルコントラクトと制約                                 | ビルド時に適用されるカラム型と制約。                 | <Badge color="green">サポート済み</Badge> |       |
+| インクリメンタルモデルでのスキーマ進化                          | `on_schema_change` によるカラムの追加または同期。 | <Badge color="green">サポート済み</Badge> |       |
+| カラムの `codec` と `ttl`                         | カラムごとの圧縮と有効期限。                     | <Badge color="green">サポート済み</Badge> |       |
+
+### テストとドキュメント {#parity-testing-and-docs}
+
+| 機能               | 内容                           | dbt v2                              | 備考                                                                                                                                   |
+| ---------------- | ---------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| データテスト           | 汎用テストと個別テスト。                 | <Badge color="green">サポート済み</Badge> |                                                                                                                                      |
+| 単体テスト            | フィクスチャ入力に対するモデルロジックの検証。      | <Badge color="green">サポート済み</Badge> |                                                                                                                                      |
+| ドキュメントの永続化       | 説明をClickHouseのコメントとして書き込みます。 | <Badge color="yellow">部分的</Badge>   | `;` を含む説明は失敗します。                                                                                                                     |
+| カタログおよびドキュメントの生成 | ドキュメントサイト向けのカラムメタデータ。        | <Badge color="green">サポート済み</Badge> |                                                                                                                                      |
+| カラムレベルのリネージ      | DAG全体を通じてカラムを追跡します。          | <Badge color="yellow">部分的</Badge>   | SQLコンパイラによるv2の新機能で、v1では利用できません。dbtプラットフォームのリネージは、`dbt_project.yml` で識別子のクオートを無効にした場合にのみ表示されます。エンジン側のリネージにはClickHouse SQLダイアレクトが必要です。 |
+
+### クラスターと Cloud {#parity-cluster-and-cloud}
+
+| 機能                             | 内容                                                           | dbt v2                              | 備考                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| ClickHouse Cloud               | 推奨されるベータ構成。                                                  | <Badge color="green">サポート済み</Badge> |                                                                                                                                          |
+| マルチレプリカの整合性                    | `select_sequential_consistency` および関連する read-after-write 設定。 | <Badge color="green">サポート済み</Badge> |                                                                                                                                          |
+| `ON CLUSTER` と replicated エンジン | セルフマネージドクラスターでの DDL の fan-out。                               | <Badge color="red">未対応</Badge>      | ClickHouse Cloud のマルチノードクラスターはサポートされています。DDL の伝播に `ON CLUSTER` が必要なその他の構成は、まだサポートされていません。セルフマネージドのデプロイメントでは、シングルノードクラスターに対してのみテストしてください。 |
+| `EXCHANGE TABLES`              | 再構築時のアトミックな入れ替え。                                             | <Badge color="green">サポート済み</Badge> |                                                                                                                                          |
+| カスタム接続設定                       | プロファイルレベルの `custom_settings`。                                | <Badge color="green">サポート済み</Badge> |                                                                                                                                          |
+| ClickHouse サーバーバージョン           | 最小サーバーバージョン。                                                 | <Badge color="green">サポート済み</Badge> | 両エンジンとも 25.3 以降。v2 で `UUID` カラムを読み取るには 26.7 以降が必要です (これより古いサーバーでは `UUID` を Arrow に変換できません) 。                                             |
+
+### マクロと操作 {#parity-macros-and-operations}
+
+| 機能                      | 内容                                                            | dbt v2                              | Notes                             |
+| ----------------------- | ------------------------------------------------------------- | ----------------------------------- | --------------------------------- |
+| S3 table function マクロ   | `clickhouse_s3source()` でモデル内から S3 を直接読み取ります。                 | <Badge color="green">サポート済み</Badge> |                                   |
+| クロスデータベースマクロ            | `dbt-utils` に含まれるようなヘルパー。                                     | <Badge color="green">サポート済み</Badge> |                                   |
+| Grants                  | モデル設定による `GRANT` ステートメント。                                     | <Badge color="red">未対応</Badge>      |                                   |
+| `dbt clone`             | 環境間での zero-copy な `CLONE AS`。                                 | <Badge color="red">未対応</Badge>      |                                   |
+| 実行結果の Query ID          | `system.query_log` と紐付けるための `adapter_response` 内の `query_id`。 | <Badge color="red">未対応</Badge>      |                                   |
+| `query-comment`         | クエリコメントの設定。                                                   | <Badge color="red">未対応</Badge>      | `query-comment: null` はまだ反映されません。 |
+| カタログインテグレーション (Iceberg) | external catalogs へのマテリアライズ。                                  | <Badge color="red">未対応</Badge>      | v1 でも未対応です。回避策はドキュメントに記載されています。   |
+
+### 接続と認証 {#parity-connectivity-and-auth}
+
+| 機能                | 概要                                                                                                        | dbt v2                              | 備考                                               |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
+| プロトコル             | dbt が ClickHouse と通信する方式。                                                                                 | <Badge color="green">サポート済み</Badge> | v2 では ADBC (HTTP 上の Arrow) 、v1 では HTTP と native。 |
+| ユーザー名とパスワード、TLS   | 標準的な認証。                                                                                                   | <Badge color="green">サポート済み</Badge> |                                                  |
+| mTLS クライアント証明書    | `client_cert`、`client_cert_key`、`verify`。                                                                 | <Badge color="red">未対応</Badge>      | ドライバー側の対応が必要。オプションは受け付けられますが無視されます。              |
+| HTTP client オプション | `connect_timeout`、`send_receive_timeout`、`sync_request_timeout`、`compress_block_size`、`server_host_name`。 | <Badge color="red">未対応</Badge>      | 受け付けられますが無視されます。`server_host_name` は使用不可です。      |

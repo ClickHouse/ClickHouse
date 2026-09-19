@@ -30,7 +30,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## Requisitos previos
+  ## Requisitos previos {#prerequisites}
 </div>
 
 * Ya has configurado previamente un [servidor ClickHouse local](/es/get-started/setup/install)
@@ -171,7 +171,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
   </Step>
 
   <Step title="Configurar nodos de ClickHouse" id="configure-clickhouse-servers">
-    ### Configuración del servidor
+    ### Configuración del servidor {#server-setup}
 
     Ahora modifique cada archivo de configuración vacío `config.xml` ubicado en
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Las líneas resaltadas
@@ -257,7 +257,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
 
     Cada sección del archivo de configuración anterior se explica con más detalle a continuación.
 
-    #### Redes y logging
+    #### Redes y logging {#networking}
 
     <ListenHost />
 
@@ -277,7 +277,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     Para obtener más información sobre la configuración de logging, consulte los comentarios incluidos en el
     [archivo de configuración](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) predeterminado de ClickHouse.
 
-    #### Configuración del clúster
+    #### Configuración del clúster {#cluster-config}
 
     La configuración del clúster se establece en el bloque `<remote_servers>`.
     Aquí se define el nombre del clúster `cluster_2S_2R`.
@@ -326,7 +326,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     y actúa como plantilla para las distributed DDL queries, es decir, queries que se ejecutan
     en todo el cluster mediante la cláusula `ON CLUSTER`.
 
-    #### Configuración de Keeper
+    #### Configuración de Keeper {#keeper-config-explanation}
 
     La sección `<ZooKeeper>` indica a ClickHouse dónde se está ejecutando ClickHouse Keeper (o ZooKeeper).
     Como estamos utilizando un cluster de ClickHouse Keeper, es necesario especificar cada `<node>` del cluster,
@@ -356,7 +356,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
       en entornos de producción recomendamos encarecidamente ejecutar ClickHouse Keeper en servidores dedicados.
     </Note>
 
-    #### Configuración de macros
+    #### Configuración de macros {#macros-config-explanation}
 
     Además, la sección `<macros>` se utiliza para definir sustituciones de parámetros para
     tablas replicadas. Estas aparecen listadas en `system.macros` y permiten usar sustituciones
@@ -369,7 +369,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     </macros>
     ```
 
-    ### Configuración de usuario
+    ### Configuración de usuario {#cluster-configuration}
 
     Ahora modifique cada archivo de configuración vacío `users.xml` ubicado en
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` con el siguiente contenido:
@@ -387,7 +387,6 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -395,7 +394,6 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -425,7 +423,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
   <Step title="Configurar ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     A continuación, configure ClickHouse Keeper, que se usa para la coordinación.
 
-    ### Configuración de Keeper
+    ### Configuración de Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -746,9 +744,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
   </Step>
 </Steps>
 
-<div id="conclusion">
-  ## Conclusión
-</div>
+## Conclusión {#conclusion}
 
 La ventaja de esta topología de clúster con 2 segmentos y 2 réplicas es que ofrece tanto escalabilidad como tolerancia a fallos.
 Los datos se distribuyen entre hosts distintos, lo que reduce los requisitos de almacenamiento y de E/S por nodo, mientras que las consultas se procesan en paralelo en ambos segmentos para mejorar el rendimiento y el uso de memoria.

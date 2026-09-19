@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -55,9 +55,9 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 
 省略可能な `ON CLUSTER` は、ステートメント全体に適用されます (指定できるクラスター名は1つです) 。ClickHouse では、単一の作成操作にまとめられたポリシー名ごとに異なる `ON CLUSTER` を指定することは**できません**。異なるクラスターにポリシーを作成する必要がある場合は、個別の `CREATE ROW POLICY` ステートメントを実行してください。
 
-<div id="multiple-names-and-tables">
-  ## 複数の名前とテーブル
-</div>
+`CREATE ROW POLICY` には、ポリシーを作成する対象テーブルに対する [CREATE ROW POLICY](/ja/reference/statements/grant#access-management) 権限が必要です。`OR REPLACE` は、同名の既存ポリシーを (適用対象のロールも含めて) 破棄するため、そのテーブルに対する [DROP ROW POLICY](/ja/reference/statements/grant#access-management) 権限も追加で必要になります。`DROP ROW POLICY` 権限は、ポリシーが既に存在するかどうかにかかわらず必要です。そのため、このステートメントを使ってどのポリシーが存在するかを調べることはできません。
+
+## 複数の名前とテーブル {#multiple-names-and-tables}
 
 有効な例:
 
@@ -94,23 +94,19 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-<div id="using-clause">
-  ## USING 句
-</div>
+## USING 句 {#using-clause}
 
 行を絞り込むための条件を指定できます。ある行に対する条件の評価結果が非ゼロの場合、その行はユーザーに表示されます。
 
-<div id="to-clause">
-  ## TO 句
-</div>
+## TO 句 {#to-clause}
 
 `TO` 句では、このポリシーの適用対象となるユーザーとロールの一覧を指定できます。たとえば、`CREATE ROW POLICY ... TO accountant, john@localhost` のように指定します。
 
 キーワード `ALL` は、現在のユーザーを含むすべての ClickHouse ユーザーを意味します。キーワード `ALL EXCEPT` を使うと、全ユーザーの一覧から一部のユーザーを除外できます。たとえば、`CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost` のように指定します。
 
-<div id="as-clause">
-  ## AS 句
-</div>
+`ALL EXCEPT` の後に指定したものも含め、`TO` 句に指定されたロールは、そのユーザーに付与されたすべてのロールではなく、現在のユーザーの有効なロール ([`system.enabled_roles`](/ja/reference/system-tables/enabled_roles)) と照合されます。そのため、[`SET ROLE`](/ja/reference/statements/set-role) によって適用されるポリシーが変わる可能性があります。
+
+## AS 句 {#as-clause}
 
 同じユーザーに対して、同じテーブルに複数のポリシーを同時に有効化できます。そのため、複数のポリシーの条件を組み合わせる方法が必要です。
 
@@ -130,11 +126,13 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 一般的な式は次のとおりです。
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
 
-たとえば、次のようなポリシーがあります。
+permissive な条件がひとつも適用されない場合、`access_control_improvements.users_without_row_policies_can_read_rows` がデフォルトで有効になっているため、最初の条件は効果を持たず、restrictive ポリシーのみが可否を決定します。したがって、どの条件も適用されないユーザーはすべての行を参照できます。また、デフォルトで無効になっている `access_control_improvements.throw_on_unmatched_row_policies` を有効にすると、テーブルに条件が存在するもののいずれも適用されない場合に、代わりに例外が送出されます。
+
+たとえば、次のポリシーです。
 
 ```sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
@@ -155,9 +153,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ユーザー `peter` が `table1` の行を参照できるのは、`b=1` かつ `c=2` の場合だけです。ただし、
 mydb 内の他のテーブルには、そのユーザーに対して `b=1` のポリシーのみが適用されます。
 
-<div id="distributed-and-remote-backed-tables">
-  ## Distributed テーブルとリモートバックエンドテーブル
-</div>
+## Distributed テーブルとリモートバックエンドテーブル {#distributed-and-remote-backed-tables}
 
 行ポリシーは、テーブルデータが実際に読み取られる場所で行をフィルタリングします。[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルや、それをラップするテーブル (たとえば、ターゲットが `Distributed` の materialized view) のように、読み取りをリモートサーバーに委譲するテーブルは、クエリテキストをリモートサーバーに送信するだけであるため、リモートでの読み取りにポリシーのフィルターを適用できません。フィルターが暗黙的に削除されるのを防ぐため、ポリシーの適用対象となるユーザーがこのようなテーブルに対して実行するクエリは、`ILLEGAL_PREWHERE` エラーで拒否されます。
 
@@ -172,15 +168,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   これは、デフォルトであるクエリのテキスト送信時に機能します。[`serialize_query_plan = 1`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を指定すると、イニシエーターは代わりに構築済みの読み取りプランを送信します。このようなプランを実行するリモートサーバーは独自の行ポリシーを適用しないため、`local_table` 上の `Distributed` テーブルを読み取ると、フィルタリングされていない行が返されます。行ポリシーを適用する必要があるユーザーには、`serialize_query_plan = 0` を使用してください。[issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照してください。
 </Warning>
 
-<div id="on-cluster-clause">
-  ## ON CLUSTER 句
-</div>
+## ON CLUSTER 句 {#on-cluster-clause}
 
 クラスター全体に対して行ポリシーを作成できます。詳しくは[分散DDL](/ja/reference/statements/distributed-ddl)を参照してください。これにより、クラスター内のすべてのサーバー上のローカルテーブルにポリシーを簡単に作成できます。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

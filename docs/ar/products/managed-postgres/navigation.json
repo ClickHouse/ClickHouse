@@ -29,6 +29,14 @@
             "ar/products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
         },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "ar/products/managed-postgres/extensions/chdb/introduction",
+            "ar/products/managed-postgres/extensions/chdb/chdb",
+            "ar/products/managed-postgres/extensions/chdb/chdb_hook"
+          ]
+        },
         "ar/products/managed-postgres/upgrades",
         "ar/products/managed-postgres/openapi",
         "ar/products/managed-postgres/terraform"
@@ -43,18 +51,20 @@
     {
       "group": "ClickHouse Integration",
       "pages": [
-        "ar/products/managed-postgres/clickhouse-integration"
+        "ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "ar/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
       "group": "Migrations",
       "pages": [
         "ar/products/managed-postgres/migrations/overview",
-        "ar/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "ar/products/managed-postgres/migrations/logical-replication",
-        "ar/products/managed-postgres/migrations/peerdb",
         "ar/products/managed-postgres/migrations/clickpipes",
         "ar/products/managed-postgres/migrations/data-validation",
+        "ar/products/managed-postgres/migrations/logical-replication",
+        "ar/products/managed-postgres/migrations/neon",
+        "ar/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ar/products/managed-postgres/migrations/peerdb",
         "ar/products/managed-postgres/migrations/faq"
       ]
     },

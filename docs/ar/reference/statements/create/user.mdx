@@ -28,9 +28,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 تسمح عبارة `ON CLUSTER` بإنشاء المستخدمين في العنقود، راجع [DDL الموزّع](/ar/reference/statements/distributed-ddl).
 
-<div id="identification">
-  ## تحديد الهوية
-</div>
+يتطلب `CREATE USER` امتياز [CREATE USER](/ar/reference/statements/grant#access-management). أما `OR REPLACE` فتستبدل مستخدمًا موجودًا بالاسم نفسه — بما في ذلك طرق المصادقة الخاصة به، والأدوار الممنوحة له، وإعداداته — لذا فهي تتطلب إضافةً إلى ذلك امتياز [DROP USER](/ar/reference/statements/grant#access-management). وامتياز `DROP USER` مطلوب لكل اسم مذكور في العبارة سواء كان ذلك المستخدم موجودًا بالفعل أم لا، لذلك لا يمكن استخدام العبارة لمعرفة المستخدمين الموجودين.
+
+## تحديد الهوية {#identification}
 
 هناك عدة طرق لتحديد هوية المستخدم:
 
@@ -76,9 +76,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   * أن تحتوي على رمز خاص واحد على الأقل
 </Note>
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 1. اسم الـ username التالي هو `name1` ولا يتطلب كلمة مرور، وهو ما لا يوفر بطبيعة الحال قدرًا كبيرًا من الأمان:
 
@@ -172,9 +170,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 2. لا يمكن أن يتعايش `no_password` مع طرق مصادقة أخرى لأسباب أمنية. لذلك، لا يمكنك تحديد
    `no_password` إلا إذا كانت طريقة المصادقة الوحيدة في الاستعلام.
 
-<div id="user-host">
-  ## مضيف المستخدم
-</div>
+## مضيف المستخدم {#user-host}
 
 مضيف المستخدم هو المضيف الذي يمكن إنشاء اتصال منه بـ خادم ClickHouse. ويمكن تحديد المضيف في قسم `HOST` من الاستعلام بالطرق التالية:
 
@@ -195,9 +191,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   يتعامل ClickHouse مع `user_name@'address'` باعتباره username كاملًا. لذلك، من الناحية التقنية، يمكنك إنشاء عدة مستخدمين لهم نفس `user_name` مع تراكيب مختلفة بعد `@`. ومع ذلك، لا نوصي بذلك.
 </Tip>
 
-<div id="valid-until-clause">
-  ## عبارة VALID UNTIL
-</div>
+## عبارة VALID UNTIL {#valid-until-clause}
 
 تتيح تحديد تاريخ انتهاء صلاحية طريقة مصادقة ووقته اختياريًا. تقبل سلسلة نصية كمعلَمة. يُوصى باستخدام تنسيق `YYYY-MM-DD [hh:mm:ss] [timezone]` للتاريخ والوقت، حيث يجب أن تكون `[timezone]` إزاحة رقمية مثل `+09:00` أو إحدى القيم `UTC` أو `GMT` أو `Z` أو `MSK` أو `MSD`؛ ولا يتم التعرّف على مناطق IANA الزمنية المسمّاة مثل `Asia/Tokyo` (انظر الملاحظة أدناه). افتراضيًا، تساوي هذه المعلَمة `'infinity'`. يتراوح الموعد النهائي المقبول من `1900-01-01 00:00:00 UTC` إلى `9999-12-31 09:59:59 UTC` — وهي أحدث لحظة تظل ضمن السنة 9999 في كل منطقة زمنية، لذا لا تُقيَّد اللحظة المخزنة عند عرضها. يعني الموعد النهائي الماضي أن بيانات الاعتماد منتهية الصلاحية بالفعل. لا تُقبل المواعيد النهائية السابقة لـ `1970-01-01 00:00:01 UTC` إلا كوسم «منتهي الصلاحية بالفعل»: إذ تُحوَّل إلى التمثيل القياسي لأقدم لحظة منتهية الصلاحية، أي بعد ثانية واحدة من حقبة Unix (`1970-01-01 00:00:01`)، لذا يعرض `SHOW CREATE USER` تلك اللحظة بدلًا من الموعد النهائي الذي كتبته. أما المواعيد النهائية بدءًا من تلك اللحظة فتُخزَّن كما هي تمامًا.
 
@@ -221,9 +215,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   تُحلَّل سلسلة التاريخ والوقت بواسطة `parseDateTimeBestEffort`، التي لا تتعرّف إلا على رموز المناطق الزمنية `UTC` و`GMT` و`Z` و`MSK` و`MSD`، والإزاحات الرقمية مثل `+09:00` أو `-05:00`. لا تُدعم مناطق IANA الزمنية المسمّاة مثل `Asia/Tokyo` أو `Europe/London`، كما أن الإزاحة الثابتة ليست مكافئة لمنطقة IANA في المناطق التي تتبع التوقيت الصيفي، لذا يجب حساب الإزاحة الصحيحة للتاريخ المحدد الذي تُرمِّزه.
 </Note>
 
-<div id="valid-for-clause">
-  ## عبارة VALID FOR
-</div>
+## عبارة VALID FOR {#valid-for-clause}
 
 تُعد عبارة `VALID FOR` اختصارًا ملائمًا لعبارة `VALID UNTIL`. فبدلًا من تاريخ ووقت مطلقين، تقبل [فاصلًا زمنيًا](/ar/reference/data-types/special-data-types/interval)، ويُحتسب الموعد النهائي لانتهاء الصلاحية بإضافة ذلك الفاصل الزمني إلى الوقت الحالي عند تنفيذ الاستعلام. ثم تُخزَّن النتيجة بصيغة `VALID UNTIL`، لذا يعرض `SHOW CREATE USER` دائمًا الموعد النهائي المطلق بعد حسمه. يمكن استخدامها في كل موضع يمكن استخدام `VALID UNTIL` فيه، وتتبع قواعد الترتيب نفسها: قبل `IDENTIFIED` (أو عند عدم تحديد طريقة مصادقة) تمثل موعدًا نهائيًا على مستوى المستخدم ينطبق على جميع الطرق، بينما إذا جاءت بعد طريقة مصادقة فإنها تنطبق على تلك الطريقة فقط. يُخزَّن الموعد النهائي ويُطبَّق بدقة الثواني، لذلك تُرفض الفواصل الزمنية التي تقل عن ثانية (`NANOSECOND` و`MICROSECOND` و`MILLISECOND`)؛ وأصغر وحدة مقبولة هي `SECOND`. يُقبل الفاصل الزمني السالب كوسيلة لاعتبار بيانات الاعتماد منتهية الصلاحية بالفعل؛ وإذا وقع الموعد النهائي الناتج قبل `1970-01-01 00:00:01 UTC`، فيُحوَّل إلى تلك اللحظة الأدنى المنتهية الصلاحية، وهي التي يعرضها `SHOW CREATE USER` لاحقًا — وفق المنطقة الزمنية للخادم أو الجلسة، كما هو موضح في [`VALID UNTIL`](#valid-until-clause).
 
@@ -235,9 +227,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — ينطبق الموعد النهائي على مستوى المستخدم على كلتا الطريقتين.
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — ينطبق الموعد النهائي على طريقة `bcrypt_password` فقط؛ ولا تنتهي صلاحية `plaintext_password` أبدًا.
 
-<div id="grants-clause">
-  ## عبارة GRANTS
-</div>
+## عبارة GRANTS {#grants-clause}
 
 تتيح لك تقييد حقوق الوصول المتاحة لجلسة تمت مصادقتها باستخدام طريقة مصادقة محددة. وتقبل قائمة بالامتيازات، بين قوسين، بالصيغة نفسها المستخدمة في عبارة [GRANT](/ar/reference/statements/grant). تُحدَّد العبارة بعد طريقة المصادقة (وبعد عبارة `VALID UNTIL` الخاصة بها، إن وُجدت)، ولا تنطبق إلا على تلك الطريقة.
 
@@ -266,9 +256,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 لا يُتحقق من هذا الدمج إلا بين طرق المصادقة التي يتحقق الخادم منها محليًا، للسبب نفسه الذي تُرفض من أجله العبارة نفسها مع طريقة مصادقة يُتحقق منه خارجيًا، كما ذُكر أعلاه: إذ إن إعادة التحقق من بيانات الاعتماد في هذه الحالة ستتطلب فحصًا إضافيًا غير آمن للنظام الخارجي. لذلك، إذا كانت بيانات الاعتماد نفسها مقبولة أيضًا عبر طريقة مصادقة يُتحقق منه خارجيًا (`ldap` أو `kerberos` أو `http` أو `jwt`) للمستخدم نفسه، فإن `VALID UNTIL` الخاص بذلك الأسلوب لا يدخل ضمن هذا الدمج، ولا يؤدي ضبط تاريخ انتهاء أسبق له إلى تقصير الجلسة التي تم الحصول عليها عبر طريقة المصادقة الذي يُتحقق منه محليًا.
 
-<div id="grantees-clause">
-  ## بند GRANTEES
-</div>
+## بند GRANTEES {#grantees-clause}
 
 يحدّد المستخدمين أو الأدوار المسموح لهم بتلقّي [الامتيازات](/ar/reference/statements/grant#privileges) من هذا المستخدم، بشرط أن يكون هذا المستخدم قد مُنح أيضًا جميع امتيازات الوصول المطلوبة باستخدام [GRANT OPTION](/ar/reference/statements/grant#granting-privilege-syntax). خيارات بند `GRANTEES`:
 
@@ -279,9 +267,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 يمكنك استثناء أي مستخدم أو دور باستخدام التعبير `EXCEPT`. على سبيل المثال: `CREATE USER user1 GRANTEES ANY EXCEPT user2`. وهذا يعني أنه إذا كانت بعض الامتيازات قد مُنحت إلى `user1` باستخدام `GRANT OPTION`، فسيتمكن من منح هذه الامتيازات لأي شخص باستثناء `user2`.
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples-1}
 
 أنشئ حساب المستخدم `mira` بكلمة المرور `qwerty`:
 
@@ -313,6 +299,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 
 ```sql
 CREATE USER john GRANTEES jack;
+```
+
+أنشئ حساب المستخدم `john` مع قاعدة بيانات افتراضية:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` يترك قاعدة البيانات الافتراضية غير محددة. لاستخدام قاعدة بيانات باسم `NONE`، ضع اسمها بين علامتَي backtick:
+
+```sql
+DEFAULT DATABASE `NONE`
 ```
 
 استخدم معلمة استعلام لإنشاء حساب المستخدم `john`:

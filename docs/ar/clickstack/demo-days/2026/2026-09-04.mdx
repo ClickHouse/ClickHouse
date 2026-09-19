@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-04
+title: 'أيام العروض التوضيحية - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: 'أيام العروض التوضيحية لـ ClickStack بتاريخ 2026-09-04'
+doc_type: 'guide'
+keywords: ['ClickStack', 'أيام العروض التوضيحية']
+---
+
+## أنواع جديدة من عوامل تصفية لوحة المعلومات {#new-types-of-dashboard-filter}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+في السابق، لم تكن عوامل تصفية لوحة المعلومات تتيح سوى نوع واحد من القيم: قيم query، حيث تأتي خيارات القائمة المنسدلة من column في ClickHouse. أما الآن، فعند فتح نافذة عوامل التصفية والمتغيرات ستجد نوعين إضافيين للاختيار من بينهما.
+
+تتيح لك القيم الثابتة كتابة الخيارات بنفسك عند إنشاء عامل التصفية، بحيث يمكن لعامل تصفية البيئة أن يقدّم ببساطة `dev` و`staging` و`prod` دون أي query خلفه. ولا يمتلك عامل تصفية القائمة الثابتة أي `expression`، لذا فهو يدعم وضع المتغيرات فقط ولا يمكن تحويله إلى condition في SQL لوضع Broadcast.
+
+أما قيم labels في PromQL فتجلب خياراتها من endpoint‏ `<label>/values` الخاص بأحد مصادر PromQL. تختار الـ label الذي تريده، ويمكنك اختياريًا حصر نطاقه باستخدام مطابق (matcher) قد يشير بدوره إلى متغيرات أخرى. وهذا يجعل عوامل التصفية مترابطة فيما بينها: فما إن تختار بيئة معينة حتى تنحصر الـ instances المعروضة في عامل التصفية التالي لتطابقها، مع تصفية المخططات الخاصة بـ PromQL تباعًا كلما تقدّمت.
+
+ويمكن عرض كلا النوعين كمتغيرات، ما يعني أن عامل التصفية يمكن أن يتحكم بما هو أبعد من عبارة `WHERE`. ففي العرض التوضيحي، يُستخدَم عامل تصفية ثابت يسرد `ServiceName` و`SeverityText` بوصفه dimension التجميع في أحد المخططات، بحيث يؤدي اختيار قيمة من القائمة المنسدلة إلى تغيير معيار تجميع الـ مخطط، بأي تركيبة كانت.
+
+**طلبات السحب ذات الصلة:** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) إضافة عوامل تصفية قوائم القيم الثابتة إلى schemas وواجهات برمجة تطبيقات، [#3022](https://github.com/hyperdxio/hyperdx/pull/3022) عرض مدخلات عامل تصفية قائمة القيم الثابتة، [#3020](https://github.com/hyperdxio/hyperdx/pull/3020) السماح بإنشاء وتحرير عوامل تصفية القوائم الثابتة في UI، [#3060](https://github.com/hyperdxio/hyperdx/pull/3060) دعم عوامل تصفية القيم المخصصة الثابتة في MCP، [#3053](https://github.com/hyperdxio/hyperdx/pull/3053) دعم عوامل تصفية لوحة المعلومات المبنية على قيم labels في Prometheus، [#3072](https://github.com/hyperdxio/hyperdx/pull/3072) دعم autocomplete لعوامل تصفية labels في PromQL، [#3039](https://github.com/hyperdxio/hyperdx/pull/3039) قبول حدود زمنية اختيارية في endpoint قيم labels الخاص بـ Prometheus، [#3079](https://github.com/hyperdxio/hyperdx/pull/3079) دعم match[] في endpoints الخاصة بـ labels والقيم في PromQL، [#3080](https://github.com/hyperdxio/hyperdx/pull/3080) دعم match[] في عوامل تصفية labels في PromQL، [#3083](https://github.com/hyperdxio/hyperdx/pull/3083) إزالة التكرار من labels وقيمها في PromQL لمنع حدوث crash في Mantine، [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) التأكيد قبل تجاهل التغييرات غير المحفوظة عند إغلاق محرر عوامل التصفية، [#3078](https://github.com/hyperdxio/hyperdx/pull/3078) دعم تكوين عوامل تصفية لوحة المعلومات كحقول مطلوبة، [#3093](https://github.com/hyperdxio/hyperdx/pull/3093) تطبيق عوامل تصفية لوحة المعلومات اختياريًا على معاينة محرر الـ بلاطة
+
+## قوالب وسائل الإيضاح المخصّصة لمخططات PromQL {#custom-legend-templates-for-promql-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كانت وسائل الإيضاح في PromQL صعبة القراءة، كما أشار Vladimir. فنحن نعرض افتراضيًا اسم المقياس متبوعًا بكل label يختلف بين السلاسل المُعادة، وفي استعلام يُعيد سلاسل كثيرة يتحوّل ذلك إلى نصّ طويل يتعيّن عليك النقر عليه لفهمه.
+
+أصبحت إعدادات العرض الخاصة بالمخطط تقبل الآن قالب وسيلة إيضاح. وهو قالب Handlebars، أي يمكنك الإشارة إلى الـ labels التي تهمّك فعلًا والحصول على اسم سلسلة مختصر في وسيلة الإيضاح والـ tooltip معًا.
+
+وإذا أشار القالب إلى label غير موجود، فسيظهر ذلك الموضع فارغًا. وإذا جاءت النتيجة فارغة أو غير فريدة بين السلاسل، فإننا نعود إلى المجموعة الكاملة من الـ labels المميِّزة، حتى لا ينتهي بك الأمر بسلسلتين يتعذّر التمييز بينهما.
+
+**طلبات السحب ذات الصلة:** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) دعم قالب مخصّص لوسائل إيضاح سلاسل PromQL
+
+## حفظ نطاق تاريخ نسبي كإعداد افتراضي للوحة المعلومات {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*عرض تقديمي من [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبح بإمكان لوحات المعلومات الآن حفظ نطاق تاريخ نسبي كإعداد افتراضي لها. اضبط النطاق الزمني الذي تريده وانقر على &quot;Save Query and Filters as default&quot;، وستُفتح لوحة المعلومات على ذلك النطاق في كل مرة بعد ذلك.
+
+وتكمن الفائدة في النطاقات النسبية تحديدًا؛ فحفظ &quot;آخر 6 ساعات&quot; يعني أن بيانات لوحة المعلومات تكون محدَّثة في أي وقت تفتحها فيه، بدلًا من تثبيتها على نافذة زمنية ثابتة تفقد صلاحيتها مع الوقت. ولا يزال بإمكانك تغيير النطاق أثناء وجودك في لوحة المعلومات والاطلاع على آخر 7 أيام، ثم الانتقال إلى صفحة أخرى والعودة إلى الإعداد الافتراضي المحفوظ.
+
+**طلبات السحب ذات الصلة:** [#3073](https://github.com/hyperdxio/hyperdx/pull/3073) إمكانية حفظ نطاقات التاريخ النسبية للوحات المعلومات
+
+## التنبيهات بدون بحث محفوظ أو بلاطة لوحة المعلومات {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+في السابق، كان كل تنبيه يحتاج إلى ما يستند إليه: بحث محفوظ للـ logs، أو بلاطة لوحة المعلومات للـ metrics. وهذا أسلوب لا يصلح للتوسّع عند ترحيل آلاف التنبيهات من Grafana.
+
+التنبيهات المضمّنة (Inline) تلغي هذا الشرط. فهناك إجراء **Create alert** في شريط الإجراءات في مستكشف المخططات، بحيث يمكنك بناء مخطط على metrics أو events والتنبيه عليه مباشرةً دون حفظ أي شيء مسبقًا. ويمكنك أيضًا إنشاء تنبيه مضمّن من صفحة alerts، وهو المسار المناسب عندما لا ترغب تحديدًا في ربط التنبيه بـ بحث محفوظ أو لوحة المعلومات.
+
+يحتفظ التنبيه المضمّن بـ `chartConfig` خاص به ضمن document التنبيه، بالشكل ذاته الذي تخزّنه به بلاطة لوحة المعلومات، فيُقيَّم عبر مسار الشيفرة نفسه المستخدَم لتنبيهات البلاطات بدلًا من مسار موازٍ له. وهو يغطي الـ builder وRaw SQL في عروض `line` و`stacked_bar` و`number`. أما PromQL فغير مدعوم حاليًا.
+
+كما يقبل كلٌّ من external واجهة برمجة تطبيقات v2 وأداة MCP المسمّاة `save_alert` الشكل نفسه `source: 'inline'`، باستخدام dialect إعداد البلاطات ذاته الذي تستخدمه لوحات المعلومات من الإصدار v2، ما يتيح إنشاء التنبيهات برمجيًا على نطاق واسع. ويعيد الموجِّه استخدام converters بلاطات لوحة المعلومات، وهو ما يحول دون تباعد الواجهتين عن بعضهما.
+
+**طلبات السحب ذات الصلة:** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) دعم إنشاء التنبيهات بدون عمليات بحث محفوظة أو بلاطات لوحة المعلومات (backend)، [#3069](https://github.com/hyperdxio/hyperdx/pull/3069) واجهة UI لإنشاء وتحرير تنبيهات الـ مخطط المضمّنة، [#3043](https://github.com/hyperdxio/hyperdx/pull/3043) دعم تنبيهات الـ مخطط في external واجهة برمجة تطبيقات v2 وMCP
+
+## أسماء التنبيهات ووسومها {#alert-names-and-tags}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبح بإمكان التنبيهات الآن أن تحمل اسمًا ووسومًا خاصة بها. فنموذج التنبيه في بلاطة لوحة المعلومات أو في البحث المحفوظ يتضمن حقل إدخال للاسم وآخر للوسوم، ويأخذ التنبيه الجديد افتراضيًا اسم المخطط أو البحث المحفوظ، ويرث وسوم لوحة المعلومات أو البحث المحفوظ الذي يوجد فيه.
+
+وهذه الأسماء هي ما تعرضه صفحة التنبيهات، وهي أساس البحث والترشيح. أما التنبيهات الموجودة أصلًا في قاعدة البيانات دون اسم محدد، فما زالت تستمد اسمها من البحث المحفوظ أو لوحة المعلومات التي تشير إليها.
+
+كما أصبحت الوسوم التي تُرجعها نقطة النهاية `team/tags` تشمل وسوم مستندات التنبيهات إلى جانب لوحات المعلومات وعمليات البحث المحفوظة؛ فلولا ذلك لما اقتُرح وسمٌ لا يستخدمه سوى تنبيه واحد عند وسم التنبيه التالي.
+
+ويمثّل ذلك تمهيدًا لتقسيم صفحة التنبيهات إلى صفحات مع الإبقاء على دعم البحث والترشيح حسب الوسم، وهو ما يتطلب وجود الاسم والوسوم في مستند التنبيه نفسه بدلًا من الضم مع مجموعات لوحات المعلومات وعمليات البحث المحفوظة. ولم يكتمل التقسيم إلى صفحات بعد.
+
+**طلبات السحب ذات الصلة:** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) الإبقاء على displayName والوسوم على مستوى التنبيه، [#3065](https://github.com/hyperdxio/hyperdx/pull/3065) دعم كتابة displayName والوسوم للتنبيه، [#3067](https://github.com/hyperdxio/hyperdx/pull/3067) عرض وتحرير displayName والوسوم للتنبيه في الـ UI، [#3092](https://github.com/hyperdxio/hyperdx/pull/3092) تضمين وسوم التنبيهات في استجابة واجهة برمجة تطبيقات الوسوم، [#3029](https://github.com/hyperdxio/hyperdx/pull/3029) التعبئة الرجعية لاسم التنبيه ووسومه (مفتوح)
+
+## نموذج أولي لصفحة Explore {#an-explore-prototype}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**هذا عمل استكشافي، ولا يوجد أي التزام بإطلاقه.**
+
+النموذج الأولي عبارة عن صفحة Explore واحدة تحل محل صفحة البحث و مستكشف المخططات معًا، وهو ما يزال مسودة داخل مستودع HyperDX. فقد يحل محل هاتين الصفحتين، أو يظهر إلى جانبهما كصفحة ثالثة، أو قد لا يُثمر عن شيء على الإطلاق.
+
+المشكلة التي يتصدى لها هي التنقل بين الصفحتين المتوفرتين حاليًا. يخبرنا العملاء أن نقل سؤال من صفحة البحث إلى مستكشف المخططات أمر مزعج: إذ كثيرًا ما يتعين عليك إعادة تحديد data source وإعادة بناء الاستعلام نفسه في الجهة الأخرى. أما Explore فيبقي كل شيء في صفحة واحدة، فيتغيّر العرض بين events و patterns و deltas و مخططات بدلًا من أن تتغير الصفحة من تحتك.
+
+والمحور الثاني هو تخفيض العائق أمام غير المتمكنين من لغات الاستعلام. فإضافة column إلى table، والفرز، واختيار group-by كلها تتم عبر قوائم منسدلة، مع بقاء SQL متاحًا عند الحاجة إليه. و group-by مثال جيد على الفجوة الحالية: فالـ histogram في صفحة البحث مُجمَّع حسب status code دون أي طريقة لتغيير ذلك، ومن ثم فإن من يريد تجميعًا مختلفًا مضطر إلى الانتقال إلى مستكشف المخططات. أما هنا فتضبط group-by في عرض events، وتنتقل إلى time series أو مخطط أعمدة عندما لا يكفي الـ histogram الصغير، وتغيّر الـ aggregation إلى شيء مثل `p99`، وتحفظ النتيجة في لوحة المعلومات.
+
+وشريط الـ عامل تصفية هو query builder مصغّر يجرّد كلًا من Lucene و SQL: اختر field، ثم operator، واكتب value، مع توفّر محرر الاستعلام الكامل و macros للمستخدمين المتقدمين. أما ما إذا كان وجود لغتي استعلام من الأساس هو الحل الصحيح فذلك أحد الأسئلة المفتوحة هنا.
+
+وما زال الكثير دون حسم. فلا يوجد PromQL حتى الآن، ولم يُحسم ما إذا كانت metrics تنتمي إلى هذه الصفحة أم أن ذلك يحمّل صفحة واحدة أكثر من طاقتها. ويركّز النموذج الأولي على تجربة logs و traces.
+
+ويسعدنا تلقّي ملاحظاتكم بشأن ذلك.
+
+**طلبات السحب ذات الصلة:** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explore كتصور يبدأ من البحث (نموذج أولي) (مفتوح)

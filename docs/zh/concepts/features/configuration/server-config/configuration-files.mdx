@@ -27,7 +27,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 在 YAML 配置文件中，`clickhouse:` 是可选的；如果省略，解析器会自动插入它。
 
 <div id="merging">
-  ## 合并配置
+  ## 合并配置 {#merging}
 </div>
 
 两个配置文件 (通常是主配置文件和来自 `config.d/` 的另一个配置文件) 会按如下方式合并：
@@ -83,7 +83,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="from_env_zk">
-  ### 通过环境变量和 ZooKeeper 节点进行替换
+  ### 通过环境变量和 ZooKeeper 节点进行替换 {#from_env_zk}
 </div>
 
 若要指定将某个元素的值替换为环境变量的值，可以使用属性 `from_env`。
@@ -137,7 +137,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="default-values">
-  #### 默认值
+  #### 默认值 {#default-values}
 </div>
 
 带有 `from_env` 或 `from_zk` 属性的元素还可以额外指定 `replace="1"` 属性 (后者必须出现在 `from_env`/`from_zk` 之前) 。
@@ -169,7 +169,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="substitution-with-file-content">
-  ## 使用文件内容进行替换
+  ## 使用文件内容进行替换 {#substitution-with-file-content}
 </div>
 
 也可以用文件内容替换配置中的部分内容。这可以通过两种方式实现：
@@ -199,7 +199,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 如果你想将替换内容与现有配置合并，而不是追加，可以使用 `merge="true"` 属性。例如：`<include from_zk="/some_path" merge="true">`。在这种情况下，现有配置会与替换内容合并，且现有配置中的设置会被替换内容中的值覆盖。
 
 <div id="encryption">
-  ## 加密并隐藏配置
+  ## 加密并隐藏配置 {#encryption}
 </div>
 
 你可以使用对称加密来加密配置元素，例如明文密码或私钥。
@@ -321,7 +321,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 ```
 
 <div id="user-settings">
-  ## 用户设置
+  ## 用户设置 {#user-settings}
 </div>
 
 `config.xml` 文件可以指定一个单独的配置文件，其中包含用户设置、profile 和 quotas。该配置的相对路径在 `users_config` 元素中设置。默认值为 `users.xml`。如果省略 `users_config`，则用户设置、profile 和 quotas 直接在 `config.xml` 中指定。
@@ -334,7 +334,7 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 请注意，配置文件会先在考虑相关设置的情况下进行[合并](#merging)，之后才会处理 include。
 
 <div id="example">
-  ## XML 示例
+  ## XML 示例 {#example}
 </div>
 
 例如，你可以像下面这样为每个用户分别创建一个配置文件：
@@ -358,9 +358,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-<div id="example-1">
-  ## YAML 示例
-</div>
+## YAML 示例 {#example-1}
 
 你可以在这里查看用 YAML 编写的默认配置：[`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example)。
 
@@ -373,7 +371,7 @@ YAML 和 XML 格式在 ClickHouse 配置上存在一些差异。
 key: value
 ```
 
-相应的 XML：
+对应的 XML：
 
 ```xml
 <key>value</key>
@@ -476,7 +474,7 @@ map_key:
 ```
 
 <div id="implementation-details">
-  ## 实现细节
+  ## 实现细节 {#implementation-details}
 </div>
 
 对于每个配置文件，服务器在启动时还会生成 `file-preprocessed.xml` 文件。这些文件包含所有已完成的替换和覆盖，仅供参考使用。如果配置文件中使用了 ZooKeeper 替换，但在服务器启动时 ZooKeeper 不可用，则服务器会从预处理文件中加载配置。

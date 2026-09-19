@@ -14,16 +14,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickHouse Managed Postgres には、データを保護し、コンプライアンス要件を満たすためのエンタープライズレベルのセキュリティ機能が備わっています。このページでは、ネットワークセキュリティ、暗号化、バックアップ保持期間のポリシーについて説明します。
 
-<div id="ip-whitelisting">
-  ## IP アドレスの許可リスト設定
-</div>
+## IP アドレスの許可リスト設定 {#ip-whitelisting}
 
 IP フィルタは、ClickHouse Managed Postgres インスタンスへの接続を許可する送信元 IP アドレスを制御し、未承認の接続からデータベースを保護するためのネットワークレベルのアクセス制御を提供します。
 
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List の設定" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### IP フィルタの設定
+  ### IP フィルタの設定 {#configuring-ip-filters}
 </div>
 
 IP フィルタを設定するには、次の手順に従います。
@@ -51,27 +49,21 @@ IP フィルタを設定するには、次の手順に従います。
   * 自動デプロイ用の CI/CD パイプラインの IP アドレス
 </Warning>
 
-<div id="encryption">
-  ## 暗号化
-</div>
+## 暗号化 {#encryption}
 
 ClickHouse Managed Postgres では、包括的なデータ保護を実現するため、保存時と転送時の両方でデータが暗号化されます。
 
-<div id="encryption-at-rest">
-  ### 保存時の暗号化
-</div>
+### 保存時の暗号化 {#encryption-at-rest}
 
 ClickHouse Managed Postgres に保存されるすべてのデータは、基盤となるストレージインフラストラクチャへの不正アクセスから保護するため、保存時に暗号化されます。
 
 <div id="nvme-encryption">
-  #### NVMe ストレージの暗号化
+  #### NVMe ストレージの暗号化 {#nvme-encryption}
 </div>
 
 NVMe ドライブに保存されるデータベースファイル、トランザクションログ、一時ファイルは、業界標準の暗号化アルゴリズムで暗号化されています。この暗号化はアプリケーションには透過的で、設定は不要です。
 
-<div id="s3-encryption">
-  #### オブジェクトストレージの暗号化 (S3)
-</div>
+#### オブジェクトストレージの暗号化 {#s3-encryption}
 
 オブジェクトストレージに保存されるバックアップと Write-Ahead Log (WAL) アーカイブも、保存時に暗号化されます。これには次のものが含まれます。
 
@@ -86,36 +78,32 @@ NVMe ドライブに保存されるデータベースファイル、トランザ
 </Info>
 
 <div id="encryption-in-transit">
-  ### 転送時の暗号化
+  ### 転送時の暗号化 {#encryption-in-transit}
 </div>
 
 ClickHouse Managed Postgres へのすべてのネットワーク接続は、アプリケーションとデータベースの間で送受信されるデータを保護するため、TLS (Transport Layer Security) で保護されています。
 
 <div id="tls-ssl">
-  #### TLS/SSL の設定
+  #### TLS/SSL の設定 {#tls-ssl}
 </div>
 
 デフォルトでは、接続に TLS 暗号化が使用されますが、証明書の検証は行われません。本番ワークロードでは、正しいサーバーと通信していることを確実にするため、証明書を検証した TLS で接続することを推奨します。
 
 TLS の設定と接続オプションの詳細については、[接続](/ja/products/managed-postgres/connection#tls) ページを参照してください。
 
-<div id="private-link">
-  ## プライベートリンク
-</div>
+## AWS PrivateLink {#private-link}
 
-プライベートリンクを使用すると、ClickHouse Managed Postgres インスタンスとお客様の Virtual Private Cloud (VPC) との間で、トラフィックをパブリックインターネットに公開することなく、プライベート接続を確立できます。これにより、ネットワーク分離とセキュリティがさらに強化されます。
+AWS PrivateLink を使用すると、ClickHouse Managed Postgres インスタンスとお客様の AWS Virtual Private Cloud (VPC) との間で、トラフィックをパブリックインターネットに公開することなく、プライベート接続を確立できます。これにより、ネットワーク分離とセキュリティがさらに強化されます。
 
 <Info>
   **手動でのセットアップが必要です**
 
-  プライベートリンクはサポートされていますが、ClickHouse Support による手動設定が必要です。この機能は、厳格なネットワーク分離要件を持つ Enterprise のお客様に最適です。
+  AWS PrivateLink はサポートされていますが、ClickHouse Support による手動設定が必要です。この機能は、厳格なネットワーク分離要件を持つ Enterprise のお客様に最適です。
 </Info>
 
-<div id="requesting-private-link">
-  ### プライベートリンクのセットアップをリクエストする
-</div>
+### AWS PrivateLink のセットアップをリクエストする {#requesting-private-link}
 
-ClickHouse Managed Postgres インスタンスでプライベートリンクを有効にするには、次の手順に従ってください。
+ClickHouse Managed Postgres インスタンスで AWS PrivateLink を有効にするには、次の手順に従ってください。
 
 1. **サポートチケットを作成して ClickHouse Support に連絡します**
 
@@ -129,27 +117,29 @@ ClickHouse Managed Postgres インスタンスでプライベートリンクを�
    * ClickHouse Managed Postgres 側でプライベートリンクの endpoint をプロビジョニングします
    * endpoint の connection details を提供します。これを使用して endpoint インターフェイスを作成できます。
 
-4. **プライベートリンクを Setup します**:
-   * AWS の設定で endpoint インターフェイスに移動し、ClickHouse Support から提供された設定を使用してプライベートリンクを作成します。
-   * プライベートリンクが &quot;Available&quot; 状態になったら、AWS UI に表示される Private DNS 名を使用して接続できます。
+4. **AWS PrivateLink を Setup します**:
+   * AWS の設定で endpoint インターフェイスに移動し、ClickHouse Support から提供された設定を使用して AWS PrivateLink を作成します。
+   * AWS PrivateLink が &quot;Available&quot; 状態になったら、AWS UI に表示される Private DNS 名を使用して接続できます。
 
-<div id="backup-retention">
-  ## バックアップ保持期間
-</div>
+## GCP Private Service Connect {#gcp-private-service-connect}
+
+Private Service Connect を使用すると、ClickHouse Managed Postgres インスタンスとお客様の GCP Virtual Private Cloud (VPC) との間で、トラフィックをパブリックインターネットに公開することなく、プライベート接続を確立できます。
+
+ClickHouse Managed Postgres インスタンスで Private Service Connect を有効にするには、サポートチケットを作成して ClickHouse Support にお問い合わせください。
+
+## バックアップ保持期間 {#backup-retention}
 
 ClickHouse Managed Postgres は、誤削除や破損、その他のデータ損失から保護するために、データを自動的にバックアップします。
 
 <div id="retention-policy">
-  ### 保持ポリシー
+  ### 保持ポリシー {#retention-policy}
 </div>
 
 * **デフォルトの保持期間**: 7日間
 * **バックアップ頻度**: 毎日のフルバックアップ + 継続的なWALアーカイブ (60秒ごと、または16 MBに達した時点のいずれか早い方)
 * **復旧の粒度**: 保持期間内の任意の時点へのポイントインタイムリカバリ
 
-<div id="backup-security">
-  ### バックアップのセキュリティ
-</div>
+### バックアップのセキュリティ {#backup-security}
 
 バックアップは、主要データと同等のセキュリティ保証の下で保存されます。
 

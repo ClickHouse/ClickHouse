@@ -6,11 +6,12 @@ keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-<div id="components">
-  ## 组件
-</div>
+<PrivatePreviewBadge />
+
+## 组件 {#components}
 
 ClickHouse 连接器运行两个守护进程，均内置于 `clicklink` 二进制文件中：
 
@@ -21,9 +22,7 @@ ClickHouse 连接器运行两个守护进程，均内置于 `clicklink` 二进�
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse 连接器架构" />
 
-<div id="connections">
-  ## 连接
-</div>
+## 连接 {#connections}
 
 连接器发起的所有连接均为出站连接。完整列表如下：
 
@@ -40,9 +39,7 @@ ClickHouse 连接器运行两个守护进程，均内置于 `clicklink` 二进�
 
 对于入站连接，连接器仅暴露本地健康检查和指标端口，以及[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)页面中所述的可选会话网关。ClickHouse 的控制平面绝不会连接其中任何一个。
 
-<div id="certificate-lifecycle">
-  ## 证书生命周期
-</div>
+## 证书生命周期 {#certificate-lifecycle}
 
 连接器使用其自行获取和维护的客户端证书向您的端点进行身份验证：
 
@@ -52,32 +49,24 @@ ClickHouse 连接器运行两个守护进程，均内置于 `clicklink` 二进�
 
 连接器会使用系统信任库验证端点的服务器证书；如果端点使用私有 CA，则使用注册时提供的 CA bundle 进行验证。
 
-<div id="data-flow">
-  ## 数据流
-</div>
+## 数据流 {#data-flow}
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse 连接器数据流" />
 
-<div id="what-leaves">
-  ### 哪些内容会离开您的环境
-</div>
+### 哪些内容会离开您的环境 {#what-leaves}
 
 * **来自允许列表中系统表的指标。** 抓取器默认抓取 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings` 和 `server_settings`。允许列表由显式配置指定；抓取器不会读取列表之外的任何内容。
 * **基础设施元数据。** 通过 API 同步的实例、基础设施和备份清单。
 * **健康状况和自身指标。** 组件状态以及连接器自身的运行指标。
 * **支持会话输出。** 在您启用的会话期间执行的只读诊断结果，经过脱敏处理。
 
-<div id="what-never-leaves">
-  ### 默认不会离开的内容
-</div>
+### 默认不会离开的内容 {#what-never-leaves}
 
 * **抓取路径中的原始查询文本。** 默认抓取集特意排除了 `system.query_log`，因为其查询列可能包含字面值，从而携带 PII 或密钥；是否重新添加该表，由您在充分知情的前提下针对每个部署自行决定。支持会话期间，默认表允许列表包含 `system.processes`，其中会显示正在执行的查询文本；有关如何将其裁剪，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 * **凭据。** 配置文件不包含凭据，ClickHouse 仅存储连接器用户密码的 bcrypt 哈希值，密钥则保存在 Kubernetes Secrets 或主机上仅 root 可读的文件中。抓取和同步路径均不会传输这些信息。
 * **未脱敏的 故障排查器 输出。** 故障排查器 返回的所有内容在离开前都会经过脱敏模式 (内置模式和您自定义的模式) 处理。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
-<div id="trust-boundaries">
-  ## 信任边界
-</div>
+## 信任边界 {#trust-boundaries}
 
 * **您的环境就是边界。** ClickHouse Cloud 仅接收抓取器发送的数据，以及活跃支持会话返回的数据。它绝不会主动向您的环境发起连接。
 * **会话网关由您控制。** 除非您选择通过入口将其暴露，否则只能在您的环境内访问它 (在 Kubernetes 上通过 `kubectl port-forward`，或在 VM 本地访问) 。ClickHouse 的控制平面绝不会连接到它。

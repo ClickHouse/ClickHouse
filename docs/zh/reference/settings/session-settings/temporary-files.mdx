@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="temporary_files_buffer_size">
-  ## temporary_files_buffer_size
-</div>
+## temporary_files_buffer_size {#temporary_files_buffer_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "新增设置"}]}]} />
 
-临时 File 写入器的缓冲区大小。缓冲区越大，系统调用越少，但内存消耗也会越多。
+临时 File 写入器的缓冲区大小。缓冲区越大，系统调用越少，但内存消耗也会越多。超过 1 GiB 的值会被降为 1 GiB。
 
-<div id="temporary_files_codec">
-  ## temporary_files_codec
-</div>
+## temporary_files_codec {#temporary_files_codec}
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 

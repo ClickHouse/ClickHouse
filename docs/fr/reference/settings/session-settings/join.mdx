@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="join_algorithm">
-  ## join_algorithm
-</div>
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -83,34 +81,32 @@ Lorsqu&#39;il est défini sur `auto`, la jointure `hash` est essayée en premier
 
 L&#39;algorithme [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) basé sur le tri est destiné aux `JOIN` dont la section `ON` comporte deux comparaisons d&#39;inégalité (`<`, `<=`, `>`, `>=`) entre des expressions des tables jointes. Prend en charge `ALL INNER/LEFT/RIGHT/FULL JOIN` et les `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-La position dans la liste définit la priorité : répertorié après les autres algorithmes, IEJoin est utilisé uniquement lorsqu&#39;ils ne s&#39;appliquent pas (la section `ON` ne comporte aucune condition d&#39;égalité) ; répertorié en premier, il est utilisé chaque fois que la section `ON` comporte deux conditions d&#39;inégalité. Les conditions restantes (y compris les égalités) sont appliquées comme filtre sur le résultat de la jointure pour `ALL INNER JOIN`, et évaluées au sein de l&#39;opérateur comme condition résiduelle affectant la correspondance pour les autres types. Sans `ie_join` dans la liste, une `INNER JOIN` ne comportant que des conditions d&#39;inégalité est exécutée comme une `CROSS JOIN` avec un filtre, et les autres types ne sont pas pris en charge.
+La position dans la liste définit la priorité : répertorié après les autres algorithmes, IEJoin est utilisé uniquement lorsqu&#39;ils ne s&#39;appliquent pas (la section `ON` ne comporte aucune condition d&#39;égalité) ; répertorié en premier, il est utilisé chaque fois que la section `ON` comporte deux conditions d&#39;inégalité. Les conditions restantes (y compris les égalités) sont appliquées comme filtre sur le résultat de la jointure pour `ALL INNER JOIN`, et évaluées au sein de l&#39;opérateur comme condition résiduelle affectant la correspondance pour les autres types. Lorsque la section `ON` comporte plus de deux conditions d&#39;inégalité éligibles, les deux utilisées par l&#39;algorithme sont choisies selon leur sélectivité estimée à partir des statistiques min/max des colonnes (voir le type `basic` dans [Statistiques de colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)) ; lorsque les estimations ne sont pas disponibles (aucune statistique ou [`use_statistics`](/fr/reference/settings/session-settings/use-statistics#use_statistics) est désactivé), les deux premières dans l&#39;ordre syntaxique sont utilisées. Sans `ie_join` dans la liste, une `INNER JOIN` ne comportant que des conditions d&#39;inégalité est exécutée comme une `CROSS JOIN` avec un filtre, et les autres types ne sont pas pris en charge.
 
 Les deux entrées sont accumulées en mémoire avant la jointure : [`max_rows_in_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_join) et [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitent les entrées accumulées des deux côtés confondus (et pas seulement du côté droit), avec l&#39;action en cas de dépassement définie par [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode) ; les index de tri que l&#39;opérateur construit à partir des entrées accumulées ne sont pas comptabilisés dans la limite. L&#39;opérateur de jointure lui-même s&#39;exécute dans un seul thread ; seuls les tris des entrées avant la jointure sont parallélisés.
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-Identique à `full_sorting_merge`, mais les jointures d&#39;égalité compatibles avec le hachage sont partitionnées par le hachage des clés de jointure en jointures par fusion indépendantes par segment qui s&#39;exécutent en parallèle (jusqu&#39;à `max_threads`), au lieu d&#39;une seule jointure par fusion. Cela conserve la faible utilisation de mémoire en flux d&#39;une jointure par fusion tout en utilisant tous les threads, et le résultat n&#39;est pas ordonné.
+Identique à `full_sorting_merge`, mais les jointures d&#39;égalité compatibles avec le hachage sont partitionnées par le hachage des clés de jointure en jointures par fusion indépendantes par partition qui s&#39;exécutent en parallèle (jusqu&#39;à `max_threads`), au lieu d&#39;une seule jointure par fusion. Cela conserve la faible utilisation de mémoire en flux d&#39;une jointure par fusion tout en utilisant tous les threads, et le résultat n&#39;est pas ordonné.
 
 Le partitionnement par hachage des clés de jointure s&#39;applique uniquement aux jointures d&#39;égalité simples sur des types de clés dont le hachage concorde avec la comparaison de jointure par fusion, et uniquement lorsqu&#39;aucun côté n&#39;est déjà trié. Il est ignoré dans les cas suivants :
 
-* Les jointures `ASOF`, et les types de clés à virgule flottante / `JSON` / `Object` / `Dynamic` : leurs hachages ne sont pas cohérents avec la comparaison de jointure par fusion, de sorte que des clés égales pourraient se retrouver dans des segments différents.
-* Les côtés déjà triés (une lecture MergeTree dans l&#39;ordre, ou toute entrée prétriée) : une dispersion préservant l&#39;ordre dans les fusions par segment peut provoquer un interblocage du pipeline. La lecture dans l&#39;ordre et son optimisation `read_in_order_use_virtual_row` sont conservées à la place.
+* Les jointures `ASOF`, et les types de clés à virgule flottante / `JSON` / `Object` / `Dynamic` : leurs hachages ne sont pas cohérents avec la comparaison de jointure par fusion, de sorte que des clés égales pourraient se retrouver dans des partitions différentes.
+* Les côtés déjà triés (une lecture MergeTree dans l&#39;ordre, ou toute entrée prétriée) : une dispersion préservant l&#39;ordre dans les fusions par partition peut provoquer un interblocage du pipeline. La lecture dans l&#39;ordre et son optimisation `read_in_order_use_virtual_row` sont conservées à la place.
 * Pendant que l&#39;initiateur construit un plan distribué (`make_distributed_plan`), car le tri dispersé n&#39;est pas sérialisable pour une exécution distante. Le plan local à fragment unique et les fragments par worker se réoptimisent avec ce paramètre désactivé, afin qu&#39;ils puissent tout de même être partitionnés.
 
-L&#39;ignorer désactive uniquement cette réécriture, et non le parallélisme en général : la jointure s&#39;exécute comme une unique `full_sorting_merge`, et les côtés MergeTree lus dans l&#39;ordre peuvent toujours être partitionnés à la source par plages de clés primaires (qui s&#39;ordonnent selon la même comparaison que celle utilisée par la jointure, de sorte que les clés égales restent ensemble) lorsque `query_plan_join_shard_by_pk_ranges` est activé.
+L&#39;ignorer désactive uniquement cette réécriture, et non le parallélisme en général : la jointure s&#39;exécute comme une seule `full_sorting_merge`, et les côtés MergeTree lus dans l&#39;ordre peuvent toujours être partitionnés à la source par plages de clé primaire (qui ordonnent selon la même comparaison que celle utilisée par la jointure, de sorte que les clés égales restent ensemble) lorsque `query_plan_join_shard_by_pk_ranges` est activé.
 
 * prefer&#95;partial&#95;merge
 
-ClickHouse essaie toujours d&#39;utiliser la jointure `partial_merge` si possible, sinon il utilise `hash`. *Déprécié*, identique à `partial_merge,hash`.
+ClickHouse essaie toujours d&#39;utiliser la jointure `partial_merge` si possible, sinon il utilise `hash`. *Deprecated*, identique à `partial_merge,hash`.
 
-* default (déprécié)
+* default (deprecated)
 
-Valeur héritée, veuillez ne plus l&#39;utiliser.
-Identique à `direct,hash`, c&#39;est-à-dire qu&#39;il essaie d&#39;utiliser une jointure directe puis une jointure par hachage (dans cet ordre).
+Valeur legacy, à ne plus utiliser.
+Identique à `direct,hash`, c&#39;est-à-dire essayer d&#39;utiliser la jointure directe puis la jointure par hachage (dans cet ordre).
 
-<div id="join_any_take_last_row">
-  ## join_any_take_last_row
-</div>
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,9 +129,7 @@ Voir aussi :
 * [moteur de table Join](/fr/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/fr/reference/settings/session-settings/join#join_default_strictness)
 
-<div id="join_default_strictness">
-  ## join_default_strictness
-</div>
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -148,9 +142,7 @@ Valeurs possibles :
 * `ASOF` — Pour joindre des séquences avec une correspondance incertaine.
 * `Chaîne vide` — Si `ALL` ou `ANY` n&#39;est pas spécifié dans la requête, ClickHouse lève une exception.
 
-<div id="join_on_disk_max_files_to_merge">
-  ## join_on_disk_max_files_to_merge
-</div>
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -162,9 +154,7 @@ Valeurs possibles :
 
 * Tout entier positif à partir de 2.
 
-<div id="join_output_by_rowlist_perkey_rows_threshold">
-  ## join_output_by_rowlist_perkey_rows_threshold
-</div>
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -172,9 +162,7 @@ Valeurs possibles :
 
 La limite inférieure de la moyenne de lignes par clé dans la table de droite, utilisée pour déterminer s’il faut produire la sortie sous forme de liste de lignes dans un hash join.
 
-<div id="join_overflow_mode">
-  ## join_overflow_mode
-</div>
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -202,9 +190,7 @@ Valeur par défaut : `THROW`.
 * [clause JOIN](/fr/reference/statements/select/join)
 * [moteur de table Join](/fr/reference/engines/table-engines/special/join)
 
-<div id="join_use_nulls">
-  ## join_use_nulls
-</div>
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

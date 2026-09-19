@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 يتيح هذا المحرك تكامل ClickHouse مع [Redis](https://redis.io/). ونظرًا إلى أن Redis يعتمد نموذج المفتاح/القيمة (kv)، فإننا نوصي بشدة بقصر الاستعلامات عليه على الاستعلامات النقطية فقط، مثل `where k=xx` أو `where k in (xx, xx)`.
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,25 +30,19 @@ PRIMARY KEY(primary_key_name);
 * `pool_size` — الحد الأقصى لحجم connection pool في Redis، والقيمة الافتراضية هي 16.
 * `primary_key_name` - أي اسم عمود في قائمة الأعمدة.
 
-<Info>
-  **التسلسل**
-
+<Note title="التسلسل">
   لا يدعم `PRIMARY KEY` سوى عمود واحد. سيُسلسَل المفتاح الأساسي بتنسيق binary كمفتاح Redis.
   أما الأعمدة الأخرى غير المفتاح الأساسي فستُسلسَل بتنسيق binary كقيمة Redis وفق الترتيب المقابل.
   قد تفشل عمليات الفحص الكامل باستخدام `SELECT * FROM redis_table` بسبب أخطاء إلغاء التسلسل الثنائي إذا كانت قاعدة بيانات Redis المحددة تحتوي على مفاتيح أو قيم لم يكتبها ClickHouse.
-</Info>
+</Note>
 
 يمكن أيضًا تمرير الوسيطات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، يجب تحديد `host` و`port` كلٌّ على حدة. يُوصى بهذا النهج لبيئة production. في الوقت الحالي، تكون جميع المعلمات المُمرَّرة إلى Redis باستخدام المجموعات المسماة مطلوبة.
 
-<Info>
-  **التصفية**
-
+<Note title="التصفية">
   ستُحسَّن الاستعلامات التي تحتوي على `key equals` أو `in filtering` إلى عمليات lookup متعددة المفاتيح من Redis. أما إذا كانت الاستعلامات بلا مفتاح تصفية، فسيحدث مسح كامل للجدول، وهي عملية مكلفة.
-</Info>
+</Note>
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 أنشئ جدولًا في ClickHouse باستخدام المحرك `Redis` مع وسائط بسيطة:
 
@@ -156,9 +148,7 @@ JOIN:
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-<div id="limitations">
-  ## القيود
-</div>
+## القيود {#limitations}
 
 يدعم محرك Redis أيضًا استعلامات المسح، مثل `where k > xx`، لكن له بعض القيود:
 

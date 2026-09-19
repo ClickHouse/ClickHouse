@@ -10,11 +10,11 @@ doc_type: 'guide'
 Esta guía describe cómo configurar los clústeres de ClickHouse y Keeper mediante el operador.
 
 <div id="clickhousecluster-configuration">
-  ## Configuración de ClickHouseCluster
+  ## Configuración de ClickHouseCluster {#clickhousecluster-configuration}
 </div>
 
 <div id="basic-configuration">
-  ### Configuración básica
+  ### Configuración básica {#basic-configuration}
 </div>
 
 ```yaml
@@ -34,7 +34,7 @@ spec:
 ```
 
 <div id="replicas-and-shards">
-  ### Réplicas y segmentos
+  ### Réplicas y segmentos {#replicas-and-shards}
 </div>
 
 * **Réplicas**: Número de instancias de ClickHouse por segmento (para alta disponibilidad)
@@ -49,7 +49,7 @@ spec:
 Un clúster con `replicas: 3` y `shards: 2` creará 6 pods de ClickHouse en total.
 
 <div id="keeper-integration">
-  ### Integración de Keeper
+  ### Integración de Keeper {#keeper-integration}
 </div>
 
 Cada clúster de ClickHouse debe hacer referencia a un KeeperCluster para coordinarse:
@@ -64,7 +64,7 @@ spec:
 Cuando se establece `keeperClusterRef.namespace`, el operador debe observar ambos espacios de nombres. Si `WATCH_NAMESPACE` está configurado, incluya los espacios de nombres de ClickHouse y Keeper en esa lista.
 
 <div id="keepercluster-configuration">
-  ## Configuración de KeeperCluster
+  ## Configuración de KeeperCluster {#keepercluster-configuration}
 </div>
 
 ```yaml
@@ -81,7 +81,7 @@ spec:
 ```
 
 <div id="storage-configuration">
-  ## Configuración de almacenamiento
+  ## Configuración de almacenamiento {#storage-configuration}
 </div>
 
 Configure el almacenamiento persistente con `dataVolumeClaimSpec`, un
@@ -107,7 +107,7 @@ reglas sobre lo que no puede cambiar después de la creación se tratan en la
 [guía de almacenamiento y volúmenes](/es/products/kubernetes-operator/guides/storage).
 
 <div id="cluster-domain">
-  ## Dominio del clúster
+  ## Dominio del clúster {#cluster-domain}
 </div>
 
 `spec.clusterDomain` establece el sufijo DNS de Kubernetes que usa el operador al generar
@@ -135,11 +135,11 @@ Los nodos de Keeper usan nombres de pods de Kubernetes a través de su Service h
 </Note>
 
 <div id="pod-configuration">
-  ## Configuración del pod de Kubernetes
+  ## Configuración del pod de Kubernetes {#pod-configuration}
 </div>
 
 <div id="automatic-topology-spread-and-affinity">
-  ### Dispersión de topología y afinidad automáticas
+  ### Dispersión de topología y afinidad automáticas {#automatic-topology-spread-and-affinity}
 </div>
 
 Distribuya los pods entre las zonas de disponibilidad:
@@ -156,7 +156,7 @@ spec:
 </Note>
 
 <div id="manual-configuration">
-  ### Configuración manual
+  ### Configuración manual {#manual-configuration}
 </div>
 
 Se pueden especificar reglas arbitrarias de afinidad/antiafinidad de pod de Kubernetes y restricciones de distribución topológica.
@@ -170,12 +170,12 @@ spec:
       <your-topology-spread-constraints-here>
 ```
 
-<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
+<div id="see-api-reference-for-all-supported-pod-template-options">
   ### Consulta la [Referencia de la API](/es/products/kubernetes-operator/reference/api-reference#podtemplatespec) para ver todas las opciones compatibles de la plantilla de pod de Kubernetes.
 </div>
 
 <div id="pod-disruption-budgets">
-  ## Presupuestos de interrupción de pods
+  ## Presupuestos de interrupción de pods {#pod-disruption-budgets}
 </div>
 
 El operador crea un [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) (PDB) para cada clúster, de modo que las interrupciones voluntarias — drenado de nodos, actualizaciones progresivas y desalojos del autoscaler — no puedan dejar fuera de servicio suficientes pods como para perder el quórum o comprometer la disponibilidad.
@@ -183,7 +183,7 @@ El operador crea un [PodDisruptionBudget](https://kubernetes.io/docs/concepts/wo
 En los clústeres de ClickHouse con más de un segmento, **se crea un PDB por segmento** para que una interrupción en un segmento no se impute a otro.
 
 <div id="pdb-defaults">
-  ### Valores predeterminados
+  ### Valores predeterminados {#pdb-defaults}
 </div>
 
 El operador elige valores predeterminados seguros según el tamaño del clúster, de modo que un `apply` inicial ya proteja frente a una pérdida accidental de quorum.
@@ -198,7 +198,7 @@ El operador elige valores predeterminados seguros según el tamaño del clúster
 Para un ClickHouseCluster de 3 segmentos con `replicas: 3`, el operador crea tres PDB, uno por segmento, cada uno con `minAvailable: 1`.
 
 <div id="pdb-overrides">
-  ### Sobrescribir los valores predeterminados
+  ### Sobrescribir los valores predeterminados {#pdb-overrides}
 </div>
 
 Usa `spec.podDisruptionBudget` para sobrescribir `minAvailable` **o** `maxUnavailable` (exactamente uno):
@@ -234,7 +234,7 @@ spec:
 ```
 
 <div id="pdb-policies">
-  ### Políticas
+  ### Políticas {#pdb-policies}
 </div>
 
 `spec.podDisruptionBudget.policy` te permite elegir **con qué nivel de agresividad** el operador gestiona los PDB:
@@ -262,7 +262,7 @@ spec:
 ```
 
 <div id="pdb-cluster-wide-disable">
-  ### Desactivación a nivel de clúster
+  ### Desactivación a nivel de clúster {#pdb-cluster-wide-disable}
 </div>
 
 La gestión de PDB también puede deshabilitarse a nivel de clúster mediante la variable de entorno `ENABLE_PDB` del operador. Con `ENABLE_PDB=false`, el operador omite el paso de reconciliación de PDB para **todos** los ClickHouseCluster y KeeperCluster, independientemente de su `spec.podDisruptionBudget.policy`, y **no observa** en absoluto los recursos `PodDisruptionBudget`. Por lo tanto, el ServiceAccount del operador no necesita permisos de RBAC sobre `poddisruptionbudgets.policy/v1`, lo cual resulta útil cuando el operador se ejecuta con un ServiceAccount restringido que omite intencionadamente esos permisos.
@@ -277,11 +277,11 @@ env:
 Esto está pensado para entornos que incorporan sus propias políticas de interrupción (p. ej., mediante Gatekeeper / Kyverno) y quieren que el operador quede completamente fuera del proceso.
 
 <div id="container-configuration">
-  ## Configuración del contenedor
+  ## Configuración del contenedor {#container-configuration}
 </div>
 
 <div id="custom-image">
-  ### Imagen personalizada
+  ### Imagen personalizada {#custom-image}
 </div>
 
 Usa una imagen concreta de ClickHouse:
@@ -296,7 +296,7 @@ spec:
 ```
 
 <div id="container-resources">
-  ### Recursos de los contenedores
+  ### Recursos de los contenedores {#container-resources}
 </div>
 
 Configure la CPU y la memoria de los contenedores de ClickHouse:
@@ -315,7 +315,7 @@ spec:
 ```
 
 <div id="environment-variables">
-  ### Variables de entorno
+  ### Variables de entorno {#environment-variables}
 </div>
 
 Añada variables de entorno personalizadas:
@@ -329,7 +329,7 @@ spec:
 ```
 
 <div id="volume-mounts">
-  ### Montajes de volúmenes
+  ### Montajes de volúmenes {#volume-mounts}
 </div>
 
 Agregue montajes de volúmenes adicionales:
@@ -348,16 +348,16 @@ spec:
   El operador creará un volumen proyectado con todos los montajes especificados.
 </Note>
 
-<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
+<div id="see-api-reference-for-all-supported-container-template-options">
   ### Consulta la [referencia de la API](/es/products/kubernetes-operator/reference/api-reference#containertemplatespec) para ver todas las opciones compatibles de la plantilla de contenedor.
 </div>
 
 <div id="tls-ssl-configuration">
-  ## Configuración de TLS/SSL
+  ## Configuración de TLS/SSL {#tls-ssl-configuration}
 </div>
 
 <div id="configure-secure-endpoints">
-  ### Configurar endpoints seguros
+  ### Configurar endpoints seguros {#configure-secure-endpoints}
 </div>
 
 Pasa una referencia a un Secret de Kubernetes con certificados TLS para habilitar endpoints seguros
@@ -373,7 +373,7 @@ spec:
 ```
 
 <div id="ssl-certificate-secret-format">
-  ### Formato del Secret del certificado SSL
+  ### Formato del Secret del certificado SSL {#ssl-certificate-secret-format}
 </div>
 
 Se espera que el Secret contenga el par de claves del server:
@@ -386,7 +386,7 @@ Se espera que el Secret contenga el par de claves del server:
 </Note>
 
 <div id="clickhouse-keeper-communication-over-tls">
-  ### Comunicación de ClickHouse-Keeper mediante TLS
+  ### Comunicación de ClickHouse-Keeper mediante TLS {#clickhouse-keeper-communication-over-tls}
 </div>
 
 Si KeeperCluster tiene TLS habilitado, ClickHouseCluster usará automáticamente una conexión segura a los nodos de Keeper.
@@ -405,7 +405,7 @@ spec:
 ```
 
 <div id="external-secret">
-  ## Secret externo
+  ## Secret externo {#external-secret}
 </div>
 
 De forma predeterminada, el operador crea y controla un Secret que contiene las credenciales internas del clúster (contraseña entre servidores, contraseña de administración, identidad de Keeper, secreto del clúster y clave de colecciones con nombre). El Secret toma el nombre del clúster y reside en el espacio de nombres del clúster.
@@ -435,7 +435,7 @@ spec:
 </Note>
 
 <div id="external-secret-required-keys">
-  ### Claves requeridas
+  ### Claves requeridas {#external-secret-required-keys}
 </div>
 
 El Secret debe contener las siguientes claves:
@@ -468,7 +468,7 @@ stringData:
 ```
 
 <div id="external-secret-policy">
-  ### Política: Observe vs Manage
+  ### Política: Observe vs Manage {#external-secret-policy}
 </div>
 
 `spec.externalSecret.policy` controla cómo el operador maneja las claves requeridas que faltan:
@@ -485,7 +485,7 @@ stringData:
 Elige `Observe` cuando un sistema externo (Vault, ESO, sealed-secrets, GitOps) sea la fuente de referencia y quieras que el operador falle claramente ante una configuración incorrecta. Elige `Manage` cuando quieras un aprovisionamiento inicial autosuficiente, pero también conservar la propiedad del propio objeto Secret (por ejemplo, para hacer una copia de seguridad).
 
 <div id="external-secret-status">
-  ### Condición de estado y solución de problemas
+  ### Condición de estado y solución de problemas {#external-secret-status}
 </div>
 
 El operador expone una condición `ExternalSecretValid` en `ClickHouseCluster.status.conditions`. Revísala cuando parezca que la reconciliación está atascada:
@@ -516,7 +516,7 @@ El operador vuelve a encolar la reconciliación mientras el Secret no sea válid
 </Note>
 
 <div id="additional-ports">
-  ## Puertos adicionales
+  ## Puertos adicionales {#additional-ports}
 </div>
 
 El operador expone un conjunto fijo de puertos en cada pod de Kubernetes de ClickHouse y en su Service headless público: `8123` para HTTP, `9000` nativo, `9009` entre servidores, `9001`/`9002` de administración, `9363` para métricas de Prometheus, y las variantes TLS `8443`/`9440` cuando TLS está habilitado. Los puertos `interserver` y de administración también se exponen a través de los Services internos por réplica para que las réplicas y el operador puedan comunicarse antes de que una réplica esté lista. Para que ClickHouse escuche en protocolos adicionales —MySQL, PostgreSQL, gRPC o cualquier puerto personalizado—, declárelos en `spec.additionalPorts`:
@@ -540,7 +540,7 @@ El ejemplo completo se encuentra en [`examples/custom_protocols.yaml`](https://g
 </Warning>
 
 <div id="additional-ports-mysql-example">
-  ### Ejemplo completo: MySQL wire protocol
+  ### Ejemplo completo: MySQL wire protocol {#additional-ports-mysql-example}
 </div>
 
 Para exponer ClickHouse mediante el MySQL wire protocol en el puerto `9004`:
@@ -582,7 +582,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 ```
 
 <div id="additional-ports-constraints">
-  ### Restricciones de los campos
+  ### Restricciones de los campos {#additional-ports-constraints}
 </div>
 
 | Campo  | Regla                                                                                                                                                     |
@@ -591,7 +591,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 | `port` | Entero en `[1, 65535]`. El webhook rechaza números de puerto duplicados en la lista.                                                                      |
 
 <div id="additional-ports-reserved">
-  ### Puertos y nombres reservados
+  ### Puertos y nombres reservados {#additional-ports-reserved}
 </div>
 
 El webhook de validación rechaza las entradas de `additionalPorts` que entrarían en conflicto con los puertos en los que el propio operador escucha. Todos los puertos relacionados con TLS están reservados **incondicionalmente** para que habilitar `spec.settings.tls.enabled` más adelante no invalide un clúster que antes era válido.
@@ -626,7 +626,7 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 ```
 
 <div id="version-probe-and-upgrade-channel">
-  ## Sonda de versión y canal de actualización
+  ## Sonda de versión y canal de actualización {#version-probe-and-upgrade-channel}
 </div>
 
 El operador realiza dos tareas independientes con las versiones del clúster:
@@ -635,7 +635,7 @@ El operador realiza dos tareas independientes con las versiones del clúster:
 2. **Canal de actualización** — una comprobación periódica del feed público de versiones de ClickHouse (`https://clickhouse.com/data/version_date.tsv`). El operador informa si hay una versión más reciente disponible mediante la condición de estado `VersionUpgraded`. Nunca actualiza el clúster por sí solo; el usuario controla la etiqueta de la imagen.
 
 <div id="upgrade-channel-choosing">
-  ### Elegir un canal de lanzamientos
+  ### Elegir un canal de lanzamientos {#upgrade-channel-choosing}
 </div>
 
 `spec.upgradeChannel` selecciona con qué conjunto de lanzamientos upstream compara el operador. El mismo campo existe tanto en `ClickHouseCluster` como en `KeeperCluster`.
@@ -657,7 +657,7 @@ Valores permitidos (validados por la CRD con el patrón `^(lts|stable|\d+\.\d+)?
 Para production, en general se prefiere fijar el canal a un `<major>.<minor>` explícito (por ejemplo, `25.8`). Esto fija el cluster en la línea de release mayor prevista y permite que el operador mustre una advertencia `WrongReleaseChannel` si alguna réplica se desvía de algún modo a una major distinta, algo especialmente importante cuando la image se referencia mediante un digest (`@sha256:...`) en lugar de un tag legible para humanos. El valor predeterminado vacío es adecuado para clusters de Development en los que los saltos entre versiones major no son una preocupación.
 
 <div id="version-status-conditions">
-  ### Condiciones de estado
+  ### Condiciones de estado {#version-status-conditions}
 </div>
 
 Dos condiciones reflejan el resultado de la sonda y de la comprobación de actualización:
@@ -682,7 +682,7 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 ```
 
 <div id="version-probe-template">
-  ### Sobrescritura del Job de la sonda de versión
+  ### Sobrescritura del Job de la sonda de versión {#version-probe-template}
 </div>
 
 Esto se aplica solo a `ClickHouseCluster`. `KeeperCluster` ya no ejecuta un Job de sonda de versión; su versión se lee directamente de las réplicas de Keeper en ejecución, por lo que `spec.versionProbeTemplate` está obsoleto y no tiene efecto allí.
@@ -714,24 +714,24 @@ spec:
 El nombre del contenedor `version-probe` es el predeterminado del operador: la entrada en `containers:` coincide con él por nombre, por lo que el operador aplica una fusión profunda de los campos proporcionados por el usuario sobre los valores predeterminados.
 
 <div id="version-operator-flags">
-  ### Controles globales del operador
+  ### Controles globales del operador {#version-operator-flags}
 </div>
 
 Dos opciones del administrador del operador controlan globalmente el bucle de comprobación de actualizaciones:
 
-| Opción                            | Predeterminado | Efecto                                                                                                                                                            |
-| --------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`          | Frecuencia con la que el operador vuelve a obtener la lista de versiones del origen                                                                               |
-| `--disable-version-update-checks` | `false`        | Desactiva por completo la comprobación de actualizaciones. No se establece la condición `VersionUpgraded` y no se genera tráfico HTTP saliente a `clickhouse.com` |
+| Opción                            | Predeterminado | Efecto                                                                                                                                                                             |
+| --------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`          | Frecuencia con la que el operador vuelve a obtener la lista de versiones del upstream. Debe ser mayor que cero cuando las comprobaciones de actualización de versión están activadas |
+| `--disable-version-update-checks` | `false`        | Desactiva por completo la comprobación de actualizaciones. No se establece la condición `VersionUpgraded` y no se genera tráfico HTTP saliente a `clickhouse.com`                  |
 
 Establece `--disable-version-update-checks=true` en entornos aislados de la red o cuando no se permite la salida a `clickhouse.com`.
 
 <div id="clickhouse-settings">
-  ## Configuración de ClickHouse
+  ## Configuración de ClickHouse {#clickhouse-settings}
 </div>
 
 <div id="default-user-password">
-  ### Contraseña del usuario `default`
+  ### Contraseña del usuario `default` {#default-user-password}
 </div>
 
 `spec.settings.defaultUserPassword` establece la contraseña del usuario `default`
@@ -752,7 +752,7 @@ Proporcione exactamente uno de `secret` o `configMap`, y en ambos casos `name` (
 y `key` (la entrada que contiene la contraseña).
 
 <div id="password-types">
-  #### Tipos de contraseña
+  #### Tipos de contraseña {#password-types}
 </div>
 
 `passwordType` le indica a ClickHouse cómo interpretar el valor. De forma predeterminada, es
@@ -763,7 +763,7 @@ contraseña en texto plano nunca se almacene. Consulte la
 para ver la lista completa.
 
 <div id="default-password-secret-example">
-  #### Ejemplo completo con un Secret
+  #### Ejemplo completo con un Secret {#default-password-secret-example}
 </div>
 
 Crea el Secret y, a continuación, haz referencia a su clave:
@@ -811,7 +811,7 @@ spec:
 ```
 
 <div id="using-configmap-for-user-passwords">
-  #### Uso de un ConfigMap
+  #### Uso de un ConfigMap {#using-configmap-for-user-passwords}
 </div>
 
 Un ConfigMap funciona de la misma manera, pero su contenido no está protegido como un Secret.
@@ -833,9 +833,7 @@ spec:
   (`passwordType: password`) en texto plano.
 </Note>
 
-<div id="custom-users-in-configuration">
-  ### Usuarios personalizados en la configuración
-</div>
+### Usuarios personalizados en la configuración {#custom-users-in-configuration}
 
 Configure usuarios adicionales en los archivos de configuración.
 
@@ -889,7 +887,7 @@ spec:
 ```
 
 <div id="database-sync">
-  ### Sincronización de la base de datos
+  ### Sincronización de la base de datos {#database-sync}
 </div>
 
 Habilite la sincronización automática de la base de datos para las nuevas réplicas:
@@ -909,7 +907,7 @@ El operador nunca elimina una base de datos `default` no Replicated poblada. Dic
 Antes de eliminar una réplica durante una reducción de escala, el operador primero retira de ella el tráfico de clientes, espera hasta que deje de publicarse, replica sus datos restantes en las réplicas supervivientes y solo entonces la elimina.
 
 <div id="server-logging">
-  ### Registro del servidor
+  ### Registro del servidor {#server-logging}
 </div>
 
 Configure el registro del ClickHouse server mediante `spec.settings.logger`. Todos los campos son opcionales y tienen valores predeterminados seguros, por lo que incluso un clúster que no modifique registrará en `trace` tanto en la consola del contenedor como en un archivo rotado en disco.
@@ -952,11 +950,11 @@ El mismo bloque `spec.settings.logger` se aplica a un `KeeperCluster`; en ese ca
 </Note>
 
 <div id="custom-configuration">
-  ## Configuración personalizada
+  ## Configuración personalizada {#custom-configuration}
 </div>
 
 <div id="embedded-extra-configuration">
-  ### Configuración adicional integrada
+  ### Configuración adicional integrada {#embedded-extra-configuration}
 </div>
 
 En lugar de montar archivos de configuración personalizados, puedes especificar directamente opciones adicionales de configuración de ClickHouse.
@@ -978,7 +976,7 @@ spec:
 * [Todos los ajustes del servidor](/es/reference/settings/server-settings/settings)
 
 <div id="embedded-extra-users-configuration">
-  ### Configuración integrada de usuarios adicionales
+  ### Configuración integrada de usuarios adicionales {#embedded-extra-users-configuration}
 </div>
 
 También puedes especificar la configuración adicional de usuarios de ClickHouse mediante `extraUsersConfig`. Esto es útil para definir usuarios, perfiles, cuotas y privilegios directamente en la especificación del clúster.
@@ -1009,12 +1007,12 @@ spec:
   La `extraUsersConfig` se almacena en el objeto ConfigMap de k8s. Evite incluir secretos en texto plano allí.
 </Note>
 
-<div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
+<div id="see-documentation-for-all-supported-clickhouse-users-configuration-options">
   #### Consulta la [documentación](/es/concepts/features/configuration/settings/settings-users) para ver todas las opciones de configuración de usuarios de ClickHouse admitidas.
 </div>
 
 <div id="configuration-example">
-  ### Ejemplo de configuración
+  ### Ejemplo de configuración {#configuration-example}
 </div>
 
 Ejemplo completo de configuración:
@@ -1084,4 +1082,17 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## Resincronización periódica {#periodic-resync}
+
+Además de reaccionar a los eventos de Kubernetes, el operador vuelve a reconciliar cada clúster en un intervalo fijo. Esto mantiene actualizadas las condiciones de estado del state que ningún watch puede observar —la health de las réplicas de ClickHouse o el quorum de Keeper— y reintenta acciones de remediación como la limpieza de pods de Kubernetes bloqueados.
+
+El intervalo se controla con la environment variable `RESYNC_PERIOD` del operador (valor predeterminado: `30s`), y se aplica a los recursos `KeeperCluster`, donde `0` deshabilita la resincronización periódica. Los recursos `ClickHouseCluster` consultan mediante poll la tabla `system.warnings` de ClickHouse cada 30 segundos, lo que ya vuelve a activar la reconciliación, de modo que `RESYNC_PERIOD` no tiene actualmente ningún efecto sobre ellos.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
 ```

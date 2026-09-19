@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_iceberg_metadata_files_cache">
-  ## use_iceberg_metadata_files_cache
-</div>
+## use_iceberg_manifest_list_partition_pruning {#use_iceberg_manifest_list_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, позволяющая пропускать manifest files Iceberg без чтения, если их сводки по партициям из manifest list не могут соответствовать фильтру запроса."}]}]} />
+
+Пропускать целиком manifest files Iceberg без их чтения, если сводки по партициям в manifest list не могут соответствовать фильтру запроса. Требует включенной настройки [use&#95;iceberg&#95;partition&#95;pruning](/ru/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) и даёт выигрыш только в том случае, когда manifest file содержит небольшое число различных значений партиций — именно такой результат даёт `rewriteManifests` с кластеризацией по столбцам партиции.
+
+## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,9 +34,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="use_iceberg_partition_pruning">
-  ## use_iceberg_partition_pruning
-</div>
+## use_iceberg_partition_pruning {#use_iceberg_partition_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

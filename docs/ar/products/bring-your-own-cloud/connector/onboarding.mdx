@@ -6,13 +6,14 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-تنقلك هذه الصفحة من رمز التسجيل إلى موصل سليم ومتحقَّق منه. يُثبَّت الموصل على أحد هدفين: عنقود Kubernetes ‏(Helm) أو جهاز افتراضي بنظام Linux ‏(systemd). يُعد التسجيل بالرمز المسار القياسي؛ وإذا كانت بيئتك لا تستطيع الوصول مباشرةً إلى نقاط نهاية ClickHouse، فراجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs).
+<PrivatePreviewBadge />
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+تنقلك هذه الصفحة من رمز التسجيل إلى موصل سليم ومتحقَّق منه. يُثبَّت الموصل على أحد هدفين: عنقود Kubernetes ‏(Helm) أو جهاز افتراضي بنظام Linux ‏(systemd). يُعد التسجيل بالرمز المسار القياسي؛ وإذا كانت بيئتك لا تستطيع الوصول مباشرةً إلى نقاط نهاية ClickHouse، فراجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs).
+
+## المتطلبات الأساسية {#prerequisites}
 
 لكل عملية تثبيت:
 
@@ -40,9 +41,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   `--skip-provision` هو الطريقة الوحيدة لتجاوز متطلب Kubernetes، وهو مخصص لمرحلة التجهيز فقط: إذ يتخطى توفير مستخدم ClickHouse، وعلى جهاز افتراضي، تمكين الوحدة والتحقق منها؛ لذا لا ينشئ موصلًا قيد التشغيل بمفرده.
 </Note>
 
-<div id="install-and-enroll">
-  ## التثبيت والتسجيل
-</div>
+## التثبيت والتسجيل {#install-and-enroll}
 
 <Steps>
   <Step title="احصل على نقطة نهاية الموصل ورمز الانضمام" id="get-endpoint-and-token">
@@ -153,9 +152,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## عمليات التثبيت المعزولة شبكيًا والمنعكسة
-</div>
+## عمليات التثبيت المعزولة شبكيًا والمنعكسة {#air-gapped-and-mirrored-installs}
 
 يمكن نقل جزأين مستقلين خارج النطاق، بحسب ما يمكن لبيئتك الوصول إليه.
 
@@ -167,9 +164,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يعمل المُثبّت من مرآة أيضًا: استضف ملفات الإصدار و`install.sh` على مرآتك الخاصة، ثم أشر إليها باستخدام `CLICKLINK_MIRROR_URL`.
 
-<div id="manual-download-and-verification">
-  ### التنزيل والتحقق يدويًا
-</div>
+### التنزيل والتحقق يدويًا {#manual-download-and-verification}
 
 إذا كنت تفضّل عدم تمرير المُثبِّت عبر pipe، فاجلب الإصدار وتحقّق منه بنفسك. تكتشف الكتلة نظامك الأساسي ومعماريته؛ شغّلها كما هي على macOS أو Linux، سواء كان amd64 أو arm64:
 
@@ -207,9 +202,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 على جهاز افتراضي، استخرج أرشيف tarball وشغّل `sudo ./install.sh` من الدليل المستخرج؛ وإلى جانب ملفات الإصدار الخاصة به، يُجري التثبيت نفسه على المضيف كما يفعل الخيار `--host`.
 
-<div id="if-something-fails">
-  ## في حال فشل شيء ما
-</div>
+## في حال فشل شيء ما {#if-something-fails}
 
 أعِد تشغيل الأمر نفسه. يتميز `init` بخاصية التكرار الآمن: إذ تؤدي عمليات إعادة التشغيل إلى الحالة نفسها، وتحافظ على إعداداتك الحالية وملفاتك المرحلية، وتتخطى العمل المكتمل. إذا فشلت خطوة أثناء تنفيذها، تطبع واجهة CLI أوامر الاسترداد الدقيقة المناسبة لحالتك، ويمكن تكرار هذه الأوامر بأمان.
 

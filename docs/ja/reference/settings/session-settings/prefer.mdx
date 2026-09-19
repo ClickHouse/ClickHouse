@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="prefer_column_name_to_alias">
-  ## prefer_column_name_to_alias
-</div>
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,6 +24,22 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 * 0 — カラム名は別名に置き換えられます。
 * 1 — カラム名は別名に置き換えられません。
+
+結合されたテーブル間でカラム名が曖昧であり、同じ名前の別名が存在する場合は、その別名が使用されます:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+ここでの `id AS x` の `id` は `t1` と `t3` の両方のカラムであるため、別名 `t1.id + 10` に解決されます。
 
 **例**
 
@@ -60,9 +74,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-<div id="prefer_external_sort_block_bytes">
-  ## prefer_external_sort_block_bytes
-</div>
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -70,9 +82,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 外部ソートで最大ブロックバイト数を優先し、マージ時のメモリ使用量を削減します。
 
-<div id="prefer_global_in_and_join">
-  ## prefer_global_in_and_join
-</div>
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +105,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * `GLOBAL IN`/`GLOBAL JOIN` の使用方法の詳細は、[分散サブクエリ](/ja/reference/statements/in#distributed-subqueries) を参照してください
 
-<div id="prefer_localhost_replica">
-  ## prefer_localhost_replica
-</div>
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -114,9 +122,22 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   単一の分片と複数のレプリカを持つクラスターで使用する場合、この設定を無効にすると悪影響があります。
 </Note>
 
-<div id="prefer_warmed_unmerged_parts_seconds">
-  ## prefer_warmed_unmerged_parts_seconds
-</div>
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定: `force_optimize_projection` と同様に、推定コストに関わらず利用可能な projection を選択します。ただし projection が使用されなかった場合でもクエリは失敗しません。"}]}]} />
+
+projection 最適化が有効な場合 ([optimize&#95;use&#95;projections](/ja/reference/settings/session-settings/optimize-use#optimize_use_projections) 設定を参照) 、`SELECT` クエリにおいて projection 最適化がテーブルよりも [projections](/ja/reference/engines/table-engines/mergetree-family/mergetree#projections) を優先するようにします。
+
+有効にすると、クエリを処理できる projection は、テーブル自体よりも多くの marks を読み取る必要がある場合でも使用されます。これは [force&#95;optimize&#95;projection](/ja/reference/settings/session-settings/force-optimize#force_optimize_projection) と同じ動作ですが、使用可能な projection がない場合でもクエリは失敗しません。
+
+設定可能な値:
+
+* 0 — projection は推定コストに基づいて選択されます。
+* 1 — 推定コストに関わらず、利用可能な projection が選択されます。
+
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

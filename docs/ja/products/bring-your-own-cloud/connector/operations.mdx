@@ -1,20 +1,20 @@
 ---
 title: '運用'
 sidebarTitle: '運用'
-description: 'ClickHouse Connector のDay 2運用: アップグレード、ヘルスチェック、証明書、認証情報のローテーション、復旧、アンインストール'
+description: 'ClickHouse Connector のDay 2運用: アップグレード、ヘルス、証明書、認証情報のローテーション、復旧、アンインストール'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'operations']
 doc_type: 'guide'
 ---
 
-このページでは、両方のインストール先における ClickHouse Connector のDay 2運用について説明します。インストールとオンボーディングについては、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="upgrades">
-  ## アップグレード
-</div>
+<PrivatePreviewBadge />
 
-<div id="upgrades-kubernetes">
-  ### Kubernetes
-</div>
+このページでは、両方のインストール先における ClickHouse Connector のDay 2運用について説明します。インストールと登録については、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
+
+## アップグレード {#upgrades}
+
+### Kubernetes {#upgrades-kubernetes}
 
 <Note>
   Day 2 以降の Kubernetes 運用では、ワークステーション上の `helm` CLI を使用します。組み込みの Helm クライアントを備えているのは `init` のみであるため、最初のアップグレード前に `helm` をインストールしてください。
@@ -35,9 +35,7 @@ helm upgrade --install clicklink-connector clicklink-connector \
 
 直接指定したチャート参照 (`oci://`、URL、ローカルのアーカイブまたはディレクトリ) からインストールした場合、解決に使用できるリポジトリはありません。そのため、新しいバージョンでは `helm upgrade clicklink-connector <same-chart-reference>` を再実行してください。新しい CLI で `init` を再実行しても同じ状態に収束しますが、`init` には常にいずれかのエントリポイントが必要です。バンドルを保持している場合は `--handoff` を使用し、そうでない場合は、ドキュメントに記載されたクリーンアップ後に `--force` を指定して新しい登録トークンを使用します。通常は、上記の `helm upgrade` を使用してください ([再実行と復旧](#re-runs-and-recovery)を参照) 。
 
-<div id="upgrades-linux-vm">
-  ### Linux VM
-</div>
+### Linux VM {#upgrades-linux-vm}
 
 ホスト上でインストーラーを再実行します。これにより、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)時と同様に新しいリリースがダウンロードおよび検証され、以前のバイナリがバックアップされるとともに、運用中の機密情報マスキングパターンと環境ファイルが保持されます。続いて、デーモンを再起動します。
 
@@ -48,9 +46,7 @@ sudo systemctl restart clicklink-scraper clicklink-troubleshooter
 
 最新バージョンではなく特定のリリースにアップグレードするには、インストーラーコマンドに `--version vX.Y.Z` を追加します。
 
-<div id="health">
-  ## ヘルス
-</div>
+## ヘルス {#health}
 
 各デーモンは、ヘルスポートで `/livez` エンドポイントを公開します。レスポンスボディの JSON `status` フィールドがヘルス状態を示すものであり、HTTP ステータスコードではありません。したがって、`200` に頼らずボディを確認してください。Prometheus メトリクスは各コンポーネントのメトリクスポートで公開されます。両方のターゲットのデフォルトポートは次のとおりです。
 
@@ -70,9 +66,7 @@ sudo clicklink clctl preflight
 
 config、ファイル、ポートの競合、ネットワーク到達性 (API エンドポイントと各 ClickHouse インスタンス) 、ClickHouse への接続、systemd ユニットの状態、コンポーネントごとのアクセス、ディスク、機密情報マスキングパターンを確認し、いずれかのチェックに失敗すると `2` で終了します。
 
-<div id="certificates">
-  ## 証明書
-</div>
+## 証明書 {#certificates}
 
 コネクタは自身のクライアント証明書を自動更新します。各デーモンは12時間ごとにleafを確認し、残りの有効期間が10日になると更新します。既存のmTLSおよびHMAC認証済みチャネルを通じて、30日間有効なleafを取得します。operatorによる操作は不要です。Kubernetesでは、更新されたleafは`clicklink-mtls` Secretに書き戻されます。VMでは、`/etc/clicklink/tls/`配下に書き込まれます。
 
@@ -88,13 +82,9 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
   | base64 -d | openssl x509 -noout -enddate
 ```
 
-<div id="credential-rotation">
-  ## 認証情報のローテーション
-</div>
+## 認証情報のローテーション {#credential-rotation}
 
-<div id="rotate-api-credentials">
-  ### API (HMAC) 認証情報
-</div>
+### API (HMAC) 認証情報 {#rotate-api-credentials}
 
 ClickHouse のアカウントチームに新しい登録トークンを依頼し、元の `init` コマンドに `--enroll` と `--force` を付けて再実行します。`--force` は保持されている設定を再ステージングするため、初回インストール時に指定したターゲット固有のフラグ (`--target-namespace`、`--values`、および `--chart`、`--chart-repo`、`--chart-version` のミラーフラグ) をすべて維持してください。デフォルトのインストールでは、以下のようになります。
 
@@ -115,9 +105,7 @@ sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --forc
   ```
 </Note>
 
-<div id="rotate-clickhouse-users">
-  ### ClickHouse ユーザー
-</div>
+### ClickHouse ユーザー {#rotate-clickhouse-users}
 
 インスタンスごとに、コネクタの読み取り専用ユーザーを再プロビジョニングします。Kubernetes では、ワークステーションから実行します。`--apply-ch-grants` を指定すると、再生成された権限がポッド内で再適用され、新しい認証情報が ClickHouse に反映されます (admin user にパスワードが設定されている場合は、`--ch-admin-password-stdin` を追加し、パイプで渡します) ：
 
@@ -148,15 +136,11 @@ sudo clicklink clctl troubleshoot access provision --provider local \
 
 operator によって管理されるインスタンスでは、どちらの形式にも `--ch-user-via cr` とポッド選択フラグを追加してください。詳細については、[CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)を参照してください。
 
-<div id="rotate-client-certificate">
-  ### クライアント証明書
-</div>
+### クライアント証明書 {#rotate-client-certificate}
 
 証明書は自動的に更新されます ([証明書](#certificates)を参照) 。有効期限が切れる前に証明書をすぐに置き換えるには、`--force` を指定して `init` を再実行します。
 
-<div id="re-runs-and-recovery">
-  ## 再実行と復旧
-</div>
+## 再実行と復旧 {#re-runs-and-recovery}
 
 `init` は再実行しても収束するため、まずは同じコマンドを再実行してください。`--force` を指定しない場合、既存の `/etc/clicklink/config.yaml` (VM) または `clicklink-values.yaml` オーバーレイ (Kubernetes) は保持され、既存のクライアント秘密鍵が再利用されます。認証情報と CA チェーンはアトミックに上書きされます。部分的な失敗後に CLI が出力する復旧コマンドは、安全に繰り返し実行できます。
 
@@ -170,13 +154,9 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 これは VM 用の形式です (root が `/etc/clicklink` を書き換え、サービスを管理します) 。Kubernetes では、CLI が `--target helm`、`--target-namespace`、`--values` を含む完全な形式を出力するため、出力されたコマンドをそのまま使用してください。
 
-<div id="uninstall">
-  ## アンインストール
-</div>
+## アンインストール {#uninstall}
 
-<div id="upgrades-linux-vm">
-  ### Linux VM
-</div>
+### Linux VM {#uninstall-linux-vm}
 
 `uninstall.sh` はリリース tarball に含まれています。ホスト上に展開済みの tarball が残っていない場合は、[手動でのダウンロードと検証](/ja/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)の手順に従って取得・展開し、展開したディレクトリから実行します。
 
@@ -190,9 +170,7 @@ sudo ./uninstall.sh
 sudo ./uninstall.sh --purge
 ```
 
-<div id="upgrades-kubernetes">
-  ### Kubernetes
-</div>
+### Kubernetes {#uninstall-kubernetes}
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -215,9 +193,7 @@ for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
 done
 ```
 
-<div id="rotate-clickhouse-users">
-  ### ClickHouse ユーザー
-</div>
+### ClickHouse ユーザー {#uninstall-clickhouse-users}
 
 どちらのターゲットをアンインストールしても、プロビジョニングされた読み取り専用ユーザーは残ります。各インスタンスで管理者として削除してください (`--ch-user-suffix` を設定している場合は、名前に付加してください) 。
 

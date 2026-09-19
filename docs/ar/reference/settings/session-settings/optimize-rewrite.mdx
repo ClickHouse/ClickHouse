@@ -13,22 +13,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_rewrite_aggregate_function_with_if">
-  ## optimize_rewrite_aggregate_function_with_if
-</div>
+## optimize_rewrite_aggregate_function_with_if {#optimize_rewrite_aggregate_function_with_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 أعِد كتابة الدوال التجميعية التي تستخدم تعبير `if` كوسيطة، عندما يكون ذلك متكافئًا منطقيًا.
 على سبيل المثال، يمكن إعادة كتابة `avg(if(cond, col, null))` إلى `avgOrNullIf(cond, col)`. وقد يؤدي ذلك إلى تحسين الأداء.
 
-<Note>
-  مدعوم فقط مع المحلل (`enable_analyzer = 1`).
-</Note>
-
-<div id="optimize_rewrite_array_exists_to_has">
-  ## optimize_rewrite_array_exists_to_has
-</div>
+## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +28,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 أعِد كتابة دوال arrayExists() إلى has() عندما تكون متكافئة منطقيًا. على سبيل المثال، يمكن إعادة كتابة arrayExists(x -&gt; x = 1, arr) إلى has(arr, 1)
 
-<div id="optimize_rewrite_has_to_in">
-  ## optimize_rewrite_has_to_in
-</div>
+## optimize_rewrite_has_to_in {#optimize_rewrite_has_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -46,9 +36,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 أعِد كتابة دوال `has` إلى `IN` عندما تكون الوسيطة الأولى مصفوفة ثابتة. على سبيل المثال، يمكن إعادة كتابة `has([1, 2, 3], x)` إلى `x IN [1, 2, 3]` لتحسين الأداء عند استخدام المصفوفات الثابتة
 
-<div id="optimize_rewrite_like_perfect_affix">
-  ## optimize_rewrite_like_perfect_affix
-</div>
+## optimize_rewrite_like_perfect_affix {#optimize_rewrite_like_perfect_affix}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -56,9 +44,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 أعِد كتابة تعبيرات LIKE ذات البادئة أو اللاحقة التامة (مثل `col LIKE 'ClickHouse%'`) إلى الدالتين startsWith أو endsWith (مثل `startsWith(col, 'ClickHouse')`).
 
-<div id="optimize_rewrite_regexp_functions">
-  ## optimize_rewrite_regexp_functions
-</div>
+## optimize_rewrite_regexp_functions {#optimize_rewrite_regexp_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -66,9 +52,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 أعِد كتابة الدوال المتعلقة بالتعبيرات النمطية بصيغ أبسط وأكثر كفاءة
 
-<div id="optimize_rewrite_sum_if_to_count_if">
-  ## optimize_rewrite_sum_if_to_count_if
-</div>
+## optimize_rewrite_sum_if_to_count_if {#optimize_rewrite_sum_if_to_count_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

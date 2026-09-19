@@ -13,12 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 صُممت النسخ الاحتياطية لقاعدة البيانات لتمكينك من استعادة الخدمة إلى حالة سابقة بالاعتماد على آخر نسخة احتياطية ناجحة.
 
 <div id="backups">
-  ## النسخ الاحتياطية
+  ## النسخ الاحتياطية {#backups}
 </div>
 
-<div id="how-backups-work-in-clickhouse-cloud">
-  ### كيف تعمل النسخ الاحتياطية في ClickHouse Cloud
-</div>
+### كيف تعمل النسخ الاحتياطية في ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 تتكوّن النسخ الاحتياطية في ClickHouse Cloud من مزيج من النسخ الاحتياطية &quot;الكاملة&quot; و&quot;التزايدية&quot; التي تُشكّل سلسلة نسخ احتياطية. تبدأ السلسلة بنسخة احتياطية كاملة، ثم تؤخذ نسخ احتياطية تزايدية خلال الفترات الزمنية المجدولة التالية لتكوين تسلسل من النسخ الاحتياطية. وعندما تصل سلسلة النسخ الاحتياطية إلى طول معيّن، تبدأ سلسلة جديدة. ويمكن بعد ذلك استخدام هذه السلسلة كاملةً لاستعادة البيانات إلى خدمة جديدة عند الحاجة. وبمجرد أن تتجاوز جميع النسخ الاحتياطية ضمن سلسلة معيّنة مدة الاحتفاظ المحددة للخدمة (المزيد عن الاحتفاظ أدناه)، تُزال هذه السلسلة.
 
@@ -28,18 +26,14 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="مثال على سلسلة النسخ الاحتياطية في ClickHouse Cloud" />
 
-<div id="default-backup-policy">
-  ### سياسة النسخ الاحتياطي الافتراضية
-</div>
+### سياسة النسخ الاحتياطي الافتراضية {#default-backup-policy}
 
 تُحتسب النسخ الاحتياطية وتُفوتر بشكل منفصل عن التخزين في فئات Basic وScale وEnterprise.
 تتضمن الخدمات حاليًا افتراضيًا نسخة احتياطية يومية واحدة مع فترة احتفاظ تبلغ 24 ساعة. قد تختلف إعدادات النسخ الاحتياطي حسب الخدمة والاتفاقية.
 
 راجع [&quot;مراجعة النسخ الاحتياطية واستعادتها&quot;](/ar/products/cloud/guides/backups/review-and-restore-backups) لمزيد من التفاصيل.
 
-<div id="configurable-backups">
-  ## النسخ الاحتياطية القابلة للتهيئة
-</div>
+## النسخ الاحتياطية القابلة للتهيئة {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -57,12 +51,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 راجع [&quot;تهيئة جداول النسخ الاحتياطي&quot;](/ar/products/cloud/guides/backups/configurable-backups) للاطلاع على خطوات تهيئة نسخك الاحتياطية.
 
-<div id="byob">
-  ## النسخ الاحتياطية بحاويتك الخاصة (BYOB)
-</div>
+## النسخ الاحتياطية بحاويتك الخاصة (BYOB) {#byob}
 
 يتيح ClickHouse Cloud تصدير النسخ الاحتياطية إلى مساحة التخزين في حسابك لدى مزود الخدمة السحابية (CSP) (AWS S3 أو Google Cloud Storage أو Azure Blob Storage).
 إذا قمت بتهيئة النسخ الاحتياطية إلى الحاوية الخاصة بك، فسيواصل ClickHouse Cloud أيضًا إنشاء نسخه الاحتياطية الخاصة به افتراضيًا.
+ينطبق إعداد مدة الاحتفاظ بالنسخ الاحتياطية على النسخ الاحتياطية المكتوبة إلى حاويتك. أما النسخ الاحتياطية التي يديرها ClickHouse Cloud فتستخدم سياسة الاحتفاظ الافتراضية.
 
 للتعرّف على كيفية عمل النسخ الاحتياطية في ClickHouse Cloud، راجع وثائق [النسخ الاحتياطية](/ar/products/cloud/guides/backups/review-and-restore-backups).
 
@@ -72,7 +65,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 <Info>
   **النسخ الاحتياطية عبر المناطق**
 
-  أي استخدام تُصدَّر فيه النسخ الاحتياطية إلى
+  أي استخدام تُصدَّر فيه النسخ الاحتياطية إلى
   منطقة مختلفة ضمن مزود الخدمة السحابية نفسه سيترتب عليه رسوم [نقل البيانات](/ar/products/cloud/reference/billing/network-data-transfer).
 
   حاليًا، لا ندعم النسخ الاحتياطي/الاستعادة للخدمات التي تستخدم [Transparent Data Encryption (TDE)](/ar/products/cloud/guides/security/cmek#transparent-data-encryption-tde) أو للخدمات الخاضعة للمتطلبات التنظيمية.
@@ -80,9 +73,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 راجع [&quot;تصدير النسخ الاحتياطية إلى حسابك السحابي الخاص&quot;](/ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) للاطلاع على أمثلة حول كيفية إنشاء نسخ احتياطية كاملة وتزايدية على تخزين الكائنات في AWS وGCP وAzure، وكذلك كيفية الاستعادة من هذه النسخ الاحتياطية.
 
-<div id="backup-options">
-  ### خيارات النسخ الاحتياطي
-</div>
+### خيارات النسخ الاحتياطي {#backup-options}
 
 لتصدير النسخ الاحتياطية إلى حسابك السحابي الخاص، لديك خياران:
 
@@ -100,7 +91,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 </Steps>
 
 <Warning>
-  لن تدير ClickHouse Cloud دورة حياة النسخ الاحتياطية في حاويات الخاصة بالعملاء.
-  ويقع على عاتق العملاء ضمان إدارة النسخ الاحتياطية في الـ حاوية الخاص بهم بالشكل المناسب للالتزام بمعايير الامتثال وكذلك التحكم في التكلفة.
+  لا تدير ClickHouse Cloud دورة حياة النسخ الاحتياطية المُصدَّرة باستخدام أوامر SQL.
+  ويقع على عاتق العملاء ضمان إدارة هذه النسخ الاحتياطية بالشكل المناسب للالتزام بمعايير الامتثال وكذلك التحكم في التكلفة.
   وإذا كانت النسخ الاحتياطية تالفة، فلن يمكن استعادتها.
 </Warning>

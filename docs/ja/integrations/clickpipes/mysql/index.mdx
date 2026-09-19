@@ -10,33 +10,21 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
-
-<BetaBadge />
-
-<Info>
-  ClickPipes 経由で MySQL から ClickHouse Cloud にデータを取り込む機能は、現在パブリックベータです。
-</Info>
 
 MySQL ClickPipe は、MySQL および MariaDB データベースから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ耐障害性に優れた方法です。**バルクロード**による一回限りのインジェストと、**変更データキャプチャ (CDC (変更データキャプチャ) ) **による継続的インジェストの両方をサポートしています。
 
 MySQL ClickPipe は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムで操作することもできます。
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 [//]: # "TODO 一回限りのインジェスト パイプでは、binlog レプリケーションの設定は不要です。これは過去にも混乱の原因になっていたため、ユーザーを必要以上に不安にさせないよう、バルクロードに必要な最小限の要件も提示すべきです。"
 
 開始するには、まず MySQL データベースが binlog レプリケーション用に正しく設定されていることを確認する必要があります。設定手順は MySQL のデプロイ方法によって異なるため、以下の該当するガイドに従ってください。
 
-<div id="supported-data-sources">
-  ### サポート対象のデータソース
-</div>
+### サポート対象のデータソース {#supported-data-sources}
 
 | 名前                                                   | ロゴ | 詳細                                                                                                                   |
 | ---------------------------------------------------- | -- | -------------------------------------------------------------------------------------------------------------------- |
@@ -50,9 +38,7 @@ MySQL ClickPipe は、ClickPipes UI を使用して手動でデプロイおよ�
 
 ソース MySQL データベースの設定が完了したら、ClickPipe の作成に進むことができます。
 
-<div id="create-your-clickpipe">
-  ## ClickPipe を作成する
-</div>
+## ClickPipe を作成する {#create-your-clickpipe}
 
 ClickHouse Cloud アカウントにログインしていることを確認してください。まだアカウントをお持ちでない場合は、[こちら](https://cloud.clickhouse.com/)から登録できます。
 
@@ -70,9 +56,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="MySQL を選択" size="lg" border />
 
-<div id="add-your-source-mysql-database-connection">
-  ### ソース MySQL データベース接続を追加する
-</div>
+### ソース MySQL データベース接続を追加する {#add-your-source-mysql-database-connection}
 
 4. 前提条件の手順で設定したソース MySQL データベースの接続情報を入力します。
 
@@ -83,15 +67,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="接続情報を入力" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### &#x20;(任意) TLS設定の変更
-</div>
+#### &#x20;(任意) TLS設定の変更 {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### &#x20;(任意) SSH トンネリングを設定する
-</div>
+#### &#x20;(任意) SSH トンネリングを設定する {#optional-set-up-ssh-tunneling}
 
 ソースの MySQL データベースが外部公開されていない場合は、SSH トンネリングの接続情報を指定できます。
 
@@ -111,9 +91,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 接続情報の入力が完了したら、`Next` をクリックします。
 
-<div id="advanced-settings">
-  #### 詳細設定を設定する
-</div>
+#### 詳細設定を設定する {#advanced-settings}
 
 必要に応じて、詳細設定を行えます。各設定の概要は以下のとおりです。
 
@@ -124,9 +102,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 * **スナップショットで並列に処理するテーブル数**: 初期スナップショット中に並列で取得するテーブル数です。テーブル数が多い場合に、並列に取得するテーブル数を制御するのに役立ちます。
 * **サーバー ID**: MySQL の binlog レプリケーション用のサーバー ID を設定するための任意のパラメータです。設定しない場合、ClickPipes はランダムなサーバー ID を生成しますが、これは ClickPipe のライフサイクル中に変更される可能性があります。ソース側の MySQL サーバーで ClickPipe を決定論的に識別するために使用します。
 
-<div id="configure-the-tables">
-  ### テーブルを設定
-</div>
+### テーブルを設定 {#configure-the-tables}
 
 5. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選択することも、新しいデータベースを作成することもできます。
 
@@ -136,9 +112,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 7. <SettingPartitionBy />
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### 権限を確認して ClickPipe を開始する
-</div>
+### 権限を確認して ClickPipe を開始する {#review-permissions-and-start-the-clickpipe}
 
 8. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
@@ -146,9 +120,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 最後に、よくある問題とその解決方法の詳細については、[&quot;MySQL 向け ClickPipes よくある質問&quot;](/ja/integrations/clickpipes/mysql/faq) ページを参照してください。
 
-<div id="whats-next">
-  ## 次のステップ
-</div>
+## 次のステップ {#whats-next}
 
 [//]: # "TODO PostgreSQL 向けの既存ガイドと同様に、MySQL 固有の移行ガイドとベストプラクティスを作成する。現在の移行ガイドは MySQL table engine を参照しているが、これは理想的ではない。"
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested">
-  ## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested
-</div>
+## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested {#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,19 +21,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 允许向 Nested 中添加复合标识符。这是一项兼容性设置，因为它会改变查询结果。禁用时，`SELECT a.b.c FROM table ARRAY JOIN a` 将无法工作，而 `SELECT a FROM table` 的 `Nested a` 结果中也不会包含 `a.b.c` 列。
 
-<div id="analyzer_compatibility_allow_non_aggregate_in_having">
-  ## analyzer_compatibility_allow_non_aggregate_in_having
-</div>
+## analyzer_compatibility_allow_non_aggregate_in_having {#analyzer_compatibility_allow_non_aggregate_in_having}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新的兼容性设置。启用后，analyzer 会模拟旧版将非聚合 AND 合取项从 `HAVING` 重写到 `WHERE` 的行为，而不是抛出 `NOT_AN_AGGREGATE`。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增兼容性设置。启用后，analyzer 会模拟旧版将非聚合 AND 合取项从 `HAVING` 重写到 `WHERE` 的行为，而不是抛出 `NOT_AN_AGGREGATE`。"}]}]} />
 
-启用后，analyzer 会模拟旧版行为：将非聚合 AND 合取项从 `HAVING` 移到 `WHERE`，而不是抛出 `NOT_AN_AGGREGATE`。默认行为是按标准进行拒绝；此设置可作为迁移辅助，用于处理那些曾被旧版 analyzer (`enable_analyzer = 0`) 静默接受的查询。包含聚合、`grouping` 或非确定性函数的合取项会保留在 `HAVING` 中。如果任一合取项包含窗口函数或有状态函数 (例如 `rowNumberInBlock`) ，则整个 `HAVING` 的此类重写都会被禁用，这与旧版 `PredicateExpressionsOptimizer` 的行为一致。当 `GROUP BY` 使用 `WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS` 或 `GROUPING SETS` 时，该设置同样会被忽略。
+启用后，analyzer 会模拟旧版行为：将非聚合 AND 合取项从 `HAVING` 移到 `WHERE`，而不是抛出 `NOT_AN_AGGREGATE`。默认行为是按标准进行拒绝；此设置可作为迁移辅助，用于处理那些曾被 ClickHouse 在 v24.3 之前使用的查询分析静默接受的查询。包含聚合、`grouping` 或非确定性函数的合取项会保留在 `HAVING` 中。如果任一合取项包含窗口函数或有状态函数 (例如 `rowNumberInBlock`) ，则整个 `HAVING` 的此类重写都会被禁用，这与旧版 `PredicateExpressionsOptimizer` 的行为一致。当 `GROUP BY` 使用 `WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS` 或 `GROUPING SETS` 时，该设置同样会被忽略。
 
-<div id="analyzer_compatibility_apply_final_to_all_joined_tables">
-  ## analyzer_compatibility_apply_final_to_all_joined_tables
-</div>
+## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -48,9 +42,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 - `FINAL` 仅应用于指定它的表。
 * 1 - JOIN 最左侧表上的 `FINAL` 会应用于所有参与 JOIN 的表。
 
-<div id="analyzer_compatibility_join_using_top_level_identifier">
-  ## analyzer_compatibility_join_using_top_level_identifier
-</div>
+## analyzer_compatibility_join_using_top_level_identifier {#analyzer_compatibility_join_using_top_level_identifier}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -58,9 +50,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 强制从投影中解析 JOIN USING 里的标识符 (例如，在 `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` 中，JOIN 将根据 `t1.a + 1 = t2.b` 执行，而不是 `t1.b = t2.b`) 。还会考虑 SELECT 列表中子表达式上定义的别名 (例如，在 `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` 中，JOIN 将根据 `t1.a + 1 = t2.b` 执行)。当匹配的别名定义在 SELECT 列表中的子表达式上而非顶层别名时，将对此查询禁用并行副本。对于发送到远程服务器的查询 (`Distributed` 表、`remote` 表函数) ，仅当标识符在远程服务器上完全无法解析时，此类查询才会因异常被拒绝；如果该别名遮蔽了左表中的实际列，远程服务器会改为基于该列执行 JOIN，因此结果可能与本地执行不同。
 
-<div id="analyzer_compatibility_multiple_joins_qualify_column_names">
-  ## analyzer_compatibility_multiple_joins_qualify_column_names
-</div>
+## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -78,11 +68,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 
-仅在启用 analyzer 时生效 (`enable_analyzer = 1`) 。
-
-<div id="analyzer_compatibility_prefer_alias_over_subcolumn">
-  ## analyzer_compatibility_prefer_alias_over_subcolumn
-</div>
+## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

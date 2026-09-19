@@ -6,9 +6,7 @@ title: 'clickhouse-local'
 doc_type: 'reference'
 ---
 
-<div id="when-to-use-clickhouse-local-vs-clickhouse">
-  ## متى تستخدم clickhouse-local مقابل ClickHouse
-</div>
+## متى تستخدم clickhouse-local مقابل ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 يُعد `clickhouse-local` إصدارًا سهل الاستخدام من ClickHouse، وهو مثالي للمطورين الذين يحتاجون إلى معالجة سريعة للملفات المحلية والبعيدة باستخدام SQL من دون الحاجة إلى تثبيت خادم قاعدة بيانات كامل. باستخدام `clickhouse-local`، يمكن للمطورين استخدام أوامر SQL (باستخدام [لهجة ClickHouse SQL](/ar/reference/home)) مباشرةً من سطر الأوامر، مما يوفّر طريقة بسيطة وفعّالة للوصول إلى ميزات ClickHouse من دون الحاجة إلى تثبيت ClickHouse كامل. ومن أبرز مزايا `clickhouse-local` أنه يأتي مضمنًا بالفعل عند تثبيت [clickhouse-client](/ar/concepts/features/tools-and-utilities/clickhouse-local). وهذا يعني أن المطورين يمكنهم البدء باستخدام `clickhouse-local` بسرعة، من دون الحاجة إلى عملية تثبيت معقدة.
 
@@ -16,9 +14,7 @@ doc_type: 'reference'
 
 يُرجى قراءة الوثائق أدناه التي تعرض أمثلة على حالات استخدام `clickhouse-local`، مثل [الاستعلام عن ملف محلي](#query_data_in_file) أو [قراءة ملف Parquet في S3](#query-data-in-a-parquet-file-in-aws-s3).
 
-<div id="download-clickhouse-local">
-  ## تنزيل clickhouse-local
-</div>
+## تنزيل clickhouse-local {#download-clickhouse-local}
 
 يُشغَّل `clickhouse-local` باستخدام الملف التنفيذي `clickhouse` نفسه الذي يُشغِّل خادم ClickHouse و`clickhouse-client`. وأسهل طريقة لتنزيل أحدث إصدار هي استخدام الأمر التالي:
 
@@ -30,9 +26,7 @@ curl https://clickhouse.com/ | sh
   يمكن للملف التنفيذي الذي نزّلته للتو تشغيل مختلف أدوات ClickHouse وبرامجه المساعدة. إذا كنت تريد تشغيل ClickHouse كخادم قاعدة بيانات، فراجِع [Quick Start](/ar/get-started/setup/install).
 </Note>
 
-<div id="query_data_in_file">
-  ## الاستعلام عن البيانات في ملف باستخدام SQL
-</div>
+## الاستعلام عن البيانات في ملف باستخدام SQL {#query_data_in_file}
 
 من الاستخدامات الشائعة لـ `clickhouse-local` تشغيل استعلامات مخصّصة على الملفات، بحيث لا تحتاج إلى إدراج البيانات في جدول. ويمكن لـ `clickhouse-local` دفق البيانات من ملف إلى جدول مؤقت وتنفيذ أوامر SQL.
 
@@ -110,9 +104,7 @@ FROM file('reviews.tsv')"
 Monopoly Junior Board Game    5
 ```
 
-<div id="query-data-in-a-parquet-file-in-aws-s3">
-  ## الاستعلام عن البيانات في ملف Parquet على AWS S3
-</div>
+## الاستعلام عن البيانات في ملف Parquet على AWS S3 {#query-data-in-a-parquet-file-in-aws-s3}
 
 إذا كان لديك ملف في S3، فاستخدم `clickhouse-local` ودالة الجدول `s3` للاستعلام عن الملف مباشرةً (من دون إدراج البيانات في جدول ClickHouse). لدينا ملف باسم `house_0.parquet` في حاوية عامة يحتوي على أسعار المنازل للعقارات المبيعة في المملكة المتحدة. لنرَ كم عدد الصفوف التي يحتوي عليها:
 
@@ -187,9 +179,7 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
   عندما تصبح جاهزًا لإدراج ملفاتك في ClickHouse، شغّل خادم ClickHouse وأدرِج نتائج دوال الجدول `file` و`s3` في جدول من نوع `MergeTree`. راجع [Quick Start](/ar/get-started/setup/install) لمزيد من التفاصيل.
 </Tip>
 
-<div id="format-conversions">
-  ## تحويلات الصيغ
-</div>
+## تحويلات الصيغ {#format-conversions}
 
 يمكنك استخدام `clickhouse-local` لتحويل البيانات بين صيغ مختلفة. مثال:
 
@@ -209,9 +199,7 @@ $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 $ clickhouse-local --copy < data.json > data.csv
 ```
 
-<div id="usage">
-  ## الاستخدام
-</div>
+## الاستخدام {#usage}
 
 افتراضيًا، يمكن لـ `clickhouse-local` الوصول إلى بيانات خادم ClickHouse على نفس المضيف، ولا يعتمد على إعدادات الخادم. كما يدعم تحميل إعدادات الخادم باستخدام الوسيط `--config-file`. وبالنسبة إلى البيانات المؤقتة، يُنشأ افتراضيًا دليل مؤقت فريد للبيانات.
 
@@ -261,13 +249,38 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 
 بالإضافة إلى ذلك، توجد وسيطات لكل متغير من متغيرات تهيئة ClickHouse، ويشيع استخدامها بدلًا من `--config-file`.
 
-<div id="commands">
-  ## الأوامر
-</div>
+### ملفات التهيئة {#configuration-files}
 
-<div id="ls-command">
-  ### أمر LS
-</div>
+لا يستخدم `clickhouse-local` إعدادات خادم ClickHouse المثبَّت على المضيف نفسه، بل يبحث عن ملف التهيئة الرئيسي الخاص به ويستخدم أول ملف موجود من الملفات التالية:
+
+1. المسار المُمرَّر عبر `--config-file`؛
+2. `./config.xml`؛
+3. `./clickhouse-local.xml` أو `./clickhouse-local.yaml` أو `./clickhouse-local.yml`؛
+4. `~/.clickhouse-local/config.xml` أو `~/.clickhouse-local/config.yaml` أو `~/.clickhouse-local/config.yml`؛
+5. `/etc/clickhouse-local/config.xml` أو `/etc/clickhouse-local/config.yaml` أو `/etc/clickhouse-local/config.yml`.
+
+وكما هو الحال مع `clickhouse-server`، تُدمج ملفات `.xml` و`.yaml` و`.yml` و`.conf` الموجودة في أدلة الدمج المجاورة لملف التهيئة الرئيسي داخل هذا الملف: `config.d` و`conf.d` بالنسبة إلى `config.xml`، و`clickhouse-local.d` و`conf.d` بالنسبة إلى `clickhouse-local.yaml`، وهكذا.
+
+وتُطبَّق أدلة الدمج الخاصة بالدليل الحالي حتى إن لم يوجد ملف تهيئة رئيسي، إذ يُدمج `./config.d` و`./conf.d` في إعداد بالحدّ الأدنى مضمَّن في الملف التنفيذي. وهذا يجعل الدليل ذاتي الوصف؛ فعلى سبيل المثال، مع
+
+```yaml title="config.d/datasets.yaml"
+storage_configuration:
+  disks:
+    datasets:
+      type: object_storage
+      object_storage_type: s3
+      metadata_type: plain_rewritable
+      endpoint: https://data.clickhouse.com/public-datasets/db/
+      no_sign_request: true
+      readonly: true
+      skip_access_check: true
+```
+
+فإن كل `clickhouse-local` يُشغَّل في ذلك الـ دليل يحصل على الـ disk المسمى `datasets`، دون الحاجة إلى إنشاء `config.xml` له.
+
+## الأوامر {#commands}
+
+### أمر LS {#ls-command}
 
 يعرض جميع الملفات في دليل العمل الحالي التي يمكن لـ clickhouse-local الوصول إليها.
 
@@ -303,9 +316,7 @@ file2.json
 file3.xml
 ```
 
-<div id="clear-command">
-  ### الأمر CLEAR
-</div>
+### الأمر CLEAR {#clear-command}
 
 يمسح شاشة الطرفية (على غرار الأمر `clear` في Linux أو Ctrl+L في كثير من الطرفيات). هذا إجراء من جهة العميل: ولا يُرسَل إلى محرك SQL.
 
@@ -321,9 +332,7 @@ file3.xml
 ./clickhouse-local -q clear
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 ```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
@@ -381,9 +390,7 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-<div id="starting-listeners">
-  ## تشغيل مستمعات TCP وHTTP
-</div>
+## تشغيل مستمعات TCP وHTTP {#starting-listeners}
 
 يمكن تحويل `clickhouse-local` إلى خادم خفيف الوزن يقبل اتصالات TCP (البروتوكول الأصلي) واتصالات HTTP. يكون هذا مفيدًا عندما تريد إتاحة الوصول إلى قواعد البيانات والجداول في مثيل `clickhouse-local` قيد التشغيل لأدوات أو تطبيقات ClickHouse الأخرى. لاحظ أن كل اتصال وارد يحصل على جلسة خاصة به، لذلك لا تكون الجداول المؤقتة وإعدادات مستوى الجلسة الخاصة بجلسة `clickhouse-local` التفاعلية مرئية للاتصالات الخارجية.
 
@@ -415,9 +422,7 @@ clickhouse-local \
   لاحظ أن العنوان الاسترجاعي يظل قابلًا للوصول من المتصفح: فبينما يكون مستمع HTTP مفتوحًا، يمكن لأي صفحة ويب تزورها الاستعلام من المثيل المحلي وقراءة النتائج بفضل ترويسات CORS الافتراضية.
 </Warning>
 
-<div id="related-content-1">
-  ## محتوى مرتبط
-</div>
+## محتوى مرتبط {#related-content-1}
 
 * [استخراج البيانات وتحويلها والاستعلام عنها من الملفات المحلية باستخدام clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 * [إدخال البيانات إلى ClickHouse - الجزء 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)

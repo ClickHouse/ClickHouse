@@ -1,6 +1,6 @@
 ---
 slug: /guides/developer/mutations
-sidebarTitle: 'データの更新と削除'
+sidebarTitle: 'ClickHouseデータの更新と削除'
 searchable: true
 keywords: ['UPDATE', 'DELETE', 'ミューテーション']
 title: 'ClickHouseデータの更新と削除'
@@ -33,7 +33,7 @@ ClickHouse は大量の分析ワークロード向けに設計されています
 </Tip>
 
 <div id="updating-data">
-  ## データの更新
+  ## データの更新 {#updating-data}
 </div>
 
 テーブルの行を更新するには、`ALTER TABLE...UPDATE` コマンドを使用します。
@@ -75,7 +75,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## データの削除
+  ## データの削除 {#deleting-data}
 </div>
 
 データを削除するには、`ALTER TABLE` コマンドを使用します。
@@ -105,7 +105,7 @@ ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
 詳細は、[`DELETE` ステートメント](/ja/reference/statements/delete) のドキュメントページを参照してください。
 
 <div id="lightweight-deletes">
-  ## 論理削除
+  ## 論理削除 {#lightweight-deletes}
 </div>
 
 行を削除するもう 1 つの方法として、**論理削除**と呼ばれる `DELETE FROM` コマンドがあります。削除された行は直ちに削除済みとしてマークされ、以降のすべてのクエリ結果から自動的に除外されるため、パーツのマージを待ったり、`FINAL` キーワードを使用したりする必要はありません。データのクリーンアップはバックグラウンドで非同期に実行されます。

@@ -6,7 +6,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
 ---
 
-ClickStack 브라우저 SDK를 사용하면 프런트엔드 애플리케이션을 계측해
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack 브라우저 SDK를 사용하면 프론트엔드 애플리케이션을 계측해
 이벤트를 ClickStack으로 전송할 수 있습니다. 이를 통해 네트워크
 요청과 예외를 백엔드 이벤트와 함께 단일 타임라인에서 확인할 수 있습니다.
 
@@ -14,16 +16,9 @@ ClickStack 브라우저 SDK를 사용하면 프런트엔드 애플리케이션�
 애플리케이션을 사용하는 동안 사용자가 보고 있던 내용을 시각적으로
 단계별로 따라가며 디버깅할 수 있습니다.
 
-이 가이드에서는 다음 항목을 통합합니다:
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-* **콘솔 로그**
-* **세션 리플레이**
-* **XHR/Fetch/WebSocket 요청**
-* **예외**
-
-<div id="getting-started">
-  ## 시작하기
-</div>
+## 시작하기 {#getting-started}
 
 <br />
 
@@ -43,12 +38,12 @@ ClickStack 브라우저 SDK를 사용하면 프런트엔드 애플리케이션�
     import HyperDX from '@hyperdx/browser';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack에서는 생략
         service: 'my-frontend-app',
-        tracePropagationTargets: [/api.myapp.domain/i], // 프런트엔드 요청과 백엔드 요청의 트레이스를 연결하도록 설정
+        tracePropagationTargets: [/api.myapp.domain/i], // 프론트엔드 요청과 백엔드 요청의 trace를 연결하도록 설정
         consoleCapture: true, // 콘솔 로그 수집(기본값: false)
-        advancedNetworkCapture: true, // HTTP 요청/응답의 전체 헤더와 본문 수집(기본값: false)
+        advancedNetworkCapture: true, // HTTP 요청/응답의 전체 header와 본문 수집(기본값: false)
     });
     ```
   </Tab>
@@ -66,19 +61,17 @@ ClickStack 브라우저 SDK를 사용하면 프런트엔드 애플리케이션�
     <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
     <script>
       window.HyperDX.init({
-        url: 'http://localhost:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack에서는 생략
         service: 'my-frontend-app',
-        tracePropagationTargets: [/api.myapp.domain/i], // 프런트엔드 요청과 백엔드 요청의 트레이스를 연결하도록 설정
+        tracePropagationTargets: [/api.myapp.domain/i], // 프론트엔드 요청과 백엔드 요청의 trace를 연결하도록 설정
       });
     </script>
     ```
   </Tab>
 </Tabs>
 
-<div id="options">
-  ### 옵션
-</div>
+### 옵션 {#options}
 
 * `apiKey` - ClickStack 수집 API Key입니다.
 * `service` - HyperDX UI에 이벤트가 표시될 서비스 이름입니다.
@@ -98,13 +91,9 @@ ClickStack 브라우저 SDK를 사용하면 프런트엔드 애플리케이션�
 * `disableIntercom` - (선택 사항) Intercom 통합을 비활성화할지 여부입니다(기본값 `false`)
 * `disableReplay` - (선택 사항) 세션 리플레이를 비활성화할지 여부입니다(기본값 `false`)
 
-<div id="additional-configuration">
-  ## 추가 구성
-</div>
+## 추가 구성 {#additional-configuration}
 
-<div id="attach-user-information-or-metadata">
-  ### 사용자 정보 또는 메타데이터 추가
-</div>
+### 사용자 정보 또는 메타데이터 추가 {#attach-user-information-or-metadata}
 
 사용자 정보를 추가하면 HyperDX UI에서 세션과 이벤트를 검색하거나 필터링할 수
 있습니다. 이는 클라이언트 세션 중 언제든지 호출할 수 있습니다. 현재
@@ -125,9 +114,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-<div id="auto-capture-react-error-boundary-errors">
-  ### React error boundary 오류 자동 수집
-</div>
+### React error boundary 오류 자동 수집 {#auto-capture-react-error-boundary-errors}
 
 React를 사용하는 경우, 에러 바운더리(error boundary) 컴포넌트를
 `attachToReactErrorBoundary` 함수에 전달하면 React error boundary 내에서 발생하는
@@ -142,9 +129,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-<div id="send-custom-actions">
-  ### 사용자 지정 액션 보내기
-</div>
+### 사용자 지정 액션 보내기 {#send-custom-actions}
 
 특정 애플리케이션 이벤트(예: 회원 가입, 제출 등)를 명시적으로 추적하려면 이벤트 이름과 선택적 메타데이터를 함께 지정해 `addAction` 함수를 호출할 수 있습니다.
 
@@ -158,9 +143,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-<div id="enable-network-capture-dynamically">
-  ### 네트워크 캡처 동적으로 활성화하기
-</div>
+### 네트워크 캡처 동적으로 활성화하기 {#enable-network-capture-dynamically}
 
 네트워크 캡처를 동적으로 활성화하거나 비활성화하려면 필요에 따라 `enableAdvancedNetworkCapture` 또는 `disableAdvancedNetworkCapture` 함수를 호출하면 됩니다.
 
@@ -168,9 +151,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-<div id="enable-resource-timing-for-cors-requests">
-  ### CORS 요청에 대한 리소스 타이밍 활성화
-</div>
+### CORS 요청에 대한 리소스 타이밍 활성화 {#enable-resource-timing-for-cors-requests}
 
 프런트엔드 애플리케이션이 다른 도메인으로 API 요청을 보내는 경우,
 선택적으로 `Timing-Allow-Origin`[헤더](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)가 요청과 함께 전송되도록 설정할 수

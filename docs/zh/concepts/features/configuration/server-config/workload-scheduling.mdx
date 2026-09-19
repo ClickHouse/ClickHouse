@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 当 ClickHouse 同时执行多个查询时，这些查询可能会使用共享资源 (CPU、内存和 IO) 。可以应用调度约束和策略，以规范不同工作负载之间资源的使用和共享。对于所有资源，都可以配置统一的调度层级结构。层级根节点表示共享资源，而叶子节点则是特定的工作负载，用于承载特定查询和后台活动的资源请求与分配。
 
-<div id="resources">
-  ## 资源
-</div>
+## 资源 {#resources}
 
 默认情况下，工作负载调度是禁用的。要启用它，需要创建用于调度的资源，以及至少一个工作负载。所有资源彼此独立，可以任意组合使用。
 
@@ -32,13 +30,13 @@ CREATE RESOURCE memory (MEMORY RESERVATION)
 CREATE RESOURCE query (QUERY)
 ```
 
-要为特定的 disk 启用 IO 调度，你必须为 WRITE 和 READ 访问创建读资源和写资源：
+要为特定的磁盘启用 IO 调度，你必须为 WRITE 和 READ 访问创建读资源和写资源：
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
 -- or
-CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
-CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE read_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE write_resource_name (WRITE DISK write_disk_name)
 ```
 
 一个资源可用于任意数量的磁盘，可用于 READ、WRITE，或同时用于 READ 和 WRITE。还有一种语法可将一个资源用于所有磁盘：
@@ -49,12 +47,10 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 
 资源按共享模式分类：
 
-* **时间共享资源** (CPU、IO、查询槽位) - 管理在调度层级叶子节点排队的资源请求。请求会按照层级中定义的策略和约束进行调度。当查询访问相应资源时，就会创建资源请求。例如，当查询从磁盘读取数据，或使用 CPU 进行处理时，系统会在每完成一个工作量子，或通过套接字发送或接收一定字节数时创建资源请求。
-* **空间共享资源** (内存) - 管理调度层级叶子节点上的资源分配。分配可能处于运行中或待处理状态。待处理的分配会被阻塞，直到释放出足够空间，或其他分配被驱逐 (killed) 。相关决策基于层级中定义的限制和策略。分配与查询 (或后台活动) 之间是一一对应的关系。分配会在查询开始执行时创建，并在查询结束时释放。运行中的分配其大小可以动态增减。
+* **时间共享资源** (CPU、IO、查询槽位) - 管理在调度层级结构叶子节点排队的资源请求。请求会按照层级中定义的策略和约束进行调度。当查询访问相应资源时，就会创建资源请求。例如，当查询从磁盘读取数据，或使用 CPU 进行处理时，系统会在每完成一个工作量子，或通过套接字发送或接收一定字节数时创建资源请求。
+* **空间共享资源** (内存) - 管理调度层级结构叶子节点上的资源分配。分配可能处于运行中或待处理状态。待处理的分配会被阻塞，直到释放出足够空间，或其他分配被驱逐 (killed) 。相关决策基于层级中定义的限制和策略。分配与查询 (或后台活动) 之间是一一对应的关系。分配会在查询开始执行时创建，并在查询结束时释放。运行中的分配其大小可以动态增减。
 
-<div id="workloads">
-  ## 工作负载层级结构
-</div>
+## 工作负载层级结构 {#workloads}
 
 ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有资源都分布在统一的 WORKLOAD 层级结构中。对于特定资源，分配规则的某些细节可以调整，但层级结构本身保持一致。每个 WORKLOAD 都会为每种资源维护必要的调度节点。可以在任意工作负载内创建子工作负载，从而构建出整个层级结构。ClickHouse 不会对工作负载层级结构强制规定任何特定或预定义的结构。
 
@@ -138,9 +134,7 @@ CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_sec
   工作负载设置会转换为一组合适的调度节点。有关底层细节，请参阅调度节点[类型和选项](#hierarchy)的说明。
 </Note>
 
-<div id="workload-markup">
-  ## 工作负载标记
-</div>
+## 工作负载标记 {#workload-markup}
 
 可以使用设置 `workload` 为查询打标，以区分不同的工作负载。如果未设置 `workload`，则使用值 &quot;default&quot;。请注意，也可以通过 profile 指定其他值。如果你希望某个用户的所有查询都使用固定的 `workload` 设置值进行标记，可以使用设置约束将 `workload` 固定为该值。
 
@@ -155,9 +149,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 也可以为后台活动分配 `workload` 设置。合并和变更分别使用 `merge_workload` 和 `mutation_workload` 服务器设置。这些值还可以通过 `merge_workload` 和 `mutation_workload` MergeTree 设置在特定表级别进行覆盖。
 
-<div id="cpu_scheduling">
-  ## CPU 调度
-</div>
+## CPU 调度 {#cpu_scheduling}
 
 要为工作负载启用 CPU 调度，请创建 CPU 资源，并为并发线程数设置上限：
 
@@ -212,9 +204,7 @@ CPU 调度目前尚不支持合并和变更。
   声明 CPU 资源后，[`concurrent_threads_soft_limit_num`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) 和 [`concurrent_threads_soft_limit_ratio_to_cores`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 设置将不再生效。此时，系统会改用工作负载设置 `max_concurrent_threads` 来限制分配给特定工作负载的 CPU 数量。若要实现之前的行为，请仅创建 WORKER THREAD 资源，将工作负载 `all` 的 `max_concurrent_threads` 设置为与 `concurrent_threads_soft_limit_num` 相同的值，并使用 `workload = "all"` 查询设置。此配置等同于将 [`concurrent_threads_scheduler`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 设置为 &quot;fair&#95;round&#95;robin&quot;。
 </Note>
 
-<div id="threads_vs_cpus">
-  ## 线程与 CPU
-</div>
+## 线程与 CPU {#threads_vs_cpus}
 
 控制工作负载 CPU 消耗有两种方式：
 
@@ -253,9 +243,7 @@ CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
   如果你希望最大化 ClickHouse server 的 CPU 利用率，请避免对根工作负载 `all` 使用 `max_cpus` 和 `max_cpu_share`。相反，应将 `max_concurrent_threads` 设置得更高。例如，在一个具有 8 个 CPU 的系统上，可设置 `max_concurrent_threads = 16`。这样一来，8 个线程可以运行 CPU 任务，同时另外 8 个线程可以处理 I/O 操作。额外的线程会制造 CPU 压力，从而确保调度规则得以执行。相比之下，设置 `max_cpus = 8` 永远不会产生 CPU 压力，因为 server 无法超过可用的 8 个 CPU。
 </Note>
 
-<div id="memory-reservations">
-  ## 内存预留
-</div>
+## 内存预留 {#memory-reservations}
 
 <Note>
   内存预留调度目前处于 Experimental 阶段。只有在存在 `MEMORY RESERVATION` 资源时才会生效，其 SQL 接口和行为可能会在未来的发行版中发生变化。当前尚不支持合并和变更，对正在运行的查询进行驱逐也只是尽力而为：它会在查询的下一个内存同步点生效，而不是立即生效。
@@ -334,9 +322,7 @@ CREATE WORKLOAD testing IN user SETTINGS precedence = 2
 
 请注意，system 工作负载的优先次序为 0 (default) ，高于 production、staging 和 testing 工作负载，但它们并不是同级工作负载。它们最近的共同祖先是工作负载 all，其两个子节点具有相同的优先次序。因此，处于等待状态的 system 工作负载 不能驱逐其中任何一个，反之亦然。这确保了 system 活动不容易被驱逐。
 
-<div id="query_scheduling">
-  ## 查询槽位调度
-</div>
+## 查询槽位调度 {#query_scheduling}
 
 要为 工作负载 启用查询槽位调度，请创建 QUERY 资源，并为并发查询数或每秒查询数设置上限：
 
@@ -355,21 +341,15 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   被阻塞的查询会无限期等待，并且在所有约束条件都满足之前，不会出现在 `SHOW PROCESSLIST` 中。
 </Note>
 
-<div id="workload_entity_storage">
-  ## 工作负载和资源存储
-</div>
+## 工作负载和资源存储 {#workload_entity_storage}
 
 所有工作负载和资源的定义都会以 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 查询的形式持久化存储在磁盘上的 `workload_path` 或 ZooKeeper 中的 `workload_zookeeper_path`。为确保节点之间的一致性，建议使用 ZooKeeper 存储。或者，也可以将 `ON CLUSTER` 子句与磁盘存储配合使用。
 
-<div id="config_based_workloads">
-  ## 基于配置的工作负载和资源
-</div>
+## 基于配置的工作负载和资源 {#config_based_workloads}
 
 除了基于 SQL 的定义外，还可以在服务器配置文件中预先定义工作负载和资源。这在云环境中很有用，因为有些限制受基础设施约束，而另一些限制则可由客户调整。基于配置的对象优先于通过 SQL 定义的对象，且不能使用 SQL 命令修改或删除。
 
-<div id="config_based_workloads_format">
-  ### 配置格式
-</div>
+### 配置格式 {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -385,9 +365,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 该配置使用与 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 语句相同的 SQL 语法。所有查询都必须是有效的。
 
-<div id="config_based_workloads_usage_recommendations">
-  ### 使用建议
-</div>
+### 使用建议 {#config_based_workloads_usage_recommendations}
 
 对于云环境，典型的设置可能包括：
 
@@ -400,9 +378,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 另一个用例是为异构集群中的不同节点使用不同的配置。
 
-<div id="strict_resource_access">
-  ## 严格资源访问
-</div>
+## 严格资源访问 {#strict_resource_access}
 
 为了强制所有查询遵循资源调度策略，可以使用一个服务器设置：`throw_on_unknown_workload`。如果将其设置为 `true`，则每个查询都必须使用有效的 `workload` 查询设置，否则会抛出 `RESOURCE_ACCESS_DENIED` 异常。如果将其设置为 `false`，这类查询就不会使用资源调度器，也就是说，它将获得对任意 `RESOURCE` 的无限制访问。查询设置 `use_concurrency_control = 0` 允许查询绕过 CPU 调度器，并获得对 CPU 的无限制访问。要强制启用 CPU 调度，请创建一个设置约束，使 `use_concurrency_control` 保持为只读常量值。
 
@@ -410,9 +386,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   除非已执行 `CREATE WORKLOAD default`，否则不要将 `throw_on_unknown_workload` 设置为 `true`。如果在启动期间执行了未显式设置 `workload` 的查询，可能会导致服务器启动问题。
 </Note>
 
-<div id="hierarchy">
-  ### 调度节点层级
-</div>
+### 调度节点层级 {#hierarchy}
 
 从调度子系统的角度看，每个资源都对应一个调度节点层级。ClickHouse 会根据 WORKLOAD 和 RESOURCE 的定义自动创建所有必需的调度节点。调度节点属于底层实现细节，可通过 [system.scheduler](/zh/reference/system-tables/scheduler) 表查看。
 
@@ -462,9 +436,42 @@ graph TD
 * `precedence_allocation` - 按照静态优先次序执行驱逐 (值越小，优先次序越高) ；高优先次序的待处理分配会驱逐低优先次序的分配；子节点应指定 `precedence` (默认为 0) 。
 * `queue` - 层级结构中的叶节点，可容纳正在运行和待处理的分配。
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 备份和恢复 {#backup-restore}
+
+可以将 SQL 定义的工作负载和资源包含在 ClickHouse 备份中：
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+仅会备份由 SQL 定义的对象。基于配置的工作负载和资源 (在服务器配置文件中通过 `<resources_and_workloads>` 定义) 不包括在内——它们属于服务器配置，应另行备份。
+
+始终在同一条命令中同时备份和恢复 `system.workloads` 与 `system.resources`。工作负载可以引用资源 (通过 `SETTINGS ... FOR <resource>`) 和父工作负载，而仅备份 `system.workloads` 不会一并备份所引用的资源定义。如果恢复的工作负载所引用的资源既不在备份中，也不存在于目标服务器上，恢复将失败。
+
+要从备份中恢复工作负载和资源：
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+恢复需要 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 特权。默认情况下，现有对象会保持不变 (即 `if not exists` 语义) ；下方的 `create_workloads_and_resources` 设置用于指定如何处理已存在的对象。如果服务器使用 ZooKeeper 存储 (`workload_zookeeper_path`) ，集群中仅有一个副本会创建各对象；其他副本会通过常规复制机制同步该变更。
+
+对于复制部署，可以使用 `ON CLUSTER` 备份和恢复这两个表：
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+`create_workloads_and_resources` 恢复设置用于指定在恢复过程中如何处理已存在的工作负载或资源 (它并不控制是否恢复这些对象) 。可取以下值：
+
+* `if not exists` (默认) — 保持已存在的对象不变，仅创建缺失的对象；
+* `create` — 若待恢复的对象中有任何一个已存在，则恢复失败；
+* `replace` — 使用备份中的定义覆盖已存在的对象 (此选项还需要 `DROP WORKLOAD` / `DROP RESOURCE` 特权) 。
+  :::
+
+## 另请参阅 {#see-also}
 
 * [system.scheduler](/zh/reference/system-tables/scheduler)
 * [system.workloads](/zh/reference/system-tables/workloads)

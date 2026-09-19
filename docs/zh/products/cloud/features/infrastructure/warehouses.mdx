@@ -11,9 +11,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
 
-<div id="what-is-compute-compute-separation">
-  ## 什么是计算-计算分离？
-</div>
+## 什么是计算-计算分离？ {#what-is-compute-compute-separation}
 
 在讨论什么是计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
 
@@ -44,7 +42,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 *图 2 - ClickHouse Cloud 中的计算分离*
 
 <div id="what-is-a-warehouse">
-  ## 什么是仓库？
+  ## 什么是仓库？ {#what-is-a-warehouse}
 </div>
 
 在 ClickHouse Cloud 中，*仓库* 是一组共享同一份数据的**服务**。
@@ -67,13 +65,13 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * ClickHouse 数据库版本
 * ClickHouse Keeper (用于管理副本)
 
+仓库将共享数据的长期运行的 ClickHouse Cloud 服务归为一组，每个服务都拥有专用的 compute 资源和端点。[按需 Compute](/zh/products/cloud/features/infrastructure/on-demand-compute) 通过现有的服务和端点，从托管池中临时为受支持的 workload 分配工作线程。
+
 <div id="access-controls">
-  ## 访问控制
+  ## 访问控制 {#access-controls}
 </div>
 
-<div id="database-credentials">
-  ### 数据库凭据
-</div>
+### 数据库凭据 {#database-credentials}
 
 由于同一仓库中的所有服务共享同一组表，因此它们在服务之间也共享访问控制。
 这意味着，在服务 1 中创建的所有数据库用户，也都可以使用服务 2，并且拥有相同的权限 (针对表、视图等的授权) ，反之亦然。
@@ -85,9 +83,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 *图 4 - 用户 Alice 是在服务 1 中创建的，但她可以使用相同的凭据访问所有共享相同数据的服务*
 
-<div id="network-access-control">
-  ### 网络访问控制
-</div>
+### 网络访问控制 {#network-access-control}
 
 若要限制其他应用或临时用户对特定服务的访问，可以配置网络限制。
 为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务选项卡，然后选择 **设置**。
@@ -105,9 +101,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 当你以个人身份连接、而非使用 *default* 用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
 
-<div id="read-vs-read-write">
-  ### 只读与读写服务
-</div>
+### 只读与读写服务 {#read-vs-read-write}
 
 服务可以是以下类型之一：
 
@@ -136,9 +130,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
   3. 服务的类型 (只读或读写) 在创建时即固定，之后无法在 Cloud Console 中更改。若要在只读与读写访问之间切换，请在仓库中创建一个具有所需类型的新服务。
 </Note>
 
-<div id="scaling">
-  ## 扩缩容
-</div>
+## 扩缩容 {#scaling}
 
 仓库中的各项服务均可独立扩缩容。您可以调整副本数量和规格，启用水平和垂直自动扩缩容，并配置服务在无活动时自动进入空闲状态。
 
@@ -148,9 +140,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 [定时扩缩容](/zh/products/cloud/features/autoscaling/scheduled-scaling)适用于仓库中的各项服务。仓库限制仍然适用——请合理安排时间表，确保高峰时段所有服务的副本总数不超过仓库上限。有关详细信息，请参阅[自动扩缩容](/zh/products/cloud/features/autoscaling/overview)。
 
-<div id="changes-in-behavior">
-  ## `clusterAllReplicas` 行为的变化
-</div>
+## `clusterAllReplicas` 行为的变化 {#changes-in-behavior}
 
 当一个仓库包含多个服务后，`clusterAllReplicas()` 的行为会发生变化。
 使用 `default` 集群名称时，只会以当前服务中的副本为目标，而不会覆盖仓库中的所有服务。
@@ -163,12 +153,10 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## 局限性
+  ## 局限性 {#limitations}
 </div>
 
-<div id="workload-isolation-limitations">
-  ### 工作负载隔离的限制
-</div>
+### 工作负载隔离的限制 {#workload-isolation-limitations}
 
 某些工作负载无法隔离到特定服务；在某些边缘情况下，一个服务中的某类工作负载会影响同一仓库中的另一项服务。这些情况包括：
 
@@ -180,9 +168,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 * **如果启用了空闲机制，一个读写服务上的插入操作可能会阻止另一个读写服务进入空闲状态。** 在某些情况下，
   一个服务会为另一个服务执行后台合并操作。这些后台操作可能会阻止第二个服务进入空闲状态。后台操作完成后，该服务将进入休眠。只读服务不受影响。
 
-<div id="callouts">
-  ### 实用提示
-</div>
+### 实用提示 {#callouts}
 
 * **ClickHouse 版本**：[升级计划](/zh/products/cloud/features/admin-features/upgrades)由主节点的设置决定。次级服务不能拥有独立于主节点的发布计划。
 
@@ -200,7 +186,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **主节点空闲**：默认已启用主节点自动进入空闲状态。
 
 <div id="pricing">
-  ## 定价
+  ## 定价 {#pricing}
 </div>
 
 仓库中的所有服务 (主节点和次级) 计算资源价格相同。存储只会计费一次——已包含在第一个 (原始) 服务中。
@@ -208,19 +194,17 @@ SETTINGS distributed_ddl_task_timeout=0
 请参阅 [pricing](https://clickhouse.com/pricing) 页面上的定价计算器，它可以根据您的工作负载规模和所选层级帮助估算成本。Usage Breakdown 表会显示各服务的计算资源成本明细。
 
 <div id="backups">
-  ## 备份
+  ## 备份 {#backups}
 </div>
 
 * 由于同一仓库中的所有服务共享相同的存储，因此只会在主节点 (初始服务) 上执行备份。这样一来，仓库中所有服务的数据都会一并备份。
 * 如果从仓库主节点的备份中执行恢复，系统会将其恢复到一个全新的服务中，而不会连接到现有仓库。恢复完成后，你可以立即向这个新服务添加更多服务。
 
 <div id="setup-warehouses">
-  ## 如何配置仓库
+  ## 如何配置仓库 {#setup-warehouses}
 </div>
 
-<div id="creating-a-warehouse">
-  ### 创建仓库
-</div>
+### 创建仓库 {#creating-a-warehouse}
 
 要创建一个仓库，您需要创建第二个服务，并与现有服务共享数据。您可以点击任意现有服务上的加号来完成此操作：
 
@@ -233,7 +217,7 @@ SETTINGS distributed_ddl_task_timeout=0
 在服务创建页面上，原始服务会在下拉列表中默认选为新服务的数据来源。创建完成后，这两个服务将构成一个仓库。
 
 <div id="renaming-a-warehouse">
-  ### 重命名仓库
+  ### 重命名仓库 {#renaming-a-warehouse}
 </div>
 
 重命名仓库有两种方法：
@@ -242,7 +226,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * 你也可以点击任一服务中的仓库名称，并在该处重命名仓库
 
 <div id="deleting-a-warehouse">
-  ### 删除仓库
+  ### 删除仓库 {#deleting-a-warehouse}
 </div>
 
 删除仓库意味着删除所有计算服务和数据 (表、视图、用户等) 。此操作无法撤销。

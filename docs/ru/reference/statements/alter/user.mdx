@@ -21,6 +21,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -35,9 +36,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 
 `SET variable = value` — это псевдоним для `MODIFY SETTING variable = value`: он изменяет одну настройку, сохраняя остальные. Предпочитайте его (или `MODIFY SETTING`) простой форме `SETTINGS`, которая заменяет весь список настроек, а также удаляет все наследуемые (родительские) профили.
 
-<div id="grantees-clause">
-  ## Предложение GRANTEES
-</div>
+## Предложение GRANTEES {#grantees-clause}
 
 Указывает пользователей или роли, которым этот пользователь может предоставлять [привилегии](/ru/reference/statements/grant#privileges), при условии, что ему самому предоставлены все необходимые права с [GRANT OPTION](/ru/reference/statements/grant#granting-privilege-syntax). Варианты предложения `GRANTEES`:
 
@@ -48,9 +47,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 
 Любого пользователя или роль можно исключить с помощью выражения `EXCEPT`. Например, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. Это означает, что если `user1` предоставлены какие-либо привилегии с `GRANT OPTION`, он сможет предоставлять эти привилегии кому угодно, кроме `user2`.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Сделайте назначенные роли ролями по умолчанию:
 
@@ -110,9 +107,19 @@ ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
-<div id="valid-until-clause">
-  ## Предложение VALID UNTIL
-</div>
+Изменение базы данных по умолчанию для пользователя:
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` очищает базу данных по умолчанию для пользователя. Чтобы использовать базу данных с именем `NONE`, заключите её имя в обратные кавычки:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
+## Предложение VALID UNTIL {#valid-until-clause}
 
 Позволяет указать дату истечения срока действия и, при необходимости, время для метода аутентификации. В качестве параметра принимает строку. Для даты и времени рекомендуется использовать формат `YYYY-MM-DD [hh:mm:ss] [timezone]`. По умолчанию этот параметр равен `'infinity'`. Допустимый диапазон сроков: от `1900-01-01 00:00:00 UTC` до `9999-12-31 09:59:59 UTC` — это последний момент, который остаётся в пределах 9999 года в любом часовом поясе, поэтому при отображении сохранённый момент никогда не ограничивается. Срок в прошлом означает, что срок действия учётных данных уже истёк. Сроки до `1970-01-01 00:00:01 UTC` принимаются только как маркер «уже истекло»: они приводятся к наименьшему истёкшему моменту — одной секунде после эпохи Unix (`1970-01-01 00:00:01 UTC`), поэтому `SHOW CREATE USER` выводит этот момент вместо указанного вами срока. Сроки, начиная с этого момента, сохраняются без изменений.
 
@@ -131,9 +138,7 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 * `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — срок на уровне пользователя применяется к обоим методам.
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — срок применяется только к методу `bcrypt_password`; срок действия `plaintext_password` не истекает.
 
-<div id="valid-for-clause">
-  ## Предложение VALID FOR
-</div>
+## Предложение VALID FOR {#valid-for-clause}
 
 Предложение `VALID FOR` — удобная сокращённая форма `VALID UNTIL`. Вместо абсолютной даты и времени оно принимает [интервал](/ru/reference/data-types/special-data-types/interval), а срок действия вычисляется как текущее время плюс этот интервал на момент выполнения запроса. Результат сохраняется в форме `VALID UNTIL`, поэтому `SHOW CREATE USER` всегда отображает вычисленный абсолютный срок. К нему применяются те же правила размещения, что и к `VALID UNTIL`: перед `IDENTIFIED` (или при отсутствии метода аутентификации) оно задаёт срок действия на уровне пользователя, применяемый ко всем методам, а после метода аутентификации — только к этому методу. Срок действия сохраняется и применяется с точностью до секунды, поэтому интервалы меньше секунды (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) отклоняются; наименьшая допустимая единица — `SECOND`. Отрицательный интервал можно использовать, чтобы отметить учётные данные как уже истёкшие; если вычисленный срок приходится на время до `1970-01-01 00:00:01 UTC`, он приводится к этому минимальному моменту для истёкших учётных данных, который затем показывает `SHOW CREATE USER` — в часовом поясе сервера или сеанса, как описано для [`VALID UNTIL`](#valid-until-clause).
 
@@ -144,9 +149,7 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 * `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — срок действия на уровне пользователя применяется к обоим методам.
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — срок действия применяется только к методу `bcrypt_password`; срок действия `plaintext_password` не ограничен.
 
-<div id="grants-clause">
-  ## Предложение GRANTS
-</div>
+## Предложение GRANTS {#grants-clause}
 
 Позволяет ограничить права доступа, доступные для сеанса, аутентифицированного с использованием определённого метода аутентификации. Подробнее см. [предложение GRANTS оператора CREATE USER](/ru/reference/statements/create/user#grants-clause).
 

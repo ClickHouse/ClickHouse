@@ -10,7 +10,7 @@ doc_type: '참고'
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="what-is-standard-onboarding">
-  ## 표준 온보딩이란 무엇입니까?
+  ## 표준 온보딩이란 무엇입니까? {#what-is-standard-onboarding}
 </div>
 
 **표준 온보딩**은 BYOC를 사용해 자체 클라우드 계정에 ClickHouse를 배포할 때 사용하는 기본 안내형 워크플로입니다. 이 방식에서는 ClickHouse Cloud가 배포에 필요한 핵심 클라우드 리소스(VPC/VNet, 서브넷, 보안 그룹, Kubernetes(EKS/GKE/AKS) 클러스터, 관련 IAM 역할/서비스 계정/서비스 주체 등)를 AWS 계정, GCP 프로젝트 또는 Azure subscription 내에 프로비저닝합니다. 이를 통해 일관되고 안전한 구성을 보장하고, 팀이 수동으로 수행해야 하는 작업을 최소화합니다.
@@ -26,18 +26,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## 액세스 요청
+  ## 액세스 요청 {#request-access}
 </div>
 
 온보딩 절차를 시작하려면 [문의해 주세요](https://clickhouse.com/cloud/bring-your-own-cloud). 당사 팀이 BYOC 요구 사항을 안내하고, 가장 적합한 배포 옵션을 선택할 수 있도록 지원하며, 계정을 허용 목록에 추가해 드립니다.
 
 <div id="onboarding-process">
-  ## 온보딩
+  ## 온보딩 {#onboarding-process}
 </div>
 
-<div id="prepare-an-aws-account">
-  ### AWS 계정/GCP 프로젝트/Azure subscription 준비
-</div>
+### AWS 계정/GCP 프로젝트/Azure subscription 준비 {#prepare-an-aws-account}
 
 조직 아래에 새로운 AWS 계정, GCP 프로젝트 또는 Azure subscription을 준비합니다.
 
@@ -59,7 +57,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       ClickHouse 실행에 필요한 스토리지 버킷, VPC/VNet, Kubernetes 클러스터 및 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 다음 단계에서 프로비저닝됩니다.
     </Note>
 
-    #### AWS용 Terraform 모듈
+    #### AWS용 Terraform 모듈 {#terraform-module-aws}
 
     AWS 배포에서 CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
 
@@ -78,7 +76,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       이 모듈은 이전에 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`에서 tarball 형태로 배포되었습니다. 해당 URL은 계속 사용할 수 있지만 더 이상 사용되지 않으므로 위의 GitHub 모듈을 사용하십시오.
     </Note>
 
-    #### AWS 외부 ID
+    #### AWS 외부 ID {#aws-external-id}
 
     AWS에서는 설정 중 생성된 IAM 역할이 혼동된 대리인 공격을 방지하기 위해 [외부 ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)(`sts:ExternalId`)를 통해 ClickHouse Cloud를 신뢰하도록 구성됩니다. ClickHouse Cloud 콘솔은 온보딩을 시작할 때 AWS 계정용 외부 ID를 생성하여 CloudFormation 링크에 미리 입력합니다. Terraform을 사용하는 경우 동일한 값을 `external_id`로 전달하십시오. 동일한 AWS 계정의 모든 BYOC 인프라는 같은 외부 ID를 공유합니다.
 
@@ -104,7 +102,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC 인프라 구성" background="black" />
 
-    #### 사전 유효성 검사
+    #### 사전 유효성 검사 {#preflight-validation}
 
     **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 리소스를 생성하기 전에 계정을 대상으로 일련의 **읽기 전용** 사전 점검을 실행합니다. 모든 점검을 통과하면 프로비저닝이 계속 진행됩니다. 점검에 실패하면 설정이 일시 중지되고 콘솔에 문제가 무엇인지 정확히 표시되므로, 리소스가 생성되기 전에 문제를 해결할 수 있습니다.
 
@@ -113,6 +111,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     * **권한** — 관리 아이덴티티(IAM role / service account / service principal)에 ClickHouse Cloud가 배포를 프로비저닝하고 운영하는 데 필요한 권한이 부여되어 있습니다.
     * **활성화된 서비스** *(GCP)* — 필요한 Google Cloud API(Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM)가 프로젝트에서 활성화되어 있습니다.
     * **네트워크** *(AWS 자체 VPC 사용)* — VPC와 서브넷이 서브넷 크기, 필수 태그, 가용 영역 분산, 아웃바운드 연결, 사용 가능한 IP 주소에 관한 [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)을 충족합니다.
+    * **네트워크** *(GCP 자체 VPC 사용)* — VPC와 서브넷이 [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-gcp#configure-existing-vpc)을 충족합니다. 즉, 네트워크와 서브넷이 정상적으로 확인되고, 서브넷의 프라이머리 범위와 파드 secondary 범위가 충분히 크며, Cloud NAT gateway가 해당 네트워크를 포함합니다.
     * **쿼터 및 보호 장치** *(AWS)* — 계정에 충분한 서비스 쿼터(VPC, NAT gateway, Elastic IP, EKS 클러스터, vCPUs)가 있으며, organization policy(SCP)로 인해 필수 작업이 차단되지 않습니다.
 
     검사에 실패하면 각 항목이 매핑된 작업 및 실패 사유와 함께 나열됩니다(예: `iam:CreateRole · explicitDeny`). 성공한 항목을 모두 확인하려면 **Show passed checks**를 펼치십시오.
@@ -126,21 +125,20 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     자주 발생하는 오류는 아래 표를 참고하여 해결하십시오.
 
-    | 유효성 검사 오류                                                                                                                 | 예상 원인                                                                                      | 해결 방법                                                                                                                      |
-    | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-    | **관리 역할을 assume할 수 없음** *(AWS)*                                                                                           | 온보딩 스택이 완료되지 않았거나 역할 또는 외부 ID가 일치하지 않습니다                                                   | 최신 온보딩 스택을 다시 실행하고 콘솔에 표시된 [외부 ID](#aws-external-id)가 trust policy의 외부 ID와 일치하는지 확인하십시오                                    |
-    | **관리 service account를 가장할 수 없음** *(GCP)*                                                                                  | 온보딩 Terraform이 완료되지 않았거나 `clickhouse-management` 서비스 계정이 없거나 ClickHouse에 가장 권한을 부여하지 않았습니다 | 최신 온보딩 Terraform을 다시 실행하고 `clickhouse-management` service account가 존재하며 ClickHouse가 이를 impersonate할 수 있는 권한이 부여되었는지 확인하십시오 |
-    | **누락된 권한**(예: VPC 생성, IAM role 생성, Kubernetes 클러스터 생성)                                                                    | 관리 아이덴티티에 필요한 권한이 없습니다. 사용자 지정되었거나 오래된 스택에서 흔히 발생합니다                                       | 전체 권한 세트를 부여하는 최신 온보딩 스택을 다시 실행하십시오. 의도적으로 권한을 제한한 경우 오류에 보고된 권한을 추가하십시오.                                                  |
-    | **필수 API가 활성화되지 않음** *(GCP)*                                                                                              | 프로젝트에서 필수 Google Cloud 서비스 API가 비활성화되어 있습니다                                                | 예를 들어 `gcloud services enable compute.googleapis.com --project <your-project>`를 실행하여 활성화하십시오                               |
-    | **서브넷 또는 VPC 구성 문제** *(AWS bring-your-own-VPC)* — CIDR 범위가 너무 작음, 태그 누락, 가용 영역 수 부족, 아웃바운드 egress 없음 또는 사용 가능한 IP 주소 수 부족 | 제공된 VPC가 BYOC 네트워크 요구 사항을 충족하지 않습니다                                                        | [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)을 충족하도록 VPC를 조정하십시오        |
-    | **서비스 QUOTA 부족** *(AWS)*                                                                                                  | 필수 리소스에 대한 계정 할당량이 너무 낮습니다                                                                 | 클라우드 제공업체에 quota 증액을 요청하십시오. [AWS 서비스 한도](/ko/products/bring-your-own-cloud/reference/aws-service-limits)를 참조하십시오.            |
-    | **조직 정책/SCP에 의해 차단됨** *(AWS)*                                                                                             | 조직 가드레일로 인해 계정에 필요한 작업이 거부됩니다                                                              | 클라우드 관리자와 협력하여 BYOC 계정에서 해당 작업을 허용하십시오                                                                                     |
+    | 유효성 검사 오류                                                                                                                                         | 예상 원인                                                                                      | 해결 방법                                                                                                                      |
+    | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+    | **관리 역할을 assume할 수 없음** *(AWS)*                                                                                                                   | 온보딩 스택이 완료되지 않았거나 역할 또는 외부 ID가 일치하지 않습니다                                                   | 최신 온보딩 스택을 다시 실행하고 콘솔에 표시된 [외부 ID](#aws-external-id)가 trust policy의 외부 ID와 일치하는지 확인하십시오                                    |
+    | **관리 service account를 가장할 수 없음** *(GCP)*                                                                                                          | 온보딩 Terraform이 완료되지 않았거나 `clickhouse-management` 서비스 계정이 없거나 ClickHouse에 가장 권한을 부여하지 않았습니다 | 최신 온보딩 Terraform을 다시 실행하고 `clickhouse-management` service account가 존재하며 ClickHouse가 이를 impersonate할 수 있는 권한이 부여되었는지 확인하십시오 |
+    | **누락된 권한**(예: VPC 생성, IAM role 생성, Kubernetes 클러스터 생성)                                                                                            | 관리 아이덴티티에 필요한 권한이 없습니다. 사용자 지정되었거나 오래된 스택에서 흔히 발생합니다                                       | 전체 권한 세트를 부여하는 최신 온보딩 스택을 다시 실행하십시오. 의도적으로 권한을 제한한 경우 오류에 보고된 권한을 추가하십시오.                                                  |
+    | **필수 API가 활성화되지 않음** *(GCP)*                                                                                                                      | 프로젝트에서 필수 Google Cloud 서비스 API가 비활성화되어 있습니다                                                | 예를 들어 `gcloud services enable compute.googleapis.com --project <your-project>`를 실행하여 활성화하십시오                               |
+    | **서브넷 또는 VPC 구성 문제** *(AWS bring-your-own-VPC)* — CIDR 범위가 너무 작음, 태그 누락, 가용 영역 수 부족, 아웃바운드 egress 없음 또는 사용 가능한 IP 주소 수 부족                         | 제공된 VPC가 BYOC 네트워크 요구 사항을 충족하지 않습니다                                                        | [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)을 충족하도록 VPC를 조정하십시오        |
+    | **서브넷 또는 VPC 구성 문제** *(GCP bring-your-own-VPC)* — 네트워크 또는 서브넷을 찾을 수 없음, 프라이머리 범위 또는 파드 secondary 범위가 너무 작음, 또는 해당 네트워크를 포괄하는 Cloud NAT gateway 없음 | 제공된 VPC가 BYOC 네트워크 요구 사항을 충족하지 않습니다                                                        | [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-gcp#configure-existing-vpc)을 충족하도록 VPC를 조정하십시오        |
+    | **서비스 QUOTA 부족** *(AWS)*                                                                                                                          | 필수 리소스에 대한 계정 할당량이 너무 낮습니다                                                                 | 클라우드 제공업체에 quota 증액을 요청하십시오. [AWS 서비스 한도](/ko/products/bring-your-own-cloud/reference/aws-service-limits)를 참조하십시오.            |
+    | **조직 정책/SCP에 의해 차단됨** *(AWS)*                                                                                                                     | 조직 가드레일로 인해 계정에 필요한 작업이 거부됩니다                                                              | 클라우드 관리자와 협력하여 BYOC 계정에서 해당 작업을 허용하십시오                                                                                     |
   </Step>
 </Steps>
 
-<div id="create-clickhouse-service">
-  ### 첫 번째 BYOC ClickHouse 서비스 생성
-</div>
+### 첫 번째 BYOC ClickHouse 서비스 생성 {#create-clickhouse-service}
 
 BYOC 인프라가 프로비저닝되면 첫 번째 ClickHouse 서비스를 생성할 준비가 됩니다. ClickHouse Cloud 콘솔을 열고 BYOC 환경을 선택한 다음, 안내에 따라 새 서비스를 생성하십시오.
 

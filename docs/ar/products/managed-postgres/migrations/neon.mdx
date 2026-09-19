@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Neon'
+title: 'الترحيل من Neon إلى ClickHouse Managed Postgres'
+description: 'تعرّف على كيفية ترحيل بيانات PostgreSQL الخاصة بك من Neon إلى ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
+doc_type: 'guide'
+---
+
+يتضمّن ClickHouse Managed Postgres خدمة ClickPipes التي توفّر مسار ترحيل مُدارًا بالكامل وعبر الإنترنت انطلاقًا من Neon.
+فهي تُرحّل الـ مخطط تلقائيًا، وتُنفّذ تحميلًا أوليًا مُحسَّنًا باستخدام الـ snapshot المتوازي، وتستخدم التقاط تغييرات البيانات (CDC) لإبقاء قاعدتَي البيانات متزامنتين حتى لحظة التحويل.
+وبفضل ClickPipes، يمكن للعملاء ترحيل قواعد بيانات Postgres التي يبلغ حجمها عدة تيرابايتات في غضون ساعات قليلة فقط.
+
+<Steps>
+  <Step title="تجهيز Neon">
+    أنشئ مستخدمًا مخصصًا لـ ClickPipes يتمتع بصلاحيات القراءة والـ نسخ المتماثل:
+
+    ```sql
+    CREATE USER clickpipes_user PASSWORD '<password>';
+
+    GRANT USAGE ON SCHEMA public TO clickpipes_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO clickpipes_user;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO clickpipes_user;
+    ALTER USER clickpipes_user WITH REPLICATION;
+
+    ```
+
+    نفّذ هذه الخطوات على فرع Neon الخاص بالإنتاج، مع تكرار عمليات المنح لكل مخطط ترغب في ترحيله.
+    ويجب أن يحتوي كل جدول خاضع للنسخ المتماثل على primary key أو أن يستخدم `REPLICA IDENTITY FULL`.
+
+    في وحدة تحكّم Neon، انتقل إلى **Settings → Logical Replication** وفعّل الـ النسخ المتماثل المنطقي.
+    وإذا كنت تستخدم قيودًا على عناوين IP، فاسمح بعناوين IP الثابتة الخاصة بـ ClickPipes. راجع [دليل إعداد مصدر Neon](/ar/integrations/clickpipes/postgres/source/neon-postgres) للاطلاع على تعليمات مفصّلة.
+  </Step>
+
+  <Step title="الترحيل والتحويل باستخدام ClickPipes">
+    اتبع [دليل الترحيل عبر ClickPipes](/ar/products/managed-postgres/migrations/clickpipes) لتهيئة الترحيل وإتمامه.
+    تُؤتمت ClickPipes العملية من طرف إلى طرف، إذ تقوم بما يلي:
+
+    * ترحيل مخطط المصدر إلى قاعدة بيانات هدف فارغة.
+    * تنفيذ تحميل أولي مُحسَّن باستخدام الـ snapshot المتوازي.
+    * استخدام CDC لإبقاء الهدف متزامنًا مع Neon.
+    * توفير مراقبة للتقدّم ولتأخر الـ نسخ المتماثل وللأخطاء.
+    * إرشادك خلال عمليتَي التحقق والتحويل.
+
+    بمجرد اكتمال التحميل الأولي واقتراب تأخر الـ نسخ المتماثل من الصفر، نفّذ التحويل من تبويب **Post-migration steps** الإرشادي في عرض تفاصيل ClickPipe. راجع [تحويل حركة المرور](/ar/products/managed-postgres/migrations/clickpipes#cutover) للاطلاع على الشرح الكامل. ويرشدك المعالج عبر الخطوات التالية بالترتيب:
+
+    1. ضع Neon في وضع القراءة فقط لإيقاف عمليات الكتابة.
+    2. تحقّق من تطابق أعداد الصفوف بين المصدر والهدف.
+    3. أوقف الـ pipe مؤقتًا.
+    4. أعد ضبط التسلسلات على الهدف.
+    5. حوّل حركة المرور بتحديث سلسلة الاتصال الخاصة بالتطبيق لتشير إلى ClickHouse Managed Postgres.
+    6. نظّف البيئة بحذف الـ فتحة النسخ المتماثل وحذف ClickPipe.
+
+    أبقِ Neon متاحًا في وضع القراءة فقط لفترة قصيرة، تحسبًا للحاجة إلى التراجع.
+    وبمجرد استقرار البيئة الجديدة، أكمل خطوة التنظيف لإزالة ClickPipe والـ فتحة النسخ المتماثل الخاصة به.
+  </Step>
+</Steps>
+
+## اعتبارات الترحيل {#migration-considerations}
+
+### الفروع {#branches}
+
+توفّر Neon تفريعًا فوريًا بتقنية النسخ عند الكتابة (copy-on-write). أما ClickHouse Managed Postgres فيستخدم تخزين NVMe محليًا لتقديم أداء Postgres سريع ويمكن التنبؤ به وموثوق.
+وفي المقابل، فإن الفروع ليست فورية؛ إذ تُنشأ كعمليات نشر مستقلة باستخدام [الاستعادة إلى نقطة زمنية (PITR)](/ar/products/managed-postgres/backup-and-restore)، وتصبح متاحة عادةً خلال دقائق قليلة.
+
+وللتطوير اليومي، ننصح بالاحتفاظ بقاعدة بيانات تطوير أصغر على ClickHouse Managed Postgres تحتوي على بيانات إنتاج ممثِّلة ومنقّاة من المعلومات الحساسة - بضعة غيغابايتات مثلًا - ثم إنشاء فروع PITR منها عند الحاجة. ويمكن أتمتة إنشاء الفروع وحذفها عبر [clickhousectl](/ar/concepts/features/interfaces/cli)، وهي واجهة سطر الأوامر الرسمية لدينا، أو عبر [OpenAPI](/ar/products/managed-postgres/openapi) أو [Terraform](/ar/products/managed-postgres/terraform)
+
+ويعتمد بعض العملاء هذا النهج لإدارة مئات بيئات التطوير. ونعمل باستمرار على تحسين تجربة التفريع والبيئات المعزولة. راجع [توثيق التفريع](/ar/products/managed-postgres/branching).
+
+### Neon Serverless Driver {#neon-serverless}
+
+إذا كان تطبيقك لا يستخدم Neon Serverless Driver، فيمكنك تخطي هذا القسم.
+
+قد تستخدم التطبيقات التي تعمل على منصات مثل [Vercel](https://vercel.com/docs) **‏** [Neon Serverless Driver](https://neon.com/docs/serverless/serverless-driver)، وهو driver قائم على WebSocket وخاص بـ Neon.
+ولا يمكن ببساطة توجيهه إلى ClickHouse Managed Postgres.
+
+قبل الترحيل:
+
+* تحقق من وجود اعتماديات مثل [@neondatabase/serverless](https://www.npmjs.com/package/@neondatabase/serverless). في حال وجودها، استبدلها بـ driver قياسي لـ Postgres مثل [node-postgres (pg)](https://node-postgres.com/).
+* بالنسبة إلى أحمال العمل serverless التي تنشئ عددًا كبيرًا من الاتصالات قصيرة العمر، استخدم [نسخة PgBouncer المضمّنة](/ar/products/managed-postgres/connection#pgbouncer).
+* العبارات المُهيّأة (prepared statements) مدعومة. ومع ذلك، ولأن PgBouncer يعتمد تجميع الاتصالات على مستوى المعاملة، تحقق من التطبيقات التي تعتمد على سلوك على مستوى الجلسة، وهو أمر غير شائع في معظم التطبيقات:
+  1. استخدم `SET LOCAL` بدلًا من `SET` أو `RESET` على مستوى الجلسة.
+  2. استخدم جداول مؤقتة محصورة بنطاق المعاملة مع `ON COMMIT DROP`.
+  3. `NOTIFY` مدعوم؛ أما `LISTEN` فغير مدعوم.
+  4. استخدم الأقفال الاستشارية على مستوى المعاملة، لا على مستوى الجلسة.
+  5. المؤشرات المحصورة بنطاق المعاملة مدعومة؛ أما `WITH HOLD` فغير مدعوم.
+* إذا كان تطبيقك يعتمد على سلوك غير مدعوم على مستوى الجلسة، فاتصل بـ Postgres مباشرةً بدلًا من الاتصال عبر PgBouncer.
+
+لمزيد من التفاصيل، راجع [مصفوفة توافق PgBouncer](https://www.pgbouncer.org/features.html).
+
+### حدود الاتصالات {#connection-limits}
+
+يدعم ClickHouse Managed Postgres 500 اتصال Postgres مباشر بشكل افتراضي. إذا تجاوز عبء العمل لديك في Neon هذا العدد، فيمكنك:
+
+* استخدام تجميع الاتصالات على جانب التطبيق.
+* استخدام مثيل PgBouncer المرفق، الذي يدعم ما يصل إلى 5,000 اتصال عميل.
+* زيادة `max_connections` إذا لزم المزيد من الاتصالات المباشرة.
+  * يمكن تغيير `max_connections` من **Settings → Edit parameters**. وتتطلب بعض التغييرات إعادة تشغيل. راجع [وثائق التهيئة](/ar/products/managed-postgres/settings#changing-configuration).
+
+### تغييرات المخطط أثناء الترحيل {#schema-changes}
+
+اجعل الفترة الفاصلة بين بدء ClickPipes وعملية التحويل أقصر ما يمكن — ويُفضّل ألّا تتجاوز بضعة أيام — وتجنّب إجراء أي تغييرات على المخطط خلال هذه الفترة.
+
+يحتفظ بعض العملاء ببيئات متوازية لعدة أيام أثناء اختبار تطبيقاتهم على ClickHouse Managed Postgres. وبعد اكتمال الاختبار، يبدأون ClickPipe جديدًا لإجراء الترحيل النهائي، بما يقلّل الوقت الفاصل بين التحميل الأولي والتحويل.
+
+ينقل CDC عمليات الإدراج والتحديث والحذف و`ADD COLUMN`، لكن معظم تغييرات DDL الأخرى لا تُمرَّر، ويشمل ذلك الفهارس والمشغّلات وتغييرات enum والقيود والدوال ومعظم التعديلات على الأعمدة.
+
+بعض التغييرات، مثل وجود قيمة enum مفقودة، تؤدي إلى توقّف النسخ المتماثل وتظهر في سجلات ClickPipes. طبّق التغيير المفقود على الهدف، ومن المفترض أن يستأنف النسخ المتماثل عمله. أما التغييرات الأخرى، مثل إنشاء فهرس أو مشغّل جديد، فقد لا تُقاطع CDC، لكن يجب إنشاؤها يدويًا قبل التحويل.
+
+قبل تحويل حركة البيانات، قارن مخطط المصدر بمخطط الهدف، وأضف أي كائنات مفقودة، وأعد ضبط التسلسلات. وتغطي [الأسئلة الشائعة حول الترحيل](/ar/products/managed-postgres/migrations/faq) الأخطاء الشائعة وخطوات معالجتها.

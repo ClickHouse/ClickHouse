@@ -24,7 +24,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
     * **파트 1:** NVMe Postgres 시작하기 및 성능 체험하기
     * **파트 2:** ClickHouse와 통합해 실시간 분석 시작하기
 
-    ClickHouse Managed Postgres는 현재 AWS의 여러 리전에서 사용 가능하며, 퍼블릭 베타 단계입니다.
+    ClickHouse Managed Postgres는 현재 AWS의 여러 리전에서 사용 가능하며, 퍼블릭 베타 단계입니다. GCP는 비공개 프리뷰 단계입니다. GCP 비공개 프리뷰 대기자 명단은 [여기](https://clickhouse.com/cloud/postgres#gcp-waitlist)에서 신청할 수 있습니다.
 
     **이 퀵스타트에서 수행할 작업:**
 
@@ -34,9 +34,9 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
     * 실시간 분석을 위해 데이터를 ClickHouse로 복제하세요
     * `pg_clickhouse`를 사용해 Postgres에서 ClickHouse를 직접 쿼리하세요
 
-    ## 1부: NVMe Postgres 시작하기
+    ## 1부: NVMe Postgres 시작하기 {#part-1}
 
-    ### 데이터베이스 생성
+    ### 데이터베이스 생성 {#create-postgres-database}
 
     새로운 ClickHouse Managed Postgres 서비스를 생성하려면 Cloud Console의 서비스 목록에서 **New service** 버튼을 클릭하십시오. 이후 데이터베이스 유형으로 Postgres를 선택할 수 있습니다.
 
@@ -48,7 +48,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     ClickHouse 관리형 Postgres 인스턴스는 3~5분 내에 프로비저닝되어 사용 가능한 상태가 됩니다.
 
-    ### 데이터베이스에 연결하기
+    ### 데이터베이스에 연결하기 {#connect}
 
     왼쪽 사이드바에서 [**Connect** 버튼](/ko/products/managed-postgres/connection)을 확인할 수 있습니다. 이 버튼을 클릭하면 접속 정보와 다양한 포맷의 연결 문자열(connection string)을 확인할 수 있습니다.
 
@@ -56,7 +56,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     `psql` 연결 문자열을 복사하여 데이터베이스에 연결하세요. DBeaver와 같은 Postgres 호환 클라이언트나 애플리케이션 라이브러리도 사용할 수 있습니다.
 
-    ### NVMe 성능 직접 체험하기
+    ### NVMe 성능 직접 체험하기 {#nvme-performance}
 
     NVMe 기반 성능이 실제로 어느 정도인지 확인해 보겠습니다. 먼저 쿼리 실행 시간을 측정할 수 있도록 `psql`에서 타이밍을 활성화합니다:
 
@@ -154,7 +154,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-    ### 데이터에 쿼리 실행하기
+    ### 데이터에 쿼리 실행하기 {#run-queries}
 
     이제 몇 가지 쿼리를 실행해 NVMe 스토리지에서 Postgres가 얼마나 빠르게 응답하는지 확인해 보겠습니다.
 
@@ -231,7 +231,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     ***
 
-    ## Part 2: ClickHouse로 실시간 분석 추가하기
+    ## 파트 2: ClickHouse로 실시간 분석 추가하기 {#part-2}
 
     Postgres는 트랜잭션 워크로드(OLTP)에 탁월하고, ClickHouse는 대규모 데이터셋에 대한 분석 쿼리(OLAP)를 위해 특별히 설계되었습니다. 두 시스템을 통합하면 양쪽의 장점을 모두 활용할 수 있습니다:
 
@@ -240,7 +240,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     이 섹션에서는 Postgres 데이터를 ClickHouse로 복제하고 원활하게 쿼리하는 방법을 설명합니다.
 
-    ### ClickHouse 통합 설정
+    ### ClickHouse 통합 설정 {#setup-integrate-clickhouse}
 
     이제 Postgres에 테이블과 데이터가 준비되었으니, 분석을 위해 테이블을 ClickHouse로 복제해 보겠습니다. 사이드바에서 **Sync to ClickHouse**를 클릭한 다음, **Replicate data in ClickHouse**를 클릭하십시오.
 
@@ -266,7 +266,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     복제 프로세스가 시작되며 통합 개요 페이지로 이동합니다. 첫 번째 통합인 경우 초기 인프라를 설정하는 데 2~3분이 소요될 수 있습니다. 그동안 새로운 **pg&#95;clickhouse** 확장 기능을 살펴보겠습니다.
 
-    ### Postgres에서 ClickHouse 쿼리하기
+    ### Postgres에서 ClickHouse 쿼리하기 {#pg-clickhouse-extension}
 
     `pg_clickhouse` 확장 기능을 사용하면 표준 SQL로 Postgres에서 직접 ClickHouse 데이터를 쿼리할 수 있습니다. 즉, 애플리케이션이 트랜잭션 데이터와 분석 데이터 모두에 대해 Postgres를 통합 쿼리 레이어로 활용할 수 있습니다. 자세한 내용은 [전체 문서](/ko/products/managed-postgres/extensions/pg_clickhouse/introduction)를 참조하십시오.
 
@@ -317,7 +317,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-    ### 분석 기능을 직접 확인해 보세요
+    ### 분석 기능을 직접 확인해 보세요 {#analytics-after-integration}
 
     통합 페이지로 돌아가 확인해 보세요. 초기 복제가 완료된 것을 확인할 수 있습니다. 통합 이름을 클릭하면 세부 정보를 볼 수 있습니다.
 
@@ -327,7 +327,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse의 ClickHouse Managed Postgres 복제 테이블" size="md" border />
 
-    ### Postgres와 ClickHouse 성능 비교
+    ### Postgres와 ClickHouse 성능 비교 {#performance-comparison}
 
     이제 몇 가지 분석 쿼리를 실행하여 Postgres와 ClickHouse 간의 성능을 비교해 보겠습니다. 복제된 테이블은 `public_<table_name>` 명명 규칙을 사용한다는 점에 유의하십시오.
 
@@ -412,7 +412,7 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
       쿼리 시간은 인스턴스 크기, 서비스 간 네트워크 지연 시간, 데이터 특성, 현재 부하에 따라 달라집니다.
     </Tip>
 
-    ## 정리
+    ## 정리 {#cleanup}
 
     이 빠른 시작에서 생성한 리소스를 삭제하려면 다음을 실행하십시오:
 

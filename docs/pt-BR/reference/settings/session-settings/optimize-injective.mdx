@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_injective_functions_in_group_by">
-  ## optimize_injective_functions_in_group_by
-</div>
+## optimize_injective_functions_in_group_by {#optimize_injective_functions_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Substitui funções injetivas por seus argumentos na seção GROUP BY
 
-<div id="optimize_injective_functions_in_limit_by">
-  ## optimize_injective_functions_in_limit_by
-</div>
+## optimize_injective_functions_in_limit_by {#optimize_injective_functions_in_limit_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,7 @@ Substitui funções injetivas por seus argumentos na seção LIMIT BY.
 
 Exemplo: `LIMIT 5 BY toString(x)` passa a ser `LIMIT 5 BY x`.
 
-<div id="optimize_injective_functions_inside_uniq">
-  ## optimize_injective_functions_inside_uniq
-</div>
+## optimize_injective_functions_inside_uniq {#optimize_injective_functions_inside_uniq}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

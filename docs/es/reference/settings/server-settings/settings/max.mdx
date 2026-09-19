@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="max_active_parts_loading_thread_pool_size">
-  ## max_active_parts_loading_thread_pool_size
-</div>
+## max_active_parts_loading_thread_pool_size {#max_active_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Yes" />La cantidad de hilos para cargar, al iniciar, el conjunto activo de partes de datos (las activas).
 
-<div id="max_authentication_methods_per_user">
-  ## max_authentication_methods_per_user
-</div>
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />
 
@@ -32,15 +28,11 @@ Las consultas de CREATE/ALTER no relacionadas con la autenticación se ejecutar�
   Un valor de `0` significa que no hay límite.
 </Note>
 
-<div id="max_backup_bandwidth_for_server">
-  ## max_backup_bandwidth_for_server
-</div>
+## max_backup_bandwidth_for_server {#max_backup_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />La velocidad máxima de lectura, en bytes por segundo, para todas las copias de seguridad del servidor. Cero significa ilimitado.
 
-<div id="max_build_vector_similarity_index_thread_pool_size">
-  ## max_build_vector_similarity_index_thread_pool_size
-</div>
+## max_build_vector_similarity_index_thread_pool_size {#max_build_vector_similarity_index_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 
@@ -50,33 +42,23 @@ El número máximo de hilos que se usarán para crear índices vectoriales.
   Un valor de `0` significa usar todos los núcleos.
 </Note>
 
-<div id="max_connections">
-  ## max_connections
-</div>
+## max_connections {#max_connections}
 
 <SettingsInfoBlock type="Int32" default_value="4096" changeable_without_restart="No" />Máximo número de conexiones del servidor.
 
-<div id="max_entries_for_hash_table_stats">
-  ## max_entries_for_hash_table_stats
-</div>
+## max_entries_for_hash_table_stats {#max_entries_for_hash_table_stats}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Cuántas entradas pueden tener las estadísticas de la tabla hash recopiladas durante la agregación
 
-<div id="max_fetch_partition_thread_pool_size">
-  ## max_fetch_partition_thread_pool_size
-</div>
+## max_fetch_partition_thread_pool_size {#max_fetch_partition_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Sí" />Número de hilos para ALTER TABLE FETCH PARTITION.
 
-<div id="max_held_snapshots">
-  ## max_held_snapshots
-</div>
+## max_held_snapshots {#max_held_snapshots}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Número máximo de instantáneas ligeras que se pueden mantener al mismo tiempo. Cero significa ilimitado. Si el número de instantáneas alcanza este límite, se genera una excepción al intentar crear una nueva instantánea.
 
-<div id="max_http_index_page_size">
-  ## max_http_index_page_size
-</div>
+## max_http_index_page_size {#max_http_index_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
 
@@ -85,9 +67,21 @@ Si la respuesta supera este límite, la consulta falla con un error.
 
 Valor predeterminado: `10485760` (10 MiB).
 
-<div id="max_keep_alive_requests">
-  ## max_keep_alive_requests
-</div>
+## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+Número máximo de hilos inactivos en reserva que se mantienen en el grupo de hilos destinado a decodificar los archivos de manifiesto de datos de Iceberg.
+
+## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
+
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
+
+Número total máximo de hilos que se usarán para decodificar los archivos de manifiesto de datos de Iceberg.
+
+El grupo está separado del grupo de IO de forma intencionada: una task de decodificación puede quedarse bloqueada hasta que la consulta consuma las entries que ha producido, mientras que la decodificación del manifest de eliminaciones espera a sus tasks en el grupo de IO antes de que se consuma ninguna entry; compartir un único grupo podría provocar un interbloqueo.
+
+## max_keep_alive_requests {#max_keep_alive_requests}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 
@@ -99,9 +93,7 @@ Número máximo de solicitudes a través de una sola conexión keep-alive antes 
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
-<div id="max_materialized_views_count_for_table">
-  ## max_materialized_views_count_for_table
-</div>
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -111,21 +103,15 @@ Límite del número de vistas materializadas adjuntas a una tabla.
   Aquí solo se tienen en cuenta las vistas directamente dependientes, y no se considera la creación de una vista sobre otra.
 </Note>
 
-<div id="max_merges_bandwidth_for_server">
-  ## max_merges_bandwidth_for_server
-</div>
+## max_merges_bandwidth_for_server {#max_merges_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />La velocidad máxima de lectura de todas las fusiones en el servidor, en bytes por segundo. 0 significa que no hay límite.
 
-<div id="max_mutations_bandwidth_for_server">
-  ## max_mutations_bandwidth_for_server
-</div>
+## max_mutations_bandwidth_for_server {#max_mutations_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />La velocidad máxima de lectura de todas las mutaciones del servidor en bytes por segundo. Cero significa ilimitado.
 
-<div id="max_open_files">
-  ## max_open_files
-</div>
+## max_open_files {#max_open_files}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -135,24 +121,18 @@ El número máximo de archivos que pueden estar abiertos.
   Recomendamos usar esta opción en macOS, ya que la función getrlimit() devuelve un valor incorrecto.
 </Note>
 
-<div id="max_os_cpu_wait_time_ratio_to_drop_connection">
-  ## max_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## max_os_cpu_wait_time_ratio_to_drop_connection {#max_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Sí" />
 
 Relación máxima entre los tiempos de espera de CPU del SO (métrica OSCPUWaitMicroseconds) y de actividad (métrica OSCPUVirtualTimeMicroseconds) para considerar el cierre de conexiones. Se utiliza interpolación lineal entre la relación mínima y la máxima para calcular la probabilidad; en este punto, la probabilidad es 1.
 Consulta [Control del comportamiento ante la sobrecarga de CPU del servidor](/es/concepts/features/configuration/settings/server-overload) para obtener más detalles.
 
-<div id="max_outdated_parts_loading_thread_pool_size">
-  ## max_outdated_parts_loading_thread_pool_size
-</div>
+## max_outdated_parts_loading_thread_pool_size {#max_outdated_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="32" changeable_without_restart="Sí" />El número de hilos para cargar al inicio el conjunto inactivo de partes de datos (las obsoletas).
 
-<div id="max_part_num_to_warn">
-  ## max_part_num_to_warn
-</div>
+## max_part_num_to_warn {#max_part_num_to_warn}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="Sí" />
 
@@ -164,9 +144,7 @@ Si el número de partes activas supera el valor especificado, el servidor de Cli
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
-<div id="max_partition_size_to_drop">
-  ## max_partition_size_to_drop
-</div>
+## max_partition_size_to_drop {#max_partition_size_to_drop}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" changeable_without_restart="Yes" />
 
@@ -187,23 +165,17 @@ Esta configuración no requiere reiniciar el servidor de ClickHouse para que sur
 <max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
-<div id="max_parts_cleaning_thread_pool_size">
-  ## max_parts_cleaning_thread_pool_size
-</div>
+## max_parts_cleaning_thread_pool_size {#max_parts_cleaning_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="Yes" />El número de hilos para la eliminación concurrente de partes de datos inactivas.
 
-<div id="max_per_cpu_untracked_memory">
-  ## max_per_cpu_untracked_memory
-</div>
+## max_per_cpu_untracked_memory {#max_per_cpu_untracked_memory}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
 
 Límite superior, en bytes, de la memoria no rastreada que todos los hilos que se ejecutan en una CPU pueden mantener a la vez antes de que se vacíe en el memory tracker. Mientras que `max_untracked_memory` limita un único hilo, este ajuste limita el total por CPU, de modo que muchos hilos no puedan multiplicar su asignación por hilo hasta provocar un gran overcommit en todo el servidor. Por tanto, la memoria total no rastreada queda limitada aproximadamente por `number_of_cpus * max_per_cpu_untracked_memory`. Un valor de `0` desactiva el límite por CPU (solo se aplica `max_untracked_memory` por hilo). Solo en Linux.
 
-<div id="max_session_timeout">
-  ## max_session_timeout
-</div>
+## max_session_timeout {#max_session_timeout}
 
 Tiempo máximo de espera de la sesión, en segundos.
 
@@ -213,9 +185,7 @@ Ejemplo:
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-<div id="max_temporary_data_on_disk_size">
-  ## max_temporary_data_on_disk_size
-</div>
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -231,15 +201,11 @@ Véase también:
 * [`max_temporary_data_on_disk_size_for_user`](/es/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
 * [`max_temporary_data_on_disk_size_for_query`](/es/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
-<div id="max_unexpected_parts_loading_thread_pool_size">
-  ## max_unexpected_parts_loading_thread_pool_size
-</div>
+## max_unexpected_parts_loading_thread_pool_size {#max_unexpected_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="8" changeable_without_restart="No" />El número de hilos para cargar al inicio el conjunto inactivo de partes de datos (las Unexpected).
 
-<div id="max_waiting_queries">
-  ## max_waiting_queries
-</div>
+## max_waiting_queries {#max_waiting_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sí" />
 
@@ -264,9 +230,7 @@ La ejecución de una consulta en espera queda bloqueada mientras las tablas nece
   Esta configuración puede modificarse en tiempo de ejecución y surtirá efecto de inmediato. Las consultas que ya estén en ejecución no se verán afectadas.
 </Note>
 
-<div id="max_zookeeper_pooled_connections">
-  ## max_zookeeper_pooled_connections
-</div>
+## max_zookeeper_pooled_connections {#max_zookeeper_pooled_connections}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 

@@ -6,21 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'логирование', 'интеграция', 'мониторинг приложений']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 React Native SDK для ClickStack позволяет инструментировать ваше React Native-приложение
 для отправки событий в ClickStack. Благодаря этому вы сможете видеть сетевые
 запросы мобильного приложения и исключения рядом с событиями бэкенда на единой временной шкале.
 
-В этом руководстве рассматриваются:
+<ClickStackIntegrates signals={['traces']} />
 
-* **XHR/Fetch-запросы**
+## Начало работы {#getting-started}
 
-<div id="getting-started">
-  ## Начало работы
-</div>
-
-<div id="install-via-npm">
-  ### Установка через NPM
-</div>
+### Установка через NPM {#install-via-npm}
 
 Чтобы установить [пакет ClickStack React Native](https://www.npmjs.com/package/@hyperdx/otel-react-native), выполните следующую команду.
 
@@ -28,9 +24,7 @@ React Native SDK для ClickStack позволяет инструментиро
 npm install @hyperdx/otel-react-native
 ```
 
-<div id="initialize-clickstack">
-  ### Инициализация ClickStack
-</div>
+### Инициализация ClickStack {#initialize-clickstack}
 
 Инициализируйте библиотеку как можно раньше в жизненном цикле приложения:
 
@@ -38,16 +32,14 @@ npm install @hyperdx/otel-react-native
 import { HyperDXRum } from '@hyperdx/otel-react-native';
 
 HyperDXRum.init({
-  url: 'http://your-otel-collector:4318',
+  url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
-  apiKey: '<YOUR_INGESTION_API_KEY>', // Пропустите для Управляемого ClickStack
-  tracePropagationTargets: [/api.myapp.domain/i], // Укажите для связывания трассировок от фронтенда с запросами к backend
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
+  tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
 
-<div id="attach-user-information-metadata">
-  ### Добавление информации о пользователе или метаданных (необязательно)
-</div>
+### Добавление информации о пользователе или метаданных (необязательно) {#attach-user-information-metadata}
 
 Добавление информации о пользователе позволит искать и фильтровать сеансы и события
 в HyperDX. Это можно вызвать в любой момент в течение клиентского сеанса. Текущий
@@ -68,9 +60,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-<div id="instrument-lower-versions">
-  ### Инструментирование более старых версий
-</div>
+### Инструментирование более старых версий {#instrument-lower-versions}
 
 Чтобы инструментировать приложения на React Native версий ниже 0.68,
 отредактируйте файл `metro.config.js`, чтобы принудительно использовать в metro
@@ -116,9 +106,7 @@ module.exports = {
 };
 ```
 
-<div id="view-navigation">
-  ## Навигация между экранами
-</div>
+## Навигация между экранами {#view-navigation}
 
 Поддерживаются версии 5 и 6 библиотеки [react-navigation](https://github.com/react-navigation/react-navigation).
 

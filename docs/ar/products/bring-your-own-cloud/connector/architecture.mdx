@@ -1,16 +1,17 @@
 ---
-title: 'المعمارية'
-sidebarTitle: 'المعمارية'
+title: 'معمارية'
+sidebarTitle: 'معمارية'
 description: 'مكوّنات ClickHouse Connector والاتصالات ودورة حياة الشهادات وتدفّق البيانات'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-<div id="components">
-  ## المكوّنات
-</div>
+<PrivatePreviewBadge />
+
+## المكوّنات {#components}
 
 يشغّل ClickHouse Connector برنامجين خفيين، وكلاهما مضمّن في الملف التنفيذي `clicklink`:
 
@@ -21,9 +22,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="معمارية ClickHouse Connector" />
 
-<div id="connections">
-  ## الاتصالات
-</div>
+## الاتصالات {#connections}
 
 جميع الاتصالات التي ينشئها الموصل صادرة. وفيما يلي القائمة الكاملة:
 
@@ -40,9 +39,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ومن جهة الاتصالات الواردة، لا يوفّر الموصل سوى منافذ الصحة والمقاييس المحلية، بالإضافة إلى بوابة الجلسة الاختيارية الموصوفة في صفحة [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions). ولا تتصل طبقة التحكم في ClickHouse بأيٍّ منها مطلقًا.
 
-<div id="certificate-lifecycle">
-  ## دورة حياة الشهادة
-</div>
+## دورة حياة الشهادة {#certificate-lifecycle}
 
 يُجري الموصل المصادقة مع نقطة النهاية لديك باستخدام شهادة عميل يستحصل عليها ويتولى إدارتها بنفسه:
 
@@ -52,32 +49,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يتحقق الموصل من شهادة خادم نقطة النهاية لديك بالرجوع إلى مخزن الثقة الخاص بالنظام، أو إلى حزمة CA التي تم تسليمها عند التسجيل إذا كانت نقطة النهاية لديك تستخدم CA خاصة.
 
-<div id="data-flow">
-  ## تدفق البيانات
-</div>
+## تدفق البيانات {#data-flow}
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="تدفق البيانات في ClickHouse Connector" />
 
-<div id="what-leaves">
-  ### ما الذي يغادر بيئتك
-</div>
+### ما الذي يغادر بيئتك {#what-leaves}
 
 * **المقاييس من جداول النظام المدرجة في قائمة السماح.** تتضمن المجموعة الافتراضية للكاشط `metric_log` و`asynchronous_metric_log` و`tables` و`warnings` و`server_settings`. وقائمة السماح إعداد صريح؛ ولا يقرأ الكاشط أي شيء خارجها.
 * **بيانات تعريف البنية التحتية.** جرد المثيلات والبنية التحتية والنسخ الاحتياطية المتزامن عبر واجهة برمجة التطبيقات.
 * **مقاييس الصحة والمقاييس الذاتية.** حالة المكوّن والمقاييس التشغيلية الخاصة بالموصل.
 * **مخرجات جلسة الدعم.** نتائج عمليات التشخيص للقراءة فقط التي تُجرى خلال جلسة فعّلتها، بعد التنقيح.
 
-<div id="what-never-leaves">
-  ### ما لا يغادر افتراضياً
-</div>
+### ما لا يغادر افتراضياً {#what-never-leaves}
 
 * **نص الاستعلام الخام على مسار الجمع.** يُستبعد `system.query_log` عمداً من مجموعة الجمع الافتراضية، لأن أعمدة الاستعلام فيه قد تتضمن قيماً حرفية، بما في ذلك معلومات تحديد الهوية الشخصية أو الأسرار؛ وإعادة إضافته تجاوز خاص بكل عملية نشر تُجريه عن قصد ودراية. أثناء جلسة دعم، تتضمن قائمة السماح الافتراضية للجداول `system.processes`، الذي يعرض نص الاستعلامات الجارية؛ راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions) لمعرفة كيفية إزالة أجزاء منه.
 * **بيانات الاعتماد.** لا تحتوي ملفات التكوين على بيانات اعتماد، ولا يخزن ClickHouse سوى تجزئات bcrypt لكلمات مرور مستخدمي الموصل، وتبقى الأسرار في Kubernetes Secrets أو في ملفات على المضيف لا يقرأها إلا الجذر. ولا ينقلها أي شيء في مسارات الجمع أو المزامنة.
 * **مخرجات مستكشف الأخطاء ومصلحها غير المنقحة.** يمر كل ما يعيده مستكشف الأخطاء ومصلحها عبر أنماط التنقيح، سواء المضمنة أو التي تضيفها أنت، قبل أن يغادر. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions).
 
-<div id="trust-boundaries">
-  ## حدود الثقة
-</div>
+## حدود الثقة {#trust-boundaries}
 
 * **بيئتك هي الحد الفاصل.** لا يتلقى ClickHouse Cloud إلا ما يرسله الكاشط وما تُعيده جلسة دعم نشطة. ولا يبادر مطلقًا بإنشاء اتصال وارد.
 * **بوابة الجلسة ملكك.** لا يمكن الوصول إليها إلا من داخل بيئتك (عبر `kubectl port-forward` على Kubernetes، أو محليًا على جهاز افتراضي) ما لم تختر كشفها عبر مورد Ingress. ولا تتصل بها طبقة التحكم في ClickHouse مطلقًا.

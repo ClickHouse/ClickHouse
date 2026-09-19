@@ -15,9 +15,7 @@ package extra를 사용하여 SQLAlchemy 의존성을 설치하십시오:
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-<div id="sqlalchemy-connect">
-  ## SQLAlchemy로 연결
-</div>
+## SQLAlchemy로 연결 {#sqlalchemy-connect}
 
 `clickhousedb://` 또는 `clickhousedb+connect://` URL 형식 중 하나를 사용해 엔진을 생성합니다:
 
@@ -37,9 +35,7 @@ URL 쿼리 매개변수에는 ClickHouse 설정, `compression`, `query_limit`, �
 
 사용 가능한 클라이언트 옵션은 [연결 인수 및 설정](/ko/integrations/language-clients/python/driver-api#connection-arguments)을 참조하십시오.
 
-<div id="sqlalchemy-per-query-settings">
-  ### 쿼리별 설정
-</div>
+### 쿼리별 설정 {#sqlalchemy-per-query-settings}
 
 SQLAlchemy 실행 옵션을 통해 ClickHouse 설정을 전달할 수 있습니다. 설정은 engine, connection 또는 statement에 지정할 수 있습니다. 동일한 키가 있는 경우 statement 값이 connection 또는 engine 값보다 우선합니다.
 
@@ -54,9 +50,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-<div id="sqlalchemy-per-query-read-formats">
-  ### 쿼리별 읽기 포맷
-</div>
+### 쿼리별 읽기 포맷 {#sqlalchemy-per-query-read-formats}
 
 SQLAlchemy 실행 옵션에서 `query_formats`를 사용해 엔진, 연결 또는 statement에 ClickHouse 읽기 포맷을 설정합니다. statement 포맷이 먼저 적용되므로 일치하는 연결 또는 엔진 키와 와일드카드보다 우선합니다.
 
@@ -71,9 +65,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-<div id="sqlalchemy-server-side-parameters">
-  ### 서버 측 매개변수
-</div>
+### 서버 측 매개변수 {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy는 일반적으로 매개변수를 클라이언트 측에서 렌더링합니다. 엔진을 생성할 때 ClickHouse 서버 측 매개변수를 사용하도록 설정하십시오:
 
@@ -88,9 +80,7 @@ engine = create_engine(
 
 바인딩 이름은 ClickHouse ASCII BareWord 이름이어야 합니다. 핵심 드라이버가 원시 바이너리 쿼리 매개변수용으로 예약하므로 `$`로 시작하고 끝나는 이름은 거부됩니다.
 
-<div id="sqlalchemy-core-queries">
-  ## Core 쿼리
-</div>
+## Core 쿼리 {#sqlalchemy-core-queries}
 
 이 방언은 조인, 필터, 정렬, LIMIT 및 OFFSET, `DISTINCT`, 복합 SELECT를 포함한 SQLAlchemy Core `SELECT` 쿼리를 지원합니다.
 
@@ -125,15 +115,52 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-<div id="sqlalchemy-literal-rendering">
-  ### 리터럴 렌더링
-</div>
+### 리터럴 렌더링 {#sqlalchemy-literal-rendering}
 
 SQLAlchemy가 `literal_binds` 또는 `literal_execute`를 통해 바인딩된 값을 인라인으로 삽입하면, 방언은 일반 String 타입과 ClickHouse 타입에 ClickHouse 인용 규칙을 사용합니다. 이는 `TypeDecorator` 래퍼와 `with_variant()` 선택에도 적용됩니다. 다른 바인딩된 매개변수가 남아 있어도 문자열 값의 퍼센트 기호와 백슬래시는 유지됩니다.
 
-<div id="sqlalchemy-json-subcolumns">
-  ### JSON 서브컬럼
-</div>
+### JSON 타입 힌트 {#sqlalchemy-json-type-hints}
+
+`typed_paths` 매핑으로 타입이 지정된 JSON 경로를 선언합니다. 경로 타입에는 ClickHouse SQLAlchemy 타입 클래스, 구성된 인스턴스, 또는 ClickHouse 타입 이름 문자열을 사용할 수 있습니다. 타입 이름 문자열은 `Dynamic`처럼 SQLAlchemy 생성자가 없는 타입도 지원하며, 복잡하게 구성된 타입 표현식에도 그대로 사용할 수 있습니다. 또한 이름이 지정된 `Tuple`에서 이름을 보존합니다.
+
+타입 이름 문자열에는 ``Array(JSON(`child` UInt32))``처럼 구성된 중첩 JSON 타입을 포함할 수 있습니다. 이러한 문자열에서 인식되는 ClickHouse 타입 이름은 대소문자를 구분하지 않으며, 정규 대소문자 표기로 출력됩니다. 문자열에는 완전한 타입 표현식이 하나만 포함되어야 합니다. 뒤에 남은 텍스트나 형식이 잘못된 중첩 JSON 인수는 거부됩니다.
+
+빈 `Tuple()`은 ClickHouse가 JSON 컬럼의 Native 형식으로 이를 serialize할 수 없으므로 JSON의 타입이 지정된 경로로는 지원되지 않습니다. core driver는 쿼리 및 삽입 컬럼의 모든 위치에서 `Tuple()`을 지원하며, positional 또는 named tuple 내부에 중첩된 경우, `Array` 내부, 그리고 서버에서 활성화된 경우의 `Nullable(Tuple())` 형태가 여기에 포함됩니다.
+
+```python
+from sqlalchemy import Column, MetaData, Table
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column(
+        "payload",
+        JSON(
+            typed_paths={
+                "event.id": UInt32,
+                "details": "Tuple(id UInt32, label Nullable(String))",
+                "attributes": "Variant(String, Array(String))",
+            },
+            max_dynamic_paths=256,
+            max_dynamic_types=16,
+            skip_paths=["internal.debug"],
+            skip_regexps=[r"^private\."],
+        ),
+    ),
+)
+```
+
+단순한 Python 식별자 경로의 경우, 키워드 인수는 `typed_paths`의 축약 표기입니다. 예를 들어 `JSON(user_id=UInt32)`와 같습니다. 점이 포함된 경로, 공백, 백틱, `%2E`로 인코딩된 점, 또는 생성자 옵션과 이름이 겹치는 경우에는 `typed_paths`를 사용하십시오. `SKIP`이라는 이름의 타입이 지정된 경로도 이 매핑을 통해 지원됩니다. `typed_paths`의 키와 `skip_paths`의 값은 디코딩된 이름입니다. 앞뒤에 오는 백틱과 큰따옴표는 미리 적용된 SQL 인용 부호가 아니라 리터럴 경로 문자로 처리됩니다. 원시 타입 문자열 내부에서는 백틱과 큰따옴표가 ClickHouse 식별자 구문으로 해석됩니다.
+
+타입이 지정된 경로는 최대 1000개까지 구성할 수 있습니다. `max_dynamic_paths`는 0에서 10000까지, `max_dynamic_types`는 0에서 254까지 허용합니다. 이 범위는 중첩된 원시 JSON 타입 문자열 내부에도 동일하게 적용됩니다. 명시적인 서버 기본값인 1024와 32는 생성된 DDL에서 생략됩니다. 일반 스킵 경로는 중복이 제거됩니다. 정규식 문자열은 ClickHouse가 RE2 구문을 사용하므로 Python에서 검사하지 않습니다. 중복된 정규식은 그대로 유지됩니다.
+
+ClickHouse가 `SKIP REGEXP`를 위해 해당 토큰을 예약해 두었으므로, 일반 스킵 경로의 이름을 정확히 `REGEXP`로 지정할 수 없습니다. 반면 `REGEXP_foo`와 같은 이름은 유효합니다. 원시 JSON 타입 문자열에서 일반 `SKIP` 피연산자는 하나의 ClickHouse 식별자이거나 점으로 구분된 복합 식별자여야 합니다. 인용되지 않은 복합 식별자는 `REGEXP`로 시작할 수 없으며, 첫 번째 구성 요소가 경로 데이터라면 해당 부분을 인용 부호로 묶으십시오. `SKIP REGEXP`에는 작은따옴표로 묶인 문자열 리터럴이 하나 있어야 합니다. 식별자 부분에 공백이나 구두점이 포함된 경우 백틱이나 큰따옴표로 묶으십시오. 원시 JSON 타입 힌트는 `Variant(...)`를 지원하며, 단독 `Variant`에는 공개 SQLAlchemy 생성자가 없습니다. `Variant` 멤버는 ClickHouse가 사용하는 것과 동일한 정규 이름을 기준으로 정렬되고 중복이 제거됩니다.
+
+생성자는 ClickHouse가 반환하는 것과 동일한 정규 형식으로 인수를 정렬합니다. 리플렉션된 타입, SQLAlchemy 타입 복사본, Alembic 자동 생성은 이 구성을 그대로 보존합니다.
+
+### JSON 서브컬럼 {#sqlalchemy-json-subcolumns}
 
 ClickHouse `JSON`으로 선언되었거나 반영된 컬럼에서 스토리지 기반 서브컬럼 경로의 세그먼트를 한 번에 하나씩 선택하려면 대괄호를 사용합니다:
 
@@ -179,9 +206,7 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 공백이나 백틱이 포함된 이름을 비롯해 각 세그먼트는 각각 따옴표로 묶습니다. 백틱을 사용해도 ClickHouse JSON 경로 처리에서 점이 리터럴로 해석되지는 않습니다. `json_type_escape_dots_in_keys`가 활성화된 경우 키의 리터럴 점에는 ClickHouse의 `%2E` 인코딩을 사용하십시오. `a.b`라는 키에는 `payload["a%2Eb"]`로 접근하고, `payload["a.b"]`는 사용하지 마십시오.
 
-<div id="sqlalchemy-query-extensions">
-  ### ClickHouse 쿼리 확장 기능
-</div>
+### ClickHouse 쿼리 확장 기능 {#sqlalchemy-query-extensions}
 
 정적 타입 검사기가 타입이 지정된 ClickHouse 메서드를 인식할 수 있도록 `clickhouse_connect.cc_sqlalchemy`에서 `select`를 가져오십시오. 표준 `sqlalchemy.select`도 런타임에 이러한 메서드를 제공합니다.
 
@@ -257,9 +282,7 @@ stmt = select(
 
 표준 SQLAlchemy `values()` 구문은 공통 테이블 표현식(CTE)에서 사용할 때를 포함해 ClickHouse의 `VALUES` 테이블 함수 구문으로 컴파일됩니다. CTE 형식에는 `Values.cte()`가 추가된 SQLAlchemy 2.0.42 이상이 필요합니다.
 
-<div id="sqlalchemy-materialized-ctes">
-  ### 구체화된 CTE
-</div>
+### 구체화된 CTE {#sqlalchemy-materialized-ctes}
 
 기본적으로 ClickHouse는 공통 테이블 표현식(CTE)을 인라인하므로, CTE를 두 번 이상 참조하면 참조할 때마다 본문이 한 번씩 실행됩니다. `.cte()`에 `materialized=True`를 전달하면 `WITH <name> AS MATERIALIZED (...)`가 생성되어 본문을 한 번만 계산합니다:
 
@@ -301,11 +324,11 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 ClickHouse는 재귀적 구체화된 CTE를 지원하지 않습니다. `recursive=True`와 `materialized=True`가 모두 설정되면 SQLAlchemy 헬퍼에서 `ValueError`를 발생시킵니다.
 
-<div id="sqlalchemy-ddl-reflection">
-  ## DDL 및 리플렉션
-</div>
+## DDL 및 리플렉션 {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect는 ClickHouse 데이터 타입, 테이블 엔진, 딕셔너리 구문, 데이터베이스 DDL 및 테이블 리플렉션을 제공합니다.
+
+단독 `Variant` 컬럼은 SQLAlchemy 내부 타입을 통해 리플렉션되며, Alembic 자동 생성은 반복적인 타입 변경 없이 해당 컬럼의 정규 원시 타입 이름을 유지합니다. `Geometry` 및 `MultiPoint` 컬럼은 공개 SQLAlchemy 타입으로 리플렉션됩니다.
 
 ```python
 import sqlalchemy as db
@@ -339,9 +362,7 @@ with engine.connect() as conn:
 
 `order_by`, `partition_by`, `primary_key`, `sample_by`, `ttl` 등의 MergeTree 키 인수는 일반 문자열은 물론 SQLAlchemy 컬럼과 SQL 표현식도 받을 수 있습니다.
 
-<div id="sqlalchemy-inserts">
-  ## 삽입 및 기본 ORM 사용
-</div>
+## 삽입 및 기본 ORM 사용 {#sqlalchemy-inserts}
 
 Core 삽입과 간단한 ORM 모델이 지원됩니다. 대량 데이터 처리에는 Core 삽입을 우선적으로 사용하십시오.
 
@@ -383,9 +404,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-<div id="sqlalchemy-alembic">
-  ## Alembic 마이그레이션
-</div>
+## Alembic 마이그레이션 {#sqlalchemy-alembic}
 
 ClickHouse Connect에는 ClickHouse 스키마 마이그레이션을 위한 Alembic 통합 기능이 포함되어 있습니다. 다음과 같이 설치하십시오:
 
@@ -407,9 +426,7 @@ ClickHouse 데이터 스키핑 인덱스는 SQLAlchemy 인덱스가 아닙니다
 
 전체 [Alembic 예시](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)는 여기에서 확인할 수 있습니다. `clickhouse-sqlalchemy`에서 마이그레이션하는 사용자는 [마이그레이션 가이드](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)도 읽어보시기 바랍니다.
 
-<div id="scope-and-limitations">
-  ## 범위 및 제한 사항
-</div>
+## 범위 및 제한 사항 {#scope-and-limitations}
 
 * ClickHouse는 이 HTTP 방언을 통해 전통적인 트랜잭션을 제공하지 않습니다. `engine.begin()` 및 `Session.commit()`은 Python 측 작업을 정리하지만, commit과 rollback은 서버에서는 실제로 아무 작업도 수행하지 않습니다.
 * `UPDATE`, 2단계 트랜잭션, 시퀀스, `RETURNING`, 고급 격리 수준은 이 방언에서 구현되지 않았습니다. 필요할 경우 서버 측 뮤테이션에는 명시적으로 ClickHouse SQL을 사용하십시오.

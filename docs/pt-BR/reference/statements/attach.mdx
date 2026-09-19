@@ -20,9 +20,7 @@ A consulta não cria dados em disco, mas parte do pressuposto de que os dados j�
 
 Se uma tabela tiver sido previamente desanexada (consulta [DETACH](/pt-BR/reference/statements/detach)), ou seja, se sua estrutura já for conhecida, você poderá usar a forma abreviada sem definir a estrutura.
 
-<div id="attach-existing-table">
-  ## Anexar tabela existente
-</div>
+## Anexar tabela existente {#attach-existing-table}
 
 **Sintaxe**
 
@@ -34,15 +32,12 @@ Esta consulta é usada ao iniciar o servidor. O servidor armazena os metadados d
 
 Se a tabela tiver sido desanexada permanentemente, ela não será anexada novamente quando o servidor iniciar, então você precisará usar a consulta `ATTACH` explicitamente.
 
-<div id="create-new-table-and-attach-data">
-  ## Criar nova tabela e anexar dados
-</div>
+## Criar nova tabela e anexar dados {#create-new-table-and-attach-data}
 
-<div id="with-specified-path-to-table-data">
-  ### Com caminho especificado para os dados da tabela
-</div>
+### Com caminho especificado para os dados da tabela {#with-specified-path-to-table-data}
 
-A consulta cria uma nova tabela com a estrutura fornecida e associa os dados da tabela ao diretório informado em `user_files`.
+A consulta cria uma nova tabela com a estrutura informada e anexa os dados da tabela ao diretório informado em `user_files`.
+O usuário precisa dos privilégios `READ ON FILE` e `WRITE ON FILE` para esta consulta: ela lê o diretório e o move para o caminho de dados da nova tabela.
 
 **Sintaxe**
 
@@ -65,9 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-<div id="with-specified-table-uuid">
-  ### Com UUID da tabela especificado
-</div>
+### Com UUID da tabela especificado {#with-specified-table-uuid}
 
 Esta consulta cria uma nova tabela com a estrutura informada e anexa os dados da tabela com o UUID especificado.
 Ela é compatível com o motor de banco de dados [Atomic](/pt-BR/reference/engines/database-engines/atomic).
@@ -78,9 +71,7 @@ Ela é compatível com o motor de banco de dados [Atomic](/pt-BR/reference/engin
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-<div id="attach-mergetree-table-as-replicatedmergetree">
-  ## Anexar tabela MergeTree como ReplicatedMergeTree
-</div>
+## Anexar tabela MergeTree como ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Permite anexar uma tabela MergeTree não replicada como ReplicatedMergeTree. A tabela ReplicatedMergeTree será criada com os valores das configurações `default_replica_path` e `default_replica_name`. Também é possível anexar uma tabela replicada como uma MergeTree comum.
 
@@ -124,9 +115,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-<div id="attach-existing-dictionary">
-  ## Anexar Dicionário Existente
-</div>
+## Anexar Dicionário Existente {#attach-existing-dictionary}
 
 Anexa um dicionário anteriormente desanexado.
 
@@ -136,9 +125,7 @@ Anexa um dicionário anteriormente desanexado.
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-<div id="attach-existing-database">
-  ## Anexar banco de dados existente
-</div>
+## Anexar banco de dados existente {#attach-existing-database}
 
 Anexa um banco de dados que foi desanexado anteriormente.
 

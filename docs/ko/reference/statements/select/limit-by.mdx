@@ -18,14 +18,12 @@ ClickHouse는 다음 구문 변형을 지원합니다.
 쿼리 처리 중 ClickHouse는 정렬 키(sorting key) 순으로 정렬된 데이터를 선택합니다. 정렬 키는 [ORDER BY](/ko/reference/statements/select/order-by) 절로 명시적으로 설정하거나 테이블 엔진의 속성으로 암묵적으로 설정할 수 있습니다([ORDER BY](/ko/reference/statements/select/order-by)를 사용할 때만 행 순서가 보장되며, 그렇지 않으면 멀티스레딩으로 인해 행 블록이 정렬되지 않습니다). 그런 다음 ClickHouse는 `LIMIT n BY expressions`를 적용하여 `expressions`의 각 고유 조합마다 처음 `n`개의 행을 반환합니다. `OFFSET`이 지정된 경우, ClickHouse는 `expressions`의 고유 조합에 속하는 각 데이터 블록에서 블록 시작 부분의 `offset_value`개 행을 건너뛰고 최대 `n`개의 행을 결과로 반환합니다. `offset_value`가 데이터 블록의 행 수보다 크면 ClickHouse는 해당 블록에서 행을 반환하지 않습니다.
 
 <Note>
-  `LIMIT BY`는 [LIMIT](/ko/reference/statements/select/limit)와 관련이 없습니다. 두 절은 같은 쿼리에서 함께 사용할 수 있습니다.
+  `LIMIT BY`는 [LIMIT](/ko/reference/statements/select/limit)와 관련이 없습니다. 두 절은 같은 쿼리에서 함께 사용할 수 있습니다. 여기에는 [`LIMIT ... AFTER ... UNTIL`](/ko/reference/statements/select/limit#limit-after-until) 범위 형식도 포함되며, 이 경우 `LIMIT BY`가 남긴 행에 적용됩니다.
 </Note>
 
 `LIMIT BY` 절에서 컬럼 이름 대신 컬럼 번호를 사용하려면 [enable&#95;positional&#95;arguments](/ko/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 설정을 활성화하세요.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 샘플 테이블:
 
@@ -124,9 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 `id = 1`에서는 첫 번째 행(`10`)이 건너뛰어지고, `11, 12` 중 마지막 2개가 모두 반환됩니다. `id = 2`에서는 첫 번째 행(`20`)이 건너뛰어져 `21`만 남습니다.
 
-<div id="limit-by-all">
-  ## LIMIT BY ALL
-</div>
+## LIMIT BY ALL {#limit-by-all}
 
 `LIMIT BY ALL`은 집계 함수가 아닌 모든 SELECT 표현식을 나열하는 것과 동일합니다.
 
@@ -156,9 +152,7 @@ SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIM
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples-limit-by-all}
 
 샘플 테이블:
 

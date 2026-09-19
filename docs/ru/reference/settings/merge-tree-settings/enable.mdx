@@ -14,17 +14,27 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически формируются на основе исходного кода ClickHouse.
 
-<div id="enable_index_granularity_compression">
-  ## enable_index_granularity_compression
-</div>
+## enable_adaptive_codec_selection {#enable_adaptive_codec_selection}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Если параметр включен, при слияниях и мутациях для каждого блока в столбцах, использующих кодек по умолчанию (без предложения `CODEC` или с `CODEC(Default)`), выбирается отдельный кодек.
+Кандидатами являются кодек таблицы по умолчанию (см. настройку `default_compression_codec`), `NONE` и специализированные кодеки, подходящие для типа столбца.
+Выбирается вариант с наименьшим размером выходных данных. Поэтому сжатие никогда не будет хуже, чем при использовании кодека по умолчанию, а несжимаемые блоки хранятся в исходном виде.
+Столбцы, в кодек по умолчанию которых входит шифрование (например, `AES_128_GCM_SIV`), никогда не выбираются для адаптивного кодирования, поэтому шифрование применяется всегда.
+Кодеки для каждого блока отображаются табличной функцией [`mergeTreeCodecBlockCounts`](/ru/reference/functions/table-functions/index).
+
+## enable_index_granularity_compression {#enable_index_granularity_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Сжимать значения гранулярности индекса в памяти, если это возможно
 
-<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
-  ## enable_max_bytes_limit_for_min_age_to_force_merge
-</div>
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -39,17 +49,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-<div id="enable_mixed_granularity_parts">
-  ## enable_mixed_granularity_parts
-</div>
+## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает или отключает использование настройки `index_granularity_bytes` для управления размером гранул. До версии 19.11 для ограничения размера гранул использовалась только настройка `index_granularity`. Настройка `index_granularity_bytes` повышает производительность ClickHouse при выборке данных из таблиц с большими строками (десятки и сотни мегабайт). Если у вас есть таблицы с большими строками, включите эту настройку для таких таблиц, чтобы повысить эффективность запросов `SELECT`.
 
-<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
-  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
-</div>
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
 
 <ExperimentalBadge />
 
@@ -66,17 +72,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
-  ## enable_the_endpoint_id_with_zookeeper_name_prefix
-</div>
+## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает использование Endpoint ID с префиксом имени ZooKeeper для реплицируемой таблицы MergeTree.
 
-<div id="enable_vertical_merge_algorithm">
-  ## enable_vertical_merge_algorithm
-</div>
+## enable_vertical_merge_algorithm {#enable_vertical_merge_algorithm}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

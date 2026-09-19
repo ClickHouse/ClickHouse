@@ -12,23 +12,21 @@ doc_type: 'reference'
 Оператор легковесного `DELETE` удаляет строки из таблицы `[db.]table`, которые соответствуют выражению `expr`. Он доступен только для таблиц семейства *MergeTree.
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 Это называется &quot;легковесным `DELETE`&quot; в отличие от команды [ALTER TABLE ... DELETE](/ru/reference/statements/alter/delete), которая является тяжеловесной операцией.
 
-<div id="examples">
-  ## Примеры
-</div>
+Предложение `IN PARTITION` ограничивает удаление перечисленными партициями. Без него в таблицах семейства `ReplicatedMergeTree`, когда включена настройка [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ru/reference/settings/session-settings/optimize) (по умолчанию), ClickHouse автоматически определяет в `expr` условия по ключу партиционирования и удаляет данные только из затронутых партиций. В нереплицируемых таблицах `MergeTree` используйте явное предложение `IN PARTITION`, чтобы ограничить удаление конкретными партициями.
+
+## Примеры {#examples}
 
 ```sql
 -- Удаляет все строки из таблицы `hits`, где столбец `Title` содержит текст `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## легковесный не удаляет данные сразу
-</div>
+## легковесный не удаляет данные сразу {#lightweight-delete-does-not-delete-data-immediately}
 
 легковесный реализован как [мутация](/ru/reference/statements/alter/index#mutations): он помечает строки как удалённые, но не удаляет их физически сразу.
 
@@ -38,27 +36,19 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 Если вам нужно гарантировать удаление данных из хранилища в предсказуемые сроки, рассмотрите возможность использования настройки таблицы [`min_age_to_force_merge_seconds`](/ru/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). Либо можно использовать команду [ALTER TABLE ... DELETE](/ru/reference/statements/alter/delete). Обратите внимание, что удаление данных с помощью `ALTER TABLE ... DELETE` может потребовать значительных ресурсов, поскольку при этом пересоздаются все затронутые части.
 
-<div id="deleting-large-amounts-of-data">
-  ## Удаление больших объёмов данных
-</div>
+## Удаление больших объёмов данных {#deleting-large-amounts-of-data}
 
 Удаление больших объёмов данных может отрицательно сказаться на производительности ClickHouse. Если вам нужно удалить из таблицы все строки, рассмотрите возможность использования команды [`TRUNCATE TABLE`](/ru/reference/statements/truncate).
 
 Если вы предполагаете, что удаления будут выполняться часто, рассмотрите возможность использования [пользовательского ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Затем можно использовать команду [`ALTER TABLE ... DROP PARTITION`](/ru/reference/statements/alter/partition#drop-partitionpart), чтобы быстро удалить все строки, относящиеся к этой партиции.
 
-<div id="limitations-of-lightweight-delete">
-  ## Ограничения легковесного `DELETE`
-</div>
+## Ограничения легковесного `DELETE` {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### Облегчённые `DELETE` с проекциями
-</div>
+### Облегчённые `DELETE` с проекциями {#lightweight-deletes-with-projections}
 
 По умолчанию `DELETE` не работает для таблиц с проекциями. Это связано с тем, что операция `DELETE` может затрагивать строки в проекции. Однако это поведение можно изменить с помощью [настройки MergeTree](/ru/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode`.
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## Особенности производительности при использовании облегчённого `DELETE`
-</div>
+## Особенности производительности при использовании облегчённого `DELETE` {#performance-considerations-when-using-lightweight-delete}
 
 **Удаление больших объёмов данных с помощью облегчённого оператора `DELETE` может негативно сказаться на производительности запросов SELECT.**
 
@@ -69,9 +59,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 * Затронутая таблица содержит очень большое число частей данных.
 * Большой объём данных в компактных частях. В компактной части все столбцы хранятся в одном файле.
 
-<div id="delete-permissions">
-  ## Разрешения на DELETE
-</div>
+## Разрешения на DELETE {#delete-permissions}
 
 Для `DELETE` требуется привилегия `ALTER DELETE`. Чтобы разрешить пользователю выполнять команды `DELETE` для конкретной таблицы, выполните следующую команду:
 
@@ -79,9 +67,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## Как внутри ClickHouse работают легковесные DELETE
-</div>
+## Как внутри ClickHouse работают легковесные DELETE {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **К затронутым строкам применяется &quot;маска&quot;**
 
@@ -111,9 +97,7 @@ GRANT ALTER DELETE ON db.table to username;
 
    Из описанных выше шагов видно, что легковесный `DELETE`, использующий технику маскирования, работает быстрее традиционного `ALTER TABLE ... DELETE`, потому что не требует перезаписывать файлы всех столбцов для затронутых частей.
 
-<div id="related-content">
-  ## См. также
-</div>
+## См. также {#related-content}
 
 * Блог: [Обновления и удаления в ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+SQL 標準の `OFFSET ... FETCH` 形式は、[`LIMIT ... AFTER ... UNTIL`](/ja/reference/statements/select/limit#limit-after-until) の range form と組み合わせて使用することはできません。
+
 `offset_row_count` または `fetch_row_count` の値には、数値またはリテラル定数を指定できます。`fetch_row_count` は省略可能で、デフォルト値は 1 です。
 
 `OFFSET` は、クエリの結果セットから行の返却を開始する前にスキップする行数を指定します。`OFFSET n` は、結果の先頭 `n` 行をスキップします。
@@ -57,9 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   実際のオフセットは、[offset](/ja/reference/settings/session-settings/other#offset) 設定によっても変わる場合があります。
 </Note>
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 入力テーブル：
 

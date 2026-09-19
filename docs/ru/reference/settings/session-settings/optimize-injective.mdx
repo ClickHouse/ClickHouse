@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_injective_functions_in_group_by">
-  ## optimize_injective_functions_in_group_by
-</div>
+## optimize_injective_functions_in_group_by {#optimize_injective_functions_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "Замена инъективных функций на их аргументы в разделе GROUP BY в анализаторе"}]}]} />
 
-Заменяет инъективные функции на их аргументы в разделе GROUP BY sectio
+Заменяет инъективные функции на их аргументы в разделе GROUP BY
 
-<div id="optimize_injective_functions_in_limit_by">
-  ## optimize_injective_functions_in_limit_by
-</div>
+## optimize_injective_functions_in_limit_by {#optimize_injective_functions_in_limit_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Пример: `LIMIT 5 BY toString(x)` преобразуется в `LIMIT 5 BY x`.
 
-<div id="optimize_injective_functions_inside_uniq">
-  ## optimize_injective_functions_inside_uniq
-</div>
+## optimize_injective_functions_inside_uniq {#optimize_injective_functions_inside_uniq}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

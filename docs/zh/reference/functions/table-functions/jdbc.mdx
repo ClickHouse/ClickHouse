@@ -18,9 +18,7 @@ JDBC 表函数返回一个通过 JDBC 驱动连接的表。
 此表函数要求单独运行 [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) 程序。
 它支持 Nullable 类型 (基于被查询的远程表的 DDL) 。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -28,9 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 可以指定 schema，而不使用外部数据库名称：
 

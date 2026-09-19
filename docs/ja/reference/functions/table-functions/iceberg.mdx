@@ -12,9 +12,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 Amazon S3、Azure、HDFS、またはローカルに保存された Apache [Iceberg](https://iceberg.apache.org/) テーブルに対するテーブル形式インターフェイスを提供します。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
@@ -30,36 +28,28 @@ icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 引数の説明は、それぞれテーブル関数 `s3`、`azureBlobStorage`、`HDFS`、`file` の引数の説明と同様です。
 `format` は Iceberg テーブル内のデータファイルのフォーマットを表します。
 
 `icebergS3` では、ClickHouse Cloud でロールベースのアクセスを行うための `role_arn` を渡すために、オプションの `extra_credentials` パラメータを使用できます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
 
-<div id="returned-value">
-  ### 戻り値
-</div>
+### 戻り値 {#returned-value}
 
 指定した Iceberg テーブル内のデータを読み取るための、指定した構造のテーブル。
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example}
 
 ```sql
 SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
 <Warning>
-  ClickHouse は現在、`icebergS3`、`icebergAzure`、`icebergHDFS`、`icebergLocal` の各テーブル関数、および `IcebergS3`、`icebergAzure`、`IcebergHDFS`、`IcebergLocal` の各テーブルエンジンを通じて、Iceberg フォーマットの v1 と v2 の読み取りに対応しています。v3 のサポートは限定的であり、削除ベクターおよびマニフェストのコンパクションはサポートされていません。
+  ClickHouse は現在、`icebergS3`、`icebergAzure`、`icebergHDFS`、`icebergLocal` の各テーブル関数、および `IcebergS3`、`IcebergAzure`、`IcebergHDFS`、`IcebergLocal` の各テーブルエンジンを通じて、Iceberg フォーマットの v1 と v2 の読み取りに対応しています。v3 のサポートは限定的であり、削除ベクターの読み取りはサポートされていますが、マニフェストのコンパクションはサポートされていません。
 </Warning>
 
-<div id="defining-a-named-collection">
-  ## named collection を定義する
-</div>
+## named collection を定義する {#defining-a-named-collection}
 
 URL と認証情報を保存するための named collection を設定する例を以下に示します。
 
@@ -82,9 +72,7 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
-<div id="iceberg-writes-catalogs">
-  ## データカタログの使用
-</div>
+## データカタログの使用 {#iceberg-writes-catalogs}
 
 Iceberg テーブルは、[REST Catalog](https://iceberg.apache.org/rest-catalog-spec/)、[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html)、[Unity Catalog](https://www.unitycatalog.io/) など、さまざまなデータカタログと組み合わせて使用することもできます。
 
@@ -116,9 +104,7 @@ ENGINE = IcebergS3(
 )
 ```
 
-<div id="schema-evolution">
-  ## スキーマ進化
-</div>
+## スキーマ進化 {#schema-evolution}
 
 現時点では、CH を使用して、時間の経過とともにスキーマが変更された Iceberg テーブルを読み取ることができます。現在は、カラムの追加や削除、カラム順の変更が行われたテーブルの読み取りをサポートしています。また、値が必須のカラムを、NULL を許可するカラムに変更することもできます。さらに、単純型については、許可された型キャストとして次の変換をサポートしています。  
 
@@ -128,31 +114,21 @@ ENGINE = IcebergS3(
 
 現在のところ、ネストされた構造や、Array および Map 内の要素の型を変更することはできません。
 
-<div id="partition-pruning">
-  ## パーティションプルーニング
-</div>
+## パーティションプルーニング {#partition-pruning}
 
 ClickHouse は、Iceberg テーブルに対する SELECT クエリでパーティションプルーニングをサポートしており、無関係なデータファイルをスキップすることでクエリ性能を最適化できます。パーティションプルーニングを有効にするには、`use_iceberg_partition_pruning = 1` を設定します。Iceberg のパーティションプルーニングの詳細については、https://iceberg.apache.org/spec/#partitioning を参照してください
 
-<div id="time-travel">
-  ## タイムトラベル
-</div>
+## タイムトラベル {#time-travel}
 
 ClickHouse は Iceberg テーブルでのタイムトラベルをサポートしており、特定のタイムスタンプまたはスナップショット ID を指定して過去のデータをクエリできます。
 
-<div id="deleted-rows">
-  ## 削除された行を含むテーブルの処理
-</div>
+## 削除された行を含むテーブルの処理 {#deleted-rows}
 
 ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-delete-files) および [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) を持つ Iceberg テーブルをサポートしています。equality deletes は v25.8 からサポートされています。
 
-以下の削除方式は **サポートされていません**：
+ClickHouse は [削除ベクター](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入) の読み取りもサポートしています。このサポートは読み取り専用です。ClickHouse は削除ベクターの書き込み、更新、コンパクションを行わず、Iceberg フォーマットバージョン 3 のテーブルでは `ALTER TABLE ... DELETE` および `ALTER TABLE ... UPDATE` はサポートされていません。
 
-* [削除ベクター](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
-
-<div id="basic-usage">
-  ### 基本的な使い方
-</div>
+### 基本的な使い方 {#basic-usage}
 
 ```sql
  SELECT * FROM example_table ORDER BY 1 
@@ -166,9 +142,7 @@ ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-de
 
 注: 同じクエリ内で `iceberg_timestamp_ms` と `iceberg_snapshot_id` の両方のパラメータを指定することはできません。
 
-<div id="important-considerations">
-  ### 重要な考慮事項
-</div>
+### 重要な考慮事項 {#important-considerations}
 
 * **スナップショット** は通常、次のタイミングで作成されます:
 
@@ -178,15 +152,11 @@ ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-de
 
 * **スキーマの変更では通常、スナップショットは作成されません** - このため、スキーマ進化を経たテーブルで タイムトラベル を使用する際には、重要な挙動が生じます。
 
-<div id="example-scenarios">
-  ### シナリオ例
-</div>
+### シナリオ例 {#example-scenarios}
 
 これらのシナリオでは、外部の Iceberg writer によるスキーマ変更を Spark を使用して説明します。
 
-<div id="scenario-1">
-  #### シナリオ 1: 新しいスナップショットがない場合のスキーマ変更
-</div>
+#### シナリオ 1: 新しいスナップショットがない場合のスキーマ変更 {#scenario-1}
 
 次の一連の操作を考えてみましょう。
 
@@ -246,9 +216,7 @@ ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-de
 * ts1 &amp; ts2: 元の 2 つのカラムのみが表示される
 * ts3: 3 つのカラムがすべて表示され、1 行目の `price` は NULL になる
 
-<div id="scenario-2">
-  #### シナリオ 2: 履歴と現在のスキーマの違い
-</div>
+#### シナリオ 2: 履歴と現在のスキーマの違い {#scenario-2}
 
 現時点でタイムトラベルクエリを実行すると、現在のテーブルとは異なるスキーマが表示されることがあります：
 
@@ -290,9 +258,7 @@ ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-de
 
 これは、`ALTER TABLE` では新しい スナップショット は作成されず、現在のテーブルでは Spark が スナップショット ではなく最新のメタデータファイルから `schema_id` の値を取得するために発生します。
 
-<div id="scenario-3">
-  #### シナリオ3: 履歴と現在のスキーマの違い
-</div>
+#### シナリオ3: 履歴と現在のスキーマの違い {#scenario-3}
 
 2つ目は、タイムトラベルを使っても、そのテーブルにまだデータが一度も書き込まれていなかった時点の状態は取得できないことです:
 
@@ -313,15 +279,11 @@ ClickHouse は、[position deletes](https://iceberg.apache.org/spec/#position-de
 
 ClickHouse では、この挙動は Spark と同様です。Spark の Select クエリを ClickHouse の Select クエリに読み替えれば、同じように機能します。
 
-<div id="metadata-file-resolution">
-  ## メタデータファイルの特定
-</div>
+## メタデータファイルの特定 {#metadata-file-resolution}
 
 ClickHouseで`iceberg`テーブル関数を使用する場合、システムはIcebergテーブルの構造を記述した適切なmetadata.jsonファイルを特定する必要があります。この特定プロセスは次のように機能します。
 
-<div id="candidate-search">
-  ### 候補検索 (優先順)
-</div>
+### 候補検索 (優先順) {#candidate-search}
 
 1. **直接パス指定**:
    *`iceberg_metadata_file_path` を設定すると、システムはこの正確なパスを Iceberg テーブルのディレクトリパスと組み合わせて使用します。
@@ -336,9 +298,7 @@ ClickHouseで`iceberg`テーブル関数を使用する場合、システムはI
 3. **デフォルト検索**:
    *上記のいずれの設定も指定されていない場合、`metadata` ディレクトリ内のすべての `.metadata.json` ファイルが候補になります
 
-<div id="most-recent-file">
-  ### 最新のファイルを選択する
-</div>
+### 最新のファイルを選択する {#most-recent-file}
 
 上記のルールを使用して候補ファイルを特定した後、システムはその中から最新のものを判定します。
 
@@ -361,21 +321,15 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 
 **注記**: 通常、メタデータの解決は Iceberg カタログが行いますが、ClickHouse の `iceberg` テーブル関数 は S3 に保存されたファイルを Iceberg テーブルとして直接解釈するため、これらの解決ルールを理解しておくことが重要です。
 
-<div id="metadata-cache">
-  ## メタデータキャッシュ
-</div>
+## メタデータキャッシュ {#metadata-cache}
 
 `Iceberg` テーブルエンジン と テーブル関数 は、マニフェストファイル、マニフェストリスト、metadata json の情報を保持するメタデータキャッシュをサポートしています。このキャッシュはメモリに保存されます。この機能は設定 `use_iceberg_metadata_files_cache` で制御されており、デフォルトで有効になっています。
 
-<div id="aliases">
-  ## 別名
-</div>
+## 別名 {#aliases}
 
 テーブル関数 `iceberg` は現在、`icebergS3` の別名です。
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — ファイルのパス。型: `LowCardinality(String)`.
 * `_file` — ファイル名。型: `LowCardinality(String)`.
@@ -383,9 +337,7 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 時刻が不明な場合、値は `NULL` です。
 * `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
 
-<div id="writes-into-iceberg-table">
-  ## Icebergテーブルへの書き込み
-</div>
+## Icebergテーブルへの書き込み {#writes-into-iceberg-table}
 
 バージョン25.7以降、ClickHouse は書き込み可能なストレージバックエンド上の Iceberg テーブルの変更をサポートしています。
 
@@ -395,16 +347,12 @@ Iceberg テーブルを変更または保守する前に、[`allow_insert_into_i
 SET allow_insert_into_iceberg = 1;
 ```
 
-<div id="create-iceberg-table">
-  ### Icebergテーブルの作成
-</div>
+### Icebergテーブルの作成 {#create-iceberg-table}
 
 書き込み可能なバックエンドに新しいスタンドアロンのIcebergテーブルを作成するには、Icebergテーブルエンジンを使用し、スキーマを明示的に指定します。
 書き込みでは、Parquet、Avro、ORC など、Iceberg仕様で定義されているすべてのデータフォーマットをサポートしています。
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example-iceberg-writes-create}
 
 ```sql
 CREATE TABLE iceberg_writes_example
@@ -418,17 +366,13 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 注記: バージョンヒントファイルを作成するには、`iceberg_use_version_hint` 設定を有効にします。
 `metadata.json` ファイルを圧縮する場合は、`iceberg_metadata_compression_method` 設定でcodec名を指定します。
 
-<div id="writes-inserts">
-  ### INSERT
-</div>
+### INSERT {#writes-inserts}
 
 <BetaBadge />
 
 新しいテーブルを作成したら、通常の ClickHouse 構文を使用してデータを挿入できます。
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example-iceberg-writes-insert}
 
 ```sql
 INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
@@ -448,16 +392,12 @@ x: Ivanov
 y: 993
 ```
 
-<div id="iceberg-writes-delete">
-  ### DELETE
-</div>
+### DELETE {#iceberg-writes-delete}
 
 ClickHouse は、merge-on-read フォーマットで余分な行を削除することにも対応しています。
 このクエリは、position delete ファイル を含む新しいスナップショットを作成します。
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example-iceberg-writes-delete}
 
 ```sql
 ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
@@ -472,15 +412,11 @@ x: Ivanov
 y: 993
 ```
 
-<div id="iceberg-writes-schema-evolution">
-  ### スキーマ進化
-</div>
+### スキーマ進化 {#iceberg-writes-schema-evolution}
 
 ClickHouse では、単純型 (Tuple、Array、Map 以外) のカラムを簡単に追加、削除、変更、または名前変更できます。
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example-iceberg-writes-evolution}
 
 ```sql
 ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
@@ -560,9 +496,7 @@ x: Ivanov
 value: 993
 ```
 
-<div id="iceberg-writes-compaction">
-  ### コンパクション
-</div>
+### コンパクション {#iceberg-writes-compaction}
 
 ClickHouse は Iceberg テーブルのコンパクションをサポートしています。現在は、メタデータを更新しながら、position delete ファイル を data files にマージできます。以前のスナップショット ID とタイムスタンプは変更されないため、タイムトラベル機能も引き続き同じ値で利用できます。
 
@@ -583,9 +517,7 @@ x: Ivanov
 y: 993
 ```
 
-<div id="iceberg-expire-snapshots">
-  ### スナップショットの期限切れ処理
-</div>
+### スナップショットの期限切れ処理 {#iceberg-expire-snapshots}
 
 Iceberg テーブルでは、INSERT、DELETE、または UPDATE を実行するたびにスナップショットが蓄積されます。時間の経過とともに、これにより大量のスナップショットと、それに関連するデータファイルが生じる可能性があります。`expire_snapshots` コマンドは、古いスナップショットを削除し、保持されているどのスナップショットからも参照されなくなったデータファイルをクリーンアップします。
 
@@ -669,9 +601,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 6. 通常モード: 到達不能になったマニフェストリスト、マニフェストファイル、データファイルを物理的に削除します
 7. `dry_run = 1` モード: 手順 5 と 6 をスキップし、計算されたメトリクスのみを返します
 
-<div id="iceberg-snapshot-retention-policy">
-  #### スナップショット保持ポリシー
-</div>
+#### スナップショット保持ポリシー {#iceberg-snapshot-retention-policy}
 
 `expire_snapshots` コマンドは、[Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy) に従います。保持設定は、Iceberg テーブルのプロパティと参照ごとのオーバーライドで構成します。
 
@@ -713,9 +643,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * ClickHouse がメタデータを更新する際は、カタログ自体の認可 (REST カタログ認証、AWS Glue IAM など) が別途適用されます
 </Note>
 
-<div id="iceberg-remove-orphan-files">
-  ### 孤立ファイルの削除
-</div>
+### 孤立ファイルの削除 {#iceberg-remove-orphan-files}
 
 孤立ファイルとは、ストレージ上に存在するものの、Iceberg テーブルのメタデータ内にあるどのスナップショットからも参照されていないファイルのことです。これらは、書き込みの失敗、コンパクション 後の不完全なクリーンアップ、操作の中断などによって蓄積し、ストレージ使用量が際限なく増加する原因になります。`remove_orphan_files` コマンドは、こうした孤立ファイルを特定して削除します。
 
@@ -797,9 +725,7 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
   * `older_than` のしきい値は、進行中の書き込みに由来するファイルが削除されるのを防ぎます。デフォルトの 3 日というしきい値には、十分な安全マージンがあります
 </Note>
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [Icebergエンジン](/ja/reference/engines/table-engines/integrations/iceberg)
 * [Icebergクラスターテーブル関数](/ja/reference/functions/table-functions/icebergCluster)

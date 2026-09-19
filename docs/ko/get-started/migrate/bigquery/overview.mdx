@@ -11,7 +11,7 @@ doc_type: 'guide'
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="resource-organization">
-  ## 리소스 구성
+  ## 리소스 구성 {#resource-organization}
 </div>
 
 ClickHouse Cloud의 리소스 구성 방식은 [BigQuery의 리소스 계층 구조](https://cloud.google.com/bigquery/docs/resource-hierarchy)와 유사합니다. 아래에서는 ClickHouse Cloud 리소스 계층 구조를 보여주는 다음 다이어그램을 바탕으로 구체적인 차이점을 설명합니다.
@@ -19,13 +19,13 @@ ClickHouse Cloud의 리소스 구성 방식은 [BigQuery의 리소스 계층 구
 <Image img="/images/migrations/bigquery-1.webp" size="md" alt="리소스 구성" />
 
 <div id="organizations">
-  ### 조직
+  ### 조직 {#organizations}
 </div>
 
 BigQuery와 마찬가지로 조직은 ClickHouse Cloud 리소스 계층 구조의 최상위 노드입니다. ClickHouse Cloud 계정에서 처음 생성한 사용자는 자동으로 해당 사용자가 소유한 조직에 배정됩니다. 사용자는 해당 조직에 다른 사용자를 초대할 수 있습니다.
 
 <div id="bigquery-projects-vs-clickhouse-cloud-services">
-  ### BigQuery 프로젝트와 ClickHouse Cloud 서비스 비교
+  ### BigQuery 프로젝트와 ClickHouse Cloud 서비스 비교 {#bigquery-projects-vs-clickhouse-cloud-services}
 </div>
 
 조직 내에서는 서비스를 생성할 수 있으며, ClickHouse Cloud에 저장된 데이터는 서비스에 귀속되므로 BigQuery 프로젝트와 대체로 비슷한 개념으로 볼 수 있습니다. ClickHouse Cloud에서는 [여러 서비스 유형을 사용할 수 있습니다](/ko/products/cloud/features/cloud-tiers). 각 ClickHouse Cloud 서비스는 특정 리전에 배포되며 다음을 포함합니다:
@@ -35,19 +35,19 @@ BigQuery와 마찬가지로 조직은 ClickHouse Cloud 리소스 계층 구조�
 3. endpoint(또는 ClickHouse Cloud UI Console을 통해 생성된 여러 endpoint) - 서비스에 연결할 때 사용하는 서비스 URL(예: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 
 <div id="bigquery-datasets-vs-clickhouse-cloud-databases">
-  ### BigQuery 데이터셋 vs ClickHouse Cloud 데이터베이스
+  ### BigQuery 데이터셋 vs ClickHouse Cloud 데이터베이스 {#bigquery-datasets-vs-clickhouse-cloud-databases}
 </div>
 
 ClickHouse는 테이블을 논리적으로 데이터베이스로 묶습니다. BigQuery 데이터셋과 마찬가지로 ClickHouse 데이터베이스는 테이블 데이터를 구성하고 이에 대한 접근을 제어하는 논리적 컨테이너입니다.
 
 <div id="bigquery-folders">
-  ### BigQuery 폴더
+  ### BigQuery 폴더 {#bigquery-folders}
 </div>
 
 ClickHouse Cloud에는 현재 BigQuery의 폴더에 해당하는 개념이 없습니다.
 
 <div id="bigquery-slot-reservations-and-quotas">
-  ### BigQuery 슬롯 예약 및 쿼터
+  ### BigQuery 슬롯 예약 및 쿼터 {#bigquery-slot-reservations-and-quotas}
 </div>
 
 BigQuery 슬롯 예약과 마찬가지로 ClickHouse Cloud에서는 [수직 및 수평 자동 스케일링을 구성](/ko/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)할 수 있습니다. 수직 자동 스케일링의 경우 서비스의 컴퓨트 노드에 대해 메모리와 CPU 코어의 최소 및 최대 크기를 설정할 수 있습니다. 그러면 서비스는 해당 범위 내에서 필요에 따라 스케일링됩니다. 이러한 설정은 초기 서비스 생성 과정에서도 지정할 수 있습니다. 서비스의 각 컴퓨트 노드는 모두 동일한 크기를 가집니다. [수평 스케일링](/ko/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)을 통해 서비스 내 컴퓨트 노드 수를 변경할 수 있습니다.
@@ -59,13 +59,13 @@ ClickHouse는 서버, 사용자, 쿼리 수준에서 메모리 할당의 바이�
 마지막으로 I/O 스케줄링을 사용하면 최대 대역폭, 진행 중인 요청 수, 정책을 기준으로 워크로드 클래스의 로컬 및 원격 디스크 접근을 제한할 수 있습니다.
 
 <div id="permissions">
-  ### 권한
+  ### 권한 {#permissions}
 </div>
 
-ClickHouse Cloud는 [Cloud Console](/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)과 [데이터베이스(database)](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users), 이렇게 두 곳에서 사용자 액세스를 제어합니다. Console 액세스는 [clickhouse.cloud](https://console.clickhouse.cloud) 사용자 인터페이스를 통해 관리됩니다. 데이터베이스 액세스는 데이터베이스 사용자 계정과 역할을 통해 관리됩니다. 또한 Console 사용자는 [SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console)을 통해 데이터베이스를 사용할 수 있도록 데이터베이스 내 역할을 부여받을 수 있습니다.
+ClickHouse Cloud는 [Cloud Console](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)과 [데이터베이스(database)](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users), 이렇게 두 곳에서 사용자 액세스를 제어합니다. Console 액세스는 [clickhouse.cloud](https://console.clickhouse.cloud) 사용자 인터페이스를 통해 관리됩니다. 데이터베이스 액세스는 데이터베이스 사용자 계정과 역할을 통해 관리됩니다. 또한 Console 사용자는 [SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console)을 통해 데이터베이스를 사용할 수 있도록 데이터베이스 내 역할을 부여받을 수 있습니다.
 
 <div id="data-types">
-  ## 데이터 타입
+  ## 데이터 타입 {#data-types}
 </div>
 
 ClickHouse는 수치형 타입에서 더 세분화된 정밀도를 제공합니다. 예를 들어 BigQuery는 [`INT64`, `NUMERIC`, `BIGNUMERIC`, `FLOAT64`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) 수치형 타입을 제공합니다. 반면 ClickHouse는 Decimal, Float, Integer에 대해 다양한 정밀도의 타입을 제공합니다. 이러한 데이터 타입을 사용하면 스토리지와 메모리 오버헤드를 최적화할 수 있으므로 쿼리 성능이 향상되고 리소스 활용량도 줄어듭니다. 아래에서는 각 BigQuery 타입에 해당하는 ClickHouse 타입을 매핑합니다.
@@ -92,11 +92,11 @@ ClickHouse는 수치형 타입에서 더 세분화된 정밀도를 제공합니�
 ClickHouse 타입에 여러 옵션이 제시되는 경우 실제 데이터 범위를 고려해 필요한 최소 타입을 선택하십시오. 또한 추가 압축을 위해 [적절한 코덱](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) 사용도 고려하십시오.
 
 <div id="query-acceleration-techniques">
-  ## 쿼리 가속 기법
+  ## 쿼리 가속 기법 {#query-acceleration-techniques}
 </div>
 
 <div id="primary-and-foreign-keys-and-primary-index">
-  ### 프라이머리 키, 외래 키 및 프라이머리 인덱스
+  ### 프라이머리 키, 외래 키 및 프라이머리 인덱스 {#primary-and-foreign-keys-and-primary-index}
 </div>
 
 BigQuery에서는 테이블에 [프라이머리 키 및 외래 키 제약 조건](https://cloud.google.com/bigquery/docs/information-schema-table-constraints)을 정의할 수 있습니다. 일반적으로 프라이머리 키와 외래 키는 관계형 데이터베이스에서 데이터 무결성을 보장하는 데 사용됩니다. 프라이머리 키 값은 보통 각 행마다 고유하며 `NULL`이 아닙니다. 각 행의 외래 키 값은 프라이머리 키 테이블의 프라이머리 키 컬럼에 존재하거나 `NULL`이어야 합니다. BigQuery에서는 이러한 제약 조건이 강제되지는 않지만, 쿼리 최적화기가 이 정보를 활용해 쿼리를 더 효율적으로 최적화할 수 있습니다.
@@ -104,7 +104,7 @@ BigQuery에서는 테이블에 [프라이머리 키 및 외래 키 제약 조건
 ClickHouse에서도 테이블에 프라이머리 키를 둘 수 있습니다. BigQuery와 마찬가지로 ClickHouse도 테이블의 프라이머리 키 컬럼 값에 대한 고유성을 강제하지는 않습니다. BigQuery와 달리, 테이블 데이터는 프라이머리 키 컬럼을 기준으로 [정렬된 순서대로](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) 디스크에 저장됩니다. 쿼리 최적화기는 이 정렬 순서를 활용해 재정렬을 방지하고, 조인 시 메모리 사용량을 최소화하며, LIMIT 절에서 조기 종료를 가능하게 합니다. 또한 BigQuery와 달리 ClickHouse는 프라이머리 키 컬럼 값을 기반으로 [(희소) 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales)를 자동으로 생성합니다. 이 인덱스는 프라이머리 키 컬럼에 대한 필터가 포함된 모든 쿼리의 속도를 높이는 데 사용됩니다. 현재 ClickHouse는 외래 키 제약 조건을 지원하지 않습니다.
 
 <div id="secondary-indexes-only-available-in-clickhouse">
-  ## 보조 인덱스 (ClickHouse에서만 사용 가능)
+  ## 보조 인덱스 (ClickHouse에서만 사용 가능) {#secondary-indexes-only-available-in-clickhouse}
 </div>
 
 테이블의 프라이머리 키 컬럼 값으로 생성되는 프라이머리 인덱스 외에도, ClickHouse에서는 프라이머리 키에 포함되지 않은 다른 컬럼에 보조 인덱스를 생성할 수 있습니다. ClickHouse는 여러 종류의 보조 인덱스를 제공하며, 각 인덱스는 서로 다른 유형의 쿼리에 적합합니다:
@@ -119,25 +119,25 @@ ClickHouse에서도 테이블에 프라이머리 키를 둘 수 있습니다. Bi
   * 지정된 범위에 속하지 않는 데이터 파트를 읽지 않고 건너뛸 수 있도록 도와줍니다.
 
 <div id="search-indexes">
-  ## 검색 인덱스
+  ## 검색 인덱스 {#search-indexes}
 </div>
 
 BigQuery의 [검색 인덱스](https://cloud.google.com/bigquery/docs/search-index)와 마찬가지로, 문자열 값을 포함하는 컬럼에 대해 ClickHouse 테이블에 [전문 검색 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 생성할 수 있습니다.
 
 <div id="vector-indexes">
-  ## 벡터 인덱스
+  ## 벡터 인덱스 {#vector-indexes}
 </div>
 
 BigQuery는 최근 [벡터 인덱스](https://cloud.google.com/bigquery/docs/vector-index)를 Pre-GA 기능으로 도입했습니다. ClickHouse 역시 벡터 검색 사용 사례의 성능을 높이기 위한 [인덱스](/ko/reference/engines/table-engines/mergetree-family/annindexes)를 실험적으로 지원합니다.
 
 <div id="partitioning">
-  ## 파티셔닝
+  ## 파티셔닝 {#partitioning}
 </div>
 
 BigQuery와 마찬가지로 ClickHouse는 대규모 테이블을 파티션이라고 하는 더 작고 관리하기 쉬운 단위로 나누는 테이블 파티셔닝을 사용하여 성능과 관리 편의성을 높입니다. ClickHouse 파티셔닝에 대한 자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)에서 확인할 수 있습니다.
 
 <div id="clustering">
-  ## 클러스터링
+  ## 클러스터링 {#clustering}
 </div>
 
 클러스터링을 사용하면 BigQuery는 지정된 몇 개의 컬럼 값을 기준으로 테이블 데이터를 자동으로 정렬하고, 최적의 크기로 구성된 블록에 함께 저장합니다. 클러스터링은 쿼리 성능을 향상시키고, BigQuery가 쿼리 실행 비용을 더 정확하게 추정할 수 있게 해줍니다. 또한 클러스터링된 컬럼을 사용하면 불필요한 데이터 스캔도 줄일 수 있습니다.
@@ -145,13 +145,13 @@ BigQuery와 마찬가지로 ClickHouse는 대규모 테이블을 파티션이라
 ClickHouse에서는 테이블의 프라이머리 키(primary key) 컬럼을 기준으로 데이터가 디스크에 자동으로 [클러스터링](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files)되며, 프라이머리 인덱스 데이터 구조를 활용하는 쿼리가 빠르게 찾거나 제외할 수 있는 블록으로 논리적으로 구성됩니다.
 
 <div id="materialized-views">
-  ## materialized views
+  ## materialized views {#materialized-views}
 </div>
 
 BigQuery와 ClickHouse는 모두 materialized view를 지원합니다. materialized view는 성능과 효율성을 높이기 위해 기본 테이블(base table)에 대한 변환 쿼리 결과를 기반으로 미리 계산된 결과를 저장합니다.
 
 <div id="querying-materialized-views">
-  ## materialized view 쿼리
+  ## materialized view 쿼리 {#querying-materialized-views}
 </div>
 
 BigQuery의 materialized view는 직접 쿼리할 수도 있고, 옵티마이저가 기본 테이블(base table)에 대한 쿼리를 처리하는 데 사용할 수도 있습니다. 기본 테이블의 변경으로 materialized view가 무효화될 수 있으면 데이터는 기본 테이블에서 직접 읽습니다. 반대로 기본 테이블의 변경이 materialized view를 무효화하지 않으면, 나머지 데이터는 materialized view에서 읽고 변경된 부분만 기본 테이블에서 읽습니다.
@@ -165,13 +165,13 @@ BigQuery는 주기적으로 뷰의 변환 쿼리를 기본 테이블에 대해 �
 ClickHouse에서 materialized view는 증분 방식으로 업데이트됩니다. 이러한 증분 업데이트 메커니즘은 높은 확장성과 낮은 컴퓨팅 비용을 제공합니다. 증분 업데이트되는 materialized view는 기본 테이블에 수십억 또는 수조 개의 행이 포함된 시나리오에 특히 적합하도록 설계되었습니다. 계속 커지는 기본 테이블을 반복해서 쿼리해 materialized view를 갱신하는 대신, ClickHouse는 새로 삽입된 기본 테이블 행의 값만으로 부분 결과를 계산합니다. 이 부분 결과는 이전에 계산된 부분 결과와 백그라운드에서 점진적으로 머지됩니다. 그 결과, 전체 기본 테이블을 반복해서 기준으로 materialized view를 갱신하는 방식에 비해 컴퓨팅 비용이 크게 낮아집니다.
 
 <div id="transactions">
-  ## 트랜잭션
+  ## 트랜잭션 {#transactions}
 </div>
 
 ClickHouse와 달리 BigQuery는 단일 쿼리 내에서, 또는 세션을 사용할 경우 여러 쿼리에 걸쳐 다중 문 트랜잭션을 지원합니다. 다중 문 트랜잭션을 사용하면 하나 이상의 테이블에서 행을 삽입하거나 삭제하는 등의 데이터 변경 작업을 수행한 뒤, 변경 사항을 원자적으로 커밋하거나 롤백할 수 있습니다. 다중 문 트랜잭션은 [ClickHouse의 2024년 로드맵](https://github.com/ClickHouse/ClickHouse/issues/58392)에 포함되어 있습니다.
 
 <div id="aggregate-functions">
-  ## 집계 함수
+  ## 집계 함수 {#aggregate-functions}
 </div>
 
 BigQuery와 비교하면 ClickHouse는 기본 제공 집계 함수가 훨씬 더 많습니다.
@@ -180,7 +180,7 @@ BigQuery와 비교하면 ClickHouse는 기본 제공 집계 함수가 훨씬 더
 * ClickHouse에는 [150개가 넘는 사전 구축된 집계 함수](/ko/reference/functions/aggregate-functions/reference-index)가 있으며, 사전 구축된 집계 함수의 동작을 [확장](https://www.youtube.com/watch?v=7ApwD0cfAFI)할 수 있는 강력한 [집계 컴비네이터](/ko/reference/functions/aggregate-functions/combinators)도 제공합니다. 예를 들어, 150개가 넘는 사전 구축된 집계 함수를 테이블의 행 대신 배열에 적용하려면 [-Array 접미사](/ko/reference/functions/aggregate-functions/combinators#-array)를 붙여 호출하기만 하면 됩니다. [-Map 접미사](/ko/reference/functions/aggregate-functions/combinators#-map)를 사용하면 모든 집계 함수를 맵에 적용할 수 있습니다. 또한 [-ForEach 접미사](/ko/reference/functions/aggregate-functions/combinators#-foreach)를 사용하면 모든 집계 함수를 중첩 배열에 적용할 수 있습니다.
 
 <div id="data-sources-and-file-formats">
-  ## 데이터 소스와 파일 포맷
+  ## 데이터 소스와 파일 포맷 {#data-sources-and-file-formats}
 </div>
 
 BigQuery와 비교했을 때 ClickHouse는 훨씬 더 다양한 파일 포맷과 데이터 소스를 지원합니다.
@@ -189,13 +189,13 @@ BigQuery와 비교했을 때 ClickHouse는 훨씬 더 다양한 파일 포맷과
 * BigQuery는 5개의 파일 포맷과 19개의 데이터 소스를 지원합니다
 
 <div id="sql-language-features">
-  ## SQL 언어 기능
+  ## SQL 언어 기능 {#sql-language-features}
 </div>
 
 ClickHouse는 분석 작업에 더 적합하도록 다양한 확장과 개선을 더한 표준 SQL을 제공합니다. 예를 들어, ClickHouse SQL은 [람다 함수](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)와 고차 함수를 지원하므로, 변환을 적용할 때 배열을 unnest/explode하지 않아도 됩니다. 이는 BigQuery와 같은 다른 시스템에 비해 큰 장점입니다.
 
 <div id="arrays">
-  ## 배열
+  ## 배열 {#arrays}
 </div>
 
 BigQuery에 배열 함수가 8개 있는 것과 비교하면, ClickHouse는 다양한 문제를 우아하고 간단하게 모델링하고 해결할 수 있도록 80개가 넘는 [내장 배열 함수](/ko/reference/functions/regular-functions/array-functions)를 제공합니다.

@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 本页介绍适用于您的 BYOC 部署的各种基础设施配置选项。这些配置可让您自定义网络、安全和计算资源，以满足特定需求。
 
-<div id="load-balancers">
-  ## 负载均衡器
-</div>
+## 负载均衡器 {#load-balancers}
 
 BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路由到您的 ClickHouse 服务。您可以根据自身的网络模型，选择 *public* 或 *private* 负载均衡器端点。
 
@@ -34,9 +32,7 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 
 您可以直接在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施启用私有负载均衡器。如需进行其他端点调整 (例如移除公共负载均衡器) ，请联系 **ClickHouse Cloud Support**。
 
-<div id="private-load-balancer-security-group">
-  ### AWS 的私有负载均衡器安全组 (Security Group)
-</div>
+### AWS 的私有负载均衡器安全组 (Security Group) {#private-load-balancer-security-group}
 
 如果你为 BYOC 部署选择使用私有负载均衡器，则必须确保已配置相应的安全组 (Security Group) 规则，以允许来自所需私有网络 (例如已对等连接的 VPC) 的访问。默认情况下，安全组 (Security Group) 仅允许 VPC 内部流量。
 
@@ -52,25 +48,19 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
   对私有负载均衡器安全组 (Security Group) 的所有更改都必须由 ClickHouse 支持团队执行。这样可以确保配置一致，并避免与 ClickHouse Cloud 管理环境中的设置发生冲突。
 </Note>
 
-<div id="privatelink-or-private-service-connect">
-  ## PrivateLink、Private Service Connect 或 Private Link
-</div>
+## PrivateLink、Private Service Connect 或 Private Link {#privatelink-or-private-service-connect}
 
 为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink**、**GCP Private Service Connect** 或 **Azure Private Link**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC/VNet peering，也不必将端点暴露在公共互联网中。
 
 如需分步设置说明，请参阅 [私有网络设置指南](/zh/products/bring-your-own-cloud/onboarding/network)。
 
-<div id="k8s-api-private-connection">
-  ## Kubernetes API 私有连接
-</div>
+## Kubernetes API 私有连接 {#k8s-api-private-connection}
 
-默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问，但会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过私有网络连接访问。
+默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问。在 AWS 上，会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量；在 GCP 和 Azure 上，则改为由云 IAM 进行管控 (参见 [Kubernetes API server 暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过私有网络连接访问。
 
 提供两种私有连接选项：
 
-<div id="k8s-api-private-connection-tailscale">
-  ### Tailscale (默认)
-</div>
+### Tailscale (默认) {#k8s-api-private-connection-tailscale}
 
 启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API server。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
 
@@ -78,9 +68,7 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
   如果你完全依赖 Tailscale 提供私有连接，一旦 Tailscale agent 不可用，ClickHouse 支持团队可能会失去对你的环境的访问权限。这可能会导致故障排查或支持响应时间延长。
 </Note>
 
-<div id="k8s-api-private-connection-vpc-lattice">
-  ### AWS VPC Lattice
-</div>
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
 <Info>
   VPC Lattice 连接功能目前处于私有预览阶段。请联系 ClickHouse 支持团队为您的部署启用此功能。
@@ -95,15 +83,11 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 
 **联系 ClickHouse 支持团队** 以申请配置私网 API 端点。
 
-<div id="node-groups">
-  ## 节点组
-</div>
+## 节点组 {#node-groups}
 
 Kubernetes 节点组是一组计算实例，为在 BYOC 部署中运行 ClickHouse 服务提供所需的资源。ClickHouse Cloud 负责管理这些节点组，并自动处理其配置和扩缩容。
 
-<div id="default-configuration">
-  ### 默认配置
-</div>
+### 默认配置 {#default-configuration}
 
 BYOC 集群预配了两类主要的节点组：
 
@@ -113,9 +97,7 @@ BYOC 集群预配了两类主要的节点组：
 * **工作负载节点组**
   专门用于 ClickHouse 数据工作负载，包括 server 和 Keeper 服务。默认情况下，工作负载节点运行在基于 ARM 的实例上，在性能与成本之间实现了良好的平衡。不过，也可以按需将其配置为其他 CPU/内存规格，或切换为 x86 架构。
 
-<div id="customizing-node-groups">
-  ### 自定义节点组
-</div>
+### 自定义节点组 {#customizing-node-groups}
 
 需要特定资源或架构？支持以下自定义选项——请联系 ClickHouse 支持团队进行讨论和实施：
 
@@ -132,9 +114,7 @@ BYOC 集群预配了两类主要的节点组：
   所有节点组自定义和 configuration 变更都必须通过 ClickHouse 支持团队统一协调，以确保兼容性、稳定性和最佳性能。
 </Note>
 
-<div id="auto-scaling">
-  ### 自动扩缩容
-</div>
+### 自动扩缩容 {#auto-scaling}
 
 集群节点组会根据以下因素，通过集群自动扩缩器自动进行扩缩容：
 

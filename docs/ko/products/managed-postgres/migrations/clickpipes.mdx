@@ -15,7 +15,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이제 ClickHouse Cloud는 외부 PostgreSQL 데이터베이스를 Managed Postgres 서비스로 마이그레이션할 수 있도록 ClickPipes를 제공합니다. 이 기본 제공 통합을 사용하면 원본 데이터베이스에 연결하고, 스키마를 내보내고, 이를 Managed Postgres로 가져오고, 지속적 복제를 설정하는 작업을 간편하게 수행할 수 있습니다.
 
 <div id="prerequisites">
-  ## 사전 준비 사항
+  ## 사전 준비 사항 {#prerequisites}
 </div>
 
 * 복제 권한이 있는 사용자로 원본 PostgreSQL 데이터베이스에 접근할 수 있어야 합니다. 원본에 해당하는 설정 가이드를 따르십시오.
@@ -32,7 +32,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * 로컬 머신에 `pg_dump`와 `psql`이 설치되어 있어야 합니다. 둘 다 기본 PostgreSQL 클라이언트 도구에 포함되어 있습니다.
 
 <div id="considerations">
-  ## 마이그레이션 전에 고려할 사항
+  ## 마이그레이션 전에 고려할 사항 {#considerations}
 </div>
 
 * **DDL 전파**: 지속적 복제(CDC)에서는 DML 작업과 `ADD COLUMN`을 포착합니다. `DROP COLUMN` 및 `ALTER COLUMN` 같은 다른 DDL 변경 사항은 전파되지 않으므로 대상에 수동으로 적용해야 합니다.
@@ -41,9 +41,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   마이그레이션 중 문제가 발생하면 일반적인 오류와 해결 방법은 [Managed Postgres Migrations FAQ](/ko/products/managed-postgres/migrations/faq)에서 확인하십시오.
 </Note>
 
-<div id="step-1-connect">
-  ## 1단계: 원본 데이터베이스에 연결
-</div>
+## 1단계: 원본 데이터베이스에 연결 {#step-1-connect}
 
 [ClickHouse Cloud 콘솔](https://clickhouse.cloud)을 열고 Managed Postgres 서비스를 선택합니다.
 
@@ -71,9 +69,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 **다음**을 클릭합니다.
 
-<div id="automated-schema-migration">
-  ## 자동 스키마 마이그레이션
-</div>
+## 자동 스키마 마이그레이션 {#automated-schema-migration}
 
 <Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="2단계: 대상 데이터베이스 셀렉터를 사용한 자동 스키마 마이그레이션" size="lg" border />
 
@@ -85,9 +81,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="새 Postgres 데이터베이스 만들기 대화 상자" size="lg" border />
 
-<div id="monitoring">
-  ### 모니터링
-</div>
+### 모니터링 {#monitoring}
 
 ClickPipes 세부 정보 보기에서 스키마 마이그레이션 진행 상황을 확인할 수 있습니다. **로그**에는 스키마 마이그레이션 상태와 발생한 오류가 표시됩니다.
 
@@ -95,17 +89,13 @@ ClickPipes 세부 정보 보기에서 스키마 마이그레이션 진행 상황
 
 * SSH tunneling을 사용하는 파이프에는 자동 스키마 마이그레이션을 사용할 수 없습니다. 스키마는 [수동으로 내보내고 가져와야 합니다](#manual-schema-migration).
 
-<div id="manual-schema-migration">
-  ## 수동 스키마 마이그레이션
-</div>
+## 수동 스키마 마이그레이션 {#manual-schema-migration}
 
 대상 데이터베이스에 이미 데이터가 있거나 자동화 모드에서 전제하는 초기 상태 대신 더 맞춤화된 설정이 필요한 경우, 여기에서 **수동** 모드를 선택할 수 있습니다.
 
 <Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="2단계: pg_dump 내보내기 명령을 사용한 수동 스키마 마이그레이션" size="lg" border />
 
-<div id="step-2-export-schema">
-  ### 데이터베이스 스키마 내보내기
-</div>
+### 데이터베이스 스키마 내보내기 {#step-2-export-schema}
 
 마법사에 원본 연결 정보가 미리 입력된 `pg_dump` 명령이 표시됩니다. 터미널에서 실행합니다:
 
@@ -126,9 +116,7 @@ pg_dump \
 
 **다음**을 클릭합니다.
 
-<div id="step-3-import-schema">
-  ### Managed Postgres 서비스로 스키마 가져오기
-</div>
+### Managed Postgres 서비스로 스키마 가져오기 {#step-3-import-schema}
 
 드롭다운에서 대상 데이터베이스를 선택하거나 **새 데이터베이스 만들기**를 클릭해 새 데이터베이스를 프로비저닝합니다.
 
@@ -149,9 +137,7 @@ psql \
 
 **다음**을 클릭합니다.
 
-<div id="step-4-ingestion-settings">
-  ## Step 4: 수집 설정 구성
-</div>
+## Step 4: 수집 설정 구성 {#step-4-ingestion-settings}
 
 논리적 복제에 사용할 publication을 지정합니다. 비워 두면 publication이 자동으로 생성됩니다.
 
@@ -170,7 +156,7 @@ psql \
 **다음**을 클릭하십시오.
 
 <div id="step-5-select-tables">
-  ## 5단계: 테이블 선택
+  ## 5단계: 테이블 선택 {#step-5-select-tables}
 </div>
 
 복제할 테이블을 선택하세요. 테이블은 스키마별로 그룹화되어 있습니다. 개별 테이블을 선택하거나 스키마를 펼쳐 전체를 선택하세요.
@@ -179,9 +165,7 @@ psql \
 
 **Create migration**을 클릭하세요.
 
-<div id="monitor">
-  ## 마이그레이션 모니터링
-</div>
+## 마이그레이션 모니터링 {#monitor}
 
 마이그레이션을 생성하면 **데이터 소스**에 **Running** 상태로 표시됩니다.
 
@@ -191,72 +175,72 @@ psql \
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="테이블별 초기 적재 통계가 표시된 마이그레이션 상세 보기" size="lg" border />
 
-<div id="post-migration">
-  ## 마이그레이션 후 작업
-</div>
+## 트래픽 전환 {#cutover}
 
-초기 적재가 완료되고, CDC를 사용하는 경우 복제 지연이 거의 0이 되면 다음을 수행하십시오:
+초기 적재가 완료되고, CDC를 사용하는 경우 복제 지연(replication lag)이 거의 0에 가까워지면 소스 Postgres 데이터베이스에서 Managed Postgres 서비스로 트래픽을 전환할 수 있습니다. 마이그레이션 상세 보기를 열고 **마이그레이션 후 steps** 탭을 선택하십시오. 이 가이드형 마법사는 마이그레이션을 안전하게 마무리하는 데 필요한 여섯 단계를 안내합니다. 각 단계는 순서대로 완료해야 다음 단계로 진행할 수 있습니다.
 
-**행 수를 검증합니다.** 트래픽을 전환하기 전에 원본과 대상의 주요 테이블을 선별해 점검하십시오:
+### 1단계: 소스 Postgres 데이터베이스를 읽기 전용 모드로 설정 {#cutover-read-only}
 
-```sql
-SELECT COUNT(*) FROM public.orders;
-```
-
-**소스 시스템에 대한 쓰기를 중지합니다.** 애플리케이션의 쓰기 작업을 일시 중지하세요. 전환 중 읽기 전용 모드를 강제하려면:
+cutover 도중 데이터가 어긋나지 않도록 소스에서 애플리케이션의 쓰기 작업을 중단하십시오. 마법사에는 원본 데이터베이스 이름이 미리 채워진 `ALTER DATABASE` 명령이 표시되며, 이를 원본 데이터베이스에서 실행하십시오:
 
 ```sql
-ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+ALTER DATABASE "<source_db>" SET default_transaction_read_only = on;
 ```
 
-**복제가 모두 반영되었는지 확인합니다.** 소스와 타깃의 최신 행을 비교합니다:
+그런 다음 기존 연결을 모두 종료하여 읽기 전용 설정이 적용되도록 하고, 진행 중인 쓰기 작업이 남아 있지 않게 합니다:
 
 ```sql
--- 소스와 대상 모두에서 실행
-SELECT MAX(id), MAX(updated_at) FROM public.orders;
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = '<source_db>'
+  AND pid <> pg_backend_pid();
 ```
 
-**시퀀스를 재설정합니다.** 각 테이블의 현재 최댓값에 맞춰 시퀀스를 조정합니다:
+<Note>
+  사용 중인 Postgres 공급자에 따라 이 단계는 다르게 보일 수 있습니다. 관리형 서비스에서는 `ALTER DATABASE`나 백엔드 종료를 제한하는 대신, 자체 콘솔이나 파라미터 그룹, 또는 쓰기 권한 회수를 통해 읽기 전용 모드를 제공하기도 합니다. 원본을 읽기 전용으로 설정하는 동등한 방법은 해당 공급자의 문서를 참조하십시오.
+</Note>
 
-```sql
-DO $$
-DECLARE r RECORD;
-BEGIN
-    FOR r IN
-        SELECT
-            n.nspname AS schema_name,
-            c.relname AS table_name,
-            a.attname AS column_name,
-            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid
-        WHERE c.relkind = 'r'
-            AND a.attnum > 0
-            AND NOT a.attisdropped
-            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-    LOOP
-        IF r.seq_name IS NOT NULL THEN
-            EXECUTE format(
-                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
-                r.seq_name, r.column_name, r.schema_name, r.table_name
-            );
-        END IF;
-    END LOOP;
-END $$;
-```
+계속하려면 **Mark as completed**를 클릭하십시오.
 
-**애플리케이션 트래픽을 전환하세요.** 읽기 및 쓰기 트래픽이 Managed Postgres 서비스로 향하도록 전환하고, 오류, 제약 조건 위반, 복제 상태를 모니터링하세요.
+<Image img="/images/managed-postgres/pgpg/post-migration/readonly.webp" alt="마이그레이션 후 1단계: 원본 데이터베이스를 읽기 전용 모드로 설정" size="lg" border />
 
-**정리하세요.**  전환을 완료하고 새 서비스가 정상 상태임을 확인했으면 **데이터 소스**에서 migration을 삭제하세요. CDC를 사용했다면 리소스를 확보할 수 있도록 원본에서 replication slot을 삭제하세요:
+### 2단계: 행 수 검사 {#cutover-validate}
+
+검사할 복제된 테이블을 선택합니다. ClickPipes는 선택한 모든 테이블의 행 수를 소스와 타깃 양쪽에서 집계하여 비교합니다. 대용량 테이블은 근사치가 반환될 수 있습니다. 모든 테이블을 검사하려면 **Select all tables**를 사용하고, 특정 테이블만 검사하려면 해당 테이블을 검색해 선택한 후 **Count rows**를 클릭하십시오.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp" alt="마이그레이션 후 2단계: 테이블 선택 및 소스와 타깃 간 행 수 검사" size="lg" border />
+
+### 3단계: 파이프 일시 중지 {#cutover-pause}
+
+시퀀스를 재설정하고 트래픽을 전환하기 전에 복제가 중지되도록 ClickPipe를 일시 중지합니다. **Pause ClickPipe**를 클릭한 후 파이프가 일시 중지될 때까지 기다린 다음 진행하십시오.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/pause-pipe.webp" alt="마이그레이션 후 step 3: pause the ClickPipe to stop replication" size="lg" border />
+
+### 4단계: 시퀀스 재설정 {#cutover-reset-sequences}
+
+이후의 삽입 작업이 올바른 값에서 이어지도록 대상에서 시퀀스를 재설정합니다. **Reset sequences**를 클릭하면 각 시퀀스가 해당 테이블의 현재 최대값에 맞춰집니다.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/reset-sequences.webp" alt="마이그레이션 후 step 4: reset sequences on the destination" size="lg" border />
+
+### 5단계: 트래픽 전환 {#cutover-traffic}
+
+애플리케이션의 데이터베이스 URL을 Managed Postgres 연결 문자열(connection string)로 변경하여 읽기와 쓰기를 Managed Postgres 서비스로 전환하십시오. 마법사는 **url**, **psql**, **env**, **yaml**, **jdbc** 등 여러 포맷으로 연결 정보(connection details)를 제공하므로, 사용 중인 스택에 맞는 항목을 복사해 사용하면 됩니다. 애플리케이션을 업데이트한 후 **Mark as completed**를 클릭하십시오.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp" alt="마이그레이션 후 step 5: cut over traffic using the Managed Postgres connection string" size="lg" border />
+
+### 6단계: 정리 {#cutover-cleanup}
+
+전환을 완료하고 새 서비스가 정상 상태임을 확인했다면, migration을 삭제하고 소스 리소스를 해제하십시오. 마법사에는 슬롯 이름이 미리 채워진 `pg_drop_replication_slot` 명령이 표시됩니다. 소스에서 이 명령을 실행하여 replication slot을 삭제하십시오:
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
-<div id="next-steps">
-  ## 다음 단계
-</div>
+그런 다음 **Delete ClickPipe migration**을 클릭하여 **데이터 소스**에서 해당 마이그레이션을 제거합니다.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cleanup.webp" alt="마이그레이션 후 6단계: replication slot 삭제 및 마이그레이션 삭제로 정리하기" size="lg" border />
+
+## 다음 단계 {#next-steps}
 
 * [Managed Postgres 빠른 시작](/ko/products/managed-postgres/quickstart)
 * [Managed Postgres 연결 정보](/ko/products/managed-postgres/connection)

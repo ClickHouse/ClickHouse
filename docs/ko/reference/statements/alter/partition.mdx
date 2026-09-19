@@ -30,9 +30,7 @@ doc_type: 'reference'
 
 {/* */}
 
-<div id="detach-partitionpart">
-  ## DETACH PARTITION|PART
-</div>
+## DETACH PARTITION|PART {#detach-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
@@ -53,9 +51,7 @@ ALTER TABLE mt DETACH PART 'all_2_2_0';
 
 이 쿼리는 복제되며, 모든 레플리카의 `detached` 디렉터리로 데이터를 이동합니다. 이 쿼리는 리더 레플리카에서만 실행할 수 있습니다. 레플리카가 리더인지 확인하려면 [system.replicas](/ko/reference/system-tables/replicas) 테이블에 `SELECT` 쿼리를 수행하십시오. 또는 모든 레플리카에서 `DETACH` 쿼리를 실행하는 편이 더 쉽습니다. 그러면 리더 레플리카를 제외한 모든 레플리카에서 예외가 발생합니다(여러 리더가 허용됨).
 
-<div id="drop-partitionpart">
-  ## DROP PARTITION|PART
-</div>
+## DROP PARTITION|PART {#drop-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
@@ -74,9 +70,7 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-<div id="drop-detached-partitionpart">
-  ## 분리된 PARTITION|PART 삭제
-</div>
+## 분리된 PARTITION|PART 삭제 {#drop-detached-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
@@ -85,9 +79,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 지정된 파트 또는 지정된 파티션의 모든 파트를 `detached`에서 제거합니다.
 파티션 표현식을 설정하는 방법에 대한 자세한 내용은 [파티션 표현식을 설정하는 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
 
-<div id="forget-partition">
-  ## FORGET PARTITION
-</div>
+## FORGET PARTITION {#forget-partition}
 
 ```sql
 ALTER TABLE table_name FORGET PARTITION partition_expr
@@ -103,9 +95,7 @@ ALTER TABLE table_name FORGET PARTITION partition_expr
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-<div id="attach-partitionpart">
-  ## ATTACH PARTITION|PART
-</div>
+## ATTACH PARTITION|PART {#attach-partitionpart}
 
 ```sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -128,9 +118,7 @@ ATTACH 명령을 받은 비이니시에이터 레플리카가 자체 `detached` 
 
 한 레플리카의 `detached` 디렉터리에 데이터를 넣고 `ALTER ... ATTACH` 쿼리를 사용하여 모든 레플리카의 테이블에 추가할 수 있습니다.
 
-<div id="attach-partition-from">
-  ## ATTACH PARTITION FROM
-</div>
+## ATTACH PARTITION FROM {#attach-partition-from}
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
@@ -148,11 +136,10 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 * 두 테이블의 구조가 동일해야 합니다.
 * 두 테이블은 동일한 파티션 키, 동일한 ORDER BY 키, 동일한 프라이머리 키를 가져야 합니다.
 * 두 테이블은 동일한 스토리지 정책을 가져야 합니다.
+* 원본 파트의 인덱스 세분화 수준이 비적응형이면 두 테이블의 `index_granularity`가 동일해야 합니다. 이러한 파트는 마크별 행 수를 저장하지 않으므로 대상 테이블의 값이 마크를 해석하는 데 사용됩니다.
 * 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다. 대상 테이블에서 `enforce_index_structure_match_on_partition_manipulation` 설정이 활성화되어 있으면 인덱스와 프로젝션이 완전히 동일해야 합니다. 그렇지 않으면 대상 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합일 수 있습니다.
 
-<div id="replace-partition">
-  ## REPLACE PARTITION
-</div>
+## REPLACE PARTITION {#replace-partition}
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
@@ -170,11 +157,10 @@ ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM ta
 * 두 테이블의 구조가 동일해야 합니다.
 * 두 테이블의 파티션 키, ORDER BY 키, 프라이머리 키가 모두 동일해야 합니다.
 * 두 테이블의 스토리지 정책이 동일해야 합니다.
+* 원본 파트의 인덱스 세분화 수준이 비적응형인 경우, 두 테이블의 `index_granularity`가 동일해야 합니다. 이러한 파트에는 마크별 행 수가 저장되지 않으므로 대상 테이블의 값을 사용하여 마크를 해석합니다.
 * 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다. 대상 테이블에서 `enforce_index_structure_match_on_partition_manipulation` 설정이 enabled 상태이면 인덱스와 프로젝션이 완전히 동일해야 합니다. 그렇지 않으면 대상 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합일 수 있습니다.
 
-<div id="move-partition-to-table">
-  ## MOVE PARTITION TO TABLE
-</div>
+## MOVE PARTITION TO TABLE {#move-partition-to-table}
 
 ```sql
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
@@ -188,11 +174,10 @@ ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO T
 * 두 테이블의 파티션 키, ORDER BY 키, 프라이머리 키가 동일해야 합니다.
 * 두 테이블의 스토리지 정책이 동일해야 합니다.
 * 두 테이블은 동일한 엔진 계열(복제된 또는 비복제된)이어야 합니다.
+* 원본 파트에 비적응형 인덱스 세분화 수준이 적용된 경우, 두 테이블의 `index_granularity`가 동일해야 합니다. 이러한 파트에는 마크별 행 수가 저장되지 않으므로 대상 테이블의 값이 마크를 해석하는 데 사용됩니다.
 * 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다. 대상 테이블에서 `enforce_index_structure_match_on_partition_manipulation` 설정이 활성화되어 있으면 인덱스와 프로젝션이 완전히 동일해야 합니다. 그렇지 않으면 대상 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합이어도 됩니다.
 
-<div id="clear-column-in-partition">
-  ## PARTITION에서 COLUMN 비우기
-</div>
+## PARTITION에서 COLUMN 비우기 {#clear-column-in-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -206,9 +191,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITIO
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-<div id="freeze-partition">
-  ## FREEZE PARTITION
-</div>
+## FREEZE PARTITION {#freeze-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
@@ -252,9 +235,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 
 백업 및 데이터 복원에 대한 자세한 내용은 [&quot;ClickHouse의 백업 및 복원&quot;](/ko/concepts/features/backup-restore/overview) 섹션을 참조하십시오.
 
-<div id="unfreeze-partition">
-  ## UNFREEZE PARTITION
-</div>
+## UNFREEZE PARTITION {#unfreeze-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
@@ -262,9 +243,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WIT
 
 지정된 이름의 `frozen` 파티션을 디스크에서 제거합니다. `PARTITION` 절을 생략하면 모든 파티션의 백업이 한 번에 제거됩니다.
 
-<div id="clear-index-in-partition">
-  ## CLEAR INDEX IN PARTITION
-</div>
+## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
@@ -272,9 +251,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION 
 
 이 쿼리는 `CLEAR COLUMN`과 유사하게 동작하지만, 컬럼 데이터 대신 인덱스를 재설정합니다.
 
-<div id="fetch-partitionpart">
-  ## FETCH PARTITION|PART
-</div>
+## FETCH PARTITION|PART {#fetch-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
@@ -312,9 +289,7 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 
 쿼리 이름은 `ALTER TABLE`이지만, 실제로는 테이블 구조를 변경하지 않으며 테이블에서 사용할 수 있는 데이터도 즉시 바꾸지 않습니다.
 
-<div id="move-partitionpart">
-  ## MOVE PARTITION|PART
-</div>
+## MOVE PARTITION|PART {#move-partitionpart}
 
 `MergeTree` 엔진 테이블의 파티션 또는 데이터 파트를 다른 볼륨이나 디스크로 이동합니다. 자세한 내용은 [데이터 저장을 위해 여러 블록 디바이스 사용하기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)를 참조하십시오.
 
@@ -335,9 +310,7 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-<div id="update-in-partition">
-  ## UPDATE IN PARTITION
-</div>
+## UPDATE IN PARTITION {#update-in-partition}
 
 지정한 필터링 표현식과 일치하는 지정된 파티션의 데이터를 수정합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
 
@@ -347,9 +320,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-<div id="example">
-  ### 예시
-</div>
+### 예시 {#example}
 
 ```sql
 -- 파티션 이름 사용
@@ -359,15 +330,11 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
-<div id="see-also">
-  ### 관련 항목
-</div>
+### 관련 항목 {#see-also}
 
 * [UPDATE](/ko/reference/statements/alter/partition#update-in-partition)
 
-<div id="delete-in-partition">
-  ## DELETE IN PARTITION
-</div>
+## DELETE IN PARTITION {#delete-in-partition}
 
 지정한 필터링 표현식과 일치하는 데이터를 지정한 파티션에서 삭제합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
 
@@ -377,9 +344,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-<div id="example">
-  ### 예시
-</div>
+### 예시 {#example-1}
 
 ```sql
 -- 파티션 이름 사용
@@ -389,30 +354,22 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
-<div id="rewrite-parts">
-  ## 파트 재작성
-</div>
+## 파트 재작성 {#rewrite-parts}
 
 이 작업은 모든 새로운 설정을 적용해 파트를 처음부터 다시 작성합니다. 이는 `use_const_adaptive_granularity`와 같은 테이블 수준 설정이 기본적으로 새로 작성되는 파트에만 적용되기 때문입니다.
 
-<div id="example">
-  ### 예시
-</div>
+### 예시 {#example-rewrite-parts}
 
 ```sql
 ALTER TABLE mt REWRITE PARTS;
 ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
 ```
 
-<div id="see-also">
-  ### 관련 항목
-</div>
+### 관련 항목 {#see-also-1}
 
 * [DELETE](/ko/reference/statements/alter/delete)
 
-<div id="how-to-set-partition-expression">
-  ## 파티션 표현식을 지정하는 방법
-</div>
+## 파티션 표현식을 지정하는 방법 {#how-to-set-partition-expression}
 
 `ALTER ... PARTITION` 쿼리에서는 파티션 표현식을 여러 방식으로 지정할 수 있습니다.
 

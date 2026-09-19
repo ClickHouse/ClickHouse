@@ -15,9 +15,7 @@ doc_type: 'reference'
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-<div id="sqlalchemy-connect">
-  ## الاتصال عبر SQLAlchemy
-</div>
+## الاتصال عبر SQLAlchemy {#sqlalchemy-connect}
 
 أنشئ محركًا باستخدام صيغة URL ‏`clickhousedb://` أو `clickhousedb+connect://`:
 
@@ -37,9 +35,7 @@ with engine.connect() as conn:
 
 راجع [وسيطات الاتصال والإعدادات](/ar/integrations/language-clients/python/driver-api#connection-arguments) للاطلاع على خيارات العميل المتاحة.
 
-<div id="sqlalchemy-per-query-settings">
-  ### إعدادات خاصة بكل استعلام
-</div>
+### إعدادات خاصة بكل استعلام {#sqlalchemy-per-query-settings}
 
 مرِّر إعدادات ClickHouse عبر خيارات التنفيذ في SQLAlchemy. يمكن تعيين الإعدادات على المحرك أو الاتصال أو التعليمة. وتكون قيمة التعليمة لها الأسبقية على قيمة الاتصال أو المحرك عند استخدام المفتاح نفسه.
 
@@ -54,9 +50,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-<div id="sqlalchemy-per-query-read-formats">
-  ### تنسيقات القراءة لكل استعلام
-</div>
+### تنسيقات القراءة لكل استعلام {#sqlalchemy-per-query-read-formats}
 
 عيّن تنسيقات قراءة ClickHouse على مستوى المحرك أو الاتصال أو التعليمة عبر خيارات تنفيذ SQLAlchemy باستخدام `query_formats`. تُطبَّق تنسيقات التعليمة أولًا، لذا تتجاوز المفاتيح وأحرف البدل المطابقة على مستوى الاتصال أو المحرك.
 
@@ -71,9 +65,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-<div id="sqlalchemy-server-side-parameters">
-  ### معلمات من جهة الخادم
-</div>
+### معلمات من جهة الخادم {#sqlalchemy-server-side-parameters}
 
 يعرض SQLAlchemy المعلمات عادةً من جهة العميل. فعِّل معلمات ClickHouse من جهة الخادم عند إنشاء المحرّك:
 
@@ -88,9 +80,7 @@ engine = create_engine(
 
 يجب أن تكون أسماء الربط أسماء ClickHouse من نوع ASCII BareWord. تُرفض الأسماء التي تبدأ وتنتهي بـ `$` لأن المشغّل الأساسي يحجزها لمعلمات الاستعلام الثنائية الخام.
 
-<div id="sqlalchemy-core-queries">
-  ## استعلامات Core
-</div>
+## استعلامات Core {#sqlalchemy-core-queries}
 
 تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود والإزاحات، و`DISTINCT`، وعمليات select المركبة.
 
@@ -125,15 +115,52 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-<div id="sqlalchemy-literal-rendering">
-  ### عرض القيم الحرفية
-</div>
+### عرض القيم الحرفية {#sqlalchemy-literal-rendering}
 
 عندما يضمّن SQLAlchemy قيمة مقيّدة باستخدام `literal_binds` أو `literal_execute`، تستخدم اللهجة أسلوب الاقتباس في ClickHouse لأنواع السلاسل النصية العامة وأنواع ClickHouse. وينطبق ذلك أيضًا عند استخدام أغلفة `TypeDecorator` واختيارات `with_variant()`. تحتفظ قيم السلاسل النصية بعلامات النسبة المئوية والشرطات المائلة العكسية، حتى مع وجود مَعلَمات مقيّدة أخرى.
 
-<div id="sqlalchemy-json-subcolumns">
-  ### الأعمدة الفرعية لـ JSON
-</div>
+### تلميحات نوع JSON {#sqlalchemy-json-type-hints}
+
+أعلن عن مسارات JSON ذات الأنواع المحددة باستخدام تعيين `typed_paths`. يمكن أن يكون نوع المسار صنف نوع من ClickHouse SQLAlchemy، أو نسخة مهيَّأة، أو سلسلة نصية تحمل اسم نوع ClickHouse. وتدعم سلاسل أسماء الأنواع الأنواعَ التي لا يوجد لها مُنشئ في SQLAlchemy، مثل `Dynamic`، كما يمكن استخدامها لتعبيرات الأنواع المهيَّأة المعقدة، وهي تحافظ على الأسماء داخل `Tuple` المسمّى.
+
+يمكن أن تحتوي سلاسل أسماء الأنواع على أنواع JSON متداخلة مهيَّأة مثل ``Array(JSON(`child` UInt32))``. وأسماء أنواع ClickHouse المعروفة غير حساسة لحالة الأحرف داخل هذه السلاسل، وتُخرَج بحالة الأحرف القياسية الخاصة بها. ويجب أن تحتوي السلسلة على تعبير نوع واحد كامل، إذ يُرفض أي نص لاحق أو وسائط JSON متداخلة غير صحيحة التكوين.
+
+لا يُدعم `Tuple()` الفارغ كمسار JSON ذي نوع محدد، لأن ClickHouse لا يستطيع تسلسله عبر تنسيق Native الخاص بـ JSON column. ويدعم المشغّل الأساسي `Tuple()` في أعمدة الاستعلام والإدراج في أي موضع، بما في ذلك التداخل داخل الصفوف الموضعية أو المسمّاة، وداخل `Array`، وكذلك بصيغة `Nullable(Tuple())` حيثما كان ذلك مفعّلًا في الخادم.
+
+```python
+from sqlalchemy import Column, MetaData, Table
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column(
+        "payload",
+        JSON(
+            typed_paths={
+                "event.id": UInt32,
+                "details": "Tuple(id UInt32, label Nullable(String))",
+                "attributes": "Variant(String, Array(String))",
+            },
+            max_dynamic_paths=256,
+            max_dynamic_types=16,
+            skip_paths=["internal.debug"],
+            skip_regexps=[r"^private\."],
+        ),
+    ),
+)
+```
+
+بالنسبة لمسارات معرّفات بايثون البسيطة، تُعد وسيطات الكلمات المفتاحية اختصارًا لـ `typed_paths`، على سبيل المثال `JSON(user_id=UInt32)`. استخدم `typed_paths` مع المسارات التي تحتوي على نقاط أو مسافات أو backticks أو نقاطًا مُرمَّزة بصيغة `%2E`، أو الأسماء التي تتطابق مع خيارات المُنشئ. ويُدعم مسار مُحدَّد النوع باسم `SKIP` من خلال الربط. المفاتيح في `typed_paths` والقيم في `skip_paths` هي أسماء مفكوكة الترميز. وتُعامل الـ backticks وعلامات الاقتباس المزدوجة في بداية المسار أو نهايته بوصفها محارف حرفية ضمن المسار، لا بوصفها اقتباس SQL مطبّقًا مسبقًا. أما داخل سلسلة النوع الخام، فتمثّل الـ backticks وعلامات الاقتباس المزدوجة صياغة معرّفات ClickHouse.
+
+يمكن تهيئة ما يصل إلى 1000 مسار مُحدَّد النوع. ويقبل `max_dynamic_paths` قيمًا من 0 إلى 10000، ويقبل `max_dynamic_types` قيمًا من 0 إلى 254. وتنطبق هذه النطاقات أيضًا داخل سلاسل نوع JSON المتداخلة الخام. وتُحذف القيم الافتراضية الصريحة للخادم البالغة 1024 و32 من الـ DDL المُولَّد. وتُزال التكرارات من مسارات التخطي البسيطة. ولا تتحقق بايثون من صحة سلاسل التعابير النمطية لأن ClickHouse يستخدم صياغة RE2، ويُحتفظ بالتعابير النمطية المكررة كما هي.
+
+لا يمكن أن يحمل مسار تخطٍّ بسيط الاسم `REGEXP` تحديدًا، لأن ClickHouse يحجز هذا الـ token لصيغة `SKIP REGEXP`. أما أسماء مثل `REGEXP_foo` فتبقى صالحة. وفي سلسلة نوع JSON خام، يجب أن يكون معامل `SKIP` البسيط معرّف ClickHouse واحدًا أو معرّفًا مركبًا مفصولًا بنقاط. ولا يمكن أن يبدأ المعرّف المركب غير المقتبس بـ `REGEXP`؛ فاقتبس المكوّن الأول عندما يكون جزءًا من بيانات المسار. ويجب أن يتضمن `SKIP REGEXP` قيمة حرفية نصية واحدة بين علامتي اقتباس مفردتين. واقتبس أجزاء المعرّف باستخدام الـ backticks أو علامات الاقتباس المزدوجة عندما تحتوي على مسافات أو علامات ترقيم. وتدعم تلميحات نوع JSON الخام `Variant(...)`؛ أما `Variant` بمفرده فليس له مُنشئ عام في SQLAlchemy. وتُرتَّب أعضاء `Variant` وتُزال تكراراتها وفق الأسماء القياسية نفسها التي يستخدمها ClickHouse.
+
+ويرتّب المُنشئ الوسائط بالصيغة القياسية نفسها التي يعيدها ClickHouse. كما تحافظ الأنواع المنعكسة، ونسخ أنواع SQLAlchemy، والتوليد التلقائي في Alembic على التهيئة.
+
+### الأعمدة الفرعية لـ JSON {#sqlalchemy-json-subcolumns}
 
 بالنسبة إلى عمود مُعرَّف أو ممثَّل في ClickHouse بصفته `JSON`، استخدم الأقواس المربعة لاختيار مقطع واحد في كل مرة من مسار عمود فرعي مدعوم بالتخزين:
 
@@ -179,9 +206,7 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 يُقتبس كل مقطع بشكل مستقل، بما في ذلك الأسماء التي تحتوي على مسافات أو علامات اقتباس خلفية. لا تجعل علامات الاقتباس الخلفية النقطة قيمة حرفية في معالجة مسارات JSON في ClickHouse. عند تمكين `json_type_escape_dots_in_keys`، استخدم ترميز ClickHouse `%2E` للنقاط الحرفية في المفاتيح. للوصول إلى مفتاح باسم `a.b`، استخدم `payload["a%2Eb"]`، وليس `payload["a.b"]`.
 
-<div id="sqlalchemy-query-extensions">
-  ### امتدادات استعلام ClickHouse
-</div>
+### امتدادات استعلام ClickHouse {#sqlalchemy-query-extensions}
 
 استورد `select` من `clickhouse_connect.cc_sqlalchemy` لتمكين أدوات التحقق الساكنة من الأنواع من التعرّف على طرائق ClickHouse المعرّفة الأنواع. كما تتوفر هذه الطرائق أيضًا في `sqlalchemy.select` القياسي وقت التشغيل.
 
@@ -257,9 +282,7 @@ stmt = select(
 
 تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع. يتطلب شكل تعبير الجدول الشائع استخدام SQLAlchemy 2.0.42 أو إصدار أحدث، إذ أُضيفت `Values.cte()`.
 
-<div id="sqlalchemy-materialized-ctes">
-  ### تعبيرات الجدول الشائعة المُجسَّدة
-</div>
+### تعبيرات الجدول الشائعة المُجسَّدة {#sqlalchemy-materialized-ctes}
 
 يُضمّن ClickHouse تعبير الجدول الشائع تلقائيًا، لذا إذا أُشير إلى CTE أكثر من مرة، يُنفَّذ محتواه مرةً لكل مرجع. مرّر `materialized=True` إلى `.cte()` لإنتاج `WITH <name> AS MATERIALIZED (...)`، بحيث يُحسب المحتوى مرةً واحدة:
 
@@ -301,11 +324,11 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 لا يدعم ClickHouse تعبيرات الجدول الشائع المادية التعاودية. تثير helpers الخاصة بـ SQLAlchemy الخطأ `ValueError` عند تعيين كلٍّ من `recursive=True` و`materialized=True`.
 
-<div id="sqlalchemy-ddl-reflection">
-  ## DDL واستكشاف البنية
-</div>
+## DDL واستكشاف البنية {#sqlalchemy-ddl-reflection}
 
 يوفّر ClickHouse Connect أنواع بيانات ClickHouse، ومحركات الجداول، وبُنى القواميس، وDDL لقواعد البيانات، واستكشاف بنية الجداول.
+
+تُستكشف أعمدة `Variant` المستقلة (standalone) عبر نوع SQLAlchemy داخلي، ويحافظ التوليد التلقائي في Alembic على أسماء أنواعها الخام القياسية دون تغييرات متكررة في الأنواع. أما أعمدة `Geometry` و`MultiPoint` فتُستكشف كأنواع SQLAlchemy عامة.
 
 ```python
 import sqlalchemy as db
@@ -339,9 +362,7 @@ with engine.connect() as conn:
 
 تقبل وسائط مفاتيح MergeTree مثل `order_by` و`partition_by` و`primary_key` و`sample_by` و`ttl` أعمدة SQLAlchemy وتعبيرات SQL، بالإضافة إلى السلاسل النصية العادية.
 
-<div id="sqlalchemy-inserts">
-  ## عمليات الإدراج واستخدام ORM الأساسي
-</div>
+## عمليات الإدراج واستخدام ORM الأساسي {#sqlalchemy-inserts}
 
 عمليات إدراج Core ونماذج ORM البسيطة مدعومة. يُفضَّل استخدام عمليات إدراج Core لمسارات البيانات المجمّعة.
 
@@ -383,9 +404,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-<div id="sqlalchemy-alembic">
-  ## ترحيلات Alembic
-</div>
+## ترحيلات Alembic {#sqlalchemy-alembic}
 
 يتضمن ClickHouse Connect تكاملًا مع Alembic لإجراء ترحيلات مخطط ClickHouse. ثبّته باستخدام:
 
@@ -407,9 +426,7 @@ pip install "clickhouse-connect[alembic]"
 
 راجع [المثال العملي الكامل لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). كما ينبغي للمستخدمين الذين يرحّلون من `clickhouse-sqlalchemy` قراءة [دليل الترحيل](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
 
-<div id="scope-and-limitations">
-  ## النطاق والقيود
-</div>
+## النطاق والقيود {#scope-and-limitations}
 
 * لا يوفّر ClickHouse المعاملات التقليدية عبر لهجة HTTP هذه. ينظّم `engine.begin()` و`Session.commit()` العمل على جانب بايثون، لكن commit و التراجع لا يُحدثان أي تأثير على الخادوم.
 * لا تدعم هذه اللهجة `UPDATE`، والمعاملات ثنائية الطور، والتسلسلات، و`RETURNING`، ومستويات العزل المتقدمة. استخدم ClickHouse SQL الصريح لتنفيذ تعديلات الخادوم عند الحاجة.

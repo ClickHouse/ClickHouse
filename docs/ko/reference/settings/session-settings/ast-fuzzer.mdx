@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="ast_fuzzer_any_query">
-  ## ast_fuzzer_any_query
-</div>
+## ast_fuzzer_any_query {#ast_fuzzer_any_query}
 
 <ExperimentalBadge />
 
@@ -26,9 +24,17 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 값이 false(기본값)이면 `ast_fuzzer_runs`로 제어되는 서버 측 AST 퍼저는 읽기 전용 쿼리(SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS)만 퍼징합니다. 값이 true이면 DDL 및 INSERT를 포함한 모든 쿼리 유형이 퍼징 대상이 됩니다.
 
-<div id="ast_fuzzer_runs">
-  ## ast_fuzzer_runs
-</div>
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "서버 측 AST 퍼저에서 정확성 오라클 검사를 활성화하는 새로운 설정입니다."}]}]} />
+
+`ast_fuzzer_runs`와 함께 활성화하면, 성공적으로 실행된 퍼징 SELECT 쿼리에 일련의 정확성 오라클 검사를 적용합니다. 여기에는 TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP(개별 최적화기 설정 전환), Identity WHERE, Subquery wrap이 포함됩니다. 불일치가 발견되면 `AST_FUZZER_ORACLE_MISMATCH` 예외가 발생합니다.
+
+## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge />
 

@@ -13,9 +13,21 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_bytes_before_external_group_by">
-  ## max_bytes_before_external_group_by
-</div>
+## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le seuil indiqué en octets. Si la valeur est 0, seul `max_bytes_ratio_before_external_distinct` s'applique."}]}]} />
+
+Seuil de mémoire de la requête, en octets, à partir duquel les données `DISTINCT` sont déversées sur disque. L&#39;utilisation réelle de la mémoire peut dépasser
+ce seuil.
+
+`0` désactive ce seuil. Si `max_bytes_ratio_before_external_distinct` définit lui aussi un seuil,
+c&#39;est le plus petit des deux qui est retenu. Définissez les deux paramètres à `0` pour désactiver le déversement.
+
+Voir [DISTINCT en mémoire externe](/fr/reference/statements/select/distinct#distinct-in-external-memory).
+
+## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -36,9 +48,7 @@ Valeurs possibles :
   La valeur recommandée est la moitié de la mémoire système disponible.
 </Note>
 
-<div id="max_bytes_before_external_join">
-  ## max_bytes_before_external_join
-</div>
+## max_bytes_before_external_join {#max_bytes_before_external_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -46,9 +56,7 @@ Valeurs possibles :
 
 S&#39;il est défini sur une valeur non nulle et que `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto`, le hash join sera automatiquement converti en grace hash join pour permettre le déversement sur disque sur disque lorsque les données de droite dépassent ce nombre d&#39;octets. Lorsqu&#39;il est défini sur 0 (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`) ; définissez les deux sur `0` pour désactiver complètement le déversement sur disque automatique. Cela empêche l&#39;optimisation de lecture `read in order` via join.
 
-<div id="max_bytes_before_external_sort">
-  ## max_bytes_before_external_sort
-</div>
+## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -63,17 +71,13 @@ Valeurs possibles :
   La valeur recommandée est la moitié de la mémoire système disponible
 * `0` — `ORDER BY` en mémoire externe désactivé.
 
-<div id="max_bytes_before_remerge_sort">
-  ## max_bytes_before_remerge_sort
-</div>
+## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire dépasse le seuil spécifié, effectuez des étapes supplémentaires de fusion de blocs avant la fusion finale afin de ne conserver que les LIMIT premières lignes.
 
-<div id="max_bytes_for_lazy_final">
-  ## max_bytes_for_lazy_final
-</div>
+## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -81,18 +85,14 @@ Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire d
 
 Nombre maximal d’octets dans l’ensemble utilisé pour l’optimisation lazy FINAL. Au-delà de cette limite, le système revient à FINAL standard.
 
-<div id="max_bytes_in_distinct">
-  ## max_bytes_in_distinct
-</div>
+## max_bytes_in_distinct {#max_bytes_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Nombre maximal d’octets de l’état (en octets non compressés) en mémoire,
 utilisé par une table de hachage avec DISTINCT.
 
-<div id="max_bytes_in_join">
-  ## max_bytes_in_join
-</div>
+## max_bytes_in_join {#max_bytes_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -107,18 +107,29 @@ Valeurs possibles :
 * Entier positif.
 * 0 — Le contrôle de la mémoire est désactivé.
 
-<div id="max_bytes_in_set">
-  ## max_bytes_in_set
-</div>
+## max_bytes_in_set {#max_bytes_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Le nombre maximal d’octets (de données non compressées) qu’un ensemble dans la clause IN
 créé à partir d’une sous-requête peut utiliser.
 
-<div id="max_bytes_ratio_before_external_group_by">
-  ## max_bytes_ratio_before_external_group_by
-</div>
+## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le ratio donné de la mémoire disponible. Si 0, seul `max_bytes_before_external_distinct` s'applique."}]}]} />
+
+Fraction de la mémoire disponible du serveur ou de l&#39;utilisateur servant à calculer le seuil de `DISTINCT` externe
+au début de l&#39;exécution. Par exemple, `0.5` utilise la moitié de la mémoire disponible.
+
+Les valeurs doivent être supérieures ou égales à `0` et inférieures à `1`. La valeur `0` désactive ce seuil. En l&#39;absence de limite
+de mémoire applicable au serveur ou à l&#39;utilisateur, le ratio n&#39;a aucun effet.
+
+`max_memory_usage` n&#39;intervient pas dans ce calcul. Pour configurer le déversement par rapport à cette limite,
+utilisez `max_bytes_before_external_distinct`, en laissant de la marge pour une utilisation supplémentaire de la mémoire.
+
+## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -131,9 +142,7 @@ Par exemple, si cette valeur est définie sur `0.6`, `GROUP BY` pourra utiliser 
 (pour server/user/merges) au début de l’exécution ; ensuite, il
 commencera à utiliser l’agrégation externe.
 
-<div id="max_bytes_ratio_before_external_join">
-  ## max_bytes_ratio_before_external_join
-</div>
+## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -147,9 +156,7 @@ Si `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` so
 
 N&#39;a d&#39;effet que lorsque `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto` et qu&#39;un chemin de données temporaire est configuré.
 
-<div id="max_bytes_ratio_before_external_sort">
-  ## max_bytes_ratio_before_external_sort
-</div>
+## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -161,9 +168,7 @@ Par exemple, s&#39;il est défini sur `0.6`, `ORDER BY` pourra utiliser `60%` de
 
 Notez que `max_bytes_before_external_sort` reste pris en compte : le déversement sur disque n&#39;a lieu que si le bloc de tri est plus grand que `max_bytes_before_external_sort`.
 
-<div id="max_bytes_to_read">
-  ## max_bytes_to_read
-</div>
+## max_bytes_to_read {#max_bytes_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -172,9 +177,7 @@ La restriction est vérifiée pour chaque fragment de données traité, s’appl
 l’expression de table la plus imbriquée et, lors d’une lecture depuis un serveur distant, elle est vérifiée uniquement sur
 le serveur distant.
 
-<div id="max_bytes_to_read_leaf">
-  ## max_bytes_to_read_leaf
-</div>
+## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -196,9 +199,7 @@ La restriction est vérifiée pour chaque fragment de données traité.
   Ce paramètre est instable avec `prefer_localhost_replica=1`.
 </Note>
 
-<div id="max_bytes_to_sort">
-  ## max_bytes_to_sort
-</div>
+## max_bytes_to_sort {#max_bytes_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -206,9 +207,7 @@ Le nombre maximal d’octets avant le tri. Si l’opération ORDER BY doit trait
 plus d’octets non compressés que la quantité spécifiée, le comportement sera
 déterminé par `sort_overflow_mode`, qui est défini par défaut sur `throw`.
 
-<div id="max_bytes_to_transfer">
-  ## max_bytes_to_transfer
-</div>
+## max_bytes_to_transfer {#max_bytes_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

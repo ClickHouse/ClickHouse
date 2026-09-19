@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="query_profiler_cpu_time_period_ns">
-  ## query_profiler_cpu_time_period_ns
-</div>
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -31,13 +29,13 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 * タイマーを無効にする場合は 0。
 
+MemorySanitizer ビルドではサンプリングプロファイラが無効化されており、デフォルトは 0 です。
+
 関連項目:
 
 * システムテーブル [trace&#95;log](/ja/reference/system-tables/trace_log)
 
-<div id="query_profiler_real_time_period_ns">
-  ## query_profiler_real_time_period_ns
-</div>
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -53,6 +51,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   * クラスター全体のプロファイリングでは、1000000000 (1秒に1回) 。
 
 * タイマーをオフにする場合は 0。
+
+サンプリングプロファイラが無効化される MemorySanitizer ビルドでは、デフォルトは 0 です。
 
 関連項目:
 

@@ -11,9 +11,7 @@ import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="séparation compute-compute" />
 
-<div id="what-is-compute-compute-separation">
-  ## Qu&#39;est-ce que la séparation compute-compute ?
-</div>
+## Qu&#39;est-ce que la séparation compute-compute ? {#what-is-compute-compute-separation}
 
 Avant d&#39;expliquer ce qu&#39;est la séparation compute-compute, il est utile de comprendre ce qu&#39;est un **service** dans ClickHouse Cloud.
 
@@ -43,13 +41,11 @@ La séparation compute-compute vous permet également de séparer les opération
 
 *Fig. 2 - Compute separation dans ClickHouse Cloud*
 
-<div id="what-is-a-warehouse">
-  ## Qu’est-ce qu’un warehouse ?
-</div>
+## Qu’est-ce qu’un warehouse ? {#what-is-a-warehouse}
 
 Dans ClickHouse Cloud, un *warehouse* est un ensemble de **services** qui partagent les mêmes données.
 Chaque warehouse possède un service principal (le premier service créé) et un ou plusieurs services secondaires.
-Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehouse « DWH Prod » composé de deux services :
+Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehouse « DWH Prod » composé de deux services :
 
 * Service principal `DWH Prod`
 * Service secondaire `DWH Prod Subservice`
@@ -60,20 +56,20 @@ Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehous
 
 *Fig. 3 - Exemple de warehouse*
 
-Tous les services d’un warehouse partagent les mêmes éléments :
+Tous les services d’un warehouse partagent les mêmes éléments :
 
 * Région (par exemple, us-east1)
 * Fournisseur de services Cloud (AWS, GCP ou Azure)
 * Version de la base de données ClickHouse
 * ClickHouse Keeper (pour gérer les répliques)
 
+Les warehouses regroupent des services ClickHouse Cloud durables qui partagent les mêmes données, chaque service disposant de son propre compute dédié et de son endpoint. [On-Demand Compute](/fr/products/cloud/features/infrastructure/on-demand-compute) affecte temporairement des workers issus d’un pool géré aux workloads pris en charge, via un service et un endpoint existants.
+
 <div id="access-controls">
-  ## Contrôles d&#39;accès
+  ## Contrôles d&#39;accès {#access-controls}
 </div>
 
-<div id="database-credentials">
-  ### Identifiants de la base de données
-</div>
+### Identifiants de la base de données {#database-credentials}
 
 Comme tous les services d’un warehouse partagent le même ensemble de tables, ils partagent aussi les mêmes contrôles d’accès.
 Cela signifie que tous les utilisateurs de la base de données créés dans le Service 1 pourront également utiliser le Service 2 avec les mêmes permissions (grants sur les tables, les vues, etc.), et inversement.
@@ -86,7 +82,7 @@ Chaque service utilise un endpoint distinct, mais le même nom d’utilisateur e
 *Fig. 4 - L’utilisatrice Alice a été créée dans le Service 1, mais elle peut utiliser les mêmes identifiants pour accéder à tous les services qui partagent les mêmes données*
 
 <div id="network-access-control">
-  ### Contrôle d’accès réseau
+  ### Contrôle d’accès réseau {#network-access-control}
 </div>
 
 Pour restreindre l’accès à certains services depuis d’autres applications ou par des utilisateurs ad hoc, vous pouvez appliquer des restrictions réseau.
@@ -105,9 +101,7 @@ Dans l’exemple ci-dessous, l’accès d’Alice au service 2 dans le warehouse
 
 Les rôles et grants ClickHouse peuvent également être utilisés pour contrôler l’accès aux données lorsque vous vous connectez en tant qu’utilisateur individuel plutôt qu’avec l’utilisateur *default*.
 
-<div id="read-vs-read-write">
-  ### Services read-only et read-write
-</div>
+### Services read-only et read-write {#read-vs-read-write}
 
 Les services peuvent être de l&#39;un des types suivants :
 
@@ -136,9 +130,7 @@ Vous pouvez le faire pour le deuxième service ainsi que pour tous les services 
   3. Le type d&#39;un service (read-only ou read-write) est défini lors de sa création et ne peut pas être modifié ensuite depuis la Cloud Console. Pour passer d&#39;un accès read-only à read-write ou inversement, créez un nouveau service dans le warehouse avec le type souhaité.
 </Note>
 
-<div id="scaling">
-  ## Mise à l’échelle
-</div>
+## Mise à l’échelle {#scaling}
 
 Chaque service d’un warehouse évolue indépendamment. Vous pouvez ajuster le nombre et la taille des répliques, activer la mise à l’échelle automatique horizontale et verticale, et configurer la mise en veille automatique en cas d’inactivité.
 
@@ -148,9 +140,7 @@ Par défaut, le nombre total de répliques de l’ensemble des services d’un w
 
 La [mise à l’échelle planifiée](/fr/products/cloud/features/autoscaling/scheduled-scaling) fonctionne pour les services individuels d’un warehouse. Les limites du warehouse s’appliquent toujours : planifiez les calendriers de sorte que le nombre total de répliques de l’ensemble des services aux heures de pointe reste dans la limite du warehouse. Pour plus d’informations, consultez [Mise à l’échelle automatique](/fr/products/cloud/features/autoscaling/overview).
 
-<div id="changes-in-behavior">
-  ## Changements du comportement de `clusterAllReplicas`
-</div>
+## Changements du comportement de `clusterAllReplicas` {#changes-in-behavior}
 
 Lorsqu’un warehouse comporte plusieurs services, le comportement de `clusterAllReplicas()` change.
 L’utilisation du nom de cluster `default` ne cible que les répliques du service actuel, et non l’ensemble des services du warehouse.
@@ -163,12 +153,10 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## Limitations
+  ## Limitations {#limitations}
 </div>
 
-<div id="workload-isolation-limitations">
-  ### Limites de l’isolation des workloads
-</div>
+### Limites de l’isolation des workloads {#workload-isolation-limitations}
 
 Certains workloads ne peuvent pas être isolés sur des services spécifiques ; dans certains cas limites, un workload sur un service affecte un autre service du warehouse. Cela inclut :
 
@@ -180,9 +168,7 @@ Certains workloads ne peuvent pas être isolés sur des services spécifiques ; 
 * **Les insertions sur un service en read-write peuvent empêcher un autre service en read-write de passer en veille si la mise en veille est activée.** Il existe des situations où
   un service effectue des opérations de fusion en arrière-plan pour un autre service. Ces opérations en arrière-plan peuvent empêcher le second service de passer en veille. Une fois les opérations en arrière-plan terminées, le service repassera en veille. Les services en read-only ne sont pas affectés.
 
-<div id="callouts">
-  ### Informations utiles
-</div>
+### Informations utiles {#callouts}
 
 * **Versions de ClickHouse** : le [calendrier des mises à niveau](/fr/products/cloud/features/admin-features/upgrades) est déterminé par les paramètres du service principal. Les services secondaires ne peuvent pas avoir de calendrier de publication distinct de celui du service principal.
 
@@ -200,7 +186,7 @@ Si vous arrêtez manuellement un service, vous devrez le redémarrer pour que le
 * **Mise en veille du service principal** : la mise en veille automatique du service principal est activée par défaut.
 
 <div id="pricing">
-  ## Tarification
+  ## Tarification {#pricing}
 </div>
 
 Les prix du compute sont les mêmes pour tous les services d’un warehouse (primary et secondary). Le Storage n’est facturé qu’une seule fois : il est inclus dans le premier service (d’origine).
@@ -208,19 +194,17 @@ Les prix du compute sont les mêmes pour tous les services d’un warehouse (pri
 Consultez le pricing calculator sur la page [tarification](https://clickhouse.com/pricing), qui vous aidera à estimer le coût en fonction de la taille de votre workload et du tier sélectionné. Le tableau Usage Breakdown affiche la répartition des coûts de compute entre les services.
 
 <div id="backups">
-  ## Sauvegardes
+  ## Sauvegardes {#backups}
 </div>
 
 * Comme tous les services d’un même warehouse partagent le même stockage, les sauvegardes sont effectuées uniquement sur le service principal (initial). Ainsi, les données de tous les services d’un warehouse sont sauvegardées.
 * Si vous restaurez une sauvegarde à partir du service principal d’un warehouse, elle sera restaurée dans un tout nouveau service, non connecté au warehouse existant. Vous pourrez ensuite ajouter d’autres services à ce nouveau service dès que la restauration sera terminée.
 
 <div id="setup-warehouses">
-  ## Comment configurer un warehouse
+  ## Comment configurer un warehouse {#setup-warehouses}
 </div>
 
-<div id="creating-a-warehouse">
-  ### Création d’un warehouse
-</div>
+### Création d’un warehouse {#creating-a-warehouse}
 
 Pour créer un warehouse, vous devez créer un second service qui partagera les données avec un service existant. Pour ce faire, cliquez sur l’icône plus de l’un des services existants :
 
@@ -233,7 +217,7 @@ Pour créer un warehouse, vous devez créer un second service qui partagera les 
 Sur l’écran de création du service, le service d’origine sera sélectionné dans la liste déroulante comme source de données du nouveau service. Une fois créés, ces deux services formeront un warehouse.
 
 <div id="renaming-a-warehouse">
-  ### Renommer un warehouse
+  ### Renommer un warehouse {#renaming-a-warehouse}
 </div>
 
 Il existe deux façons de renommer un warehouse :
@@ -242,7 +226,7 @@ Il existe deux façons de renommer un warehouse :
 * Vous pouvez cliquer sur le nom du warehouse depuis n&#39;importe lequel des services et le renommer à cet endroit
 
 <div id="deleting-a-warehouse">
-  ### Suppression d’un warehouse
+  ### Suppression d’un warehouse {#deleting-a-warehouse}
 </div>
 
 Supprimer un warehouse revient à supprimer tous les services de calcul ainsi que les données (tables, vues, utilisateurs, etc.). Cette action est irréversible.

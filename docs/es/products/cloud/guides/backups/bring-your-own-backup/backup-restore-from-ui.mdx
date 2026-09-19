@@ -10,20 +10,18 @@ keywords: ['copias de seguridad', 'recuperación ante desastres', 'protección d
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <Note>
-  Las copias de seguridad automatizadas en su bucket externo están configuradas para realizar copias de seguridad &quot;completas&quot; cada 24 horas, y no es posible configurar la frecuencia.
+  Las copias de seguridad automatizadas en su bucket externo son copias de seguridad completas e independientes. Siguen la frecuencia y la hora de inicio configuradas para el service (cada 24 horas de forma predeterminada). ClickHouse también crea una copia de seguridad aparte en un bucket administrado por ClickHouse cada 24 horas; esa cadencia es fija.
 </Note>
 
 <div id="AWS">
-  ## AWS
+  ## AWS {#AWS}
 </div>
 
 <div id="taking-backups-to-aws">
-  ### Crear copias de seguridad en AWS
+  ### Crear copias de seguridad en AWS {#taking-backups-to-aws}
 </div>
 
-<div id="aws-steps">
-  #### 1. Pasos a seguir en AWS
-</div>
+#### 1. Pasos a seguir en AWS {#aws-steps}
 
 <Note>
   Estos pasos son similares a la configuración segura de S3, como se describe en [&quot;Acceder de forma segura a datos de S3&quot;](/es/products/cloud/guides/data-sources/accessing-s3-data-securely); sin embargo, se requieren acciones adicionales en los permisos del rol.
@@ -106,9 +104,7 @@ Siga los pasos que se indican a continuación en su cuenta de AWS:
   </Step>
 </Steps>
 
-<div id="cloud-steps">
-  #### 2. Pasos a seguir en ClickHouse Cloud
-</div>
+#### 2. Pasos a seguir en ClickHouse Cloud {#cloud-steps}
 
 Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud para configurar el bucket externo:
 
@@ -132,9 +128,9 @@ Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud
   <Step title="Cambiar la programación de copias de seguridad predeterminada" id="changing-the-backup-schedule">
     A partir de ahora, las copias de seguridad externas se realizarán en tu bucket según la programación predeterminada.
     Como alternativa, puedes configurar la programación de copias de seguridad desde la página “Settings”.
-    Si se configura una programación distinta, se usará la programación personalizada para escribir las copias de seguridad en tu
-    bucket, y la programación predeterminada (copias de seguridad cada 24 horas) se usará para las copias de seguridad en
-    el bucket propiedad de ClickHouse Cloud.
+    Si se configura una programación distinta, la programación personalizada y la configuración de retención se aplican a
+    las copias de seguridad escritas en tu bucket. Las copias de seguridad en el bucket gestionado por ClickHouse Cloud
+    usan la programación predeterminada (copias de seguridad cada 24 horas) y la política de retención predeterminada.
   </Step>
 
   <Step title="Ver las copias de seguridad almacenadas en tu bucket" id="view-backups-stored-in-your-bucket">
@@ -145,9 +141,7 @@ Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud
   </Step>
 </Steps>
 
-<div id="restoring-backups-from-aws">
-  ### Restaurar copias de seguridad desde AWS
-</div>
+### Restaurar copias de seguridad desde AWS {#restoring-backups-from-aws}
 
 Siga los pasos que se indican a continuación para restaurar copias de seguridad desde AWS:
 
@@ -193,18 +187,16 @@ Siga los pasos que se indican a continuación para restaurar copias de seguridad
 </Steps>
 
 <div id="gcp">
-  ## GCP
+  ## GCP {#gcp}
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### Realizar copias de seguridad en GCP
+  ### Realizar copias de seguridad en GCP {#taking-backups-to-gcp}
 </div>
 
 Siga los pasos que se indican a continuación para realizar copias de seguridad en GCP:
 
-<div id="gcp-steps-to-follow">
-  #### Pasos a seguir en GCP
-</div>
+#### Pasos a seguir en GCP {#gcp-steps-to-follow}
 
 <Steps>
   <Step title="Crear un bucket de almacenamiento de GCP" id="create-a-gcp-storage-bucket">
@@ -233,9 +225,7 @@ Siga los pasos que se indican a continuación para realizar copias de seguridad 
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### Pasos a seguir en ClickHouse Cloud
-</div>
+#### Pasos a seguir en ClickHouse Cloud {#gcp-cloud-steps}
 
 Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud para configurar el bucket externo:
 
@@ -259,9 +249,9 @@ Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud
   <Step title="Cambiar la programación de copias de seguridad predeterminada" id="gcp-changing-the-backup-schedule">
     A partir de ahora, las copias de seguridad externas se realizarán en tu bucket con la programación predeterminada.
     Como alternativa, puedes configurar la programación de copias de seguridad desde la página `Settings`.
-    Si configuras una programación distinta, la programación personalizada se usará para escribir las copias de seguridad en tu
-    bucket, y la programación predeterminada (copias de seguridad cada 24 horas) se usará para las copias de seguridad en el
-    bucket propiedad de ClickHouse Cloud.
+    Si configuras una programación distinta, la programación personalizada y la configuración de retención se aplican a
+    las copias de seguridad escritas en tu bucket. Las copias de seguridad en el bucket gestionado por ClickHouse Cloud
+    usan la programación predeterminada (copias de seguridad cada 24 horas) y la política de retención predeterminada.
   </Step>
 
   <Step title="Ver las copias de seguridad almacenadas en tu bucket" id="gcp-view-backups-stored-in-your-bucket">
@@ -271,9 +261,7 @@ Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud
   </Step>
 </Steps>
 
-<div id="gcp-restoring-backups-from-gcp">
-  ### Restaurar copias de seguridad de GCP
-</div>
+### Restaurar copias de seguridad de GCP {#gcp-restoring-backups-from-gcp}
 
 Sigue estos pasos para restaurar copias de seguridad de GCP:
 
@@ -315,18 +303,16 @@ Sigue estos pasos para restaurar copias de seguridad de GCP:
 </Steps>
 
 <div id="azure">
-  ## Azure
+  ## Azure {#azure}
 </div>
 
 <div id="taking-backups-to-azure">
-  ### Realizar copias de seguridad en Azure
+  ### Realizar copias de seguridad en Azure {#taking-backups-to-azure}
 </div>
 
 Siga estos pasos para realizar copias de seguridad en Azure:
 
-<div id="steps-to-follow-in-azure">
-  #### Pasos a seguir en Azure
-</div>
+#### Pasos a seguir en Azure {#steps-to-follow-in-azure}
 
 <Steps>
   <Step title="Crear una cuenta de almacenamiento" id="azure-create-a-storage-account">
@@ -340,9 +326,7 @@ Siga estos pasos para realizar copias de seguridad en Azure:
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### Pasos a seguir en ClickHouse Cloud
-</div>
+#### Pasos a seguir en ClickHouse Cloud {#azure-cloud-steps}
 
 Siga los pasos que se indican a continuación en la consola de ClickHouse Cloud para configurar el bucket externo:
 
@@ -353,35 +337,34 @@ Siga los pasos que se indican a continuación en la consola de ClickHouse Cloud 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Cambiar la copia de seguridad externa" size="lg" />
   </Step>
 
-  <Step title="Proporcione la cadena de conexión y el nombre del Container de su storage account de Azure" id="azure-provide-connection-string-and-container-name-azure">
+  <Step title="Proporcione la cadena de conexión y el nombre del Container de su cuenta de almacenamiento de Azure" id="azure-provide-connection-string-and-container-name-azure">
     En la siguiente pantalla, proporcione la Connection String y el Container Name de la
-    storage account de Azure que creó en la sección anterior:
+    cuenta de almacenamiento de Azure que creó en la sección anterior:
 
-    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Proporcione la cadena de conexión y el nombre del Container de su storage account de Azure" size="md" />
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Proporcione la cadena de conexión y el nombre del Container de su cuenta de almacenamiento de Azure" size="md" />
   </Step>
 
   <Step title="Guardar bucket externo" id="azure-save-external-bucket">
     Haga clic en `Save External Bucket` para guardar la configuración
   </Step>
 
-  <Step title="Cambiar la programación de backups predeterminada" id="azure-changing-the-backup-schedule">
-    Los backups externos se realizarán ahora en su bucket según la programación predeterminada. Como alternativa,
-    puede configurar la programación de backups desde la página “Settings”. Si configura una programación distinta,
-    se usará la programación personalizada para escribir backups en su bucket, y la programación predeterminada
-    (backups cada 24 horas) se usará para los backups en el bucket propiedad de ClickHouse Cloud.
+  <Step title="Cambiar la programación de copias de seguridad predeterminada" id="azure-changing-the-backup-schedule">
+    Las copias de seguridad externas se realizarán ahora en su bucket según la programación predeterminada. Como alternativa,
+    puede configurar la programación de copias de seguridad desde la página “Settings”. Si configura una programación distinta,
+    la programación personalizada y la configuración de retención se aplican a las copias de seguridad escritas en su bucket.
+    Las copias de seguridad en el bucket gestionado por ClickHouse Cloud usan la programación predeterminada (copias de seguridad cada
+    24 horas) y la política de retención predeterminada.
   </Step>
 
-  <Step title="Ver los backups almacenados en su bucket" id="azure-view-backups-stored-in-your-bucket">
-    La página Backups debería mostrar estos backups de su bucket en una tabla independiente,
+  <Step title="Ver las copias de seguridad almacenadas en su bucket" id="azure-view-backups-stored-in-your-bucket">
+    La página Copias de seguridad debería mostrar estas copias de seguridad de su bucket en una tabla independiente,
     como se muestra a continuación:
 
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Ver los backups almacenados en su bucket" size="md" />
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Ver las copias de seguridad almacenadas en su bucket" size="md" />
   </Step>
 </Steps>
 
-<div id="azure-restore-steps">
-  ### Restaurar copias de seguridad desde Azure
-</div>
+### Restaurar copias de seguridad desde Azure {#azure-restore-steps}
 
 Para restaurar copias de seguridad desde Azure, siga los pasos que se indican a continuación:
 

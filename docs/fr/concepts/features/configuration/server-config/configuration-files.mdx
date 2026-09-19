@@ -28,7 +28,7 @@ Les fichiers de configuration XML doivent utiliser `<clickhouse>...</clickhouse>
 Dans les fichiers de configuration YAML, `clickhouse:` est facultatif ; s’il est absent, le parseur l’insère automatiquement.
 
 <div id="merging">
-  ## Fusion des fichiers de configuration
+  ## Fusion des fichiers de configuration {#merging}
 </div>
 
 Deux fichiers de configuration (généralement le fichier de configuration principal et un autre fichier de configuration provenant de `config.d/`) sont fusionnés comme suit :
@@ -84,7 +84,7 @@ Le fichier de configuration résultant de la fusion sera :
 ```
 
 <div id="from_env_zk">
-  ### Substitution à l’aide de variables d’environnement et de nœuds ZooKeeper
+  ### Substitution à l’aide de variables d’environnement et de nœuds ZooKeeper {#from_env_zk}
 </div>
 
 Pour indiquer que la valeur d’un élément doit être remplacée par celle d’une variable d’environnement, vous pouvez utiliser l’attribut `from_env`.
@@ -138,7 +138,7 @@ Ce qui donne la configuration suivante :
 ```
 
 <div id="default-values">
-  #### Valeurs par défaut
+  #### Valeurs par défaut {#default-values}
 </div>
 
 Un élément doté des attributs `from_env` ou `from_zk` peut également avoir l’attribut `replace="1"` (ce dernier doit apparaître avant `from_env`/`from_zk`).
@@ -170,7 +170,7 @@ Ce qui donne la configuration suivante :
 ```
 
 <div id="substitution-with-file-content">
-  ## Substitution avec le contenu d’un fichier
+  ## Substitution avec le contenu d’un fichier {#substitution-with-file-content}
 </div>
 
 Il est également possible de remplacer des parties de la configuration par le contenu de fichiers. Cela peut se faire de deux façons :
@@ -200,7 +200,7 @@ Un exemple est présenté ci-dessous :
 Si vous souhaitez fusionner le contenu de substitution avec la configuration existante au lieu de l’ajouter, vous pouvez utiliser l’attribut `merge="true"`. Par exemple : `<include from_zk="/some_path" merge="true">`. Dans ce cas, la configuration existante sera fusionnée avec le contenu de la substitution, et les paramètres de la configuration existante seront remplacés par les valeurs issues de la substitution.
 
 <div id="encryption">
-  ## Chiffrement et masquage de la configuration
+  ## Chiffrement et masquage de la configuration {#encryption}
 </div>
 
 Vous pouvez utiliser le chiffrement symétrique pour chiffrer un élément de configuration, par exemple un mot de passe en clair ou une clé privée.
@@ -322,7 +322,7 @@ Par exemple :
 ```
 
 <div id="user-settings">
-  ## Paramètres utilisateur
+  ## Paramètres utilisateur {#user-settings}
 </div>
 
 Le fichier `config.xml` peut spécifier une configuration distincte avec des paramètres utilisateur, des profils et des quotas. Le chemin relatif vers cette configuration est défini dans l’élément `users_config`. Par défaut, il s’agit de `users.xml`. Si `users_config` est omis, les paramètres utilisateur, les profils et les quotas sont spécifiés directement dans `config.xml`.
@@ -335,7 +335,7 @@ Les fragments de configuration utilisateur sont fusionnés selon l’ordre lexic
 Notez que les fichiers de configuration sont d’abord [fusionnés](#merging) en tenant compte des paramètres, puis les inclusions sont traitées.
 
 <div id="example">
-  ## Exemple XML
+  ## Exemple XML {#example}
 </div>
 
 Par exemple, vous pouvez avoir un fichier de configuration distinct pour chaque utilisateur :
@@ -359,11 +359,9 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-<div id="example-1">
-  ## Exemples YAML
-</div>
+## Exemples YAML {#example-1}
 
-Vous trouverez ici la configuration par défaut écrite en YAML : [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
+Vous trouverez ici la configuration par défaut écrite en YAML : [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
 Il existe quelques différences entre les formats YAML et XML pour les configurations ClickHouse.
 Des conseils pour écrire une configuration au format YAML sont présentés ci-dessous.
@@ -374,13 +372,13 @@ Une balise XML contenant une valeur textuelle est représentée par une paire cl
 key: value
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <key>value</key>
 ```
 
-Un nœud XML imbriqué est représenté par une structure de mappage YAML :
+Un nœud XML imbriqué est représenté par une structure de mappage YAML :
 
 ```yaml
 map_key:
@@ -389,7 +387,7 @@ map_key:
   key3: val3
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <map_key>
@@ -399,7 +397,7 @@ XML correspondant :
 </map_key>
 ```
 
-Pour créer plusieurs occurrences de la même balise XML, utilisez une séquence YAML :
+Pour créer plusieurs occurrences de la même balise XML, utilisez une séquence YAML :
 
 ```yaml
 seq_key:
@@ -411,7 +409,7 @@ seq_key:
       key3: val5
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <seq_key>val1</seq_key>
@@ -427,7 +425,7 @@ XML correspondant :
 </seq_key>
 ```
 
-Pour spécifier un attribut XML, vous pouvez utiliser une clé d’attribut avec le préfixe `@`. Notez que `@` est réservé par la norme YAML et doit donc être placé entre guillemets doubles :
+Pour spécifier un attribut XML, vous pouvez utiliser une clé d’attribut avec le préfixe `@`. Notez que `@` est réservé par la norme YAML et doit donc être placé entre guillemets doubles :
 
 ```yaml
 map:
@@ -436,7 +434,7 @@ map:
   key: 123
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <map attr1="value1" attr2="value2">
@@ -444,7 +442,7 @@ XML correspondant :
 </map>
 ```
 
-Il est également possible d’utiliser des attributs dans une séquence YAML :
+Il est également possible d’utiliser des attributs dans une séquence YAML :
 
 ```yaml
 seq:
@@ -454,7 +452,7 @@ seq:
   - abc
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <seq attr1="value1" attr2="value2">123</seq>
@@ -462,7 +460,7 @@ XML correspondant :
 ```
 
 La syntaxe mentionnée ci-dessus ne permet pas de représenter en YAML des nœuds de texte XML avec des attributs XML. Ce cas particulier peut être représenté à l’aide d’une
-clé d’attribut `#text` :
+clé d’attribut `#text` :
 
 ```yaml
 map_key:
@@ -470,14 +468,14 @@ map_key:
   "#text": value2
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <map_key attr1="value1">value2</map_key>
 ```
 
 <div id="implementation-details">
-  ## Détails d’implémentation
+  ## Détails d’implémentation {#implementation-details}
 </div>
 
 Pour chaque fichier de configuration, le serveur génère également au démarrage des fichiers `file-preprocessed.xml`. Ces fichiers contiennent toutes les substitutions et surcharges effectuées, et sont fournis à titre informatif. Si des substitutions ZooKeeper ont été utilisées dans les fichiers de configuration mais que ZooKeeper n’est pas disponible au démarrage du serveur, le serveur charge la configuration à partir du fichier prétraité.

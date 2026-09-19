@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres figurent dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="shared_merge_tree_activate_coordinated_merges_tasks">
-  ## shared_merge_tree_activate_coordinated_merges_tasks
-</div>
+## shared_merge_tree_activate_coordinated_merges_tasks {#shared_merge_tree_activate_coordinated_merges_tasks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ Active la replanification des tâches de fusions coordonnées. Cela peut être u
 shared&#95;merge&#95;tree&#95;enable&#95;coordinated&#95;merges=0, car cela alimentera les statistiques du coordinateur de fusion
 et facilitera le démarrage à froid.
 
-<div id="shared_merge_tree_blobs_list_inline_file_max_bytes">
-  ## shared_merge_tree_blobs_list_inline_file_max_bytes
-</div>
+## shared_merge_tree_blobs_list_inline_file_max_bytes {#shared_merge_tree_blobs_list_inline_file_max_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -39,9 +35,7 @@ count.txt, metadata&#95;version.txt, les index minmax), plutôt que dans un blob
 effet que pour les parts utilisant le stockage blob-list (voir
 shared&#95;merge&#95;tree&#95;use&#95;blobs&#95;list&#95;for&#95;parts). Disponible uniquement dans ClickHouse Cloud.
 
-<div id="shared_merge_tree_create_per_replica_metadata_nodes">
-  ## shared_merge_tree_create_per_replica_metadata_nodes
-</div>
+## shared_merge_tree_create_per_replica_metadata_nodes {#shared_merge_tree_create_per_replica_metadata_nodes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,18 +44,14 @@ shared&#95;merge&#95;tree&#95;use&#95;blobs&#95;list&#95;for&#95;parts). Disponi
 Active la création des nœuds /metadata et /columns pour chaque réplique dans ZooKeeper.
 Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_disable_merges_and_mutations_assignment">
-  ## shared_merge_tree_disable_merges_and_mutations_assignment
-</div>
+## shared_merge_tree_disable_merges_and_mutations_assignment {#shared_merge_tree_disable_merges_and_mutations_assignment}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Interrompt l’attribution des merges pour shared merge tree. Disponible uniquement dans ClickHouse
 Cloud
 
-<div id="shared_merge_tree_empty_partition_lifetime">
-  ## shared_merge_tree_empty_partition_lifetime
-</div>
+## shared_merge_tree_empty_partition_lifetime {#shared_merge_tree_empty_partition_lifetime}
 
 <SettingsInfoBlock type="Secondes" default_value="86400" />
 
@@ -69,9 +59,7 @@ Cloud
 
 Nombre de secondes pendant lesquelles une partition est conservée dans Keeper si elle ne comporte aucune part.
 
-<div id="shared_merge_tree_enable_automatic_empty_partitions_cleanup">
-  ## shared_merge_tree_enable_automatic_empty_partitions_cleanup
-</div>
+## shared_merge_tree_enable_automatic_empty_partitions_cleanup {#shared_merge_tree_enable_automatic_empty_partitions_cleanup}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -79,9 +67,7 @@ Nombre de secondes pendant lesquelles une partition est conservée dans Keeper s
 
 Active le nettoyage des entrées Keeper associées aux partitions vides.
 
-<div id="shared_merge_tree_enable_coordinated_merges">
-  ## shared_merge_tree_enable_coordinated_merges
-</div>
+## shared_merge_tree_enable_coordinated_merges {#shared_merge_tree_enable_coordinated_merges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -89,9 +75,7 @@ Active le nettoyage des entrées Keeper associées aux partitions vides.
 
 Active la stratégie des fusions coordonnées
 
-<div id="shared_merge_tree_enable_keeper_parts_extra_data">
-  ## shared_merge_tree_enable_keeper_parts_extra_data
-</div>
+## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -99,9 +83,7 @@ Active la stratégie des fusions coordonnées
 
 Permet d&#39;écrire des attributs dans les parties virtuelles et de valider les blocs dans Keeper
 
-<div id="shared_merge_tree_enable_outdated_parts_check">
-  ## shared_merge_tree_enable_outdated_parts_check
-</div>
+## shared_merge_tree_enable_outdated_parts_check {#shared_merge_tree_enable_outdated_parts_check}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -109,9 +91,7 @@ Permet d&#39;écrire des attributs dans les parties virtuelles et de valider les
 
 Active la vérification des parts obsolètes. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_idle_parts_update_seconds">
-  ## shared_merge_tree_idle_parts_update_seconds
-</div>
+## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -120,9 +100,7 @@ Active la vérification des parts obsolètes. Disponible uniquement dans ClickHo
 Intervalle, en secondes, entre les mises à jour des parts lorsqu’elles ne sont pas déclenchées par un
 watch ZooKeeper dans le shared merge tree. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_inactive_replica_cutoff_seconds">
-  ## shared_merge_tree_inactive_replica_cutoff_seconds
-</div>
+## shared_merge_tree_inactive_replica_cutoff_seconds {#shared_merge_tree_inactive_replica_cutoff_seconds}
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -134,9 +112,7 @@ elle retarde la suppression des parts obsolètes et la troncature des mutations 
 signifie que la valeur par défaut de deux dépassements de délai de session ZooKeeper est utilisée.
 Uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_initial_parts_update_backoff_ms">
-  ## shared_merge_tree_initial_parts_update_backoff_ms
-</div>
+## shared_merge_tree_initial_parts_update_backoff_ms {#shared_merge_tree_initial_parts_update_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -144,9 +120,7 @@ Uniquement dans ClickHouse Cloud
 
 Backoff initial pour la mise à jour des parts. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_interserver_http_connection_timeout_ms">
-  ## shared_merge_tree_interserver_http_connection_timeout_ms
-</div>
+## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -154,9 +128,7 @@ Backoff initial pour la mise à jour des parts. Disponible uniquement dans Click
 
 Dépassements de délai de la connexion HTTP interserveur. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_interserver_http_timeout_ms">
-  ## shared_merge_tree_interserver_http_timeout_ms
-</div>
+## shared_merge_tree_interserver_http_timeout_ms {#shared_merge_tree_interserver_http_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -165,9 +137,7 @@ Dépassements de délai de la connexion HTTP interserveur. Disponible uniquement
 Délai d’expiration pour la communication HTTP interserveur. Disponible uniquement dans ClickHouse
 Cloud
 
-<div id="shared_merge_tree_leader_update_period_random_add_seconds">
-  ## shared_merge_tree_leader_update_period_random_add_seconds
-</div>
+## shared_merge_tree_leader_update_period_random_add_seconds {#shared_merge_tree_leader_update_period_random_add_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -177,9 +147,7 @@ Ajoute une valeur uniformément répartie de 0 à x secondes à
 shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period afin d&#39;éviter l&#39;effet de
 troupeau. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_leader_update_period_seconds">
-  ## shared_merge_tree_leader_update_period_seconds
-</div>
+## shared_merge_tree_leader_update_period_seconds {#shared_merge_tree_leader_update_period_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="30" />
 
@@ -188,9 +156,7 @@ troupeau. Disponible uniquement dans ClickHouse Cloud
 Période maximale avant de revérifier le rôle de leader pour la mise à jour des parts. Disponible uniquement dans
 ClickHouse Cloud
 
-<div id="shared_merge_tree_max_outdated_parts_to_process_at_once">
-  ## shared_merge_tree_max_outdated_parts_to_process_at_once
-</div>
+## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -199,9 +165,7 @@ ClickHouse Cloud
 Nombre maximal de parts obsolètes que le leader tentera de confirmer pour suppression en
 une requête HTTP. Disponible uniquement dans ClickHouse Cloud.
 
-<div id="shared_merge_tree_max_parts_update_backoff_ms">
-  ## shared_merge_tree_max_parts_update_backoff_ms
-</div>
+## shared_merge_tree_max_parts_update_backoff_ms {#shared_merge_tree_max_parts_update_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -209,9 +173,7 @@ une requête HTTP. Disponible uniquement dans ClickHouse Cloud.
 
 Délai de backoff maximal pour la mise à jour des parts. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_max_parts_update_leaders_in_total">
-  ## shared_merge_tree_max_parts_update_leaders_in_total
-</div>
+## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
 
 <SettingsInfoBlock type="UInt64" default_value="6" />
 
@@ -219,9 +181,7 @@ Délai de backoff maximal pour la mise à jour des parts. Disponible uniquement 
 
 Nombre maximal de leaders de mise à jour des parts. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_max_parts_update_leaders_per_az">
-  ## shared_merge_tree_max_parts_update_leaders_per_az
-</div>
+## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -229,9 +189,7 @@ Nombre maximal de leaders de mise à jour des parts. Disponible uniquement dans 
 
 Nombre maximal de leaders de mise à jour des parts. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_max_replicas_for_parts_deletion">
-  ## shared_merge_tree_max_replicas_for_parts_deletion
-</div>
+## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -240,9 +198,7 @@ Nombre maximal de leaders de mise à jour des parts. Disponible uniquement dans 
 Nombre maximal de répliques participant à la suppression des parts (thread killer). Disponible
 uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range">
-  ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range
-</div>
+## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range {#shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -252,9 +208,7 @@ Nombre maximal de répliques qui tenteront d&#39;attribuer des fusions susceptib
 d&#39;éviter des conflits redondants dans l&#39;attribution des fusions). 0 signifie désactivé. Disponible
 uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_max_suspicious_broken_parts">
-  ## shared_merge_tree_max_suspicious_broken_parts
-</div>
+## shared_merge_tree_max_suspicious_broken_parts {#shared_merge_tree_max_suspicious_broken_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -262,9 +216,7 @@ uniquement dans ClickHouse Cloud
 
 Nombre maximal de parts défectueuses pour SMT ; au-delà, le détachement automatique est refusé.
 
-<div id="shared_merge_tree_max_suspicious_broken_parts_bytes">
-  ## shared_merge_tree_max_suspicious_broken_parts_bytes
-</div>
+## shared_merge_tree_max_suspicious_broken_parts_bytes {#shared_merge_tree_max_suspicious_broken_parts_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -272,9 +224,7 @@ Nombre maximal de parts défectueuses pour SMT ; au-delà, le détachement autom
 
 Taille maximale de l’ensemble des parties défectueuses pour SMT ; au-delà, le détachement automatique est refusé.
 
-<div id="shared_merge_tree_memo_ids_remove_timeout_seconds">
-  ## shared_merge_tree_memo_ids_remove_timeout_seconds
-</div>
+## shared_merge_tree_memo_ids_remove_timeout_seconds {#shared_merge_tree_memo_ids_remove_timeout_seconds}
 
 <SettingsInfoBlock type="Int64" default_value="1800" />
 
@@ -282,24 +232,20 @@ Taille maximale de l’ensemble des parties défectueuses pour SMT ; au-delà, l
 
 Durée de conservation des identifiants de mémoïsation d&#39;`insert` pour éviter des actions incorrectes lors des tentatives répétées d&#39;`insert`. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_merge_coordinator_distribution_algorithm">
-  ## shared_merge_tree_merge_coordinator_distribution_algorithm
-</div>
+## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm}
 
 <SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="sainte_lague" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Active la distribution Sainte-Lague par défaut."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Nouveau paramètre qui détermine l’algorithme utilisé par le coordinateur de fusion pour répartir les fusions entre les répliques"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "sainte_lague"},{"label": "Conserve la distribution Sainte-Lague quelle que soit la valeur de `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Active la distribution Sainte-Lague par défaut."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Nouveau paramètre qui détermine l’algorithme utilisé par le coordinateur de fusion pour répartir les fusions entre les répliques"}]}]} />
 
 L’algorithme utilisé par le thread du coordinateur de fusion pour répartir les fusions entre les répliques.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `water_filling`
 * `sainte_lague`
 
-<div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
-  ## shared_merge_tree_merge_coordinator_election_check_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_election_check_period_ms {#shared_merge_tree_merge_coordinator_election_check_period_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="30000" />
 
@@ -307,9 +253,7 @@ Valeurs possibles :
 
 Intervalle entre deux exécutions du thread d&#39;élection du coordinateur de fusion
 
-<div id="shared_merge_tree_merge_coordinator_factor">
-  ## shared_merge_tree_merge_coordinator_factor
-</div>
+## shared_merge_tree_merge_coordinator_factor {#shared_merge_tree_merge_coordinator_factor}
 
 <SettingsInfoBlock type="Float" default_value="1.1" />
 
@@ -317,9 +261,7 @@ Intervalle entre deux exécutions du thread d&#39;élection du coordinateur de f
 
 Facteur de variation dans le temps du délai du thread du coordinateur
 
-<div id="shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms">
-  ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms {#shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="10000" />
 
@@ -327,9 +269,7 @@ Facteur de variation dans le temps du délai du thread du coordinateur
 
 Fréquence à laquelle le coordinateur de fusion doit se synchroniser avec ZooKeeper pour récupérer des métadonnées à jour
 
-<div id="shared_merge_tree_merge_coordinator_max_merge_request_size">
-  ## shared_merge_tree_merge_coordinator_max_merge_request_size
-</div>
+## shared_merge_tree_merge_coordinator_max_merge_request_size {#shared_merge_tree_merge_coordinator_max_merge_request_size}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -337,9 +277,7 @@ Fréquence à laquelle le coordinateur de fusion doit se synchroniser avec ZooKe
 
 Nombre de fusions que le coordinateur peut demander simultanément à MergerMutator
 
-<div id="shared_merge_tree_merge_coordinator_max_period_ms">
-  ## shared_merge_tree_merge_coordinator_max_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_max_period_ms {#shared_merge_tree_merge_coordinator_max_period_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="10000" />
 
@@ -347,9 +285,7 @@ Nombre de fusions que le coordinateur peut demander simultanément à MergerMuta
 
 Intervalle maximal entre deux exécutions du thread du coordinateur de fusion
 
-<div id="shared_merge_tree_merge_coordinator_merges_prepare_count">
-  ## shared_merge_tree_merge_coordinator_merges_prepare_count
-</div>
+## shared_merge_tree_merge_coordinator_merges_prepare_count {#shared_merge_tree_merge_coordinator_merges_prepare_count}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -358,9 +294,7 @@ Intervalle maximal entre deux exécutions du thread du coordinateur de fusion
 Nombre d’entrées de fusion que le coordinateur doit préparer et répartir entre les workers.
 Lorsqu’il est défini sur &#39;auto&#39;, il est égal au nombre maximal de tâches de fusion autorisées sur une seule réplique, multiplié par le nombre de répliques actives.
 
-<div id="shared_merge_tree_merge_coordinator_min_period_ms">
-  ## shared_merge_tree_merge_coordinator_min_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_min_period_ms {#shared_merge_tree_merge_coordinator_min_period_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="1" />
 
@@ -368,9 +302,7 @@ Lorsqu’il est défini sur &#39;auto&#39;, il est égal au nombre maximal de t�
 
 Délai minimal entre deux exécutions du thread du coordinateur de fusion
 
-<div id="shared_merge_tree_merge_worker_fast_timeout_ms">
-  ## shared_merge_tree_merge_worker_fast_timeout_ms
-</div>
+## shared_merge_tree_merge_worker_fast_timeout_ms {#shared_merge_tree_merge_worker_fast_timeout_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="100" />
 
@@ -378,9 +310,7 @@ Délai minimal entre deux exécutions du thread du coordinateur de fusion
 
 Délai d&#39;expiration utilisé par le thread du merge worker s&#39;il doit mettre à jour son état après une action immédiate
 
-<div id="shared_merge_tree_merge_worker_regular_timeout_ms">
-  ## shared_merge_tree_merge_worker_regular_timeout_ms
-</div>
+## shared_merge_tree_merge_worker_regular_timeout_ms {#shared_merge_tree_merge_worker_regular_timeout_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="10000" />
 
@@ -388,9 +318,7 @@ Délai d&#39;expiration utilisé par le thread du merge worker s&#39;il doit met
 
 Temps entre deux exécutions du thread de merge worker
 
-<div id="shared_merge_tree_outdated_parts_group_size">
-  ## shared_merge_tree_outdated_parts_group_size
-</div>
+## shared_merge_tree_outdated_parts_group_size {#shared_merge_tree_outdated_parts_group_size}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -399,9 +327,7 @@ Temps entre deux exécutions du thread de merge worker
 Nombre de répliques qui se trouveront dans le même groupe de hachage de rendez-vous pour le nettoyage des parts obsolètes.
 Disponible uniquement dans ClickHouse Cloud.
 
-<div id="shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations">
-  ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations
-</div>
+## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations {#shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations}
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
@@ -410,18 +336,14 @@ partitions for mutations only (partitions that cannot be merged)>/<candidate
 partitions for mutations>` est supérieur à ce paramètre. Disponible uniquement
 dans ClickHouse Cloud
 
-<div id="shared_merge_tree_parts_load_batch_size">
-  ## shared_merge_tree_parts_load_batch_size
-</div>
+## shared_merge_tree_parts_load_batch_size {#shared_merge_tree_parts_load_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="32" />
 
 Nombre de jobs de récupération des métadonnées des parts à planifier simultanément. Disponible uniquement dans
 ClickHouse Cloud
 
-<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms">
-  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms
-</div>
+## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -431,9 +353,7 @@ Durée pendant laquelle une part fusionnée localement est conservée sans lance
 Cela laisse aux autres répliques le temps de récupérer la part et de lancer cette fusion.
 Disponible uniquement dans ClickHouse Cloud.
 
-<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold">
-  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold
-</div>
+## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -442,9 +362,7 @@ Disponible uniquement dans ClickHouse Cloud.
 Taille minimale d’une part (en lignes) à partir de laquelle l’attribution de la fusion suivante est reportée juste après
 une fusion locale. Disponible uniquement dans ClickHouse Cloud.
 
-<div id="shared_merge_tree_range_for_merge_window_size">
-  ## shared_merge_tree_range_for_merge_window_size
-</div>
+## shared_merge_tree_range_for_merge_window_size {#shared_merge_tree_range_for_merge_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -454,9 +372,7 @@ Taille de la fenêtre (en numéros de blocs) utilisée pour répartir l’attrib
 répliques. Les parts dans la même fenêtre sont attribuées aux mêmes répliques.
 Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_read_virtual_parts_from_leader">
-  ## shared_merge_tree_read_virtual_parts_from_leader
-</div>
+## shared_merge_tree_read_virtual_parts_from_leader {#shared_merge_tree_read_virtual_parts_from_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -465,9 +381,7 @@ Disponible uniquement dans ClickHouse Cloud
 Lit les parties virtuelles depuis le leader lorsque cela est possible. Disponible uniquement dans ClickHouse
 Cloud
 
-<div id="shared_merge_tree_replica_set_max_lifetime_seconds">
-  ## shared_merge_tree_replica_set_max_lifetime_seconds
-</div>
+## shared_merge_tree_replica_set_max_lifetime_seconds {#shared_merge_tree_replica_set_max_lifetime_seconds}
 
 <SettingsInfoBlock type="Secondes" default_value="1800" />
 
@@ -477,9 +391,7 @@ Fréquence à laquelle les répliques tenteront de mettre à jour l’ensemble d
 uniformément dans l’intervalle [0, value] secondes. Exception : value = 0 ne suit pas cette règle ;
 l’implémentation applique un minimum de 200 ms, de sorte que la prochaine exécution est décalée dans l’intervalle [0, 200] ms.
 
-<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas">
-  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas
-</div>
+## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -487,9 +399,7 @@ l’implémentation applique un minimum de 200 ms, de sorte que la prochaine ex�
 
 Si ce paramètre est activé, toutes les répliques tentent de récupérer depuis d&#39;autres répliques, lorsqu&#39;elles y existent déjà, les données en mémoire d&#39;une partie (comme la clé primaire, les informations de partition, etc.).
 
-<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup">
-  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup
-</div>
+## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -497,9 +407,7 @@ Si ce paramètre est activé, toutes les répliques tentent de récupérer depui
 
 Si ce paramètre est activé, toutes les répliques tentent, au démarrage, de récupérer auprès d&#39;autres répliques les données en mémoire des parts (comme la clé primaire, les informations de partition, etc.) lorsqu&#39;elles y existent déjà.
 
-<div id="shared_merge_tree_update_replica_flags_delay_ms">
-  ## shared_merge_tree_update_replica_flags_delay_ms
-</div>
+## shared_merge_tree_update_replica_flags_delay_ms {#shared_merge_tree_update_replica_flags_delay_ms}
 
 <SettingsInfoBlock type="Millisecondes" default_value="30000" />
 
@@ -507,9 +415,7 @@ Si ce paramètre est activé, toutes les répliques tentent, au démarrage, de r
 
 Fréquence à laquelle la réplique tentera de recharger ses flags selon la planification en arrière-plan.
 
-<div id="shared_merge_tree_use_blobs_list_for_parts">
-  ## shared_merge_tree_use_blobs_list_for_parts
-</div>
+## shared_merge_tree_use_blobs_list_for_parts {#shared_merge_tree_use_blobs_list_for_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -520,9 +426,7 @@ nœud de métadonnées blob-list consolidé au lieu d&#39;un nœud Keeper par fi
 Réduit les métadonnées Keeper par part de O(fichiers) à une petite constante tout en
 conservant un blob de stockage d&#39;objets par fichier. Disponible uniquement dans ClickHouse Cloud.
 
-<div id="shared_merge_tree_use_metadata_hints_cache">
-  ## shared_merge_tree_use_metadata_hints_cache
-</div>
+## shared_merge_tree_use_metadata_hints_cache {#shared_merge_tree_use_metadata_hints_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -531,9 +435,7 @@ conservant un blob de stockage d&#39;objets par fichier. Disponible uniquement d
 Permet de demander des indications de cache FS à partir du cache en mémoire
 d’autres répliques. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_use_outdated_parts_compact_format">
-  ## shared_merge_tree_use_outdated_parts_compact_format
-</div>
+## shared_merge_tree_use_outdated_parts_compact_format {#shared_merge_tree_use_outdated_parts_compact_format}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -542,9 +444,7 @@ d’autres répliques. Disponible uniquement dans ClickHouse Cloud
 Utilise le format compact pour les parts obsolètes : réduit la charge sur Keeper, améliore
 le traitement des parts obsolètes. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_use_too_many_parts_count_from_virtual_parts">
-  ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts
-</div>
+## shared_merge_tree_use_too_many_parts_count_from_virtual_parts {#shared_merge_tree_use_too_many_parts_count_from_virtual_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -552,9 +452,7 @@ le traitement des parts obsolètes. Disponible uniquement dans ClickHouse Cloud
 
 Si ce paramètre est activé, le compteur Too many parts s&#39;appuie sur les données partagées dans Keeper, et non sur l&#39;état local de la réplique. Disponible uniquement dans ClickHouse Cloud
 
-<div id="shared_merge_tree_use_zookeeper_connection_pool">
-  ## shared_merge_tree_use_zookeeper_connection_pool
-</div>
+## shared_merge_tree_use_zookeeper_connection_pool {#shared_merge_tree_use_zookeeper_connection_pool}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -562,9 +460,7 @@ Si ce paramètre est activé, le compteur Too many parts s&#39;appuie sur les do
 
 Si ce paramètre est activé, SharedMergeTree utilise l’une des sessions ZooKeeper du pool au niveau du serveur.
 
-<div id="shared_merge_tree_virtual_parts_discovery_batch">
-  ## shared_merge_tree_virtual_parts_discovery_batch
-</div>
+## shared_merge_tree_virtual_parts_discovery_batch {#shared_merge_tree_virtual_parts_discovery_batch}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -572,9 +468,7 @@ Si ce paramètre est activé, SharedMergeTree utilise l’une des sessions ZooKe
 
 Nombre de découvertes de partitions à regrouper dans un lot
 
-<div id="shared_merge_tree_virtual_parts_partition_atomic_discovery">
-  ## shared_merge_tree_virtual_parts_partition_atomic_discovery
-</div>
+## shared_merge_tree_virtual_parts_partition_atomic_discovery {#shared_merge_tree_virtual_parts_partition_atomic_discovery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

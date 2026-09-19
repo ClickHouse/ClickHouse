@@ -7,13 +7,9 @@ title: 'Inserção avançada'
 doc_type: 'reference'
 ---
 
-<div id="inserting-data-with-clickhouse-connect--advanced-usage">
-  ## Inserção de dados com ClickHouse Connect: uso avançado
-</div>
+## Inserção de dados com ClickHouse Connect: uso avançado {#inserting-data-with-clickhouse-connect--advanced-usage}
 
-<div id="insertcontexts">
-  ### InsertContexts
-</div>
+### InsertContexts {#insertcontexts}
 
 O ClickHouse Connect executa inserções no formato Native, pelos métodos `insert` e `insert_df`, em um `InsertContext`. Os métodos `insert_arrow`, `insert_df_arrow` e `raw_insert` enviam seus payloads diretamente e não usam um `InsertContext`. O `InsertContext` inclui todos os valores enviados como argumentos para o método `insert` do cliente. Além disso, quando um `InsertContext` é criado pela primeira vez, o ClickHouse Connect recupera os tipos de dados das colunas de inserção necessários para inserções eficientes no formato Native. Ao reutilizar o `InsertContext` em várias inserções, essa &quot;pré-consulta&quot; é evitada, e as inserções são executadas com mais rapidez e eficiência.
 
@@ -35,50 +31,47 @@ assert qr.first_row[0] == 113
 
 `InsertContext`s incluem estado mutável que é atualizado durante o processo de insert, portanto não são thread-safe.
 
-<div id="write-formats">
-  ### Formatos de escrita
-</div>
+### Formatos de escrita {#write-formats}
 
 Os formatos de escrita são implementados para um número limitado de tipos. Na maioria dos casos, o ClickHouse Connect determina automaticamente o formato de escrita correto para uma coluna com base no primeiro valor de dados não nulo. Por exemplo, quando o primeiro valor de uma coluna `DateTime` é um inteiro, o cliente o trata como um segundo desde a epoch.
 
 Normalmente, não é necessário substituir um formato de escrita, mas os métodos em `clickhouse_connect.datatypes.format` podem definir um globalmente. Wrappers de contêiner, como `Array`, `Nullable` e `LowCardinality`, preservam o comportamento de formatação do tipo do elemento.
 
-<div id="write-format-options">
-  #### Opções de formato de escrita
-</div>
+#### Opções de formato de escrita {#write-format-options}
 
-| ClickHouse Type       | Tipo nativo do Python   | Formatos de escrita | Comentários                                                                                                                                           |
-| --------------------- | ----------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     |                     |                                                                                                                                                       |
-| UInt64                | int                     |                     |                                                                                                                                                       |
-| [U]Int[128,256]       | int                     |                     |                                                                                                                                                       |
-| BFloat16              | float                   |                     |                                                                                                                                                       |
-| Float32               | float                   |                     |                                                                                                                                                       |
-| Float64               | float                   |                     |                                                                                                                                                       |
-| Decimal               | decimal.Decimal         |                     |                                                                                                                                                       |
-| String                | str or bytes            |                     | Uma coluna deve conter texto ou bytes de forma consistente.                                                                                           |
-| FixedString           | bytes                   | string              | Valores String são preenchidos com bytes zero. Bytes vazios são gravados como bytes todos zero.                                                       |
-| Enum[8,16]            | str or int              |                     | Insira labels como strings ou seus valores inteiros subjacentes.                                                                                      |
-| Date                  | datetime.date           | int                 | Valores inteiros são interpretados como dias desde 1970-01-01.                                                                                        |
-| Date32                | datetime.date           | int                 | Valores inteiros são interpretados como deslocamentos de dias com sinal.                                                                              |
-| DateTime              | datetime.datetime       | int                 | Valores inteiros são interpretados como segundos desde a epoch.                                                                                       |
-| DateTime64            | datetime.datetime       | int                 | Valores inteiros são interpretados como ticks na precisão da coluna.                                                                                  |
-| Time                  | datetime.timedelta      | int, string, time   | Valores inteiros são interpretados como segundos.                                                                                                     |
-| Time64                | datetime.timedelta      | int, string, time   | Valores inteiros são interpretados como ticks na precisão da coluna.                                                                                  |
-| IPv4                  | `ipaddress.IPv4Address` | string              | Strings formatadas corretamente podem ser inseridas como endereços IPv4                                                                               |
-| IPv6                  | `ipaddress.IPv6Address` | string              | Strings formatadas corretamente podem ser inseridas como endereços IPv6                                                                               |
-| Tuple                 | dict or tuple           |                     |                                                                                                                                                       |
-| Map                   | dict                    |                     |                                                                                                                                                       |
-| Nested                | Sequence[dict]          |                     |                                                                                                                                                       |
-| UUID                  | uuid.UUID               | string              | Strings formatadas corretamente podem ser inseridas como UUIDs do ClickHouse                                                                          |
-| JSON                  | dict                    | string              | Há suporte a dicionários e strings de objetos JSON. O tipo legado `Object('json')` não é suportado.                                                   |
-| Variant               | object                  |                     | Os valores usam a serialização nativa do tipo membro. Use `clickhouse_connect.datatypes.dynamic.typed_variant` quando os tipos Python forem ambíguos. |
-| Dynamic               | object                  |                     | No momento, os valores são inseridos por meio de sua representação String.                                                                            |
-| QBit                  | Sequence[float]         |                     | O NumPy é usado automaticamente para uma transposição de bits mais rápida quando instalado.                                                           |
+| ClickHouse Type       | Tipo nativo do Python   | Formatos de escrita | Comentários                                                                                                                                                                                                                                     |
+| --------------------- | ----------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     |                     |                                                                                                                                                                                                                                                 |
+| UInt64                | int                     |                     |                                                                                                                                                                                                                                                 |
+| [U]Int[128,256]       | int                     |                     |                                                                                                                                                                                                                                                 |
+| BFloat16              | float                   |                     |                                                                                                                                                                                                                                                 |
+| Float32               | float                   |                     |                                                                                                                                                                                                                                                 |
+| Float64               | float                   |                     |                                                                                                                                                                                                                                                 |
+| Decimal               | decimal.Decimal         |                     |                                                                                                                                                                                                                                                 |
+| Interval*             | int                     |                     | Os valores são contagens de 64 bits com sinal na unidade do tipo interval.                                                                                                                                                                      |
+| String                | str or bytes            |                     | Uma coluna deve conter texto ou bytes de forma consistente.                                                                                                                                                                                     |
+| FixedString           | bytes                   | string              | Valores String são preenchidos com bytes zero. Bytes vazios são gravados como bytes todos zero.                                                                                                                                                 |
+| Enum[8,16]            | str or int              |                     | Insira labels como strings ou seus valores inteiros subjacentes.                                                                                                                                                                                |
+| Date                  | datetime.date           | int                 | Valores inteiros são interpretados como dias desde 1970-01-01.                                                                                                                                                                                  |
+| Date32                | datetime.date           | int                 | Valores inteiros são interpretados como deslocamentos de dias com sinal.                                                                                                                                                                        |
+| DateTime              | datetime.datetime       | int                 | Valores inteiros são interpretados como segundos desde a epoch.                                                                                                                                                                                 |
+| DateTime64            | datetime.datetime       | int                 | Valores inteiros são interpretados como ticks na precisão da coluna.                                                                                                                                                                            |
+| Time                  | datetime.timedelta      | int, string, time   | Valores inteiros são interpretados como segundos.                                                                                                                                                                                               |
+| Time64                | datetime.timedelta      | int, string, time   | Há suporte às escalas de 0 a 9. Valores inteiros são interpretados como ticks na precisão da coluna. Valores timedelta do NumPy e inserções de DataFrame funcionam em todas as escalas. Os tipos time do Python são limitados a microssegundos. |
+| IPv4                  | `ipaddress.IPv4Address` | string              | Strings formatadas corretamente podem ser inseridas como endereços IPv4                                                                                                                                                                         |
+| IPv6                  | `ipaddress.IPv6Address` | string              | Strings formatadas corretamente podem ser inseridas como endereços IPv6                                                                                                                                                                         |
+| Tuple                 | dict or tuple           |                     | Use `()` para `Tuple()`.                                                                                                                                                                                                                        |
+| Map                   | dict                    |                     |                                                                                                                                                                                                                                                 |
+| Nested                | Sequence[dict]          |                     |                                                                                                                                                                                                                                                 |
+| UUID                  | uuid.UUID               | string              | Strings formatadas corretamente podem ser inseridas como UUIDs do ClickHouse                                                                                                                                                                    |
+| JSON                  | dict                    | string              | Há suporte a dicionários e strings de objetos JSON. O tipo legado `Object('json')` não é suportado.                                                                                                                                             |
+| Variant               | object                  |                     | Os valores usam a serialização nativa do tipo membro. Use `clickhouse_connect.datatypes.dynamic.typed_variant` quando os tipos Python forem ambíguos.                                                                                           |
+| Dynamic               | object                  |                     | No momento, os valores são inseridos por meio de sua representação String.                                                                                                                                                                      |
+| MultiPoint            | Sequence[tuple]         |                     | Cada ponto é uma tupla de 2 elementos. A inserção de valores MultiPoint exige o ClickHouse 26.8 ou posterior.                                                                                                                                   |
+| Geometry              | tuple or list           |                     | Valores Point são tuplas de 2 elementos. Envolva valores baseados em lista, incluindo MultiPoint, com `typed_variant` para selecionar um membro de geometria.                                                                                   |
+| QBit                  | Sequence[float]         |                     | O NumPy é usado automaticamente para uma transposição de bits mais rápida quando instalado.                                                                                                                                                     |
 
-<div id="specialized-insert-methods">
-  ### Métodos de inserção especializados
-</div>
+### Métodos de inserção especializados {#specialized-insert-methods}
 
 O ClickHouse Connect fornece métodos de inserção especializados para formatos de dados comuns:
 
@@ -92,9 +85,7 @@ Todos os três métodos aceitam `database`, `settings` e `transport_settings` de
   Um array do NumPy é uma Sequence of Sequences válida e pode ser usado como argumento `data` no método principal `insert`, portanto não é necessário um método especializado.
 </Note>
 
-<div id="pandas-dataframe-insert">
-  #### Inserção de DataFrame do Pandas
-</div>
+#### Inserção de DataFrame do Pandas {#pandas-dataframe-insert}
 
 ```python
 import clickhouse_connect
@@ -111,9 +102,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-<div id="pyarrow-table-insert">
-  #### Inserção de tabela PyArrow
-</div>
+#### Inserção de tabela PyArrow {#pyarrow-table-insert}
 
 ```python
 import clickhouse_connect
@@ -130,9 +119,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-<div id="arrow-backed-dataframe-insert-pandas-2">
-  #### Inserção de DataFrame com Arrow como backend (pandas 2.x)
-</div>
+#### Inserção de DataFrame com Arrow como backend (pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
 
 ```python
 import clickhouse_connect
@@ -150,9 +137,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-<div id="create-table-from-pyarrow-schema">
-  ### Criar uma tabela a partir de um esquema do PyArrow
-</div>
+### Criar uma tabela a partir de um esquema do PyArrow {#create-table-from-pyarrow-schema}
 
 `create_table_from_arrow_schema` gera uma instrução `CREATE TABLE` a partir de campos escalares comuns do Arrow. O mapeamento abrange inteiros com e sem sinal, valores de ponto flutuante, booleanos, strings, datas e timestamps. Ele cria intencionalmente colunas do ClickHouse que não permitem NULL e gera `TypeError` para tipos do Arrow sem suporte, portanto revise o DDL gerado antes de executá-lo.
 
@@ -179,15 +164,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-<div id="time-zones">
-  ### Fusos horários
-</div>
+### Fusos horários {#time-zones}
 
 Ao inserir objetos `datetime` do Python em colunas `DateTime` ou `DateTime64`, o ClickHouse Connect os converte em valores de epoch.
 
-<div id="timezone-aware-datetime-objects">
-  #### Objetos datetime com fuso horário
-</div>
+#### Objetos datetime com fuso horário {#timezone-aware-datetime-objects}
 
 Objetos com fuso horário preservam o instante representado. O fuso horário de origem não precisa coincidir com o fuso horário definido na coluna do ClickHouse.
 
@@ -216,9 +197,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   O ClickHouse Connect usa o módulo `zoneinfo` da biblioteca padrão. O driver não depende mais de `pytz`.
 </Note>
 
-<div id="timezone-naive-datetime-objects">
-  #### Objetos datetime sem fuso horário
-</div>
+#### Objetos datetime sem fuso horário {#timezone-naive-datetime-objects}
 
 A configuração global `naive_datetime_insert` controla inserções nativas de objetos Python com valores `datetime` sem fuso horário. Ela também se aplica a strings ISO sem fuso horário aceitas por colunas `DateTime64`.
 
@@ -259,9 +238,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 Parâmetros de consulta `datetime` sem fuso horário usam a configuração separada `naive_datetime_binding`. O modo padrão `"wall"` envia os campos de data e hora sem conversão para o horário local do host. Consulte a seção [argumento Parameters](/pt-BR/integrations/language-clients/python/driver-api#parameters-argument).
 
-<div id="datetime-columns-with-timezone-metadata">
-  #### Colunas DateTime com metadados de fuso horário
-</div>
+#### Colunas DateTime com metadados de fuso horário {#datetime-columns-with-timezone-metadata}
 
 As colunas do ClickHouse podem declarar metadados de fuso horário, por exemplo `DateTime('America/Denver')` ou `DateTime64(3, 'Asia/Tokyo')`. Esses metadados controlam como os valores são apresentados quando são consultados.
 
@@ -286,9 +263,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-<div id="file-inserts">
-  ## Inserções de arquivo
-</div>
+## Inserções de arquivo {#file-inserts}
 
 `clickhouse_connect.driver.tools.insert_file` transmite um arquivo local para uma tabela existente em fluxo e delega o parsing ao ClickHouse.
 

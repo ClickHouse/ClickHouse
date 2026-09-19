@@ -18,13 +18,11 @@ doc_type: 'reference'
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` и `type` — строковые литералы. Поддерживаются следующие типы сжатия: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` и `type` — строковые литералы. Поддерживаются следующие типы сжатия: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию `basic`).
 
 `level` — числовой литерал. Поддерживаются положительные целые числа в следующих диапазонах: `1-12` для типов `gzip`, `deflate` и `lz4`, `1-22` для типа `zstd` и `1-9` для остальных типов сжатия. Для `gzip` и `deflate` уровни выше `9` требуют сборки по умолчанию с `libdeflate`; сборка без `libdeflate` поддерживает уровни `1-9`.
 
-<div id="implementation-details">
-  ## Подробности реализации
-</div>
+## Подробности реализации {#implementation-details}
 
 * Эта возможность доступна в [клиенте командной строки](/ru/concepts/features/interfaces/client) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local). Поэтому запрос, отправленный через [HTTP-интерфейс](/ru/concepts/features/interfaces/http), завершится ошибкой.
 * Запрос завершится ошибкой, если файл с таким именем уже существует.

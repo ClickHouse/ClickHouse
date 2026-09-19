@@ -15,7 +15,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوفّر ClickHouse Cloud الآن ClickPipes لترحيل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة Managed Postgres. يوفّر هذا التكامل المضمّن تجربة سلسة للاتصال بقاعدة البيانات المصدر، وتصدير المخطط، واستيراده إلى Managed Postgres، وإعداد النسخ المتماثل المستمر.
 
 <div id="prerequisites">
-  ## المتطلبات المسبقة
+  ## المتطلبات المسبقة {#prerequisites}
 </div>
 
 * إمكانية الوصول إلى قاعدة بيانات PostgreSQL المصدر باستخدام مستخدم لديه صلاحيات النسخ المتماثل. اتبع دليل الإعداد الخاص بالمصدر الذي تستخدمه:
@@ -32,7 +32,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * يجب أن يكون `pg_dump` و`psql` مثبَّتين على جهازك المحلي. يأتي كلاهما ضمن أدوات PostgreSQL client القياسية.
 
 <div id="considerations">
-  ## اعتبارات قبل الترحيل
+  ## اعتبارات قبل الترحيل {#considerations}
 </div>
 
 * **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على النظام الهدف.
@@ -41,9 +41,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   إذا واجهت مشكلات أثناء الترحيل، فراجع [الأسئلة الشائعة حول عمليات ترحيل Managed Postgres](/ar/products/managed-postgres/migrations/faq) للاطلاع على الأخطاء الشائعة وحلولها.
 </Note>
 
-<div id="step-1-connect">
-  ## الخطوة 1: الاتصال بقاعدة البيانات المصدر
-</div>
+## الخطوة 1: الاتصال بقاعدة البيانات المصدر {#step-1-connect}
 
 افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد خدمة Managed Postgres الخاص بك.
 
@@ -71,9 +69,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 انقر على **التالي**.
 
-<div id="automated-schema-migration">
-  ## الترحيل الآلي للمخطط
-</div>
+## الترحيل الآلي للمخطط {#automated-schema-migration}
 
 <Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="الخطوة 2: الترحيل الآلي للمخطط مع محدد قاعدة البيانات الهدف" size="lg" border />
 
@@ -85,9 +81,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="مربع حوار إنشاء قاعدة بيانات Postgres جديدة" size="lg" border />
 
-<div id="monitoring">
-  ### المراقبة
-</div>
+### المراقبة {#monitoring}
 
 يمكنك متابعة تقدّم ترحيل المخطط في عرض تفاصيل ClickPipes. تعرض **السجلات** حالة ترحيل المخطط، وتظهر فيها أيضًا أي أخطاء تواجهها العملية.
 
@@ -95,17 +89,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * لا يمكن للأنابيب التي تستخدم SSH tunneling استخدام الترحيل الآلي للمخطط. يجب [تصدير المخطط واستيراده يدويًا](#manual-schema-migration).
 
-<div id="manual-schema-migration">
-  ## ترحيل المخطط يدويًا
-</div>
+## ترحيل المخطط يدويًا {#manual-schema-migration}
 
 إذا كانت لديك بيانات موجودة مسبقًا في قاعدة البيانات الهدف، أو كنت ترغب في إعداد أكثر تخصيصًا بدلًا من الحالة النظيفة التي يفترضها الوضع الآلي، يمكنك اختيار الوضع **اليدوي** هنا.
 
 <Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="الخطوة 2: ترحيل المخطط يدويًا باستخدام أمر تصدير pg_dump" size="lg" border />
 
-<div id="step-2-export-schema">
-  ### تصدير مخطط قاعدة البيانات
-</div>
+### تصدير مخطط قاعدة البيانات {#step-2-export-schema}
 
 يعرض المعالج أمر `pg_dump` مُعبّأ مسبقًا بتفاصيل الاتصال بالمصدر. شغّله في الطرفية:
 
@@ -126,9 +116,7 @@ pg_dump \
 
 انقر على **التالي**.
 
-<div id="step-3-import-schema">
-  ### استيراد المخطط إلى خدمة Managed Postgres الخاصة بك
-</div>
+### استيراد المخطط إلى خدمة Managed Postgres الخاصة بك {#step-3-import-schema}
 
 حدد قاعدة البيانات الهدف من القائمة المنسدلة، أو انقر على **إنشاء قاعدة بيانات جديدة** لإنشاء واحدة جديدة.
 
@@ -149,9 +137,7 @@ psql \
 
 انقر على **التالي**.
 
-<div id="step-4-ingestion-settings">
-  ## الخطوة 4: تكوين إعدادات الإدخال
-</div>
+## الخطوة 4: تكوين إعدادات الإدخال {#step-4-ingestion-settings}
 
 حدّد الـ publication المطلوب استخدامه للنسخ المتماثل المنطقي. إذا تركت هذا الحقل فارغًا، فسيتم إنشاء publication تلقائيًا.
 
@@ -169,9 +155,7 @@ psql \
 
 انقر **التالي**.
 
-<div id="step-5-select-tables">
-  ## الخطوة 5: حدِّد الجداول
-</div>
+## الخطوة 5: حدِّد الجداول {#step-5-select-tables}
 
 حدِّد الجداول التي تريد نسخها. الجداول مُجمَّعة حسب المخطط. حدِّد جداول فردية أو وسِّع أحد المخططات لاختيارها جميعًا.
 
@@ -179,9 +163,7 @@ psql \
 
 انقر على **إنشاء عملية ترحيل**.
 
-<div id="monitor">
-  ## راقب الترحيل
-</div>
+## راقب الترحيل {#monitor}
 
 بعد إنشاء الترحيل، ستجده مُدرجًا في **مصادر البيانات** بالحالة **قيد التشغيل**.
 
@@ -191,72 +173,72 @@ psql \
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="عرض تفصيلي للترحيل يوضح إحصاءات التحميل الأوّلي لكل جدول" size="lg" border />
 
-<div id="post-migration">
-  ## مهام ما بعد الترحيل
-</div>
+## تحويل حركة المرور {#cutover}
 
-بمجرد اكتمال التحميل الأولي، وإذا كنت تستخدم CDC، واقترب تأخر النسخ المتماثل من الصفر:
+بعد اكتمال التحميل الأولي، وعند استخدام CDC، وبلوغ تأخّر النسخ المتماثل مستوىً قريبًا من الصفر، يمكنك تحويل حركة البيانات من قاعدة بيانات Postgres المصدر إلى خدمة Managed Postgres الخاصة بك. افتح عرض تفاصيل الترحيل واختر علامة التبويب **Post-migration steps**. يرشدك هذا المعالج عبر الخطوات الست اللازمة لإتمام الترحيل بأمان، ويجب إكمال كل خطوة بالترتيب قبل الانتقال إلى الخطوة التالية.
 
-**تحقق من عدد الصفوف.** أجرِ مراجعة سريعة للجداول المهمة في كلٍّ من المصدر والهدف قبل تحويل حركة المرور:
+### الخطوة 1: ضبط قاعدة بيانات Postgres المصدر على وضع القراءة فقط {#cutover-read-only}
 
-```sql
-SELECT COUNT(*) FROM public.orders;
-```
-
-**أوقِف عمليات الكتابة على المصدر.** أوقِف عمليات كتابة التطبيق مؤقتًا. لفرض وضع القراءة فقط أثناء مرحلة التحويل:
+أوقف عمليات الكتابة من التطبيق على المصدر حتى لا يحدث أي تباين أثناء التحويل. يعرض المعالج أمر `ALTER DATABASE` معبّأً مسبقًا باسم قاعدة البيانات المصدر لديك — نفّذه على قاعدة البيانات المصدر:
 
 ```sql
-ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+ALTER DATABASE "<source_db>" SET default_transaction_read_only = on;
 ```
 
-**تأكّد من اكتمال تزامن النسخ المتماثل.** قارن أحدث صف في كلٍّ من المصدر والهدف:
+بعد ذلك، أنهِ أي connections قائمة كي تعتمد إعداد read-only ولا تبقى أي عمليات writes قيد الإرسال:
 
 ```sql
--- Run on both source and target
-SELECT MAX(id), MAX(updated_at) FROM public.orders;
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = '<source_db>'
+  AND pid <> pg_backend_pid();
 ```
 
-**أعِد ضبط التسلسلات.** اضبط التسلسلات لتتوافق مع القيم القصوى الحالية في كل جدول:
+<Note>
+  قد تختلف هذه الخطوة تبعًا لمزوّد Postgres لديك. فقد تُقيّد الخدمات المُدارة استخدام `ALTER DATABASE` أو إنهاء الاتصالات الخلفية (backends)، وتتيح بدلًا من ذلك وضع القراءة فقط عبر الـ Console الخاصة بها أو عبر مجموعات المعاملات أو بسحب صلاحيات الكتابة. راجع وثائق المزوّد لديك لمعرفة الطريقة المكافئة لجعل المصدر للقراءة فقط.
+</Note>
 
-```sql
-DO $$
-DECLARE r RECORD;
-BEGIN
-    FOR r IN
-        SELECT
-            n.nspname AS schema_name,
-            c.relname AS table_name,
-            a.attname AS column_name,
-            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid
-        WHERE c.relkind = 'r'
-            AND a.attnum > 0
-            AND NOT a.attisdropped
-            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-    LOOP
-        IF r.seq_name IS NOT NULL THEN
-            EXECUTE format(
-                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
-                r.seq_name, r.column_name, r.schema_name, r.table_name
-            );
-        END IF;
-    END LOOP;
-END $$;
-```
+انقر على **Mark as completed** للمتابعة.
 
-**حوِّل حركة مرور التطبيق.** وجِّه عمليات القراءة والكتابة إلى خدمة Managed Postgres لديك، وراقب الأخطاء ومخالفات القيود وسلامة النسخ المتماثل.
+<Image img="/images/managed-postgres/pgpg/post-migration/readonly.webp" alt="الخطوة 1 بعد الترحيل: ضبط قاعدة البيانات المصدر على وضع القراءة فقط" size="lg" border />
 
-**نظِّف.**  بمجرد إتمام التحويل والتأكد من أن الخدمة الجديدة سليمة، احذف عملية الترحيل من **مصادر البيانات**. إذا كنت قد استخدمت CDC، فاحذف فتحة النسخ المتماثل من المصدر لتحرير الموارد:
+### الخطوة 2: التحقق من أعداد الصفوف {#cutover-validate}
+
+حدّد الجداول المنسوخة التي تريد التحقق منها. تحسب ClickPipes عدد الصفوف في كل جدول محدد لدى كل من المصدر والهدف ثم تقارن بينها. وقد تُرجع الجداول الكبيرة أعدادًا تقريبية. استخدم **Select all tables** للتحقق من جميع الجداول، أو ابحث عن جداول بعينها وفعّل خيارها، ثم انقر على **Count rows**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp" alt="الخطوة 2 بعد الترحيل: تحديد الجداول والتحقق من أعداد الصفوف بين المصدر والهدف" size="lg" border />
+
+### الخطوة 3: إيقاف الـ pipe مؤقتًا {#cutover-pause}
+
+أوقف ClickPipe مؤقتًا ليتوقف النسخ المتماثل قبل إعادة ضبط التسلسلات وتحويل حركة المرور. انقر على **Pause ClickPipe** وانتظر حتى يتوقف الـ pipe مؤقتًا قبل المتابعة.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/pause-pipe.webp" alt="الخطوة 3 بعد الترحيل: إيقاف ClickPipe مؤقتًا لإيقاف النسخ المتماثل" size="lg" border />
+
+### الخطوة 4: إعادة تعيين التسلسلات {#cutover-reset-sequences}
+
+أعد تعيين التسلسلات في الـ destination كي تتابع عمليات الـ inserts الجديدة من القيم الصحيحة. انقر على **Reset sequences** لمواءمة كل تسلسل مع أعلى قيمة حالية في الـ table الخاص به.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/reset-sequences.webp" alt="الخطوة 4 بعد الـ migration: إعادة تعيين التسلسلات في الـ destination" size="lg" border />
+
+### الخطوة 5: تحويل حركة المرور {#cutover-traffic}
+
+وجّه عمليات القراءة والكتابة إلى خدمة Managed Postgres لديك عبر تحديث عنوان URL لقاعدة بيانات تطبيقك ليشير إلى سلسلة اتصال Managed Postgres. يوفّر المعالج تفاصيل الاتصال بعدة صيغ — **url** و**psql** و**env** و**yaml** و**jdbc** — لتتمكن من نسخ الصيغة التي تناسب حزمتك التقنية. وبعد تحديث تطبيقك، انقر على **Mark as completed**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp" alt="الخطوة 5 بعد الترحيل: تحويل حركة المرور باستخدام سلسلة اتصال Managed Postgres" size="lg" border />
+
+### الخطوة 6: التنظيف {#cutover-cleanup}
+
+بعد إتمام التحويل والتأكد من سلامة الخدمة الجديدة، احذف الترحيل وحرّر موارد المصدر. يعرض المعالج الأمر `pg_drop_replication_slot` مُعبّأً مسبقًا باسم الـ slot — نفّذه على المصدر لإسقاط فتحة النسخ المتماثل:
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+ثم انقر على **Delete ClickPipe migration** لإزالة عملية الـ migration من **مصادر البيانات**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cleanup.webp" alt="الخطوة 6 بعد الترحيل: التنظيف عبر إسقاط الـ فتحة النسخ المتماثل وحذف عملية الـ migration" size="lg" border />
+
+## الخطوات التالية {#next-steps}
 
 * [البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
 * [تفاصيل الاتصال بـ Managed Postgres](/ar/products/managed-postgres/connection)

@@ -1,0 +1,140 @@
+---
+sidebarTitle: 'dbt OSS, v2 et Platform (bêta)'
+slug: /integrations/dbt/dbt-core-v2-fusion-and-platform
+description: "État de l'adaptateur ClickHouse dans dbt OSS, dbt v2 et la plateforme dbt"
+keywords: ['dbt', 'dbt v2', 'dbt platform', 'dbt oss', 'dbt fusion', 'dbt core v2']
+title: 'dbt OSS, v2 et Platform (bêta)'
+doc_type: 'reference'
+---
+
+import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<ClickHouseSupportedBadge />
+
+<BetaBadge link="https://github.com/ClickHouse/dbt-clickhouse/issues/660" />
+
+dbt est en cours de refonte sur un nouveau moteur, et ClickHouse en fait partie dès le départ. ClickHouse fonctionne désormais avec le nouveau moteur dbt écrit en Rust, aussi bien dans dbt OSS que dans dbt v2, et vous pouvez pour la première fois vous connecter à ClickHouse depuis la plateforme dbt. Votre projet ne change pas : les mêmes modèles, tests et profils qui s&#39;exécutent aujourd&#39;hui sur dbt Core 1.x s&#39;exécutent sur le nouveau moteur ; seul le binaire diffère.
+
+ClickHouse est le premier adaptateur communautaire disponible sur dbt OSS, dbt v2 et la plateforme dbt. Les adaptateurs propriétaires de dbt sont lancés en même temps que le nôtre ; nous sommes les premiers en dehors de dbt Labs. L&#39;adaptateur Python pour dbt Core 1.x, `dbt-clickhouse`, ne disparaît pas : nous le maintenons à jour au fil des releases dbt 1.x et assurons la maintenance des deux adaptateurs in parallel.
+
+<Warning>
+  **Pas prêt pour la production.** L&#39;adaptateur ClickHouse pour dbt OSS et dbt v2, ainsi que la connexion à la plateforme dbt, ne sont pas encore generally available (GA). Ne les utilisez que dans des projets de development ou de staging.
+</Warning>
+
+<Note>
+  **La documentation dbt Core 1.x s&#39;applique également à dbt OSS et dbt v2.** L&#39;adaptateur se comporte de la même manière sur les deux moteurs : les profils, configurations de modèles, materialization et macros décrits dans les autres pages dbt fonctionnent sans modification sur dbt OSS, dbt v2 et la plateforme dbt. Les exceptions sont documentées dans le tableau [parity v1 vs v2](#parity) ci-dessous.
+</Note>
+
+<Note>
+  **dbt OSS** est le build open-source (Apache 2.0) du moteur v2. Consultez [terminologie et availability](#terminology) pour comprendre son lien avec dbt v2 et la plateforme dbt.
+</Note>
+
+L&#39;état en temps réel est suivi dans [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (parity de la v2 avec la v1, un sous-issue par domaine) et [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2).
+
+#### Essayer ClickHouse dans la plateforme dbt {#request-access}
+
+Si vous souhaitez tester la bêta privée, inscrivez-vous via le [formulaire de bêta privée de dbt Labs](https://docs.google.com/forms/d/e/1FAIpQLScjHwRchnKarq_RpNM7hATjphNFxqBEePmAwRtSpMWG1snGHA/viewform). Ce formulaire appartient à dbt Labs : les informations que vous transmettez sont donc envoyées à dbt Labs, et non à ClickHouse. Une fois l&#39;accès activé, suivez la page [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) de la documentation dbt pour configurer la connexion.
+
+## Terminologie et disponibilité {#terminology}
+
+dbt existe sous plusieurs formes, et un même adapter peut fonctionner dans plusieurs d&#39;entre elles. Ce tableau présente chaque nom ainsi que le niveau actuel de prise en charge de ClickHouse.
+
+| Terme              | De quoi il s&#39;agit                                                                                                                                                                                                                                                                                     | Statut ClickHouse et comment l&#39;obtenir                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **dbt Core 1.x**   | Le moteur dbt écrit en Python, open source (Apache 2.0). Notre adapter est `dbt-clickhouse`, maintenu au sein de l&#39;[organisation GitHub ClickHouse](https://github.com/ClickHouse/dbt-clickhouse) et installé aux côtés de `dbt-core`.                                                                | **GA, maintenu.** Continue de recevoir des releases en parallèle de dbt v2.                                                                                                                                                                                                                                                                                                                               |
+| **dbt OSS**        | Réécriture complète du moteur dbt en Rust, open source (Apache 2.0). Cette nouvelle version reprend toutes les fonctionnalités de la v1 et y ajoute plusieurs améliorations de performance.                                                                                                               | **Bêta.** Consultez le [guide de mise à niveau vers dbt v2](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) et la [page de configuration ClickHouse pour la v2](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2) dans la documentation dbt. L&#39;adapter ClickHouse est intégré au binary dbt ; aucun paquet distinct n&#39;est à installer. |
+| **dbt v2**         | dbt OSS auquel s&#39;ajoutent des fonctionnalités supplémentaires de dbt Labs : compréhension du SQL, analyse statique, LSP, une extension VS Code et la column awareness. Code source fermé, sous licence [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement). | **Bêta.** L&#39;adapter fonctionne avec le binary v2, mais les nouvelles fonctionnalités SQL ne sont pas encore disponibles pour ClickHouse.                                                                                                                                                                                                                                                              |
+| **plateforme dbt** | dbt hébergé, anciennement dbt Cloud : IDE Studio, jobs planifiés, environnements, Catalog, Semantic Layer. La plateforme n&#39;exécute que dbt v2 : utiliser ClickHouse sur la plateforme revient donc à utiliser l&#39;adapter v2.                                                                       | **Bêta privée.** Voir [comment demander l&#39;access](#request-access). Configuration : [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) dans la documentation dbt.                                                                                                                                                                                   |
+
+## Statut bêta {#beta-status}
+
+Nous évaluons l&#39;adaptateur dbt v2 à l&#39;aide de la test suite d&#39;intégration dbt Core 1.x de `dbt-clickhouse`. Le statut bêta signifie que les workflows dbt essentiels et l&#39;ensemble des fonctionnalités de ClickHouse Cloud fonctionnent dans les limites documentées ; la parité complète avec la v1 et la prise en charge des clusters self-managed viendront ensuite.
+
+**À ce jour,** l&#39;adapter réussit plus de 81 % de la suite v1 complète et 92 % des tests applicables à ClickHouse Cloud. Toutes les materializations sont à parité (`view`, `table`, `incremental`, `materialized_view`, `dictionary`, `snapshot`, `seed`, `ephemeral`), avec l&#39;ensemble complet des configs de table, des contrats de model, des tests de données et unit tests, la persistance de la documentation, `clickhouse_s3source()` et les settings de connection de dbt Core 1.x. Les échecs restants sont liés aux travaux sur les clusters self-managed listés ci-dessous, ainsi qu&#39;à quelques différences côté engine. Consultez [parité v1 vs v2](#parity) pour un aperçu fonctionnalité par fonctionnalité.
+
+**Prochaines étapes** : le DDL `ON CLUSTER` et les Distributed materializations pour les clusters self-managed, les grants, `dbt clone`, `dbt source freshness` à partir des metadata de table, la correction des bogues restants et la réussite de l&#39;intégralité de la test suite v1 afin de garantir une parité complète. L&#39;avancement de ces travaux est suivi dans [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660), avec une sous-issue par domaine.
+
+La GA figure dans notre roadmap et arrivera prochainement. Nous mettrons la documentation à jour dès qu&#39;elle sera disponible.
+
+### Hors périmètre pour la bêta {#out-of-scope}
+
+Outre les écarts de parité avec la v1 listés ci-dessous, quelques fonctionnalités propres à la v2 sortent du périmètre actuel, mais arriveront prochainement :
+
+* **Semantic Layer / MetricFlow.** La prise en charge de ClickHouse n&#39;a pas encore été ajoutée. Suivi dans [dbt-labs/metricflow#2124](https://github.com/dbt-labs/metricflow/pull/2124).
+* **L&#39;intelligence ClickHouse SQL dans dbt v2** (validation tenant compte du dialecte, analyse statique, LSP, prise en compte des colonnes dans l&#39;extension VS Code). L&#39;adapter fonctionne aujourd&#39;hui avec le binary dbt v2, mais n&#39;intègre pas encore ces fonctionnalités. D&#39;ici là, l&#39;analyse statique est forcée à `off` pour les projets ClickHouse et l&#39;engine n&#39;écrit aucune traçabilité au niveau des colonnes. Suivi dans [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736).
+* **Des méthodes d&#39;authentification supplémentaires**, au-delà du username et du password, dans la plateforme dbt.
+
+## Parité v1 / v2 {#parity}
+
+Les tableaux ci-dessous comparent les fonctionnalités disponibles dans `dbt-clickhouse` (v1) avec leur statut dans l&#39;adapter dbt v2. Toutes les fonctionnalités listées sont prises en charge en v1, sauf mention contraire dans les notes ; la colonne de statut concerne dbt v2 et s&#39;applique également à dbt OSS. L&#39;évolution de chaque élément en attente est suivie dans [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
+
+<Badge color="green">Supported</Badge> déjà fonctionnel · <Badge color="yellow">Partial</Badge> fonctionne avec des limitations · <Badge color="red">Not yet</Badge> implémentation en attente.
+
+### Materializations {#parity-materializations}
+
+| Fonctionnalité                                 | Rôle                                                                      | dbt v2                                      | Notes                                                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `view`                                         | Vue dbt standard.                                                         | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `table`                                        | Reconstruction complète avec options de moteur et de DDL.                 | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `incremental`                                  | Ajoute ou fusionne de nouvelles lignes.                                   | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `materialized_view`                            | Vue matérialisée ClickHouse qui transforme les données à l&#39;insertion. | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `dictionary`                                   | Dictionnaire ClickHouse pour les recherches par clé et les jointures.     | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `snapshot`                                     | Dimensions à évolution lente de type 2.                                   | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `seed`                                         | Charge des fichiers CSV sous forme de tables.                             | <Badge color="green">Pris en charge</Badge> | Les types de colonnes numériques sont inférés comme `Int64`/`Float64` au lieu de `Int32`/`Float32` ; utilisez `column_types` pour les définir explicitement. |
+| `ephemeral`                                    | CTE intégrée, aucun objet créé.                                           | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                              |
+| `distributed_table`, `distributed_incremental` | Tables partitionnées derrière un moteur Distributed.                      | <Badge color="red">Pas encore</Badge>       |                                                                                                                                                              |
+
+### Configuration des modèles {#parity-model-configuration}
+
+| Fonctionnalité                                    | Rôle                                                      | dbt v2                                      | Remarques |
+| ------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------- | --------- |
+| Moteur, `ORDER BY`, `PARTITION BY`, `PRIMARY KEY` | Contrôles DDL fondamentaux de MergeTree.                  | <Badge color="green">Pris en charge</Badge> |           |
+| TTL                                               | Expiration des lignes et des colonnes.                    | <Badge color="green">Pris en charge</Badge> |           |
+| Paramètres de table et de requête                 | `SETTINGS` par modèle sur le DDL et sur l&#39;insert.     | <Badge color="green">Pris en charge</Badge> |           |
+| Projections, index, `sql_header`                  | Structures secondaires et SQL de préfixe.                 | <Badge color="green">Pris en charge</Badge> |           |
+| Contrats et contraintes de modèle                 | Types de colonnes et contraintes appliqués lors du build. | <Badge color="green">Pris en charge</Badge> |           |
+| Évolution de schéma sur les modèles incrémentaux  | `on_schema_change` ajoute ou synchronise les colonnes.    | <Badge color="green">Pris en charge</Badge> |           |
+| `codec` et `ttl` de colonne                       | Compression et expiration par colonne.                    | <Badge color="green">Pris en charge</Badge> |           |
+
+### Tests et documentation {#parity-testing-and-docs}
+
+| Fonctionnalité                                 | Rôle                                                        | dbt v2                                      | Notes                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tests de données                               | Tests génériques et singuliers.                             | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                               |
+| Tests unitaires                                | Logique du modèle testée sur des données de fixtures.       | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                               |
+| Persistance de la documentation                | Descriptions écrites sous forme de commentaires ClickHouse. | <Badge color="yellow">Partiel</Badge>       | Les descriptions contenant `;` échouent.                                                                                                                                                                                                                                      |
+| Génération du catalogue et de la documentation | Métadonnées de colonnes pour le site de documentation.      | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                               |
+| Traçabilité au niveau des colonnes             | Suivre les colonnes à travers le DAG.                       | <Badge color="yellow">Partiel</Badge>       | Nouveauté de la v2 via le compilateur SQL, indisponible en v1. La traçabilité de la plateforme dbt ne s&#39;affiche que si la mise entre guillemets des identifiants est désactivée dans `dbt_project.yml` ; la traçabilité côté moteur nécessite le dialecte ClickHouse SQL. |
+
+### Cluster et Cloud {#parity-cluster-and-cloud}
+
+| Fonctionnalité                        | Rôle                                                                              | dbt v2                                      | Notes                                                                                                                                                                                                                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ClickHouse Cloud                      | Configuration bêta recommandée.                                                   | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                            |
+| Cohérence multi-répliques             | `select_sequential_consistency` et paramètres de lecture-après-écriture associés. | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                            |
+| `ON CLUSTER` et engines répliqués     | Propagation des DDL sur les clusters self-managed.                                | <Badge color="red">Pas encore</Badge>       | Les clusters multi-nœuds de ClickHouse Cloud sont pris en charge. Les autres configurations nécessitant `ON CLUSTER` pour la propagation des DDL ne le sont pas encore. Pour les déploiements self-managed, effectuez vos tests uniquement sur des clusters à nœud unique. |
+| `EXCHANGE TABLES`                     | Swap atomique lors de la reconstruction.                                          | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                            |
+| Paramètres de connexion personnalisés | `custom_settings` au niveau du profile.                                           | <Badge color="green">Pris en charge</Badge> |                                                                                                                                                                                                                                                                            |
+| Version du ClickHouse server          | Version minimale du serveur.                                                      | <Badge color="green">Pris en charge</Badge> | 25.3+ sur les deux engines. La lecture des colonnes `UUID` sur v2 nécessite 26.7+ (les serveurs plus anciens ne peuvent pas convertir `UUID` en Arrow).                                                                                                                    |
+
+### Macros et opérations {#parity-macros-and-operations}
+
+| Fonctionnalité                              | Rôle                                                                            | dbt v2                                       | Notes                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------- |
+| Macro de table function S3                  | `clickhouse_s3source()` lit directement depuis S3 dans un model.                | <Badge color="green">Prise en charge</Badge> |                                                            |
+| Macros inter-bases de données               | Helpers tels que ceux de `dbt-utils`.                                           | <Badge color="green">Prise en charge</Badge> |                                                            |
+| Grants                                      | Statements `GRANT` issus de la configuration du model.                          | <Badge color="red">Pas encore</Badge>        |                                                            |
+| `dbt clone`                                 | `CLONE AS` zero-copy entre environnements.                                      | <Badge color="red">Pas encore</Badge>        |                                                            |
+| Query id dans les résultats d&#39;exécution | `query_id` dans `adapter_response` pour la corrélation avec `system.query_log`. | <Badge color="red">Pas encore</Badge>        |                                                            |
+| `query-comment`                             | Configuration du comment de requête.                                            | <Badge color="red">Pas encore</Badge>        | `query-comment: null` n&#39;est pas encore pris en compte. |
+| Intégration de catalog (Iceberg)            | Materialize vers des external catalogs.                                         | <Badge color="red">Pas encore</Badge>        | Absent de la v1 également ; contournements documentés.     |
+
+### Connectivité et authentification {#parity-connectivity-and-auth}
+
+| Fonctionnalité                             | Rôle                                                                                                          | dbt v2                                 | Notes                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| Protocol                                   | Mode de communication entre dbt et ClickHouse.                                                                | <Badge color="green">Supported</Badge> | ADBC (Arrow sur HTTP) en v2 ; HTTP et native en v1.                    |
+| Nom d&#39;utilisateur et mot de passe, TLS | Authentification standard.                                                                                    | <Badge color="green">Supported</Badge> |                                                                        |
+| Certificats client mTLS                    | `client_cert`, `client_cert_key`, `verify`.                                                                   | <Badge color="red">Not yet</Badge>     | Travail côté driver ; les keys sont acceptées mais ignorées.           |
+| Options du HTTP client                     | `connect_timeout`, `send_receive_timeout`, `sync_request_timeout`, `compress_block_size`, `server_host_name`. | <Badge color="red">Not yet</Badge>     | Acceptées mais ignorées ; `server_host_name` n&#39;est pas disponible. |

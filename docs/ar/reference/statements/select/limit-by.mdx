@@ -18,14 +18,12 @@ doc_type: 'reference'
 أثناء معالجة الاستعلام، يحدِّد ClickHouse البيانات مرتبةً بحسب مفتاح الفرز. ويُضبط مفتاح الفرز صراحةً باستخدام البند [ORDER BY](/ar/reference/statements/select/order-by) أو ضمنيًا كخاصية من خصائص محرك الجدول (لا يُضمن ترتيب الصفوف إلا عند استخدام [ORDER BY](/ar/reference/statements/select/order-by)، وإلا فلن تكون كتل الصفوف مرتبةً بسبب تعدد سلاسل التنفيذ). بعد ذلك يطبّق ClickHouse ‏`LIMIT n BY expressions` ويُرجع أول `n` صفوف لكل تركيبة مميزة من `expressions`. وإذا تم تحديد `OFFSET`، فعندئذٍ يتجاوز ClickHouse، لكل كتلة بيانات تنتمي إلى تركيبة مميزة من `expressions`، عدد `offset_value` من الصفوف من بداية الكتلة ويُرجع بحد أقصى `n` صفوف كنتيجة. وإذا كانت `offset_value` أكبر من عدد الصفوف في كتلة البيانات، فإن ClickHouse لا يُرجع أي صفوف من الكتلة.
 
 <Note>
-  لا يرتبط `LIMIT BY` بـ [LIMIT](/ar/reference/statements/select/limit). ويمكن استخدامهما معًا في الاستعلام نفسه.
+  لا يرتبط `LIMIT BY` بـ [LIMIT](/ar/reference/statements/select/limit). ويمكن استخدامهما معًا في الاستعلام نفسه. ويشمل ذلك صيغة النطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until)، التي تُطبَّق حينئذٍ على الصفوف التي يحتفظ بها `LIMIT BY`.
 </Note>
 
 إذا أردت استخدام أرقام الأعمدة بدلًا من أسماء الأعمدة في البند `LIMIT BY`، ففعّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 جدول مثال:
 
@@ -124,9 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 بالنسبة إلى `id = 1`، يُتخطى الصف الأول (`10`)؛ ثم يُعاد الصفّان `11` و`12` معًا. وبالنسبة إلى `id = 2`، يُتخطى الصف الأول (`20`)، فلا يبقى سوى `21`.
 
-<div id="limit-by-all">
-  ## LIMIT BY ALL
-</div>
+## LIMIT BY ALL {#limit-by-all}
 
 يعادل `LIMIT BY ALL` سرد جميع التعبيرات المحددة في `SELECT` التي ليست دوالًا تجميعية.
 
@@ -156,9 +152,7 @@ SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIM
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples-limit-by-all}
 
 جدول مثال:
 

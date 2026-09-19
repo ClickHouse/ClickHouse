@@ -2,7 +2,7 @@
 title: 'BYOC GCP 프라이빗 네트워킹 설정'
 slug: /cloud/reference/byoc/onboarding/network-gcp
 sidebarTitle: 'GCP 프라이빗 네트워킹 설정'
-keywords: ['BYOC', '클라우드', 'bring your own cloud', 'VPC peering', 'gcp', 'private service connect']
+keywords: ['BYOC', '클라우드', 'bring your own cloud', 'VPC peering', 'gcp', 'private service connect', 'PSC subnet', 'BYO-VPC']
 description: 'GCP에서 BYOC를 위한 VPC Peering 또는 Private Service Connect를 설정합니다'
 doc_type: '참고'
 ---
@@ -12,22 +12,18 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 GCP의 ClickHouse BYOC는 VPC Peering과 PSC(Private Service Connect)의 두 가지 프라이빗 연결 옵션을 지원합니다.
 
 <div id="common-prerequisites">
-  ## 사전 요구 사항
+  ## 사전 요구 사항 {#common-prerequisites}
 </div>
 
 VPC peering 및 PSC에 공통으로 필요한 단계입니다.
 
-<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
-  ### BYOC용 ClickHouse에 프라이빗 로드 밸런서 활성화
-</div>
+### BYOC용 ClickHouse에 프라이빗 로드 밸런서 활성화 {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 ClickHouse Cloud 콘솔에서 BYOC 인프라의 **프라이빗 로드 밸런서**를 활성화하십시오.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC 프라이빗 로드 밸런서 활성화" border />
 
-<div id="gcp-vpc-peering">
-  ## VPC peering 설정
-</div>
+## VPC peering 설정 {#gcp-vpc-peering}
 
 [GCP VPC peering 기능](https://docs.cloud.google.com/vpc/docs/vpc-peering)을 미리 숙지하고, VPC peering의 제한 사항(예: 피어링된 VPC 네트워크 간에 서브넷 IP 범위가 겹치면 안 됨)도 확인하십시오. ClickHouse BYOC는 피어링을 통해 ClickHouse 서비스에 네트워크로 연결할 수 있도록 프라이빗 로드 밸런서를 사용합니다.
 
@@ -67,9 +63,7 @@ ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계�
   </Step>
 </Steps>
 
-<div id="setup-psc">
-  ## PSC(Private Service Connect) 설정
-</div>
+## PSC(Private Service Connect) 설정 {#setup-psc}
 
 GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 ClickHouse BYOC 서비스에 안전한 프라이빗 연결을 제공합니다. 모든 트래픽은 GCP 네트워크 내에서만 흐르므로 공용 인터넷을 거치지 않습니다.
 
@@ -77,6 +71,27 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
   <Step title="ClickHouse 콘솔에서 Private Link 활성화" id="step-1-enable-private-link">
     <Note>
       사전 요구 사항으로 **프라이빗 로드 밸런서**가 활성화되어 있는지 확인하십시오.
+    </Note>
+
+    인프라가 [고객 관리형 VPC(BYO-VPC)](/ko/cloud/reference/byoc/onboarding/customization-gcp)에서 실행되는 경우, Private Link를 활성화하기 전에 Private Service Connect NAT 서브넷을 생성하십시오. ClickHouse Cloud는 사용자의 VPC에 서브넷을 생성할 수 없으며, GCP는 들어오는 각 PSC 연결에 대해 이 서브넷에서 NAT IP 주소를 할당합니다.
+
+    인프라와 동일한 VPC 및 리전에 서브넷을 생성하고, Shared VPC를 사용하는 경우에는 호스트 프로젝트에 생성하십시오.
+
+    ```bash
+    gcloud compute networks subnets create <psc-subnet-name> \
+        --project=<vpc-project-id> \
+        --network=<vpc-network-name> \
+        --region=<region> \
+        --range=<cidr-range> \
+        --purpose=PRIVATE_SERVICE_CONNECT
+    ```
+
+    `<cidr-range>`는 최소 `/29` 이상이어야 합니다. 예상 연결 수에 맞게 용량을 산정할 때는 GCP의 [NAT 서브넷 용량 산정 가이드](https://cloud.google.com/vpc/docs/about-vpc-hosted-services#subnet-capacity)를 참고하십시오.
+
+    BYO-VPC 인프라에서 Private Link를 활성화하면 콘솔에서 **PSC subnet name**을 입력하라는 요청이 표시됩니다. 생성한 서브넷의 이름을 입력합니다.
+
+    <Note>
+      PSC 서브넷은 Private Link가 활성화된 상태에서는 변경할 수 없습니다. 다른 서브넷으로 전환하려면 Private Link를 비활성화한 후 새 이름으로 다시 활성화하십시오.
     </Note>
 
     <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink 활성화" />

@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-04
+title: '데모 데이 - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: '2026-09-04 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## 새로운 유형의 대시보드 필터 {#new-types-of-dashboard-filter}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 대시보드 필터가 한 가지 종류의 값, 즉 ClickHouse의 컬럼에서 드롭다운 옵션을 가져오는 쿼리 값만 제공했습니다. 이제 필터 및 변수 모달을 열면 두 가지 유형을 추가로 선택할 수 있습니다.
+
+정적 값을 사용하면 필터를 만들 때 옵션을 직접 입력할 수 있어, 별도의 쿼리 없이도 환경 필터에서 `dev`, `staging`, `prod`를 간단히 제공할 수 있습니다. 정적 목록 필터에는 `expression`이 없으므로 변수 모드만 지원하며, Broadcast 모드를 위한 SQL condition으로는 변환할 수 없습니다.
+
+PromQL 레이블 값은 PromQL source의 `<label>/values` endpoint에서 옵션을 조회합니다. 원하는 레이블을 선택한 뒤, 필요하다면 매처로 범위를 좁힐 수 있으며, 이 매처 자체가 다른 변수를 참조할 수도 있습니다. 이렇게 하면 필터끼리 서로 연동되어, 환경을 선택하면 다음 필터가 제공하는 instance 목록이 그에 맞게 좁혀지고 선택을 진행할수록 PromQL 차트도 함께 필터링됩니다.
+
+두 유형 모두 변수로 노출할 수 있으므로, 필터는 `WHERE` 절 이상의 역할을 할 수 있습니다. 데모에서는 `ServiceName`과 `SeverityText`를 나열하는 정적 필터를 차트의 group-by 차원으로 사용하며, 드롭다운에서 값을 선택하면 어떤 조합으로든 차트의 그룹화 기준이 바뀝니다.
+
+**관련 PR:** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) schema 및 API에 정적 값 목록 필터 추가, [#3022](https://github.com/hyperdxio/hyperdx/pull/3022) 정적 값 목록 필터 Input 렌더링, [#3020](https://github.com/hyperdxio/hyperdx/pull/3020) UI에서 정적 목록 필터 생성 및 편집 허용, [#3060](https://github.com/hyperdxio/hyperdx/pull/3060) MCP에서 정적 사용자 정의 값 필터 지원, [#3053](https://github.com/hyperdxio/hyperdx/pull/3053) Prometheus 레이블 값 기반 대시보드 필터 지원, [#3072](https://github.com/hyperdxio/hyperdx/pull/3072) PromQL 레이블 필터의 autocomplete 지원, [#3039](https://github.com/hyperdxio/hyperdx/pull/3039) Prometheus 레이블 값 endpoint에서 선택적 시간 경계 허용, [#3079](https://github.com/hyperdxio/hyperdx/pull/3079) PromQL 레이블 및 값 endpoint에서 match[] 지원, [#3080](https://github.com/hyperdxio/hyperdx/pull/3080) PromQL 레이블 필터에서 match[] 지원, [#3083](https://github.com/hyperdxio/hyperdx/pull/3083) Mantine 크래시 방지를 위해 PromQL 레이블 및 값 중복 제거, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) 필터 Editor를 닫을 때 저장되지 않은 변경 사항 폐기 전 확인, [#3078](https://github.com/hyperdxio/hyperdx/pull/3078) 대시보드 필터를 Required로 구성하는 기능 지원, [#3093](https://github.com/hyperdxio/hyperdx/pull/3093) tile Editor 프리뷰에 대시보드 필터를 선택적으로 적용
+
+## PromQL 차트용 사용자 정의 범례 Template {#custom-legend-templates-for-promql-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Vladimir가 지적했듯이 PromQL 범례는 읽기 어려웠습니다. 기본적으로 메트릭 이름 뒤에 반환된 series 간에 서로 다른 모든 레이블을 함께 표시하기 때문에, 많은 series를 반환하는 쿼리에서는 문자열이 지나치게 길어져 클릭해서 열어봐야 내용을 파악할 수 있었습니다.
+
+이제 차트의 display settings에서 범례 Template을 지정할 수 있습니다. Handlebars Template이므로 실제로 필요한 레이블만 참조하여 범례와 tooltip 모두에서 짧은 series 이름을 사용할 수 있습니다.
+
+Template이 존재하지 않는 레이블을 참조하면 해당 부분은 빈 값으로 렌더링됩니다. 결과가 비어 있거나 series 간에 unique하지 않으면 구분에 필요한 전체 레이블 집합으로 폴백되므로, 서로 구분할 수 없는 두 series가 생기는 일은 없습니다.
+
+**관련 PR:** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) PromQL series 범례에 대한 사용자 정의 Template 지원
+
+## 상대 날짜 범위를 대시보드 기본값으로 저장하기 {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 대시보드에서 상대 날짜 범위를 기본값으로 저장할 수 있습니다. 원하는 시간 범위를 설정한 뒤 &quot;Save Query and Filters as default&quot;를 클릭하면, 이후부터 대시보드가 해당 범위로 열립니다.
+
+핵심은 상대 범위입니다. &quot;최근 6시간&quot;으로 저장해 두면 시간이 지나면 오래된 값이 되는 고정 구간에 묶이지 않고, 대시보드를 열 때마다 항상 적절한 구간이 표시됩니다. 대시보드에서 범위를 변경해 최근 7일을 확인한 뒤 다른 화면으로 이동했다가 돌아오면 저장된 기본값이 다시 적용됩니다.
+
+**관련 PR:** [#3073](https://github.com/hyperdxio/hyperdx/pull/3073) 대시보드에 상대 날짜 범위를 저장할 수 있습니다
+
+## saved search나 대시보드 tile 없이 사용하는 알림 {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 모든 알림에 기반이 되는 대상이 반드시 필요했습니다. logs에는 saved search가, 메트릭에는 대시보드 tile이 있어야 했습니다. 하지만 수천 개의 Grafana 알림을 마이그레이션할 때는 이런 방식으로 확장하기 어렵습니다.
+
+인라인 알림은 이러한 요구 사항을 없앱니다. 차트 Explorer의 액션 바에 **Create alert** 액션이 추가되어, 메트릭나 events로 차트를 구성한 뒤 아무것도 저장하지 않고 곧바로 알림을 만들 수 있습니다. 알림 페이지에서도 인라인 알림을 생성할 수 있는데, 알림을 saved search나 대시보드와 연결하고 싶지 않을 때 이 방법을 사용하면 됩니다.
+
+인라인 알림은 자체 `chartConfig`를 알림 문서에 저장하며, 그 형태는 대시보드 tile이 저장하는 것과 완전히 동일합니다. 따라서 별도의 경로가 아니라 tile 알림과 동일한 코드 경로로 평가됩니다. `line`, `stacked_bar`, `number` 표시 방식에서 builder와 Raw SQL을 모두 지원하며, PromQL은 현재 지원되지 않습니다.
+
+동일한 `source: 'inline'` 형태는 external v2 API와 MCP `save_alert` 도구에서도 사용할 수 있으며, 대시보드가 사용하는 것과 동일한 tile 구성 방언 v2를 따릅니다. 덕분에 대규모로 알림을 프로그래밍 방식으로 생성할 수 있습니다. 라우터는 대시보드 tile 컨버터를 재사용하므로 두 영역이 서로 어긋나지 않습니다.
+
+**관련 PR:** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) saved searches나 대시보드 tiles 없이 알림 생성 지원(backend), [#3069](https://github.com/hyperdxio/hyperdx/pull/3069) 인라인 차트 알림 생성 및 편집 UI, [#3043](https://github.com/hyperdxio/hyperdx/pull/3043) external API v2 및 MCP에서 차트 알림 지원
+
+## 알림 이름 및 태그 {#alert-names-and-tags}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 알림에 자체 이름과 태그를 지정할 수 있습니다. 대시보드 tile 또는 saved search의 알림 양식에는 이름 입력란과 태그 입력란이 있으며, 새 알림은 기본적으로 차트 또는 saved search의 이름을 사용하고 해당 알림이 속한 대시보드 또는 saved search의 태그를 상속합니다.
+
+알림 페이지에 표시되는 이름이 바로 이 이름이며, 검색과 필터링의 기준도 이 이름입니다. 이름이 설정되지 않은 채 이미 데이터베이스에 저장된 알림은 이전과 같이 참조 중인 saved search 또는 대시보드에서 이름을 가져옵니다.
+
+`team/tags` endpoint가 반환하는 태그에는 이제 대시보드와 saved search의 태그뿐 아니라 알림 document의 태그도 포함됩니다. 이 처리가 없으면 알림에서만 사용된 태그는 다음 알림에 태그를 지정할 때 후보로 제안되지 않습니다.
+
+이는 태그별 검색 및 필터링을 계속 지원하면서 알림 페이지에 페이지네이션을 도입하기 위한 사전 작업입니다. 이를 위해서는 대시보드 및 saved search collection과 join하는 대신 알림 document 자체에 이름과 태그가 있어야 합니다. 페이지네이션은 아직 적용되지 않았습니다.
+
+**관련 PR:** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) 알림 수준 displayName 및 태그 유지, [#3065](https://github.com/hyperdxio/hyperdx/pull/3065) 알림 displayName 및 태그 쓰기 지원, [#3067](https://github.com/hyperdxio/hyperdx/pull/3067) UI에서 알림 displayName 및 태그 표시 및 편집, [#3092](https://github.com/hyperdxio/hyperdx/pull/3092) 태그 API 응답에 알림 태그 포함, [#3029](https://github.com/hyperdxio/hyperdx/pull/3029) 알림 이름 및 태그 backfill (진행 중)
+
+## Explore 프로토타입 {#an-explore-prototype}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이는 탐색적 작업이며, 출시를 약속하는 것은 아닙니다.**
+
+이 프로토타입은 검색 페이지와 차트 Explorer를 모두 대체하는 단일 Explore 페이지입니다. 현재 HyperDX 저장소에서 초안 상태로 있습니다. 기존 페이지들을 대체할 수도 있고, 세 번째 페이지로 함께 제공될 수도 있으며, 아무 결과 없이 끝날 수도 있습니다.
+
+이 작업이 해결하려는 문제는 현재의 두 페이지를 오가는 일입니다. 고객들은 검색에서 시작한 질문을 차트 Explorer로 가져가는 과정이 번거롭다고 이야기합니다. 반대편에서 data source를 다시 선택하고 동일한 쿼리를 처음부터 다시 만들어야 하는 경우가 많기 때문입니다. Explore는 이 모든 과정을 한 페이지에서 처리하며, 페이지 자체가 바뀌는 대신 events, patterns, deltas, 차트 사이에서 view만 전환됩니다.
+
+두 번째 주제는 쿼리 language에 익숙하지 않은 사용자의 진입 장벽을 낮추는 것입니다. table에 컬럼을 추가하고, 정렬하고, group-by를 선택하는 작업이 모두 드롭다운으로 제공되며, 필요할 때는 SQL도 그대로 사용할 수 있습니다. group-by는 현재의 간극을 잘 보여주는 예시입니다. 검색 페이지의 histogram은 status code로 그룹화되어 있고 이를 변경할 방법이 없어, 다른 기준으로 그룹화하려면 차트 Explorer로 이동해야 합니다. 이 프로토타입에서는 events view에서 group-by를 설정하고, 작은 histogram만으로는 부족할 때 time series나 막대 차트로 전환하며, aggregation을 `p99` 같은 값으로 변경한 뒤 결과를 대시보드에 저장할 수 있습니다.
+
+필터 바는 Lucene과 SQL을 모두 추상화한 작은 쿼리 builder입니다. field를 선택하고, 연산자를 선택하고, value를 입력하면 되며, 고급 사용자를 위한 전체 쿼리 편집기와 macros도 함께 제공됩니다. 애초에 두 개의 쿼리 language를 두는 것이 올바른 답인지 여부 또한 아직 열려 있는 질문 중 하나입니다.
+
+아직 정해지지 않은 부분이 많습니다. PromQL은 아직 지원되지 않으며, 메트릭이 이 페이지에 포함되어야 할지, 아니면 그것이 단일 페이지에 지나친 부담을 주는 것인지도 결정되지 않았습니다. 이 프로토타입은 logs와 traces 경험에 집중하고 있습니다.
+
+이에 대한 의견을 기다립니다.
+
+**관련 PR:** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explore as search-first visualization (prototype) (open)

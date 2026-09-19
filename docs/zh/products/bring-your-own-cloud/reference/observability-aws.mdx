@@ -9,10 +9,10 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-BYOC 部署提供全面的可观测性功能，使您能够通过专用的 Prometheus 监控栈以及 ClickHouse 服务器直接暴露的指标端点来监控您的 ClickHouse 服务。所有可观测性数据都会保留在您的云账户中，让您能够完全掌控自己的监控基础设施。
+BYOC 部署提供全面的可观测性功能，使您能够通过专用的 Prometheus 监控栈以及 ClickHouse 服务器直接暴露的指标端点来监控您的 ClickHouse 服务。您的监控数据都会保留在您的云账户中，让您能够完全掌控自己的监控基础设施。[网络边界](/zh/products/bring-your-own-cloud/reference/network-security#outbound-connections)中列出的受限用量与健康状况遥测数据是唯一导出到 ClickHouse 的监控数据；此外，ClickHouse 的仪表盘以及在经过批准的处理流程后其工程师可通过 Tailscale 就地查询该栈，且不会在 ClickHouse 一侧留存任何数据 —— 参见 [ClickHouse 数据访问](/zh/products/bring-your-own-cloud/reference/clickhouse-data-access)。
 
 <div id="prometheus-monitoring">
-  ## Prometheus 监控方法
+  ## Prometheus 监控方法 {#prometheus-monitoring}
 </div>
 
 BYOC 提供了两种使用 Prometheus 收集和可视化指标的主要方法：
@@ -21,7 +21,7 @@ BYOC 提供了两种使用 Prometheus 收集和可视化指标的主要方法：
 2. **直接抓取 ClickHouse 指标**：将你自己的 Prometheus 部署指向各个 ClickHouse 服务暴露的 `/metrics_all` 端点。
 
 <div id="monitoring-approaches-comparison">
-  ### 监控方式对比
+  ### 监控方式对比 {#monitoring-approaches-comparison}
 </div>
 
 | 能力         | 内置 Prometheus 栈                                  | 直接从 ClickHouse 服务抓取                      |
@@ -37,7 +37,7 @@ BYOC 提供了两种使用 Prometheus 收集和可视化指标的主要方法：
 **建议**：对于大多数使用场景，我们建议集成内置 Prometheus 栈，因为它能够提供 BYOC 部署中所有组件 (ClickHouse 服务、Kubernetes 集群和配套服务) 的全面指标，而不仅仅是 ClickHouse 服务器指标。
 
 <div id="builtin-prometheus-stack">
-  ## 内置 BYOC Prometheus 栈
+  ## 内置 BYOC Prometheus 栈 {#builtin-prometheus-stack}
 </div>
 
 ClickHouse BYOC 会在 Kubernetes 集群内部署一套完整的 Prometheus 监控栈，其中包括 Prometheus、Grafana、AlertManager，以及可选的 Thanos (用于长期存储指标) 。该栈会从以下来源采集指标：
@@ -46,9 +46,7 @@ ClickHouse BYOC 会在 Kubernetes 集群内部署一套完整的 Prometheus 监�
 * Kubernetes 集群和系统组件
 * 底层基础设施节点
 
-<div id="accessing-prometheus-stack">
-  ### 访问 Prometheus 栈
-</div>
+### 访问 Prometheus 栈 {#accessing-prometheus-stack}
 
 要连接内置的 Prometheus 栈：
 
@@ -70,7 +68,7 @@ ClickHouse BYOC 会在 Kubernetes 集群内部署一套完整的 Prometheus 监�
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### 与您的监控工具集成
+  ### 与您的监控工具集成 {#prometheus-stack-integration}
 </div>
 
 您可以通过多种方式将 BYOC Prometheus 栈接入您的监控体系：
@@ -109,14 +107,12 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## ClickHouse 服务 Prometheus 集成
+  ## ClickHouse 服务 Prometheus 集成 {#direct-prometheus-integration}
 </div>
 
 ClickHouse 服务会暴露一个与 Prometheus 兼容的指标端点，你可以直接使用自己的 Prometheus 实例进行抓取。这种方式可提供 ClickHouse 特有的指标，但不包含 Kubernetes 或相关支持服务的指标。
 
-<div id="metrics-endpoint">
-  ### 访问指标端点
-</div>
+### 访问指标端点 {#metrics-endpoint}
 
 指标端点位于您的 ClickHouse 服务端点上的 `/metrics_all`：
 
@@ -139,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### 身份验证
+  ### 身份验证 {#authentication}
 </div>
 
 指标端点需要使用 ClickHouse 凭据进行身份验证。我们建议使用 `default` 用户，或专门创建一个仅具备最小权限、用于抓取指标的用户。
@@ -171,9 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-<div id="configuring-prometheus">
-  ### 配置 Prometheus
-</div>
+### 配置 Prometheus {#configuring-prometheus}
 
 将你的 Prometheus 实例配置为抓取 ClickHouse 的指标端点：
 
@@ -199,14 +193,12 @@ scrape_configs:
 * 将 `<username>` 和 `<password>` 替换为用于抓取的用户凭据
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin
+  ## ClickHouse Mixin {#clickhouse-mixin}
 </div>
 
 对于希望直接使用现成仪表盘的团队，ClickHouse 提供了一个 Prometheus **ClickHouse Mixin**。这是一个预先构建好的 Grafana 仪表盘，专门用于监控 ClickHouse 集群。
 
-<div id="setup-grafana-mixin">
-  ### 设置 Grafana 并导入 ClickHouse Mix-in
-</div>
+### 设置 Grafana 并导入 ClickHouse Mix-in {#setup-grafana-mixin}
 
 当你的 Prometheus 实例已集成到 ClickHouse 监控栈中后，即可按以下步骤在 Grafana 中将指标可视化：
 

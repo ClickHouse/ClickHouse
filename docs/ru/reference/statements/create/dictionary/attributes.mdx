@@ -53,7 +53,7 @@ PRIMARY KEY Id
 * `AttrName AttrType` — столбец данных. Атрибутов может быть несколько.
 
 <div id="key">
-  ## Ключ
+  ## Ключ {#key}
 </div>
 
 ClickHouse поддерживает следующие типы ключей:
@@ -68,7 +68,7 @@ XML-структура может содержать либо `<id>`, либо `
 </Note>
 
 <div id="numeric-key">
-  ### Числовой ключ
+  ### Числовой ключ {#numeric-key}
 </div>
 
 Тип: `UInt64`.
@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – Имя столбца, содержащего ключи.
 
-<div id="composite-key">
-  ### Составной ключ
-</div>
+### Составной ключ {#composite-key}
 
 Ключом может быть `Tuple` из полей любых типов. [Структура](/ru/reference/statements/create/dictionary/layouts/overview) в этом случае должна быть `complex_key_hashed` или `complex_key_cache`.
 
@@ -144,7 +142,7 @@ PRIMARY KEY field1, field2
 Когда составной ключ состоит из одного атрибута, значение ключа можно передать напрямую, без обёртки в `tuple`. Например, допустимы оба варианта: `dictGetString('dict_name', 'attr_name', 'key')` и `dictGetString('dict_name', 'attr_name', tuple('key'))`.
 
 <div id="attributes">
-  ## Атрибуты
+  ## Атрибуты {#attributes}
 </div>
 
 Пример конфигурации:

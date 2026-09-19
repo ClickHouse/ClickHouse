@@ -13,15 +13,11 @@ doc_type: 'مرجع'
   *الطرق غير الموثقة هنا لا تُعد جزءًا من واجهة برمجة التطبيقات، وقد تُزال أو تتغير.*
 </Note>
 
-<div id="client-initialization">
-  ## تهيئة العميل
-</div>
+## تهيئة العميل {#client-initialization}
 
 استخدم `clickhouse_connect.get_client` لإنشاء `Client` متزامن، أو ثبّت الإضافة `async` واستخدم `await` مع `clickhouse_connect.get_async_client` لإنشاء `AsyncClient` أصلي.
 
-<div id="connection-arguments">
-  ### وسائط الاتصال
-</div>
+### وسائط الاتصال {#connection-arguments}
 
 | المعامل                    | النوع                                       | القيمة الافتراضية                              | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | -------------------------- | ------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,12 +29,12 @@ doc_type: 'مرجع'
 | `access_token`             | str أو None                                 | `None`                                         | رمز وصول JWT الخاص بـ ClickHouse Cloud. لا يمكن استخدامه مع `token_provider` أو مصادقة اسم المستخدم/كلمة المرور.                                                                                                                                                                                                                                                                                                                                                        |
 | `token_provider`           | callable أو None                            | `None`                                         | دالة قابلة للاستدعاء توفّر JWT في البداية وبعد رفض المصادقة. يمكن استخدام موفّر غير متزامن مع `get_async_client`.                                                                                                                                                                                                                                                                                                                                                       |
 | `database`                 | str أو None                                 | الإعداد الافتراضي للمستخدم                     | قاعدة البيانات الافتراضية. يؤدّي تمرير `None` إلى طلب قاعدة البيانات الافتراضية للمستخدم على الخادم.                                                                                                                                                                                                                                                                                                                                                                    |
-| `secure`                   | bool أو str                                 | `False`                                        | تمكين HTTPS/TLS. كما يؤدي `interface="https"` أيضًا إلى استخدام HTTPS، وكذلك المنفذ 443 أو 8443 عندما لا يكون `interface` مُعيَّنًا.                                                                                                                                                                                                                                                                                                                                    |
-| `dsn`                      | str أو None                                 | `None`                                         | URL الاتصال. تكون للوسيطات keyword الصريحة الأسبقية على القيم التي جرى parse لها من DSN. شفِّر المحارف المحجوزة بترميز النسبة المئوية في بيانات الاعتماد وأسماء قواعد البيانات.                                                                                                                                                                                                                                                                                         |
-| `settings`                 | dict أو None                                | `None`                                         | إعدادات ClickHouse التي تُطبَّق على كل request يُرسله client.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `headers`                  | dict أو None                                | `None`                                         | رؤوس HTTP التي تُطبَّق على كل طلب، بما في ذلك تهيئة العميل. تُطبَّق رؤوس المستخدم بعد الإعدادات الافتراضية الخاصة بـ driver، ويمكنها تجاوزها.                                                                                                                                                                                                                                                                                                                           |
-| `compress`                 | bool أو str                                 | `True`                                         | فعِّل الضغط أو اختر `"lz4"` أو `"zstd"` أو `"br"` أو `"gzip"`. اطّلع على [الضغط](/ar/integrations/language-clients/python/additional-options#compression).                                                                                                                                                                                                                                                                                                                 |
-| `query_limit`              | int                                         | `0`                                            | حد الصفوف الافتراضي الذي يُضاف إلى الاستعلامات المؤهلة. يعني الصفر عدم وجود حد. مرِّر النتائج الكبيرة كتدفّق بدلًا من تحميلها كلها في الذاكرة.                                                                                                                                                                                                                                                                                                                          |
+| `secure`                   | bool أو str                                 | `False`                                        | تمكين HTTPS/TLS. كما يؤدي `interface="https"` أيضًا إلى استخدام HTTPS، وكذلك المنفذ 443 أو 8443 عندما لا يكون `interface` مُعيَّنًا.                                                                                                                                                                                                                                                                                                                                    |
+| `dsn`                      | str أو None                                 | `None`                                         | URL الاتصال. تكون للوسيطات keyword الصريحة الأسبقية على القيم التي جرى parse لها من DSN. شفِّر المحارف المحجوزة بترميز النسبة المئوية في بيانات الاعتماد وأسماء قواعد البيانات.                                                                                                                                                                                                                                                                                         |
+| `settings`                 | dict أو None                                | `None`                                         | إعدادات ClickHouse التي تُطبَّق على كل request يُرسله client.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `headers`                  | dict أو None                                | `None`                                         | رؤوس HTTP التي تُطبَّق على كل طلب، بما في ذلك تهيئة العميل. تُطبَّق رؤوس المستخدم بعد الإعدادات الافتراضية الخاصة بـ driver، ويمكنها تجاوزها.                                                                                                                                                                                                                                                                                                                           |
+| `compress`                 | bool أو str                                 | `True`                                         | فعِّل الضغط أو اختر `"lz4"` أو `"zstd"` أو `"br"` أو `"gzip"`. اطّلع على [الضغط](/ar/integrations/language-clients/python/additional-options#compression).                                                                                                                                                                                                                                                                                                                 |
+| `query_limit`              | int                                         | `0`                                            | حد الصفوف الافتراضي الذي يُضاف إلى الاستعلامات المؤهلة. يعني الصفر عدم وجود حد. مرِّر النتائج الكبيرة كتدفّق بدلًا من تحميلها كلها في الذاكرة.                                                                                                                                                                                                                                                                                                                          |
 | `query_retries`            | int                                         | `2`                                            | عدد محاولات إعادة التنفيذ المسموح به لحالات فشل القراءة القابلة لإعادة المحاولة. لا تُعاد محاولة الأوامر وعمليات insert عمومًا لأن إعادة التنفيذ قد تؤدي إلى تكرار الآثار الجانبية.                                                                                                                                                                                                                                                                                     |
 | `connect_timeout`          | int                                         | `10`                                           | مهلة الاتصال بالثواني.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `send_receive_timeout`     | int                                         | `300`                                          | مهلة قراءة الـsocket بالثواني.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -51,16 +47,15 @@ doc_type: 'مرجع'
 | `pool_mgr`                 | `urllib3.PoolManager` أو None               | الإعداد الافتراضي المشترك                      | مدير pool مخصص للعميل المتزامن فقط.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `tz_source`                | str أو None                                 | `"auto"`                                       | مصدر المنطقة الزمنية البديل للأعمدة التي تفتقر إلى بيانات وصفية للمنطقة الزمنية: `"auto"`، `"server"`، أو `"local"`.                                                                                                                                                                                                                                                                                                                                                    |
 | `tz_mode`                  | str أو None                                 | `"naive_utc"`                                  | سياسة نتائج UTC: `"naive_utc"`، أو `"aware"`، أو `"schema"`. راجع [المناطق الزمنية](/ar/integrations/language-clients/python/advanced-querying#time-zones).                                                                                                                                                                                                                                                                                                                |
-| `show_clickhouse_errors`   | bool، سلسلة نصية منطقية، `"scrub"`، أو None | `True`                                         | يتحكم في `str(exc)` لأخطاء الخادم وأخطاء النقل و`StreamFailureError` الذي يحدث أثناء البث. تتضمن القيمة `True` URL الطلب وذيل إصدار الخادم. تحتفظ `"scrub"` بنص خطأ SQL والاسم الرمزي، لكنها تحذف المضيف/‏URL وذيل `(version ...)`. تُرجع `False` رسالة عامة (يبقى `code` مُعيَّنًا لأخطاء الخادم). تُقبل السلاسل المنطقية. وتؤدي السلاسل الأخرى إلى إثارة `ProgrammingError`. بالنسبة إلى أخطاء النقل، يظل `__cause__` وآثار التتبع محتويَين على استثناء النقل الأصلي. |
+| `show_clickhouse_errors`   | bool، سلسلة نصية منطقية، `"scrub"`، أو None | `True`                                         | يتحكم في `str(exc)` لأخطاء الخادم وأخطاء النقل و`StreamFailureError` الذي يحدث أثناء البث. تتضمن القيمة `True` URL الطلب وذيل إصدار الخادم. تحتفظ `"scrub"` بنص خطأ SQL والاسم الرمزي، لكنها تحذف المضيف/‏URL وذيل `(version ...)`. تُرجع `False` رسالة عامة (يبقى `code` مُعيَّنًا لأخطاء الخادم). تُقبل السلاسل المنطقية. وتؤدي السلاسل الأخرى إلى إثارة `ProgrammingError`. بالنسبة إلى أخطاء النقل، يظل `__cause__` وآثار التتبع محتويَين على استثناء النقل الأصلي. |
 | `proxy_path`               | str                                         | `""`                                           | بادئة المسار المضافة إلى URL الخادم عند التوجيه عبر وكيل.                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `form_encode_query_params` | bool                                        | `False`                                        | ضع معلمات الاستعلام دائمًا في نص الطلب بترميز النموذج. وتُنقل حمولات المعلمات الكبيرة غير الثنائية تلقائيًا حتى عندما تكون هذه القيمة false.                                                                                                                                                                                                                                                                                                                            |
+| `native_codec`             | str أو None                                 | إعداد عام، `"python"`                          | codec تجريبي لحركة بيانات صيغة Native التي يديرها client: `"python"`، أو `"rust"`، أو `"rust_strict"`. تتطلب قيم Rust حزمة wheel المسمّاة `clickhouse-connect-core`. راجع [codec الخاص بـ Rust](/ar/integrations/language-clients/python/rust-codec).                                                                                                                                                                                                                      |
 | `rename_response_column`   | str أو None                                 | `None`                                         | استراتيجية إعادة تسمية الأعمدة: `"remove_prefix"`, `"to_camelcase"`, `"to_camelcase_without_prefix"`, `"to_underscore"`, أو `"to_underscore_without_prefix"`.                                                                                                                                                                                                                                                                                                           |
 
 تقبل الدالة المُنشِئة غير المتزامنة أيضًا `connector_limit=100` و`connector_limit_per_host=20` و`keepalive_timeout=30.0` لتهيئة مجمّع اتصالات aiohttp الخاص بها. ولا تقبل `pool_mgr`. تقبل الواجهة الخلفية المتزامنة لـ chDB أيضًا `path` و`chdb_options`؛ راجع [الواجهة الخلفية المضمنة لـ chDB](#embedded-chdb-backend).
 
-<div id="httpstls-arguments">
-  ### وسائط HTTPS/TLS
-</div>
+### وسائط HTTPS/TLS {#httpstls-arguments}
 
 | Parameter          | Type        | Default | Description                                                                                                                                                                                                                                   |
 | ------------------ | ----------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,9 +66,7 @@ doc_type: 'مرجع'
 | `server_host_name` | str or None | `None`  | اسم المضيف في شهادة TLS/SNI عندما يختلف عن `host`، مثل المرور عبر نفق أو Private Endpoint.                                                                                                                                                    |
 | `tls_mode`         | str or None | `None`  | يستخدم `"mutual"` authentication عبر mutual TLS في ClickHouse. ويرسل `"proxy"` و`"strict"` الشهادة على طبقة TLS دون تفعيل headers الخاصة بمصادقة الشهادات في ClickHouse. وتتصرف القيمة الافتراضية `None` مثل `"mutual"` عند توفير شهادة عميل. |
 
-<div id="settings-argument">
-  ### وسيطة Settings
-</div>
+### وسيطة Settings {#settings-argument}
 
 أخيرًا، تُستخدم وسيطة `settings` في `get_client` لتمرير إعدادات ClickHouse إضافية إلى الخادم مع كل طلب من العميل. لاحظ أنه في معظم الحالات، لا يمكن للمستخدمين الذين لديهم صلاحية وصول *readonly*=*1* تعديل الإعدادات المرسلة مع الاستعلام، لذلك سيُسقط ClickHouse Connect هذه الإعدادات من الطلب النهائي ويسجل تحذيرًا. تنطبق الإعدادات التالية فقط على استعلامات/جلسات HTTP التي يستخدمها ClickHouse Connect، وليست موثقة باعتبارها إعدادات ClickHouse عامة.
 
@@ -93,9 +86,7 @@ doc_type: 'مرجع'
 
 للاطلاع على إعدادات ClickHouse الأخرى التي يمكن إرسالها مع كل استعلام، راجع [وثائق ClickHouse](/ar/reference/settings/session-settings).
 
-<div id="client-creation-examples">
-  ### أمثلة على إنشاء العميل
-</div>
+### أمثلة على إنشاء العميل {#client-creation-examples}
 
 * من دون أي معلمات، سيتصل عميل ClickHouse Connect بمنفذ HTTP الافتراضي على `localhost` باستخدام المستخدم `default` ومن دون كلمة مرور:
 
@@ -141,9 +132,7 @@ print(client.database)
 # Output: github
 ```
 
-<div id="embedded-chdb-backend">
-  ### الواجهة الخلفية المضمّنة لـ chDB
-</div>
+### الواجهة الخلفية المضمّنة لـ chDB {#embedded-chdb-backend}
 
 ثبّت `clickhouse-connect[chdb]` لاستخدام الواجهة الخلفية التجريبية لـ chDB التي تعمل داخل العملية. وهي توفّر طرق العميل المتزامنة للاستعلام والإدراج والتدفّق وArrow:
 
@@ -158,24 +147,18 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 
 الإعداد الافتراضي هو قاعدة بيانات داخل الذاكرة. مرِّر `path="/data/my_chdb"` أو استخدم `dsn="chdb:///data/my_chdb"` للتخزين الدائم. تسمح الواجهة الخلفية بمسار محرك واحد لكل عملية، ولا تدعم `get_async_client` أو البيانات الخارجية.
 
-<div id="client-lifecycle-and-best-practices">
-  ## دورة حياة العميل وأفضل الممارسات
-</div>
+## دورة حياة العميل وأفضل الممارسات {#client-lifecycle-and-best-practices}
 
 يُعَدّ إنشاء عميل ClickHouse Connect عملية مكلفة، إذ يتضمن إنشاء اتصال، واسترجاع البيانات الوصفية الخاصة بالخادم، وتهيئة الإعدادات. اتبع أفضل الممارسات التالية لتحقيق أفضل أداء:
 
-<div id="core-principles">
-  ### المبادئ الأساسية
-</div>
+### المبادئ الأساسية {#core-principles}
 
 * **أعِد استخدام العملاء**: أنشئ العملاء مرة واحدة عند بدء تشغيل التطبيق، وأعِد استخدامهم طوال دورة حياة التطبيق
 * **تجنّب الإنشاء المتكرر**: لا تُنشئ عميلاً جديدًا لكل query أو طلب
 * **نظّف الموارد بشكل صحيح**: احرص دائمًا على إغلاق العملاء عند إيقاف التشغيل لتحرير موارد مجمع الاتصالات
 * **استخدم عميلاً واحدًا عند الإمكان**: يمكن لعميل واحد معالجة العديد من الاستعلامات المتزامنة عبر مجمع الاتصالات الخاص به (راجع ملاحظات مؤشرات الترابط أدناه)
 
-<div id="basic-patterns">
-  ### أنماط أساسية
-</div>
+### أنماط أساسية {#basic-patterns}
 
 أعِد استخدام عميل واحد:
 
@@ -211,9 +194,7 @@ for i in range(1000):
     client.close()
 ```
 
-<div id="multi-threaded-applications">
-  ### التطبيقات متعددة الخيوط
-</div>
+### التطبيقات متعددة الخيوط {#multi-threaded-applications}
 
 <Warning>
   مثيلات العميل **غير آمنة للاستخدام عبر خيوط متعددة** عند استخدام معرّفات الجلسات. افتراضيًا، يكون لكل عميل معرّف جلسة مُنشأ تلقائيًا، وستؤدي الاستعلامات المتزامنة ضمن الجلسة نفسها إلى ظهور `ProgrammingError`.
@@ -262,9 +243,7 @@ def worker(thread_id):
     client.close()
 ```
 
-<div id="proper-cleanup">
-  ### التنظيف الصحيح
-</div>
+### التنظيف الصحيح {#proper-cleanup}
 
 أغلق كائنات العميل دائمًا عند إيقاف التشغيل. لاحظ أن `client.close()` يحرّر العميل ويغلق اتصالات HTTP المجمّعة فقط عندما يكون العميل هو مالك مدير الـ pool الخاص به (على سبيل المثال، عند إنشائه باستخدام خيارات TLS/proxy مخصّصة). أمّا بالنسبة إلى الـ pool المشتركة الافتراضية، فاستخدم `client.close_connections()` لإغلاق الـ sockets بشكل استباقي؛ وإلا فستُسترد الاتصالات تلقائيًا عند انتهاء مهلة الخمول وعند خروج العملية.
 
@@ -291,9 +270,7 @@ with clickhouse_connect.get_client(
     result = client.query("SELECT 1")
 ```
 
-<div id="when-to-use-multiple-clients">
-  ### متى تستخدم عدة عملاء
-</div>
+### متى تستخدم عدة عملاء {#when-to-use-multiple-clients}
 
 يكون استخدام عدة عملاء مناسبًا في الحالات التالية:
 
@@ -303,21 +280,15 @@ with clickhouse_connect.get_client(
 * **جلسات معزولة**: عندما تحتاج إلى جلسات منفصلة للجداول المؤقتة أو للإعدادات الخاصة بالجلسة
 * **عزل لكل خيط تنفيذ**: عندما تحتاج خيوط التنفيذ إلى جلسات مستقلة (كما هو موضح أعلاه)
 
-<div id="common-method-arguments">
-  ## وسائط الطرق الشائعة
-</div>
+## وسائط الطرق الشائعة {#common-method-arguments}
 
 تستخدم عدة طرق في العميل إحدى وسيطتي `parameters` و`settings` الشائعتين أو كلتيهما. وتُشرح وسائط الكلمات المفتاحية هذه أدناه.
 
-<div id="parameters-argument">
-  ### وسيطة Parameters
-</div>
+### وسيطة Parameters {#parameters-argument}
 
 تقبل طرائق `query*` و`command` في ClickHouse Connect Client وسيطة keyword اختيارية باسم `parameters`، تُستخدم لربط تعبيرات بايثون بتعبير قيمة في ClickHouse. ويتوفر نوعان من هذا الربط.
 
-<div id="server-side-binding">
-  #### الربط من جهة الخادم
-</div>
+#### الربط من جهة الخادم {#server-side-binding}
 
 يدعم ClickHouse [الربط من جهة الخادم](/ar/concepts/features/interfaces/client#cli-queries-with-parameters) لقيم الاستعلام. تُرسَل القيمة المربوطة منفصلةً عن الاستعلام كمعلمة HTTP. يستخدم ClickHouse Connect هذا الوضع عندما يكتشف تعبيرًا بالصيغة `{<name>:<datatype>}`. مرِّر القيم في قاموس بايثون.
 
@@ -357,9 +328,7 @@ WHERE date >= '2022-10-01 15:20:05'
   الربط من جهة الخادم مدعوم في استعلامات `SELECT` فقط. ولا يعمل مع `ALTER` أو `DELETE` أو `INSERT` أو أي نوع آخر من العبارات.
 </Warning>
 
-<div id="client-side-binding">
-  #### الربط من جهة العميل
-</div>
+#### الربط من جهة العميل {#client-side-binding}
 
 يدعم ClickHouse Connect أيضًا ربط المعلمات من جهة العميل، ما يتيح مرونة أكبر عند إنشاء استعلامات SQL المعتمدة على القوالب. بالنسبة إلى الربط من جهة العميل، يجب أن تكون وسيطة `parameters` قاموسًا أو تسلسلًا. ويستخدم الربط من جهة العميل تنسيق السلاسل بأسلوب [&quot;printf&quot;](https://docs.python.org/3/library/stdtypes.html#old-string-formatting) في بايثون لإجراء استبدال المعلمات.
 
@@ -434,9 +403,7 @@ WHERE metric >= 35200.44
   تُنسَّق معلمة `datetime.time` أو `datetime.timedelta` كقيمة حرفية `[-]HH:MM:SS[.ffffff]` لأعمدة ClickHouse `Time` و`Time64`، في أسلوبي الربط كليهما وداخل قيم `Array` و`Tuple`. يضيف العميل علامتي الاقتباس، لذا لا تضع علامات اقتباس حول العنصر النائب في الاستعلام. قد تكون قيمة `timedelta` سالبة وقد تتجاوز 24 ساعة. تحتفظ قيمة `Timedelta` من pandas بالنانوثواني الخاصة بها وتُنسَّق بكسر من تسع خانات لـ `Time64(9)`. تُتجاهل معلومات المنطقة الزمنية في قيمة `time` المراعية للمنطقة الزمنية لأن ClickHouse `Time` لا يحتوي على منطقة زمنية.
 </Note>
 
-<div id="settings-argument">
-  ### وسيطة Settings
-</div>
+### وسيطة Settings {#settings-argument-1}
 
 تقبل جميع طُرق `insert` و`select` الأساسية في ClickHouse Connect Client وسيطةً اختيارية باسم `settings` لتمرير [إعدادات المستخدم](/ar/reference/settings/session-settings) الخاصة بخادم ClickHouse لعبارة SQL المضمَّنة. يجب أن تكون وسيطة `settings` قاموسًا. ويجب أن يتكوّن كل عنصر من اسم إعداد في ClickHouse والقيمة المرتبطة به. لاحظ أن القيم ستُحوَّل إلى سلاسل نصية عند إرسالها إلى الخادم كمعلمات استعلام.
 
@@ -457,9 +424,7 @@ client.query(
 )
 ```
 
-<div id="client-command-method">
-  ## طريقة `command` في `Client`
-</div>
+## طريقة `command` في `Client` {#client-command-method}
 
 استخدم `Client.command` مع التعليمات التي لا تُرجِع مجموعة بيانات جدولية، أو مع الاستعلامات التي تُرجِع قيمة بدائية واحدة أو صفًا واحدًا. وبحسب الاستجابة، فإنها تُرجِع سلسلة نصية، أو عددًا صحيحًا، أو تسلسلًا من السلاسل النصية، أو `QuerySummary`. وتُرجِع عملية القراءة التي تنتج مجموعة نتائج فارغة سلسلةً نصية فارغة.
 
@@ -473,13 +438,9 @@ client.query(
 | external&#95;data      | ExternalData     | *None*     | كائن `ExternalData` يحتوي على بيانات ملف أو بيانات ثنائية لاستخدامها مع الاستعلام. راجع [الاستعلامات المتقدمة (البيانات الخارجية)](/ar/integrations/language-clients/python/advanced-querying#external-data)                          |
 | transport&#95;settings | dict             | *None*     | قاموس اختياري من ترويسات HTTP لتضمينها مع هذا الطلب. يُضاف كل زوج مفتاح-قيمة كترويسة HTTP (مثل `{'X-Custom-Header': 'value'}`). وهو مفيد لمصادقة الوكيل، أو تتبّع الطلبات، أو تمرير الترويسات التي تتطلبها البنية التحتية الوسيطة. |
 
-<div id="command-examples">
-  ### أمثلة الأوامر
-</div>
+### أمثلة الأوامر {#command-examples}
 
-<div id="ddl-statements">
-  #### عبارات DDL
-</div>
+#### عبارات DDL {#ddl-statements}
 
 ```python
 import clickhouse_connect
@@ -510,9 +471,7 @@ print(result)
 client.command("DROP TABLE test_command")
 ```
 
-<div id="simple-queries-returning-single-values">
-  #### استعلامات بسيطة تُعيد قيماً مفردة
-</div>
+#### استعلامات بسيطة تُعيد قيماً مفردة {#simple-queries-returning-single-values}
 
 ```python
 import clickhouse_connect
@@ -528,9 +487,7 @@ version = client.command("SELECT version()")
 print(version)
 ```
 
-<div id="commands-with-parameters">
-  #### الأوامر ذات المعلمات
-</div>
+#### الأوامر ذات المعلمات {#commands-with-parameters}
 
 ```python
 import clickhouse_connect
@@ -551,9 +508,7 @@ result = client.command(
 )
 ```
 
-<div id="commands-with-settings">
-  #### الأوامر ذات الإعدادات
-</div>
+#### الأوامر ذات الإعدادات {#commands-with-settings}
 
 ```python
 import clickhouse_connect
@@ -567,9 +522,7 @@ result = client.command(
 )
 ```
 
-<div id="client-query-method">
-  ## طريقة `query` في Client
-</div>
+## طريقة `query` في Client {#client-query-method}
 
 تسترجع `Client.query` مجموعة بيانات جدولية بتنسيق ClickHouse Native وتُرجع `QueryResult`. تُحمَّل النتيجة الكاملة في الذاكرة عند الوصول إلى إحدى خصائص النتيجة. استخدم طريقة بث للنتائج التي لا ينبغي الاحتفاظ بها في الذاكرة.
 
@@ -592,13 +545,9 @@ result = client.command(
 | `transport_settings` | dict             | `None`         | HTTP headers تُضاف إلى هذا الطلب.                                                                                                                           |
 | `tz_mode`            | str              | Client default | تجاوز على مستوى الاستعلام لمعالجة المنطقة الزمنية بالقيم `"naive_utc"` أو `"aware"` أو `"schema"`.                                                          |
 
-<div id="query-examples">
-  ### أمثلة على الاستعلامات
-</div>
+### أمثلة على الاستعلامات {#query-examples}
 
-<div id="basic-query">
-  #### استعلام بسيط
-</div>
+#### استعلام بسيط {#basic-query}
 
 ```python
 import clickhouse_connect
@@ -625,9 +574,7 @@ print([col_type.name for col_type in result.column_types])
 # Output: ['UInt64', 'String']
 ```
 
-<div id="accessing-query-results">
-  #### الوصول إلى نتائج الاستعلام
-</div>
+#### الوصول إلى نتائج الاستعلام {#accessing-query-results}
 
 ```python
 import clickhouse_connect
@@ -661,9 +608,7 @@ print(result.first_row)
 # Output: (0, '0')
 ```
 
-<div id="query-with-client-side-parameters">
-  #### استعلام باستخدام معلمات جهة العميل
-</div>
+#### استعلام باستخدام معلمات جهة العميل {#query-with-client-side-parameters}
 
 ```python
 import clickhouse_connect
@@ -681,9 +626,7 @@ parameters = ("system", 5)
 result = client.query(query, parameters=parameters)
 ```
 
-<div id="query-with-server-side-parameters">
-  #### استعلام باستخدام معلمات على جانب الخادم
-</div>
+#### استعلام باستخدام معلمات على جانب الخادم {#query-with-server-side-parameters}
 
 ```python
 import clickhouse_connect
@@ -697,9 +640,7 @@ parameters = {"db": "system", "tbl": "query_log"}
 result = client.query(query, parameters=parameters)
 ```
 
-<div id="query-with-settings">
-  #### الاستعلام مع الإعدادات
-</div>
+#### الاستعلام مع الإعدادات {#query-with-settings}
 
 ```python
 import clickhouse_connect
@@ -716,9 +657,7 @@ result = client.query(
 )
 ```
 
-<div id="the-queryresult-object">
-  ### كائن `QueryResult`
-</div>
+### كائن `QueryResult` {#the-queryresult-object}
 
 تُرجِع طريقة `query` الأساسية كائن `QueryResult` بالخصائص العامة التالية:
 
@@ -736,21 +675,15 @@ result = client.query(
 
 راجع [الاستعلامات المتدفقة](/ar/integrations/language-clients/python/advanced-querying#streaming-queries) للتعرّف على واجهات برمجة التطبيقات `StreamContext` المدعومة.
 
-<div id="consuming-query-results-with-numpy-pandas-or-arrow">
-  ## استهلاك نتائج الاستعلام باستخدام NumPy أو Pandas أو Arrow
-</div>
+## استهلاك نتائج الاستعلام باستخدام NumPy أو Pandas أو Arrow {#consuming-query-results-with-numpy-pandas-or-arrow}
 
 يوفّر ClickHouse Connect طرق استعلام متخصصة لتنسيقات بيانات NumPy وPandas وArrow. للحصول على معلومات مفصلة حول استخدام هذه الطرق، بما في ذلك الأمثلة وإمكانات البث والتعامل المتقدم مع الأنواع، راجع [الاستعلام المتقدم (استعلامات NumPy وPandas وArrow)](/ar/integrations/language-clients/python/advanced-querying#numpy-pandas-and-arrow-queries).
 
-<div id="client-streaming-query-methods">
-  ## أساليب Client للاستعلامات المتدفقة
-</div>
+## أساليب Client للاستعلامات المتدفقة {#client-streaming-query-methods}
 
 لبث مجموعات نتائج كبيرة، يوفّر ClickHouse Connect عدة أساليب للبث المتدفق. راجع [الاستعلامات المتقدمة (الاستعلامات المتدفقة)](/ar/integrations/language-clients/python/advanced-querying#streaming-queries) للاطلاع على التفاصيل والأمثلة.
 
-<div id="client-insert-method">
-  ## طريقة `insert` في `Client`
-</div>
+## طريقة `insert` في `Client` {#client-insert-method}
 
 في حالة الاستخدام الشائعة المتمثلة في إدراج عدة سجلات في ClickHouse، تتوفر الطريقة `Client.insert`. وتقبل المعلمات التالية:
 
@@ -775,15 +708,11 @@ result = client.query(
   تُعد مصفوفة NumPy أيضًا Sequence of Sequences صالحة، ويمكن استخدامها كوسيط `data` مع طريقة `insert` الأساسية، لذلك لا حاجة إلى طريقة متخصصة.
 </Note>
 
-<div id="examples">
-  ### أمثلة
-</div>
+### أمثلة {#examples}
 
 تفترض الأمثلة الواردة أدناه وجود جدول `users` مسبقًا، بمخطط `(id UInt32, name String, age UInt8)`.
 
-<div id="basic-row-oriented-insert">
-  #### إدراج أساسي موجّه بالصفوف
-</div>
+#### إدراج أساسي موجّه بالصفوف {#basic-row-oriented-insert}
 
 ```python
 import clickhouse_connect
@@ -799,9 +728,7 @@ data = [
 client.insert("users", data, column_names=["id", "name", "age"])
 ```
 
-<div id="column-oriented-insert">
-  #### إدراج موجّه بالأعمدة
-</div>
+#### إدراج موجّه بالأعمدة {#column-oriented-insert}
 
 ```python
 import clickhouse_connect
@@ -818,9 +745,7 @@ data = [
 client.insert("users", data, column_names=["id", "name", "age"], column_oriented=True)
 ```
 
-<div id="insert-with-explicit-column-types">
-  #### إدراج باستخدام أنواع أعمدة صريحة
-</div>
+#### إدراج باستخدام أنواع أعمدة صريحة {#insert-with-explicit-column-types}
 
 ```python
 import clickhouse_connect
@@ -841,9 +766,7 @@ client.insert(
 )
 ```
 
-<div id="insert-into-specific-database">
-  #### الإدراج في قاعدة بيانات محددة
-</div>
+#### الإدراج في قاعدة بيانات محددة {#insert-into-specific-database}
 
 ```python
 import clickhouse_connect
@@ -864,21 +787,15 @@ client.insert(
 )
 ```
 
-<div id="file-inserts">
-  ## الإدراج من الملفات
-</div>
+## الإدراج من الملفات {#file-inserts}
 
 لإدراج البيانات مباشرةً من الملفات إلى جداول ClickHouse، راجع [الإدراج المتقدم (الإدراج من الملفات)](/ar/integrations/language-clients/python/advanced-inserting#file-inserts).
 
-<div id="raw-api">
-  ## واجهة برمجة التطبيقات الخام
-</div>
+## واجهة برمجة التطبيقات الخام {#raw-api}
 
 للاطلاع على حالات الاستخدام المتقدمة التي تتطلب وصولًا مباشرًا إلى واجهات HTTP الخاصة بـ ClickHouse من دون تحويلات للأنواع، راجع [الاستخدام المتقدم (واجهة برمجة التطبيقات الخام)](/ar/integrations/language-clients/python/advanced-usage#raw-api).
 
-<div id="python-db-api-20">
-  ## بايثون DB-API 2.0
-</div>
+## بايثون DB-API 2.0 {#python-db-api-20}
 
 تُنفِّذ وحدة `clickhouse_connect.dbapi` واجهة الاتصال والمُؤشِّر وفقًا للمعيار PEP 249. وهي تُعرِّف مستوى واجهة برمجة التطبيقات بأنه 2.0، و`threadsafety=2`، و`paramstyle="pyformat"`. وتوفّر الوحدة أيضًا مُنشئات الأنواع وفقًا للمعيار PEP 249، وهي `Date` و`Time` و`Timestamp` و`Binary`، والدوال `DateFromTicks` و`TimeFromTicks` و`TimestampFromTicks`.
 
@@ -912,46 +829,32 @@ finally:
 
 لا يوفّر ClickHouse معاملات تقليدية عبر واجهة HTTP هذه. وتُعدّ `Connection.commit()` و`Connection.rollback()` عمليتَي no-op. ولا تزال [قواعد تزامن معرّف الجلسة](/ar/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids) تنطبق عند مشاركة الاتصال.
 
-<div id="utility-classes-and-functions">
-  ## فئات ودوال الأدوات المساعدة
-</div>
+## فئات ودوال الأدوات المساعدة {#utility-classes-and-functions}
 
 توفر الوحدات التالية أدوات مساعدة عامة إضافية تستخدمها التطبيقات العميلة.
 
 يُعرض إصدار الحزمة المثبتة في السلسلة `clickhouse_connect.__version__`.
 
-<div id="exceptions">
-  ### الاستثناءات
-</div>
+### الاستثناءات {#exceptions}
 
 تُعرَّف الاستثناءات المخصّصة، بما في ذلك التسلسل الهرمي للاستثناءات في DB-API 2.0، في `clickhouse_connect.driver.exceptions`. ويوفّر كلٌّ من `DatabaseError` و`OperationalError` السمة الرقمية `code` التي تحمل رمز الخطأ في ClickHouse، والسمة `name` التي تحمل الاسم الرمزي مثل `UNKNOWN_TABLE`، بحيث يمكن للتطبيقات التفريع بناءً على `exc.code` بدلًا من تحليل الرسالة. تُضبط `code` حتى عند تعطيل `show_clickhouse_errors`، بينما تتطلب `name` تفاصيل الخطأ (`True` أو `"scrub"`). وتكون كلتاهما `None` عند عدم توفرهما، كما في أخطاء النقل. استخدم `show_clickhouse_errors="scrub"` عندما ينبغي للمستخدمين النهائيين رؤية أخطاء SQL دون معلومات عن المضيف أو إصدار الخادم. يتحكم الإعداد أيضًا في رسائل `StreamFailureError` أثناء التدفق ورسائل النقل العامة. وهو يتحكم في `str(exc)` فقط. تظل أخطاء النقل مرفقة باعتبارها `__cause__`، ويمكن أن تحتوي آثار التتبع على نص الخطأ الأصلي للمضيف أو URL أو المكتبة.
 
-<div id="clickhouse-sql-utilities">
-  ### أدوات ClickHouse SQL
-</div>
+### أدوات ClickHouse SQL {#clickhouse-sql-utilities}
 
 يمكن استخدام الدوال والفئة DT64Param في الوحدة `clickhouse_connect.driver.binding` لبناء استعلامات ClickHouse SQL وإفلاتها بشكل صحيح. وبالمثل، يمكن استخدام الدوال في الوحدة `clickhouse_connect.driver.parser` لتحليل أسماء أنواع بيانات ClickHouse.
 
-<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
-  ## حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث
-</div>
+## حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
 للحصول على معلومات حول استخدام ClickHouse Connect في التطبيقات متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث، راجع [الاستخدام المتقدم (حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة أو القائمة على الأحداث)](/ar/integrations/language-clients/python/advanced-usage#multithreaded-multiprocess-and-asyncevent-driven-use-cases).
 
-<div id="asyncclient">
-  ## AsyncClient
-</div>
+## AsyncClient {#asyncclient}
 
 للاطلاع على الاستخدام الأصلي لـ asyncio، راجع [الاستخدام المتقدم (AsyncClient)](/ar/integrations/language-clients/python/advanced-usage#asyncclient).
 
-<div id="managing-clickhouse-session-ids">
-  ## إدارة معرّفات الجلسات في ClickHouse
-</div>
+## إدارة معرّفات الجلسات في ClickHouse {#managing-clickhouse-session-ids}
 
 للاطلاع على معلومات حول إدارة معرّفات جلسات ClickHouse في التطبيقات متعددة الخيوط أو المتزامنة، راجع [الاستخدام المتقدم (إدارة معرّفات الجلسات في ClickHouse)](/ar/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids).
 
-<div id="customizing-the-http-connection-pool">
-  ## تخصيص مجمّع اتصالات HTTP
-</div>
+## تخصيص مجمّع اتصالات HTTP {#customizing-the-http-connection-pool}
 
 لمزيد من المعلومات حول تخصيص مجمّع اتصالات HTTP للتطبيقات الكبيرة متعددة الخيوط، راجع [الاستخدام المتقدم (تخصيص مجمّع اتصالات HTTP)](/ar/integrations/language-clients/python/advanced-usage#customizing-the-http-connection-pool).

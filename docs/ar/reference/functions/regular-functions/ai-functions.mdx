@@ -29,9 +29,7 @@ doc_type: 'reference'
 * **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings/ai-function#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
-<div id="configuration">
-  ## الإعداد
-</div>
+## الإعداد {#configuration}
 
 تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) مقابل دوال التضمين (`aiEmbed`, `aiSimilarity`)، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
 
@@ -53,9 +51,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     api_key = 'sk-...';
 ```
 
-<div id="named-collection-parameters">
-  ### معلمات المجموعة المسماة
-</div>
+### معلمات المجموعة المسماة {#named-collection-parameters}
 
 | المعلمة       | النوع  | الافتراضي | الوصف                                                                                                                                                                                      |
 | ------------- | ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -70,9 +66,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   يمكن استخدام أي واجهة برمجة تطبيقات متوافقة مع OpenAI (مثل vLLM وOllama وLiteLLM) عبر ضبط `provider = 'openai'` وتوجيه `endpoint` إلى خدمتك.
 </Note>
 
-<div id="selecting-credentials">
-  ### اختيار بيانات الاعتماد
-</div>
+### اختيار بيانات الاعتماد {#selecting-credentials}
 
 تحدِّد الدالة المجموعة المُسمّاة المطلوب استخدامها وفق الترتيب التالي:
 
@@ -100,9 +94,7 @@ SELECT * FROM reviews
 WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
-<div id="parameter-map">
-  ### خريطة المعلمات
-</div>
+### خريطة المعلمات {#parameter-map}
 
 تقبل كل دالة، اختياريًا، ‎`Map(String, String)`‎ من المعلمات في النهاية. جميع القيم سلاسل نصية (ضع الأرقام بين علامتَي اقتباس، مثل ‎`'0.2'`‎). تُرفض المفاتيح غير المعروفة. وإذا كان المفتاح موجودًا، فإنه يتجاوز القيمة المناظرة في المجموعة المُسمّاة؛ أما إذا لم يكن موجودًا، فيُستخدَم ما في المجموعة المُسمّاة (بالنسبة إلى ‎`model`‎/‎`max_tokens`‎) أو القيمة الافتراضية المضمّنة. والاستثناء هو دوال التضمين (‎`aiEmbed`‎ و‎`aiSimilarity`‎)، إذ تأخذ ‎`model`‎ بوصفها وسيطة موضعية مطلوبة (مثل ‎`aiEmbed(text, model[, params])`‎ و‎`aiSimilarity(text1, text2, model[, params])`‎) وتُرجع خطأ إذا جرى تعيينها بدلًا من ذلك في خريطة المعلمات أو المجموعة المُسمّاة. وذلك لضمان تضمينات قابلة لإعادة الإنتاج.
 
@@ -119,15 +111,11 @@ WHERE aiFilter(body, 'the customer is angry about shipping');
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
-<div id="query-level-settings">
-  ### إعدادات على مستوى الاستعلام
-</div>
+### إعدادات على مستوى الاستعلام {#query-level-settings}
 
 تَرِد جميع الإعدادات المتعلقة بالذكاء الاصطناعي في [الإعدادات](/ar/reference/settings/session-settings) تحت البادئة `ai_function_`.
 
-<div id="restricting-endpoint-hosts">
-  ### تقييد مضيفات نقطة النهاية
-</div>
+### تقييد مضيفات نقطة النهاية {#restricting-endpoint-hosts}
 
 يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
 
@@ -140,9 +128,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 لاحظ أن هذا الإعداد عام على مستوى الخادم ويسري على جميع الميزات التي تستخدم HTTP.
 
-<div id="transport-security">
-  ### أمان النقل (HTTP مقابل HTTPS)
-</div>
+### أمان النقل (HTTP مقابل HTTPS) {#transport-security}
 
 يُحدَّد النقل حصريًا من خلال scheme لعنوان URL الخاص بـ `endpoint`. لا يوجد تشفير على مستوى التطبيق لحمولة الطلب؛ إذ تعتمد حماية البيانات أثناء النقل بالكامل على هذا الـ scheme:
 
@@ -153,18 +139,14 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 لاحظ أنه في كلتا الحالتين يتلقى الموفّر بيانات الإدخال بصيغة مكشوفة بعد إنهاء TLS؛ إذ لا يحمي TLS البيانات إلا على مسار الشبكة بين الخادم والموفّر.
 
-<div id="supported-providers">
-  ## الموفّرون المدعومون
-</div>
+## الموفّرون المدعومون {#supported-providers}
 
 | الموفّر   | قيمة `provider` | وظائف الدردشة | ملاحظات                             |
 | --------- | --------------- | ------------- | ----------------------------------- |
 | OpenAI    | `'openai'`      | نعم           | الموفّر الافتراضي.                  |
 | Anthropic | `'anthropic'`   | نعم           | يستخدم نقطة النهاية `/v1/messages`. |
 
-<div id="observability">
-  ## Observability
-</div>
+## Observability {#observability}
 
 يُتتبَّع نشاط AI function عبر [ProfileEvents](/ar/reference/system-tables/query_log) في ClickHouse:
 
@@ -197,9 +179,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-<div id="aiClassify">
-  ## aiClassify
-</div>
+## aiClassify {#aiClassify}
 
 أُضيف في: v26.4.0
 
@@ -209,6 +189,10 @@ ORDER BY event_time DESC;
 من المفتاح `credentials` في خريطة المعلمات الاختيارية، أو من الإعداد
 `ai_function_text_default_credentials` إذا لم تتضمنه الخريطة.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -217,11 +201,11 @@ aiClassify(text, categories[, params])
 
 **الأسماء البديلة**: `AIClassify`
 
-**الوسيطة**
+**وسيطات الدالة**
 
 * `text` — النص المطلوب تصنيفه. [`String`](/ar/reference/data-types/string)
 * `categories` — قائمة ثابتة بتسميات الفئات المرشحة. [`Array(String)`](/ar/reference/data-types/array)
-* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بالدالة: `temperature` (درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية؛ القيمة الافتراضية `0.0`) و`max_tokens` (الحد الأقصى لعدد الرموز المُخرجة في كل استدعاء؛ القيمة الافتراضية `1024`). كما تنطبق أيضًا المعلمات العامة `credentials` و`model` (راجع [دالة الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بالدالة: `temperature` (درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية؛ القيمة الافتراضية `0.0`) و`max_tokens` (الحد الأقصى لعدد الرموز المُخرجة في كل استدعاء؛ القيمة الافتراضية `1024`). كما تنطبق أيضًا المعلمات العامة `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
 
 **القيمة المُعادة**
 
@@ -232,7 +216,6 @@ aiClassify(text, categories[, params])
 **تصنيف المشاعر**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -243,15 +226,12 @@ positive
 **تصنيف عمود باستخدام بيانات اعتماد صريحة**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-<div id="aiEmbed">
-  ## aiEmbed
-</div>
+## aiEmbed {#aiEmbed}
 
 أُضيف في: v26.6.0
 
@@ -281,9 +261,9 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 aiEmbed(text, model[, params])
 ```
 
-**اسم بديل**: `AIEmbed`
+**الأسماء البديلة**: `AIEmbed`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `text` — النص المراد تحويله إلى تضمين. [`String`](/ar/reference/data-types/string)
 * `model` — اسم نموذج التضمين. [`const String`](/ar/reference/data-types/string)
@@ -298,29 +278,24 @@ aiEmbed(text, model[, params])
 **تضمين سلسلة نصية واحدة (يمكن حذف `credentials` إذا كان الإعداد `ai_function_embedding_default_credentials` مضبوطًا)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **مع تحديد الأبعاد صراحةً**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **إنشاء تضمينات لعمود من النصوص**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (title String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-<div id="aiExtract">
-  ## aiExtract
-</div>
+## aiExtract {#aiExtract}
 
 أُضيف في: v26.4.0
 
@@ -336,6 +311,10 @@ SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding
 من المفتاح `credentials` في خريطة المعلمات الاختيارية، أو من الإعداد
 `ai_function_text_default_credentials` عندما لا تتضمن الخريطة هذا المفتاح.
 
+<Note>
+  هذه الدالة غير حتمية: إذ يمكن أن تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -344,7 +323,7 @@ aiExtract(text, instruction_or_schema[, params])
 
 **الأسماء البديلة**: `AIExtract`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `text` — النص المراد استخراج المعلومات منه. [`String`](/ar/reference/data-types/string)
 * `instruction_or_schema` — تعليمة استخراج بصياغة حرة، أو كائن JSON ثابت يصف الحقول المطلوب استخراجها. [`const String`](/ar/reference/data-types/string)
@@ -359,7 +338,6 @@ aiExtract(text, instruction_or_schema[, params])
 **تعليمة بصياغة حرة**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -370,15 +348,12 @@ late and damaged package
 **استخراج المخطط**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (review String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-<div id="aiFilter">
-  ## aiFilter
-</div>
+## aiFilter {#aiFilter}
 
 أُضيف في: v26.8.0
 
@@ -399,15 +374,19 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 ملاحظة: يؤدي استخدام `aiFilter` في `JOIN ... ON` إلى تقييم LLM مرة واحدة لكل زوج مرشّح، وقد يكون ذلك مكلفًا.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 aiFilter(text, condition[, params])
 ```
 
-**اسم بديل**: `AIFilter`
+**الأسماء البديلة**: `AIFilter`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `text` — النص المراد تقييمه. [`String`](/ar/reference/data-types/string)
 * `condition` — شرط ثابت باللغة الطبيعية يجب أن يستوفيه النص. [`String`](/ar/reference/data-types/string)
@@ -422,7 +401,6 @@ aiFilter(text, condition[, params])
 **تصفية المراجعات الغاضبة**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (body String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
@@ -431,15 +409,12 @@ SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping
 **تصفية عمود باستخدام بيانات اعتماد صريحة**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-<div id="aiGenerate">
-  ## aiGenerate
-</div>
+## aiGenerate {#aiGenerate}
 
 أُضيف في: v26.4.0
 
@@ -455,6 +430,10 @@ SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_crede
 مثل النبرة، والتنسيق، والدور)، و`temperature`، و`max_tokens`، و`model`. إذا لم يتم تعيين `system_prompt`،
 فالقيمة الافتراضية هي: `You are a helpful assistant. Provide a clear and concise response.`
 
+<Note>
+  هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -463,7 +442,7 @@ aiGenerate(prompt[, params])
 
 **الأسماء البديلة**: `AIGenerate`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `prompt` — الموجّه أو السؤال الذي يُرسله المستخدم إلى النموذج. [`String`](/ar/reference/data-types/string)
 * `params` — قيمة ثابتة اختيارية من النوع `Map(String, String)` للمعلمات. المفاتيح الخاصة بالدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ والقيمة الافتراضية `0.7`)، و`max_tokens` (الحد الأقصى لعدد رموز الإخراج لكل استدعاء؛ والقيمة الافتراضية `1024`)، و`system_prompt` (تعليمة ثابتة على مستوى النظام لتوجيه سلوك النموذج؛ والقيمة الافتراضية موجّه عام للمساعد). كما تنطبق أيضًا المعلمتان العامتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
@@ -477,7 +456,6 @@ aiGenerate(prompt[, params])
 **سؤال بسيط**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -488,22 +466,18 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **مع بيانات اعتماد صريحة وموجّه النظام**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **لخّص قيم العمود**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-<div id="aiRedact">
-  ## aiRedact
-</div>
+## aiRedact {#aiRedact}
 
 أُضيف في: v26.8.0
 
@@ -533,15 +507,19 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 مع `AI_PROVIDER_RESPONSE_TRUNCATED` (أو تُنتج القيمة الافتراضية للعمود عندما يكون `ai_function_throw_on_error`
 معطلاً) بدلًا من إرجاع نص محجوب جزئيًا.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 aiRedact(text, categories[, params])
 ```
 
-**اسم بديل**: `AIRedact`
+**الأسماء البديلة**: `AIRedact`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `text` — النص المراد حجبه. [`String`](/ar/reference/data-types/string)
 * `categories` — قائمة ثابتة بفئات معلومات تحديد الهوية الشخصية المراد حجبها (مثل `['name', 'ssn', 'credit_card']`). تستخدم المصفوفة الفارغة مجموعة افتراضية من الفئات الشائعة (الاسم، والبريد الإلكتروني، ورقم الهاتف، والعنوان، وبطاقة الائتمان، وعنوان IP). [`Array(String)`](/ar/reference/data-types/array)
@@ -556,7 +534,6 @@ aiRedact(text, categories[, params])
 **حجب فئات محددة**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -567,15 +544,12 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **احجب فئات معلومات تحديد الهوية الشخصية الافتراضية باستخدام رمز مميز مخصص**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE tickets (body String) ENGINE = Memory;
 INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-<div id="aiSimilarity">
-  ## aiSimilarity
-</div>
+## aiSimilarity {#aiSimilarity}
 
 أُضيف في: v26.8.0
 
@@ -592,7 +566,7 @@ SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 تتطابق عملية التجميع على دفعات وبيانات الاعتماد والمعلمة `dimensions` مع `aiEmbed`، بما في ذلك
 إعداد بيانات الاعتماد الافتراضية `ai_function_embedding_default_credentials`.
 
-كما في `aiEmbed`، يُعدّ `model` وسيطًا موضعيًا مطلوبًا (قيمة ثابتة من نوع `String`) ولا يُقرأ من
+كما في `aiEmbed`، تُعدّ `model` وسيطة موضعية مطلوبة (قيمة ثابتة من نوع `String`) ولا يُقرأ من
 المجموعة المُسمّاة أو خريطة المعلمات.
 
 **البنية**
@@ -601,9 +575,9 @@ SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 aiSimilarity(text1, text2, model[, params])
 ```
 
-**اسم بديل**: `AISimilarity`
+**الأسماء البديلة**: `AISimilarity`
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `text1` — النص الأول. [`String`](/ar/reference/data-types/string)
 * `text2` — النص الثاني. [`String`](/ar/reference/data-types/string)
@@ -619,14 +593,12 @@ aiSimilarity(text1, text2, model[, params])
 **قارن بين سلسلتين (`credentials` يمكن حذفها إذا كان الإعداد `ai_function_embedding_default_credentials` مضبوطًا)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **رتّب المراجعات حسب مدى تشابهها مع استعلام**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE product_reviews (review String) ENGINE = Memory;
 INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
@@ -635,15 +607,12 @@ SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well 
 **إزالة التكرار الدلالي باستخدام ربط ذاتي**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
 INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-<div id="aiTranslate">
-  ## aiTranslate
-</div>
+## aiTranslate {#aiTranslate}
 
 أُضيف في: v26.4.0
 
@@ -655,6 +624,10 @@ SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title
 من المفتاح `credentials` في خريطة المعلمات الاختيارية، أو من
 الإعداد `ai_function_text_default_credentials` إذا لم تتضمنه الخريطة.
 
+<Note>
+  هذه الدالة غير حتمية: فقد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -663,7 +636,7 @@ aiTranslate(text, target_language[, params])
 
 **الأسماء البديلة**: `AITranslate`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `text` — النص المراد ترجمته. [`String`](/ar/reference/data-types/string)
 * `target_language` — اسم اللغة الهدف أو رمز BCP-47 لها (مثل `'French'` و`'es-MX'`). [`String`](/ar/reference/data-types/string)
@@ -678,7 +651,6 @@ aiTranslate(text, target_language[, params])
 **الترجمة إلى الفرنسية**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -689,7 +661,6 @@ Bonjour le monde!
 **ترجم إلى اليابانية مع تعليمات الأسلوب**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5

@@ -6,13 +6,14 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<PrivatePreviewBadge />
 
 Esta página orienta você desde o token de inscrição até um conector íntegro e verificado. O conector é instalado em um de dois destinos: um cluster do Kubernetes (Helm) ou uma VM Linux (systemd). A inscrição por token é o fluxo padrão; se o ambiente não puder acessar diretamente os endpoints do ClickHouse, consulte [instalações isoladas da internet e espelhadas](#air-gapped-and-mirrored-installs).
 
-<div id="prerequisites">
-  ## Pré-requisitos
-</div>
+## Pré-requisitos {#prerequisites}
 
 Para todas as instalações:
 
@@ -40,9 +41,7 @@ Para instalações em VM Linux (systemd):
   `--skip-provision` é a única forma de contornar o requisito do Kubernetes e serve apenas para a etapa de preparação: ele ignora o provisionamento de usuários do ClickHouse e, em uma VM, a ativação e a verificação da unidade; portanto, não produz um conector em execução por si só.
 </Note>
 
-<div id="install-and-enroll">
-  ## Instale e faça o registro
-</div>
+## Instale e faça o registro {#install-and-enroll}
 
 <Steps>
   <Step title="Obtenha o endpoint do conector e o token de registro" id="get-endpoint-and-token">
@@ -153,9 +152,7 @@ Para instalações em VM Linux (systemd):
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## Instalações isoladas da internet e espelhadas
-</div>
+## Instalações isoladas da internet e espelhadas {#air-gapped-and-mirrored-installs}
 
 Dois componentes independentes podem ser transferidos fora de banda, dependendo do que seu ambiente consegue acessar.
 
@@ -167,9 +164,7 @@ No Kubernetes, `--chart` aceita um nome de chart resolvido por `--chart-repo`, u
 
 O instalador também funciona a partir de um espelho: hospede os artefatos do lançamento e `install.sh` em seu próprio espelho e use `CLICKLINK_MIRROR_URL` para apontar para ele.
 
-<div id="manual-download-and-verification">
-  ### Download e verificação manuais
-</div>
+### Download e verificação manuais {#manual-download-and-verification}
 
 Se preferir não usar pipe para executar o instalador, baixe e verifique o lançamento manualmente. O bloco detecta sua plataforma e arquitetura; execute-o como está no macOS ou Linux, amd64 ou arm64:
 
@@ -207,9 +202,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 Em uma VM, extraia o tarball e execute `sudo ./install.sh` no diretório extraído; ao lado dos artefatos do lançamento, ele realiza a mesma instalação no host que `--host`.
 
-<div id="if-something-fails">
-  ## Se algo falhar
-</div>
+## Se algo falhar {#if-something-fails}
 
 Execute novamente o mesmo comando. `init` é idempotente: novas execuções convergem para o mesmo estado, preservam a config e os arquivos preparados existentes e pulam o trabalho concluído. Quando uma etapa falha parcialmente, a CLI exibe os comandos de recuperação exatos para a sua situação, e é seguro repeti-los.
 

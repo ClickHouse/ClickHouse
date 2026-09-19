@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'chdb'
+description: 'Полная справочная документация по расширению chDB для Postgres'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb'
+title: 'Справочная документация по расширению chDB'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
+---
+
+## Краткое описание {#synopsis}
+
+```psql
+# CREATE EXTENSION chdb;
+CREATE EXTENSION
+
+# SELECT * FROM chdb_query('version()') AS (version text);
+ version
+----------
+ 26.7.2.1
+(1 row)
+```
+
+## Описание {#description}
+
+Расширение `chdb` выполняет запросы [chDB] во вспомогательном процессе.
+
+## Функции {#functions}
+
+<div id="pgchdb_version">
+  ### `pgchdb_version`
+</div>
+
+```sql
+SELECT pgchdb_version();
+```
+
+Возвращает текущую [семантическую версию][semver] библиотеки расширения chDB.
+Хотя версия расширения chDB использует только часть `x.y`, библиотека
+предоставляет полную [семантическую версию][semver] вида `x.y.z`. Это значение
+совпадает с тем, которое возвращает функция [`pg_get_loaded_modules()`] в Postgres 18
+и более поздних версиях:
+
+```sql
+SELECT version
+  FROM pg_get_loaded_modules()
+ WHERE module_name = 'chdb';
+```
+
+### `chdb_query` {#chdb_query}
+
+```sql
+SELECT * FROM chdb_query('SELECT version()') AS (version text);
+```
+
+Выполняет запрос [chDB] и возвращает его строки в виде отношения. При каждом вызове на диске создаётся временная база данных chDB, которая удаляется по завершении запроса. Поэтому объекты, созданные предыдущими вызовами `chdb_query()` (например, через DDL), не сохраняются для последующих вызовов.
+
+Список определений столбцов (`AS (col type, ...)`) обязателен: PostgreSQL требует определения структуры строки до получения строк, и эта структура должна соответствовать столбцам, возвращаемым запросом. Значения преобразуются из chDB в объявленные типы.
+
+По умолчанию ни одна роль не имеет права `EXECUTE`; выдайте `GRANT` роли, чтобы разрешить ей использовать эту функцию.
+
+```sql
+GRANT EXECUTE ON FUNCTION chdb_query(text) TO chdb_admin;
+```
+
+**Пример:**
+
+```sql
+SELECT * FROM chdb_query(
+    'SELECT number AS n, number * number FROM numbers(5) ORDER BY n'
+) AS (n int2, p int);
+```
+
+Вывод:
+
+```
+ n | p
+---+----
+ 0 |  0
+ 1 |  1
+ 2 |  4
+ 3 |  9
+ 4 | 16
+(5 rows)
+```
+
+## Кодирование текста {#text-encoding}
+
+О том, как байтовые строки chDB сопоставляются с типами Postgres `text`, `bytea` и другими, см. раздел [«Кодирование текста» в документации `chdb_hook`][text encoding].
+
+## Настройки {#settings}
+
+### `chdb.max_memory` {#chdbmax_memory}
+
+```sql
+SET chdb.max_memory = '1 GB';
+```
+
+Максимальный объём памяти для запроса chDB; задаёт настройку chDB
+[`max_memory_usage`]. Требует привилегий суперпользователя. Укажите целое число,
+означающее количество мегабайт, либо значение с одной из следующих единиц измерения памяти:
+
+* `B` (байты)
+* `kB` (килобайты)
+* `MB` (мегабайты)
+* `GB` (гигабайты)
+* `TB` (терабайты)
+
+Значение по умолчанию — `0`: объём памяти не ограничен.
+
+### `chdb.max_threads` {#chdmax_threads}
+
+```sql
+SET chdb.max_threads = 4;
+```
+
+Максимальное количество потоков обработки запроса для запроса chDB; используется для установки настройки chDB [`max_threads`]. Требует привилегий суперпользователя. Значение по умолчанию —
+`0`: в этом случае chDB определяет значение самостоятельно.
+
+Настоятельно рекомендуется задавать `chdb.max_threads` перед выполнением тяжёлого
+запроса, чтобы chDB не загрузила CPU целиком в ущерб
+PostgreSQL.
+
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+
+```sql
+SET chdb.max_parsing_threads = 2;
+```
+
+Максимальное количество потоков, которое chDB может использовать для разбора данных во входных форматах, поддерживающих параллельный разбор; задаётся настройкой chDB [`max_parsing_threads`]. Требует привилегий суперпользователя. Значение по умолчанию — `0`: в этом случае chDB определяет его самостоятельно.
+
+Рекомендуем задавать `chdb.max_parsing_threads` перед выполнением запроса, разбирающего большой объём данных, например при загрузке данных из [табличных функций], чтобы chDB не загружал CPU полностью в ущерб PostgreSQL.
+
+## Политика версионирования {#versioning-policy}
+
+Расширение chDB следует [семантическому версионированию][semver] в своих
+публичных выпусках.
+
+* Мажорная версия увеличивается при изменениях API
+* Минорная версия увеличивается при обратно совместимых изменениях SQL
+* Patch-версия увеличивается при изменениях, затрагивающих только бинарный файл
+
+После установки PostgreSQL отслеживает две разновидности версии:
+
+* Версия библиотеки (задаётся через `PG_MODULE_MAGIC` в PostgreSQL 18 и
+  выше) содержит полную семантическую версию и отображается в выводе функции
+  `pgchdb_version()` или функции Postgres [`pg_get_loaded_modules()`].
+* Версия расширения (задаётся в control-файле) содержит только мажорную
+  и минорную версии и отображается в таблице `pg_catalog.pg_extension`, в
+  выводе функции `pg_available_extension_versions()` и в `\dx chdb`.
+
+На практике это означает, что выпуск с увеличением patch-версии, например
+с `v0.1.0` до `v0.1.1`, полезен всем базам данных, в которые загружена версия `v0.1`,
+причём выполнять `ALTER EXTENSION` для получения обновления не требуется.
+
+Выпуск же с увеличением минорной или мажорной версии сопровождается
+SQL-скриптами обновления, и во всех существующих базах данных, где установлено
+расширение, необходимо выполнить `ALTER EXTENSION chdb UPDATE`, чтобы получить
+обновление.
+
+## Авторы {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## Авторские права {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB — быстрая, надёжная и масштабируемая встраиваемая (in-process) база данных"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: настройки сеанса max_memory_usage_*"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: настройки сеанса max_threads_*"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: настройка сеанса max_parsing_threads"
+
+[table functions]: https://clickhouse.com/docs/reference/functions/table-functions "ClickHouse Docs: табличные функции"
+
+[text encoding]: /products/managed-postgres/extensions/chdb/chdb_hook#text-encoding "Документация chdb_hook: кодирование текста"
+
+[semver]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"

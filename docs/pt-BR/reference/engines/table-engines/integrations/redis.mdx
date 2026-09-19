@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 Este motor permite integrar o ClickHouse ao [Redis](https://redis.io/). Como o Redis adota o modelo chave-valor, recomendamos fortemente que ele seja consultado apenas de forma pontual, como em `where k=xx` ou `where k in (xx, xx)`.
 
-<div id="creating-a-table">
-  ## Criar uma tabela
-</div>
+## Criar uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,25 +30,19 @@ PRIMARY KEY(primary_key_name);
 * `pool_size` — Tamanho máximo do pool de conexões do Redis; o padrão é 16.
 * `primary_key_name` - qualquer nome de coluna na lista de colunas.
 
-<Info>
-  **Serialização**
-
+<Note title="Serialização">
   `PRIMARY KEY` suporta apenas uma coluna. A chave primária será serializada em formato binário como uma chave do Redis.
   As colunas diferentes da chave primária serão serializadas em formato binário como valores do Redis, na ordem correspondente.
   Varreduras completas com `SELECT * FROM redis_table` podem falhar com erros de desserialização binária se o banco de dados Redis selecionado contiver chaves ou valores que não foram gravados pelo ClickHouse.
-</Info>
+</Note>
 
 Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections). Nesse caso, `host` e `port` devem ser especificados separadamente. Essa abordagem é recomendada para ambientes de produção. No momento, todos os parâmetros passados ao Redis usando coleções nomeadas são obrigatórios.
 
-<Info>
-  **Filtragem**
-
+<Note title="Filtragem">
   Consultas com `key equals` ou `in filtering` serão otimizadas para buscas de múltiplas chaves no Redis. Se as consultas não incluírem filtro pela chave, ocorrerá uma varredura completa da tabela, o que é uma operação custosa.
-</Info>
+</Note>
 
-<div id="usage-example">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#usage-example}
 
 Crie uma tabela no ClickHouse usando o motor `Redis` com argumentos simples:
 
@@ -156,9 +148,7 @@ Junção com outras tabelas.
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-<div id="limitations">
-  ## Limitações
-</div>
+## Limitações {#limitations}
 
 O motor Redis também oferece suporte a consultas de varredura, como `where k > xx`, mas tem algumas limitações:
 

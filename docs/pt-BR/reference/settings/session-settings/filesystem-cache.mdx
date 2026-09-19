@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="filesystem_cache_allow_background_download">
-  ## filesystem_cache_allow_background_download
-</div>
+## filesystem_cache_allow_background_download {#filesystem_cache_allow_background_download}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,19 +22,15 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Permite que o cache do sistema de arquivos enfileire downloads em segundo plano para dados lidos do armazenamento remoto. Desative esta opção para manter os downloads em primeiro plano para a consulta/sessão atual.
 
-<div id="filesystem_cache_boundary_alignment">
-  ## filesystem_cache_boundary_alignment
-</div>
+## filesystem_cache_boundary_alignment {#filesystem_cache_boundary_alignment}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Alinhamento da fronteira do cache do sistema de arquivos. Esta configuração se aplica apenas a leituras que não são feitas em disco (por exemplo, ao cache de motores de tabela remotos / funções de tabela, mas não à configuração de armazenamento de tabelas MergeTree). O valor 0 significa que não há alinhamento.
+Alinhamento da fronteira do cache do sistema de arquivos. Para leituras que não são feitas em disco (por exemplo, ao cache de motores de tabela remotos / funções de tabela), o valor 0 significa que não há alinhamento. Para leituras em disco (por exemplo, para tabelas MergeTree em um disco com cache), o valor 0 significa que o `boundary_alignment` da configuração do cache é utilizado.
 
-<div id="filesystem_cache_enable_background_download_during_fetch">
-  ## filesystem_cache_enable_background_download_during_fetch
-</div>
+## filesystem_cache_enable_background_download_during_fetch {#filesystem_cache_enable_background_download_during_fetch}
 
 <CloudOnlyBadge />
 
@@ -46,9 +40,7 @@ Alinhamento da fronteira do cache do sistema de arquivos. Esta configuração se
 
 Só tem efeito no ClickHouse Cloud. Tempo de espera para obter o bloqueio do cache para reserva de espaço no cache do sistema de arquivos
 
-<div id="filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage">
-  ## filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage
-</div>
+## filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage {#filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage}
 
 <CloudOnlyBadge />
 
@@ -58,25 +50,19 @@ Só tem efeito no ClickHouse Cloud. Tempo de espera para obter o bloqueio do cac
 
 Tem efeito apenas no ClickHouse Cloud. Tempo de espera para obter o bloqueio do cache para reserva de espaço no cache do sistema de arquivos
 
-<div id="filesystem_cache_max_download_size">
-  ## filesystem_cache_max_download_size
-</div>
+## filesystem_cache_max_download_size {#filesystem_cache_max_download_size}
 
 <SettingsInfoBlock type="UInt64" default_value="137438953472" />
 
 Tamanho máximo do cache do sistema de arquivos remoto que pode ser baixado por uma única consulta
 
-<div id="filesystem_cache_name">
-  ## filesystem_cache_name
-</div>
+## filesystem_cache_name {#filesystem_cache_name}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": ""},{"label": "Nome do cache do sistema de arquivos a ser usado para motores de tabela sem estado ou lagos de dados"}]}]} />
 
 Nome do cache do sistema de arquivos a ser usado para motores de tabela sem estado ou lagos de dados
 
-<div id="filesystem_cache_prefer_bigger_buffer_size">
-  ## filesystem_cache_prefer_bigger_buffer_size
-</div>
+## filesystem_cache_prefer_bigger_buffer_size {#filesystem_cache_prefer_bigger_buffer_size}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -84,9 +70,7 @@ Nome do cache do sistema de arquivos a ser usado para motores de tabela sem esta
 
 Dá preferência a um tamanho de buffer maior quando o cache do sistema de arquivos está habilitado, para evitar gravar pequenos segmentos de arquivo, o que prejudica o desempenho do cache. Por outro lado, habilitar essa configuração pode aumentar o uso de memória.
 
-<div id="filesystem_cache_reserve_space_wait_lock_timeout_milliseconds">
-  ## filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
-</div>
+## filesystem_cache_reserve_space_wait_lock_timeout_milliseconds {#filesystem_cache_reserve_space_wait_lock_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -94,17 +78,13 @@ Dá preferência a um tamanho de buffer maior quando o cache do sistema de arqui
 
 Tempo de espera para obter o bloqueio do cache para reserva de espaço no cache do sistema de arquivos
 
-<div id="filesystem_cache_segments_batch_size">
-  ## filesystem_cache_segments_batch_size
-</div>
+## filesystem_cache_segments_batch_size {#filesystem_cache_segments_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 Limite para o tamanho de um único lote de segmentos de arquivo que um buffer de leitura pode solicitar ao cache. Um valor muito baixo levará a solicitações excessivas ao cache; um valor muito alto pode tornar mais lenta a evicção do cache
 
-<div id="filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit">
-  ## filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit
-</div>
+## filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit {#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit}
 
 **Aliases**: `skip_download_if_exceeds_query_cache`
 
@@ -114,9 +94,7 @@ Limite para o tamanho de um único lote de segmentos de arquivo que um buffer de
 
 Ignora o download do sistema de arquivos remoto caso exceda o tamanho do cache de consultas
 
-<div id="filesystem_cache_verbose_logging">
-  ## filesystem_cache_verbose_logging
-</div>
+## filesystem_cache_verbose_logging {#filesystem_cache_verbose_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -124,9 +102,7 @@ Ignora o download do sistema de arquivos remoto caso exceda o tamanho do cache d
 
 Emite mensagens de log de nível `TEST` para cada recarga de buffer do cache do sistema de arquivos (estado da leitura, tamanho restante a ler, bytes lidos). Apenas para depuração: as mensagens são formatadas uma vez por leitura; portanto, habilitar essa opção em uma consulta que realiza muitas pequenas leituras em cache adiciona uma grande sobrecarga de logging. As mensagens só são visíveis quando o nível de log é `test` (consulte `send_logs_level`).
 
-<div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
-  ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
-</div>
+## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds {#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

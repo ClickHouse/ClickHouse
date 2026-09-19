@@ -53,7 +53,7 @@ PRIMARY KEY Id
 * `AttrName AttrType` — عمود البيانات. يمكن أن تكون هناك عدة سمات.
 
 <div id="key">
-  ## المفتاح
+  ## المفتاح {#key}
 </div>
 
 يدعم ClickHouse الأنواع التالية من المفاتيح:
@@ -68,7 +68,7 @@ PRIMARY KEY Id
 </Note>
 
 <div id="numeric-key">
-  ### المفتاح الرقمي
+  ### المفتاح الرقمي {#numeric-key}
 </div>
 
 النوع: `UInt64`.
@@ -98,17 +98,15 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – اسم العمود الذي يتضمن المفاتيح.
 
-<div id="composite-key">
-  ### مفتاح مركب
-</div>
+### مفتاح مركب {#composite-key}
 
-يمكن أن يكون المفتاح `tuple` مكوَّنًا من حقول بأي أنواع. ويجب أن يكون [التخطيط](/ar/reference/statements/create/dictionary/layouts/overview) في هذه الحالة `complex_key_hashed` أو `complex_key_cache`.
+يمكن أن يكون المفتاح `tuple` مكوَّنًا من حقول بأي أنواع. ويجب أن يكون [التخطيط](/ar/reference/statements/create/dictionary/layouts/overview) في هذه الحالة `complex_key_hashed` أو `complex_key_cache`.
 
 <Tip>
   يمكن أن يتكوّن المفتاح المركب من عنصر واحد. وهذا يتيح، على سبيل المثال، استخدام سلسلة نصية كمفتاح.
 </Tip>
 
-يُحدَّد تركيب المفتاح في العنصر `<key>`. وتُحدَّد حقول المفتاح بالتنسيق نفسه المستخدم في [سمات](#attributes) القاموس. مثال:
+يُحدَّد تركيب المفتاح في العنصر `<key>`. وتُحدَّد حقول المفتاح بالتنسيق نفسه المستخدم في [سمات](#attributes) القاموس. مثال:
 
 ```xml
 <structure>
@@ -139,12 +137,12 @@ PRIMARY KEY field1, field2
 ...
 ```
 
-بالنسبة إلى استعلام للدالة `dictGet*`، تُمرَّر قيمة tuple كمفتاح. مثال: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+بالنسبة إلى استعلام للدالة `dictGet*`، تُمرَّر قيمة tuple كمفتاح. مثال: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-عندما يتكوّن المفتاح المركب من سمة واحدة، يمكن تمرير قيمة المفتاح مباشرةً، من دون تغليفها داخل `tuple`. على سبيل المثال، كلٌّ من `dictGetString('dict_name', 'attr_name', 'key')` و `dictGetString('dict_name', 'attr_name', tuple('key'))` صحيح.
+عندما يتكوّن المفتاح المركب من سمة واحدة، يمكن تمرير قيمة المفتاح مباشرةً، من دون تغليفها داخل `tuple`. على سبيل المثال، كلٌّ من `dictGetString('dict_name', 'attr_name', 'key')` و `dictGetString('dict_name', 'attr_name', tuple('key'))` صحيح.
 
 <div id="attributes">
-  ## السمات
+  ## السمات {#attributes}
 </div>
 
 مثال على التهيئة:

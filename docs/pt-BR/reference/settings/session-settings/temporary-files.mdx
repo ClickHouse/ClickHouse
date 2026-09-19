@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="temporary_files_buffer_size">
-  ## temporary_files_buffer_size
-</div>
+## temporary_files_buffer_size {#temporary_files_buffer_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "Nova configuração"}]}]} />
 
-Tamanho do buffer para a escrita de arquivos temporários. Um buffer maior significa menos chamadas de sistema, mas maior consumo de memória.
+Tamanho do buffer para a escrita de arquivos temporários. Um buffer maior significa menos chamadas de sistema, mas maior consumo de memória. Um valor acima de 1 GiB é reduzido para 1 GiB.
 
-<div id="temporary_files_codec">
-  ## temporary_files_codec
-</div>
+## temporary_files_codec {#temporary_files_codec}
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 

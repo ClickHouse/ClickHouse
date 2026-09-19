@@ -42,9 +42,7 @@ doc_type: '참고'
 
 예를 들어 엔진 표현식 `URL('http://localhost/test.gzip')`에는 `gzip` 압축 방식이 적용되지만, `URL('http://localhost/test.fr')`의 경우 접미사 `fr`이 위의 어떤 압축 방식과도 일치하지 않으므로 압축이 적용되지 않습니다.
 
-<div id="scheme-dispatch">
-  ## URL 스킴별 디스패치
-</div>
+## URL 스킴별 디스패치 {#scheme-dispatch}
 
 `URL` 엔진은 다른 파일 및 객체 스토리지 엔진 위에 구축된 통합 래퍼로, URL 스킴에 따라 적절한 백엔드로 디스패치합니다. `http`/`https`(및 인식되지 않는 모든 스킴)는 `URL` 엔진 자체에서 처리하고, `file://`는 [File](/ko/reference/engines/table-engines/special/file) 엔진이, `s3://`, `gs://`, `gcs://`, `oss://`는 [S3](/ko/reference/engines/table-engines/integrations/s3) 엔진이, `az://`, `azure://`, `abfss://`, `abfs://`는 [AzureBlobStorage](/ko/reference/engines/table-engines/integrations/azureBlobStorage) 엔진이, `hdfs://`는 [HDFS](/ko/reference/engines/table-engines/integrations/hdfs) 엔진이 처리합니다.
 
@@ -57,9 +55,7 @@ CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', C
 CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
 ```
 
-<div id="using-the-engine-in-the-clickhouse-server">
-  ## 사용법
-</div>
+## 사용법 {#using-the-engine-in-the-clickhouse-server}
 
 `INSERT` 및 `SELECT` 쿼리는 각각 `POST` 및 `GET` 요청으로 변환됩니다.
 `POST` 요청을 처리하려면 원격 서버에서
@@ -67,18 +63,14 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 
 [max&#95;http&#95;get&#95;redirects](/ko/reference/settings/session-settings/max#max_http_get_redirects) 설정을 사용하여 HTTP GET 리디렉션의 최대 홉 수를 제한할 수 있습니다.
 
-<div id="wildcards-with-http-index-pages">
-  ## HTTP 인덱스 페이지의 와일드카드
-</div>
+## HTTP 인덱스 페이지의 와일드카드 {#wildcards-with-http-index-pages}
 
-[allow&#95;experimental&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages)가 활성화되면 `URL` 테이블 엔진은 HTTP 인덱스 페이지를 가져와 그 안의 링크를 추출해 와일드카드를 확장할 수 있습니다.
+[allow&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/ko/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages)가 활성화되면 `URL` 테이블 엔진은 HTTP 인덱스 페이지를 가져와 그 안의 링크를 추출해 와일드카드를 확장할 수 있습니다.
 이는 [`url`](/ko/reference/functions/table-functions/url#wildcards-with-http-index-pages) 테이블 함수와 동일한 메커니즘입니다.
 
 확장은 가져온 각 인덱스 페이지마다 [max&#95;http&#95;index&#95;page&#95;size](/ko/reference/settings/server-settings/settings/max#max_http_index_page_size)로 제한되며, 재귀적 디렉터리 순회는 [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/ko/reference/settings/session-settings/url#url_wildcard_max_directories_to_read)로 제한됩니다.
 
-<div id="example">
-  ## 예시
-</div>
+## 예시 {#example}
 
 **1.** 서버에 `url_engine_table` 테이블을 생성합니다:
 
@@ -123,9 +115,7 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-<div id="details-of-implementation">
-  ## 구현 세부 사항
-</div>
+## 구현 세부 사항 {#details-of-implementation}
 
 * 읽기와 쓰기는 병렬로 수행할 수 있습니다.
 * 다음은 지원되지 않습니다:
@@ -133,9 +123,7 @@ SELECT * FROM url_engine_table
   * 인덱스
   * 복제
 
-<div id="virtual-columns">
-  ## 가상 컬럼
-</div>
+## 가상 컬럼 {#virtual-columns}
 
 * `_path` — `URL`의 경로입니다. 유형: `LowCardinality(String)`.
 * `_file` — `URL` 리소스의 이름입니다. 유형: `LowCardinality(String)`.
@@ -143,9 +131,7 @@ SELECT * FROM url_engine_table
 * `_time` — 파일의 최종 수정 시간입니다. 유형: `Nullable(DateTime)`. 시간을 알 수 없으면 값은 `NULL`입니다.
 * `_headers` - HTTP 응답 헤더입니다. 유형: `Map(LowCardinality(String), LowCardinality(String))`.
 
-<div id="resolving-relative-urls">
-  ## 상대 URL 해석
-</div>
+## 상대 URL 해석 {#resolving-relative-urls}
 
 [url&#95;base](/ko/reference/settings/session-settings/url#url_base) 설정을 사용하면 `URL` 엔진에서 상대 URL을 사용할 수 있습니다. `url_base`가 설정되어 있으면 엔진에 전달된 URL은 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)에 따라 `url_base`를 기준으로 해석됩니다. 해석 규칙에 대한 전체 설명은 [url 테이블 함수 문서](/ko/reference/functions/table-functions/url#resolving-relative-urls)를 참조하십시오.
 
@@ -157,9 +143,7 @@ CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.cs
 SELECT * FROM url_engine_table;
 ```
 
-<div id="storage-settings">
-  ## 스토리지 설정
-</div>
+## 스토리지 설정 {#storage-settings}
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings/other#engine_url_skip_empty_files) - 읽을 때 빈 파일을 건너뛸 수 있습니다. 기본적으로 비활성화되어 있습니다.
 * [enable&#95;url&#95;encoding](/ko/reference/settings/session-settings/enable#enable_url_encoding) - URI 경로의 디코딩/인코딩을 활성화하거나 비활성화할 수 있습니다. 기본적으로 활성화되어 있습니다.

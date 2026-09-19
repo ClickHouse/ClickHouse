@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Neon'
+title: '从 Neon 迁移到 ClickHouse Managed Postgres'
+description: '了解如何将 PostgreSQL 数据从 Neon 迁移到 ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
+doc_type: 'guide'
+---
+
+ClickHouse Managed Postgres 内置 ClickPipes，提供从 Neon 迁移的全托管在线迁移方案。
+它会自动迁移 schema，通过并行快照执行经过优化的初始加载，并借助 CDC (变更数据捕获) 在切换前保持两个数据库同步。
+借助 ClickPipes，客户只需数小时即可完成数 TB 级 Postgres 数据库的迁移。
+
+<Steps>
+  <Step title="准备 Neon">
+    创建具有读取和复制权限的专用 ClickPipes 用户：
+
+    ```sql
+    CREATE USER clickpipes_user PASSWORD '<password>';
+
+    GRANT USAGE ON SCHEMA public TO clickpipes_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO clickpipes_user;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO clickpipes_user;
+    ALTER USER clickpipes_user WITH REPLICATION;
+
+    ```
+
+    请在生产环境的 Neon 分支上执行上述步骤，并为每个需要迁移的 schema 重复授予相应权限。
+    每张被复制的表都必须具有主键，或设置 `REPLICA IDENTITY FULL`。
+
+    在 Neon 控制台中，前往 **Settings → Logical Replication** 并启用逻辑复制。
+    如果启用了 IP 限制，请放行 ClickPipes 的静态 IP 地址。详细说明请参阅 [Neon 源设置指南](/zh/integrations/clickpipes/postgres/source/neon-postgres)。
+  </Step>
+
+  <Step title="使用 ClickPipes 完成迁移与切换">
+    请按照 [ClickPipes 迁移指南](/zh/products/managed-postgres/migrations/clickpipes) 配置并完成迁移。
+    ClickPipes 可自动完成端到端流程：
+
+    * 将源 schema 迁移到空的目标数据库。
+    * 通过并行快照执行经过优化的初始加载。
+    * 使用 CDC (变更数据捕获) 保持目标端与 Neon 同步。
+    * 提供进度、复制延迟和错误监控。
+    * 引导你完成校验与切换。
+
+    初始加载完成且复制延迟接近零后，即可在 ClickPipe 详情视图中通过引导式的 **Post-migration steps** 选项卡执行切换。完整操作流程请参阅 [切换流量](/zh/products/managed-postgres/migrations/clickpipes#cutover)。向导将依次引导你完成以下操作：
+
+    1. 将 Neon 设为只读模式以停止写入。
+    2. 校验源端与目标端的行数是否一致。
+    3. 暂停管道。
+    4. 在目标端重置序列。
+    5. 将应用程序的连接字符串指向 ClickHouse Managed Postgres，完成流量切换。
+    6. 删除 replication slot 与 ClickPipe，完成清理。
+
+    请让 Neon 继续以只读模式保留一段时间，以备回滚之需。
+    待新环境稳定后，再执行清理步骤，移除 ClickPipe 及其 replication slot。
+  </Step>
+</Steps>
+
+## 迁移注意事项 {#migration-considerations}
+
+### 分支 {#branches}
+
+Neon 提供即时的 copy-on-write 分支能力。ClickHouse Managed Postgres 使用 local NVMe storage，以提供快速、可预测且可靠的 Postgres 性能。
+代价是分支并非即时创建，而是通过 [Point-in-Time Recovery (PITR)](/zh/products/managed-postgres/backup-and-restore) 以独立部署的形式创建，通常在几分钟内即可使用。
+
+对于日常开发，我们建议维护一个较小的 ClickHouse Managed Postgres 开发数据库，其中包含具有代表性且已脱敏的 production 数据 (例如几 GB) ，并按需从中创建 PITR 分支。分支的创建与清理可以通过我们的官方命令行客户端 [clickhousectl](/zh/concepts/features/interfaces/cli)、[OpenAPI](/zh/products/managed-postgres/openapi) 或 [Terraform](/zh/products/managed-postgres/terraform) 实现自动化
+
+一些客户借助这种方式管理着数百个开发环境。我们也在持续改进分支与 sandbox 体验。请参阅[分支文档](/zh/products/managed-postgres/branching)。
+
+### Neon Serverless Driver {#neon-serverless}
+
+如果你的应用未使用 Neon Serverless Driver，可以跳过本节。
+
+运行在 [Vercel](https://vercel.com/docs) 等平台上的应用**可能**使用 [Neon Serverless Driver](https://neon.com/docs/serverless/serverless-driver)，该驱动基于 WebSocket，且专用于 Neon。
+因此，不能简单地将其指向 ClickHouse Managed Postgres。
+
+迁移前：
+
+* 检查是否存在 [@neondatabase/serverless](https://www.npmjs.com/package/@neondatabase/serverless) 等依赖项。若存在，请将其替换为标准的 Postgres 驱动，例如 [node-postgres (pg)](https://node-postgres.com/)。
+* 对于会创建大量短连接的 serverless 工作负载，请使用[内置的 PgBouncer 实例](/zh/products/managed-postgres/connection#pgbouncer)。
+* 预处理语句是受支持的。但由于 PgBouncer 采用事务级连接池，请验证那些依赖 session 级行为的应用 (大多数应用中这种情况并不常见) ：
+  1. 使用 `SET LOCAL`，而非 session 级的 `SET` 或 `RESET`。
+  2. 使用带 `ON COMMIT DROP` 的事务作用域临时表。
+  3. 支持 `NOTIFY`，不支持 `LISTEN`。
+  4. 使用事务级而非 session 级的咨询锁。
+  5. 支持事务作用域游标，不支持 `WITH HOLD`。
+* 如果你的应用依赖不受支持的 session 级行为，请直接连接 Postgres，而不要经由 PgBouncer。
+
+更多详情，请参阅 [PgBouncer 兼容性矩阵](https://www.pgbouncer.org/features.html)。
+
+### 连接数限制 {#connection-limits}
+
+ClickHouse Managed Postgres 默认支持 500 个直连 Postgres 连接。如果你的 Neon 工作负载超出该数量，可以：
+
+* 在应用侧使用连接池。
+* 使用内置的 PgBouncer 实例，它最多支持 5,000 个客户端连接。
+* 如需更多直连连接，可调高 `max_connections`。
+  * 可在 **Settings → Edit parameters** 中修改 `max_connections`。部分更改需要重启。请参阅[配置文档](/zh/products/managed-postgres/settings#changing-configuration)。
+
+### 迁移期间的 schema 变更 {#schema-changes}
+
+请尽量缩短从启动 ClickPipes 到切换 (cutover) 之间的时间——最好不超过几天——并在此期间避免进行 schema 变更。
+
+有些客户会在数天内保留并行环境，以便针对 ClickHouse Managed Postgres 测试自己的应用程序。测试完成后，他们会为最终迁移启动一个全新的 ClickPipe，从而尽可能缩短初始加载与切换之间的时间间隔。
+
+CDC (变更数据捕获) 会复制插入、更新、删除以及 `ADD COLUMN`，但大多数其他 DDL 变更不会被同步。这包括索引、触发器、枚举变更、约束、函数以及大多数列修改。
+
+某些变更 (例如缺失的枚举值) 会导致复制停止，并在 ClickPipes 日志中出现相应记录。将缺失的变更应用到目标端后，复制即可恢复。另一些变更 (例如新创建的索引或触发器) 可能不会中断 CDC (变更数据捕获) ，但仍必须在切换前手动创建。
+
+在切换流量之前，请对比源端与目标端的 schema，补齐所有缺失的对象，并重置序列。[迁移常见问题](/zh/products/managed-postgres/migrations/faq) 介绍了常见错误及其修复步骤。

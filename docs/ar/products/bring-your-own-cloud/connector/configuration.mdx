@@ -1,16 +1,18 @@
 ---
 title: 'التهيئة'
 sidebarTitle: 'التهيئة'
-description: 'هيّئ ClickHouse Connector: مثيلات ClickHouse، وقوائم السماح الخاصة بالمشغّل، وسياسات الشبكة، وإخفاء المعلومات الحساسة، والنسخ المتطابقة الخاصة، والتخزين'
+description: 'هيّئ ClickHouse Connector: مثيلات ClickHouse، وقوائم السماح الخاصة بالمشغّل، وسياسات الشبكة، وإخفاء المعلومات الحساسة، والمرايا الخاصة، والتخزين'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 تتناول هذه الصفحة تغييرات التهيئة التي يُرجّح إجراؤها بعد تثبيت ClickHouse Connector. للاطلاع على كل مفتاح وقيمته الافتراضية ومعناه، راجع [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration)؛ ولخيارات سطر الأوامر، راجع [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli).
 
-<div id="configuration-surfaces">
-  ## واجهات التهيئة
-</div>
+## واجهات التهيئة {#configuration-surfaces}
 
 للموصل واجهة تهيئة واحدة لكل هدف تثبيت.
 
@@ -56,9 +58,7 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="clickhouse-instances">
-  ## إضافة مثيلات ClickHouse أو تعديلها
-</div>
+## إضافة مثيلات ClickHouse أو تعديلها {#clickhouse-instances}
 
 يحدّد كل إدخال ضمن `instances` نقطة نهاية لبروتوكول ClickHouse الأصلي يقرأ منها الموصل: `host` و`port` و`database` و`secure`، إضافةً إلى `namespace` و`cluster` في Kubernetes. لا تُخزَّن بيانات الاعتماد في التهيئة مطلقًا؛ إذ يستخرج كل مكوّن مستخدم ClickHouse للقراءة فقط من حزمة الوصول التي ينشئها التزويد.
 
@@ -153,9 +153,7 @@ doc_type: 'guide'
   تعمل أوامر `access provision` نفسها مع `--force` على تدوير بيانات اعتماد ClickHouse الخاصة بالمثيل. راجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations).
 </Tip>
 
-<div id="operator-allowlist">
-  ## قائمة السماح بالمشغّلين
-</div>
+## قائمة السماح بالمشغّلين {#operator-allowlist}
 
 تتحكم قائمة سماح لعناوين البريد الإلكتروني للمشغّلين في الوصول إلى الجلسات المُدارة عبر Gateway: يجب أن يتضمن كل طلب إلى بوابة الجلسة رمز OIDC ID قصير الأجل، ويكون عنوان البريد الإلكتروني المُثبَت فيه مدرجًا في القائمة. تؤدي قائمة السماح الفارغة إلى إغلاق البوابة، لذا لن يتمكن أحد من فتح جلسة عبرها. على جهاز افتراضي، يمكن للمستخدم الجذر على المضيف أيضًا إدارة الجلسات مباشرةً من خلال ملف الجلسة المحلي؛ إذ تحكم قائمة السماح مسار البوابة فقط. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions) للاطلاع على نموذج الثقة الكامل.
 
@@ -185,9 +183,7 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="network-policy">
-  ## سياسة الشبكة وحركة المرور الصادرة
-</div>
+## سياسة الشبكة وحركة المرور الصادرة {#network-policy}
 
 في Kubernetes، يوفّر المخطط كائن NetworkPolicy يمنع حركة المرور افتراضيًا، مع قائمة سماح لحركة المرور الصادرة (`networkPolicy.enabled: true`). لا تصبح كائنات NetworkPolicy نافذة إلا إذا كانت CNI لديك تفرض تطبيقها؛ ومع CNI تفرضها، لن يتمكن الموصل من إرسال أي حركة مرور صادرة حتى تحدد `allowEgressCIDRs` نطاقات CIDR الخاصة بنقطة نهاية واجهة برمجة تطبيقات الموصل.
 
@@ -227,9 +223,7 @@ clctl:
 
 إعدادان إضافيان لـ Ingress: يقيّد `metricsScrapeSelector` حركة Ingress الخاصة بكشط المقاييس إلى مساحة اسم محددة في Prometheus استنادًا إلى تسمية، بينما يسمح `kubeletProbeCIDRs` صراحةً بمسبارات السلامة الخاصة بـ kubelet في البيئات التي تتبع سياسة رفض افتراضية صارمة. راجع [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration) للاطلاع على القائمة الكاملة للمفاتيح.
 
-<div id="redaction-patterns">
-  ## أنماط إخفاء المعلومات الحساسة
-</div>
+## أنماط إخفاء المعلومات الحساسة {#redaction-patterns}
 
 تُخفى المعلومات الحساسة من مخرجات مستكشف الأخطاء وإصلاحها قبل أن تغادر نطاقك. تغطي الأنماط المضمّنة `ipv4` و`ipv6` و`bearer-token` و`aws-access-key` و`email` و`jwt` و`ssh-private-key` و`connection-string-credentials`. يمكنك إضافة أنماطك الخاصة في ملف YAML؛ إذ تُطبَّق أنماطك أولًا حسب ترتيبها في الملف، ثم الأنماط المضمّنة. ويستبدل الإدخال الذي يعيد استخدام `name` لنمط مضمّن ذلك النمط.
 
@@ -254,9 +248,7 @@ patterns:
   يرفض مستكشف الأخطاء وإصلاحها البدء إذا كان ملف الأنماط موجودًا لكنه غير صالح، ويسجل الإدخال المسبّب للمشكلة. يتحقق `clicklink clctl preflight` من صحة الملف، لذا شغّله قبل إعادة تشغيل البرنامج الخفي.
 </Warning>
 
-<div id="private-mirrors">
-  ## المرايا الخاصة ونقاط النهاية ضمن الحدود
-</div>
+## المرايا الخاصة ونقاط النهاية ضمن الحدود {#private-mirrors}
 
 يُعيّن المخطط المنشور مسبقًا `image.repository` إلى صورة موصل عامة متعددة المعماريات وموقّعة باستخدام cosign، لذا لا تتطلب عمليات التثبيت العادية قيمًا للصورة. لفحص الإعدادات الافتراضية المنشورة:
 
@@ -283,9 +275,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
 
 عندما تكون نقطة نهاية واجهة برمجة تطبيقات الموصل خلف مرجع تصديق خاص (CA) ضمن نطاقك، مرّر `--api-private-ca` إلى `init`: إذ يُهيّئ `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`، بحيث يُتحقق من نقطة النهاية باستخدام سلسلة CA من حزمة التسجيل بدلاً من جذور النظام. على جهاز افتراضي (VM)، يكون المكافئ هو `api.tls.ca_file` في `/etc/clicklink/config.yaml`؛ يثبّت `init` سلسلة الحزمة في `/etc/clicklink/tls/ca.crt`، وتُضاف إلى جذور النظام لأغراض التحقق. للتسجيل وتوقيع الشهادات في بيئة معزولة هوائياً بالكامل، راجع [الإعداد الأوّلي](/ar/products/bring-your-own-cloud/connector/onboarding).
 
-<div id="storage">
-  ## التخزين
-</div>
+## التخزين {#storage}
 
 <Tabs>
   <Tab title="Kubernetes">

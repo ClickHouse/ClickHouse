@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 该引擎提供与 [Azure Blob 存储](https://azure.microsoft.com/en-us/products/storage/blobs) 生态的集成，可实现流式数据导入。
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE test (name String, value UInt32)
@@ -42,18 +40,14 @@ ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;
 SETTINGS mode = 'unordered'
 ```
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 支持的设置基本与 `S3Queue` 表引擎相同，只是不带 `s3queue_` 前缀。请参阅[完整设置列表](/zh/reference/engines/table-engines/integrations/s3queue#settings)。
 如需查看为该表配置的设置列表，请使用 `system.azure_queue_settings` 表。该功能自 `24.10` 起可用。
 
 以下设置仅适用于 AzureQueue，不适用于 S3Queue。
 
-<div id="after_processing_move_connection_string">
-  ### `after_processing_move_connection_string`
-</div>
+### `after_processing_move_connection_string` {#after_processing_move_connection_string}
 
 如果目标端是另一个 Azure 容器，则用于将已成功处理的文件移动到该容器的 Azure Blob 存储连接字符串。
 
@@ -63,9 +57,7 @@ SETTINGS mode = 'unordered'
 
 默认值：空字符串。
 
-<div id="after_processing_move_container">
-  ### `after_processing_move_container`
-</div>
+### `after_processing_move_container` {#after_processing_move_container}
 
 如果目标端是另一个 Azure 容器，则此参数指定成功处理后的文件要移动到的容器名称。
 
@@ -91,17 +83,13 @@ SETTINGS
     after_processing_move_container = 'dst-container';
 ```
 
-<div id="select">
-  ## 对 AzureQueue 表引擎执行 SELECT
-</div>
+## 对 AzureQueue 表引擎执行 SELECT {#select}
 
 默认情况下，AzureQueue 表禁止执行 SELECT 查询。这遵循了常见的队列模式：数据读取一次后，就会从队列中移除。禁用 SELECT 是为了防止意外的数据丢失。
 不过，在某些场景下，这样做也可能很有用。要启用此功能，需要将设置 `stream_like_engine_allow_direct_select` 设为 `True`。
-AzureQueue 引擎还为 SELECT 查询提供了一个特殊设置：`commit_on_select`。将其设为 `False` 可在读取后保留队列中的数据，设为 `True` 则会将其移除。
+AzureQueue 引擎还为 SELECT 查询提供了一个特殊设置：`commit_on_select`。将其设为 `False` 可在读取后保留队列中的数据，设为 `True` 则会将其移除。 (注意：该设置在 `exclusive` 模式下没有意义，会被忽略；`exclusive` 模式的行为始终等同于 `commit_on_select` 为 `True`。)
 
-<div id="description">
-  ## 描述
-</div>
+## 描述 {#description}
 
 `SELECT` 对流式导入并不是特别有用 (调试除外) ，因为每个文件只能导入一次。更实用的做法是使用 [materialized views](/zh/reference/statements/create/view) 创建实时处理链路。为此：
 
@@ -130,18 +118,14 @@ AS SELECT key, data FROM azure_queue_engine_table;
 SELECT * FROM stats ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。
 * `_file` — 文件名。
 
 有关虚拟列的更多信息，见[此处](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)。
 
-<div id="introspection">
-  ## 内部信息
-</div>
+## 内部信息 {#introspection}
 
 通过表设置 `enable_logging_to_queue_log=1` 为该表启用日志记录。
 
@@ -213,9 +197,7 @@ exception:
 
 ```
 
-<div id="limitations">
-  ## 限制
-</div>
+## 限制 {#limitations}
 
 `AzureQueue` 与 `S3Queue` 使用相同的实现，因此具有相同的[限制](/zh/reference/engines/table-engines/integrations/s3queue#limitations)。尤其是，ClickHouse 节点发生设备级断电时，已消费的行可能会在没有任何提示的情况下丢失：插入完成后，文件会立即在 Keeper 中标记为已处理 (若 `after_processing = 'delete'`，其源 blob 也会被删除) ，但插入的行只有在目标分片完成 fsync 后才会持久化；而默认情况下，fsync 不会同步执行 (`fsync_after_insert = 0`) 。对于推荐的物化视图消费方式，在目标 `MergeTree` 表上设置 `fsync_after_insert = 1` (以及 `fsync_part_directory = 1`) 可大幅缩小这一时间窗口。
 

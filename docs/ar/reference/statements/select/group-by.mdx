@@ -20,9 +20,7 @@ doc_type: 'مرجع'
   توجد طريقة إضافية لإجراء التجميع على جدول. إذا كان الاستعلام يحتوي على أعمدة الجدول داخل الدوال التجميعية فقط، فيمكن حذف `بند GROUP BY`، وعندئذٍ يُفترض التجميع على مجموعة مفاتيح فارغة. وتُرجع مثل هذه الاستعلامات دائمًا صفًا واحدًا فقط.
 </Note>
 
-<div id="null-processing">
-  ## معالجة NULL
-</div>
+## معالجة NULL {#null-processing}
 
 في عمليات التجميع، يتعامل ClickHouse مع [NULL](/ar/reference/syntax#null) على أنها قيمة، ويُعدّ `NULL==NULL`. وهذا يختلف عن معالجة `NULL` في معظم السياقات الأخرى.
 
@@ -54,9 +52,7 @@ doc_type: 'مرجع'
 
 إذا مرّرت عدة مفاتيح إلى `GROUP BY`، فستعطيك النتيجة جميع تركيبات التحديد، كما لو كانت `NULL` قيمةً محددة.
 
-<div id="rollup-modifier">
-  ## مُعدِّل `ROLLUP`
-</div>
+## مُعدِّل `ROLLUP` {#rollup-modifier}
 
 يُستخدم المُعدِّل `ROLLUP` لحساب المجاميع الفرعية لتعبيرات المفاتيح، استنادًا إلى ترتيبها في قائمة `GROUP BY`. وتُضاف صفوف المجاميع الفرعية بعد جدول النتائج.
 
@@ -127,9 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 * إعداد [group&#95;by&#95;use&#95;nulls](/ar/reference/settings/session-settings/group-by#group_by_use_nulls) للتوافق مع معيار SQL.
 
-<div id="cube-modifier">
-  ## المُعدِّل `CUBE`
-</div>
+## المُعدِّل `CUBE` {#cube-modifier}
 
 يُستخدم المُعدِّل `CUBE` لحساب المجاميع الفرعية لكل توليفة من تعبيرات المفاتيح في قائمة `GROUP BY`. وتُضاف صفوف المجاميع الفرعية بعد جدول النتائج.
 
@@ -224,9 +218,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 * إعداد [group&#95;by&#95;use&#95;nulls](/ar/reference/settings/session-settings/group-by#group_by_use_nulls) لضمان التوافق مع معيار SQL.
 
-<div id="with-totals-modifier">
-  ## مُعدِّل `WITH TOTALS`
-</div>
+## مُعدِّل `WITH TOTALS` {#with-totals-modifier}
 
 إذا تم تحديد المُعدِّل `WITH TOTALS`، فسيُحسَب صف إضافي. سيحتوي هذا الصف على الأعمدة المفتاحية بقيم افتراضية (أصفار أو قيم فارغة)، وعلى أعمدة الدوال التجميعية بالقيم المحسوبة عبر جميع الصفوف (أي قيم &quot;الإجمالي&quot;).
 
@@ -244,9 +236,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 يمكن تنفيذ `WITH TOTALS` بطرق مختلفة عند وجود [HAVING](/ar/reference/statements/select/having). ويعتمد هذا السلوك على الإعداد `totals_mode`.
 
-<div id="configuring-totals-processing">
-  ### ضبط معالجة الإجماليات
-</div>
+### ضبط معالجة الإجماليات {#configuring-totals-processing}
 
 افتراضيًا، تكون قيمة `totals_mode = 'before_having'`. في هذه الحالة، يُحتسَب &#39;totals&#39; على جميع الصفوف، بما في ذلك الصفوف التي لا تجتاز HAVING و`max_rows_to_group_by`.
 
@@ -264,9 +254,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 يمكنك استخدام `WITH TOTALS` في الاستعلامات الفرعية، بما في ذلك الاستعلامات الفرعية في عبارة [JOIN](/ar/reference/statements/select/join) (وفي هذه الحالة، تُدمَج قيم الإجماليات المقابلة).
 
-<div id="group-by-all">
-  ## GROUP BY ALL
-</div>
+## GROUP BY ALL {#group-by-all}
 
 يُكافئ `GROUP BY ALL` إدراج جميع التعبيرات المحددة في عبارة `SELECT` التي ليست دوالًا تجميعية.
 
@@ -314,9 +302,7 @@ FROM t
 GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 مثال:
 
@@ -343,9 +329,7 @@ GROUP BY domain
 
 لكل قيمة مفتاح مختلفة تتم مصادفتها، يحسب `GROUP BY` مجموعة من قيم الدوال التجميعية.
 
-<div id="grouping-sets-modifier">
-  ## مُعدِّل GROUPING SETS
-</div>
+## مُعدِّل GROUPING SETS {#grouping-sets-modifier}
 
 هذا هو المُعدِّل الأكثر عمومية.
 يتيح هذا المُعدِّل تحديد عدة مجموعات من مفاتيح التجميع يدويًا (grouping sets).
@@ -382,23 +366,17 @@ GROUPING SETS
 
 * إعداد [group&#95;by&#95;use&#95;nulls](/ar/reference/settings/session-settings/group-by#group_by_use_nulls) للتوافق مع معيار SQL.
 
-<div id="implementation-details">
-  ## تفاصيل التنفيذ
-</div>
+## تفاصيل التنفيذ {#implementation-details}
 
 يُعدّ التجميع إحدى أهم الميزات في نظام إدارة قواعد البيانات الموجّه بالأعمدة، لذا فإن تنفيذَه يُعدّ من أكثر أجزاء ClickHouse خضوعًا للتحسين المكثّف. افتراضيًا، يُجرى التجميع في الذاكرة باستخدام جدول تجزئة. وهناك أكثر من 40 تخصيصًا له، تُختار تلقائيًا بحسب أنواع بيانات &quot;مفتاح التجميع&quot;.
 
-<div id="group-by-optimization-depending-on-table-sorting-key">
-  ### تحسين `GROUP BY` اعتمادًا على مفتاح فرز الجدول
-</div>
+### تحسين `GROUP BY` اعتمادًا على مفتاح فرز الجدول {#group-by-optimization-depending-on-table-sorting-key}
 
 يمكن إجراء التجميع بكفاءة أكبر إذا كان الجدول مفروزًا وفقًا لمفتاح معيّن، وكان تعبير `GROUP BY` يحتوي على بادئة مفتاح الفرز على الأقل أو دوال حقنية. في هذه الحالة، عند قراءة مفتاح جديد من الجدول، يمكن إنهاء النتيجة المرحلية للتجميع وإرسالها إلى العميل. يُفعَّل هذا السلوك بواسطة الإعداد [optimize&#95;aggregation&#95;in&#95;order](/ar/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). يقلّل هذا التحسين من استخدام الذاكرة أثناء التجميع، لكنه قد يبطئ تنفيذ الاستعلام في بعض الحالات.
 
-<div id="group-by-in-external-memory">
-  ### GROUP BY في الذاكرة الخارجية
-</div>
+### GROUP BY في الذاكرة الخارجية {#group-by-in-external-memory}
 
-يمكنك تمكين كتابة البيانات المؤقتة إلى القرص لتقييد استهلاك الذاكرة أثناء `GROUP BY`.
+يمكنك تمكين كتابة البيانات المؤقتة إلى القرص لتقييد استخدام الذاكرة أثناء `GROUP BY`.
 يحدّد الإعداد [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) حد استهلاك RAM الذي عنده تُكتب البيانات المؤقتة الخاصة بـ `GROUP BY` إلى نظام الملفات. وإذا ضُبط على 0 (القيمة الافتراضية)، فسيكون معطّلًا.
 وبديلًا من ذلك، يمكنك ضبط [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by)، الذي يتيح استخدام `GROUP BY` في الذاكرة الخارجية فقط عندما يصل الاستعلام إلى حد معيّن من الذاكرة المستخدمة.
 
@@ -406,12 +384,12 @@ GROUPING SETS
 
 على سبيل المثال، إذا كان [max&#95;memory&#95;usage](/ar/reference/settings/session-settings/max-memory-usage#max_memory_usage) مضبوطًا على 10000000000 وكنت تريد استخدام التجميع الخارجي، فمن المنطقي ضبط `max_bytes_before_external_group_by` على 10000000000، و`max_memory_usage` على 20000000000. وعند بدء التجميع الخارجي (إذا حدثت كتابة واحدة على الأقل للبيانات المؤقتة)، يكون الحد الأقصى لاستهلاك RAM أعلى بقليل فقط من `max_bytes_before_external_group_by`.
 
-مع معالجة الاستعلامات الموزعة، يُنفَّذ التجميع الخارجي على الخوادم البعيدة. ولكي يستخدم الخادم الذي يرسل الطلب مقدارًا صغيرًا فقط من RAM، اضبط `distributed_aggregation_memory_efficient` على 1.
+مع معالجة الاستعلامات الموزعة، يُنفَّذ التجميع الخارجي على الخوادم البعيدة. ولكي يستخدم الخادم الذي يرسل الطلب مقدارًا صغيرًا فقط من RAM، اضبط `distributed_aggregation_memory_efficient` على 1.
 
 عند دمج البيانات التي كُتبت إلى القرص، وكذلك عند دمج النتائج من الخوادم البعيدة عندما يكون الإعداد `distributed_aggregation_memory_efficient` مفعّلًا، قد يصل استهلاك الذاكرة إلى `1/256 * the_number_of_threads` من إجمالي مقدار RAM.
 
 عند تمكين التجميع الخارجي، إذا كان حجم البيانات أقل من `max_bytes_before_external_group_by` (أي إن البيانات لم تُكتب إلى القرص)، فسيعمل الاستعلام بالسرعة نفسها كما لو لم يكن التجميع الخارجي مفعّلًا. وإذا كُتبت أي بيانات مؤقتة إلى القرص، فسيكون زمن التشغيل أطول عدة مرات (حوالي ثلاث مرات).
 
-إذا كان لديك [ORDER BY](/ar/reference/statements/select/order-by) مع [LIMIT](/ar/reference/statements/select/limit) بعد `GROUP BY`، فإن مقدار RAM المستخدم يعتمد على مقدار البيانات في `LIMIT`، وليس في الجدول بأكمله. ولكن إذا كان `ORDER BY` لا يحتوي على `LIMIT`، فلا تنسَ تمكين الفرز الخارجي (`max_bytes_before_external_sort`).
+إذا كان لديك [ORDER BY](/ar/reference/statements/select/order-by) مع [LIMIT](/ar/reference/statements/select/limit) بعد `GROUP BY`، فإن مقدار RAM المستخدم يعتمد على مقدار البيانات في `LIMIT`، وليس في الجدول بأكمله. ولا يحقق نطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until) مثل هذا التوفير، لأن الفرز لا يمكنه معرفة عدد الصفوف التي سيحتاجها النطاق. ولكن إذا كان `ORDER BY` لا يحتوي على `LIMIT`، فلا تنسَ تمكين الفرز الخارجي (`max_bytes_before_external_sort`).
 
 {/*AUTOGENERATED_END*/}

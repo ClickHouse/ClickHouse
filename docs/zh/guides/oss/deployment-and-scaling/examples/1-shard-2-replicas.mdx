@@ -30,7 +30,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## 前置条件
+  ## 前置条件 {#pre-requisites}
 </div>
 
 * 你之前已完成[本地 ClickHouse 服务器](/zh/get-started/setup/install)的设置
@@ -139,7 +139,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
   </Step>
 
   <Step title="配置 ClickHouse 节点" id="configure-clickhouse-servers">
-    ### 服务器配置
+    ### 服务器配置 {#server-setup}
 
     现在修改位于 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` 的每个空配置文件 `config.xml`。下方高亮显示的行需要根据各节点进行相应修改：
 
@@ -211,7 +211,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 
     以下将对上述配置文件的各个部分进行详细说明。
 
-    #### 网络与日志
+    #### 网络与日志 {#networking}
 
     <ListenHost />
 
@@ -229,12 +229,14 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 
     有关日志配置的更多信息，请参阅默认 ClickHouse [配置文件](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)中的注释。
 
-    #### 集群配置
+    #### 集群配置 {#cluster-configuration}
 
     集群配置在 `<remote_servers>` 块中定义。
     其中集群名称为 `cluster_1S_2R`。
 
-    `<cluster_1S_2R></cluster_1S_2R>` 块定义了集群的布局，使用 `<shard></shard>` 和 `<replica></replica>` 配置项，并作为 distributed DDL queries 的模板，这些查询通过 `ON CLUSTER` 子句在整个集群中执行。默认情况下，distributed DDL queries 是被允许的，但也可以通过设置 `allow_distributed_ddl_queries` 将其关闭。
+    `<cluster_1S_2R></cluster_1S_2R>` 块使用 `<shard></shard>` 和 `<replica></replica>` 设置定义了集群的布局，
+    并作为分布式 DDL 查询的模板，这些查询通过 `ON CLUSTER` 子句在整个集群中执行。
+    默认情况下，分布式 DDL 查询是允许的，但也可以通过设置 `allow_distributed_ddl_queries` 将其关闭。
 
     `internal_replication` 设置为 true，这样数据只会写入其中一个副本。
 
@@ -261,7 +263,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-    #### Keeper 配置
+    #### Keeper 配置 {#keeper-config-explanation}
 
     `<ZooKeeper>` 部分用于告知 ClickHouse，ClickHouse Keeper (或 ZooKeeper) 的运行位置。
     由于我们使用的是 ClickHouse Keeper 集群，需要指定该集群中的每个 `<node>`，
@@ -291,7 +293,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
       但在生产环境中，我们强烈建议将 ClickHouse Keeper 部署在专用主机上。
     </Note>
 
-    #### 宏配置
+    #### 宏配置 {#macros-config-explanation}
 
     此外，`<macros>` 部分用于为复制表定义参数替换。这些替换项列于 `system.macros` 中，可在查询中使用 `{shard}` 和 `{replica}` 等替换占位符。
 
@@ -307,7 +309,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
       这些将根据集群的布局分别定义。
     </Note>
 
-    ### 用户配置
+    ### 用户配置 {#user-config}
 
     现在，将以下内容写入位于 `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` 的每个空配置文件 `users.xml`：
 
@@ -324,7 +326,6 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -332,7 +333,6 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -365,7 +365,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
   </Step>
 
   <Step title="配置 ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-    ### Keeper 配置
+    ### Keeper 配置 {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -760,7 +760,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 </Steps>
 
 <div id="conclusion">
-  ## 结论
+  ## 结论 {#conclusion}
 </div>
 
 这种集群拓扑的优势在于，使用两个副本后，

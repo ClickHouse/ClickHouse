@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-21
+title: '데모 데이 - 2026-08-21'
+sidebarTitle: '2026-08-21'
+description: '2026-08-21 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## 차트 편집기의 메트릭 수식 {#metric-formulas-in-the-chart-editor}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tSCoW-GGXTU" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 메트릭 차트에서 산술 연산을 수행할 수 있습니다. 이번 주 이전까지는 같은 차트에 두 메트릭을 표시해도 두 개의 선이 그려질 뿐, 이를 결합할 방법이 없었습니다.
+
+차트의 series에는 `A`, `B`, `C`와 같은 레이블이 부여됩니다. 수식 행에서 이러한 참조를 조합해 파생 series를 만들 수 있습니다. 예를 들어 `A / (A + B + C) * 100`은 큐 utilization 비율을 산출합니다. collector의 수신 및 전송 개수로 포화도를 계산하는 것도 같은 방식으로 가능합니다.
+
+하나의 차트에 여러 수식을 추가할 수 있고, 결과와 함께 피연산자 series를 표시할지 수식만 표시할지 선택할 수 있으며, 서로 다른 메트릭의 series를 섞어 쓸 수도 있습니다. 알림도 수식에 적용됩니다.
+
+산술 연산 자체는 ClickHouse에서 수행됩니다. 각 수식은 검사를 거친 AST에서 합성된 메트릭 쿼리로 컴파일되므로, 애플리케이션이 나중에 결과를 조인하는 것이 아니라 ClickHouse가 단일 쿼리의 일부로 계산합니다. 각 series는 CTE가 되고, 수식은 조인된 결과를 대상으로 평가됩니다.
+
+누락된 피연산자는 0으로 간주되므로, 오류가 없는 그룹은 N/A가 아니라 0%로 표시됩니다. 모든 나눗셈의 분모는 `nullif(..., 0)`으로 감싸므로, 분모가 0이거나 누락된 경우 0이나 오류가 아니라 공백으로 렌더링됩니다.
+
+후속 작업에서는 `HAVING`, `ORDER BY`, `LIMIT`을 각 `UNION` 분기에 적용하지 않고 최종 조인으로 옮겼습니다. 이전에는 이러한 절이 사용자에게 노출되는 출력 이름이 존재하지 않는 범위에서 실행되었습니다. 그 결과 각 series가 조인 전에 개별적으로 필터링되었고, 최종 행 순서도 nondeterministic한 상태로 남았습니다.
+
+입력란은 현재 임의의 SQL이 아니라 문자 참조와 단순 산술만 허용합니다. 알 수 없는 series 참조, 형식이 잘못된 표현식, 상수만으로 구성된 표현식은 입력란 아래에 실시간으로 표시됩니다. 동일한 유효성 검사가 저장과 실행도 차단하므로, 유효하지 않은 표현식이 ClickHouse까지 전달되는 일은 없습니다.
+
+비트 단위 연산자와 ClickHouse 함수는 아직 지원되지 않습니다. 특별한 이유가 있는 것은 아니며, 단지 첫 번째 버전의 범위가 여기까지였을 뿐입니다. 더 폭넓은 표현식 지원은 다음 단계에서 추가할 수 있습니다.
+
+논의 과정에서 두 가지 의견이 나왔지만 아직 구현되지는 않았습니다. 먼저 수식은 다른 수식을 참조할 수 없어 `F1`을 `F2`로 연결할 수 없습니다. 또한 차트 전체에 적용되는 피연산자 toggle보다 series별 표시/숨김 컨트롤이 더 유용할 것입니다. `A`와 `B`를 수식에는 그대로 두면서 화면에서만 숨기는 것이 사용자가 실제로 원하는 방식입니다.
+
+조인을 어디까지 밀어붙일 수 있고 언제부터 쓸모가 없어지는지에 대한 타당한 질문도 있었습니다. PromQL의 나눗셈을 써 본 사람이라면 그 실패 양상을 알 것입니다. 예상대로 매칭되지 않아 아무런 데이터도 반환하지 않으면서 오류조차 내지 않는 조인 말입니다.
+
+**관련 PR:** [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 합성된 메트릭 쿼리에서 수식 렌더링, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) 메트릭 수식용 차트 편집기 UI, [#2946](https://github.com/hyperdxio/hyperdx/pull/2946) HAVING/ORDER BY/LIMIT을 series별 분기가 아닌 합성된 메트릭 조인에 적용, [#2952](https://github.com/hyperdxio/hyperdx/pull/2952) API 전반의 수식 지원, [#2953](https://github.com/hyperdxio/hyperdx/pull/2953) 로그/트레이스 이벤트 source에 대한 수식 지원
+
+## 종속 대시보드 변수 및 macro {#dependent-dashboard-variables-and-macros}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0CaapNH1Vc" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+지난주 데모에서 나온 두 가지 요청 사항이 반영되었습니다.
+
+이제 filter 정의의 `WHERE` 절에서 다른 변수를 참조할 수 있어, 하나의 dropdown으로 다른 dropdown의 범위를 좁힐 수 있습니다. service name filter를 참조하는 severity filter는 처음에 비어 있습니다. service를 선택하면 해당 service에 존재하는 severity만 표시됩니다.
+
+참조된 변수에서 아무것도 선택하지 않은 상태에서도 옵션 쿼리는 그대로 실행됩니다. 이 상태에서도 값이 채워지게 하려면 `$__filters` 또는 `$__conditionalAll`을 사용하십시오. `<expression> IN ($var)`만 단독으로 쓰면 `$var`에 선택 값이 생기기 전까지 아무것도 반환하지 않습니다. 이제는 아무 설명 없이 빈 목록만 보여주는 대신 툴팁으로 그 이유를 안내합니다. filter 모달의 `WHERE` 입력란에서도 변수와 macro에 대한 autocomplete가 동작합니다.
+
+순환 종속성을 만들 수도 있지만, 변수는 recursive하게 평가되지 않고 선택된 값으로 대체되므로 실제로 문제가 되지는 않습니다.
+
+이제 macro가 인수로 전달된 변수를 확장하므로 `$__timeFilter($TimeColumn)`이 동작합니다. 변수에서 타임스탬프 컬럼을 선택하면 macro가 해당 컬럼을 기준으로 하는 전체 타임스탬프 filter로 확장됩니다. `$__filter`와 `$__conditionalAll`에 전달하는 변수는 이제 반드시 `$var` 형식이어야 합니다. 이전에는 `var`처럼 기호 없이 쓰는 것도 허용되었지만, 이러한 관대함은 대부분 혼란만 유발했습니다.
+
+외부 API v2와 MCP Server 모두 변수를 인식하며, 따라서 Terraform에서도 사용할 수 있습니다. agent는 변수 및 broadcast filter, 종속 dropdown, 그리고 이러한 변수를 직접 또는 macro를 통해 참조하는 tile로 구성된 대시보드를 만들 수 있습니다. 생성, 저장, patch 도구는 변수가 동작하지 않는 위치에 사용될 경우 경고를 표시합니다.
+
+쿼리 tile 도구도 변수 값을 받으므로, agent가 대시보드를 넘기기 전에 자체적으로 치환 결과를 확인할 수 있습니다.
+
+**관련 PR:** [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 종속 변수 값 쿼리 지원, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) 중첩 macro 및 macro 내 변수 참조 지원, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 외부 API에 대시보드 변수 추가, [#2951](https://github.com/hyperdxio/hyperdx/pull/2951) MCP Server에서 대시보드 변수 지원
+
+## 엄격한 클라이언트가 허용하는 MCP 도구 schema {#mcp-tool-schemas-that-strict-clients-accept}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W4dvgYj47ZM" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+한 고객이 자사 agent에서 MCP Server를 전혀 사용할 수 없다고 보고했습니다.
+
+일부 agent 프레임워크는 사용 가능한 도구 목록을 나열한 뒤, 모든 입력 schema를 model provider로 보내기 전에 검사합니다. schema가 하나라도 유효하지 않으면 프레임워크는 문제가 된 도구만 걸러내는 것이 아니라 도구 목록 전체를 거부하기 때문에, 서버가 완전히 고장 난 것처럼 보이게 됩니다.
+
+상당수의 agent 하네스는 이보다 관대하지만, 그렇지 않은 것도 있습니다. 영향을 받은 클라이언트에서는 서버를 detach하는 것이 agent를 다시 동작시키는 유일한 방법이었습니다.
+
+이제 모든 도구의 입력 schema가 유효한 JSON Schema draft 2020-12인지 확인하는 테스트가 추가되어, 새로 추가되는 도구가 같은 방식으로 엄격한 클라이언트를 망가뜨리는 일은 더 이상 발생하지 않습니다.
+
+**관련 PR:** [#2925](https://github.com/hyperdxio/hyperdx/pull/2925) draft-2020-12에 유효한 도구 입력 schema 생성, [#2971](https://github.com/hyperdxio/hyperdx/pull/2971) 분위수 수준을 문자열 enum으로 노출
+
+## 교체 가능한 Personal API Access Key {#rotatable-personal-api-access-keys}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tHQoaFaVPpY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 Team Settings → API &amp; Agents에서 Personal API Access Key를 교체할 수 있습니다.
+
+이 키는 external API v2와 MCP Server의 bearer token으로 사용됩니다. 이전에는 계정 생성 시 한 번만 발급되고 이후에는 변경할 수 없었기 때문에, 키가 유출되면 해당 사용자를 삭제하는 수밖에 없었습니다.
+
+교체는 유예 기간 없이 즉시 적용되며, 브라우저 세션은 로그인 상태로 유지됩니다. 다만 주의할 점이 있습니다. 키는 팀이 아니라 계정에 속하므로, 여러 팀에 소속되어 있다면 모든 팀에서 해당 키를 사용하는 모든 항목을 함께 업데이트해야 합니다.
+
+Enterprise에서는 이를 설명하는 경고가 표시됩니다. 단일 팀으로 구성된 오픈 소스 설치 환경에서는 경고할 내용이 없으므로 표시되지 않습니다.
+
+의도적으로 둔 제한이 두 가지 있습니다. `PATCH /me/accessKey` 경로는 사용자 식별자를 받지 않으며, ID를 세션에서 가져옵니다. 따라서 호출자 본인의 키만 교체할 수 있습니다.
+
+또한 이 경로는 bearer 인증 방식의 external API v2에는 노출되지 않습니다. 유출된 키만으로도 해당 API에서 자기 자신을 조회할 수 있는데, 교체까지 허용하면 제3자가 소유자를 자신의 도구에서 차단해 버릴 수 있기 때문입니다.
+
+**관련 PR:** [#2926](https://github.com/hyperdxio/hyperdx/pull/2926) Personal API Access Key 교체 기능 추가
+
+## Column Values 탭의 알파벳순 키 {#alphabetical-keys-in-the-column-values-tab}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/9RfTL-dtZF0" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+행 사이드 패널의 Column Values 탭에 표시되는 키가 이제 logs와 traces 모두에서 모든 중첩 수준마다 알파벳순으로 정렬됩니다.
+
+이전에는 JSON 트리가 ClickHouse의 물리적 저장 순서대로 키를 렌더링했기 때문에 사실상 무작위로 보였습니다. 키가 125개인 `ProfileEvents` 같은 `Map` 컬럼은 파악할 수 있는 순서가 없어, 키 하나를 찾으려면 목록 전체를 훑어봐야 했습니다.
+
+문제의 덜 드러난 측면은 각 수준이 50개 행으로 제한되는데, 잘라내기가 정렬보다 먼저 수행되었다는 점입니다. 즉, 화면에 보이는 50개 키는 임의의 부분 집합이었고, 나머지를 확인하려면 &quot;Expand 75 more properties&quot;를 누르는 수밖에 없었습니다.
+
+이제 정렬은 목록을 자르기 전에 `TreeNode`에서 수행됩니다. 숫자를 인식하므로 `key2`가 `key10`보다 앞에 옵니다.
+
+**관련 PR:** [#2943](https://github.com/hyperdxio/hyperdx/pull/2943) JSON 뷰어 키를 알파벳순으로 정렬
+
+## 탐색 가능한 디자인 시스템으로서의 Storybook {#storybook-as-a-browsable-design-system}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/mnHtrsuKsC8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 Storybook은 단순한 컴포넌트 sandbox가 아니라 탐색 가능한 디자인 시스템입니다. 사이드바는 Guidelines → Brand → Icons → Design Tokens → Components 순서로 구성됩니다.
+
+Guidelines는 `agent_docs` Markdown을 그대로 렌더링하므로 code style, 테마, 페이지 layout, 데이터 visualization 색상이 모두 한곳에 모여 있습니다. 이는 사람뿐 아니라 agent를 위한 것이기도 합니다. 새로 합류한 팀 멤버가 읽는 문서를 agent에게도 그대로 참조하게 하면, 생성된 컴포넌트를 기존 요소들과 일관되게 유지하는 데 도움이 됩니다.
+
+Brand와 Icons에는 HyperDX 및 ClickStack 로고와 `IconAiNotebook`을 포함한 사용자 정의 아이콘이 들어 있습니다. SVG를 복사하거나 다운로드할 수 있으며, Tabler 호환 아웃라인 아이콘을 사용할 때와 브랜드 마크를 사용할 때에 대한 안내도 함께 제공됩니다.
+
+이 작업은 아이콘에서 시작되었습니다. 슬라이드마다 대충 비슷해 보이는 아이콘을 가져다 쓰고 있었기 때문입니다. 발표 자료에 마크가 필요하다면 여기에서 가져오십시오.
+
+Brand 툴바로 HyperDX와 ClickStack을 전환할 수 있고, Theme 툴바는 라이트와 다크를 지원합니다. 새 컴포넌트는 출시 전에 모든 조합에서 확인할 수 있습니다. 분류되지 않은 채 남아 있던 컴포넌트 스토리는 이제 `Components/` 아래에 정리되었으며, 차트 카드 컴포넌트도 함께 노출됩니다.
+
+작업 과정에서 두 가지가 드러났습니다. Storybook의 폰트 CSS 변수는 이제 앱과 동일하게 `<html>`에 위치하므로, 본문 텍스트와 portal로 렌더링되는 popover가 더 이상 Times로 표시되지 않습니다.
+
+또 하나는 Tabler 아이콘 세트를 일관되게 사용하지 못하고 있다는 점입니다. PromQL은 별도의 아이콘이 필요해 보이며, 메트릭과 traces는 현재 화면마다 서로 다른 아이콘으로 표현되고 있습니다. 앞으로는 Storybook이 기준이 되는 참고 자료입니다.
+
+로컬에서는 `yarn workspace @hyperdx/app storybook`으로 실행하십시오.
+
+**관련 PR:** [#2935](https://github.com/hyperdxio/hyperdx/pull/2935) Storybook을 탐색 가능한 디자인 시스템으로 전환
+
+## 히스토그램 차트의 categorical 팔레트 {#categorical-palette-on-histogram-charts}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wybAadS6ms0" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Services 대시보드의 Request Latency를 비롯한 히스토그램 차트에는 `#50FA7B` 색상이 하드코딩되어 있었습니다. 이 네온 그린은 차트 팔레트에 없는 색상인 데다 대비도 충분하지 않았습니다. 툴팁의 &quot;Number of events&quot; 역시 같은 색상으로 렌더링되었습니다.
+
+이제 차트는 `getColorFromCSSToken`을 통해 `chart-blue`를 가져옵니다. 툴팁은 공통 `ChartTooltipContainer`와 `ChartTooltipItem`을 사용하므로, 선 차트, 막대 차트, 파이 차트와 일관성을 갖추게 되었습니다.
+
+툴팁의 **View events** 링크는 제거되었습니다. `generateSearchUrl`은 내부 히스토그램과 툴팁에서 받도록 되어 있었지만 `DBHistogramChart`에서 한 번도 전달되지 않았기 때문에, 이 링크는 production 환경에서 표시된 적이 없었습니다.
+
+유일한 caller에는 duration 버킷용 검색 URL builder가 없으며, 이벤트를 지연 시간 범위로 필터링하는 것은 단순한 연결 수정이 아니라 하나의 기능에 해당합니다.
+
+사소한 개선이지만, 이런 것들이 쌓여 큰 차이를 만듭니다.
+
+**관련 PR:** [#2949](https://github.com/hyperdxio/hyperdx/pull/2949) use categorical palette on histogram charts

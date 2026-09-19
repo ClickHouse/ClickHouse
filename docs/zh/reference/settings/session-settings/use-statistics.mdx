@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 /// 相较于 &#39;allow&#95;statistics&#95;optimize&#39;，更推荐使用此名称，因为它与 &#39;use&#95;primary&#95;key&#39; 和 &#39;use&#95;skip&#95;indexes&#39; 保持一致
 允许使用统计信息优化查询
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 在查询中使用统计信息缓存，以避免为每个 parts 加载统计信息带来的额外开销
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：对于不含 `GROUP BY` 和过滤器的 `min`、`max` 和 `count` 聚合，可直接利用各 part 的列统计信息得出结果（仅限已 materialized 统计信息的 parts），其余 parts 才需读取数据。previous_value=false，因此将 `compatibility` 设置为 26.9 之前的版本时会禁用该优化，恢复原有的执行 plan。"}]}]} />
+
+直接利用各 part 的列统计信息得出 `min`、`max` 和 `count` 聚合结果，而无需读取数据。
+
+启用后，形如 `SELECT min(column), max(column), count() FROM table` 且不含 `GROUP BY` 和过滤器的查询，
+对于已 materialized 列统计信息 (例如 MinMax 统计信息，参见 `auto_statistics_types` MergeTree 设置) 的数据 parts，
+将直接由列统计信息得出结果，其余 parts 才会被读取。
+
+可能的值：
+
+* 0 — 禁用。
+* 1 — 启用。
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

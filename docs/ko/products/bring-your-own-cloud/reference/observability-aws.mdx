@@ -9,10 +9,10 @@ doc_type: '참고'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-BYOC 배포에는 포괄적인 관측성 기능이 포함되어 있어, 전용 Prometheus 모니터링 스택과 ClickHouse 서버에서 직접 제공되는 메트릭 엔드포인트를 통해 ClickHouse 서비스를 모니터링할 수 있습니다. 모든 관측성 데이터는 클라우드 계정 내에 유지되므로 모니터링 인프라를 완전히 제어할 수 있습니다.
+BYOC 배포에는 포괄적인 관측성 기능이 포함되어 있어, 전용 Prometheus 모니터링 스택과 ClickHouse 서버에서 직접 제공되는 메트릭 엔드포인트를 통해 ClickHouse 서비스를 모니터링할 수 있습니다. 모니터링 데이터는 클라우드 계정 내에 유지되므로 모니터링 인프라를 완전히 제어할 수 있습니다. ClickHouse로 내보내지는 모니터링 데이터는 [네트워크 경계](/ko/products/bring-your-own-cloud/reference/network-security#outbound-connections)에 명시된 제한된 사용량 및 상태 텔레메트리뿐입니다. 이와 별개로, ClickHouse의 대시보드와 승인된 에스컬레이션 시 ClickHouse 엔지니어는 Tailscale을 통해 이 스택을 원격지에서 그대로 쿼리할 수 있으며, ClickHouse 측에는 어떠한 데이터도 저장되지 않습니다. [ClickHouse 데이터 액세스](/ko/products/bring-your-own-cloud/reference/clickhouse-data-access)를 참조하십시오.
 
 <div id="prometheus-monitoring">
-  ## Prometheus 모니터링 방식
+  ## Prometheus 모니터링 방식 {#prometheus-monitoring}
 </div>
 
 BYOC는 Prometheus를 사용해 메트릭을 수집하고 시각화하는 두 가지 주요 방법을 제공합니다.
@@ -21,7 +21,7 @@ BYOC는 Prometheus를 사용해 메트릭을 수집하고 시각화하는 두 �
 2. **ClickHouse 메트릭 직접 스크레이프**: 자체 Prometheus 배포가 각 ClickHouse 서비스에서 노출하는 `/metrics_all` 엔드포인트를 스크레이프하도록 설정합니다.
 
 <div id="monitoring-approaches-comparison">
-  ### 모니터링 방법 비교
+  ### 모니터링 방법 비교 {#monitoring-approaches-comparison}
 </div>
 
 | Capability     | 기본 제공 Prometheus 스택                                               | ClickHouse 서비스에서 직접 스크레이프                                 |
@@ -37,7 +37,7 @@ BYOC는 Prometheus를 사용해 메트릭을 수집하고 시각화하는 두 �
 **권장 사항**: 대부분의 사용 사례에서는 기본 제공 Prometheus 스택과 통합하는 방식을 권장합니다. 이 방식은 ClickHouse 서버 메트릭만 제공하는 것이 아니라, BYOC 배포의 모든 구성 요소(ClickHouse 서비스, Kubernetes 클러스터, 지원 서비스)에서 포괄적인 메트릭을 제공하기 때문입니다.
 
 <div id="builtin-prometheus-stack">
-  ## 기본 제공 BYOC Prometheus 스택
+  ## 기본 제공 BYOC Prometheus 스택 {#builtin-prometheus-stack}
 </div>
 
 ClickHouse BYOC는 Kubernetes 클러스터 내에 Prometheus, Grafana, AlertManager와 선택적으로 메트릭을 장기 저장하기 위한 Thanos를 포함한 전체 Prometheus 모니터링 스택을 배포합니다. 이 스택은 다음 대상으로부터 메트릭을 수집합니다:
@@ -46,9 +46,7 @@ ClickHouse BYOC는 Kubernetes 클러스터 내에 Prometheus, Grafana, AlertMana
 * Kubernetes 클러스터 및 시스템 구성 요소
 * 기반 인프라의 노드
 
-<div id="accessing-prometheus-stack">
-  ### Prometheus 스택 액세스
-</div>
+### Prometheus 스택 액세스 {#accessing-prometheus-stack}
 
 기본 제공 Prometheus 스택에 연결하려면 다음을 수행하십시오.
 
@@ -70,7 +68,7 @@ ClickHouse BYOC는 Kubernetes 클러스터 내에 Prometheus, Grafana, AlertMana
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### 모니터링 도구와 통합하기
+  ### 모니터링 도구와 통합하기 {#prometheus-stack-integration}
 </div>
 
 모니터링 환경에서 BYOC Prometheus 스택을 여러 방식으로 활용할 수 있습니다:
@@ -109,14 +107,12 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## ClickHouse 서비스 Prometheus 통합
+  ## ClickHouse 서비스 Prometheus 통합 {#direct-prometheus-integration}
 </div>
 
 ClickHouse 서비스는 Prometheus와 호환되는 메트릭 endpoint를 노출하며, 자체 Prometheus instance를 사용해 이를 직접 스크레이프할 수 있습니다. 이 방식은 ClickHouse 전용 메트릭을 제공하지만 Kubernetes 또는 관련 서비스 메트릭은 포함하지 않습니다.
 
-<div id="metrics-endpoint">
-  ### 메트릭 엔드포인트에 액세스하기
-</div>
+### 메트릭 엔드포인트에 액세스하기 {#metrics-endpoint}
 
 메트릭 엔드포인트는 ClickHouse 서비스 엔드포인트의 `/metrics_all` 경로에서 사용할 수 있습니다:
 
@@ -139,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### 인증
+  ### 인증 {#authentication}
 </div>
 
 메트릭 endpoint는 ClickHouse 자격 증명을 사용한 인증이 필요합니다. `default` 사용자를 사용하거나, 메트릭 scraping 전용으로 최소 권한만 가진 사용자를 별도로 생성하는 것을 권장합니다.
@@ -171,9 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-<div id="configuring-prometheus">
-  ### Prometheus 구성하기
-</div>
+### Prometheus 구성하기 {#configuring-prometheus}
 
 Prometheus 인스턴스가 ClickHouse 메트릭 엔드포인트를 스크레이프하도록 구성하십시오:
 
@@ -199,14 +193,12 @@ scrape_configs:
 * `<username>` 및 `<password>`를 스크래핑에 사용할 사용자 자격 증명으로 대체하십시오
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin
+  ## ClickHouse Mixin {#clickhouse-mixin}
 </div>
 
 즉시 사용할 수 있는 대시보드 모음을 원하는 팀을 위해 ClickHouse는 Prometheus **ClickHouse Mixin**을 제공합니다. 이는 ClickHouse 클러스터 모니터링을 위해 특별히 설계된 사전 구축된 Grafana 대시보드입니다.
 
-<div id="setup-grafana-mixin">
-  ### Grafana 설정 및 ClickHouse Mix-in 가져오기
-</div>
+### Grafana 설정 및 ClickHouse Mix-in 가져오기 {#setup-grafana-mixin}
 
 Prometheus 인스턴스가 ClickHouse 모니터링 스택에 통합되면, 다음 단계에 따라 Grafana에서 메트릭을 시각화할 수 있습니다.
 

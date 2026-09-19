@@ -8,11 +8,12 @@ doc_type: 'guide'
 
 ClickHouse utilise [jemalloc](https://github.com/jemalloc/jemalloc) comme allocateur global. Jemalloc inclut des outils d’échantillonnage et de profilage des allocations.
 
-ClickHouse et Keeper vous permettent de contrôler l’échantillonnage à l’aide de configs, de paramètres de requête, de commandes `SYSTEM` et de commandes à quatre lettres (4LW) dans Keeper. Il existe plusieurs façons d’examiner les résultats :
+ClickHouse et Keeper vous permettent de contrôler l’échantillonnage à l’aide de configs, de paramètres de requête, de commandes `SYSTEM` et de commandes à quatre lettres (4LW) dans Keeper. Il existe plusieurs façons d’examiner les résultats :
 
 * Collecter des échantillons dans `system.trace_log` avec le type `JemallocSample` pour une analyse par requête.
 * Afficher les statistiques mémoire en direct et récupérer des profils du tas via l’[interface web jemalloc intégrée](#jemalloc-web-ui) (26.2+).
 * Interroger directement le profil du tas actuel depuis SQL à l’aide de [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql) (26.2+).
+* Analyser la fragmentation mémoire depuis SQL à l’aide de [`system.jemalloc_sampled_allocations`](#analyzing-fragmentation-from-sql) (26.9+).
 * Écrire les profils du tas sur disque et les analyser avec [`jeprof`](#analyzing-heap-profile-files-with-jeprof).
 
 <Note>
@@ -20,9 +21,7 @@ ClickHouse et Keeper vous permettent de contrôler l’échantillonnage à l’a
   Pour les versions antérieures, veuillez consulter [le guide de profilage des allocations pour les versions antérieures à 25.9](/fr/concepts/features/performance/allocation-profiling-old).
 </Note>
 
-<div id="sampling-allocations">
-  ## Échantillonnage des allocations
-</div>
+## Échantillonnage des allocations {#sampling-allocations}
 
 Pour échantillonner et profiler les allocations, démarrez ClickHouse/Keeper avec la configuration `jemalloc_enable_global_profiler` activée :
 
@@ -42,9 +41,7 @@ Vous pouvez également activer l’échantillonnage pour chaque requête à l’
   Comme ClickHouse est une application qui effectue de nombreuses allocations, l’échantillonnage de jemalloc peut entraîner un surcoût en termes de performances.
 </Warning>
 
-<div id="storing-jemalloc-samples-in-system-trace-log">
-  ## Stocker les échantillons jemalloc dans `system.trace_log`
-</div>
+## Stocker les échantillons jemalloc dans `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
 
 Vous pouvez stocker les échantillons jemalloc dans `system.trace_log` avec le type `JemallocSample`.
 Pour l’activer globalement, utilisez la config `jemalloc_collect_global_profile_samples_in_trace_log` :
@@ -63,9 +60,7 @@ Pour l’activer globalement, utilisez la config `jemalloc_collect_global_profil
 
 Vous pouvez également l’activer pour chaque requête à l’aide du paramètre `jemalloc_collect_profile_samples_in_trace_log`.
 
-<div id="example-analyzing-memory-usage-trace-log">
-  ### Exemple : analyser l’utilisation mémoire d’une requête
-</div>
+### Exemple : analyser l’utilisation mémoire d’une requête {#example-analyzing-memory-usage-trace-log}
 
 Commencez par exécuter une requête avec le profileur jemalloc activé, puis collectez les échantillons dans `system.trace_log` :
 
@@ -183,9 +178,7 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-<div id="jemalloc-web-ui">
-  ## Interface web jemalloc
-</div>
+## Interface web jemalloc {#jemalloc-web-ui}
 
 <Note>
   Cette section s’applique aux versions 26.2+.
@@ -201,7 +194,7 @@ Vous pouvez également récupérer directement depuis l’interface des profils 
     http://localhost:8123/jemalloc
     ```
 
-    L’interface du serveur inclut tous les onglets : Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler et Raw Output.
+    L’interface du serveur inclut tous les onglets : Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Fragmentation et Raw Output.
   </Tab>
 
   <Tab title="Keeper">
@@ -209,7 +202,7 @@ Vous pouvez également récupérer directement depuis l’interface des profils 
     http://localhost:9182/jemalloc
     ```
 
-    L’interface de Keeper est disponible sur le port de contrôle HTTP. Ce port est **désactivé par défaut** et doit être explicitement activé en définissant `keeper_server.http_control.port` dans la configuration de Keeper :
+    L’interface de Keeper est disponible sur le port de contrôle HTTP. Ce port est **désactivé par défaut** et doit être explicitement activé en définissant `keeper_server.http_control.port` dans la configuration de Keeper :
 
     ```xml
     <clickhouse>
@@ -221,17 +214,17 @@ Vous pouvez également récupérer directement depuis l’interface des profils 
     </clickhouse>
     ```
 
-    Une fois activée, l’interface fournit les mêmes visualisations que le serveur — Summary, Allocations, Arenas, Operations, Global Profiler et Raw Output — à l’exception de l’onglet Query Profiler, qui nécessite SQL et `system.trace_log`.
+    Une fois activée, l’interface fournit les mêmes visualisations que le serveur — Summary, Allocations, Arenas, Operations, Global Profiler et Raw Output — à l’exception des onglets Query Profiler et Fragmentation, qui nécessitent un accès SQL aux tables système.
 
     <Warning>
       **Sécurité**
 
       Le port de contrôle HTTP de Keeper ne dispose pas d’authentification au niveau de l’application. Contrairement à l’interface jemalloc du serveur ClickHouse — où toutes les requêtes de données passent par le gestionnaire HTTP SQL et nécessitent des identifiants utilisateur/mot de passe — les points de terminaison de l’API REST de Keeper ne sont pas authentifiés. Cela est cohérent avec les autres points de terminaison de contrôle HTTP de Keeper (commands, storage, dashboard).
 
-      Restreignez l’accès à ce port à l’aide de contrôles réseau : configurez Keeper pour écouter sur localhost, utilisez des règles de pare-feu ou placez-le derrière un proxy inverse avec authentification. Lorsqu’aucun `listen_host` n’est configuré, Keeper écoute par défaut uniquement sur localhost.
+      Restreignez l’accès à ce port à l’aide de contrôles réseau : configurez Keeper pour écouter sur localhost, utilisez des règles de pare-feu ou placez-le derrière un proxy inverse avec authentification. Lorsqu’aucun `listen_host` n’est configuré, Keeper écoute par défaut uniquement sur localhost.
     </Warning>
 
-    Keeper expose également des points de terminaison de l’API REST pour un accès programmatique :
+    Keeper expose également des points de terminaison de l’API REST pour un accès programmatique :
 
     * `GET /jemalloc/stats` — sortie brute de `malloc_stats_print`
     * `GET /jemalloc/status` — état du profiling au format JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
@@ -239,9 +232,7 @@ Vous pouvez également récupérer directement depuis l’interface des profils 
   </Tab>
 </Tabs>
 
-<div id="fetching-heap-profiles-from-sql">
-  ## Récupération des profils du tas depuis SQL
-</div>
+## Récupération des profils du tas depuis SQL {#fetching-heap-profiles-from-sql}
 
 <Note>
   Cette section s’applique aux versions 26.2 et ultérieures.
@@ -261,9 +252,7 @@ Vous pouvez interroger la table directement — il n’est pas nécessaire de vi
 SELECT * FROM system.jemalloc_profile_text
 ```
 
-<div id="output-format">
-  ### Format de sortie
-</div>
+### Format de sortie {#output-format}
 
 Le format de sortie est contrôlé par le paramètre `jemalloc_profile_text_output_format`, qui accepte trois valeurs :
 
@@ -285,16 +274,12 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'symbolized'
 ```
 
-<div id="fetching-heap-profiles-settings">
-  ### Paramètres supplémentaires
-</div>
+### Paramètres supplémentaires {#fetching-heap-profiles-settings}
 
 * `jemalloc_profile_text_symbolize_with_inline` (Bool, par défaut : `true`) — Indique s’il faut inclure les frames inline lors de la symbolisation. Désactiver cette option accélère considérablement la symbolisation, mais réduit la précision, car les appels de fonctions inline n’apparaîtront pas dans les piles d’appels. Affecte uniquement les formats `symbolized` et `collapsed`.
 * `jemalloc_profile_text_collapsed_use_count` (Bool, par défaut : `false`) — Lors de l’utilisation du format `collapsed`, agrège par nombre d’allocations plutôt que par octets.
 
-<div id="example-flamegraph-from-sql">
-  ### Exemple : générer un flame graph à partir d’une requête SQL
-</div>
+### Exemple : générer un flame graph à partir d’une requête SQL {#example-flamegraph-from-sql}
 
 Comme le format de sortie par défaut est `collapsed`, vous pouvez rediriger directement la sortie vers FlameGraph :
 
@@ -308,9 +293,85 @@ Pour générer un flame graph en fonction du nombre d’allocations plutôt que 
 clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
 ```
 
-<div id="flushing-heap-profiles">
-  ## Vidage des profils du tas sur disque
-</div>
+## Analyser la fragmentation depuis SQL {#analyzing-fragmentation-from-sql}
+
+<Note>
+  Cette section s&#39;applique aux versions 26.9 et ultérieures.
+</Note>
+
+jemalloc sert les petites allocations depuis des slabs : des blocs de mémoire de taille fixe découpés en régions d&#39;une même size class. Un slab n&#39;est libéré que lorsque toutes ses régions sont libres. Si la plupart des allocations d&#39;une size class sont libérées rapidement, mais que quelques-unes vivent longtemps, les slabs restent immobilisés alors que leurs régions sont majoritairement libres. La mémoire reste résidente, mais elle n&#39;est pas allouée. C&#39;est ce que l&#39;on entend ici par fragmentation.
+
+Deux tables système aident à en identifier l&#39;origine :
+
+* [`system.jemalloc_arena_bins`](/fr/reference/system-tables/jemalloc_bins) indique la quantité de mémoire gaspillée par chaque size class dans chaque arena. `waste` correspond aux octets retenus dans les slabs mais non utilisés par des allocations vivantes. `purpose` signale les arenas dédiées (`mergetree`, `jit`, `cache`) ; elles contiennent par conception des données à longue durée de vie : filtrez-les donc avec `purpose = ''` lorsque vous recherchez une fragmentation inattendue. `system.jemalloc_bins` contient les mêmes données agrégées sur l&#39;ensemble des arenas.
+* `system.jemalloc_sampled_allocations` liste les allocations échantillonnées actuellement vivantes, à raison d&#39;une row par échantillon : la backtrace (`trace`), la durée de vie écoulée (`age_ns`), la taille et la size class, ainsi que l&#39;arena. La lecture de la table déclenche un flush d&#39;un nouveau profil du tas.
+
+Le join de ces deux tables sur l&#39;arena et la size class révèle quel code a alloué les anciens objets dans les size classes coûteuses.
+
+Gardez à l&#39;esprit, en lisant les résultats :
+
+* Seuls les threads pour lesquels le profileur est activé produisent des échantillons (`jemalloc_enable_global_profiler` dans le config ou le SETTING `jemalloc_enable_profiler`).
+* Chaque row représente environ `weight` allocations réelles, et les petites allocations sont rarement échantillonnées. Ajustez `jemalloc_profiler_sampling_rate` si les size classes qui vous intéressent n&#39;ont aucun échantillon.
+* Les allocations échantillonnées ne sont pas stockées dans des slabs, elles ne contribuent donc pas elles-mêmes à `waste`. Elles vous indiquent seulement quel code alloue dans cette size class.
+* Chaque échantillon vivant coûte deux pages supplémentaires (128 Kio sur les builds avec des pages de 64 Kio) jusqu&#39;à ce que l&#39;allocation soit libérée. Désactiver le profileur empêche la création de nouveaux échantillons, mais ne libère pas ceux qui existent déjà.
+
+La requête suivante liste les backtraces des allocations âgées de plus d&#39;une minute dans les size classes qui gaspillent plus de 1 Mio :
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT
+    b.arena,
+    b.size AS reg_size,
+    b.waste AS class_waste,
+    s.est_old_objects,
+    s.stack
+FROM system.jemalloc_arena_bins AS b
+INNER JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 1048576
+ORDER BY b.waste DESC, s.est_old_objects DESC
+SETTINGS allow_introspection_functions=1
+```
+
+### Example : générer un flame graph de la fragmentation {#example-fragmentation-flamegraph}
+
+La même requête peut répartir le gaspillage de chaque size class entre ses backtraces, proportionnellement à leur nombre d&#39;anciennes allocations, puis afficher le résultat au format collapsed pour `flamegraph.pl`. Les size classes présentant du gaspillage mais dépourvues d&#39;échantillons suffisamment anciens sont regroupées sous un frame `[unattributed]`, de sorte que le total du flame graph corresponde au gaspillage total. Ne lisez `system.jemalloc_sampled_allocations` qu&#39;une seule fois par requête : chaque lecture déclenche le flush d&#39;un nouveau profile, si bien que deux subqueries verraient des données différentes.
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT format('{} {}',
+    if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+FROM system.jemalloc_arena_bins AS b
+LEFT JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 0
+SETTINGS allow_introspection_functions=1
+```
+
+```sh
+clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
+```
+
+## Vidage des profils du tas sur disque {#flushing-heap-profiles}
 
 Si vous devez enregistrer des profils du tas sous forme de fichiers pour une analyse hors ligne avec `jeprof`, vous pouvez les vider sur disque.
 
@@ -344,9 +405,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 Le fichier généré sera suffixé par le préfixe PID et le numéro de séquence.
 
-<div id="analyzing-heap-profile-files-with-jeprof">
-  ## Analyse des fichiers de profil du tas avec `jeprof`
-</div>
+## Analyse des fichiers de profil du tas avec `jeprof` {#analyzing-heap-profile-files-with-jeprof}
 
 Après l’écriture des profils du tas sur disque, ils peuvent être analysés à l’aide de l’outil `jemalloc` appelé [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). Il peut être installé de plusieurs façons :
 
@@ -355,9 +414,7 @@ Après l’écriture des profils du tas sur disque, ils peuvent être analysés 
 
 De nombreux formats de sortie sont disponibles. Exécutez `jeprof --help` pour obtenir la liste complète des options.
 
-<div id="symbolized-heap-profiles">
-  ### Profils du tas symbolisés
-</div>
+### Profils du tas symbolisés {#symbolized-heap-profiles}
 
 À partir de la version 26.1+, ClickHouse génère automatiquement des profils du tas symbolisés lorsque vous lancez un flush avec `SYSTEM JEMALLOC FLUSH PROFILE`.
 Le profil symbolisé (avec l’extension `.symbolized`) contient des symboles de fonction intégrés et peut être analysé par `jeprof` sans nécessiter le binaire de ClickHouse.
@@ -408,9 +465,7 @@ Pour comparer deux profils, vous pouvez utiliser l&#39;argument `--base` :
 jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
-<div id="examples">
-  ### Exemples
-</div>
+### Exemples {#examples}
 
 Utiliser des profils symbolisés (recommandé) :
 
@@ -440,9 +495,7 @@ jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result
 jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
-<div id="generating-flame-graph">
-  ### Génération d’un flame graph
-</div>
+### Génération d’un flame graph {#generating-flame-graph}
 
 `jeprof` permet de générer des collapsed stack afin de créer des flame graphs.
 
@@ -468,9 +521,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 Un autre outil intéressant est [speedscope](https://www.speedscope.app/), qui vous permet d’analyser les piles d’appels collectées de manière plus interactive.
 
-<div id="additional-options-for-profiler">
-  ## Options supplémentaires pour le profileur
-</div>
+## Options supplémentaires pour le profileur {#additional-options-for-profiler}
 
 `jemalloc` propose de nombreuses options liées au profileur. Elles peuvent être configurées en modifiant la variable d&#39;environnement `MALLOC_CONF`.
 Par exemple, l&#39;intervalle entre les échantillons d&#39;allocation peut être contrôlé avec `lg_prof_sample`.
@@ -478,9 +529,7 @@ Si vous souhaitez générer un profil du tas tous les N octets, vous pouvez l&#3
 
 Nous vous recommandons de consulter la [page de référence](https://jemalloc.net/jemalloc.3.html) de `jemalloc` pour obtenir la liste complète des options.
 
-<div id="other-resources">
-  ## Autres ressources
-</div>
+## Autres ressources {#other-resources}
 
 ClickHouse/Keeper exposent des `metrics` liées à `jemalloc` sous de nombreuses formes différentes.
 
@@ -490,9 +539,7 @@ ClickHouse/Keeper exposent des `metrics` liées à `jemalloc` sous de nombreuses
   Il est important de noter qu&#39;aucune de ces `metrics` n&#39;est synchronisée avec les autres et que leurs valeurs peuvent diverger.
 </Warning>
 
-<div id="system-table-asynchronous_metrics">
-  ### Table système `asynchronous_metrics`
-</div>
+### Table système `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -503,17 +550,13 @@ FORMAT Vertical
 
 [Référence](/fr/reference/system-tables/asynchronous_metrics)
 
-<div id="system-table-jemalloc_bins">
-  ### Table système `jemalloc_bins`
-</div>
+### Table système `jemalloc_bins` {#system-table-jemalloc_bins}
 
 Contient des informations sur les allocations de mémoire effectuées via l’allocateur jemalloc dans différentes classes de taille (bins), agrégées sur l’ensemble des arenas.
 
 [Référence](/fr/reference/system-tables/jemalloc_bins)
 
-<div id="system-table-jemalloc_stats">
-  ### Table système `jemalloc_stats` (26.2+)
-</div>
+### Table système `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
 
 Renvoie l’intégralité de la sortie de `malloc_stats_print()` dans une seule chaîne. Équivalent à la commande `SYSTEM JEMALLOC STATS`.
 
@@ -521,17 +564,13 @@ Renvoie l’intégralité de la sortie de `malloc_stats_print()` dans une seule 
 SELECT * FROM system.jemalloc_stats
 ```
 
-<div id="prometheus">
-  ### Prometheus
-</div>
+### Prometheus {#prometheus}
 
 Toutes les métriques liées à `jemalloc` de `asynchronous_metrics` sont également exposées via le point de terminaison Prometheus dans ClickHouse et Keeper.
 
 [Référence](/fr/reference/settings/server-settings/settings/other#prometheus)
 
-<div id="jmst-4lw-command-in-keeper">
-  ### Commande 4LW `jmst` dans Keeper
-</div>
+### Commande 4LW `jmst` dans Keeper {#jmst-4lw-command-in-keeper}
 
 Keeper prend en charge la commande 4LW `jmst`, qui renvoie des [statistiques de base de l’allocateur](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics) :
 

@@ -13,31 +13,25 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir des sources de ClickHouse.
 
-<div id="object_shared_data_buckets_for_compact_part">
-  ## object_shared_data_buckets_for_compact_part
-</div>
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "Ajout d'un paramètre permettant de contrôler le nombre de buckets pour les données partagées dans la sérialisation JSON des parts compactes"}]}]} />
 
-Nombre de buckets pour la sérialisation JSON des données partagées dans les parts compactes. Fonctionne avec les sérialisations de données partagées `map_with_buckets` et `advanced`.
+Nombre de buckets pour la sérialisation JSON des données partagées dans les parts compactes. Fonctionne avec les sérialisations de données partagées `map_with_buckets`, `advanced` et `advanced_chunked`.
 La valeur maximale autorisée est de 256.
 
-<div id="object_shared_data_buckets_for_wide_part">
-  ## object_shared_data_buckets_for_wide_part
-</div>
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "Ajout d’un paramètre permettant de contrôler le nombre de buckets pour les données partagées dans la sérialisation JSON des Wide parts"}]}]} />
 
-Le nombre de buckets pour la sérialisation JSON des données partagées dans les Wide parts. Fonctionne avec les sérialisations de données partagées `map_with_buckets` et `advanced`.
+Le nombre de buckets pour la sérialisation JSON des données partagées dans les Wide parts. Fonctionne avec les sérialisations de données partagées `map_with_buckets`, `advanced` et `advanced_chunked`.
 La valeur maximale autorisée est de 256.
 
-<div id="object_shared_data_serialization_version">
-  ## object_shared_data_serialization_version
-</div>
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -45,19 +39,18 @@ La valeur maximale autorisée est de 256.
 
 Version de sérialisation des données partagées dans le type de données JSON.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `map` - stocke les données partagées sous forme de `Map(String, String)`
 * `map_with_buckets` - stocke les données partagées dans plusieurs colonnes `Map(String, String)` distinctes. L’utilisation de buckets améliore la lecture de chemins individuels à partir des données partagées.
 * `advanced` - sérialisation spéciale des données partagées conçue pour améliorer considérablement la lecture de chemins individuels à partir des données partagées.
   Notez que cette sérialisation augmente la taille de stockage sur disque des données partagées, car elle stocke beaucoup d’informations supplémentaires.
+* `advanced_chunked` - identique à `advanced`, mais avec la prise en charge du découpage des lignes en fragments plus petits lors de la sérialisation, afin de réduire le pic de mémoire pendant les fusions de colonnes JSON comportant de nombreux chemins uniques. La taille des fragments est contrôlée par le paramètre [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows).
 
-Le nombre de buckets pour les sérialisations `map_with_buckets` et `advanced` est déterminé par les paramètres
+Le nombre de buckets pour les sérialisations `map_with_buckets`, `advanced` et `advanced_chunked` est déterminé par les paramètres
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-<div id="object_shared_data_serialization_version_for_zero_level_parts">
-  ## object_shared_data_serialization_version_for_zero_level_parts
-</div>
+## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -65,7 +58,18 @@ Le nombre de buckets pour les sérialisations `map_with_buckets` et `advanced` e
 
 Ce paramètre permet de spécifier la version de sérialisation des
 données partagées dans le type JSON pour les parts de niveau zéro créées lors des insertions.
-Il est recommandé de ne pas utiliser la sérialisation des données partagées `advanced` pour les parts de niveau zéro, car cela peut augmenter
+Il est recommandé de ne pas utiliser la sérialisation des données partagées `advanced` ou `advanced_chunked` pour les parts de niveau zéro, car cela peut augmenter
 considérablement le temps d&#39;insertion.
+
+## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "8192"},{"label": "New setting"}]}]} />
+
+Nombre cible de lignes par fragment lors de la sérialisation `advanced_chunked` des données partagées JSON.
+Il ne s&#39;agit pas d&#39;une limite stricte : si le dernier fragment est plus petit que la moitié de la cible, il est fusionné avec le fragment précédent,
+de sorte que la taille réelle des fragments varie entre `target/2` et `1.5 * target`.
+Des valeurs plus faibles réduisent le pic de mémoire lors des fusions de colonnes JSON comportant de nombreux chemins uniques, au prix d&#39;un plus grand nombre de fragments.
 
 {/*AUTOGENERATED_END*/}

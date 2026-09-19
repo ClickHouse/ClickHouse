@@ -12,11 +12,11 @@ integration:
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز قيم السجلات المُرمَّزة بتنسيقَي Avro وProtobuf و[مفاتيح Kafka المهيكلة](/ar/integrations/clickpipes/kafka/reference#structured-message-keys).
+يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز قيم السجلات المُرمَّزة بتنسيقَي Avro وProtobuf و[مفاتيح Kafka المهيكلة](/ar/integrations/clickpipes/kafka/reference#structured-message-keys).
 
-<div id="supported-schema-registries">
-  ## سجلات المخططات المدعومة لـ Kafka ClickPipes
-</div>
+بالنسبة إلى قيم السجلات بتنسيق Protobuf، يمكنك أيضًا [رفع مخطط مباشرةً](/ar/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) دون تكوين سجل مخططات.
+
+## سجلات المخططات المدعومة لـ Kafka ClickPipes {#supported-schema-registries}
 
 يدعم Kafka ClickPipes فئتين من سجلات المخططات:
 
@@ -25,13 +25,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لا يدعم ClickPipes Azure Schema Registry حتى الآن. إذا كنت بحاجة إلى دعمه، [فتواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
 
-<div id="confluent-compatible-registries">
-  ## السجلات المتوافقة مع Confluent
-</div>
+## السجلات المتوافقة مع Confluent {#confluent-compatible-registries}
 
-<div id="schema-registry-configuration">
-  ### الإعداد
-</div>
+### الإعداد {#schema-registry-configuration}
 
 للتكامل مع سجل مخططات أثناء إعداد ClickPipes، يجب استخدام أحد الأساليب التالية:
 
@@ -40,9 +36,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. توفير مسار كامل إلى معرّف المخطط (مثل: `https://registry.example.com/schemas/ids/1000`)
 3. توفير URL الجذر لسجل مخططات (مثل: `https://registry.example.com`)
 
-<div id="network-connectivity">
-  ### اتصال الشبكة
-</div>
+### اتصال الشبكة {#network-connectivity}
 
 يتصل ClickPipes بسجل مخططات عبر HTTPS باستخدام عنوان URL الذي توفّره. ولا يشترط أن يكون سجل مخططات متاحًا عبر الإنترنت العام.
 
@@ -53,9 +47,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * يجب أن يستخدم عنوان URL لسجل مخططات `https://`.
 * إذا كان اسم مضيف السجل يُحل إلى عنوان خاص، فيجب أن يكون الوصول إليه ممكنًا عبر نقطة نهاية خاصة عكسية محددة لـ ClickPipe؛ وإلا فسيفشل فحص الاتصال أثناء الإعداد.
 
-<div id="how-schema-registries-work">
-  ### كيف يعمل ذلك
-</div>
+### كيف يعمل ذلك {#how-schema-registries-work}
 
 يسترجع ClickPipes المخطط من سجل مخططات المُعدّ ويطبّقه ديناميكيًا.
 
@@ -67,9 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عند تهيئة التعيينات لحقول مثل `_key.id`، يحل ClickPipes معرّف المخطط المضمن في مفتاح Kafka بشكل مستقل عن قيمة السجل. يمكن للمفتاح استخدام معرّف مخطط مختلف، ولكن يجب أن يستخدم عائلة السجل نفسها وتنسيق التسلسل نفسه المستخدمين للقيمة. تُخزّن مخططات المفاتيح المحلولة مؤقتًا وتُكتشف تغييرات المخطط تلقائيًا.
 
-<div id="aws-glue-schema-registry">
-  ## AWS Glue Schema Registry
-</div>
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
 إذا كانت مكوّنات الإنتاج لديك تُسلسل بيانات Avro باستخدام AWS Glue SerDe (على سبيل المثال، `AWSKafkaAvroSerializer` مع topic في Amazon MSK)، فيمكن لـ ClickPipes حلّ هذه المخططات مباشرةً من AWS Glue Schema Registry. يستخدم Glue تنسيق wire مختلفًا وواجهة برمجة تطبيقات مختلفة عن السجلات المتوافقة مع Confluent، لذا يُهيَّأ بشكل منفصل.
 
@@ -79,9 +69,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   **Avro فقط.** تُدعم سجلات AWS Glue لتنسيق Avro فقط. يمكن لـ Glue SerDe أيضًا تأطير JSON وProtobuf، لكن ClickPipes لا يدعمهما، ويُرفضان عند إنشاء pipe.
 </Note>
 
-<div id="schema-registry-configuration">
-  ### الإعداد
-</div>
+### الإعداد {#glue-configuration}
 
 في معالج إنشاء ClickPipe، فعّل **سجل المخططات** في خطوة اتصال Kafka واضبط **نوع السجل** على **AWS Glue**:
 
@@ -96,15 +84,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لا يوجد URL لسجل لتكوينه. يحمل كل سجل تنتجه Glue SerDe معرّف إصدار مخططه الخاص، ويحلّه ClickPipes باستخدام `glue:GetSchemaVersion` ويخزّنه مؤقتًا، بإجراء استدعاء واحد لواجهة برمجة التطبيقات لكل إصدار مخطط مميز. يُعالَج تطور المخطط تلقائيًا: فعندما تنتقل السجلات إلى إصدار مخطط جديد أثناء التدفق، يُحلّ عند ظهوره أول مرة.
 
-<div id="glue-iam-setup">
-  ### إعداد IAM
-</div>
+### إعداد IAM {#glue-iam-setup}
 
 استخدم الخيار الأنسب لإعدادك من بين الخيارين. الخيار أ هو الخيار الشائع في حالة Amazon MSK.
 
-<div id="glue-iam-option-a">
-  #### الخيار أ: إعادة استخدام هوية IAM الخاصة بالوسيط
-</div>
+#### الخيار أ: إعادة استخدام هوية IAM الخاصة بالوسيط {#glue-iam-option-a}
 
 إذا كان Kafka ClickPipe لديك يستخدم IAM للمصادقة مع MSK بالفعل، فسيستخدم ClickPipes هوية IAM نفسها لقراءة السجل. اترك حقل **IAM role ARN** فارغًا وأضف العبارة التالية إلى أذونات الهوية:
 
@@ -127,9 +111,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بالنسبة إلى المصادقة المستندة إلى الدور، لا حاجة إلى تغيير سياسة الثقة؛ فعلاقة الثقة المُعدّة لـ MSK تغطي هذا الوصول بالفعل. لا تستخدم بيانات اعتماد IAM سياسة ثقة للدور.
 
-<div id="glue-iam-option-b">
-  #### الخيار ب: استخدام دور مخصص للسجل
-</div>
+#### الخيار ب: استخدام دور مخصص للسجل {#glue-iam-option-b}
 
 استخدم هذا الخيار إذا كان الوسيط لديك لا يستخدم مصادقة IAM ‏(SASL/SCRAM أو SASL/PLAIN أو mTLS)، أو إذا كان السجل موجودًا في حساب AWS مختلف عن حساب الوسيط.
 
@@ -192,9 +174,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   **نطاق موارد IAM.** تتبع هذه الأمثلة [سياسة AWS الموثقة لمكونات إلغاء التسلسل](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html) وسياسة AWS المُدارة [`AWSGlueSchemaRegistryReadonlyAccess`](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html)، وكلتاهما تمنح الإذن `glue:GetSchemaVersion` على `"*"`. يتحقق ClickPipes بشكل مستقل من مطابقة كل مخطط تم حله مع **اسم السجل** الذي كوّنته، ويرفض الإصدارات الواردة من أي سجل آخر.
 </Note>
 
-<div id="glue-troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها
-</div>
+### استكشاف الأخطاء وإصلاحها {#glue-troubleshooting}
 
 | الخطأ                                                                                        | السبب والحل                                                                                                                                                                                             |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -204,16 +184,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | يسجّل المنتجون لديك المخططات في سجل مختلف عن السجل المحدد في الـ pipe. صحح **اسم السجل**، أو وجّه المنتجين إلى السجل الصحيح.                                                                            |
 | `the AWS Glue schema registry only supports the Avro format`                                 | لا تدعم Glue pipes سوى تنسيق Avro. لا يتم دعم JSON وProtobuf عبر Glue SerDe.                                                                                                                            |
 
-<div id="glue-limitations">
-  ### القيود
-</div>
+### القيود {#glue-limitations}
 
 * Avro فقط. لا يُدعم JSON Schema وProtobuf عبر Glue SerDe.
 * مصادر Kafka فقط. لا يمكن لـ ClickPipes في Kinesis استخدام سجل Glue.
 
-<div id="schema-mapping">
-  ## مواءمة المخطط
-</div>
+## مواءمة المخطط {#schema-mapping}
 
 تنطبق القواعد التالية على كلٍّ من السجلات المتوافقة مع Confluent وAWS Glue Schema Registry. وهي تحكم المواءمة بين مخطط القيمة المسترجَع وجدول الوجهة في ClickHouse، وتنطبق أيضًا على حقول السجل أو الرسالة المعيَّنة من مفاتيح مهيكلة ذات البادئة `_key.`:
 

@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-21
+title: '演示日 - 2026-08-21'
+sidebarTitle: '2026-08-21'
+description: '2026-08-21 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## 图表编辑器中的指标公式 {#metric-formulas-in-the-chart-editor}
+
+*演示者：[@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tSCoW-GGXTU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+指标图表现在可以做算术运算了。在本周之前，同一图表上的两个指标只是两条各自独立的曲线，无法组合到一起。
+
+图表中的 series 以 `A`、`B`、`C` 等字母标注，公式行则可以基于这些引用构建派生 series。例如 `A / (A + B + C) * 100` 就是队列利用率；同样，也可以用 collector 的接收数和发送数计算饱和度。
+
+一个图表中可以添加多个公式，可以选择在结果旁一并显示操作数 series 还是只显示公式，还可以混用来自不同指标的 series。告警同样支持公式。
+
+算术运算本身在 ClickHouse 中完成。每个公式都会从经过校验的 AST 编译进组合后的指标查询，因此由 ClickHouse 在单次查询中完成计算，而不是由应用事后再连接结果。每个 series 会成为一个 CTE，公式则在连接后的结果上求值。
+
+缺失的操作数按零处理，因此没有错误的分组显示为 0%，而不是 N/A。所有除法的分母都会包裹在 `nullif(..., 0)` 中，这样分母为零或缺失时呈现为断点，而不是零值或报错。
+
+后续的一次改动把 `HAVING`、`ORDER BY` 和 `LIMIT` 移到了最终的连接上，不再逐个应用于每个 `UNION` 分支。此前，这些子句所在的作用域中并不存在面向用户的输出名称，这意味着每个 series 在连接前被独立过滤，而最终的行顺序仍是不确定的。
+
+输入框目前只接受字母引用和简单算术运算，尚不支持任意 SQL。未知的 series 引用、格式错误的表达式以及仅含常量的表达式，都会实时提示在输入框下方。保存和运行也会走同样的校验，因此无效表达式永远不会到达 ClickHouse。
+
+位运算符和 ClickHouse 函数暂不支持。这背后并没有什么深层原因，只是第一个版本做到这里为止，更广泛的表达式支持是我们接下来可以补上的。
+
+讨论中还提到了两点尚未实现的功能。一是公式无法引用其他公式，因此无法把 `F1` 串接到 `F2`；二是相比图表级的操作数开关，按 series 的显示/隐藏控制会更实用——把 `A` 和 `B` 隐藏起来、但仍保留在公式中，才是大家真正想要的效果。
+
+另外还有一个很中肯的问题：这类连接能推进到什么程度才会失去实用价值？用过 PromQL 除法的人都熟悉那种失败模式：连接没有按预期匹配上，然后悄无声息地返回空数据。
+
+**相关 PR：** [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 在组合后的指标查询中渲染公式；[#2909](https://github.com/hyperdxio/hyperdx/pull/2909) 指标公式的图表编辑器 UI；[#2946](https://github.com/hyperdxio/hyperdx/pull/2946) 将 HAVING/ORDER BY/LIMIT 应用于组合后的指标连接，而非各 series 分支；[#2952](https://github.com/hyperdxio/hyperdx/pull/2952) 各 API 层面的公式支持；[#2953](https://github.com/hyperdxio/hyperdx/pull/2953) 日志/追踪事件 source 的公式支持
+
+## 依赖式仪表盘变量与宏 {#dependent-dashboard-variables-and-macros}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0CaapNH1Vc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+上周演示中提出的两项需求已经落地。
+
+过滤器定义现在可以在其 `WHERE` 子句中引用其他变量，因此一个下拉列表可以限定另一个下拉列表的范围。引用了服务名称过滤器的严重级别过滤器初始为空；选定某个服务后，它只会列出该服务实际存在的严重级别。
+
+当被引用的变量尚未选中任何值时，选项查询仍会执行。如果希望在这种状态下也能填充取值，请使用 `$__filters` 或 `$__conditionalAll`。单独的 `<expression> IN ($var)` 在 `$var` 没有选中项之前不会返回任何结果。现在会有工具提示说明原因，而不是只留下一个没有任何解释的空列表。在过滤器弹窗的 `WHERE` 输入框中，变量和宏的自动补全同样可用。
+
+你可以创建循环依赖，但这并不会造成实际问题，因为变量会被其选中值替换，而不是递归求值。
+
+宏现在会展开作为参数传入的变量，因此 `$__timeFilter($TimeColumn)` 可以正常工作。从变量中选择一个时间戳列，宏就会围绕它展开为完整的时间戳过滤条件。传递给 `$__filter` 和 `$__conditionalAll` 的变量现在必须使用 `$var` 形式。以前不带符号的 `var` 也能被接受，这种宽松处理反而更多地造成了困惑。
+
+外部 API v2 和 MCP server 都能识别变量，这意味着 Terraform 同样支持。agent 可以构建这样的仪表盘：带有变量过滤器和广播过滤器、依赖式下拉列表，以及直接或通过宏引用这些变量的卡片。创建、保存和 patch 工具会在变量被用在无法生效的位置时发出警告。
+
+查询卡片工具也接受变量取值，因此 agent 可以在交付仪表盘之前先检查自己的替换结果。
+
+**相关 PR：** [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 支持依赖式变量取值查询、[#2937](https://github.com/hyperdxio/hyperdx/pull/2937) 支持嵌套宏及宏中的变量引用、[#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 在外部 API 中添加仪表盘变量、[#2951](https://github.com/hyperdxio/hyperdx/pull/2951) 在 MCP server 中支持仪表盘变量
+
+## 严格客户端可接受的 MCP 工具 schema {#mcp-tool-schemas-that-strict-clients-accept}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W4dvgYj47ZM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+有客户反馈，他们的 agent 完全无法使用我们的 MCP server。
+
+某些 agent 框架会先列出可用工具，并在发送给模型提供商之前逐一校验输入 schema。只要有一个 schema 无效，框架拒绝的就是整个工具列表，而不只是那个有问题的工具，结果 server 看起来就像彻底坏掉了一样。
+
+不少 agent 框架的处理要宽松得多，但也有一些并非如此。对受影响的客户端来说，detach 掉该 server 是让 agent 恢复正常的唯一办法。
+
+现在已新增测试，用于断言每个工具的输入 schema 都是有效的 JSON Schema draft 2020-12，这样新增工具就不会再以同样的方式影响严格客户端。
+
+**相关 PR：**[#2925](https://github.com/hyperdxio/hyperdx/pull/2925) 输出符合 draft-2020-12 的工具输入 schema，[#2971](https://github.com/hyperdxio/hyperdx/pull/2971) 将 quantile level 声明为字符串枚举
+
+## 可轮换的 Personal API Access Key {#rotatable-personal-api-access-keys}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tHQoaFaVPpY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+现在可以在 Team Settings → API &amp; Agents 中轮换 Personal API Access Key。
+
+该 key 用作外部 API v2 和 MCP server 的 bearer 令牌。此前它只在创建 account 时生成一次，之后无法更改，一旦泄露就只能删除该用户。
+
+轮换立即生效，没有宽限期，浏览器 session 仍保持登录状态。此处需要注意：该 key 属于 account，而非某个团队。如果你隶属于多个团队，所有团队中用到该 key 的地方都需要一并更新。
+
+Enterprise 版会显示警告对此加以说明。单团队的 open source 安装无需提醒，因此不会出现该警告。
+
+这里有两处刻意设置的限制。`PATCH /me/accessKey` 路由不接受用户标识符，因为 ID 取自 session，它只能轮换调用方自己的 key。
+
+该路由也不会通过采用 bearer 身份验证的外部 API v2 对外暴露。泄露的 key 在那里本就可以读取自身，若再允许其执行轮换，就可能让人把 owner 挡在自己的工具之外。
+
+**相关 PR：** [#2926](https://github.com/hyperdxio/hyperdx/pull/2926) 使 Personal API Access Key 可轮换
+
+## Column Values 选项卡中的键按字母排序 {#alphabetical-keys-in-the-column-values-tab}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/9RfTL-dtZF0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+在行侧边面板的 Column Values 选项卡中，日志和链路追踪的键现在都会在每一层嵌套上按字母顺序排列。
+
+此前，JSON 树是按 ClickHouse 的物理存储顺序渲染键的，看上去近乎随机。像 `ProfileEvents` 这样多达 125 个键的 `Map` 列毫无规律可循，要找某个键只能把整个列表通读一遍。
+
+这个问题还有不太显眼的另一半：每一层最多只显示 50 行，而截取发生在排序之前。你看到的这 50 个键其实是任意挑出的一部分，想看其余的键，只能点击 “Expand 75 more properties”。
+
+现在排序在 `TreeNode` 中完成，且先于列表截取，并且能识别数字，因此 `key2` 会排在 `key10` 前面。
+
+**相关 PR：** [#2943](https://github.com/hyperdxio/hyperdx/pull/2943) 将 JSON 查看器中的键按字母排序
+
+## Storybook 作为可浏览的设计系统 {#storybook-as-a-browsable-design-system}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/mnHtrsuKsC8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Storybook 现在是一个可浏览的设计系统，而不再只是组件 sandbox。侧边栏依次为 Guidelines → Brand → Icons → Design Tokens → Components。
+
+Guidelines 直接渲染 `agent_docs` 的 Markdown，因此 code style、主题、页面布局和数据可视化配色都集中在同一处。这既是给人看的，也是给 agent 看的。让 agent 参考新团队成员所读的同一份文档，有助于让生成的组件与既有内容保持一致。
+
+Brand 和 Icons 包含 HyperDX 与 ClickStack 的徽标以及我们的自定义图标，其中包括 `IconAiNotebook`。你可以复制或下载这些 SVG，其中还说明了何时该使用与 Tabler 兼容的线性图标、何时该使用品牌标识。
+
+这项工作是从图标入手的，因为此前幻灯片里用的都是看着差不多的图形。如果你需要在演示文稿中使用标识，请从这里获取。
+
+Brand 工具栏可在 HyperDX 与 ClickStack 之间切换，Theme 工具栏则涵盖浅色与深色。新组件在发布前可以逐一检查各种组合下的效果。此前未归类的组件 story 现在都归入 `Components/` 之下，图表卡片组件也一并展示其中。
+
+过程中还发现了两个问题。Storybook 的字体 CSS 变量现在挂在 `<html>` 上，与应用保持一致，因此正文文本和通过 portal 渲染的弹出菜单不再显示为 Times 字体。
+
+另外，我们对 Tabler 图标集的使用并不一致。PromQL 大概需要一个专属图标，而指标和链路追踪目前在不同位置用的是不同图标。Storybook 现在就是应当遵循的参考基准。
+
+使用 `yarn workspace @hyperdx/app storybook` 在本地运行。
+
+**相关 PR：** [#2935](https://github.com/hyperdxio/hyperdx/pull/2935) 将 Storybook 打造为可浏览的设计系统
+
+## 直方图图表使用 categorical 调色板 {#categorical-palette-on-histogram-charts}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wybAadS6ms0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+直方图图表 (包括 Services 仪表盘上的 Request Latency) 此前被硬编码为 `#50FA7B`。这种荧光绿并不属于图表调色板，对比度也不够。工具提示中的 &quot;Number of events&quot; 同样使用了这个颜色。
+
+现在该图表通过 `getColorFromCSSToken` 解析 `chart-blue`，工具提示也改用共享的 `ChartTooltipContainer` 和 `ChartTooltipItem`，从而与折线图、柱状图和饼图保持一致。
+
+工具提示中的 **View events** 链接已被移除。内部直方图和工具提示虽然接受 `generateSearchUrl`，但 `DBHistogramChart` 从未向下传入该参数，因此这个链接在 production 中根本不会出现。
+
+唯一的 caller 也没有针对 duration bucket 的搜索 URL builder，而按 latency 区间筛选事件本身属于新功能，并非简单的接线修复。
+
+虽是小改进，但积少成多。
+
+**相关 PR：** [#2949](https://github.com/hyperdxio/hyperdx/pull/2949) 直方图图表使用 categorical 调色板

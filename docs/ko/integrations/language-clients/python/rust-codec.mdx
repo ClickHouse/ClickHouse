@@ -1,0 +1,98 @@
+---
+sidebarTitle: 'Rust codec'
+keywords: ['clickhouse', 'python', 'rust', 'native', 'codec', 'performance']
+description: 'ClickHouse Connect용 선택적 컴파일 Rust 코덱'
+slug: /integrations/language-clients/python/rust-codec
+title: 'Rust 네이티브 코덱'
+doc_type: 'reference'
+---
+
+ClickHouse Connect는 기본 Python 및 Cython 구현 대신 컴파일된 Rust 코덱으로 쿼리 결과를 디코딩하고 삽입 데이터를 인코딩할 수 있습니다. Rust 코덱은 클라이언트가 관리하는 `FORMAT Native` 트래픽에만 적용되며, `query`, `query_np`, `query_df`와 이들의 블록 및 행 스트리밍 변형, 그리고 `insert_df`를 포함한 삽입이 여기에 해당합니다. Arrow 메서드는 `FORMAT Arrow`를 사용하므로 영향을 받지 않으며, raw 쿼리, raw 삽입, Native 이외의 포맷도 마찬가지입니다.
+
+이 코덱은 실험적 기능이며 선택적으로 사용할 수 있습니다. 기본값은 여전히 Python 코덱입니다.
+
+## 설치 {#installation}
+
+컴파일된 코덱은 `clickhouse-connect-core`라는 별도의 휠로 배포되며, `_ch_core` 확장 기능 모듈을 제공합니다. 평가 목적이라면 코덱과 PyArrow를 함께 설치하십시오:
+
+```bash
+pip install "clickhouse-connect[rust,arrow]"
+```
+
+1.8에서는 NumPy 또는 Pandas 출력을 생성하는 모든 Rust 경로에 PyArrow가 필요합니다. 여기에는 `query_np`, `query_df`, 이들의 스트리밍 변형, 그리고 `query(..., use_numpy=True)`가 포함됩니다. PyArrow가 없으면 `native_codec="rust"`는 경고를 기록한 뒤 해당 쿼리를 Python 코덱으로 실행합니다. 반면 `native_codec="rust_strict"`는 `NotSupportedError`를 발생시킵니다.
+
+`rust` 엑스트라만 설치하면, 표준 Python 행 결과, 행 또는 컬럼 블록 스트림, 그리고 NumPy나 Pandas 출력을 요청하지 않는 삽입만 사용하는 애플리케이션에서는 설치 구성이 가볍게 유지됩니다. 이러한 경로에는 PyArrow가 필요하지 않습니다:
+
+```bash
+pip install "clickhouse-connect[rust]"
+```
+
+이 코덱과 패키징, 그리고 의존성 집합은 실험적인 기능입니다. 향후 릴리스에는 더 가벼운 Arrow 상호 운용성 의존성을 적용하는 방안을 검토하고 있습니다.
+
+Rust 코덱을 선택했으나 컴파일된 모듈이 설치되어 있지 않으면, 클라이언트 생성 시 이 설치 명령을 안내하는 `NotSupportedError`가 발생합니다.
+
+## 코덱 활성화 {#enabling-the-codec}
+
+`native_codec` 클라이언트 옵션으로 코덱을 선택합니다:
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
+```
+
+허용되는 값:
+
+| Value         | 동작                                                                          |
+| ------------- | --------------------------------------------------------------------------- |
+| `python`      | 기본값. 기존 Python 및 Cython 코덱입니다.                                              |
+| `rust`        | Rust 코덱을 우선 사용합니다. 지원되지 않는 옵션을 사용하는 쿼리와 지원되지 않는 타입의 삽입은 Python 코덱으로 라우팅됩니다. |
+| `rust_strict` | Rust 코덱을 반드시 사용합니다. 지원되지 않는 옵션과 타입은 라우팅되지 않고 예외를 발생시킵니다.                    |
+
+기본값은 `native_codec` 공통 설정이나 `CLICKHOUSE_CONNECT_NATIVE_CODEC` 환경 변수로도 지정할 수 있습니다. 우선순위는 클라이언트 keyword argument, 공통 설정, 환경 변수 순입니다.
+
+이 옵션은 `interface="chdb"` 클라이언트에서는 무시되며, 해당 클라이언트는 항상 Python 코덱을 사용합니다.
+
+## Rust 코덱을 사용해야 하는 경우 {#when-to-use-the-rust-codec}
+
+Rust 코덱은 `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal`, `UUID`와 같은 텍스트, 컨테이너, 복합 타입이 포함된 대용량 DataFrame 결과에서 가장 유용합니다. 또한 대규모 행 및 컬럼 블록 스트림, 동시 실행 쿼리 워크로드, 대량 삽입에도 도움이 될 수 있습니다.
+
+결과가 작거나 네트워크에 성능이 좌우되는 쿼리에서는 차이가 거의 없을 수 있습니다. 단순 숫자형 결과는 Python 코덱에서도 이미 효율적인 대량 처리 경로를 사용하므로 이점이 크지 않을 수 있습니다.
+
+컬럼 수가 매우 많거나 전부 숫자형인 결과에 대한 버퍼링된 `query()` 호출은 현재 Rust 코덱에서 오히려 더 느리고 최대 메모리 사용량도 더 클 수 있습니다. 이러한 워크로드에는 `query_df`, `query_row_block_stream`, `query_column_block_stream`을 사용하십시오. 스트리밍은 메모리 사용량을 일정 범위 내로 유지해 줍니다.
+
+코덱을 도입하기 전에 실제 워크로드로 벤치마크를 수행하십시오. 측정 중에는 `native_codec="rust_strict"`를 사용하여, 지원되지 않는 옵션이나 누락된 의존성이 있을 때 쿼리가 조용히 Python으로 라우팅되지 않고 예외가 발생하도록 하십시오.
+
+## 폴백 규칙 {#fallback-rules}
+
+폴백 결정은 바이트를 읽거나 전송하기 전에 이루어지므로 스트림 도중에 코덱이 전환되는 일은 없습니다. 쿼리에서는 응답 본문(response body)을 소비하기 전에 선택이 이루어집니다. 삽입에서는 모든 컬럼 타입이 지원되는 경우에만 Rust 인코더가 선택되며, 그렇지 않으면 삽입 전체가 Python 코덱에서 실행됩니다.
+
+`naive_datetime_insert="server"`가 활성화되어 있으면 `rust`는 `DateTime` 또는 `DateTime64` 컬럼이 포함된 삽입을 Python 코덱으로 라우팅하여, 선언된 컬럼 시간대 또는 서버 시간대가 적용되도록 합니다. `rust_strict`는 이 조합을 거부합니다. 기본값인 `naive_datetime_insert="local"` 모드에서는 계속 Rust 인코더를 사용합니다.
+
+SQLAlchemy 방언 리플렉션 SQL 문을 비롯한 드라이버 내부 메타데이터 쿼리는 모든 모드에서 항상 별도의 알림 없이 Python 코덱을 사용합니다.
+
+Rust 코덱이 감지한 잘못된 형식의 Native 페이로드는 `DataError`를 발생시킵니다.
+
+## 버전 관리 {#versioning}
+
+`clickhouse-connect-core`는 `clickhouse-connect`와 별개로 버전이 관리됩니다. 드라이버는 `rust` extra를 통해 호환되는 버전 범위를 선언하며, 모듈은 Rust 코덱이 선택될 때 드라이버가 확인하는 바인딩 API 버전을 내보냅니다. 설치된 휠이 드라이버에 비해 너무 오래된 버전이면, 클라이언트 생성 시 업그레이드 명령을 안내하는 `NotSupportedError`가 발생합니다:
+
+```bash
+pip install --upgrade clickhouse-connect-core
+```
+
+코덱 수정 및 성능 개선 사항은 `clickhouse-connect-core` 릴리스로 제공되며, `clickhouse-connect` 릴리스를 기다리지 않고 휠(wheel) 업그레이드만으로 적용할 수 있습니다.
+
+## 알려진 동작 차이 {#known-behavior-differences}
+
+Rust 코덱은 Python 코덱과 셀 단위로 동일한 결과를 내는 것을 목표로 합니다. 현재 알려진 차이는 다음과 같습니다.
+
+* `Variant` 컬럼의 `query_np` 및 `query_df` 결과에는 numpy 스칼라 값이 아닌 일반 Python 객체가 담깁니다. 값은 동일하지만 셀 타입이 다릅니다.
+* `Time64`를 포함하는 `Dynamic` 값은 Rust의 `query_np` 및 `query_df` 결과에서 `datetime.timedelta`로 구체화됩니다. scale이 0, 3, 6, 9일 때는 값이 Python 코덱의 `numpy.timedelta64` 셀과 동일하지만 셀 타입이 다릅니다. 그 외의 scale에서는 Rust 코덱이 `datetime.timedelta`를 반환하는 반면, Python 코덱은 NumPy에 대응하는 단위가 없어 `ProgrammingError`를 발생시킵니다. Rust로 디코딩한 뒤에는 Dynamic 멤버 메타데이터가 드라이버에 노출되지 않으므로, NumPy 셀 타입이나 지원되지 않는 scale에 대한 유효성 검사가 필요하다면 `native_codec="python"`을 사용하십시오.
+* `query_df`에서 Python 코덱은 JSON shared data에 저장된 Compound 값을 문자열로 변환할 수 있습니다. Rust 코덱은 디코딩된 객체를 반환하며, 이는 두 코덱의 `query_np` 결과와 일치합니다.
+* `Array(Variant(...))`처럼 셀 단위로 구체화되는 컨테이너 내부의 `LowCardinality` 대안은 값이 동일한 셀을 생성하지만, Python 코덱에서 나타나는 딕셔너리 슬롯 단위의 객체 아이덴티티는 공유하지 않습니다.
+* 원소가 하나 이상인 `Nullable(Tuple(...))` 컬럼은 Rust 코덱에서 올바르게 디코딩됩니다. Python 코덱은 이 layout을 잘못 읽으며, Rust 결과가 기준 동작입니다. 두 코덱 모두 `Nullable(Tuple())`을 지원합니다.
+* `rust_strict`는 쿼리별 사용자 정의 `query_formats`처럼 Rust 경로가 구현하지 않은 쿼리 옵션을, 동작을 조용히 바꾸는 대신 거부합니다.
+* Rust의 삽입 변환 및 유효성 검사 오류는 Python 코덱이 `ValueError`를 발생시키는 상황에서 `DataError`를 발생시킬 수 있으며, 메시지 문구도 다를 수 있습니다. 유효하지 않은 `Time` 및 `Time64` 값, IPv6 주소, QBit 차원, `FixedString` length, `Float64` 문자열, `Tuple()` 컬럼에 원소를 삽입하려는 시도 등이 이에 해당합니다.
+* Rust 인코더는 `FixedString(N)`에 대한 `b""`와 정수 컬럼에 대한 `"2"` 같은 숫자 문자열을 거부합니다. 반면 Python 코덱은 비어 있는 `FixedString` 값을 0으로 채우고 숫자 문자열을 변환합니다.
+* Python 코덱이 raw bytes 상태로 남겨두는 일부 `Dynamic` shared-variant 값을 Rust 코덱은 해당 Python 타입으로 디코딩합니다. 예를 들어 저장된 `Date`는 Rust에서는 `datetime.date`로, Python에서는 이진 값으로 반환될 수 있습니다.

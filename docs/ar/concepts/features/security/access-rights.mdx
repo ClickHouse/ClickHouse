@@ -37,9 +37,7 @@ doc_type: 'guide'
 
 لعرض جميع المستخدمين والأدوار وملفات التعريف وما إلى ذلك، وكذلك جميع الامتيازات الممنوحة لها، استخدم عبارة [`SHOW ACCESS`](/ar/reference/statements/show#show-access).
 
-<div id="access-control-usage">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#access-control-usage}
 
 يوفّر خادم ClickHouse افتراضيًا حساب المستخدم `default`، ولا يُسمح لهذا الحساب باستخدام التحكم في الوصول وإدارة الحسابات المعتمدَين على SQL، لكنه يملك جميع الحقوق والأذونات. ويُستخدم حساب المستخدم `default` في كل الحالات التي لا يكون فيها اسم المستخدم محددًا، مثلًا عند تسجيل الدخول من العميل أو في الاستعلامات الموزعة. وفي معالجة الاستعلامات الموزعة، يُستخدم حساب المستخدم `default` إذا لم يحدّد إعداد الخادم أو العنقود الخاصيتين [user and password](/ar/reference/engines/table-engines/special/distributed).
 
@@ -49,17 +47,13 @@ doc_type: 'guide'
 2. سجّل الدخول إلى حساب المستخدم `default` وأنشئ جميع المستخدمين المطلوبين. ولا تنسَ إنشاء حساب مسؤول (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
 3. [قيّد الأذونات](/ar/concepts/features/configuration/settings/permissions-for-queries) للمستخدم `default`، وعطّل له التحكم في الوصول وإدارة الحسابات المعتمدَين على SQL.
 
-<div id="access-control-properties">
-  ### خصائص الحل الحالي
-</div>
+### خصائص الحل الحالي {#access-control-properties}
 
 * يمكنك منح أذونات لقواعد البيانات والجداول حتى إن لم تكن موجودة.
 * إذا حُذف جدول، فلن تُسحب الامتيازات المرتبطة به. وهذا يعني أنه حتى إذا أنشأت لاحقًا جدولًا جديدًا بالاسم نفسه، فستظل جميع الامتيازات سارية. ولسحب الامتيازات المرتبطة بالجدول المحذوف، عليك تنفيذ الاستعلام `REVOKE ALL PRIVILEGES ON db.table FROM ALL`، على سبيل المثال.
 * لا توجد إعدادات لمدة صلاحية الامتيازات.
 
-<div id="user-account-management">
-  ### حساب مستخدم
-</div>
+### حساب مستخدم {#user-account-management}
 
 حساب المستخدم هو كيان وصول يتيح تخويل شخص ما في ClickHouse. ويحتوي حساب المستخدم على:
 
@@ -80,9 +74,7 @@ doc_type: 'guide'
 * [SHOW CREATE USER](/ar/reference/statements/show#show-create-user)
 * [SHOW USERS](/ar/reference/statements/show#show-users)
 
-<div id="access-control-settings-applying">
-  ### تطبيق الإعدادات
-</div>
+### تطبيق الإعدادات {#access-control-settings-applying}
 
 يمكن تهيئة الإعدادات بطرق مختلفة: لحساب مستخدم، وفي الأدوار الممنوحة له، وفي ملفات تعريف الإعدادات. عند تسجيل دخول المستخدم، إذا كان إعداد ما مهيّأً لكيانات وصول مختلفة، فستُطبَّق قيمة هذا الإعداد وقيوده على النحو التالي (من الأعلى إلى الأدنى أولوية):
 
@@ -91,9 +83,7 @@ doc_type: 'guide'
 3. الإعدادات من ملفات تعريف الإعدادات المعيّنة لمستخدم أو لأدواره الافتراضية. إذا كان إعداد ما مهيّأً في بعض ملفات التعريف، فسيكون ترتيب تطبيق الإعداد غير محدد.
 4. الإعدادات المطبقة على الخادم بأكمله افتراضيًا أو من [ملف التعريف الافتراضي](/ar/reference/settings/server-settings/settings/default#default_profile).
 
-<div id="role-management">
-  ### الدور
-</div>
+### الدور {#role-management}
 
 الدور هو حاوية لكيانات الوصول يمكن منحها إلى حساب مستخدم.
 
@@ -115,9 +105,7 @@ doc_type: 'guide'
 
 يمكن منح الامتيازات إلى الدور باستخدام استعلام [GRANT](/ar/reference/statements/grant). ولسحب الامتيازات من دور، يوفّر ClickHouse استعلام [REVOKE](/ar/reference/statements/revoke).
 
-<div id="row-policy-management">
-  #### سياسة الصفوف
-</div>
+#### سياسة الصفوف {#row-policy-management}
 
 ‏سياسة الصفوف هي عامل تصفية يحدّد الصفوف المتاحة لمستخدم أو دور. وتحتوي سياسة الصفوف على عوامل تصفية لجدول معيّن، بالإضافة إلى قائمة بالأدوار و/أو المستخدمين الذين ينبغي أن تنطبق عليهم سياسة الصفوف هذه.
 
@@ -135,9 +123,7 @@ doc_type: 'guide'
 * [SHOW CREATE ROW POLICY](/ar/reference/statements/show#show-create-row-policy)
 * [SHOW POLICIES](/ar/reference/statements/show#show-policies)
 
-<div id="settings-profiles-management">
-  ### ملف تعريف الإعدادات
-</div>
+### ملف تعريف الإعدادات {#settings-profiles-management}
 
 ملف تعريف الإعدادات هو مجموعة من [الإعدادات](/ar/reference/settings/index). ويحتوي على إعدادات وقيود، بالإضافة إلى قائمة بالأدوار و/أو المستخدمين الذين يُطبَّق عليهم هذا الملف.
 
@@ -149,9 +135,7 @@ doc_type: 'guide'
 * [SHOW CREATE SETTINGS PROFILE](/ar/reference/statements/show#show-create-settings-profile)
 * [SHOW PROFILES](/ar/reference/statements/show#show-profiles)
 
-<div id="quotas-management">
-  ### الحصة
-</div>
+### الحصة {#quotas-management}
 
 تحدّ الحصة من استخدام الموارد. راجع [الحصص](/ar/concepts/features/configuration/server-config/quotas).
 
@@ -166,21 +150,26 @@ doc_type: 'guide'
 * [SHOW QUOTA](/ar/reference/statements/show#show-quota)
 * [SHOW QUOTAS](/ar/reference/statements/show#show-quotas)
 
-<div id="enabling-access-control">
-  ### تمكين التحكم في الوصول وإدارة الحسابات المعتمدين على SQL
-</div>
+### تمكين التحكم في الوصول وإدارة الحسابات المعتمدين على SQL {#enabling-access-control}
 
 * أنشئ دليلاً لتخزين ملفات التهيئة.
 
-  يخزّن ClickHouse تهيئات كيانات التحكم في الوصول في المجلد المحدد في مَعلَمة إعداد الخادم [access&#95;control&#95;path](/ar/reference/settings/server-settings/settings/access-control#access_control_path).
+  يخزّن ClickHouse تهيئات كيانات الوصول في المجلد المحدد في مَعلَمة إعداد الخادم [access&#95;control&#95;path](/ar/reference/settings/server-settings/settings/access-control#access_control_path).
 
 * فعّل التحكم في الوصول وإدارة الحسابات المعتمدين على SQL لحساب مستخدم واحد على الأقل.
 
-  يكون التحكم في الوصول وإدارة الحسابات المعتمدان على SQL معطّلين افتراضيًا لجميع المستخدمين. تحتاج إلى تهيئة مستخدم واحد على الأقل في ملف التهيئة `users.xml`، وتعيين قيم الإعدادات [`access_management`](/ar/concepts/features/configuration/settings/settings-users#access_management-user-setting) و`named_collection_control` و`show_named_collections` و`show_named_collections_secrets` إلى 1.
+  يُمكّن ملف التهيئة `users.xml` المرفق مع ClickHouse التحكمَ في الوصول وإدارة الحسابات المعتمدين على SQL للمستخدم `default` عبر تعيين [`access_management`](/ar/concepts/features/configuration/settings/settings-users#access_management-user-setting) و[`named_collection_control`](/ar/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) إلى 1. أما لسائر المستخدمين فتكون القيمة الافتراضية لكلا الإعدادين 0، لذا عليك تعيينهما صراحةً.
 
-<div id="defining-sql-users-and-roles">
-  ## تعريف مستخدمي SQL والأدوار
-</div>
+  أما [`show_named_collections_secrets`](/ar/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) فقيمته الافتراضية 0 حتى للمستخدم `default`، لأن القدرة على إدارة المجموعات المسماة لا تعني القدرة على قراءة بيانات الاعتماد المخزّنة فيها بالفعل. لا يستطيع المستخدم منح سوى الامتيازات التي يملكها هو نفسه، لذا فما دام هذا الإعداد بالقيمة 0، لا يمتلك المستخدم المجموعة الكاملة من الامتيازات ويُرفض استعلام مثل `GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION`:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  عيّن الإعدادات الثلاثة جميعها إلى 1 لجعل المستخدم مسؤولاً كامل الصلاحيات.
+
+## تعريف مستخدمي SQL والأدوار {#defining-sql-users-and-roles}
 
 <Tip>
   إذا كنت تستخدم ClickHouse Cloud، فيُرجى الرجوع إلى [إدارة الوصول إلى Cloud](/ar/products/cloud/reference/security/console-roles).
@@ -188,17 +177,19 @@ doc_type: 'guide'
 
 توضح هذه المقالة أساسيات تعريف مستخدمي SQL والأدوار، وتطبيق هذه الامتيازات والأذونات على قواعد البيانات والجداول والصفوف والأعمدة.
 
-<div id="enabling-sql-user-mode">
-  ### تمكين وضع مستخدم SQL
-</div>
+### تمكين وضع مستخدم SQL {#enabling-sql-user-mode}
 
-1. فعِّل وضع مستخدم SQL في ملف `users.xml` ضمن المستخدم `<default>`:
+1. فعِّل وضع مستخدم SQL في ملف `users.xml` ضمن المستخدم `<default>`:
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- مطلوب لجعل المستخدم مسؤولًا كاملًا،
+        وإلا سيتم رفض `GRANT ALL ... WITH GRANT OPTION` أدناه. -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   الإعدادان الأولان مفعَّلان بالفعل للمستخدم `default` في ملف `users.xml` الذي يأتي مع ClickHouse؛ أما `show_named_collections_secrets` فهو معلَّق هناك ويجب إلغاء التعليق عنه.
 
 <Note>
   المستخدم `default` هو المستخدم الوحيد الذي يتم إنشاؤه عند إجراء تثبيت جديد، وهو أيضًا الحساب المستخدم افتراضيًا للاتصال بين العقد.
@@ -208,14 +199,12 @@ doc_type: 'guide'
 
 2. أعد تشغيل العقد لتطبيق التغييرات.
 
-3. شغِّل عميل ClickHouse:
+3. شغِّل عميل ClickHouse:
    ```sql
    clickhouse-client --user default --password <password>
    ```
 
-<div id="defining-users">
-  ### تعريف المستخدمين
-</div>
+### تعريف المستخدمين {#defining-users}
 
 1. أنشئ حساب مسؤول في SQL:
    ```sql
@@ -226,9 +215,7 @@ doc_type: 'guide'
    GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
    ```
 
-<div id="alter-permissions">
-  ## أذونات `ALTER`
-</div>
+## أذونات `ALTER` {#alter-permissions}
 
 تهدف هذه المقالة إلى تزويدك بفهم أوضح لكيفية تحديد الأذونات، وكيف تعمل الأذونات عند استخدام عبارات `ALTER` للمستخدمين ذوي الامتيازات.
 

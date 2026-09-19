@@ -22,9 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 
 모든 옵션을 빠르게 살펴보려면 전체 구성 옵션 목록을 [여기](#all-yaml-options)에서 확인할 수 있습니다.
 
-<div id="common-settings">
-  ## 공통 설정
-</div>
+## 공통 설정 {#common-settings}
 
 예시 구성 화면:
 
@@ -57,7 +55,7 @@ secureJsonData:
 구성을 UI에서 저장하면 `version` 속성이 추가된다는 점에 유의하십시오. 이는 해당 구성을 저장할 때 사용된 플러그인의 버전을 나타냅니다.
 
 <div id="http-protocol">
-  ### HTTP protocol
+  ### HTTP protocol {#http-protocol}
 </div>
 
 HTTP protocol로 연결을 선택하면 추가 설정이 표시됩니다.
@@ -65,7 +63,7 @@ HTTP protocol로 연결을 선택하면 추가 설정이 표시됩니다.
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="추가 HTTP 구성 옵션" border />
 
 <div id="http-path">
-  #### HTTP 경로
+  #### HTTP 경로 {#http-path}
 </div>
 
 HTTP 서버가 다른 URL 경로에 노출되어 있는 경우, 여기에서 해당 경로를 추가할 수 있습니다.
@@ -77,7 +75,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### 사용자 지정 HTTP 헤더
+  #### 사용자 지정 HTTP 헤더 {#custom-http-headers}
 </div>
 
 서버로 전송되는 요청에 사용자 지정 헤더를 추가할 수 있습니다.
@@ -106,9 +104,7 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-<div id="additional-settings">
-  ## 추가 설정
-</div>
+## 추가 설정 {#additional-settings}
 
 이 추가 설정은 선택 사항입니다.
 
@@ -127,7 +123,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry
+  ### OpenTelemetry {#opentelemetry}
 </div>
 
 OpenTelemetry (OTel)는 플러그인에 깊이 통합되어 있습니다.
@@ -136,9 +132,7 @@ OpenTelemetry 데이터는 [exporter plugin](https://github.com/open-telemetry/o
 
 또한 강력한 관측성 워크플로를 지원하는 [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links) 기능을 활성화하려면 이러한 기본값도 구성해야 합니다.
 
-<div id="logs">
-  ### 로그
-</div>
+### 로그 {#logs}
 
 [로그용 쿼리 빌드](/ko/integrations/connectors/data-visualization/grafana/query-builder#logs) 속도를 높이기 위해 로그 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 쿼리 빌더에 실행 가능한 로그 쿼리가 미리 로드되어 관측성 워크플로에서 Explore 페이지를 더 빠르게 탐색할 수 있습니다.
 
@@ -162,17 +156,24 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
-<div id="traces">
-  ### 트레이스
-</div>
+#### &quot;View logs&quot; 링크 비활성화 {#disabling-view-logs-links}
 
-[트레이스용 쿼리 작성](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
+로그 구성의 **트레이스 ID 연관 관계** 섹션에는 **&quot;View logs&quot; 링크 표시** 토글이 있습니다.
+이 토글은 플러그인이 쿼리 결과의 트레이스 ID 필드에 &quot;View logs&quot; [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)를 추가할지 여부를 제어합니다.
+이 토글은 기본적으로 활성화되어 있습니다. 동일한 쿼리 유형의 &quot;View logs&quot; 링크에는 로그 기본값을 구성할 필요가 없지만, 트레이스 쿼리 결과에서 교차 신호로 연결되는 &quot;View logs&quot; 링크에는 로그 기본값을 구성해야 합니다.
+링크를 숨기려면 토글을 끄거나 YAML에서 `showLogLinks: false`로 설정하십시오.
+
+### 트레이스 {#traces}
+
+[트레이스용 쿼리 빌드](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
 
 OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활성화하고, **기본 트레이스 테이블**을 `otel_traces`로 설정해야 합니다.
 이렇게 하면 선택한 OTel 스키마 버전을 사용하도록 기본 컬럼이 자동으로 재정의됩니다.
@@ -193,6 +194,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -206,8 +209,15 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
+#### &quot;View trace&quot; 링크 비활성화 {#disabling-view-trace-links}
+
+트레이스 구성의 **트레이스 ID 연관 관계** 섹션에는 **Show &quot;View trace&quot; links** 토글이 있습니다.
+이 토글은 플러그인이 쿼리 결과의 트레이스 ID 필드에 &quot;View trace&quot; [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)를 추가할지 여부를 제어합니다.
+토글은 기본적으로 활성화되어 있습니다. 동일한 쿼리 유형의 &quot;View trace&quot; 링크에는 트레이스 기본값을 구성할 필요가 없지만, 로그 쿼리 결과의 교차 신호 &quot;View trace&quot; 링크에는 필요합니다.
+링크를 숨기려면 토글을 끄거나 YAML에서 `showTraceLinks: false`로 설정하십시오.
+
 <div id="column-aliases">
-  ### 컬럼 별칭
+  ### 컬럼 별칭 {#column-aliases}
 </div>
 
 컬럼 별칭은 데이터를 서로 다른 이름과 타입으로 쿼리할 수 있게 해주는 편리한 기능입니다.
@@ -221,7 +231,7 @@ jsonData:
 * 선택한 컬럼을 변환하기 위해 함수를 자주 적용합니다
 
 <div id="table-defined-alias-columns">
-  #### 테이블에 정의된 ALIAS 컬럼
+  #### 테이블에 정의된 ALIAS 컬럼 {#table-defined-alias-columns}
 </div>
 
 ClickHouse는 컬럼 별칭 기능을 기본으로 제공하며 Grafana와도 바로 사용할 수 있습니다.
@@ -240,9 +250,7 @@ CREATE TABLE alias_example (
 
 자세한 내용은 [ALIAS](/ko/reference/statements/create/table#alias) 컬럼 유형 문서를 참조하십시오.
 
-<div id="column-alias-tables">
-  #### 컬럼 별칭 테이블
-</div>
+#### 컬럼 별칭 테이블 {#column-alias-tables}
 
 기본적으로 Grafana는 `DESC table`의 응답을 바탕으로 컬럼 추천을 제공합니다.
 경우에 따라 Grafana에 표시되는 컬럼을 완전히 재정의해야 할 수 있습니다.
@@ -284,9 +292,7 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 두 가지 alias 방식 모두 복잡한 타입 변환이나 JSON 필드 추출에 사용할 수 있습니다.
 
-<div id="all-yaml-options">
-  ## 모든 YAML 옵션
-</div>
+## 모든 YAML 옵션 {#all-yaml-options}
 
 다음은 이 플러그인에서 제공하는 모든 YAML 구성 옵션입니다.
 일부 필드에는 예시 값이 포함되어 있고, 다른 필드는 유형만 표시합니다.
@@ -323,6 +329,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +338,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

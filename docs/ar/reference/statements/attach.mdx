@@ -20,9 +20,7 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 إذا كان قد سبق فصل جدول (استعلام [DETACH](/ar/reference/statements/detach))، أي إن بنيته معروفة، فيمكنك استخدام الصيغة المختصرة من دون تعريف البنية.
 
-<div id="attach-existing-table">
-  ## إرفاق جدول موجود
-</div>
+## إرفاق جدول موجود {#attach-existing-table}
 
 **الصياغة**
 
@@ -34,17 +32,14 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 إذا كان الجدول قد فُصل بشكل دائم، فلن يُعاد إرفاقه عند بدء تشغيل الخادم، لذا عليك استخدام استعلام `ATTACH` صراحةً.
 
-<div id="create-new-table-and-attach-data">
-  ## إنشاء جدول جديد وإرفاق البيانات به
-</div>
+## إنشاء جدول جديد وإرفاق البيانات به {#create-new-table-and-attach-data}
 
-<div id="with-specified-path-to-table-data">
-  ### مع تحديد مسار بيانات الجدول
-</div>
+### مع تحديد مسار بيانات الجدول {#with-specified-path-to-table-data}
 
 ينشئ هذا الاستعلام جدولًا جديدًا بالبنية المحددة، ويُرفق بيانات الجدول من الدليل المحدد داخل `user_files`.
+يحتاج المستخدم إلى الصلاحيتين `READ ON FILE` و`WRITE ON FILE` لتنفيذ هذا الاستعلام: فهو يقرأ الدليل وينقله إلى مسار بيانات الجدول الجديد.
 
-**البنية**
+**الصيغة**
 
 ```sql
 ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
@@ -65,9 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-<div id="with-specified-table-uuid">
-  ### مع UUID جدول محدد
-</div>
+### مع UUID جدول محدد {#with-specified-table-uuid}
 
 ينشئ هذا الاستعلام جدولًا جديدًا بالبنية المحددة ويُرفق البيانات من الجدول ذي الـ UUID المحدد.
 وهو مدعوم من محرك قاعدة البيانات [Atomic](/ar/reference/engines/database-engines/atomic).
@@ -78,9 +71,7 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-<div id="attach-mergetree-table-as-replicatedmergetree">
-  ## إرفاق جدول MergeTree كـ ReplicatedMergeTree
-</div>
+## إرفاق جدول MergeTree كـ ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 يتيح ذلك إرفاق جدول MergeTree غير مكرّر كـ ReplicatedMergeTree. سيُنشأ جدول ReplicatedMergeTree باستخدام قيم إعدادَي `default_replica_path` و`default_replica_name`. ومن الممكن أيضًا إرفاق جدول مكرّر كجدول MergeTree عادي.
 
@@ -124,9 +115,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-<div id="attach-existing-dictionary">
-  ## إرفاق قاموس موجود
-</div>
+## إرفاق قاموس موجود {#attach-existing-dictionary}
 
 يُرفق قاموسًا فُصل سابقًا.
 
@@ -136,9 +125,7 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-<div id="attach-existing-database">
-  ## إرفاق قاعدة بيانات موجودة
-</div>
+## إرفاق قاعدة بيانات موجودة {#attach-existing-database}
 
 يُرفِق قاعدة بيانات سبق فصلها.
 

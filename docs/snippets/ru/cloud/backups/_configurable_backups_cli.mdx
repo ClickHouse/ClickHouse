@@ -1,0 +1,188 @@
+---
+title: Настраиваемые резервные копии в CLI
+---
+
+На этой странице описано, как просмотреть и изменить расписание резервного копирования сервиса ClickHouse Cloud из командной строки с помощью [ClickHouse CLI](/ru/products/cloud/features/cli) (`clickhousectl`). Команды выполняются в неинтерактивном режиме; с флагом `--json` `clickhousectl` выводит результат в формате JSON.
+
+Настраиваемые резервные копии доступны в планах Scale и Enterprise.
+
+## Предварительные требования {#prerequisites}
+
+Установите ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Также вам понадобится `jq`.
+
+Изменение конфигурации резервного копирования — это операция записи, поэтому требуется [аутентификация по API-ключу](/ru/products/cloud/features/admin-features/api/openapi); вход через OAuth даёт доступ только для чтения:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Как вариант, задайте переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Проверьте результат командой `clickhousectl cloud auth status`: убедитесь, что **активны** учётные данные со scope `read/write`. Учётные данные, сохранённые ранее командой `auth login`, имеют приоритет над переменными окружения; в этом случае в строке `Env vars` по-прежнему может отображаться scope `read/write`, но она будет помечена как неактивная (`Configured (inactive, outranked by credentials file)`), а приведённые ниже команды записи будут выполняться с сохранёнными учётными данными. Если вы хотите, чтобы использовались переменные окружения, сначала выполните `clickhousectl cloud auth logout`.
+
+## Определение ID сервиса {#find-the-service-id}
+
+Конфигурация резервного копирования задаётся отдельно для каждого сервиса. Найдите ID сервиса по его имени:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="<service-name>") | .id')
+```
+
+Если вы состоите более чем в одной организации, определить её автоматически невозможно, и команда завершится с ошибкой `Multiple organizations found. Specify --org-id to choose one.`. Получите список своих организаций командой `clickhousectl cloud org list` и передавайте `--org-id <org-id>` как этой команде, так и всем командам `backup-config`, приведённым ниже.
+
+## Просмотр текущей конфигурации резервного копирования {#read-the-current-backup-configuration}
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+Сервис, который всё ещё использует расписание по умолчанию, вернёт:
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 24.0
+}
+```
+
+`backupStartTime` появляется в выводе только после того, как задано время начала.
+
+## Изменение срока хранения и частоты {#change-retention-and-frequency}
+
+`backup-config update` принимает те же настройки, что и форма в консоли — срок хранения (`--backup-retention-period-hours`), частоту (`--backup-period-hours`) и время начала (`--backup-start-time`) — и выводит итоговую конфигурацию. Не указанные вами флаги сохраняют текущие значения:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-period-hours 12 \
+  --backup-retention-period-hours 48 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+Изменение вступает в силу немедленно; прочитайте конфигурацию, чтобы убедиться в этом:
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+## Задание времени начала резервного копирования {#set-a-backup-start-time}
+
+`--backup-start-time` принимает ежедневное время начала в UTC, кратное часу (`HH:00`). Время начала ограничивает частоту: период резервного копирования должен составлять `24` или `48` часов — переданный либо в той же команде, либо уже сохранённый для сервиса. Начиная с `clickhousectl 0.4.2` и формат, и правило периода проверяются на стороне клиента, до каких-либо вызовов API. Время, не кратное часу — или без ведущего нуля, например `2:00`, — отклоняется парсером аргументов с кодом выхода `2`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
+```
+
+```text
+error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': invalid backup start time '02:30': expected HH:00 with HH from 00 to 23
+```
+
+Передача `--backup-start-time` вместе со значением `--backup-period-hours`, отличным от `24` или `48`, также отклоняется ещё до отправки запроса — с кодом выхода `1`:
+
+```text
+Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
+```
+
+`--backup-period-hours` можно не указывать — в этом случае сервис сохранит уже заданный период, но этот сохранённый период сам должен быть равен `24` или `48`. У сервиса, который по-прежнему использует расписание по умолчанию, период равен `24`, поэтому достаточно указать только время начала. Для сервиса выше на предыдущем шаге было задано значение `12`, поэтому без указания периода команда завершится ошибкой: `clickhousectl` сначала считывает сохранённую конфигурацию и завершается с кодом выхода `1`, снова не обращаясь к API:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json
+```
+
+```text
+Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48. Pass --backup-period-hours 24 or --backup-period-hours 48 in the same call.
+```
+
+Явное указание периода — допустимая комбинация:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-start-time 02:00 \
+  --backup-period-hours 24 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0,
+  "backupStartTime": "02:00"
+}
+```
+
+Обратный случай на стороне клиента не отлавливается: если время начала уже сохранено, обновление, меняющее только `--backup-period-hours` на значение, отличное от `24` или `48`, доходит до API и завершается там ошибкой с кодом выхода `1`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-period-hours 12 --json
+```
+
+```text
+Error: BAD_REQUEST: customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set
+```
+
+Чтобы этого избежать, очистите время начала в той же команде, как показано далее.
+
+## Очистка времени начала резервного копирования {#clear-the-backup-start-time}
+
+`--clear-backup-start-time` удаляет сохранённое время начала и снимает ограничение в `24`/`48` часов на период:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`backupStartTime` исчезает из вывода, а не возвращается как `null`, и `backup-config get` больше его не выдаёт. Сброс времени начала, которое ни разу не задавалось, — это no-op, но команда всё равно завершается с кодом `0`.
+
+Используйте этот флаг вместе с `--backup-period-hours`, чтобы сбросить время начала и задать любой период одной командой — именно так можно обойти описанную выше ошибку API:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --backup-period-hours 12 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+`--clear-backup-start-time` и `--backup-start-time` нельзя использовать вместе; парсер отклоняет такую пару с кодом выхода `2`:
+
+```text
+error: the argument '--clear-backup-start-time' cannot be used with '--backup-start-time <BACKUP_START_TIME>'
+```
+
+Чтобы изменить время начала, а не удалять его, передайте новое значение `--backup-start-time` отдельно — оно перезапишет сохранённое.
+
+<Note>
+  Изменение расписания резервного копирования может привести к росту ежемесячных расходов на хранилище, поскольку часть резервных копий может не покрываться резервными копиями сервиса по умолчанию. См. [«Как формируется стоимость резервных копий»](/ru/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

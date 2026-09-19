@@ -13,35 +13,27 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="vertical_merge_algorithm_min_bytes_to_activate">
-  ## vertical_merge_algorithm_min_bytes_to_activate
-</div>
+## vertical_merge_algorithm_min_bytes_to_activate {#vertical_merge_algorithm_min_bytes_to_activate}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأدنى (التقريبي) للحجم غير المضغوط، بالبايت، في الأجزاء التي يجري دمجها لتفعيل
 خوارزمية الدمج العمودي.
 
-<div id="vertical_merge_algorithm_min_columns_to_activate">
-  ## vertical_merge_algorithm_min_columns_to_activate
-</div>
+## vertical_merge_algorithm_min_columns_to_activate {#vertical_merge_algorithm_min_columns_to_activate}
 
 <SettingsInfoBlock type="UInt64" default_value="11" />
 
 الحد الأدنى لعدد الأعمدة غير المدرجة في المفتاح الأساسي (PK) لتفعيل خوارزمية الدمج العمودية.
 
-<div id="vertical_merge_algorithm_min_rows_to_activate">
-  ## vertical_merge_algorithm_min_rows_to_activate
-</div>
+## vertical_merge_algorithm_min_rows_to_activate {#vertical_merge_algorithm_min_rows_to_activate}
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 الحد الأدنى (التقريبي) لإجمالي عدد الصفوف في
 الأجزاء الجاري دمجها لتفعيل خوارزمية الدمج العمودي.
 
-<div id="vertical_merge_optimize_lightweight_delete">
-  ## vertical_merge_optimize_lightweight_delete
-</div>
+## vertical_merge_optimize_lightweight_delete {#vertical_merge_optimize_lightweight_delete}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -49,20 +41,16 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كانت القيمة true، فسيتم تحسين الحذف خفيف الوزن أثناء الدمج العمودي.
 
-<div id="vertical_merge_optimize_ttl_delete">
-  ## vertical_merge_optimize_ttl_delete
-</div>
+## vertical_merge_optimize_ttl_delete {#vertical_merge_optimize_ttl_delete}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "السماح بخوارزمية الدمج العمودي لعمليات الدمج التي تتطلب إزالة الصفوف التي انتهت صلاحيتها وفق TTL"}]}]} />
 
-إذا كانت القيمة true، فسيُحسَّن حذف الصفوف عبر TTL في الدمج العمودي. وبدلاً من فرض الدمج الأفقي،
-يُقيَّم عامل تصفية TTL ويُمرَّر إلى خوارزمية الدمج التي تضبط علامات التخطي في مصادر الصفوف.
+إذا كانت القيمة true، فسيُحسَّن حذف الصفوف عبر TTL في الدمج العمودي لجداول `MergeTree` فقط. وبدلاً من
+فرض الدمج الأفقي، يُقيَّم عامل تصفية TTL ويُمرَّر إلى خوارزمية الدمج التي تضبط علامات التخطي في مصادر الصفوف.
 
-<div id="vertical_merge_remote_filesystem_prefetch">
-  ## vertical_merge_remote_filesystem_prefetch
-</div>
+## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

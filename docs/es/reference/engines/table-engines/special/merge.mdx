@@ -13,21 +13,15 @@ El motor `Merge` (no debe confundirse con `MergeTree`) no almacena datos por sí
 
 La lectura se paraleliza automáticamente. No se admite la escritura en una tabla. Al leer, se utilizan los índices de las tablas que efectivamente se están leyendo, si existen.
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-<div id="engine-parameters">
-  ## Parámetros del motor
-</div>
+## Parámetros del motor {#engine-parameters}
 
-<div id="db_name">
-  ### `db_name`
-</div>
+### `db_name` {#db_name}
 
 `db_name` — Valores posibles:
 
@@ -35,27 +29,21 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
   * expresión constante que devuelve una cadena con el nombre de una base de datos; por ejemplo, `currentDatabase()`,
   * `REGEXP(expression)`, donde `expression` es una expresión regular para hacer coincidir los nombres de las bases de datos.
 
-<div id="tables_regexp">
-  ### `tables_regexp`
-</div>
+### `tables_regexp` {#tables_regexp}
 
 `tables_regexp` — Una expresión regular para coincidir con los nombres de las tablas en la DB o las DB especificadas.
 
 Expresiones regulares: [re2](https://github.com/google/re2) (admite un subconjunto de PCRE), sensible a mayúsculas y minúsculas.
 Consulte las notas sobre el escape de símbolos en las expresiones regulares en la sección &quot;match&quot;.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Al seleccionar tablas para leer, la propia tabla `Merge` no se selecciona, aunque coincida con la expresión regular. Esto se hace para evitar bucles.
 Es posible crear dos tablas `Merge` que intenten leer indefinidamente los datos de la otra, pero no es una buena idea.
 
 La forma habitual de usar el motor `Merge` es trabajar con una gran cantidad de tablas `TinyLog` como si fueran una sola tabla.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 **Ejemplo 1**
 
@@ -108,13 +96,11 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-<div id="virtual-columns">
-  ## Columnas virtuales
-</div>
+## Columnas virtuales {#virtual-columns}
 
 * `_table` — El nombre de la tabla desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
 
-  Si filtra por `_table` (por ejemplo, `WHERE _table='xyz'`), solo se leen las tablas que cumplen la condición de filtrado.
+  Si filtra por `_table` (por ejemplo, `WHERE _table='xyz'`), solo se leen las tablas que cumplen la condición de filtrado. Una tabla que a su vez lee de otras tablas (`Distributed`, `Merge`, `Buffer`, `Alias`) devuelve filas con el nombre de la tabla que realmente las produjo, por lo que dichas tablas siempre se leen y el filtro se aplica a sus filas.
 
 * `_database` — Contiene el nombre de la base de datos desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
 

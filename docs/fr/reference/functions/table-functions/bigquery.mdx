@@ -12,18 +12,14 @@ Permet d&#39;exécuter des requêtes `SELECT` et `INSERT` sur une table [Google 
 
 La lecture utilise l&#39;API REST de BigQuery (`tabledata.list`) ; seules les tables natives peuvent donc être lues (les vues, les vues matérialisées et les tables externes ne sont pas prises en charge). L&#39;écriture utilise les insertions en streaming (`tabledata.insertAll`), ce qui nécessite l&#39;activation de la facturation pour le projet.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 bigquery(project, dataset, table[, access_token][, key = value, ...])
 bigquery(named_collection[, key = value, ...])
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument       | Description                                                                                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -47,9 +43,7 @@ Les arguments suivants peuvent être spécifiés sous la forme `key = value` (ou
 | `base_url`            | Le point de terminaison de l’API, `https://bigquery.googleapis.com` par défaut. Peut être modifié pour les tests et les émulateurs.                                                         |
 | `token_url`           | Remplacement du point de terminaison des jetons OAuth pour les tests et les émulateurs. Par défaut, le `token_uri` de la clé de compte de service ou `https://oauth2.googleapis.com/token`. |
 
-<div id="authentication">
-  ## Authentification
-</div>
+## Authentification {#authentication}
 
 Vous devez fournir exactement une méthode d&#39;authentification. BigQuery n&#39;autorise pas l&#39;accès anonyme. Des identifiants sont donc requis, même pour les jeux de données publics.
 
@@ -59,9 +53,7 @@ Vous devez fournir exactement une méthode d&#39;authentification. BigQuery n&#3
 
 Stockez les identifiants dans une [collection nommée](/fr/concepts/features/configuration/server-config/named-collections) afin d&#39;éviter de devoir les spécifier dans chaque requête. Une table permanente créée à partir d&#39;une collection nommée (avec le moteur de table `BigQuery` ou `CREATE TABLE ... AS bigquery(...)`) est enregistrée comme dépendance de la collection ; `DROP NAMED COLLECTION` est donc bloqué tant que la table existe.
 
-<div id="data-type-mapping">
-  ## Correspondance des types de données
-</div>
+## Correspondance des types de données {#data-type-mapping}
 
 | Type BigQuery         | Type ClickHouse                                                                                                                                                                                                 |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -88,7 +80,7 @@ Remarques :
 
 * Le `DATETIME` de BigQuery n&#39;a pas de fuseau horaire ; il est mappé sur `DateTime64(6, 'UTC')` afin que la valeur affichée ne dépende pas du fuseau horaire du serveur.
 * Un `RECORD` `NULLABLE` est mappé sur `Nullable(Tuple(...))`, afin qu&#39;un `NULL` pour l&#39;ensemble de l&#39;enregistrement soit conservé comme `NULL` au lieu d&#39;être réduit à un `Tuple` de valeurs par défaut. Un tableau `NULL` (ou vide) devient un tableau vide, car `Array` ne peut pas être contenu dans `Nullable` dans ClickHouse. Un tableau BigQuery ne peut pas contenir d&#39;éléments `NULL` (`ARRAY<T>` équivaut à `ARRAY<T NOT NULL>`), donc le type d&#39;élément d&#39;un champ `REPEATED` n&#39;est pas `Nullable` (`Array(T)`, ou `Array(Tuple(...))` pour un élément `RECORD`) ; un élément `NULL` dans une réponse `tabledata.list` est rejeté comme entrée malformée.
-* La lecture et l&#39;écriture de colonnes `Nullable(Tuple(...))` via la fonction de table `bigquery` fonctionnent sans paramètre supplémentaire. La création d&#39;une table persistante utilisant le moteur `BigQuery` qui contient une telle colonne (que la structure soit inférée ou déclarée explicitement) nécessite le paramètre `enable_nullable_tuple_type`, comme pour toute colonne `Nullable(Tuple)`. Lors de la déclaration explicite des colonnes, un champ `RECORD` peut également être déclaré comme un simple `Tuple(...)` pour éviter ce paramètre, au prix de la conversion d&#39;un `NULL` pour l&#39;ensemble de l&#39;enregistrement en tuple par défaut ; la seule différence acceptée par rapport au type inféré consiste à supprimer un `Nullable` qui enveloppe le `Tuple` d&#39;un `RECORD`, et uniquement pour ce même enregistrement — la nullabilité ne peut pas être déplacée vers un autre enregistrement, interne ou externe.
+* Lors de la déclaration explicite des colonnes d&#39;une table persistante utilisant le moteur `BigQuery`, un champ `RECORD` peut être déclaré comme un simple `Tuple(...)` au lieu du `Nullable(Tuple(...))` inféré, au prix de la conversion d&#39;un `NULL` pour l&#39;ensemble de l&#39;enregistrement en tuple par défaut ; la seule différence acceptée par rapport au type inféré consiste à supprimer un `Nullable` qui enveloppe le `Tuple` d&#39;un `RECORD`, et uniquement pour ce même enregistrement — la nullabilité ne peut pas être déplacée vers un autre enregistrement, interne ou externe.
 * `GEOGRAPHY` est mappé sur [Geometry](/fr/reference/data-types/geo#geometry). BigQuery transfère une valeur `GEOGRAPHY` sous forme de texte [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry), qui est analysé à la lecture en l&#39;alternative correspondante de `Geometry` (un `Variant` de `Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon` et `MultiPolygon`), puis sérialisé à nouveau en WKT à l&#39;écriture. Un `GEOMETRYCOLLECTION` et une géométrie vide (telle que `POINT EMPTY`) n&#39;ont pas d&#39;équivalent dans `Geometry` ; la lecture d&#39;une ligne contenant une telle valeur génère donc une erreur. Comme `Variant` peut contenir `NULL` directement, un champ `GEOGRAPHY` `NULLABLE` est mappé sur `Geometry` et non sur `Nullable(Geometry)`, et `NULL` est toujours préservé lors de l&#39;aller-retour.
 * `JSON` est mappé sur `String` plutôt que sur le type de données [JSON](/fr/reference/data-types/newjson), car le type `JSON` de ClickHouse n&#39;accepte qu&#39;un objet (`{...}`) au niveau supérieur, alors qu&#39;une valeur `JSON` BigQuery peut être n&#39;importe quelle valeur JSON — un scalaire, un tableau ou `null` — et qu&#39;une table contenant de telles valeurs ne pourrait donc pas être lue. De plus, `JSON` ne peut pas être enveloppé dans `Nullable`, de sorte qu&#39;un `NULL` SQL dans une colonne `NULLABLE` ne serait pas préservé. Le mappage vers `String` est sans perte ; les objets de niveau supérieur peuvent être convertis avec `CAST(value AS JSON)`.
 * Les valeurs `BIGNUMERIC` dont la partie entière comporte plus de 38 chiffres ne tiennent pas dans `Decimal(76, 38)` et génèrent une erreur.
@@ -96,9 +88,7 @@ Remarques :
 * Les colonnes `RANGE` sont en lecture seule. `tabledata.insertAll` attend une valeur `RANGE<T>` sous la forme d&#39;un objet structuré `{start, end}`, qui ne peut pas être reconstruit à partir du mappage vers `String` ; l&#39;insertion dans une colonne `RANGE` génère donc une erreur.
 * Les valeurs `INT64` sont envoyées à `tabledata.insertAll` sous forme de chaînes décimales, car l&#39;API analyse les nombres JSON comme des nombres à virgule flottante double précision et corromprait sinon les valeurs hors de `[-2^53 + 1, 2^53 - 1]`.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Lisez un jeu de données public à l’aide d’un jeton `gcloud` :
 
@@ -143,9 +133,7 @@ Utilisez une collection nommée :
 SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 ```
 
-<div id="limitations">
-  ## Limitations
-</div>
+## Limitations {#limitations}
 
 * Seules les tables BigQuery natives peuvent être lues. Les vues et les tables externes nécessitent l’exécution d’une tâche de requête BigQuery, ce que cette fonction ne fait pas.
 * Les colonnes `RANGE` peuvent être lues (en tant que `String`), mais pas écrites : l’insertion dans une colonne `RANGE` génère une erreur.
@@ -159,9 +147,7 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 * Un grand `INSERT` est envoyé à `tabledata.insertAll` par lots : au plus 500 lignes par requête, avec un découpage supplémentaire afin que chaque requête reste sous la limite de taille de 10 Mo imposée par BigQuery (une ligne unique dépassant cette limite est rejetée avec une erreur explicite).
 * Les écritures ne sont pas atomiques et une même requête `tabledata.insertAll` peut réussir partiellement : BigQuery peut valider certaines lignes d’une requête tout en rejetant les autres avec `insertErrors`. Les requêtes sont également validées indépendamment les unes des autres ; un lot ultérieur peut donc être rejeté après acceptation de lots précédents. Dans les deux cas, la requête renvoie une erreur, mais les lignes déjà validées restent dans BigQuery. Afin de limiter les doublons, chaque ligne est envoyée avec un `insertId` stable dérivé de l’ID de requête et de la position ordinale de la ligne dans le flux. BigQuery l’utilise pour effectuer une déduplication au mieux pendant sa fenêtre d’insertion en flux. Un `query_id` dépassant la limite de 128 caractères de l’`insertId` BigQuery est haché en un préfixe de longueur fixe, qui reste stable pour ce `query_id`. Comme l’`insertId` dépend de la position ordinale, la déduplication n’est fiable que si la réexécution produit les lignes dans le même ordre : une nouvelle tentative d’un lot au niveau du transport est toujours sûre, et la réexécution du même `INSERT` avec le même `query_id` ne permet la déduplication que si les lignes sont présentées dans le même ordre (par exemple, avec une insertion monothread ou un ordre déterministe — définissez `max_threads = 1` et `max_insert_threads = 1` pour un `INSERT ... SELECT` parallèle dont l’ordre des fragments pourrait autrement varier d’une tentative à l’autre).
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [Moteur de table `BigQuery`](/fr/reference/engines/table-engines/integrations/bigquery)
 

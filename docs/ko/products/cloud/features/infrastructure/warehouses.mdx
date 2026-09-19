@@ -11,9 +11,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="컴퓨트-컴퓨트 분리" />
 
-<div id="what-is-compute-compute-separation">
-  ## 컴퓨트-컴퓨트 분리란 무엇입니까?
-</div>
+## 컴퓨트-컴퓨트 분리란 무엇입니까? {#what-is-compute-compute-separation}
 
 컴퓨트-컴퓨트 분리를 설명하기 전에, 먼저 ClickHouse Cloud에서 **서비스**가 무엇을 의미하는지 이해하면 도움이 됩니다.
 
@@ -43,9 +41,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 
 *그림 2 - ClickHouse Cloud의 컴퓨트 분리*
 
-<div id="what-is-a-warehouse">
-  ## 웨어하우스란 무엇입니까?
-</div>
+## 웨어하우스란 무엇입니까? {#what-is-a-warehouse}
 
 ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 **서비스** 집합입니다.
 각 웨어하우스에는 기본 서비스(가장 먼저 생성된 서비스)와 하나 이상의 보조 서비스가 있습니다.
@@ -67,13 +63,13 @@ ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 
 * ClickHouse 데이터베이스 버전
 * ClickHouse Keeper(레플리카 관리용)
 
+웨어하우스는 데이터를 공유하는 장기 실행 ClickHouse Cloud 서비스를 그룹화하며, 각 서비스마다 전용 컴퓨트와 엔드포인트를 제공합니다. [온디맨드 컴퓨트](/ko/products/cloud/features/infrastructure/on-demand-compute)는 관리형 풀의 worker를 기존 서비스와 엔드포인트를 통해 지원되는 workload에 일시적으로 할당합니다.
+
 <div id="access-controls">
-  ## 액세스 제어
+  ## 액세스 제어 {#access-controls}
 </div>
 
-<div id="database-credentials">
-  ### 데이터베이스 자격 증명
-</div>
+### 데이터베이스 자격 증명 {#database-credentials}
 
 웨어하우스의 모든 서비스는 동일한 테이블 집합을 공유하므로, 서비스 전반에서 액세스 제어도 함께 공유됩니다.
 즉, Service 1에서 생성된 모든 데이터베이스 사용자는 동일한 권한(테이블, 뷰 등에 대한 권한 부여)으로 Service 2도 사용할 수 있으며, 반대의 경우도 마찬가지입니다.
@@ -85,9 +81,7 @@ ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 
 
 *그림 4 - 사용자 Alice는 Service 1에서 생성되었지만, 동일한 자격 증명을 사용해 동일한 데이터를 공유하는 모든 서비스에 액세스할 수 있습니다*
 
-<div id="network-access-control">
-  ### 네트워크 액세스 제어
-</div>
+### 네트워크 액세스 제어 {#network-access-control}
 
 다른 애플리케이션이나 임시 사용자의 특정 서비스에 대한 액세스를 제한하려면 네트워크 제한을 적용할 수 있습니다.
 이렇게 하려면 ClickHouse Cloud 콘솔에서 액세스를 제한하려는 서비스의 서비스 탭으로 이동한 뒤 **설정**으로 이동하십시오.
@@ -105,9 +99,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 
 개별 사용자로 연결하는 경우에는 *default* 사용자 대신 데이터에 대한 액세스를 제어하기 위해 ClickHouse 역할 및 권한 부여를 적용할 수도 있습니다.
 
-<div id="read-vs-read-write">
-  ### 읽기 전용 서비스와 읽기-쓰기 서비스
-</div>
+### 읽기 전용 서비스와 읽기-쓰기 서비스 {#read-vs-read-write}
 
 서비스는 다음 유형 중 하나입니다.
 
@@ -136,9 +128,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
   3. 서비스 유형(읽기 전용 또는 읽기-쓰기)은 생성 시 고정되며, 이후에는 Cloud Console에서 변경할 수 없습니다. 읽기 전용과 읽기-쓰기 액세스 간에 전환하려면 원하는 유형으로 웨어하우스에 새 서비스를 생성하십시오.
 </Note>
 
-<div id="scaling">
-  ## 스케일링
-</div>
+## 스케일링 {#scaling}
 
 웨어하우스의 각 서비스는 독립적으로 스케일링됩니다. 레플리카 수와 크기를 조정하고, 수평 및 수직 자동 스케일링을 활성화하며, 비활성 상태일 때 자동 유휴 상태 전환을 구성할 수 있습니다.
 
@@ -148,9 +138,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 
 [예약 스케일링](/ko/products/cloud/features/autoscaling/scheduled-scaling)은 웨어하우스 내 개별 서비스에 적용할 수 있습니다. 웨어하우스 제한은 계속 적용되므로, 피크 시간대에 모든 서비스의 레플리카 수 합계가 웨어하우스 한도 내에 유지되도록 일정을 계획하십시오. 자세한 내용은 [자동 스케일링](/ko/products/cloud/features/autoscaling/overview)을 참조하십시오.
 
-<div id="changes-in-behavior">
-  ## `clusterAllReplicas` 동작 변경 사항
-</div>
+## `clusterAllReplicas` 동작 변경 사항 {#changes-in-behavior}
 
 하나의 웨어하우스에 여러 서비스가 있으면 `clusterAllReplicas()`의 동작이 달라집니다.
 `default` 클러스터 이름을 사용하면 웨어하우스의 모든 서비스가 아니라 현재 서비스 내의 레플리카만 대상으로 합니다.
@@ -163,12 +151,10 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## 제한 사항
+  ## 제한 사항 {#limitations}
 </div>
 
-<div id="workload-isolation-limitations">
-  ### 워크로드 격리의 제한 사항
-</div>
+### 워크로드 격리의 제한 사항 {#workload-isolation-limitations}
 
 일부 워크로드는 특정 서비스로 격리할 수 없습니다. 한 서비스의 워크로드가 웨어하우스의 다른 서비스에 영향을 미치는 예외적인 경우가 있습니다. 예를 들면 다음과 같습니다:
 
@@ -180,9 +166,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 * **유휴 상태 전환이 활성화된 경우, 한 읽기-쓰기 서비스의 삽입으로 인해 다른 읽기-쓰기 서비스가 유휴 상태로 전환되지 않을 수 있습니다.** 다음과 같은 상황이 있습니다
   한 서비스가 다른 서비스의 백그라운드 머지 작업을 수행할 수 있습니다. 이러한 백그라운드 작업으로 인해 두 번째 서비스가 유휴 상태로 전환되지 않을 수 있습니다. 백그라운드 작업이 끝나면 해당 서비스는 유휴 상태가 됩니다. 읽기 전용 서비스는 영향을 받지 않습니다.
 
-<div id="callouts">
-  ### 알아두면 유용한 사항
-</div>
+### 알아두면 유용한 사항 {#callouts}
 
 * **ClickHouse 버전**: [업그레이드 일정](/ko/products/cloud/features/admin-features/upgrades)은 기본 서비스의 설정에 따라 결정됩니다. 보조 서비스는 기본 서비스와 별개의 릴리스 일정을 가질 수 없습니다.
 
@@ -200,7 +184,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **기본 서비스 유휴 상태 전환**: 기본 서비스의 자동 유휴 상태 전환은 기본으로 활성화되어 있습니다.
 
 <div id="pricing">
-  ## 요금
+  ## 요금 {#pricing}
 </div>
 
 컴퓨트 가격은 웨어하우스의 모든 서비스(기본 서비스 및 보조 서비스)에서 동일합니다. 스토리지는 한 번만 청구되며 첫 번째(원본) 서비스에 포함됩니다.
@@ -208,19 +192,17 @@ SETTINGS distributed_ddl_task_timeout=0
 워크로드 크기와 선택한 티어를 기준으로 비용을 추정하는 데 도움이 되는 [pricing](https://clickhouse.com/pricing) 페이지의 요금 계산기를 참조하십시오. Usage Breakdown 테이블에는 서비스별 컴퓨트 비용 내역이 표시됩니다.
 
 <div id="backups">
-  ## 백업
+  ## 백업 {#backups}
 </div>
 
 * 단일 웨어하우스의 모든 서비스는 동일한 스토리지를 공유하므로 백업은 기본(초기) 서비스에서만 수행됩니다. 이렇게 하면 웨어하우스 내 모든 서비스의 데이터가 백업됩니다.
 * 웨어하우스의 기본 서비스에서 백업을 복원하면 기존 웨어하우스와 연결되지 않은 완전히 새로운 서비스로 복원됩니다. 그런 다음 복원이 완료되는 즉시 새 서비스에 서비스를 추가할 수 있습니다.
 
 <div id="setup-warehouses">
-  ## 웨어하우스를 설정하는 방법
+  ## 웨어하우스를 설정하는 방법 {#setup-warehouses}
 </div>
 
-<div id="creating-a-warehouse">
-  ### 웨어하우스 생성하기
-</div>
+### 웨어하우스 생성하기 {#creating-a-warehouse}
 
 웨어하우스를 생성하려면 기존 서비스와 데이터를 공유할 두 번째 서비스를 만들어야 합니다. 기존 서비스에서 더하기 기호를 클릭하면 됩니다.
 
@@ -233,7 +215,7 @@ SETTINGS distributed_ddl_task_timeout=0
 서비스 생성 화면에서는 새 서비스의 데이터 원본으로 드롭다운에서 원본 서비스가 선택되어 있습니다. 생성이 완료되면 이 두 서비스가 하나의 웨어하우스를 구성합니다.
 
 <div id="renaming-a-warehouse">
-  ### 웨어하우스 이름 변경하기
+  ### 웨어하우스 이름 변경하기 {#renaming-a-warehouse}
 </div>
 
 웨어하우스 이름을 변경하는 방법은 두 가지입니다:
@@ -242,7 +224,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * 어떤 서비스에서든 웨어하우스 이름을 클릭한 다음, 해당 위치에서 웨어하우스 이름을 변경할 수 있습니다
 
 <div id="deleting-a-warehouse">
-  ### 웨어하우스 삭제하기
+  ### 웨어하우스 삭제하기 {#deleting-a-warehouse}
 </div>
 
 웨어하우스를 삭제하면 모든 컴퓨트 서비스와 데이터(테이블, 뷰, 사용자 등)가 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.

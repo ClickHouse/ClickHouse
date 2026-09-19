@@ -8,17 +8,13 @@ title: 'Contraintes sur les paramètres'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## Vue d’ensemble
-</div>
+## Vue d’ensemble {#overview}
 
 Dans ClickHouse, les « contraintes sur les paramètres » désignent les limitations et les règles
 que vous pouvez leur définir. Ces contraintes permettent de préserver
 la stabilité, la sécurité et le comportement prévisible de votre base de données.
 
-<div id="defining-constraints">
-  ## Définition des contraintes
-</div>
+## Définition des contraintes {#defining-constraints}
 
 Les contraintes sur les paramètres peuvent être définies dans la section `profiles` du fichier de configuration `user.xml`.
 Elles empêchent les utilisateurs de modifier certains paramètres à l’aide de
@@ -64,9 +60,7 @@ Les contraintes sont définies comme suit :
 Si l&#39;utilisateur tente d&#39;enfreindre les contraintes, une exception est levée et le
 paramètre reste inchangé.
 
-<div id="types-of-constraints">
-  ## Types de contraintes
-</div>
+## Types de contraintes {#types-of-constraints}
 
 ClickHouse prend en charge plusieurs types de contraintes :
 
@@ -100,9 +94,7 @@ autrement, les paramètres ne peuvent pas être modifiés en mode `readonly=1`.
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## Plusieurs profils de contraintes
-</div>
+## Plusieurs profils de contraintes {#multiple-constraint-profiles}
 
 S&#39;il y a plusieurs profils actifs pour un utilisateur, les contraintes sont fusionnées.
 Le processus de fusion dépend de `settings_constraints_replace_previous` :
@@ -114,22 +106,16 @@ Le processus de fusion dépend de `settings_constraints_replace_previous` :
   chaque type de contrainte non défini est repris du profil précédent et que chaque
   type de contrainte défini est remplacé par la valeur du nouveau profil.
 
-<div id="read-only">
-  ## Mode lecture seule
-</div>
+## Mode lecture seule {#read-only}
 
-Le mode lecture seule est activé par le paramètre `readonly`, à ne pas confondre
-avec le type de contrainte `readonly` :
+Le mode lecture seule est activé par le paramètre `readonly`, à ne pas confondre avec le type de
+contrainte `readonly`. Lorsque `readonly = 1`, un paramètre qui serait normalement refusé peut malgré tout être modifié si
+une contrainte `changeable_in_readonly` l&#39;autorise. Pour la signification des valeurs de ce paramètre, consultez la
+[référence des settings](/fr/reference/settings/session-settings/other#readonly) ; pour savoir quelles classes de requête
+chaque valeur autorise, et comment l&#39;HTTP interface la définit, consultez
+[les permissions pour les requêtes](/fr/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
-* `readonly=0` : aucune restriction de lecture seule.
-* `readonly=1` : seules les requêtes en lecture sont autorisées et les paramètres ne peuvent pas être modifiés,
-  sauf si `changeable_in_readonly` est défini.
-* `readonly=2` : seules les requêtes en lecture sont autorisées, mais les paramètres peuvent être modifiés,
-  à l’exception du paramètre `readonly` lui-même.
-
-<div id="example-read-only">
-  ### Exemple
-</div>
+### Exemple {#example-read-only}
 
 Supposons que `users.xml` contienne les lignes suivantes :
 
@@ -172,9 +158,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   jusqu’à ce qu’elles soient explicitement remplacées pour ces utilisateurs.
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## Contraintes sur les paramètres de MergeTree
-</div>
+## Contraintes sur les paramètres de MergeTree {#constraints-on-merge-tree-settings}
 
 Il est possible de définir des contraintes pour les [paramètres de MergeTree](/fr/reference/settings/merge-tree-settings).
 Ces contraintes sont appliquées lors de la création d&#39;une table utilisant le moteur MergeTree
@@ -183,9 +167,7 @@ ou lors de la modification de ses paramètres de stockage.
 Le nom d&#39;un paramètre de MergeTree doit être précédé du préfixe `merge_tree_` lorsqu&#39;il est
 référencé dans la section `<constraints>`.
 
-<div id="example-read-only">
-  ### Exemple
-</div>
+### Exemple {#example-mergetree}
 
 Vous pouvez interdire la création de nouvelles tables avec un `storage_policy` spécifié explicitement
 

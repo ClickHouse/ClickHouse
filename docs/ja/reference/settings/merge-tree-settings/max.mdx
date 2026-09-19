@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) に記載されており、ClickHouse のソースコードから自動生成されています。
 
-<div id="max_avg_part_size_for_too_many_parts">
-  ## max_avg_part_size_for_too_many_parts
-</div>
+## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 サーバー上の単一のテーブルで数百テラバイトを扱えるようになります。これは
 非アクティブなパーツ数や総パーツ数に対するしきい値には影響しません。
 
-<div id="max_buckets_in_map">
-  ## max_buckets_in_map
-</div>
+## max_buckets_in_map {#max_buckets_in_map}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -39,17 +35,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 実際のバケット数は [map&#95;buckets&#95;strategy](/ja/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy) によって決まります。
 許容される最大値は 256 です。
 
-<div id="max_cleanup_delay_period">
-  ## max_cleanup_delay_period
-</div>
+## max_cleanup_delay_period {#max_cleanup_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 古いキューログ、ブロックのハッシュ、およびパーツをクリーンアップする最大間隔です。
 
-<div id="max_compress_block_size">
-  ## max_compress_block_size
-</div>
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -58,9 +50,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 ([max&#95;compress&#95;block&#95;size](/ja/reference/settings/merge-tree-settings/max#max_compress_block_size)
 設定を参照) 。テーブルの作成時に指定した値は、この設定のグローバル値より優先されます。
 
-<div id="max_concurrent_queries">
-  ## max_concurrent_queries
-</div>
+## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -80,9 +70,7 @@ MergeTree テーブル に関連して同時実行されるクエリの最大数
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-<div id="max_digestion_size_per_segment">
-  ## max_digestion_size_per_segment
-</div>
+## max_digestion_size_per_segment {#max_digestion_size_per_segment}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -90,9 +78,7 @@ MergeTree テーブル に関連して同時実行されるクエリの最大数
 
 廃止された設定であり、効果はありません。
 
-<div id="max_file_name_length">
-  ## max_file_name_length
-</div>
+## max_file_name_length {#max_file_name_length}
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -102,9 +88,7 @@ MergeTree テーブル に関連して同時実行されるクエリの最大数
 filesystem エラーを避けるには、最大ファイル名長 (通常は 255
 バイト) よりも、ある程度のギャップを持たせて小さめに設定することを推奨します。
 
-<div id="max_partitions_to_read">
-  ## max_partitions_to_read
-</div>
+## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -119,17 +103,68 @@ filesystem エラーを避けるには、最大ファイル名長 (通常は 255
 
 クエリ / session / profile レベルで、クエリ複雑度の設定 [max&#95;partitions&#95;to&#95;read](/ja/reference/settings/session-settings/max-partitions#max_partitions_to_read) を指定することもできます。
 
-<div id="max_projections">
-  ## max_projections
-</div>
+## max_projections {#max_projections}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 MergeTreeプロジェクションの最大数。
 
-<div id="max_uncompressed_bytes_in_patches">
-  ## max_uncompressed_bytes_in_patches
-</div>
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "テーブルのすべてのアクティブおよび非アクティブなデータパーツにわたる圧縮バイト数の合計を制限する新しい設定。"}]}]} />
+
+テーブルのすべてのアクティブおよび非アクティブなデータパーツにわたる圧縮バイト数 (ディスク上のサイズ) の合計がこの値を超えると、`INSERT` は `Table size limit exceeded` 例外により中断されます。この設定の目的はディスク使用量を制限することであるため、非アクティブなパーツも計上されます。なお、非アクティブなパーツはバックグラウンドで削除されるため (`old_parts_lifetime` 設定を参照) 、観測されるサイズは時間の経過とともに減少することがあります。この制限は `INSERT` の開始時と、新しいデータパーツがワーキングセットにコミットされるとき (バックグラウンドマージやミューテーションの結果を含む) にチェックされます。materialized view による挿入もチェック対象です。一方、レプリケーションフェッチではチェックされないため、複数のレプリカへ並列に挿入した場合に制限を超過してしまうレースコンディションが起こり得ます。空のデータパーツのコミットは常に許可されるため、制限を超えたテーブルからでも、たとえば `TRUNCATE` や `ALTER TABLE ... DROP PARTITION` でデータを削除できます。
+
+設定可能な値:
+
+* 任意の正の整数。
+* 0 — 無制限。
+
+マルチテナント、一時的な用途、デモ用のサービスで有用です。
+
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "テーブル内のすべてのアクティブおよび非アクティブなデータパーツの非圧縮バイト数の合計を制限する新しい設定。"}]}]} />
+
+`max_table_size_bytes_compressed` と同じですが、制限はテーブル内のすべてのアクティブ
+および非アクティブなデータパーツの非圧縮バイト数の合計に対して適用されます。
+
+設定可能な値:
+
+* 任意の正の整数。
+* 0 — 無制限。
+
+マルチテナント、一時的な用途、デモ用のサービスで役立ちます。
+
+## max_table_size_rows {#max_table_size_rows}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "テーブルのアクティブなデータパーツに含まれる行の総数を制限する新しい設定。"}]}]} />
+
+テーブルのアクティブなデータパーツに含まれる行の総数がこの値を超えると、
+`INSERT` は `Table size limit exceeded` 例外で中断されます。この制限は
+`INSERT` の開始時、および新しいデータパーツがワーキングセットにコミットされる際
+(バックグラウンドマージおよびミューテーションの結果を含む) にチェックされます
+(したがって、テーブルサイズを制限を超えて増加させるミューテーションは、完了しないまま
+リトライされ続けます) 。materialized view による挿入もチェック対象です。一方、
+レプリケーションフェッチではチェックされないため、複数のレプリカへ並列に挿入した場合に
+制限を超過してしまうレースコンディションが発生し得ます。空のデータパーツのコミットは常に許可
+されるため、制限を超えたテーブルからデータを削除することは可能です。たとえば
+`TRUNCATE` や `ALTER TABLE ... DROP PARTITION` を使用できます。
+
+設定可能な値:
+
+* 任意の正の整数。
+* 0 — 無制限。
+
+マルチテナント、一時的、デモ用のサービスで有用です。
+
+## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

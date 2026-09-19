@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки сгенерированы автоматически из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="output_format_always_write_decimal_point_in_float_and_decimal">
-  ## output_format_always_write_decimal_point_in_float_and_decimal
-</div>
+## output_format_always_write_decimal_point_in_float_and_decimal {#output_format_always_write_decimal_point_in_float_and_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 По умолчанию отключено.
 
-<div id="output_format_arrow_compression_method">
-  ## output_format_arrow_compression_method
-</div>
+## output_format_arrow_compression_method {#output_format_arrow_compression_method}
 
 <SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Метод сжатия для формата вывода Arrow. Поддерживаемые кодеки: lz4&#95;frame, zstd, none (без сжатия)
 
-<div id="output_format_arrow_date_as_uint16">
-  ## output_format_arrow_date_as_uint16
-</div>
+## output_format_arrow_date_as_uint16 {#output_format_arrow_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +39,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Записывает значения Date как обычные 16-битные числа (при обратном чтении — как UInt16), а не преобразует их в 32-битный тип Arrow DATE32 (при обратном чтении — как Date32).
 
-<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
-  ## output_format_arrow_fixed_string_as_fixed_byte_array
-</div>
+## output_format_arrow_fixed_string_as_fixed_byte_array {#output_format_arrow_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,17 +47,41 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать тип Arrow FIXED&#95;SIZE&#95;BINARY вместо Binary для столбцов FixedString.
 
-<div id="output_format_arrow_low_cardinality_as_dictionary">
-  ## output_format_arrow_low_cardinality_as_dictionary
-</div>
+## output_format_arrow_low_cardinality_as_dictionary {#output_format_arrow_low_cardinality_as_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает вывод типа LowCardinality как типа Dictionary Arrow
 
-<div id="output_format_arrow_string_as_string">
-  ## output_format_arrow_string_as_string
-</div>
+## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для объединения небольших блоков в выводе `Arrow` и `ArrowStream` по целевому количеству строк. Значение по умолчанию `0` сохраняет по одному record batch на блок."}]}]} />
+
+Целевое количество строк в одном record batch для форматов вывода `Arrow` и `ArrowStream`. Объединение небольших блоков снижает накладные расходы на метаданные и дополнение буферов, особенно для запросов с селективными фильтрами.
+
+Блоки накапливаются до тех пор, пока не будет достигнуто это целевое значение или значение [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/ru/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes). Блок, который уже удовлетворяет целевому количеству строк или байт, записывается отдельно, без разбиения. Если задать целевое количество строк, объединённые батчи будут содержать менее чем вдвое больше строк, однако отдельный входной блок может быть больше.
+
+Буферизация блоков может увеличить потребление памяти и задержать вывод. Если результат так и не достигнет ни одного из целевых значений, `ArrowStream` запишет первый record batch только по завершении запроса, хотя схему может записать раньше. Оставьте оба целевых значения равными `0`, чтобы record batch записывались по мере поступления блоков.
+
+`0` (значение по умолчанию) отключает целевое количество строк. В качестве начального значения попробуйте `65409`.
+
+## output_format_arrow_record_batch_size_bytes {#output_format_arrow_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для объединения мелких блоков при выводе в форматах `Arrow` и `ArrowStream` по целевому размеру накопленных данных в байтах. Значение по умолчанию `0` сохраняет один record batch на блок."}]}]} />
+
+Целевой размер record batch для форматов вывода `Arrow` и `ArrowStream`, измеряемый в байтах накопленных данных блока. Используется та же мера, что и в [min&#95;insert&#95;block&#95;size&#95;bytes](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes). Батч записывается при достижении либо этого целевого значения, либо [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/ru/reference/settings/formats/output-format#output_format_arrow_record_batch_size).
+
+Обратите внимание, что столбцы `LowCardinality` могут порождать батчи Arrow значительно больше или меньше указанного целевого размера в байтах. Повторяющиеся значения разворачиваются в выводе, если не включена настройка [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/ru/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary). Отфильтрованные блоки также могут сохранять большие словари, поэтому даже блок с очень небольшим числом строк может достичь целевого размера и быть записан отдельно. Для таких столбцов управляйте количеством строк с помощью [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/ru/reference/settings/formats/output-format#output_format_arrow_record_batch_size), а целевой размер в байтах задайте равным `0`.
+
+Буферизация блоков может увеличить потребление памяти и задержать первый record batch до завершения запроса. Оставьте оба целевых значения равными `0`, чтобы записывать record batch по мере поступления блоков.
+
+`0` (значение по умолчанию) отключает целевой размер в байтах. В качестве начального значения попробуйте `1048576` (1 МиБ).
+
+## output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,19 +89,43 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать тип Arrow String вместо Binary для столбцов String
 
-<div id="output_format_arrow_unsupported_types_as_binary">
-  ## output_format_arrow_unsupported_types_as_binary
-</div>
+## output_format_arrow_unsupported_types {#output_format_arrow_unsupported_types}
+
+<SettingsInfoBlock type="ArrowUnsupportedTypes" default_value="binary" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "binary"},{"label": "Новая настройка, заменяющая `output_format_arrow_unsupported_types_as_binary` и добавляющая режим `text`. Её значение по умолчанию соответствует прежнему поведению, поэтому `compatibility` не должна его изменять."}]}]} />
+
+Что записывать для столбца, тип которого не имеет прямого соответствия в Arrow (например, `JSON`, `Dynamic`, `QBit` или `AggregateFunction`):
+
+* `throw` — отклонить запрос;
+* `text` — по одному значению в текстовой форме на строку (то, что выдал бы `CAST(col AS String)`), в виде столбца Arrow `Utf8`;
+* `binary` — двоичное представление каждого значения в виде столбца Arrow `Binary` (то же кодирование отдельных значений, что и в `RowBinary`).
+
+Столбец `AggregateFunction` остаётся `Binary` и в режиме `text`, поскольку его текстовая форма — это сырое агрегатное состояние, а не текст, тогда как столбец Arrow `Utf8` обязан содержать корректный UTF-8. Чтобы получить читаемое значение, используйте `finalizeAggregation`.
+
+Значение, записываемое в столбец `Utf8`, приводится к корректному UTF-8: каждая некорректная последовательность заменяется на U+FFFD. Это затрагивает только тот текст, который считыватель всё равно не смог бы интерпретировать как текст, — например, `Dynamic`, содержащий `String` с произвольными байтами. Если байты необходимо сохранить в точности, используйте режим `binary`.
+
+`output_format_arrow_string_as_string` к таким столбцам не применяется — только к настоящим `String` и `FixedString`. Благодаря этому тип Arrow у непрозрачного столбца по-прежнему говорит о том, какое кодирование в нём содержится: `Utf8` — текстовая форма, `Binary` — двоичная, независимо от значения этой настройки.
+
+То же касается агрегатного состояния, хранящегося в `Dynamic`: тип столбца определяется по `Dynamic`, который ничего не говорит о содержимом его строк, а схема Arrow фиксируется до того, как будет просмотрено хоть одно значение, поэтому состоянию нельзя выделить собственный столбец `Binary`, как это делается для столбца `AggregateFunction`. Следовательно, в режиме `text` данные теряются. Режим `binary` их сохраняет. `Variant` это не затрагивает — он перечисляет свои альтернативы, поэтому `AggregateFunction` среди них получает собственный дочерний столбец `Binary`.
+
+И в режиме `text`, и в режиме `binary` поле помечается в схеме Arrow именем расширения `clickhouse.opaque` и исходным именем типа ClickHouse, чтобы считыватель мог отличить его от настоящего строкового или двоичного столбца.
+
+ClickHouse читает такой столбец обратно в тип, указанный в метке, только там, где читающая сторона этот тип уже знает — потому что его объявляет таблица или задаёт structure argument, такой как у `file` и `s3`; при этом то же происходит и внутри `Array`, `Tuple`, `Map` и `Nullable`. Schema inference метку не учитывает, поэтому столбец, прочитанный без явно заданного для него типа, всё равно приходит как `String` с сырой полезной нагрузкой. Альтернатива внутри `Variant` не читается обратно никогда, даже при указанном типе, поскольку объединение Arrow, образуемое её альтернативами, декодируется без учёта меток. Записанные данные во всех случаях корректно сформированы для других считывателей Arrow.
+
+Имеет приоритет над более старой настройкой `output_format_arrow_unsupported_types_as_binary`, которая учитывается, только если данная настройка оставлена в значении по умолчанию.
+
+## output_format_arrow_unsupported_types_as_binary {#output_format_arrow_unsupported_types_as_binary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Новая настройка для преобразования неподдерживаемых типов CH в бинарный формат Arrow вместо исключения UNKNOWN_TYPE."}]}]} />
 
-Выводить типы, для которых нет преобразования, в виде необработанных двоичных данных. Если false — такие типы будут вызывать исключение UNKNOWN&#95;TYPE.
+Выводить типы, для которых нет преобразования, в виде необработанных двоичных данных. Если false — такие типы будут генерировать исключение.
 
-<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
-  ## output_format_arrow_use_64_bit_indexes_for_dictionary
-</div>
+Заменена настройкой `output_format_arrow_unsupported_types`: `0` соответствует `throw`, а `1` — `binary`. Учитывается только в том случае, если `output_format_arrow_unsupported_types` не задана явно.
+
+## output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -93,9 +133,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Всегда использовать 64-битные целые числа для индексов словаря в формате Arrow
 
-<div id="output_format_arrow_use_signed_indexes_for_dictionary">
-  ## output_format_arrow_use_signed_indexes_for_dictionary
-</div>
+## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,45 +141,33 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать знаковые целые числа для индексов словарей в формате Arrow
 
-<div id="output_format_avro_codec">
-  ## output_format_avro_codec
-</div>
+## output_format_avro_codec {#output_format_avro_codec}
 
 Кодек сжатия, используемый для вывода данных. Возможные значения: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
 
-<div id="output_format_avro_confluent_subject">
-  ## output_format_avro_confluent_subject
-</div>
+## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "Новая настройка для указания subject, используемого для регистрации схемы в Confluent Schema Registry при записи в формате вывода AvroConfluent."}]}]} />
 
 Для формата вывода AvroConfluent: subject, под которым схема регистрируется в Confluent Schema Registry. Обязательно при записи вывода AvroConfluent.
 
-<div id="output_format_avro_rows_in_file">
-  ## output_format_avro_rows_in_file
-</div>
+## output_format_avro_rows_in_file {#output_format_avro_rows_in_file}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Максимальное число строк в файле (если это поддерживается хранилищем)
 
-<div id="output_format_avro_string_column_pattern">
-  ## output_format_avro_string_column_pattern
-</div>
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
 
 Для формата Avro: шаблон регулярного выражения для столбцов типа String, которые следует выбирать как строки AVRO.
 
-<div id="output_format_avro_sync_interval">
-  ## output_format_avro_sync_interval
-</div>
+## output_format_avro_sync_interval {#output_format_avro_sync_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 Интервал синхронизации, в байтах.
 
-<div id="output_format_binary_encode_types_in_binary_format">
-  ## output_format_binary_encode_types_in_binary_format
-</div>
+## output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -149,9 +175,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Записывает типы данных в двоичном формате вместо имён типов в формате вывода RowBinaryWithNamesAndTypes
 
-<div id="output_format_binary_write_json_as_string">
-  ## output_format_binary_write_json_as_string
-</div>
+## output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -159,17 +183,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Записывает значения типа данных [JSON](/ru/reference/data-types/newjson) в виде значений JSON [String](/ru/reference/data-types/string) в формате вывода RowBinary.
 
-<div id="output_format_bson_string_as_string">
-  ## output_format_bson_string_as_string
-</div>
+## output_format_bson_string_as_string {#output_format_bson_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Использовать тип BSON String вместо Binary для столбцов типа String.
 
-<div id="output_format_compression_level">
-  ## output_format_compression_level
-</div>
+## output_format_compression_level {#output_format_compression_level}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -179,9 +199,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Возможные значения: от `1` до `22`
 
-<div id="output_format_compression_zstd_window_log">
-  ## output_format_compression_zstd_window_log
-</div>
+## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -191,17 +209,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Возможные значения: неотрицательные числа. Обратите внимание: если значение слишком маленькое или слишком большое, `zstdlib` сгенерирует исключение. Обычно используются значения от `20` (размер окна = `1MB`) до `30` (размер окна = `1GB`).
 
-<div id="output_format_csv_crlf_end_of_line">
-  ## output_format_csv_crlf_end_of_line
-</div>
+## output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если задать значение true, в формате CSV в конце строки будет использоваться \r\n вместо \n.
 
-<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
-  ## output_format_csv_header_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_header_serialize_tuple_into_separate_columns {#output_format_csv_header_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +225,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Примечание: раскрытый заголовок не считывается обратно в Tuple по имени, когда `input_format_with_names_use_header = 1`. Чтобы прочитать такие данные обратно в Tuple, либо установите для этой настройки значение `0` при выводе, либо читайте с `input_format_with_names_use_header = 0` (а для форматов `*WithNamesAndTypes` — `CSVWithNamesAndTypes` и `CustomSeparatedWithNamesAndTypes` — также `input_format_with_types_use_header = 0`, поскольку иначе раскрытая строка типов будет проверяться на соответствие единственному входному полю Tuple верхнего уровня и будет отклонена).
 
-<div id="output_format_csv_serialize_tuple_into_separate_columns">
-  ## output_format_csv_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_serialize_tuple_into_separate_columns {#output_format_csv_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -223,9 +235,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Это преобразование применяется только к обычному `Tuple`. `Nullable(Tuple)` всегда сериализуется как одно поле CSV (чтобы строки с NULL и не-NULL занимали одинаковое число полей) независимо от этой настройки.
 
-<div id="output_format_decimal_trailing_zeros">
-  ## output_format_decimal_trailing_zeros
-</div>
+## output_format_decimal_trailing_zeros {#output_format_decimal_trailing_zeros}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -235,9 +245,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 По умолчанию отключено.
 
-<div id="output_format_float_precision">
-  ## output_format_float_precision
-</div>
+## output_format_float_precision {#output_format_float_precision}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -250,9 +258,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Допустимый диапазон: от 0 до 100.
 
-<div id="output_format_image_height">
-  ## output_format_image_height
-</div>
+## output_format_image_height {#output_format_image_height}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -262,9 +268,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: 1024.
 
-<div id="output_format_image_streaming_animation">
-  ## output_format_image_streaming_animation
-</div>
+## output_format_image_streaming_animation {#output_format_image_streaming_animation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -276,9 +280,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: `false`.
 
-<div id="output_format_image_terminal_mode">
-  ## output_format_image_terminal_mode
-</div>
+## output_format_image_terminal_mode {#output_format_image_terminal_mode}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "Новая настройка, определяющая, будут ли форматы вывода изображений, такие как PNG, отображаться прямо в терминале с помощью inline-протокола изображений."}]}]} />
 
@@ -294,9 +296,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: &#96;&#96; (пусто).
 
-<div id="output_format_image_time_divisor_seconds">
-  ## output_format_image_time_divisor_seconds
-</div>
+## output_format_image_time_divisor_seconds {#output_format_image_time_divisor_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -308,9 +308,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: 60.
 
-<div id="output_format_image_time_multiplier_seconds">
-  ## output_format_image_time_multiplier_seconds
-</div>
+## output_format_image_time_multiplier_seconds {#output_format_image_time_multiplier_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -323,9 +321,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: 1.
 
-<div id="output_format_image_width">
-  ## output_format_image_width
-</div>
+## output_format_image_width {#output_format_image_width}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -335,9 +331,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: 1024.
 
-<div id="output_format_json_array_of_rows">
-  ## output_format_json_array_of_rows
-</div>
+## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -384,9 +378,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 {"number":"2"}
 ```
 
-<div id="output_format_json_escape_forward_slashes">
-  ## output_format_json_escape_forward_slashes
-</div>
+## output_format_json_escape_forward_slashes {#output_format_json_escape_forward_slashes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -394,9 +386,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Включено по умолчанию.
 
-<div id="output_format_json_map_as_array_of_tuples">
-  ## output_format_json_map_as_array_of_tuples
-</div>
+## output_format_json_map_as_array_of_tuples {#output_format_json_map_as_array_of_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -406,9 +396,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Отключено по умолчанию.
 
-<div id="output_format_json_named_tuples_as_objects">
-  ## output_format_json_named_tuples_as_objects
-</div>
+## output_format_json_named_tuples_as_objects {#output_format_json_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -418,9 +406,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Включено по умолчанию.
 
-<div id="output_format_json_pretty_print">
-  ## output_format_json_pretty_print
-</div>
+## output_format_json_pretty_print {#output_format_json_pretty_print}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -468,9 +454,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Включено по умолчанию.
 
-<div id="output_format_json_quote_64bit_floats">
-  ## output_format_json_quote_64bit_floats
-</div>
+## output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -478,9 +462,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 По умолчанию отключено.
 
-<div id="output_format_json_quote_64bit_integers">
-  ## output_format_json_quote_64bit_integers
-</div>
+## output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -494,9 +476,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 * 0 — Целые числа выводятся без кавычек.
 * 1 — Целые числа заключаются в кавычки.
 
-<div id="output_format_json_quote_decimals">
-  ## output_format_json_quote_decimals
-</div>
+## output_format_json_quote_decimals {#output_format_json_quote_decimals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -504,9 +484,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Отключено по умолчанию.
 
-<div id="output_format_json_quote_denormals">
-  ## output_format_json_quote_denormals
-</div>
+## output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -605,17 +583,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 }
 ```
 
-<div id="output_format_json_skip_null_value_in_named_tuples">
-  ## output_format_json_skip_null_value_in_named_tuples
-</div>
+## output_format_json_skip_null_value_in_named_tuples {#output_format_json_skip_null_value_in_named_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать пары ключ-значение со значением NULL при сериализации столбцов именованных кортежей в виде объектов JSON. Действует только если output&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects имеет значение true.
 
-<div id="output_format_json_validate_utf8">
-  ## output_format_json_validate_utf8
-</div>
+## output_format_json_validate_utf8 {#output_format_json_validate_utf8}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -623,9 +597,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 По умолчанию отключено.
 
-<div id="output_format_markdown_escape_special_characters">
-  ## output_format_markdown_escape_special_characters
-</div>
+## output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -642,17 +614,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="output_format_msgpack_uuid_representation">
-  ## output_format_msgpack_uuid_representation
-</div>
+## output_format_msgpack_uuid_representation {#output_format_msgpack_uuid_representation}
 
 <SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
 
 Способ представления UUID в формате MsgPack при выводе.
 
-<div id="output_format_native_encode_types_in_binary_format">
-  ## output_format_native_encode_types_in_binary_format
-</div>
+## output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -660,9 +628,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывает типы данных в двоичном виде вместо имён типов в формате вывода Native
 
-<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
-  ## output_format_native_use_flattened_dynamic_and_json_serialization
-</div>
+## output_format_native_use_flattened_dynamic_and_json_serialization {#output_format_native_use_flattened_dynamic_and_json_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -670,9 +636,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывает данные из столбцов [JSON](/ru/reference/data-types/newjson) и [Dynamic](/ru/reference/data-types/dynamic) в уплощенном формате (все типы/пути — как отдельные подстолбцы).
 
-<div id="output_format_native_write_json_as_string">
-  ## output_format_native_write_json_as_string
-</div>
+## output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -680,9 +644,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывает данные [JSON](/ru/reference/data-types/newjson) столбца как столбец [String](/ru/reference/data-types/string), содержащий JSON-строки, вместо стандартной нативной JSON-сериализации.
 
-<div id="output_format_orc_compression_block_size">
-  ## output_format_orc_compression_block_size
-</div>
+## output_format_orc_compression_block_size {#output_format_orc_compression_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -690,9 +652,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Размер блока сжатия в байтах для формата вывода ORC.
 
-<div id="output_format_orc_compression_method">
-  ## output_format_orc_compression_method
-</div>
+## output_format_orc_compression_method {#output_format_orc_compression_method}
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
@@ -700,9 +660,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Метод сжатия для выходного формата ORC. Поддерживаемые кодеки: lz4, snappy, zlib, zstd, none (без сжатия)
 
-<div id="output_format_orc_dictionary_key_size_threshold">
-  ## output_format_orc_dictionary_key_size_threshold
-</div>
+## output_format_orc_dictionary_key_size_threshold {#output_format_orc_dictionary_key_size_threshold}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -710,17 +668,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Для строкового столбца в формате вывода ORC: если число различных значений превышает эту долю от общего числа строк с не-NULL значениями, кодирование с использованием словаря отключается. В противном случае оно включается
 
-<div id="output_format_orc_row_index_stride">
-  ## output_format_orc_row_index_stride
-</div>
+## output_format_orc_row_index_stride {#output_format_orc_row_index_stride}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Целевой шаг индекса строк для выходного формата ORC
 
-<div id="output_format_orc_string_as_string">
-  ## output_format_orc_string_as_string
-</div>
+## output_format_orc_string_as_string {#output_format_orc_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -728,9 +682,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать тип ORC String вместо Binary для столбцов String
 
-<div id="output_format_orc_writer_time_zone_name">
-  ## output_format_orc_writer_time_zone_name
-</div>
+## output_format_orc_writer_time_zone_name {#output_format_orc_writer_time_zone_name}
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -738,9 +690,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Название часового пояса для ORC writer; часовой пояс ORC writer по умолчанию — GMT.
 
-<div id="output_format_parallel_formatting">
-  ## output_format_parallel_formatting
-</div>
+## output_format_parallel_formatting {#output_format_parallel_formatting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -751,17 +701,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 * 1 — Включено.
 * 0 — Отключено.
 
-<div id="output_format_parquet_batch_size">
-  ## output_format_parquet_batch_size
-</div>
+## output_format_parquet_batch_size {#output_format_parquet_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 Проверять размер страницы через каждые столько строк. Рассмотрите возможность уменьшить значение, если у вас есть столбцы, у которых средний размер значений превышает несколько КБ.
 
-<div id="output_format_parquet_bloom_filter_bits_per_value">
-  ## output_format_parquet_bloom_filter_bits_per_value
-</div>
+## output_format_parquet_bloom_filter_bits_per_value {#output_format_parquet_bloom_filter_bits_per_value}
 
 <SettingsInfoBlock type="Double" default_value="10.5" />
 
@@ -775,9 +721,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 * 26.4 бита —  0.01%
 * 41   бит —  0.001%
 
-<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
-  ## output_format_parquet_bloom_filter_flush_threshold_bytes
-</div>
+## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
@@ -789,9 +733,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
   * если значение больше общего размера всех bloom-фильтров, bloom-фильтры для всех групп строк будут накапливаться в памяти, а затем записываться вместе ближе к концу файла,
   * в противном случае bloom-фильтры будут накапливаться в памяти и записываться, как только их общий размер превысит это значение.
 
-<div id="output_format_parquet_compression_method">
-  ## output_format_parquet_compression_method
-</div>
+## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
 <SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
 
@@ -799,17 +741,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Метод сжатия для выходного формата Parquet. Поддерживаемые кодеки: snappy, lz4, brotli, zstd, gzip, none (без сжатия)
 
-<div id="output_format_parquet_data_page_size">
-  ## output_format_parquet_data_page_size
-</div>
+## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 Целевой размер страницы в байтах до сжатия.
 
-<div id="output_format_parquet_date_as_uint16">
-  ## output_format_parquet_date_as_uint16
-</div>
+## output_format_parquet_date_as_uint16 {#output_format_parquet_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -817,9 +755,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывать значения Date как простые 16-битные числа (при чтении возвращаются как UInt16) вместо преобразования в 32-битный тип DATE в Parquet (при чтении возвращается как Date32).
 
-<div id="output_format_parquet_datetime_as_uint32">
-  ## output_format_parquet_datetime_as_uint32
-</div>
+## output_format_parquet_datetime_as_uint32 {#output_format_parquet_datetime_as_uint32}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -827,9 +763,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывает значения DateTime как исходную Unix-временную метку (при обратном чтении — как UInt32), а не преобразует их в миллисекунды (при обратном чтении — как DateTime64(3)).
 
-<div id="output_format_parquet_enum_as_byte_array">
-  ## output_format_parquet_enum_as_byte_array
-</div>
+## output_format_parquet_enum_as_byte_array {#output_format_parquet_enum_as_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -837,9 +771,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывать enum с использованием физического типа Parquet: BYTE&#95;ARRAY и логического типа: ENUM
 
-<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
-  ## output_format_parquet_fixed_string_as_fixed_byte_array
-</div>
+## output_format_parquet_fixed_string_as_fixed_byte_array {#output_format_parquet_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -847,9 +779,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать тип Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY вместо Binary для столбцов типа FixedString.
 
-<div id="output_format_parquet_geometadata">
-  ## output_format_parquet_geometadata
-</div>
+## output_format_parquet_geometadata {#output_format_parquet_geometadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -857,9 +787,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Позволяет записывать информацию о геопространственных столбцах в метаданные Parquet и кодировать столбцы в формате WKB.
 
-<div id="output_format_parquet_max_dictionary_size">
-  ## output_format_parquet_max_dictionary_size
-</div>
+## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -867,33 +795,25 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Если размер словаря превышает указанное количество байт, используется кодирование без словаря. Установите значение 0, чтобы отключить кодирование с использованием словаря.
 
-<div id="output_format_parquet_parallel_encoding">
-  ## output_format_parquet_parallel_encoding
-</div>
+## output_format_parquet_parallel_encoding {#output_format_parquet_parallel_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Выполняет кодирование Parquet в нескольких потоках.
 
-<div id="output_format_parquet_row_group_size">
-  ## output_format_parquet_row_group_size
-</div>
+## output_format_parquet_row_group_size {#output_format_parquet_row_group_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 Целевой размер группы строк в количестве строк.
 
-<div id="output_format_parquet_row_group_size_bytes">
-  ## output_format_parquet_row_group_size_bytes
-</div>
+## output_format_parquet_row_group_size_bytes {#output_format_parquet_row_group_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
 Целевой размер группы строк в байтах, до сжатия.
 
-<div id="output_format_parquet_string_as_string">
-  ## output_format_parquet_string_as_string
-</div>
+## output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -901,9 +821,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать тип String в Parquet вместо Binary для столбцов String.
 
-<div id="output_format_parquet_wide_integer_as_decimal">
-  ## output_format_parquet_wide_integer_as_decimal
-</div>
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -911,9 +829,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывать значения `Int128`, `UInt128`, `Int256` и `UInt256` как соответствующие стандарту Parquet значения `DECIMAL` с порядком байтов big-endian. Значение по умолчанию сохраняет устаревшее представление `FIXED_LEN_BYTE_ARRAY` без аннотации в порядке little-endian для совместимости со старыми версиями ClickHouse. Десятичное представление обеспечивает совместимость числовой статистики, однако некоторые ридеры Parquet не поддерживают точность свыше 38 или 76.
 
-<div id="output_format_parquet_write_bloom_filter">
-  ## output_format_parquet_write_bloom_filter
-</div>
+## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -921,9 +837,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывать bloom-фильтры в файлы Parquet.
 
-<div id="output_format_parquet_write_checksums">
-  ## output_format_parquet_write_checksums
-</div>
+## output_format_parquet_write_checksums {#output_format_parquet_write_checksums}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -931,9 +845,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Добавляет контрольные суммы CRC32 в заголовки страниц Parquet.
 
-<div id="output_format_parquet_write_page_index">
-  ## output_format_parquet_write_page_index
-</div>
+## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -941,9 +853,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Записывает индекс столбцов и индекс смещений (то есть статистику по каждой странице данных, которую можно использовать для pushdown фильтров при чтении) в файлы Parquet.
 
-<div id="output_format_pretty_color">
-  ## output_format_pretty_color
-</div>
+## output_format_pretty_color {#output_format_pretty_color}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -951,9 +861,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать ANSI-последовательности экранирования в форматах Pretty. 0 — отключено, 1 — включено, &#39;auto&#39; — включено, если вывод идёт в терминал.
 
-<div id="output_format_pretty_display_footer_column_names">
-  ## output_format_pretty_display_footer_column_names
-</div>
+## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -987,9 +895,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
       └─number─┴─toTypeName(number)─┘
 ```
 
-<div id="output_format_pretty_display_footer_column_names_min_rows">
-  ## output_format_pretty_display_footer_column_names_min_rows
-</div>
+## output_format_pretty_display_footer_column_names_min_rows {#output_format_pretty_display_footer_column_names_min_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -997,9 +903,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Задает минимальное количество строк, при котором будет отображаться нижний колонтитул с именами столбцов, если включена настройка [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](/ru/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names).
 
-<div id="output_format_pretty_fallback_to_vertical">
-  ## output_format_pretty_fallback_to_vertical
-</div>
+## output_format_pretty_fallback_to_vertical {#output_format_pretty_fallback_to_vertical}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1008,9 +912,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 Если настройка включена и таблица широкая, но содержит мало строк, формат Pretty будет выводить её так же, как формат Vertical.
 Подробную настройку этого поведения см. в `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` и `output_format_pretty_fallback_to_vertical_min_table_width`.
 
-<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
-  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
-</div>
+## output_format_pretty_fallback_to_vertical_max_rows_per_chunk {#output_format_pretty_fallback_to_vertical_max_rows_per_chunk}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1018,9 +920,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Переключение на формат Vertical (см. `output_format_pretty_fallback_to_vertical`) будет выполняться только в том случае, если количество записей во фрагменте не превышает указанное значение.
 
-<div id="output_format_pretty_fallback_to_vertical_min_columns">
-  ## output_format_pretty_fallback_to_vertical_min_columns
-</div>
+## output_format_pretty_fallback_to_vertical_min_columns {#output_format_pretty_fallback_to_vertical_min_columns}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -1028,9 +928,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Переключение на формат Vertical (см. `output_format_pretty_fallback_to_vertical`) произойдёт только в том случае, если количество столбцов больше указанного значения.
 
-<div id="output_format_pretty_fallback_to_vertical_min_table_width">
-  ## output_format_pretty_fallback_to_vertical_min_table_width
-</div>
+## output_format_pretty_fallback_to_vertical_min_table_width {#output_format_pretty_fallback_to_vertical_min_table_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
@@ -1038,9 +936,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Переход к формату Vertical (см. `output_format_pretty_fallback_to_vertical`) выполняется только если суммарная длина столбцов таблицы не меньше указанного значения либо хотя бы одно значение содержит символ перевода строки.
 
-<div id="output_format_pretty_glue_chunks">
-  ## output_format_pretty_glue_chunks
-</div>
+## output_format_pretty_glue_chunks {#output_format_pretty_glue_chunks}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -1050,9 +946,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 0 — отключено, 1 — включено, &#39;auto&#39; — включено при выводе в терминал.
 
-<div id="output_format_pretty_grid_charset">
-  ## output_format_pretty_grid_charset
-</div>
+## output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
 <SettingsInfoBlock type="String" default_value="UTF-8" />
 
@@ -1060,9 +954,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 В interactive mode `clickhouse-client` автоматически переключается на `ASCII`, если терминал не поддерживает UTF-8 (это определяется переменными окружения `LC_ALL`, `LC_CTYPE` и `LANG`), если только этот параметр не задан явно.
 
-<div id="output_format_pretty_highlight_digit_groups">
-  ## output_format_pretty_highlight_digit_groups
-</div>
+## output_format_pretty_highlight_digit_groups {#output_format_pretty_highlight_digit_groups}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1070,9 +962,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Если параметр включен и вывод осуществляется в терминал, цифры, соответствующие тысячам, миллионам и т. д., подчеркиваются.
 
-<div id="output_format_pretty_highlight_trailing_spaces">
-  ## output_format_pretty_highlight_trailing_spaces
-</div>
+## output_format_pretty_highlight_trailing_spaces {#output_format_pretty_highlight_trailing_spaces}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1080,9 +970,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Если настройка включена и вывод идет в терминал, конечные пробелы подсвечиваются серым цветом и подчеркиваются.
 
-<div id="output_format_pretty_max_column_name_width_cut_to">
-  ## output_format_pretty_max_column_name_width_cut_to
-</div>
+## output_format_pretty_max_column_name_width_cut_to {#output_format_pretty_max_column_name_width_cut_to}
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -1091,9 +979,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 Если имя столбца слишком длинное, оно будет обрезано до этой длины.
 Имя столбца будет обрезано, если его длина превышает сумму `output_format_pretty_max_column_name_width_cut_to` и `output_format_pretty_max_column_name_width_min_chars_to_cut`.
 
-<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
-  ## output_format_pretty_max_column_name_width_min_chars_to_cut
-</div>
+## output_format_pretty_max_column_name_width_min_chars_to_cut {#output_format_pretty_max_column_name_width_min_chars_to_cut}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -1102,17 +988,13 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 Минимальное количество символов, на которое нужно сократить имя столбца, если оно слишком длинное.
 Имя столбца будет сокращено, если его длина превышает `output_format_pretty_max_column_name_width_cut_to` плюс `output_format_pretty_max_column_name_width_min_chars_to_cut`.
 
-<div id="output_format_pretty_max_column_pad_width">
-  ## output_format_pretty_max_column_pad_width
-</div>
+## output_format_pretty_max_column_pad_width {#output_format_pretty_max_column_pad_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
 Максимальная ширина заполнения для всех значений в столбце в форматах Pretty.
 
-<div id="output_format_pretty_max_rows">
-  ## output_format_pretty_max_rows
-</div>
+## output_format_pretty_max_rows {#output_format_pretty_max_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1120,18 +1002,14 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Ограничение количества строк для форматов Pretty.
 
-<div id="output_format_pretty_max_value_width">
-  ## output_format_pretty_max_value_width
-</div>
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Максимальная ширина значения, отображаемого в форматах Pretty. Если ширина больше, значение будет обрезано.
 Значение 0 означает, что обрезка не выполняется.
 
-<div id="output_format_pretty_max_value_width_apply_for_single_value">
-  ## output_format_pretty_max_value_width_apply_for_single_value
-</div>
+## output_format_pretty_max_value_width_apply_for_single_value {#output_format_pretty_max_value_width_apply_for_single_value}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1139,9 +1017,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Обрезать значения (см. настройку `output_format_pretty_max_value_width`) только в том случае, если это не одиночное значение в блоке. В противном случае выводить его полностью, что особенно полезно для запроса `SHOW CREATE TABLE`.
 
-<div id="output_format_pretty_multiline_fields">
-  ## output_format_pretty_multiline_fields
-</div>
+## output_format_pretty_multiline_fields {#output_format_pretty_multiline_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1150,9 +1026,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 Если включено, форматы Pretty будут отображать многострочные поля внутри ячейки таблицы, благодаря чему сохранятся границы таблицы.
 Если нет, они будут отображаться как есть, что может исказить таблицу (при этом у отключения этой настройки есть и плюс: многострочные значения будет проще копировать и вставлять).
 
-<div id="output_format_pretty_named_tuples_as_json">
-  ## output_format_pretty_named_tuples_as_json
-</div>
+## output_format_pretty_named_tuples_as_json {#output_format_pretty_named_tuples_as_json}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1160,9 +1034,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Определяет, выводятся ли именованные Tuple в формате Pretty в виде красиво отформатированных объектов JSON.
 
-<div id="output_format_pretty_row_numbers">
-  ## output_format_pretty_row_numbers
-</div>
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1170,9 +1042,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Добавляет номера перед каждой строкой в формате вывода Pretty
 
-<div id="output_format_pretty_single_large_number_tip_threshold">
-  ## output_format_pretty_single_large_number_tip_threshold
-</div>
+## output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -1180,9 +1050,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Выводить справа от таблицы понятную числовую подсказку, если блок состоит из одного числа, превышающего это значение (кроме 0)
 
-<div id="output_format_pretty_squash_consecutive_ms">
-  ## output_format_pretty_squash_consecutive_ms
-</div>
+## output_format_pretty_squash_consecutive_ms {#output_format_pretty_squash_consecutive_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -1191,9 +1059,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 Ожидает следующий блок в течение указанного количества миллисекунд и перед выводом объединяет его с предыдущим.
 Это позволяет избежать слишком частого вывода слишком маленьких блоков, сохраняя при этом возможность отображать данные в режиме стриминга.
 
-<div id="output_format_pretty_squash_max_wait_ms">
-  ## output_format_pretty_squash_max_wait_ms
-</div>
+## output_format_pretty_squash_max_wait_ms {#output_format_pretty_squash_max_wait_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1201,9 +1067,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Выводить отложенный блок в форматах Pretty, если с момента предыдущего вывода прошло больше указанного количества миллисекунд.
 
-<div id="output_format_pretty_use_nbsp_for_padding">
-  ## output_format_pretty_use_nbsp_for_padding
-</div>
+## output_format_pretty_use_nbsp_for_padding {#output_format_pretty_use_nbsp_for_padding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1213,63 +1077,47 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 В моноширинном шрифте вывод визуально остается тем же, но дополнение сохраняется при использовании инструментов, которые сжимают или обрезают последовательности обычных пробелов.
 Действует только если `output_format_pretty_grid_charset` имеет значение `UTF-8`.
 
-<div id="output_format_protobuf_nullables_with_google_wrappers">
-  ## output_format_protobuf_nullables_with_google_wrappers
-</div>
+## output_format_protobuf_nullables_with_google_wrappers {#output_format_protobuf_nullables_with_google_wrappers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 При сериализации столбцов с типом Nullable с помощью обёрток Google значения по умолчанию сериализуются как пустые обёртки. Если этот параметр отключён, значения по умолчанию и значения NULL не сериализуются
 
-<div id="output_format_schema">
-  ## output_format_schema
-</div>
+## output_format_schema {#output_format_schema}
 
 Путь к файлу, в который будет сохранена автоматически сгенерированная схема в формате [Cap&#39;n Proto](/ru/reference/formats/CapnProto) или [Protobuf](/ru/reference/formats/Protobuf/Protobuf).
 
-<div id="output_format_sql_insert_include_column_names">
-  ## output_format_sql_insert_include_column_names
-</div>
+## output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Добавлять имена столбцов в запрос INSERT
 
-<div id="output_format_sql_insert_max_batch_size">
-  ## output_format_sql_insert_max_batch_size
-</div>
+## output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65409" />
 
 Максимальное количество строк в одном операторе INSERT.
 
-<div id="output_format_sql_insert_quote_names">
-  ## output_format_sql_insert_quote_names
-</div>
+## output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Заключать имена столбцов в символы «&#96;»
 
-<div id="output_format_sql_insert_table_name">
-  ## output_format_sql_insert_table_name
-</div>
+## output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
 
 <SettingsInfoBlock type="String" default_value="table" />
 
 Название таблицы в выводимом запросе INSERT
 
-<div id="output_format_sql_insert_use_replace">
-  ## output_format_sql_insert_use_replace
-</div>
+## output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Использовать оператор REPLACE вместо оператора INSERT
 
-<div id="output_format_trim_fixed_string">
-  ## output_format_trim_fixed_string
-</div>
+## output_format_trim_fixed_string {#output_format_trim_fixed_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1277,17 +1125,13 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Удаляет завершающие null-байты из значений FixedString в текстовых форматах вывода. Например, `toFixedString('John', 8)` выводится как `John`, а не `John\0\0\0\0`.
 
-<div id="output_format_tsv_crlf_end_of_line">
-  ## output_format_tsv_crlf_end_of_line
-</div>
+## output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если установлено значение true, в формате TSV в качестве конца строки будет использоваться \r\n вместо \n.
 
-<div id="output_format_values_escape_quote_with_quote">
-  ## output_format_values_escape_quote_with_quote
-</div>
+## output_format_values_escape_quote_with_quote {#output_format_values_escape_quote_with_quote}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1295,9 +1139,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Если true, экранировать &#39; как &#39;&#39;, иначе использовать &#92;&#39;
 
-<div id="output_format_write_statistics">
-  ## output_format_write_statistics
-</div>
+## output_format_write_statistics {#output_format_write_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

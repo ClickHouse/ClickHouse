@@ -15,7 +15,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁移到 Managed Postgres 服务。这项内置集成简化了整个流程，帮助您连接源数据库、导出 schema、将其导入 Managed Postgres，并设置持续复制。
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 * 能够使用具有复制权限的用户访问源 PostgreSQL 数据库。请按照与您的数据源对应的设置指南进行配置：
@@ -32,7 +32,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 * 在本地计算机上安装 `pg_dump` 和 `psql`。两者都包含在标准 PostgreSQL 客户端工具中。
 
 <div id="considerations">
-  ## 迁移前注意事项
+  ## 迁移前注意事项 {#considerations}
 </div>
 
 * **DDL 传播**：持续复制 (CDC) 会捕获 DML 操作和 `ADD COLUMN`。其他 DDL 更改 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会自动传播，必须在目标端手动执行。
@@ -41,9 +41,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
   如果您在迁移过程中遇到问题，请查看 [Managed Postgres Migrations FAQ](/zh/products/managed-postgres/migrations/faq)，了解常见错误及其解决方案。
 </Note>
 
-<div id="step-1-connect">
-  ## 步骤 1：连接到源数据库
-</div>
+## 步骤 1：连接到源数据库 {#step-1-connect}
 
 打开 [ClickHouse Cloud 控制台](https://clickhouse.cloud)，选择您的 Managed Postgres 服务。
 
@@ -71,9 +69,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 点击 **下一步**。
 
-<div id="automated-schema-migration">
-  ## 自动 schema 迁移
-</div>
+## 自动 schema 迁移 {#automated-schema-migration}
 
 <Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="第 2 步：使用目标数据库选择器自动迁移 schema" size="lg" border />
 
@@ -85,9 +81,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="创建新 Postgres 数据库对话框" size="lg" border />
 
-<div id="monitoring">
-  ### 监控
-</div>
+### 监控 {#monitoring}
 
 您可以在 ClickPipes 详情视图中跟踪 schema 迁移进度。**日志**会显示 schema 迁移的状态，以及过程中遇到的任何错误。
 
@@ -95,17 +89,13 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 * 使用 SSH 隧道的管道无法使用自动 schema 迁移。必须[手动导出和导入 schema](#manual-schema-migration)。
 
-<div id="manual-schema-migration">
-  ## 手动 schema 迁移
-</div>
+## 手动 schema 迁移 {#manual-schema-migration}
 
 如果目标数据库中已有数据，或者希望采用比自动模式所要求的全新环境更灵活的自定义设置，可以在此选择 **手动** 模式。
 
 <Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="第 2 步：使用 pg_dump 导出命令进行手动 schema 迁移" size="lg" border />
 
-<div id="step-2-export-schema">
-  ### 导出数据库 schema
-</div>
+### 导出数据库 schema {#step-2-export-schema}
 
 向导会显示一条已预填源连接信息的 `pg_dump` 命令。在终端中运行它：
 
@@ -126,9 +116,7 @@ pg_dump \
 
 点击 **下一步**。
 
-<div id="step-3-import-schema">
-  ### 将 schema 导入您的 Managed Postgres 服务
-</div>
+### 将 schema 导入您的 Managed Postgres 服务 {#step-3-import-schema}
 
 从下拉列表中选择目标数据库，或点击 **创建新数据库** 来创建新数据库。
 
@@ -149,9 +137,7 @@ psql \
 
 点击 **下一步**。
 
-<div id="step-4-ingestion-settings">
-  ## Step 4: 配置摄取设置
-</div>
+## Step 4: 配置摄取设置 {#step-4-ingestion-settings}
 
 指定用于逻辑复制的 publication。将此项留空时，系统会自动创建 publication。
 
@@ -169,9 +155,7 @@ psql \
 
 点击 **下一步**。
 
-<div id="step-5-select-tables">
-  ## 第 5 步：选择表
-</div>
+## 第 5 步：选择表 {#step-5-select-tables}
 
 选择要复制的表。表会按 schema 分组显示。你可以选择单个表，也可以展开某个 schema，一次性选择其中的所有表。
 
@@ -179,9 +163,7 @@ psql \
 
 点击 **Create migration**。
 
-<div id="monitor">
-  ## 监控迁移
-</div>
+## 监控迁移 {#monitor}
 
 创建迁移后，你会在**数据源**中看到它，状态为 **运行中**。
 
@@ -191,72 +173,72 @@ psql \
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="显示各表初始加载统计信息的迁移详情视图" size="lg" border />
 
-<div id="post-migration">
-  ## 迁移后任务
-</div>
+## 切换流量 {#cutover}
 
-初始加载完成后，如果使用 CDC，且复制延迟几乎为零：
+初始加载完成后 (如果使用 CDC，还需确保复制延迟接近零) ，即可将流量从源 Postgres 数据库切换到 Managed Postgres 服务。打开迁移详情视图，选择 **Post-migration steps** 选项卡。该向导会引导你完成安全收尾迁移所需的六个步骤。每一步都必须按顺序完成，之后才能进入下一步。
 
-**验证行数。** 在切换流量之前，对源端和目标端的关键表进行抽查：
+### 步骤 1:将源 Postgres 数据库设置为只读模式 {#cutover-read-only}
 
-```sql
-SELECT COUNT(*) FROM public.orders;
-```
-
-**停止向源端写入。** 暂停应用写入。要在切换期间强制设为只读模式：
+停止应用程序对源库的写入,确保在 cutover 期间数据不会出现分叉。向导会显示一条已预填源数据库名称的 `ALTER DATABASE` 命令 —— 请在源数据库上执行该命令:
 
 ```sql
-ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+ALTER DATABASE "<source_db>" SET default_transaction_read_only = on;
 ```
 
-**确认复制已追上。** 比较源端和目标端的最新一行：
+然后终止所有现有连接，使其重新加载只读设置，并确保没有仍在进行中的写入：
 
 ```sql
--- 在源端和目标端均执行
-SELECT MAX(id), MAX(updated_at) FROM public.orders;
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = '<source_db>'
+  AND pid <> pg_backend_pid();
 ```
 
-**重置序列。** 使序列与各表中的当前最大值保持一致：
+<Note>
+  该步骤的具体操作可能因所用的 Postgres 提供商而异。托管服务可能会限制 `ALTER DATABASE` 或终止 backend 等操作，转而通过自身的 Console、parameter group 或撤销写入特权来启用只读模式。请查阅您所用提供商的文档，了解将源端设为只读的等效方式。
+</Note>
 
-```sql
-DO $$
-DECLARE r RECORD;
-BEGIN
-    FOR r IN
-        SELECT
-            n.nspname AS schema_name,
-            c.relname AS table_name,
-            a.attname AS column_name,
-            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid
-        WHERE c.relkind = 'r'
-            AND a.attnum > 0
-            AND NOT a.attisdropped
-            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-    LOOP
-        IF r.seq_name IS NOT NULL THEN
-            EXECUTE format(
-                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
-                r.seq_name, r.column_name, r.schema_name, r.table_name
-            );
-        END IF;
-    END LOOP;
-END $$;
-```
+单击 **Mark as completed** 继续。
 
-**切换应用流量。** 将读写流量切换到你的 Managed Postgres 服务，并监控错误、约束冲突以及复制状态是否正常。
+<Image img="/images/managed-postgres/pgpg/post-migration/readonly.webp" alt="Post-migration step 1: set the source database in read-only mode" size="lg" border />
 
-**清理。**  完成切换并确认新服务运行正常后，从**数据源**中删除此次迁移。如果你使用了 CDC，请从源端删除 replication slot 以释放资源：
+### 步骤 2：校验行数 {#cutover-validate}
+
+选择需要校验的复制表。ClickPipes 会分别统计源端和目标端中每个所选表的行数并进行比较。大表可能返回近似行数。使用 **Select all tables** 校验所有表，或搜索特定表并将其勾选，然后点击 **Count rows**。
+
+<Image img="/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp" alt="Post-migration step 2: select tables and validate row counts between source and target" size="lg" border />
+
+### 步骤 3：暂停管道 {#cutover-pause}
+
+暂停 ClickPipe，使复制停止，之后再重置序列并切换流量。点击 **Pause ClickPipe**，等待管道进入暂停状态后再继续。
+
+<Image img="/images/managed-postgres/pgpg/post-migration/pause-pipe.webp" alt="Post-migration step 3: pause the ClickPipe to stop replication" size="lg" border />
+
+### 步骤 4：重置序列 {#cutover-reset-sequences}
+
+在目标端重置序列，使后续插入能够从正确的值继续。点击 **Reset sequences**，将每个序列对齐到其所在表中的当前最大值。
+
+<Image img="/images/managed-postgres/pgpg/post-migration/reset-sequences.webp" alt="迁移后步骤 4：在目标端重置序列" size="lg" border />
+
+### 步骤 5：切换流量 {#cutover-traffic}
+
+将应用程序的数据库 URL 更新为 Managed Postgres 的连接字符串，从而把读写流量指向你的 Managed Postgres 服务。向导以 **url**、**psql**、**env**、**yaml** 和 **jdbc** 等多种格式提供连接信息，你可以复制与自身技术栈相匹配的那一种。更新应用程序后，点击 **Mark as completed**。
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp" alt="Post-migration step 5: cut over traffic using the Managed Postgres connection string" size="lg" border />
+
+### 步骤 6：清理 {#cutover-cleanup}
+
+完成切换并确认新 service 健康状况正常后，请删除该 migration 并释放源端资源。向导会显示一条已预先填好 slot 名称的 `pg_drop_replication_slot` 命令 —— 在源端运行该命令即可删除 replication slot：
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+然后点击 **Delete ClickPipe migration**，即可将该 migration 从 **数据源** 中移除。
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cleanup.webp" alt="迁移后步骤 6：删除 replication slot 并删除 migration 以完成清理" size="lg" border />
+
+## 后续步骤 {#next-steps}
 
 * [Managed Postgres 快速入门](/zh/products/managed-postgres/quickstart)
 * [Managed Postgres 连接信息](/zh/products/managed-postgres/connection)

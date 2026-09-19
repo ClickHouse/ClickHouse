@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Neon'
+title: 'Migrer de Neon vers ClickHouse Managed Postgres'
+description: 'Découvrez comment migrer vos données PostgreSQL de Neon vers ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
+doc_type: 'guide'
+---
+
+ClickHouse Managed Postgres inclut ClickPipes, qui offre une voie de migration en ligne entièrement gérée depuis Neon.
+Le service migre automatiquement le schéma, effectue un chargement initial optimisé grâce au snapshot parallèle et s&#39;appuie sur le Change Data Capture (CDC) pour maintenir les deux bases de données synchronisées jusqu&#39;au basculement.
+Avec ClickPipes, les clients peuvent migrer des bases de données Postgres de plusieurs téraoctets en quelques heures seulement.
+
+<Steps>
+  <Step title="Préparer Neon">
+    Créez un utilisateur ClickPipes dédié disposant des permissions de lecture et de réplication :
+
+    ```sql
+    CREATE USER clickpipes_user PASSWORD '<password>';
+
+    GRANT USAGE ON SCHEMA public TO clickpipes_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO clickpipes_user;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO clickpipes_user;
+    ALTER USER clickpipes_user WITH REPLICATION;
+
+    ```
+
+    Exécutez ces étapes sur votre branche Neon de production, en répétant les grants pour chaque schéma que vous souhaitez migrer.
+    Chaque table répliquée doit posséder une primary key ou utiliser `REPLICA IDENTITY FULL`.
+
+    Dans la console Neon, accédez à **Settings → Logical Replication** et activez la logical replication.
+    Si vous utilisez des restrictions d&#39;IP, autorisez les adresses IP statiques de ClickPipes. Consultez le [guide de configuration de la source Neon](/fr/integrations/clickpipes/postgres/source/neon-postgres) pour des instructions détaillées.
+  </Step>
+
+  <Step title="Migrer et basculer avec ClickPipes">
+    Suivez le [guide de migration ClickPipes](/fr/products/managed-postgres/migrations/clickpipes) pour configurer et mener à bien la migration.
+    ClickPipes automatise le processus de bout en bout :
+
+    * Migration du schéma source vers une target database vide.
+    * Chargement initial optimisé grâce au snapshot parallèle.
+    * Utilisation du CDC pour maintenir la cible synchronisée avec Neon.
+    * Monitoring de la progression, du replication lag et des erreurs.
+    * Accompagnement tout au long de la validation et du basculement.
+
+    Une fois le chargement initial terminé et le replication lag proche de zéro, effectuez le basculement à l&#39;aide de l&#39;onglet guidé **Post-migration steps** dans la vue de détail du ClickPipe. Consultez [Basculer le trafic](/fr/products/managed-postgres/migrations/clickpipes#cutover) pour la procédure complète. L&#39;assistant vous guide, dans l&#39;ordre :
+
+    1. Passez Neon en mode lecture seule pour arrêter les écritures.
+    2. Vérifiez la concordance du nombre de lignes entre la source et la cible.
+    3. Mettez le pipe en pause.
+    4. Réinitialisez les séquences sur la cible.
+    5. Basculez le trafic en mettant à jour la connection string de l&#39;application pour qu&#39;elle pointe vers ClickHouse Managed Postgres.
+    6. Nettoyez en supprimant le replication slot et le ClickPipe.
+
+    Gardez Neon disponible en mode lecture seule pendant une courte période, au cas où un retour en arrière serait nécessaire.
+    Une fois le nouvel environnement stabilisé, effectuez l&#39;étape de nettoyage pour supprimer le ClickPipe et son replication slot.
+  </Step>
+</Steps>
+
+## Points à considérer pour la migration {#migration-considerations}
+
+### Branches {#branches}
+
+Neon propose une création de branches instantanée en copy-on-write. ClickHouse Managed Postgres s&#39;appuie sur du stockage NVMe local pour offrir des performances Postgres rapides, prévisibles et fiables.
+En contrepartie, les branches ne sont pas instantanées : elles sont créées sous forme de deployments indépendants via la [récupération à un instant précis (PITR)](/fr/products/managed-postgres/backup-and-restore). Elles sont généralement disponibles en quelques minutes.
+
+Pour le développement au quotidien, nous recommandons de maintenir une base de données de développement ClickHouse Managed Postgres de taille réduite, contenant des données de production représentatives et anonymisées — quelques gigaoctets par exemple — et d&#39;en créer des branches PITR selon les besoins. La création et le nettoyage des branches peuvent être automatisés au moyen de [clickhousectl](/fr/concepts/features/interfaces/cli), notre CLI officielle, ou via [OpenAPI](/fr/products/managed-postgres/openapi) ou [Terraform](/fr/products/managed-postgres/terraform)
+
+Certains clients recourent à cette approche pour gérer des centaines d&#39;environnements de développement. Nous améliorons activement l&#39;expérience de fork et de sandbox. Consultez la [documentation sur la création de branches](/fr/products/managed-postgres/branching).
+
+### Neon Serverless Driver {#neon-serverless}
+
+Si votre application n&#39;utilise pas le Neon Serverless Driver, vous pouvez ignorer cette section.
+
+Les applications exécutées sur des plateformes telles que [Vercel](https://vercel.com/docs) **peuvent** utiliser le [Neon Serverless Driver](https://neon.com/docs/serverless/serverless-driver), qui repose sur WebSocket et est spécifique à Neon.
+Il ne suffit pas de le faire pointer vers ClickHouse Managed Postgres.
+
+Avant la migration :
+
+* Vérifiez la présence de dépendances telles que [@neondatabase/serverless](https://www.npmjs.com/package/@neondatabase/serverless). Le cas échéant, remplacez-les par un driver Postgres standard comme [node-postgres (pg)](https://node-postgres.com/).
+* Pour les workloads serverless qui créent de nombreuses connexions de courte durée, utilisez l&#39;[instance PgBouncer intégrée](/fr/products/managed-postgres/connection#pgbouncer).
+* Les prepared statements sont pris en charge. Toutefois, comme PgBouncer utilise un pool de connexions par transaction, validez les applications qui s&#39;appuient sur un comportement au niveau de la session, ce qui reste peu courant :
+  1. Utilisez `SET LOCAL` plutôt que `SET` ou `RESET` au niveau de la session.
+  2. Utilisez des temporary tables limitées à la transaction avec `ON COMMIT DROP`.
+  3. `NOTIFY` est pris en charge ; `LISTEN` ne l&#39;est pas.
+  4. Utilisez des verrous consultatifs au niveau de la transaction, et non au niveau de la session.
+  5. Les curseurs limités à la transaction sont pris en charge ; `WITH HOLD` ne l&#39;est pas.
+* Si votre application dépend d&#39;un comportement au niveau de la session non pris en charge, connectez-vous directement à Postgres plutôt que de passer par PgBouncer.
+
+Pour plus de détails, consultez la [compatibility matrix de PgBouncer](https://www.pgbouncer.org/features.html).
+
+### Limites de connexions {#connection-limits}
+
+ClickHouse Managed Postgres prend en charge par défaut 500 connexions Postgres directes. Si votre workload Neon dépasse ce nombre, vous pouvez :
+
+* Utiliser un pool de connexions côté application.
+* Utiliser l&#39;instance PgBouncer intégrée, qui prend en charge jusqu&#39;à 5 000 connexions client.
+* Augmenter `max_connections` si davantage de connexions directes sont nécessaires.
+  * `max_connections` peut être modifié depuis **Settings → Edit parameters**. Certaines modifications nécessitent un redémarrage. Consultez la [documentation de configuration](/fr/products/managed-postgres/settings#changing-configuration).
+
+### Modifications de schéma pendant la migration {#schema-changes}
+
+Réduisez au maximum la période entre le démarrage de ClickPipes et le basculement — idéalement quelques jours tout au plus — et évitez toute modification de schéma pendant cet intervalle.
+
+Certains clients maintiennent des environnements en parallèle pendant plusieurs jours, le temps de tester leurs applications avec ClickHouse Managed Postgres. Une fois les tests terminés, ils démarrent un nouveau ClickPipe pour la migration finale, ce qui réduit le délai entre le chargement initial et le basculement.
+
+Le CDC réplique les inserts, les updates, les deletes et `ADD COLUMN`, mais la plupart des autres modifications DDL ne sont pas propagées. Cela concerne notamment les index, les triggers, les modifications d&#39;enum, les constraints, les fonctions et la plupart des modifications de colonnes.
+
+Certaines modifications, comme une valeur d&#39;enum manquante, interrompent la réplication et apparaissent dans les logs ClickPipes. Appliquez la modification manquante sur la cible : la réplication devrait alors reprendre. D&#39;autres modifications, comme un index ou un trigger nouvellement créé, n&#39;interrompent pas nécessairement le CDC, mais doivent tout de même être créées manuellement avant le basculement.
+
+Avant de rediriger le trafic, comparez les schémas source et cible, appliquez les objets manquants et réinitialisez les sequences. La [FAQ sur la migration](/fr/products/managed-postgres/migrations/faq) présente les erreurs courantes et les actions correctives.

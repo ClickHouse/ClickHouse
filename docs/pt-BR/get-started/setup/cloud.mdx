@@ -58,7 +58,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
 
         <br />
 
-        ### Conectar usando o console SQL
+        ### Conectar usando o console SQL {#connect-using-sql-console}
 
         Para começar rapidamente, o ClickHouse oferece um console SQL na web, para o qual você será redirecionado ao concluir o onboarding.
 
@@ -78,7 +78,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
 
         Pronto! Agora você pode começar a usar seu novo serviço do ClickHouse.
 
-        ### Conecte-se ao seu aplicativo
+        ### Conecte-se ao seu aplicativo {#connect-with-your-app}
 
         Clique no botão Connect no menu de navegação. Uma janela modal será aberta, exibindo as credenciais do seu serviço e instruções para se conectar usando sua interface ou cliente por linguagem.
 
@@ -104,7 +104,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
         * Faça upload de um arquivo  - os formatos aceitos incluem JSON, CSV e TSV
         * Faça upload de dados a partir do URL do arquivo
 
-        ### ClickPipes
+        ### ClickPipes {#clickpipes}
 
         [ClickPipes](/pt-BR/integrations/clickpipes/home) é uma plataforma de integração gerenciada que torna a ingestão de dados de diversas fontes tão simples quanto clicar em alguns botões. Projetada para as cargas de trabalho mais exigentes, a arquitetura robusta e escalável do ClickPipes garante desempenho e confiabilidade consistentes. O ClickPipes pode ser usado tanto para necessidades de streaming de longo prazo quanto para um trabalho pontual de carregamento de dados.
 
@@ -112,7 +112,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
 
         <br />
 
-        ### Adicionar dados pelo SQL Console
+        ### Adicionar dados pelo SQL Console {#add-data-using-the-sql-console}
 
         Como a maioria dos sistemas de gerenciamento de banco de dados, o ClickHouse agrupa logicamente as tabelas em **bancos de dados**. Use o comando [`CREATE DATABASE`](/pt-BR/reference/statements/create/database) para criar um novo banco de dados no ClickHouse:
 
@@ -136,7 +136,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
 
         No exemplo acima, `my_first_table` é uma tabela [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) com quatro colunas:
 
-        * `user_id`: um inteiro sem sinal de 32 bits ([UInt32](/pt-BR/reference/data-types/int-uint))
+        * `user_id`:  um inteiro sem sinal de 32 bits ([UInt32](/pt-BR/reference/data-types/int-uint))
         * `message`: um tipo de dado [String](/pt-BR/reference/data-types/string), que substitui tipos como `VARCHAR`, `BLOB`, `CLOB` e outros de outros sistemas de banco de dados
         * `timestamp`: um valor [DateTime](/pt-BR/reference/data-types/datetime), que representa um instante no tempo
         * `metric`: um número de ponto flutuante de 32 bits ([Float32](/pt-BR/reference/data-types/float))
@@ -155,7 +155,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
           Há diversos motores de tabela disponíveis, mas, para uma tabela simples em um servidor ClickHouse de nó único, [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) provavelmente é a melhor opção.
         </Info>
 
-        #### Uma breve introdução às chaves primárias
+        #### Uma breve introdução às chaves primárias {#a-brief-intro-to-primary-keys}
 
         Antes de prosseguir, é importante entender como as chaves primárias funcionam no ClickHouse (a implementação
         das chaves primárias pode parecer inesperada!):
@@ -175,7 +175,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
 
         Para se aprofundar nos conceitos fundamentais do ClickHouse, consulte [&quot;Conceitos fundamentais&quot;](/pt-BR/concepts/core-concepts/index).
 
-        #### Insira dados na sua tabela
+        #### Insira dados na sua tabela {#insert-data-into-your-table}
 
         Você pode usar o já conhecido comando [`INSERT INTO TABLE`](/pt-BR/reference/statements/insert-into) no ClickHouse, mas é importante entender que cada inserção em uma tabela [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) cria um **part** no armazenamento.
 
@@ -208,7 +208,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
         SELECT * FROM helloworld.my_first_table
         ```
 
-        ### Adicionar dados usando o ClickHouse Client
+        ### Adicionar dados usando o ClickHouse Client {#add-data-using-the-clickhouse-client}
 
         Você também pode se conectar ao seu serviço ClickHouse Cloud usando uma ferramenta de linha de comando chamada [**clickhouse client**](/pt-BR/concepts/features/interfaces/client). Clique em `Connect` no menu à esquerda para acessar esses detalhes. Na caixa de diálogo, selecione `Native` na lista suspensa:
 
@@ -288,7 +288,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
         exit
         ```
 
-        ### Fazer upload de um arquivo
+        ### Fazer upload de um arquivo {#upload-a-file}
 
         Uma tarefa comum ao começar a usar um banco de dados é inserir dados que você já tem em arquivos. Disponibilizamos online alguns
         dados de exemplo que você pode inserir e que representam dados de clickstream — eles incluem um ID de usuário, uma URL visitada e
@@ -331,7 +331,7 @@ import CloudQuickstartCLI from "/snippets/pt-BR/quickstarts/_cloud_quickstart_cl
       Consulte [&quot;Configurar filtros de IP&quot;](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters) para mais detalhes.
     </Tip>
 
-    ## O que vem a seguir?
+    ## O que vem a seguir? {#whats-next}
 
     * O [tutorial](/pt-BR/get-started/quickstarts/tutorial) orienta você a inserir 2 milhões de linhas em uma tabela e executar algumas consultas analíticas
     * Temos uma lista de [conjuntos de dados de exemplo](/pt-BR/get-started/sample-datasets/index) com instruções sobre como inseri-los

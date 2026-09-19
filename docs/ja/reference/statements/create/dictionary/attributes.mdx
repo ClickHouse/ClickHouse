@@ -53,7 +53,7 @@ PRIMARY KEY Id
 * `AttrName AttrType` — データカラム。属性は複数指定できます。
 
 <div id="key">
-  ## キー
+  ## キー {#key}
 </div>
 
 ClickHouse は、次の種類のキーをサポートしています。
@@ -68,7 +68,7 @@ XML 構造には `<id>` と `<key>` のどちらか一方のみを含めるこ�
 </Note>
 
 <div id="numeric-key">
-  ### 数値キー
+  ### 数値キー {#numeric-key}
 </div>
 
 型: `UInt64`。
@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – キーとなるカラムの名前。
 
-<div id="composite-key">
-  ### 複合キー
-</div>
+### 複合キー {#composite-key}
 
 キーには、任意の型のフィールドからなる`tuple`を指定できます。この場合、[layout](/ja/reference/statements/create/dictionary/layouts/overview)は`complex_key_hashed`または`complex_key_cache`である必要があります。
 
@@ -144,7 +142,7 @@ PRIMARY KEY field1, field2
 複合キーが単一の属性で構成されている場合、キーの値は`tuple`で囲まずに直接渡すことができます。たとえば、`dictGetString('dict_name', 'attr_name', 'key')`と`dictGetString('dict_name', 'attr_name', tuple('key'))`はいずれも有効です。
 
 <div id="attributes">
-  ## 属性
+  ## 属性 {#attributes}
 </div>
 
 設定例:

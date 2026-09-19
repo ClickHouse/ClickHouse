@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     성능이나 직접 접근이 중요하다면 최신 Java 클라이언트를 직접 사용할 것을 권장합니다.
   </Note>
 
-  ## 환경 요구 사항
+  ## 환경 요구 사항 {#environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) 버전 &gt;= 8
 
-  ### Setup
+  ### Setup {#setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -52,14 +52,14 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  애플리케이션에서 JDBC 드라이버를 사용할 때 classpath에 jar를 추가해야 하는 경우, 다음 위치에서 jar를 다운로드하십시오:
+  애플리케이션에서 JDBC 드라이버를 사용하고 해당 jar를 클래스패스에 추가해야 하는 경우, 다음에서 jar를 다운로드하십시오:
 
-  * [Maven Central](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)에서 가져와 classpath에 추가합니다
+  * [Maven Central](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)에서 다운로드하여 classpath에 추가합니다
     * `0.9.4` 버전부터는 https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc-all 아티팩트를 사용할 수 있습니다.
     * 모든 shaded 종속성이 포함된 jar를 받으려면 한정자 `all`을 사용하십시오.
   * 또는 공식 리포지토리의 [여기](https://github.com/ClickHouse/clickhouse-java/releases)에서 확인할 수 있습니다
 
-  ## 구성
+  ## 구성 {#configuration}
 
   **드라이버 클래스**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -87,24 +87,26 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * 드라이버는 포트 번호만 보고 프로토콜을 추측하지 않으므로, 프로토콜을 명시적으로 지정해야 합니다
   * protocol이 지정된 경우 `ssl` 매개변수는 필요하지 않습니다.
 
-  ### 연결(Connection) 속성
+  <div id="connection-properties">
+    ### 연결 속성
+  </div>
 
-  주요 구성 매개변수는 [Java 클라이언트](/ko/integrations/language-clients/java/client#client-configuration)에 정의되어 있습니다. 해당 매개변수는 그대로 드라이버에 전달하면 됩니다. 드라이버에는 클라이언트 구성에 포함되지 않는 고유 속성이 있으며, 아래에 나열되어 있습니다.
+  주요 구성 매개변수는 [Java 클라이언트](/ko/integrations/language-clients/java/client#client-configuration)에 정의되어 있습니다. 해당 매개변수는 있는 그대로 드라이버에 전달해야 합니다. 드라이버에는 클라이언트 구성에 포함되지 않는 고유 속성들이 있으며, 아래에 나열되어 있습니다.
 
   **드라이버 속성**:
 
-  | 속성                                  | 기본값      | 설명                                                                                                                   |
-  | ----------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-  | `disable_frameworks_detection`      | `true`   | User-Agent의 프레임워크 감지를 비활성화합니다                                                                                        |
-  | `jdbc_ignore_unsupported_values`    | `false`  | 드라이버 동작에 영향을 주지 않는 경우 `SQLFeatureNotSupportedException` 발생을 억제합니다                                                    |
-  | `clickhouse.jdbc.v1`                | `false`  | 새 JDBC 대신 이전 JDBC 구현을 사용합니다                                                                                          |
-  | `default_query_settings`            | `null`   | 쿼리 작업 시 기본 쿼리 설정을 함께 전달할 수 있습니다                                                                                      |
-  | `jdbc_resultset_auto_close`         | `true`   | `Statement`이 닫히면 `ResultSet`도 자동으로 닫힙니다                                                                              |
-  | `beta.row_binary_for_simple_insert` | `false`  | `RowBinary` writer 기반의 `PreparedStatement` 구현을 사용합니다. `INSERT INTO ... VALUES` 쿼리에서만 동작합니다.                          |
-  | `jdbc_resultset_auto_close`         | `true`   | `Statement`이 닫히면 `ResultSet`도 자동으로 닫힙니다                                                                              |
-  | `jdbc_use_max_result_rows`          | `false`  | 서버 속성 `max_result_rows`를 사용해 쿼리에서 반환되는 행 수를 제한할 수 있도록 합니다. 활성화하면 사용자가 설정한 오버플로우 모드를 재정의합니다. 자세한 내용은 JavaDoc을 참조하십시오. |
-  | `jdbc_sql_parser`                   | `JAVACC` | 사용할 SQL 파서를 설정합니다. 선택 가능한 값은 `ANTLR4`, `ANTLR4_PARAMS_PARSER`, `JAVACC`입니다.                                          |
-  | `remember_last_set_roles`           | `true`   | 해당 연결에 마지막으로 설정한 역할을 기억합니다.                                                                                          |
+  | 속성                                  | 기본값      | 설명                                                                                                          |
+  | ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+  | `disable_frameworks_detection`      | `true`   | User-Agent의 프레임워크 감지를 비활성화합니다                                                                               |
+  | `jdbc_ignore_unsupported_values`    | `false`  | 드라이버 동작에 영향을 미치지 않는 경우 `SQLFeatureNotSupportedException` 발생을 억제합니다                                          |
+  | `clickhouse.jdbc.v1`                | `false`  | 새 JDBC 대신 이전 JDBC 구현을 사용합니다                                                                                 |
+  | `default_query_settings`            | `null`   | 쿼리 작업 시 기본 쿼리 설정을 함께 전달할 수 있습니다                                                                             |
+  | `jdbc_resultset_auto_close`         | `true`   | `Statement`이 닫히면 `ResultSet`도 자동으로 닫힙니다                                                                     |
+  | `beta.row_binary_for_simple_insert` | `false`  | `RowBinary` writer 기반의 `PreparedStatement` 구현을 사용합니다. `INSERT INTO ... VALUES` 쿼리에서만 동작합니다.                 |
+  | `jdbc_resultset_auto_close`         | `true`   | `Statement`이 닫히면 `ResultSet`도 자동으로 닫힙니다                                                                     |
+  | `jdbc_use_max_result_rows`          | `false`  | 서버 속성 `max_result_rows`를 사용해 쿼리가 반환하는 행 수를 제한합니다. 활성화하면 사용자가 설정한 오버플로우 모드를 재정의합니다. 자세한 내용은 JavaDoc을 참조하십시오. |
+  | `jdbc_sql_parser`                   | `JAVACC` | 사용할 SQL 파서를 설정합니다. 선택 가능한 값은 `ANTLR4`, `ANTLR4_PARAMS_PARSER`, `JAVACC`입니다.                                 |
+  | `remember_last_set_roles`           | `true`   | 해당 연결에 마지막으로 설정한 역할을 기억합니다.                                                                                 |
 
   <Info>
     **서버 설정**
@@ -141,15 +143,15 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
-  참고: JDBC URL 또는 속성을 URL 인코딩할 필요가 없습니다. 자동으로 인코딩됩니다.
+  참고: JDBC URL 또는 속성은 URL 인코딩할 필요가 없으며 자동으로 인코딩됩니다.
 
-  **읽기 전용(Readonly) 프로필**
+  **읽기 전용 프로필**
 
   읽기 전용 프로필과의 충돌을 방지하기 위해 연결(connection) 속성에 기본 설정을 추가하지 않습니다.
   그러나 일부 사용자는 포맷 설정을 전달해야 하는 경우가 있으며(예: JSON을 String으로 읽기), 이 경우 `readonly=2` 프로필 사용을 권장합니다.
   읽기 전용 프로필에 대한 자세한 내용은 [여기](/ko/concepts/features/configuration/settings/constraints-on-settings#read-only)를 참조하십시오.
 
-  ### 클라이언트 식별
+  ### 클라이언트 식별 {#client-identification}
 
   요청을 발생시킨 애플리케이션을 식별하는 방법은 두 가지입니다. 연결(connection) 속성을 통해 `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME`을 설정하거나, `java.sql.Connection#setClientInfo(String name, String value)` 메서드를 사용하십시오.
 
@@ -163,7 +165,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   conn.setClientInfo(com.clickhouse.jdbc.ClientInfoProperties.APPLICATION_NAME.getKey(), "my-app-01");
   ```
 
-  두 방법 모두 쿼리 로그에 다음과 같은 `http_user_agent` 값을 생성합니다:
+  두 방법 모두 쿼리 로그에 다음과 같은 `http_user_agent` 값이 기록됩니다:
 
   ```
   my-app-01/1.0 jdbc-v2/0.9.7 clickhouse-java-v2/0.9.6 (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
@@ -171,26 +173,26 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **참고:** `client_name` 속성에는 `app_name/version` 포맷을 사용하는 것을 권장합니다. 이렇게 하면 쿼리 로그에서 애플리케이션을 식별하는 데 도움이 됩니다.
 
-  ### 작업 식별
+  ### 작업 식별 {#operation-identification}
 
-  JDBC 드라이버는 각 작업마다 `query_id`를 생성합니다(현재는 서버 예외(Exception)에 포함되어 있습니다).
+  JDBC 드라이버는 각 작업마다 `query_id`를 생성합니다(현재는 서버 예외에 포함되어 있습니다).
 
-  작업에 `log_comment`를 설정하려면 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 메서드를 사용하십시오. 이 메서드를 사용하려면 먼저 `Statement` 또는 `PreparedStatement`를 `com.clickhouse.jdbc.StatementImpl`로 캐스팅해야 합니다.
+  작업에 `log_comment`를 설정하려면 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 메서드를 사용하십시오. 이를 위해 먼저 `Statement` 또는 `PreparedStatement`를 `com.clickhouse.jdbc.StatementImpl`로 캐스팅해야 합니다.
 
   ```java showLineNumbers
   StatementImpl stmt = (StatementImpl) conn.createStatement();
   stmt.getLocalSettings().logComment("some-comment");
   ```
 
-  **참고:** `localSettings`가 스레드 간에 공유되므로, 이 방식은 단일 스레드에서 statement를 사용하는 경우에만 적용됩니다.
+  **참고:** `localSettings`가 스레드 간에 공유되므로 이 방식은 statement를 단일 스레드에서 사용할 때만 작동합니다.
 
-  ## 지원되는 데이터 타입
+  ## 지원되는 데이터 타입 {#supported-data-types}
 
   JDBC 드라이버는 기반 [Java 클라이언트](/ko/integrations/language-clients/java/index#supported-data-types)와 동일한 데이터 포맷을 지원합니다.
 
-  ### JDBC 유형 매핑
+  ### JDBC 유형 매핑 {#jdbc-type-mapping}
 
-  다음 매핑이 적용되는 대상:
+  다음 매핑이 적용됩니다:
 
   * `ResultSet#getObject(columnIndex)` - 메서드는 해당 Java 클래스에 대응하는 객체를 반환합니다. (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short` 등)
   * `ResultSetMetaData#getColumnType(columnIndex)` - 메서드는 해당 JDBC 타입을 반환합니다. (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short` 등)
@@ -242,7 +244,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `String`은 `java.lang.String` 또는 `byte[]` 형식으로만 읽을 수 있습니다.
   * `FixedString`은 있는 그대로 읽히며, 컬럼 길이에 맞게 0으로 채워집니다. (예를 들어 `'John'`에 대한 `FixedString(10)`은 `'John\0\0\0\0\0\0\0\0\0'`으로 읽힙니다.)
 
-  **Enum 타입**
+  **열거형 타입**
 
   | ClickHouse 유형 | JDBC 유형 | Java 클래스         |
   | ------------- | ------- | ---------------- |
@@ -266,9 +268,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | Time64        | TIME      | java.sql.Time      |
 
   * Date / Time 타입은 JDBC와의 호환성을 높이기 위해 `java.sql` 타입에 매핑됩니다. 하지만 두 번째 인수로 해당 클래스를 지정해 `ResultSet#getObject(columnIndex, Class<T>)`를 사용하면 `java.time.LocalDate`, `java.time.LocalDateTime`, `java.time.LocalTime`도 가져올 수 있습니다.
-    * `rs.getObject(1, java.time.LocalDate.class)`는 `Date` 컬럼 값을 `java.time.LocalDate`로 반환합니다.
-    * `rs.getObject(1, java.time.LocalDateTime.class)`는 `DateTime` 컬럼 값을 `java.time.LocalDateTime`으로 반환합니다.
-    * `rs.getObject(1, java.time.LocalTime.class)`는 `Time` 컬럼 값을 `java.time.LocalTime`으로 반환합니다.
+    * `rs.getObject(1, java.time.LocalDate.class)`는 `Date` 컬럼의 값을 `java.time.LocalDate`로 반환합니다.
+    * `rs.getObject(1, java.time.LocalDateTime.class)`는 `DateTime` 컬럼의 값을 `java.time.LocalDateTime`으로 반환합니다.
+    * `rs.getObject(1, java.time.LocalTime.class)`는 `Time` 컬럼의 값을 `java.time.LocalTime`으로 반환합니다.
   * `Date`, `Date32`, `Time`, `Time64`는 서버 시간대의 영향을 받지 않습니다.
   * `DateTime`, `DateTime64`는 서버의 시간대 또는 세션 시간대의 영향을 받습니다.
   * `DateTime` 및 `DateTime64`는 `getObject(colIndex, ZonedDateTime.class)`를 사용해 `ZonedDateTime`으로 가져올 수 있습니다.
@@ -285,8 +287,8 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * 기본적으로 `Array`는 JDBC와의 호환성을 위해 `java.sql.Array`에 매핑됩니다. 이는 반환되는 배열 값에 관한 더 많은 정보를 제공하기 위한 것이기도 합니다. 유형 추론에 유용합니다.
   * `Array`는 원래 배열과 동일한 내용을 담은 `java.sql.ResultSet`을 반환하도록 `getResultSet()` 메서드를 구현합니다.
   * 컬렉션 타입은 데이터를 올바르게 표현하는 방식이 아니므로 `java.lang.String`으로 읽어서는 안 됩니다(예: 배열의 문자열 값에는 따옴표가 없습니다).
-  * `Map`은 값을 `getObject(columnIndex, Class<T>)` 메서드로만 읽을 수 있으므로 `OTHER`로 매핑됩니다.
-    * `Map`은 이름이 있는 컬럼이 없으므로 `java.sql.Struct`가 아닙니다.
+  * `Map`은 `getObject(columnIndex, Class<T>)` 메서드로만 값을 읽을 수 있으므로 `OTHER`로 매핑됩니다.
+    * `Map`은 이름이 지정된 컬럼이 없으므로 `java.sql.Struct`가 아닙니다.
   * `Tuple`은 서로 다른 타입을 포함할 수 있으며 `List`는 사용할 수 없기 때문에 `Object[]`로 매핑됩니다.
   * `Tuple`은 `getObject(columnIndex, Array.class)` 메서드를 사용해 `Array`로 읽을 수 있습니다. 이 경우 `Array#baseTypeName`은 `Tuple` 컬럼의 정의를 반환합니다.
 
@@ -301,7 +303,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | ------------------------------------------ | ------------------------------------ | --------------------- |
   | `Array(<기본 유형>)`                           | `<기본 타입>`                            | `<JDBC 원시 유형>`        |
   | `Array(<Parameterized Type>(<N>))`         | `<매개변수화된 유형>(<N>)`                   | `<기본 타입의 JDBC 유형>`    |
-  | `Array(Nullable(<Type>))`                  | `널 허용(<유형>)`                         | `<내부 유형의 JDBC 유형>`    |
+  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                   | `<내부 유형의 JDBC 유형>`    |
   | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`             | `<내부 유형의 JDBC 유형>`    |
   | `Array(Array(...(<Type>)))`                | `<Type>` (가장 안쪽의 요소)                 | `<가장 안쪽 요소의 JDBC 유형>` |
   | `Array(Tuple(...))`                        | `Tuple(...)` (전체 정의)                 | `OTHER`               |
@@ -349,7 +351,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **배열 쓰기**
 
-  `java.sql.Array` 객체를 인스턴스화하려면 `java.sql.Connection#createArrayOf`를 사용하십시오. 이 객체는 서로 다른 데이터베이스 간의 배열 처리를 통합하기 위해 설계되었습니다.
+  `java.sql.Array` 객체를 인스턴스화하려면 `java.sql.Connection#createArrayOf`를 사용하십시오. 이 객체는 서로 다른 데이터베이스 간의 배열 처리를 통합하도록 설계되었습니다.
   Array 팩토리 메서드에 구성을 전달하려면 Connection이 필요합니다.
 
   이 메서드는 두 개의 인수를 받습니다:
@@ -357,7 +359,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `typeName` - 배열 요소의 타입 이름입니다. 예를 들어 `Array(Int32)` -&gt; `"Int32"`입니다.
   * `elements` - 실제 배열 요소입니다. 예를 들어 `[[1, 2, 3], [4, 5, 6]]`는 `new Integer[][] {{1, 2, 3}, {4, 5, 6}}`입니다.
 
-  튜플은 `Object[]` 또는 `java.sql.Struct`로 표현할 수 있습니다 (튜플 작성 방법은 아래를 참조하세요).
+  튜플은 `Object[]` 또는 `java.sql.Struct`로 표현할 수 있습니다(튜플 작성 방법은 아래를 참조하십시오).
 
   **예시**
 
@@ -402,7 +404,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **튜플 작성**
 
-  튜플은 `com.clickhouse.data.Tuple` 객체에 매핑되며, `setObject(columnIndex, tuple)` 메서드를 호출하여 해당 객체로 작성해야 합니다.
+  튜플은 `com.clickhouse.data.Tuple` 객체에 매핑되며 `setObject(columnIndex, tuple)` 메서드를 호출하여 이 객체로 작성해야 합니다.
   이식성을 높이기 위해 `java.sql.Struct` 객체를 사용하여 튜플을 작성할 수도 있습니다.
 
   **예시**
@@ -450,7 +452,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **맵 쓰기**
 
-  맵(Map)은 key-value 쌍을 필요로 하는 타입이므로 `java.collections.Map` 객체로만 작성할 수 있습니다(`java.sql.Struct`는 key-value 쌍을 지원하지 않습니다).
+  맵(Map)은 키-값 쌍이 필요하기 때문에 `java.collections.Map` 객체로만 작성할 수 있습니다(`java.sql.Struct`는 키-값 쌍을 지원하지 않습니다).
 
   **예시**
 
@@ -488,7 +490,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **중첩 데이터 쓰기**
 
-  `java.sql.Connection#createStruct`를 사용하여 `java.sql.Struct` 객체를 인스턴스화하십시오. 이 객체는 서로 다른 데이터베이스 간의 중첩 처리를 통합하기 위해 설계되었습니다.
+  `java.sql.Connection#createStruct`를 사용하여 `java.sql.Struct` 객체를 인스턴스화하십시오. 이 객체는 서로 다른 데이터베이스에서의 중첩 처리를 통일하기 위해 설계되었습니다.
   Struct 팩토리 메서드에 구성을 전달하려면 Connection이 필요합니다.
 
   이 메서드는 두 개의 인수를 받습니다:
@@ -582,7 +584,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  다음으로 매핑됩니다:
+  다음과 같이 매핑됩니다:
 
   ```java
   Map<String, Object> map = new HashMap<>();
@@ -594,8 +596,8 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }});
   ```
 
-  연결(connection) 속성에 서버 설정 `jdbc_read_json_as_string=true`를 전달하면 JSON을 String으로 읽는 더 편리한 방법을 사용할 수 있습니다.
-  이 설정을 사용하면 드라이버가 JSON 값을 String으로 반환하며, 임의의 JSON 라이브러리를 사용하여 파싱(parse)할 수 있습니다.
+  연결(connection) 속성에 서버 설정 `output_format_binary_write_json_as_string=1`을 전달하면 JSON을 문자열(String)로 읽을 수 있습니다.
+  이 설정을 사용하면 드라이버가 JSON 값을 문자열로 반환하므로 원하는 JSON 라이브러리로 파싱할 수 있습니다.
 
   ```java
   Properties properties = new Properties();
@@ -621,11 +623,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### 날짜, 시간 및 시간대 처리
+  ### 날짜, 시간 및 시간대 처리 {#handling-dates-times-and-timezones}
 
-  Date/Time 및 Timestamps 처리 시 흔히 발생하는 문제점과 드라이버의 동작 방식을 설명하는 [Date/Time Guide](/ko/integrations/language-clients/java/date-time-guide)를 참고하십시오.
+  Date/Time 및 타임스탬프 처리 시 흔히 발생하는 문제점과 드라이버의 동작 방식을 설명하는 [Date/Time Guide](/ko/integrations/language-clients/java/date-time-guide)를 참고하십시오.
 
-  ## 연결(Connection) 생성
+  ## 연결(Connection) 생성 {#creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -636,7 +638,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## 자격 증명 및 설정 제공
+  ## 자격 증명 및 설정 제공 {#supplying-credentials-and-settings}
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -658,7 +660,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 간단한 구문(Statement)
+  ## 간단한 문장 {#simple-statement}
 
   ```java showLineNumbers
 
@@ -671,7 +673,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 삽입
+  ## 삽입 {#insert}
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -683,7 +685,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP`
+  ## `HikariCP` {#hikaricp}
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -706,17 +708,17 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 추가 정보
+  ## 추가 정보 {#more-information}
 
   자세한 내용은 [GitHub 리포지토리](https://github.com/ClickHouse/clickhouse-java) 및 [Java 클라이언트 문서](/ko/integrations/language-clients/java/client)를 참조하십시오.
 
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 
-  ### 로깅
+  ### 로깅 {#logging}
 
   드라이버는 로깅에 [slf4j](https://www.slf4j.org/)를 사용하며, `classpath`에서 사용 가능한 첫 번째 구현체를 사용합니다.
 
-  ### 대용량 삽입 시 JDBC 타임아웃 해결
+  ### 대용량 삽입 시 JDBC 타임아웃 해결 {#resolving-jdbc-timeout-on-large-inserts}
 
   ClickHouse에서 실행 시간이 긴 대용량 삽입(insert) 작업을 수행할 때 다음과 같은 JDBC 타임아웃 오류가 발생할 수 있습니다:
 
@@ -726,7 +728,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   이러한 오류는 데이터 삽입 프로세스를 방해하고 시스템 안정성에 영향을 미칠 수 있습니다. 이 문제를 해결하려면 클라이언트 OS의 timeout 설정을 일부 조정해야 할 수 있습니다.
 
-  #### Mac OS
+  #### Mac OS {#mac-os}
 
   Mac OS에서는 다음 설정을 조정하여 문제를 해결할 수 있습니다.
 
@@ -736,9 +738,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux
+  #### Linux {#linux}
 
-  Linux에서는 동일한 설정만으로는 문제가 해결되지 않을 수 있습니다. Linux의 소켓 연결 유지 설정 처리 방식이 다르기 때문에 추가적인 단계가 필요합니다. 다음 단계를 따르십시오.
+  Linux에서는 동일한 설정만으로 문제가 해결되지 않을 수 있습니다. Linux가 소켓 keep-alive 설정을 처리하는 방식의 차이로 인해 추가 단계가 필요합니다. 다음 단계를 따르십시오:
 
   1. 다음 Linux 커널 매개변수를 `/etc/sysctl.conf` 또는 관련 설정 파일에서 조정하세요:
 
@@ -749,7 +751,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `net.inet.tcp.always_keepalive`: 1
   * `net.ipv4.tcp_keepalive_intvl`: 75
   * `net.ipv4.tcp_keepalive_probes`: 9
-  * `net.ipv4.tcp_keepalive_time`: 60 (기본값 300초보다 더 낮게 설정하는 것도 고려할 수 있습니다)
+  * `net.ipv4.tcp_keepalive_time`: 60 (기본값인 300초보다 낮게 설정하는 것을 고려할 수 있습니다)
 
   2. 커널 매개변수를 수정한 후 다음 명령을 실행하여 변경 사항을 적용하십시오:
 
@@ -757,15 +759,15 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   sudo sysctl -p
   ```
 
-  해당 설정을 적용한 후에는 클라이언트가 소켓에서 Keep Alive 옵션을 활성화하는지 확인하십시오:
+  해당 설정을 적용한 후 클라이언트에서 소켓의 Keep Alive 옵션을 활성화했는지 확인하십시오:
 
   ```java
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## 마이그레이션 가이드
+  ## 마이그레이션 가이드 {#migration-guide}
 
-  ### 주요 변경 사항
+  ### 주요 변경 사항 {#key-changes}
 
   | 기능                                | V1 (구버전)  | V2 (신버전)                  |
   | --------------------------------- | --------- | ------------------------- |
@@ -775,12 +777,12 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | 이름 있는 매개변수                        | 지원됨       | 지원되지 않음(JDBC 사양에 포함되지 않음) |
   | `PreparedStatement`를 사용한 데이터 스트리밍 | 지원됨       | 지원되지 않음                   |
 
-  * JDBC V2는 더 경량화되도록 구현되었으며, 일부 기능은 제거되었습니다.
-    * 스트리밍 데이터는 JDBC 사양 및 Java 자체에 포함되지 않으므로 JDBC V2에서는 지원되지 않습니다.
+  * JDBC V2는 더 가볍게 구현되었으며, 일부 기능이 제거되었습니다.
+    * 스트리밍 데이터는 JDBC 사양이나 Java에 포함되지 않으므로 JDBC V2에서는 지원되지 않습니다.
   * JDBC V2는 명시적인 구성이 필요합니다. 기본 failover 설정은 없습니다.
-    * URL에 protocol을 명시해야 합니다. 포트 번호를 이용한 암묵적 protocol 감지는 지원하지 않습니다.
+    * URL에 프로토콜을 명시해야 합니다. 포트 번호를 기반으로 프로토콜을 암묵적으로 감지하지 않습니다.
 
-  ### 구성 변경 사항
+  ### 구성 변경 사항 {#configuration-changes}
 
   enum은 두 가지뿐입니다:
 
@@ -810,7 +812,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### 데이터 타입 변경 사항
+  ### 데이터 타입 변경 사항 {#data-types-changes}
 
   **숫자 타입**
 
@@ -863,7 +865,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `Time` 및 `Time64`는 V2에서만 새 타입으로 지원됩니다.
   * `DateTime` 및 `DateTime64`는 JDBC와의 호환성을 높이기 위해 `java.sql.Timestamp`로 매핑됩니다.
 
-  **Enum 타입**
+  **열거형 타입**
 
   | ClickHouse 유형 | V1 호환 여부 | JDBC 유형 (V2) | Java 클래스 (V2)    | JDBC 유형 (V1) | Java 클래스 (V1)    |
   | ------------- | -------- | ------------ | ---------------- | ------------ | ---------------- |
@@ -924,7 +926,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * IPv4 및 IPv6 값은 `getBytes(columnIndex)` 메서드를 사용해 `byte[]`로 읽을 수 있습니다. 그러나 이러한 타입에는 전용 클래스를 사용하는 것이 좋습니다.
   * V2는 IP 주소를 숫자 값으로 읽는 기능을 지원하지 않습니다. 변환은 InetAddress 클래스에서 처리하는 편이 더 적절하기 때문입니다.
 
-  ### 데이터베이스 메타데이터 변경 사항
+  ### 데이터베이스 메타데이터 변경 사항 {#database-metadata-changes}
 
   * V2에서는 데이터베이스를 지칭하는 용어로 `Schema`만 사용합니다. `Catalog`는 향후 사용을 위해 예약되어 있습니다.
   * V2는 `DatabaseMetaData.supportsTransactions()` 및 `DatabaseMetaData.supportsSavepoints()`에 대해 `false`를 반환합니다. 이 동작은 향후 개발 과정에서 변경될 예정입니다.
@@ -941,11 +943,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   `clickhouse-jdbc` API는 동기식이며, 일반적으로 오버헤드가 더 많습니다(예: SQL 파싱 및 타입 매핑/변환 등). 성능이 중요하거나 ClickHouse에 더 직접적인 방식으로 접근하고자 한다면 [clickhouse-client](/ko/integrations/connectors/sql-clients/sql-console) 사용을 고려하십시오.
 
-  ## 환경 요구 사항
+  ## 환경 요구 사항 {#v07-environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) 버전 &gt;= 8
 
-  ### Setup
+  ### Setup {#v07-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1007,7 +1009,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## 구성
+  ## 구성 {#v07-configuration}
 
   **드라이버 클래스**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1032,7 +1034,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   참고: 자세한 내용은 [JDBC 전용 구성](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)을 참조하십시오.
 
-  ## 지원되는 데이터 타입
+  ## 지원되는 데이터 타입 {#v07-supported-data-types}
 
   JDBC 드라이버는 클라이언트 라이브러리와 동일한 데이터 포맷을 지원합니다.
 
@@ -1043,7 +1045,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     * UInt64 - `long`으로 매핑됩니다(client-v1에서)
   </Note>
 
-  ## 연결(Connection) 생성
+  ## 연결(Connection) 생성 {#v07-creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1056,7 +1058,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 간단한 구문(Statement)
+  ## 간단한 구문(Statement) {#v07-simple-statement}
 
   ```java showLineNumbers
 
@@ -1069,7 +1071,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 삽입
+  ## 삽입 {#v07-insert}
 
   <Note>
     * `Statement` 대신 `PreparedStatement`를 사용하십시오
@@ -1087,7 +1089,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### input 테이블 함수 사용
+  ### input 테이블 함수 사용 {#with-input-table-function}
 
   우수한 성능 특성을 갖춘 옵션:
 
@@ -1106,7 +1108,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   * 가능하면 [input function 문서](/ko/reference/functions/table-functions/input)를 참조하십시오
 
-  ### 플레이스홀더를 사용한 삽입
+  ### 플레이스홀더를 사용한 삽입 {#insert-with-placeholders}
 
   이 옵션은 소규모 삽입에만 권장됩니다. 긴 SQL 표현식이 필요하고 클라이언트 측에서 파싱되므로 CPU 및 메모리를 소비하기 때문입니다.
 
@@ -1121,7 +1123,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## DateTime 및 시간대 처리
+  ## DateTime 및 시간대 처리 {#handling-datetime-and-time-zones}
 
   `java.sql.Timestamp` 대신 `java.time.LocalDateTime` 또는 `java.time.OffsetDateTime`을, `java.sql.Date` 대신 `java.time.LocalDate`를 사용하십시오.
 
@@ -1136,7 +1138,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `AggregateFunction` 처리
+  ## `AggregateFunction` 처리 {#handling-aggregatefunction}
 
   <Note>
     `AggregateFunction` 상태를 바이너리 형식으로 직접 읽는 기능은 `groupBitmap`에 대해서만 지원됩니다. 다른 집계 함수(`min`, `max`, `avg` 등)의 경우, 쿼리에서 `-Merge` 콤비네이터를 사용해(예: `SELECT minMerge(min_state) FROM ...`) 서버 측에서 집계 상태를 최종 값으로 계산하고 일반 값을 반환하십시오.
@@ -1184,7 +1186,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## HTTP 라이브러리 구성
+  ## HTTP 라이브러리 구성 {#v07-configuring-http-library}
 
   ClickHouse JDBC 커넥터는 세 가지 HTTP 라이브러리를 지원합니다: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html), [`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html), 및 [Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
 
@@ -1208,11 +1210,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## SSL을 사용하여 ClickHouse에 연결
+  ## SSL을 사용하여 ClickHouse에 연결 {#connect-to-clickhouse-with-ssl}
 
   SSL을 사용하여 ClickHouse에 안전한 JDBC 연결을 설정하려면 SSL 매개변수가 포함되도록 JDBC 속성을 구성해야 합니다. 일반적으로 JDBC URL 또는 Properties 객체에 `sslmode` 및 `sslrootcert`와 같은 SSL 속성을 지정하는 방식으로 이루어집니다.
 
-  ## SSL 속성
+  ## SSL 속성 {#ssl-properties}
 
   | 이름                   | 기본값    | 선택 값         | 설명                                                 |
   | -------------------- | ------ | ------------ | -------------------------------------------------- |
@@ -1245,7 +1247,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## 대용량 삽입 시 JDBC Timeout 해결
+  ## 대용량 삽입 시 JDBC Timeout 해결 {#v07-resolving-jdbc-timeout-on-large-inserts}
 
   ClickHouse에서 실행 시간이 긴 대용량 삽입(insert) 작업을 수행할 때 다음과 같은 JDBC timeout 오류가 발생할 수 있습니다:
 
@@ -1255,7 +1257,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   이러한 오류는 데이터 삽입 프로세스를 방해하고 시스템 안정성에 영향을 미칠 수 있습니다. 이 문제를 해결하려면 클라이언트 OS의 타임아웃 설정 몇 가지를 조정해야 합니다.
 
-  ### Mac OS
+  ### Mac OS {#v07-mac-os}
 
   Mac OS에서는 다음 설정을 조정하여 문제를 해결할 수 있습니다.
 
@@ -1265,7 +1267,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux
+  ### Linux {#v07-linux}
 
   Linux에서는 동일한 설정만으로는 문제가 해결되지 않을 수 있습니다. Linux의 소켓 연결 유지 설정 처리 방식이 다르기 때문에 추가적인 단계가 필요합니다. 다음 단계를 따르십시오.
 

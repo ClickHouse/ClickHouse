@@ -13,10 +13,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePl
 
 import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.jsx";
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="カスタムアイデンティティプロバイダを使用したJWT認証" />
@@ -30,7 +26,7 @@ ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイン�
 ClickHouse Cloud Console の **Settings → Security** から、サービスごとにこれらの JWKS プロバイダを設定できます。
 
 <div id="before-you-begin">
-  ## 始める前に
+  ## 始める前に {#before-you-begin}
 </div>
 
 サービスの JWT プロバイダを設定するには、次の要件を満たす必要があります。
@@ -45,7 +41,7 @@ ClickHouse Cloud Console の **Settings → Security** から、サービスご�
 </Note>
 
 <div id="how-it-works">
-  ## 仕組み
+  ## 仕組み {#how-it-works}
 </div>
 
 クライアント (アイデンティティプロバイダまたはアプリケーション) は JWT を生成し、**秘密鍵**で署名します。トークンは、想定される[トークン形式](/ja/concepts/features/security/external-authenticators/jwt#token-claims)に従う必要があります。ClickHouse は、JWKS URL で公開されている**公開鍵**を使用してトークンを検証します。
@@ -57,7 +53,7 @@ ClickHouse Cloud Console の **Settings → Security** から、サービスご�
 ClickHouse はプロバイダーの追加または更新時に JWKS URL を検証して取得するため、設定が不適切な URL や到達できない URL は事前に拒否されます。
 
 <div id="add-a-jwt-provider">
-  ## JWT プロバイダを追加する
+  ## JWT プロバイダを追加する {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -93,7 +89,7 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
 </Warning>
 
 <div id="limits">
-  ## 制限事項
+  ## 制限事項 {#limits}
 </div>
 
 * 1サービスあたり最大**5つ**のJWTプロバイダを設定できます。
@@ -101,7 +97,7 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
 * JWKS URLはPublic HTTPSエンドポイントである必要があります。Private、内部、またはリンクローカルアドレスは拒否されます。
 
 <div id="related">
-  ## 関連情報
+  ## 関連情報 {#related}
 </div>
 
 * [JWT Authentication](/ja/concepts/features/security/external-authenticators/jwt) — トークンのクレーム、一時ユーザー、クライアントの使用方法。

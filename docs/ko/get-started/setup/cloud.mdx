@@ -57,7 +57,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### SQL 콘솔을 사용하여 연결
+        ### SQL 콘솔을 사용하여 연결 {#connect-using-sql-console}
 
         빠르게 시작할 수 있도록 ClickHouse는 온보딩을 완료하면 자동으로 이동되는 웹 기반 SQL 콘솔을 제공합니다.
 
@@ -77,7 +77,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
 
         이제 새 ClickHouse 서비스를 사용할 준비가 되었습니다!
 
-        ### 앱 연결
+        ### 앱 연결 {#connect-with-your-app}
 
         탐색 메뉴에서 연결 버튼을 선택하십시오. 서비스 자격 증명과 사용 중인 인터페이스 또는 언어 클라이언트에서 연결하는 방법을 안내하는 모달이 열립니다.
 
@@ -103,7 +103,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
         * 파일을 업로드합니다 - 지원 포맷은 JSON, CSV, TSV입니다
         * 파일 URL을 통해 데이터를 업로드합니다
 
-        ### ClickPipes
+        ### ClickPipes {#clickpipes}
 
         [ClickPipes](/ko/integrations/clickpipes/home)는 다양한 소스의 데이터를 버튼 몇 번 클릭만으로 간단하게 수집할 수 있는 관리형 통합 플랫폼입니다. 가장 까다로운 워크로드를 염두에 두고 설계된 ClickPipes의 견고하고 확장 가능한 아키텍처는 일관된 성능과 안정성을 보장합니다. ClickPipes는 장기적인 스트리밍 용도뿐만 아니라 일회성 데이터 적재 작업에도 사용할 수 있습니다.
 
@@ -111,7 +111,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### SQL 콘솔을 사용하여 데이터 추가하기
+        ### SQL 콘솔을 사용하여 데이터 추가하기 {#add-data-using-the-sql-console}
 
         대부분의 데이터베이스 관리 시스템과 마찬가지로 ClickHouse도 테이블을 논리적으로 **데이터베이스** 단위로 묶습니다. ClickHouse에서 새 데이터베이스를 생성하려면 [`CREATE DATABASE`](/ko/reference/statements/create/database) 명령을 사용하십시오:
 
@@ -154,14 +154,14 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
           선택할 수 있는 테이블 엔진은 많지만, 단일 노드 ClickHouse 서버에서 단순한 테이블을 만들 때는 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 선택하는 것이 일반적입니다.
         </Info>
 
-        #### 기본 키(Primary Key) 간단한 소개
+        #### 기본 키(Primary Key) 간단한 소개 {#a-brief-intro-to-primary-keys}
 
         더 진행하기 전에 ClickHouse에서 기본 키(primary key)가 어떻게 동작하는지 이해하는 것이 중요합니다(기본 키의
         구현 방식이 예상과 다르게 보일 수 있습니다!):
 
         * ClickHouse의 프라이머리 키는 테이블의 각 행에서 ***고유하지 않습니다***
 
-        ClickHouse 테이블의 기본 키는 데이터가 디스크에 기록될 때 어떻게 정렬되는지를 결정합니다. 8,192행 또는 10MB의 데이터(이를 **인덱스 그래뉼러리티(index granularity)**라고 함)마다 기본 키 인덱스 파일에 항목이 생성됩니다. 이 그래뉼러리티 개념은 메모리에 쉽게 들어갈 수 있는 **희소 인덱스(sparse index)**를 만들며, 그래뉼은 `SELECT` 쿼리 처리 중에 다뤄지는 가장 작은 단위의 열 데이터 스트라이프를 나타냅니다.
+        ClickHouse 테이블의 기본 키는 데이터가 디스크에 기록될 때 어떻게 정렬되는지를 결정합니다. 8,192행 또는 10MB의 데이터(이를 **인덱스 그래뉼러리티(index granularity)**라고 함)마다 기본 키 인덱스 파일에 항목이 생성됩니다. 이 그래뉼러리티 개념은 메모리에 쉽게 들어갈 수 있는 **희소 인덱스(sparse index)**를 만들며, 그래뉼은 `SELECT` 쿼리 처리 중에 다뤄지는 가장 작은 단위의 컬럼 데이터 스트라이프를 나타냅니다.
 
         기본 키는 `PRIMARY KEY` 매개변수로 정의할 수 있습니다. `PRIMARY KEY`를 지정하지 않고 테이블을 정의하면
         `ORDER BY` 절에 지정된 튜플이 기본 키가 됩니다. `PRIMARY KEY`와 `ORDER BY`를 모두 지정하는 경우 기본 키는 정렬 순서의 부분 집합이어야 합니다.
@@ -171,7 +171,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
 
         ClickHouse의 핵심 개념에 대한 심층 분석은 [&quot;핵심 개념&quot;](/ko/concepts/core-concepts/index)을 참조하십시오.
 
-        #### 테이블에 데이터 삽입하기
+        #### 테이블에 데이터 삽입하기 {#insert-data-into-your-table}
 
         ClickHouse에서도 익숙한 [`INSERT INTO TABLE`](/ko/reference/statements/insert-into) 명령을 사용할 수 있지만, [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에 한 번 삽입할 때마다 스토리지에 **파트(part)** 가 하나씩 생성된다는 점을 유의해야 합니다.
 
@@ -203,7 +203,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
         SELECT * FROM helloworld.my_first_table
         ```
 
-        ### ClickHouse Client로 데이터 추가하기
+        ### ClickHouse Client로 데이터 추가하기 {#add-data-using-the-clickhouse-client}
 
         [**clickhouse client**](/ko/concepts/features/interfaces/client)라는 명령줄 도구를 사용하여 ClickHouse Cloud 서비스에 연결할 수도 있습니다. 왼쪽 메뉴에서 `Connect`를 클릭하여 이러한 세부 정보를 확인하세요. 대화 상자에서 드롭다운을 열고 `Native`를 선택합니다:
 
@@ -283,9 +283,11 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
         exit
         ```
 
-        ### 파일 업로드
+        ### 파일 업로드 {#upload-a-file}
 
-        데이터베이스를 처음 사용하기 시작할 때 흔히 하는 작업 중 하나는 이미 파일로 보유하고 있는 데이터를 삽입하는 것입니다. 온라인에 삽입할 수 있는 샘플 데이터가 있으며, 이 데이터는 클릭스트림 데이터를 나타내며 사용자 ID, 방문한 URL 및 이벤트의 타임스탬프가 포함되어 있습니다.
+        데이터베이스를 처음 사용하기 시작할 때 흔히 하는 작업 중 하나는 이미 파일로 보유하고 있는 데이터를 삽입하는 것입니다. 온라인에 삽입할 수 있는
+        샘플 데이터가 있으며, 이 데이터는 클릭스트림 데이터를 나타내며 사용자 ID, 방문한 URL 및
+        이벤트의 타임스탬프가 포함되어 있습니다.
 
         `data.csv`라는 이름의 CSV 파일에 다음과 같은 텍스트가 있다고 가정합니다:
 
@@ -324,7 +326,7 @@ import CloudQuickstartCLI from "/snippets/ko/quickstarts/_cloud_quickstart_cli.m
       자세한 내용은 [&quot;IP 필터 설정&quot;](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)을 참조하십시오.
     </Tip>
 
-    ## 다음 단계
+    ## 다음 단계 {#whats-next}
 
     * [튜토리얼](/ko/get-started/quickstarts/tutorial)에서는 테이블에 200만 개의 행을 삽입하고 몇 가지 분석 쿼리를 작성합니다
     * [예시 데이터셋](/ko/get-started/sample-datasets/index) 목록과 데이터 삽입 방법을 안내합니다

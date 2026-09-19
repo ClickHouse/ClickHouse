@@ -42,9 +42,7 @@ doc_type: 'reference'
 
 たとえば、エンジン式 `URL('http://localhost/test.gzip')` では `gzip` 圧縮方式が適用されますが、`URL('http://localhost/test.fr')` では接尾辞 `fr` が上記のどの圧縮方式にも一致しないため、圧縮は有効になりません。
 
-<div id="scheme-dispatch">
-  ## URLスキームによるディスパッチ
-</div>
+## URLスキームによるディスパッチ {#scheme-dispatch}
 
 `URL` エンジンは、他のファイルストレージ エンジンやオブジェクトストレージ エンジンを統一的に扱うラッパーで、URL スキームに基づいて適切なバックエンドに振り分けます。`http`/`https` (および認識されないスキーム) は `URL` エンジン自体で処理され、`file://` は [File](/ja/reference/engines/table-engines/special/file) エンジン、`s3://`、`gs://`、`gcs://`、`oss://` は [S3](/ja/reference/engines/table-engines/integrations/s3) エンジン、`az://`、`azure://`、`abfss://`、`abfs://` は [AzureBlobStorage](/ja/reference/engines/table-engines/integrations/azureBlobStorage) エンジン、`hdfs://` は [HDFS](/ja/reference/engines/table-engines/integrations/hdfs) エンジンで処理されます。
 
@@ -57,9 +55,7 @@ CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', C
 CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
 ```
 
-<div id="using-the-engine-in-the-clickhouse-server">
-  ## 使用方法
-</div>
+## 使用方法 {#using-the-engine-in-the-clickhouse-server}
 
 `INSERT` クエリと `SELECT` クエリは、それぞれ `POST` リクエストと `GET` リクエストに変換されます。
 `POST` リクエストを処理するには、リモートサーバーが
@@ -67,18 +63,14 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 
 [max&#95;http&#95;get&#95;redirects](/ja/reference/settings/session-settings/max#max_http_get_redirects) 設定を使用すると、HTTP GET リダイレクトの最大ホップ数を制限できます。
 
-<div id="wildcards-with-http-index-pages">
-  ## HTTPインデックスページでのワイルドカード
-</div>
+## HTTPインデックスページでのワイルドカード {#wildcards-with-http-index-pages}
 
-[allow&#95;experimental&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) が有効な場合、`URL` テーブルエンジンは、HTTPインデックスページを取得してそこからリンクを抽出することで、ワイルドカードを展開できます。
+[allow&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/ja/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) が有効な場合、`URL` テーブルエンジンは、HTTPインデックスページを取得してそこからリンクを抽出することで、ワイルドカードを展開できます。
 これは、[`url`](/ja/reference/functions/table-functions/url#wildcards-with-http-index-pages) テーブル関数と同じ仕組みです。
 
 展開は、取得する各インデックスページごとに [max&#95;http&#95;index&#95;page&#95;size](/ja/reference/settings/server-settings/settings/max#max_http_index_page_size) で、再帰的なディレクトリ走査については [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/ja/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) で制限されます。
 
-<div id="example">
-  ## 例
-</div>
+## 例 {#example}
 
 **1.** サーバー上に `url_engine_table` テーブルを作成します：
 
@@ -123,9 +115,7 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-<div id="details-of-implementation">
-  ## 実装の詳細
-</div>
+## 実装の詳細 {#details-of-implementation}
 
 * 読み取りと書き込みは並列で実行できます
 * サポートされていません:
@@ -133,9 +123,7 @@ SELECT * FROM url_engine_table
   * 索引
   * レプリケーション
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — `URL` のパス。型: `LowCardinality(String)`.
 * `_file` — `URL` のリソース名。型: `LowCardinality(String)`.
@@ -143,9 +131,7 @@ SELECT * FROM url_engine_table
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 時刻が不明な場合、値は `NULL` です。
 * `_headers` - HTTP レスポンスヘッダー。型: `Map(LowCardinality(String), LowCardinality(String))`.
 
-<div id="resolving-relative-urls">
-  ## 相対 URL の解決
-</div>
+## 相対 URL の解決 {#resolving-relative-urls}
 
 [url&#95;base](/ja/reference/settings/session-settings/url#url_base) 設定を使用すると、`URL` エンジンで相対 URL を使用できます。`url_base` が設定されている場合、エンジンに渡された URL は [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従ってそれを基準として解決されます。解決ルールの詳細については、[url テーブル関数のドキュメント](/ja/reference/functions/table-functions/url#resolving-relative-urls) を参照してください。
 
@@ -157,9 +143,7 @@ CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.cs
 SELECT * FROM url_engine_table;
 ```
 
-<div id="storage-settings">
-  ## ストレージ設定
-</div>
+## ストレージ設定 {#storage-settings}
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/other#engine_url_skip_empty_files) - 読み込み時に空のファイルをスキップできるようにします。デフォルトでは無効です。
 * [enable&#95;url&#95;encoding](/ja/reference/settings/session-settings/enable#enable_url_encoding) - URI 内のパスのデコード/エンコードを有効/無効にできるようにします。デフォルトで有効です。

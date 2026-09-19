@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Neon'
+title: 'Neon에서 ClickHouse Managed Postgres로 마이그레이션'
+description: 'Neon의 PostgreSQL 데이터를 ClickHouse Managed Postgres로 마이그레이션하는 방법을 알아보세요'
+keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
+doc_type: 'guide'
+---
+
+ClickHouse Managed Postgres에는 ClickPipes가 포함되어 있어 Neon에서 완전 관리형 온라인 마이그레이션 경로를 제공합니다.
+스키마를 자동으로 마이그레이션하고, 병렬 스냅샷으로 최적화된 초기 적재를 수행하며, CDC(Change Data Capture)를 통해 컷오버 시점까지 두 데이터베이스를 동기화된 상태로 유지합니다.
+ClickPipes를 사용하면 수 테라바이트 규모의 Postgres 데이터베이스도 단 몇 시간 만에 마이그레이션할 수 있습니다.
+
+<Steps>
+  <Step title="Neon 준비">
+    읽기 및 복제 권한을 가진 전용 ClickPipes 사용자를 생성합니다:
+
+    ```sql
+    CREATE USER clickpipes_user PASSWORD '<password>';
+
+    GRANT USAGE ON SCHEMA public TO clickpipes_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO clickpipes_user;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO clickpipes_user;
+    ALTER USER clickpipes_user WITH REPLICATION;
+
+    ```
+
+    이 단계는 프로덕션 Neon 브랜치에서 실행하며, 마이그레이션하려는 모든 스키마에 대해 권한 부여를 반복하십시오.
+    복제되는 각 테이블에는 primary key가 있거나 `REPLICA IDENTITY FULL`을 사용해야 합니다.
+
+    Neon 콘솔에서 **Settings → Logical Replication**으로 이동하여 논리적 복제를 활성화합니다.
+    IP 제한을 사용하는 경우 ClickPipes 고정 IP 주소를 허용하십시오. 자세한 안내는 [Neon 소스 설정 가이드](/ko/integrations/clickpipes/postgres/source/neon-postgres)를 참조하십시오.
+  </Step>
+
+  <Step title="ClickPipes로 마이그레이션 및 컷오버 수행">
+    [ClickPipes 마이그레이션 가이드](/ko/products/managed-postgres/migrations/clickpipes)에 따라 마이그레이션을 구성하고 완료하십시오.
+    ClickPipes는 전체 과정을 자동화합니다:
+
+    * 소스 스키마를 비어 있는 대상 데이터베이스로 마이그레이션합니다.
+    * 병렬 스냅샷으로 최적화된 초기 적재를 수행합니다.
+    * CDC를 사용해 대상을 Neon과 동기화된 상태로 유지합니다.
+    * 진행 상황, 복제 지연, 오류 모니터링을 제공합니다.
+    * 유효성 검사와 컷오버 과정을 안내합니다.
+
+    초기 적재가 완료되고 복제 지연이 거의 0에 가까워지면, ClickPipe 상세 보기의 **Post-migration steps** 탭에서 안내에 따라 컷오버를 수행하십시오. 전체 절차는 [트래픽 컷오버](/ko/products/managed-postgres/migrations/clickpipes#cutover)를 참조하십시오. 마법사는 다음 순서로 안내합니다:
+
+    1. Neon을 읽기 전용 모드로 설정하여 쓰기를 중단합니다.
+    2. 소스와 대상 간의 행 수를 검증합니다.
+    3. 파이프를 일시 중지합니다.
+    4. 대상의 시퀀스를 재설정합니다.
+    5. 애플리케이션 connection string이 ClickHouse Managed Postgres를 가리키도록 변경하여 트래픽을 전환합니다.
+    6. replication slot을 삭제하고 ClickPipe를 제거하여 정리합니다.
+
+    롤백이 필요할 경우를 대비해 Neon을 짧은 기간 동안 읽기 전용 모드로 유지하십시오.
+    새 환경이 안정화되면 정리 단계를 완료하여 ClickPipe와 해당 replication slot을 제거하십시오.
+  </Step>
+</Steps>
+
+## 마이그레이션 고려 사항 {#migration-considerations}
+
+### 브랜치 {#branches}
+
+Neon은 즉각적인 copy-on-write 브랜치를 제공합니다. ClickHouse Managed Postgres는 local NVMe storage를 사용하여 빠르고 예측 가능하며 안정적인 Postgres 성능을 제공합니다.
+대신 브랜치 생성은 즉시 완료되지 않고, [Point-in-Time Recovery(PITR)](/ko/products/managed-postgres/backup-and-restore)를 통해 독립적인 배포로 생성됩니다. 일반적으로 몇 분 이내에 사용할 수 있습니다.
+
+일상적인 개발에는 실제 데이터를 대표하면서 민감 정보를 제거한 production 데이터를 담은 소규모 ClickHouse Managed Postgres 개발 데이터베이스(예: 수 기가바이트 규모)를 유지하고, 필요할 때마다 여기에서 PITR 브랜치를 생성하는 방식을 권장합니다. 브랜치 생성과 정리는 공식 CLI인 [clickhousectl](/ko/concepts/features/interfaces/cli)이나 [OpenAPI](/ko/products/managed-postgres/openapi), [Terraform](/ko/products/managed-postgres/terraform)을 통해 자동화할 수 있습니다.
+
+일부 고객은 이 방식으로 수백 개의 개발 환경을 관리하고 있습니다. ClickHouse는 fork 및 sandbox 사용 경험을 지속적으로 개선하고 있습니다. [branching 문서](/ko/products/managed-postgres/branching)를 참조하십시오.
+
+### Neon Serverless Driver {#neon-serverless}
+
+애플리케이션에서 Neon Serverless Driver를 사용하지 않는다면 이 섹션은 건너뛰어도 됩니다.
+
+[Vercel](https://vercel.com/docs)과 같은 플랫폼에서 실행되는 애플리케이션은 WebSocket 기반이면서 Neon 전용인 [Neon Serverless Driver](https://neon.com/docs/serverless/serverless-driver)를 사용할 **수 있습니다**.
+이 driver는 연결 대상만 ClickHouse Managed Postgres로 바꾼다고 해서 그대로 동작하지 않습니다.
+
+마이그레이션 전에 다음을 확인하십시오.
+
+* [@neondatabase/serverless](https://www.npmjs.com/package/@neondatabase/serverless)와 같은 의존성이 있는지 확인하십시오. 있다면 [node-postgres (pg)](https://node-postgres.com/)와 같은 표준 Postgres driver로 대체하십시오.
+* 수명이 짧은 연결을 다수 생성하는 serverless workload에는 [번들로 제공되는 PgBouncer 인스턴스](/ko/products/managed-postgres/connection#pgbouncer)를 사용하십시오.
+* prepared statement는 지원됩니다. 다만 PgBouncer는 트랜잭션 풀링을 사용하므로, session 수준 동작에 의존하는 애플리케이션은 반드시 검사하십시오(대부분의 애플리케이션에서는 흔치 않은 경우입니다).
+  1. session 수준 `SET` 또는 `RESET` 대신 `SET LOCAL`을 사용하십시오.
+  2. 임시 테이블은 `ON COMMIT DROP`을 지정해 트랜잭션 범위로 사용하십시오.
+  3. `NOTIFY`는 지원되지만 `LISTEN`은 지원되지 않습니다.
+  4. advisory lock은 session 수준이 아닌 트랜잭션 수준으로 사용하십시오.
+  5. 트랜잭션 범위 cursor는 지원되지만 `WITH HOLD`는 지원되지 않습니다.
+* 애플리케이션이 지원되지 않는 session 수준 동작에 의존한다면, PgBouncer를 경유하지 말고 Postgres에 직접 연결하십시오.
+
+자세한 내용은 [PgBouncer 호환성 매트릭스](https://www.pgbouncer.org/features.html)를 참조하십시오.
+
+### 연결 제한 {#connection-limits}
+
+ClickHouse Managed Postgres는 기본적으로 500개의 직접(direct) Postgres 연결을 지원합니다. Neon workload가 이 수를 초과한다면 다음 방법을 사용할 수 있습니다.
+
+* 애플리케이션 측 연결 풀링을 사용합니다.
+* 최대 5,000개의 클라이언트 연결을 지원하는 번들 PgBouncer 인스턴스를 사용합니다.
+* 더 많은 직접 연결이 필요하면 `max_connections` 값을 늘립니다.
+  * `max_connections`는 **Settings → Edit parameters**에서 변경할 수 있습니다. 일부 변경 사항은 재시작이 필요합니다. [구성 문서](/ko/products/managed-postgres/settings#changing-configuration)를 참조하십시오.
+
+### 마이그레이션 중 스키마 변경 {#schema-changes}
+
+ClickPipes를 시작한 시점부터 컷오버까지의 기간은 가능한 한 짧게, 이상적으로는 며칠 이내로 유지하고, 이 기간 동안에는 스키마 변경을 피하십시오.
+
+일부 고객은 ClickHouse Managed Postgres를 대상으로 애플리케이션을 테스트하는 동안 며칠간 병렬 환경을 유지합니다. 테스트가 완료되면 최종 마이그레이션을 위해 새 ClickPipe를 시작하여 초기 적재와 컷오버 사이의 시간을 최소화합니다.
+
+CDC는 삽입, 업데이트, 삭제 및 `ADD COLUMN`은 복제하지만, 그 외 대부분의 DDL 변경은 전파하지 않습니다. 여기에는 인덱스, 트리거, enum 변경, 제약 조건, 함수, 그리고 대부분의 컬럼 수정이 해당됩니다.
+
+누락된 enum 값과 같은 일부 변경은 복제를 중단시키며, 이는 ClickPipes 로그에 표시됩니다. 누락된 변경을 대상에 적용하면 복제가 재개됩니다. 새로 생성된 인덱스나 트리거와 같은 변경은 CDC를 중단시키지 않을 수 있으나, 컷오버 전에 수동으로 생성해야 합니다.
+
+트래픽을 전환하기 전에 소스와 대상 스키마를 비교하고, 누락된 객체를 적용한 뒤 시퀀스를 재설정하십시오. [마이그레이션 FAQ](/ko/products/managed-postgres/migrations/faq)에서 흔히 발생하는 오류와 해결 방법을 확인할 수 있습니다.

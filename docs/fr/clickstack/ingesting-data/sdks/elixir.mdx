@@ -6,25 +6,15 @@ doc_type: 'guide'
 keywords: ['SDK ClickStack Elixir', 'observabilité Elixir', 'HyperDX Elixir', 'SDK de logs Elixir', 'intégration ClickStack Elixir']
 ---
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✖️ Métriques</td>
-      <td className="pe-2">✖️ Traces</td>
-    </tr>
-  </tbody>
-</table>
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-*🚧 L’instrumentation OpenTelemetry pour les métriques et le tracing sera bientôt disponible !*
+<ClickStackIntegrates signals={['logs']} />
 
-<div id="getting-started">
-  ## Premiers pas
-</div>
+*🚧 L’instrumentation OpenTelemetry pour les métriques et le tracing sera bientôt disponible !*
 
-<div id="install-hyperdx-logger-backend-package">
-  ### Installer le paquet backend du logger ClickStack
-</div>
+## Premiers pas {#getting-started}
+
+### Installer le paquet backend du logger ClickStack {#install-hyperdx-logger-backend-package}
 
 Le paquet s’installe en ajoutant `hyperdx` à votre liste de dépendances dans
 `mix.exs`:
@@ -37,9 +27,7 @@ def deps do
 end
 ```
 
-<div id="configure-logger">
-  ### Configurer le logger
-</div>
+### Configurer le logger {#configure-logger}
 
 Ajoutez ce qui suit à votre fichier `config.exs` :
 
@@ -51,27 +39,25 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-<div id="configure-environment-variables">
-  ### Configurer les variables d’environnement
-</div>
+### Configurer les variables d’environnement {#configure-environment-variables}
 
 Vous devrez ensuite configurer les variables d’environnement suivantes dans votre
-shell afin d’envoyer la télémétrie à ClickStack via l’OpenTelemetry Collector :
+shell afin d’envoyer la télémétrie à ClickStack via l’OpenTelemetry Collector :
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 </Tabs>
 
 *La variable d’environnement `OTEL_SERVICE_NAME` sert à identifier votre service
-dans l’application HyperDX ; vous pouvez lui donner le nom de votre choix.*
+dans l’application HyperDX ; vous pouvez lui donner le nom de votre choix.*

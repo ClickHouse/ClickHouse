@@ -18,9 +18,7 @@ Este motor proporciona integración con el ecosistema de [Apache Hadoop](https:/
 
 Esta funcionalidad no cuenta con soporte de los ingenieros de ClickHouse y se sabe que su calidad es irregular. Si surge algún problema, tendrás que solucionarlo por tu cuenta y enviar un pull request.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 ```sql
 ENGINE = HDFS(URI, format)
@@ -35,9 +33,7 @@ ENGINE = HDFS(URI, format)
   sección [Formatos](/es/reference/formats/index#formats-overview).
 * [PARTITION BY expr]
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Opcional. En la mayoría de los casos, no se necesita una clave de partición y, si hace falta, por lo general no debe ser más granular que por mes. La partición no acelera las consultas (a diferencia de la expresión ORDER BY). Nunca debe usar una partición demasiado granular. No particione sus datos por identificadores o nombres de clientes (en su lugar, haga que el identificador o el nombre del cliente sea la primera columna de la expresión ORDER BY).
 
@@ -70,9 +66,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-<div id="implementation-details">
-  ## Detalles de implementación
-</div>
+## Detalles de implementación {#implementation-details}
 
 * Las lecturas y escrituras pueden ser paralelas.
 * No se admiten:
@@ -80,11 +74,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   * Los índices.
   * La [replicación zero-copy](/es/concepts/features/configuration/server-config/storing-data#zero-copy) es posible, pero no se recomienda.
 
-<Info>
-  **La replicación zero-copy no está lista para producción**
-
+<Note title="La replicación zero-copy no está lista para producción">
   La replicación zero-copy está deshabilitada de forma predeterminada en ClickHouse versión 22.8 y posteriores. Esta función no se recomienda para uso en producción.
-</Info>
+</Note>
 
 **Globs en la ruta**
 
@@ -110,7 +102,7 @@ Las construcciones con `{}` son similares a la función de tabla [remote](/es/re
 
 2. Hay varias formas de crear una tabla compuesta por los seis archivos:
 
-{/* */}
+{{/* */}}
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
@@ -140,9 +132,7 @@ Cree una tabla con archivos llamados `file000`, `file001`, ... , `file999`:
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-<div id="configuration">
-  ## Configuración
-</div>
+## Configuración {#configuration}
 
 Al igual que GraphiteMergeTree, el motor HDFS admite una configuración ampliada mediante el archivo de configuración de ClickHouse. Puede usar dos claves de configuración: una global (`hdfs`) y otra a nivel de usuario (`hdfs_*`). Primero se aplica la configuración global y, después, la configuración a nivel de usuario (si existe).
 
@@ -160,13 +150,9 @@ Al igual que GraphiteMergeTree, el motor HDFS admite una configuración ampliada
 </hdfs_root>
 ```
 
-<div id="configuration-options">
-  ### Opciones de configuración
-</div>
+### Opciones de configuración {#configuration-options}
 
-<div id="supported-by-libhdfs3">
-  #### Compatible con libhdfs3
-</div>
+#### Compatible con libhdfs3 {#supported-by-libhdfs3}
 
 | **parámetro**                                                           | **valor predeterminado**          |
 | ----------------------------------------------------------------------- | --------------------------------- |
@@ -214,9 +200,7 @@ Al igual que GraphiteMergeTree, el motor HDFS admite una configuración ampliada
 
 La [referencia de configuración de HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) puede aclarar algunos parámetros.
 
-<div id="clickhouse-extras">
-  #### Opciones adicionales de ClickHouse
-</div>
+#### Opciones adicionales de ClickHouse {#clickhouse-extras}
 
 | **parámetro**                     | **valor predeterminado** |
 | --------------------------------- | ------------------------ |
@@ -224,15 +208,11 @@ La [referencia de configuración de HDFS](https://hawq.apache.org/docs/userguide
 | hadoop&#95;kerberos&#95;principal | &quot;&quot;             |
 | libhdfs3&#95;conf                 | &quot;&quot;             |
 
-<div id="limitations">
-  ### Limitaciones
-</div>
+### Limitaciones {#limitations}
 
 * `hadoop_security_kerberos_ticket_cache_path` y `libhdfs3_conf` solo pueden ser globales, no específicos para cada usuario
 
-<div id="kerberos-support">
-  ## Compatibilidad con Kerberos
-</div>
+## Compatibilidad con Kerberos {#kerberos-support}
 
 Si el parámetro `hadoop_security_authentication` tiene el valor `kerberos`, ClickHouse se autentica mediante Kerberos.
 Los parámetros están [aquí](#clickhouse-extras), y `hadoop_security_kerberos_ticket_cache_path` puede ser útil.
@@ -242,9 +222,7 @@ enfoque de seguridad). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_
 
 Si se especifican `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` o `hadoop_security_kerberos_ticket_cache_path`, se utilizará la autenticación de Kerberos. En este caso, `hadoop_kerberos_keytab` y `hadoop_kerberos_principal` son obligatorios.
 
-<div id="namenode-ha">
-  ## Compatibilidad con HDFS NameNode HA
-</div>
+## Compatibilidad con HDFS NameNode HA {#namenode-ha}
 
 libhdfs3 admite HA para el NameNode de HDFS.
 
@@ -259,9 +237,7 @@ libhdfs3 admite HA para el NameNode de HDFS.
 
 * Luego, usa el valor de la etiqueta `dfs.nameservices` de `hdfs-site.xml` como dirección del namenode en el URI de HDFS. Por ejemplo, sustituye `hdfs://appadmin@192.168.101.11:8020/abc/` por `hdfs://appadmin@my_nameservice/abc/`.
 
-<div id="virtual-columns">
-  ## Columnas virtuales
-</div>
+## Columnas virtuales {#virtual-columns}
 
 * `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
@@ -269,9 +245,7 @@ libhdfs3 admite HA para el NameNode de HDFS.
 * `_time` — Fecha y hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
 * `_etag` — ETag del archivo. Tipo: `LowCardinality(String)`. HDFS no tiene un ETag nativo, por lo que el valor se genera a partir de la hora de modificación y el tamaño del archivo como `<mtime_seconds>_<size>`. Dado que `libhdfs3` expone la hora de modificación solo con precisión de un segundo, una reescritura dentro del mismo segundo que mantiene el mismo tamaño genera el mismo valor; por ese motivo, este ETag generado no se utiliza como clave de caché de contenido.
 
-<div id="storage-settings">
-  ## Configuración de almacenamiento
-</div>
+## Configuración de almacenamiento {#storage-settings}
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene un sufijo. Deshabilitado de forma predeterminada.

@@ -1,5 +1,5 @@
 ---
-sidebarTitle: '개요'
+sidebarTitle: 'C#'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
 slug: /integrations/csharp
 description: 'ClickHouse에 연결하기 위한 공식 C# 클라이언트입니다.'
@@ -25,18 +25,14 @@ ClickHouse에 연결하기 위한 공식 C# 클라이언트입니다.
 
 두 API는 동일한 기본 HTTP 연결 풀을 공유하며, 같은 애플리케이션에서 함께 사용할 수 있습니다.
 
-<div id="migration-guide">
-  ## 마이그레이션 가이드
-</div>
+## 마이그레이션 가이드 {#migration-guide}
 
 1. `.csproj` 파일에서 패키지 이름을 `ClickHouse.Driver`로 변경하고, [NuGet의 최신 버전](https://www.nuget.org/packages/ClickHouse.Driver)으로 업데이트합니다.
 2. 코드베이스의 모든 `ClickHouse.Client` 참조를 `ClickHouse.Driver`로 변경합니다.
 
 ***
 
-<div id="supported-net-versions">
-  ## 지원되는 .NET 버전
-</div>
+## 지원되는 .NET 버전 {#supported-net-versions}
 
 `ClickHouse.Driver`는 다음과 같은 .NET 버전을 지원합니다.
 
@@ -45,15 +41,11 @@ ClickHouse에 연결하기 위한 공식 C# 클라이언트입니다.
 * .NET 9.0
 * .NET 10.0
 
-<div id="supported-clickhouse-versions">
-  ## 지원되는 ClickHouse 버전
-</div>
+## 지원되는 ClickHouse 버전 {#supported-clickhouse-versions}
 
 이 클라이언트는 공식적으로 최신 릴리스 3개와 최신 LTS 릴리스 2개를 지원합니다.
 
-<div id="installation">
-  ## 설치
-</div>
+## 설치 {#installation}
 
 NuGet에서 패키지를 설치합니다:
 
@@ -67,9 +59,7 @@ dotnet add package ClickHouse.Driver
 Install-Package ClickHouse.Driver
 ```
 
-<div id="quick-start">
-  ## 빠른 시작
-</div>
+## 빠른 시작 {#quick-start}
 
 ```csharp
 using ClickHouse.Driver;
@@ -82,9 +72,7 @@ var version = await client.ExecuteScalarAsync("SELECT version()");
 Console.WriteLine(version);
 ```
 
-<div id="configuration">
-  ## 구성
-</div>
+## 구성 {#configuration}
 
 ClickHouse 연결을 구성하는 방법은 두 가지입니다.
 
@@ -93,9 +81,7 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
 
 아래에는 모든 설정의 전체 목록과 각 설정의 기본값 및 영향이 나와 있습니다.
 
-<div id="connection-settings">
-  ### 연결 설정
-</div>
+### 연결 설정 {#connection-settings}
 
 | 속성       | 유형         | 기본값                        | 연결 문자열 키   | 설명                                         |
 | -------- | ---------- | -------------------------- | ---------- | ------------------------------------------ |
@@ -108,26 +94,25 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
 | Path     | `string`   | `null`                     | `Path`     | 리버스 프록시 환경에서 사용할 URL 경로(예: `/clickhouse`)  |
 | Timeout  | `TimeSpan` | 2분                         | `Timeout`  | 작업 제한 시간입니다. 연결 문자열에는 초 단위로 저장됩니다          |
 
-<div id="data-format-serialization">
-  ### 데이터 포맷 및 직렬화
-</div>
+### 데이터 포맷 및 직렬화 {#data-format-serialization}
 
-| 속성                      | 유형                       | 기본값            | 연결 문자열 키                  | 설명                                                                                                                                                             |
-| ----------------------- | ------------------------ | -------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UseCompression          | `bool`                   | `true`         | `Compression`             | 데이터 전송에 gzip 압축을 사용합니다                                                                                                                                         |
-| UseCustomDecimals       | `bool`                   | `true`         | `UseCustomDecimals`       | 임의 정밀도에는 `ClickHouseDecimal`을 사용하고, false이면 .NET `decimal`을 사용합니다(128비트 제한)                                                                                    |
-| ReadStringsAsByteArrays | `bool`                   | `false`        | `ReadStringsAsByteArrays` | `String` 및 `FixedString` 컬럼을 `string` 대신 `byte[]`로 읽습니다. 바이너리 데이터에 유용합니다                                                                                       |
-| UseFormDataParameters   | `bool`                   | `false`        | `UseFormDataParameters`   | 매개변수를 URL 쿼리 문자열 대신 폼 데이터로 전송합니다                                                                                                                               |
-| ReadBufferSize          | `int`                    | `8192` (8 KiB) | `ReadBufferSize`          | HTTP 쿼리 응답을 읽는 데 사용하는 버퍼 크기(바이트)입니다. 큰 결과 집합에서 버퍼를 다시 채우는 횟수를 줄이려면 값을 늘리십시오. 85,000바이트 이상 값은 Large Object Heap에 할당되며, 이로 인해 LOH 단편화와 더 긴 GC 일시 중지가 발생할 수 있습니다. |
-| ParameterTypeResolver   | `IParameterTypeResolver` | `null`         | —                         | `@` 스타일 매개변수 유형 매핑을 위한 사용자 지정 리졸버입니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오                                                                     |
-| ParameterFormatter      | `IParameterFormatter`    | `null`         | —                         | 매개변수 값 직렬화를 위한 사용자 지정 포매터입니다. [사용자 지정 매개변수 값 포맷팅](#parameter-value-formatting)을 참조하십시오                                                                         |
-| ReadValueConverter      | `IReadValueConverter`    | `null`         | —                         | 데이터 리더가 반환하는 값에 적용되는 사용자 지정 변환입니다. [사용자 지정 읽기 값 변환](#read-value-conversion)을 참조하십시오                                                                            |
-| JsonReadMode            | `JsonReadMode`           | `Binary`       | `JsonReadMode`            | JSON 데이터를 반환하는 방식입니다: `Binary`(`JsonObject` 반환) 또는 `String`(원시 JSON 문자열 반환)                                                                                    |
-| JsonWriteMode           | `JsonWriteMode`          | `String`       | `JsonWriteMode`           | JSON 데이터를 전송하는 방식입니다: `String`(`JsonSerializer`를 통해 직렬화하며 모든 입력 허용) 또는 `Binary`(타입 힌트가 있는 등록된 POCO만)                                                           |
+| 속성                      | 유형                       | 기본값              | 연결 문자열 키                  | 설명                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ------------------------ | ---------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`           | `Compression`             | 일반 쿼리에서 양방향 전송 압축을 제어합니다. 서버에 응답을 압축하도록 요청하고(`enable_http_compression`, 코덱은 `AcceptEncoding` 참조. 이 옵션이 꺼져 있어도 명시적 값으로 요청할 수 있습니다) **동시에** 요청 본문을 gzip으로 압축합니다. 단, `UseFormDataParameters`의 멀티파트 본문은 항상 압축되지 않은 상태로 전송됩니다. 바이너리 삽입은 이 옵션을 전혀 참조하지 않으며 `InsertOptions.Compressor`를 사용합니다. [삽입 압축](#insert-compression)을 참조하십시오 |
+| AcceptEncoding          | `string`                 | `null`           | `AcceptEncoding`          | 모든 요청과 함께 전송되는 `Accept-Encoding`으로, 드라이버가 기본으로 알리는 코덱(`zstd, lz4, gzip, deflate`)을 대체합니다. 서버가 어떤 방식으로 응답하든 투명하게 디코딩됩니다. [응답 압축 해제](#response-decompression)를 참조하십시오                                                                                                                                                          |
+| UseCustomDecimals       | `bool`                   | `true`           | `UseCustomDecimals`       | 임의 정밀도에는 `ClickHouseDecimal`을 사용하고, false이면 .NET `decimal`을 사용합니다(128비트 제한)                                                                                                                                                                                                                                                  |
+| ReadStringsAsByteArrays | `bool`                   | `false`          | `ReadStringsAsByteArrays` | `String` 및 `FixedString` 컬럼을 `string` 대신 `byte[]`로 읽습니다. 바이너리 데이터에 유용합니다                                                                                                                                                                                                                                                     |
+| UseFormDataParameters   | `bool`                   | `false`          | `UseFormDataParameters`   | 매개변수를 URL 쿼리 문자열 대신 폼 데이터로 전송합니다                                                                                                                                                                                                                                                                                             |
+| ReadBufferSize          | `int`                    | `65536` (64 KiB) | `ReadBufferSize`          | HTTP 쿼리 응답을 읽는 버퍼의 크기(바이트)입니다. 드라이버는 공유 풀에서 버퍼를 대여했다가 리더를 해제할 때 반환하므로, 쿼리마다 새로 할당하지는 않습니다. 큰 결과 집합에서 버퍼를 다시 채우는 횟수를 줄이려면 값을 늘리십시오. 드라이버는 동시 리더마다 버퍼를 하나씩 보유하므로 메모리 사용량은 버퍼 크기와 동시 리더 수에 비례해 증가합니다. [버퍼](#perf-buffers)를 참조하십시오.                                                                                              |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`           | —                         | `@` 스타일 매개변수 유형 매핑을 위한 사용자 지정 리졸버입니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오                                                                                                                                                                                                                                   |
+| ParameterFormatter      | `IParameterFormatter`    | `null`           | —                         | 매개변수 값 직렬화를 위한 사용자 지정 포매터입니다. [사용자 지정 매개변수 값 포맷팅](#parameter-value-formatting)을 참조하십시오                                                                                                                                                                                                                                       |
+| ReadValueConverter      | `IReadValueConverter`    | `null`           | —                         | 데이터 리더가 반환하는 값에 적용되는 사용자 지정 변환입니다. [사용자 지정 읽기 값 변환](#read-value-conversion)을 참조하십시오                                                                                                                                                                                                                                          |
+| JsonReadMode            | `JsonReadMode`           | `Binary`         | `JsonReadMode`            | JSON 데이터를 반환하는 방식입니다: `Binary`(`JsonObject` 반환) 또는 `String`(원시 JSON 문자열 반환)                                                                                                                                                                                                                                                  |
+| JsonWriteMode           | `JsonWriteMode`          | `String`         | `JsonWriteMode`           | JSON 데이터를 전송하는 방식입니다: `String`(`JsonSerializer`를 통해 직렬화하며 모든 입력 허용) 또는 `Binary`(타입 힌트가 있는 등록된 POCO만)                                                                                                                                                                                                                         |
+| MapReadMode             | `MapReadMode`            | `Dictionary`     | `MapReadMode`             | `Map(K, V)` 데이터를 반환하는 방식입니다: `Dictionary`(`Dictionary<K, V>` 반환. 중복된 키는 마지막 값만 유지) 또는 `KeyValuePairs`(`List<KeyValuePair<K, V>>` 반환. 모든 쌍 유지). [Map 타입](#type-map-reading-map)을 참조하십시오                                                                                                                                       |
+| AllowDuplicateJsonKeys  | `bool`                   | `false`          | `AllowDuplicateJsonKeys`  | 겹치는 경로가 모두 값을 가진 `JSON` 행을 읽는 방식입니다. `false`이면 예외를 발생시키는데, 한쪽 값을 유지하면 다른 쪽을 버려야 하기 때문입니다. `true`이면 행에 마지막으로 담긴 값을 유지합니다. [겹치는 경로](#type-map-reading-json)를 참조하십시오                                                                                                                                                            |
 
-<div id="session-management">
-  ### 세션 관리
-</div>
+### 세션 관리 {#session-management}
 
 | 속성         | 유형       | 기본값     | 연결 문자열 키 | 설명                                                     |
 | ---------- | -------- | ------- | --------------------- | ------------------------------------------------------ |
@@ -140,17 +125,13 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
   `ClickHouseConnection` 클래스는 일반적으로 병렬 작업을 허용합니다(여러 스레드가 동시에 쿼리를 실행할 수 있음). 하지만 `UseSession` 플래그를 활성화하면 어떤 시점에도 connection당 활성 쿼리는 하나만 허용됩니다(이는 서버 측 제한입니다).
 </Note>
 
-<div id="security">
-  ### 보안
-</div>
+### 보안 {#security}
 
 | 속성                              | 유형     | 기본값     | 연결 문자열 키 | 설명                                          |
 | ------------------------------- | ------ | ------- | -------- | ------------------------------------------- |
 | SkipServerCertificateValidation | `bool` | `false` | —        | HTTPS 인증서 검증을 생략합니다. **운영 환경에서는 사용하지 마십시오** |
 
-<div id="http-client-configuration">
-  ### HTTP 클라이언트 구성
-</div>
+### HTTP 클라이언트 구성 {#http-client-configuration}
 
 | 속성                | 유형                   | 기본값    | 연결 문자열 키 | 설명                                         |
 | ----------------- | -------------------- | ------ | -------- | ------------------------------------------ |
@@ -158,18 +139,14 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
 | HttpClientFactory | `IHttpClientFactory` | `null` | —        | HttpClient 인스턴스를 생성하기 위한 사용자 지정 팩터리        |
 | HttpClientName    | `string`             | `null` | —        | HttpClientFactory가 특정 클라이언트를 생성하는 데 사용할 이름 |
 
-<div id="logging-debugging">
-  ### 로깅 및 디버깅
-</div>
+### 로깅 및 디버깅 {#logging-debugging}
 
 | 속성              | 유형               | 기본값     | 연결 문자열 키 | 설명                                                                          |
 | --------------- | ---------------- | ------- | -------- | --------------------------------------------------------------------------- |
 | LoggerFactory   | `ILoggerFactory` | `null`  | —        | 진단용 로깅을 위한 로거 팩토리                                                           |
 | EnableDebugMode | `bool`           | `false` | —        | .NET 네트워크 추적을 활성화합니다(수준이 Trace로 설정된 LoggerFactory 필요); **성능에 상당한 영향이 있습니다** |
 
-<div id="custom-settings-roles">
-  ### 사용자 지정 설정 &amp; 역할
-</div>
+### 사용자 지정 설정 &amp; 역할 {#custom-settings-roles}
 
 | 속성              | 유형                                    | 기본값   | 연결 문자열 키    | 설명                                                        |
 | --------------- | ------------------------------------- | ----- | ----------- | --------------------------------------------------------- |
@@ -185,21 +162,15 @@ ClickHouse 연결을 구성하는 방법은 두 가지입니다.
 
 ***
 
-<div id="connection-string-examples">
-  ### 연결 문자열 예시
-</div>
+### 연결 문자열 예시 {#connection-string-examples}
 
-<div id="basic-connection">
-  #### 기본 연결
-</div>
+#### 기본 연결 {#basic-connection}
 
 ```text
 Host=localhost;Port=8123;Username=default;Password=secret;Database=mydb
 ```
 
-<div id="with-custom-clickhouse-settings">
-  #### 사용자 지정 ClickHouse 설정 사용 시
-</div>
+#### 사용자 지정 ClickHouse 설정 사용 시 {#with-custom-clickhouse-settings}
 
 ```text
 Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
@@ -207,27 +178,25 @@ Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
 
 ***
 
-<div id="query-options">
-  ### QueryOptions
-</div>
+### QueryOptions {#query-options}
 
 `QueryOptions`를 사용하면 쿼리마다 클라이언트 수준 설정을 재정의할 수 있습니다. 모든 속성은 선택 사항이며, 지정한 경우에만 클라이언트 기본값을 덮어씁니다.
 
-| Property              | Type                          | Description                                                                                                                                                                                 |
-| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| QueryId               | `string`                      | `system.query_log`에서 추적하거나 취소할 때 사용할 사용자 지정 쿼리 식별자                                                                                                                                          |
-| Database              | `string`                      | 이 쿼리에 사용할 기본 데이터베이스를 재정의합니다                                                                                                                                                                 |
-| Roles                 | `IReadOnlyList<string>`       | 이 쿼리에 적용할 클라이언트 역할을 재정의합니다                                                                                                                                                                  |
-| CustomSettings        | `IDictionary<string, object>` | 이 쿼리에 대한 ClickHouse 서버 설정입니다(예: `max_threads`)                                                                                                                                              |
-| CustomHeaders         | `IDictionary<string, string>` | 이 쿼리에 대한 추가 HTTP 헤더                                                                                                                                                                         |
-| UseSession            | `bool?`                       | 이 쿼리의 세션 동작을 재정의합니다                                                                                                                                                                         |
-| SessionId             | `string`                      | 이 쿼리의 세션 ID입니다(`UseSession = true` 필요)                                                                                                                                                      |
-| BearerToken           | `string`                      | 이 쿼리에 사용할 인증 토큰을 재정의합니다                                                                                                                                                                     |
-| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 스타일 매개변수 유형 매핑에 사용할 클라이언트 수준 리졸버를 재정의합니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오                                                                              |
-| ParameterFormatter    | `IParameterFormatter`         | `@` 스타일 매개변수 값 직렬화에 사용할 클라이언트 수준 포매터를 재정의합니다. [사용자 지정 매개변수 값 포맷팅](#parameter-value-formatting)을 참조하십시오                                                                      |
-| ReadValueConverter    | `IReadValueConverter`         | 데이터 리더가 반환하는 값에 적용되는 클라이언트 수준 변환을 재정의합니다. [사용자 지정 읽기 값 변환](#read-value-conversion)을 참조하십시오                                                                                    |
-| MaxExecutionTime      | `TimeSpan?`                   | 서버 측 쿼리 시간 초과입니다(`max_execution_time` 설정으로 전달됨). 이를 초과하면 서버가 쿼리를 취소합니다                                                                                                                      |
-| AcceptEncoding        | `string`                      | 쿼리별 `Accept-Encoding` 헤더를 재정의합니다(예: `"zstd"`, `"zstd, gzip;q=0.5"`). 또한 URL에 `enable_http_compression=1`을 강제로 설정합니다. [Per-query transport compression](#per-query-accept-encoding)을 참조하십시오. |
+| Property              | Type                          | Description                                                                                                                                                                                                                      |
+| --------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | `system.query_log`에서 추적하거나 취소할 때 사용할 사용자 지정 쿼리 식별자                                                                                                                                                                               |
+| Database              | `string`                      | 이 쿼리에 사용할 기본 데이터베이스를 재정의합니다                                                                                                                                                                                                      |
+| Roles                 | `IReadOnlyList<string>`       | 이 쿼리에 적용할 클라이언트 역할을 재정의합니다                                                                                                                                                                                                       |
+| CustomSettings        | `IDictionary<string, object>` | 이 쿼리에 대한 ClickHouse 서버 설정입니다(예: `max_threads`)                                                                                                                                                                                   |
+| CustomHeaders         | `IDictionary<string, string>` | 이 쿼리에 대한 추가 HTTP 헤더                                                                                                                                                                                                              |
+| UseSession            | `bool?`                       | 이 쿼리의 세션 동작을 재정의합니다                                                                                                                                                                                                              |
+| SessionId             | `string`                      | 이 쿼리의 세션 ID입니다(`UseSession = true` 필요)                                                                                                                                                                                           |
+| BearerToken           | `string`                      | 이 쿼리에 사용할 인증 토큰을 재정의합니다                                                                                                                                                                                                          |
+| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 스타일 매개변수 유형 매핑에 사용할 클라이언트 수준 리졸버를 재정의합니다. [사용자 지정 매개변수 유형 매핑](#parameter-type-mapping)을 참조하십시오                                                                                                                               |
+| ParameterFormatter    | `IParameterFormatter`         | `@` 스타일 매개변수 값 직렬화에 사용할 클라이언트 수준 포매터를 재정의합니다. [사용자 지정 매개변수 값 포맷팅](#parameter-value-formatting)을 참조하십시오                                                                                                                           |
+| ReadValueConverter    | `IReadValueConverter`         | 데이터 리더가 반환하는 값에 적용되는 클라이언트 수준 변환을 재정의합니다. [사용자 지정 읽기 값 변환](#read-value-conversion)을 참조하십시오                                                                                                                                       |
+| MaxExecutionTime      | `TimeSpan?`                   | 서버 측 쿼리 시간 초과입니다(`max_execution_time` 설정으로 전달됨). 이를 초과하면 서버가 쿼리를 취소합니다                                                                                                                                                           |
+| AcceptEncoding        | `string`                      | 쿼리별 `Accept-Encoding` 재정의입니다(예: `"br"`, `"identity"`). `ClickHouseClientSettings.AcceptEncoding`보다 우선합니다. 또한 URL에 `enable_http_compression=1`을 강제로 설정합니다. [Per-query transport compression](#per-query-accept-encoding)을 참조하십시오. |
 
 **예시:**
 
@@ -253,19 +222,19 @@ var reader = await client.ExecuteReaderAsync(
 
 ***
 
-<div id="insert-options">
-  ### InsertOptions
-</div>
+### InsertOptions {#insert-options}
 
 `InsertOptions`는 `InsertBinaryAsync`를 통한 대량 삽입 작업에 필요한 설정을 `QueryOptions`에 추가한 옵션입니다.
 
-| 속성                     | 유형                                    | 기본값         | 설명                                                  |
-| ---------------------- | ------------------------------------- | ----------- | --------------------------------------------------- |
-| BatchSize              | `int`                                 | 100,000     | 배치당 행 수                                             |
-| MaxDegreeOfParallelism | `int`                                 | 1           | 동시에 업로드할 배치 수                                       |
-| Format                 | `RowBinaryFormat`                     | `RowBinary` | 바이너리 형식: `RowBinary` 또는 `RowBinaryWithDefaults`     |
-| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`      | 컬럼 이름 → ClickHouse 타입 문자열. 설정하면 스키마 확인 쿼리를 건너뜁니다.   |
-| UseSchemaCache         | `bool`                                | `false`     | 클라이언트 수명 동안 (database, table)별 전체 table 스키마를 캐시합니다. |
+| 속성                     | 유형                                    | 기본값                      | 설명                                                                                                                                 |
+| ---------------------- | ------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| BatchSize              | `int`                                 | 100,000                  | 배치당 행 수                                                                                                                            |
+| MaxDegreeOfParallelism | `int`                                 | 1                        | 동시에 업로드할 배치 수                                                                                                                      |
+| Format                 | `RowBinaryFormat`                     | `RowBinary`              | 바이너리 형식: `RowBinary` 또는 `RowBinaryWithDefaults`                                                                                    |
+| Compressor             | `IClickHouseCompressor`               | `ZstdCompressor.Default` | 삽입 본문(`Content-Encoding`)에 적용되는 코덱입니다. `null`이면 압축하지 않고 전송합니다. [삽입 압축](#insert-compression) 참조                                     |
+| QueryPlacement         | `InsertQueryPlacement`                | `Body`                   | `INSERT INTO ... FORMAT ...` statement를 전송할 위치: `Body`(행 앞) 또는 `Url`(`query` URL 매개변수로 전송). [삽입 쿼리 위치](#insert-query-placement) 참조 |
+| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`                   | 컬럼 이름 → ClickHouse 타입 문자열. 설정하면 스키마 확인 쿼리를 건너뜁니다.                                                                                  |
+| UseSchemaCache         | `bool`                                | `false`                  | 클라이언트 수명 동안 (데이터베이스, 테이블)별 전체 테이블 스키마를 캐시합니다.                                                                                |
 
 모든 `QueryOptions` 속성은 `InsertOptions`에서도 사용할 수 있습니다.
 
@@ -287,9 +256,7 @@ long rowsInserted = await client.InsertBinaryAsync(
 );
 ```
 
-<div id="skip-schema-query">
-  #### 스키마 확인 쿼리 건너뛰기
-</div>
+#### 스키마 확인 쿼리 건너뛰기 {#skip-schema-query}
 
 기본적으로 `InsertBinaryAsync`는 각 삽입 전에 컬럼 타입을 확인하기 위해 `SELECT ... WHERE 1=0` 쿼리를 전송합니다. 높은 처리량이 필요한 환경에서는 두 가지 방법으로 이 오버헤드를 제거할 수 있습니다:
 
@@ -331,15 +298,11 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
   * 캐시 범위는 `ClickHouseClient` 인스턴스로 한정되며, 키는 (데이터베이스, 테이블)입니다. 동일한 테이블의 서로 다른 컬럼 부분 집합은 하나의 캐시된 스키마를 공유합니다.
 </Note>
 
-<div id="clickhouse-client">
-  ## ClickHouseClient
-</div>
+## ClickHouseClient {#clickhouse-client}
 
 `ClickHouseClient`는 ClickHouse와 상호 작용할 때 권장되는 API입니다. 스레드 안전을 보장하며, singleton으로 사용하도록 설계되었고, 내부적으로 HTTP 연결 풀링을 관리합니다.
 
-<div id="creating-a-client">
-  ### 클라이언트 생성
-</div>
+### 클라이언트 생성 {#creating-a-client}
 
 연결 문자열 또는 `ClickHouseClientSettings` 객체를 사용해 `ClickHouseClient`를 생성합니다. 사용 가능한 옵션은 [구성](#configuration) 섹션을 참조하십시오.
 
@@ -380,13 +343,11 @@ using var client = new ClickHouseClient(settings);
 의존성 주입 시나리오에서는 `IHttpClientFactory`를 사용하세요:
 
 ```csharp
-// In your DI configuration
+// In your DI configuration. No AutomaticDecompression needed — the driver decodes
+// compressed responses itself, and a mask here would widen its Accept-Encoding.
 services.AddHttpClient("ClickHouse", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
 });
 
 // Create client with factory
@@ -400,9 +361,7 @@ var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
 
 ***
 
-<div id="executing-queries">
-  ### 쿼리 실행
-</div>
+### 쿼리 실행 {#executing-queries}
 
 결과를 반환하지 않는 SQL 문에는 `ExecuteNonQueryAsync`를 사용하십시오:
 
@@ -428,13 +387,9 @@ Console.WriteLine($"서버 버전: {version}");
 
 ***
 
-<div id="inserting-data">
-  ### 데이터 삽입
-</div>
+### 데이터 삽입 {#inserting-data}
 
-<div id="parameterized-inserts">
-  #### 매개변수화된 삽입
-</div>
+#### 매개변수화된 삽입 {#parameterized-inserts}
 
 `ExecuteNonQueryAsync`를 사용해 매개변수화된 쿼리로 데이터를 삽입합니다. 매개변수 타입은 SQL에서 `{name:Type}` 구문으로 지정해야 합니다:
 
@@ -454,9 +409,7 @@ await client.ExecuteNonQueryAsync(
 
 ***
 
-<div id="bulk-insert">
-  #### 대량 삽입
-</div>
+#### 대량 삽입 {#bulk-insert}
 
 대량의 행을 효율적으로 삽입하려면 `InsertBinaryAsync`를 사용합니다. 이 메서드는 ClickHouse의 네이티브 행 바이너리 형식으로 데이터를 스트리밍하고, 병렬 Batch 업로드를 지원하며, 매개변수화 쿼리에서 발생할 수 있는 &quot;URL too long&quot; 오류를 방지합니다.
 
@@ -488,9 +441,7 @@ var options = new InsertOptions
   * 제공되지 않은 컬럼에 서버가 DEFAULT 값을 적용하도록 하려면 `InsertOptions.Format`에서 `RowBinaryFormat.RowBinaryWithDefaults`를 사용하세요.
 </Note>
 
-<div id="poco-insert">
-  #### POCO 삽입
-</div>
+#### POCO 삽입 {#poco-insert}
 
 `object[]` 배열을 구성하는 대신, 강력한 형식이 지정된 POCO 객체를 직접 삽입할 수 있습니다. 타입을 한 번 등록한 다음 `IEnumerable<T>`를 전달하면 됩니다:
 
@@ -554,17 +505,26 @@ public class Event
   `InsertOptions`에서 `ColumnTypes`를 설정하면 POCO 특성보다 우선 적용됩니다.
 </Note>
 
-<div id="poco-insert-schema-evolution">
-  #### 스키마 진화
-</div>
+#### 스키마 진화 {#poco-insert-schema-evolution}
 
 타입이 등록된 후 대상 테이블에 컬럼이 추가되더라도 POCO 삽입은 원활하게 동작합니다. 드라이버는 POCO에 매핑된 컬럼만 삽입하므로, `DEFAULT`(또는 다른 기본 표현식)가 있는 새 컬럼은 서버가 자동으로 채웁니다. 코드를 변경하거나 다시 등록할 필요가 없습니다.
 
+#### 삽입 쿼리 배치 {#insert-query-placement}
+
+바이너리 삽입은 `INSERT INTO ... FORMAT ...` 문을 행보다 앞선 요청 본문의 첫 줄에 기록합니다. 본문은 기본적으로 압축되므로 URL만 검사하는 라우팅과 로깅에서는 이 문을 확인할 수 없습니다. `InsertOptions.QueryPlacement`를 `InsertQueryPlacement.Url`로 설정하면 해당 문이 `query` URL 매개변수로 전송되어 본문에는 행만 남게 됩니다:
+
+```csharp
+var options = new InsertOptions { QueryPlacement = InsertQueryPlacement.Url };
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+프록시, 로드 밸런서 또는 게이트웨이가 `query` 매개변수를 기준으로 라우팅하거나 이를 검사하는 경우, 또는 액세스 로그와 관측성 도구에서 쿼리문을 확인하고자 하는 경우에 사용하십시오. 이 방식은 쿼리문이 URL 길이에 포함되기 때문에 옵트인 방식으로 제공됩니다. 실제 적용되는 한도는 .NET 런타임, 중개 구성 요소, 서버가 부과하는 한도 중 가장 낮은 값입니다. .NET 6부터 .NET 9까지 `System.Uri`는 인코딩된 전체 요청 URI를 65,519자로 제한하며, 이 한도를 초과하면 드라이버가 `InvalidOperationException`을 발생시켜 `InsertQueryPlacement.Body`를 사용하도록 안내합니다. ClickHouse의 `http_max_uri_size`는 기본값이 1 MiB이지만, 중개 구성 요소가 더 낮은 한도를 부과할 수 있습니다. body 모드에서는 쿼리문과 행에 이러한 URL 길이 제한이 적용되지 않으며, 다른 요청 옵션은 여전히 URL에 나타날 수 있습니다.
+
+이 설정은 `Compressor`와 무관합니다. body는 두 모드 모두에서 동일한 방식으로 인코딩됩니다.
+
 ***
 
-<div id="reading-data">
-  ### 데이터 읽기
-</div>
+### 데이터 읽기 {#reading-data}
 
 SELECT 쿌리를 실행하려면 `ExecuteReaderAsync`를 사용합니다. 반환된 `ClickHouseDataReader`는 `GetInt64()`, `GetString()`, `GetFieldValue<T>()` 같은 메서드를 통해 결과 컬럼에 형식에 맞게 접근할 수 있도록 해줍니다.
 
@@ -587,9 +547,7 @@ while (reader.Read())
 }
 ```
 
-<div id="poco-read">
-  #### POCO 읽기
-</div>
+#### POCO 읽기 {#poco-read}
 
 컬럼을 인덱스나 이름으로 읽는 대신, 쿼리 결과를 사용자 정의 클래스에 직접 스트리밍할 수 있습니다. 클라이언트에 해당 타입을 한 번만 등록한 다음 `QueryAsync<T>`를 사용하십시오:
 
@@ -617,9 +575,7 @@ await foreach (var reading in client.QueryAsync<SensorReading>(
 }
 ```
 
-<div id="poco-read-registration">
-  ##### 등록
-</div>
+##### 등록 {#poco-read-registration}
 
 `RegisterPocoType<T>()`는 삽입과 읽기 매핑을 모두 설정하고, 두 매핑을 모두 사전에 검증합니다. `RegisterBinaryInsertType<T>()`는 변경 없이 유지되며, 하위 호환성(backwards compatibility)을 위해 계속 삽입 전용으로 남아 있습니다.
 
@@ -628,17 +584,55 @@ await foreach (var reading in client.QueryAsync<SensorReading>(
 * 매개변수가 없는 public 생성자
 * public이며 `init`이 아닌 setter가 있는 public 속성이 1개 이상 있어야 합니다. `required` 속성도 지원됩니다.
 
-<div id="poco-read-column-matching">
-  ##### 컬럼 매칭
-</div>
+##### 컬럼 매칭 {#poco-read-column-matching}
 
 컬럼 매칭은 대소문자를 구분합니다. 결과 컬럼이 누락되면 해당 속성은 기본값으로 유지되며, 추가 결과 컬럼은 무시됩니다.
 
-자동 변환은 수행되지 않으며, 유형이 일치하지 않으면 `InvalidOperationException` 예외가 발생합니다.
+드라이버는 값을 확장하거나 축소하지 않습니다. 아래에 나열된 대체 표현을 제외하면, 컬럼의 프레임워크 유형은 속성 유형에 할당 가능해야 하며, 일치하지 않으면 `InvalidOperationException` 예외가 발생합니다. 따라서 `object` 속성은 모든 컬럼을 허용합니다.
 
-<div id="poco-read-mapto">
-  ##### 단일 행 구체화하기
-</div>
+##### 지원되는 프로퍼티 타입 {#poco-read-types}
+
+`QueryAsync<T>`는 다음 각 컬럼을 대응하는 프로퍼티로 곧바로 읽어들입니다:
+
+| ClickHouse 컬럼                           | 프로퍼티 타입                                                             |
+| --------------------------------------- | ------------------------------------------------------------------- |
+| `Int8`/`Int16`/`Int32`/`Int64`          | `sbyte`/`short`/`int`/`long`                                        |
+| `UInt8`/`UInt16`/`UInt32`/`UInt64`      | `byte`/`ushort`/`uint`/`ulong`                                      |
+| `Int128`/`UInt128`                      | `BigInteger`, 또는 .NET 8 이상에서는 네이티브 `System.Int128`/`System.UInt128` |
+| `Int256`/`UInt256`                      | `BigInteger`                                                        |
+| `Float32`/`Float64`/`BFloat16`          | `float`/`double`/`float`                                            |
+| `Bool`                                  | `bool`                                                              |
+| `Decimal`                               | `decimal` 또는 `ClickHouseDecimal`                                    |
+| `Date`/`Date32`/`DateTime`/`DateTime64` | `DateTime`, `DateTimeOffset` 또는 `DateOnly`                          |
+| `Time`/`Time64`                         | `TimeSpan`                                                          |
+| `UUID`                                  | `Guid`                                                              |
+| `IPv4`/`IPv6`                           | `IPAddress`                                                         |
+| `Enum8`/`Enum16`                        | `string`(레이블) 또는 `int`(wire 서수)                                     |
+| `String`/`FixedString`                  | `string` 또는 `byte[]`                                                |
+
+모든 행은 컬럼이 `Nullable(...)`인지 여부와 관계없이 해당 프로퍼티 타입의 널 허용 형식(`long?`,
+`DateOnly?` 등)도 허용합니다. `Nullable(T)` 컬럼에 널을 허용하지 않는 값 타입 프로퍼티를 사용하는 것은
+등록 시점에는 허용되지만, NULL이 들어오면 예외가 발생합니다.
+
+`LowCardinality(T)`, `SimpleAggregateFunction(f, T)`, `Object(T)`와 같은 래퍼는 `T`와 완전히 동일하게 매핑됩니다.
+
+복합 컬럼도 지원되며, [읽기 타입 참고](#clickhouse-native-type-map-reading)에 제시된 프레임워크
+타입을 사용합니다: `Array(T)`는 `T[]`로, `Tuple(...)`은 `System.Tuple<...>`로, `Nested(...)`는
+`Tuple<...>[]`로, `JSON`은 `JsonObject`로([`JsonReadMode=String`](#type-map-reading-json)에서는
+`string`), `Variant`/`Dynamic`은 `object`로 매핑됩니다.
+
+`Map(K, V)` 컬럼은 특수한 경우입니다. `List<KeyValuePair<K, V>>` 또는 `KeyValuePair<K, V>[]`
+프로퍼티는 박싱이 없는 경로로 읽으며, 어떤 [`MapReadMode`](#type-map-reading-map)에서든 wire
+순서와 중복된 키를 그대로 유지합니다. `Dictionary<K, V>` 프로퍼티는 기본 모드에서만 동작합니다.
+키와 값 타입은 정확히 일치해야 하므로, `Map(String, Nullable(Int32))`에는
+`KeyValuePair<string, int?>`가 필요합니다.
+
+하나의 컬럼이 둘 이상의 프로퍼티 타입을 제공하는 경우(`DateTime` 컬럼을 `DateTime`,
+`DateTimeOffset` 또는 `DateOnly`로, `String` 컬럼을 `string` 또는 `byte[]`로) 선언된 프로퍼티
+타입이 표현 방식을 결정합니다. 이러한 대체 표현은 POCO 경로에 속하므로 `QueryAsync<T>`에서는
+사용할 수 있지만 `MapTo<T>`에서는 사용할 수 없습니다.
+
+##### 단일 행 구체화하기 {#poco-read-mapto}
 
 리더를 수동으로 순회할 때는 `ClickHouseDataReader.MapTo<T>()`를 사용하여 리더를 다음으로 진행시키지 않고 현재 행을 등록된 POCO로 구체화합니다:
 
@@ -652,17 +646,25 @@ while (reader.Read())
 }
 ```
 
-<div id="poco-read-diagnostics">
-  ##### 등록 진단
-</div>
+리더 루프를 직접 제어해야 할 때 `MapTo<T>`를 사용하십시오. 예를 들어 raw 컬럼 액세스와 POCO 머티리얼라이즈를
+혼합해야 하는 경우입니다. 이 메서드는 리더의 박싱된 값을 통해 행을 읽으므로 위에서 설명한 대체 속성 타입을 제공하지
+않으며, `QueryAsync<T>`보다 할당이 더 많이 발생합니다. 행만 필요하다면 `QueryAsync<T>`를 사용하는 것이
+좋습니다. 구체적인 수치는 [머티리얼라이즈 경로 선택하기](#perf-read-path)를 참조하십시오.
+
+##### 읽기 값 컨버터 {#poco-read-converters}
+
+클라이언트 수준 또는 쿼리별 [읽기 값 컨버터](#read-value-conversion)는 두 경로 모두에 적용되며
+박싱 없는 읽기를 비활성화하지 않습니다. 드라이버는 해당 컬럼을 읽은 방식과 일치하는 오버로드로 각 컬럼을 변환합니다.
+박싱 없는 컬럼에는 유형이 지정된 `ConvertValue<T>`를, 복합(composite) 컬럼에는 박싱된 `ConvertValue`를 사용합니다.
+두 오버로드를 일관되게 구현하십시오. 그렇지 않으면 동일한 컬럼이라도 경로에 따라 서로 다른 결과가 반환됩니다.
+
+##### 등록 진단 {#poco-read-diagnostics}
 
 `LoggerFactory`가 설정되면 `RegisterPocoType<T>()` 및 `RegisterBinaryInsertType<T>()`는 어떤 속성이 어떤 컬럼에 매핑되었는지와 어떤 항목이 왜 건너뛰어졌는지를 보여주는 `Debug` 수준의 로그(카테고리: `ClickHouse.Driver.Client`)를 출력합니다. [로깅 및 진단](#logging-and-diagnostics)을 참조하십시오.
 
 ***
 
-<div id="sql-parameters">
-  ### SQL 매개변수
-</div>
+### SQL 매개변수 {#sql-parameters}
 
 ClickHouse에서 SQL 쿼리의 쿼리 매개변수는 일반적으로 `{parameter_name:DataType}` 포맷을 사용합니다.
 
@@ -684,9 +686,17 @@ INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
   SQL &#39;bind&#39; 매개변수는 HTTP URI 쿼리 매개변수로 전달되므로, 너무 많이 사용하면 &quot;URL이 너무 깁니다&quot; 예외가 발생할 수 있습니다. 이 제한을 피하려면 대량 데이터 삽입에는 `InsertBinaryAsync`를 사용하세요.
 </Note>
 
-<div id="identifier-parameters">
-  #### Identifier 매개변수
-</div>
+#### ADO 스타일 `@name` 플레이스홀더 {#at-style-placeholders}
+
+드라이버는 Dapper와 같은 ORM이 생성하는 `@name` 플레이스홀더도 지원합니다. 이는 클라이언트 측 편의 기능으로, 요청이 전송되기 전에 각 플레이스홀더가 `{name:ResolvedType}` 형태로 재작성되므로 서버에는 `@`가 전달되지 않습니다. 유형이 결정되는 방식은 [유형 해석](#parameter-type-mapping)을 참조하십시오. 가능하다면 명시적인 `{name:Type}` 형식을 사용하십시오.
+
+일치하는 매개변수가 없는 `@name`은 그대로 유지되어 서버가 이를 거부하게 됩니다. 매칭 시 대소문자를 구분하므로 `@ID`는 `id`라는 이름의 매개변수에 바인딩되지 않습니다.
+
+<Note>
+  재작성을 비활성화하려면 드라이버를 처음 사용하기 전에 `ClickHouse.Driver.DisableReplacingParameters` AppContext 스위치를 설정하십시오. 텍스트 재작성만 중단될 뿐 매개변수는 그대로 전송되므로, 네이티브 `{name:Type}` 구문으로 작성된 쿼리는 계속 정상적으로 동작합니다.
+</Note>
+
+#### Identifier 매개변수 {#identifier-parameters}
 
 `Identifier` 매개변수 유형을 사용하면 따옴표로 묶은 문자열 리터럴 대신 데이터베이스, 테이블 또는 컬럼 이름을 안전하게 바인딩할 수 있습니다. SQL에서는 `{name:Identifier}` 구문을 사용하거나, `ClickHouseDbParameter.ClickHouseType = "Identifier"`로 설정하여 사용할 수 있습니다:
 
@@ -708,9 +718,7 @@ var reader = await client.ExecuteReaderAsync("SELECT {col:Identifier} FROM t", p
 
 ***
 
-<div id="query-id">
-  ### 쿼리 ID
-</div>
+### 쿼리 ID {#query-id}
 
 모든 쿼리에는 고유한 `query_id`가 할당되며, 이 값은 `system.query_log` 테이블에서 데이터를 조회하거나 장시간 실행 중인 쿼리를 취소하는 데 사용할 수 있습니다. `QueryOptions`를 통해 사용자 지정 쿼리 ID를 지정할 수 있습니다:
 
@@ -733,9 +741,7 @@ var reader = await client.ExecuteReaderAsync(
 
 ***
 
-<div id="parameter-type-mapping">
-  ### 사용자 지정 매개변수 타입 매핑
-</div>
+### 사용자 지정 매개변수 타입 매핑 {#parameter-type-mapping}
 
 `@` 스타일 매개변수(예: `WHERE id = @id`)를 사용하면 드라이버가 .NET 값 형식을 기준으로 ClickHouse 타입을 자동으로 추론합니다. 예를 들어 `int`는 `Int32`로 매핑됩니다.
 
@@ -804,9 +810,7 @@ public class SmartDecimalResolver : IParameterTypeResolver
 
 ***
 
-<div id="parameter-value-formatting">
-  ### 사용자 지정 매개변수 값 포맷팅
-</div>
+### 사용자 지정 매개변수 값 포맷팅 {#parameter-value-formatting}
 
 `IParameterFormatter`는 매개변수 값이 어떻게 직렬화되는지 결정하는 후크입니다. 기본 제공 포맷팅(예: DateTime 정밀도, Decimal 문화권 형식, 문자열 이스케이프 처리, 숫자 표현)이 스키마 또는 다운스트림 도구에서 기대하는 방식과 맞지 않을 때 사용합니다.
 
@@ -865,9 +869,7 @@ public class FixedDecimalFormatter : IParameterFormatter
 
 ***
 
-<div id="read-value-conversion">
-  ### 사용자 지정 읽기 값 변환
-</div>
+### 사용자 지정 읽기 값 변환 {#read-value-conversion}
 
 `IReadValueConverter`를 사용하면 역직렬화 후 데이터 리더가 반환하는 값을 CLR 타입은 변경하지 않은 채 변환할 수 있습니다. 일반적인 용도로는 시간대가 없는 `DateTime` 컬럼에서 `DateTime.Kind = Utc`를 설정하거나, 문자열을 트리밍하거나 정규화하거나, `JSON column`이 application code에 전달되기 전에 후처리하는 작업이 있습니다.
 
@@ -898,16 +900,16 @@ ClickHouse 측 타입 문자열을 기준으로 디스패치해야 한다면(예
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickhouseType)
+    public object ConvertValue(object value, string columnName, string clickHouseType)
     {
-        if (value is DateTime dt && clickhouseType == "DateTime")
+        if (value is DateTime dt && clickHouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
@@ -922,13 +924,27 @@ public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 
 컨버터는 역직렬화된 전체 셀 값을 대상으로 컬럼마다 한 번씩 호출되며, **복합 컨테이너 내부로 재귀적으로 들어가지는 않습니다**. `Array(Int32)` 컬럼에서는 전달되는 값이 `int[]`이고, `Tuple(Int32, String)`에서는 `ITuple`입니다.
 
+**실행되는 오버로드:**
+
+드라이버가 호출하는 오버로드는 호출자가 컬럼을 어떻게 읽었는지에 따라 달라지므로, 두 오버로드는
+서로 일치해야 합니다:
+
+* `ConvertValue<T>` — 타입이 지정된 accessor인 `GetByte`, `GetSByte`, `GetInt16`/`32`/`64`,
+  `GetUInt16`/`32`/`64`, `GetFloat`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetIPAddress`,
+  `GetBigInteger` 및 `GetFieldValue<T>`, 그리고
+  [POCO 읽기 경로](#poco-read-converters)의 박싱이 없는 모든 컬럼.
+* `ConvertValue`(boxed) — `GetValue`, `GetValues`, 인덱서, `GetChar`, `GetTuple`, 그리고
+  `GetBoolean`, `GetDecimal`, `GetString`의 강제 변환 경로.
+
+`IsDBNull`은 컨버터를 전혀 실행하지 않습니다. null 플래그를 직접 읽으므로 컨버터가 값이 null로
+취급되는지 여부를 바꿀 수 없습니다. `TryGetEnumOrdinal` 역시 컨버터를 우회합니다 —
+[enum의 서수 읽기](#ado-net-reader-enum-ordinal)를 참조하십시오.
+
 컨버터는 ADO.NET `ClickHouseConnection` 경로에서 동작하며, 이 설정은 클라이언트에서 생성된 연결에 상속됩니다.
 
 ***
 
-<div id="raw-streaming">
-  ### Raw 스트리밍
-</div>
+### Raw 스트리밍 {#raw-streaming}
 
 데이터 리더를 거치지 않고 특정 포맷으로 쿼리 결과를 직접 스트리밍하려면 `ExecuteRawResultAsync`를 사용합니다. 이는 데이터를 파일로 내보내거나 다른 시스템으로 그대로 전달할 때 유용합니다:
 
@@ -946,11 +962,9 @@ var json = await reader.ReadToEndAsync();
 
 ***
 
-<div id="per-query-accept-encoding">
-  ### 쿼리별 전송 압축
-</div>
+### 쿼리별 전송 압축 {#per-query-accept-encoding}
 
-기본적으로 `Compression=true`(connection string의 기본값)인 경우 클라이언트는 `gzip, deflate`를 협상하며, HTTP 클라이언트는 스트림 압축을 자동으로 해제합니다.
+기본적으로 `Compression=true`(연결 문자열의 기본값)인 경우 클라이언트는 `zstd, lz4, gzip, deflate`를 협상하며, 스트림을 직접 자동으로 디코딩합니다.
 
 원시 내보내기(예: Parquet, Arrow, Native)에서는 connection 전체 설정을 변경하지 않고도 CPU 사용량과 대역폭을 절충하기 위해 다른 코덱(예: `zstd` 또는 `lz4`)을 협상할 수 있습니다. `QueryOptions.AcceptEncoding` 및 `ClickHouseCommand.AcceptEncoding`은 단일 요청에 대해 HTTP `Accept-Encoding` 헤더를 설정하고, 기존에 적용된 기본값을 대체하며, URL에 `enable_http_compression=1`을 강제로 추가합니다(ClickHouse는 `Accept-Encoding`을 적용하기 전에 이를 요구합니다).
 
@@ -963,66 +977,296 @@ using var result = await client.ExecuteRawResultAsync(
 await using var body = await result.ReadAsStreamAsync();
 ```
 
-<div id="per-query-accept-encoding-httpclient">
-  #### HttpClient 구성
-</div>
+#### HttpClient 구성 {#per-query-accept-encoding-httpclient}
 
-드라이버가 생성하는 기본 `HttpClient`에는 `AutomaticDecompression = GZip | Deflate`가 설정되어 있으며, 해당 알고리즘으로 압축된 데이터를 자동으로 압축 해제하고 응답에서 `Content-Encoding`을 제거합니다. 일반적인 쿼리에는 이 설정이 적합하지만, 원시 압축 데이터를 직접 처리하려는 경우에는 적합하지 않습니다.
-
-이 경우 `AutomaticDecompression = DecompressionMethods.None`으로 설정된 `HttpClient` 또는 `HttpClientFactory`를 ClickHouseClient에 전달하십시오.
+별도로 구성할 것은 없습니다. 드라이버가 생성하는 `HttpClient`는 `AutomaticDecompression`을 `DecompressionMethods.None`으로 두고 드라이버가 직접 응답을 디코딩하므로, `Content-Encoding`이 모르는 사이에 제거되는 일이 없으며 원시 body가 서버가 보낸 그대로 전달됩니다.
 
 <Warning>
-  `AcceptEncoding`에서 구성된 `HttpClient`가 자동으로 압축 해제할 수 없는 코덱을 요청하는 경우에는 `ExecuteRawResultAsync`만 안전합니다. 동일한 쿼리 경로에서 `ExecuteReaderAsync`, `ExecuteScalarAsync` 또는 `ExecuteNonQueryAsync`를 호출하면 압축된 바이트를 일반 결과 포맷으로 해석하려고 시도하여 깨진 결과가 생성됩니다.
+  직접 `HttpClient`를 제공하는 경우에도 `AutomaticDecompression`은 꺼 둔 상태로 유지하십시오. 이는 응답 측에만 적용되는 설정이 아닙니다. 전송 시점에 핸들러는 **마스크에 포함된 알고리즘 중 나가는 `Accept-Encoding`에 빠져 있는 것을 모두 추가합니다**. 따라서 `GZip | Deflate` 마스크를 가진 핸들러는 명시적으로 지정한 `AcceptEncoding = "lz4"`를 wire 상에서 `lz4, gzip, deflate`로, `"identity"`를 `identity, gzip, deflate`로 바꿔 버립니다. 게다가 ClickHouse는 순서와 q-value를 무시하고 자체 고정 코덱 우선순위에 따라 헤더를 해석하므로, 요청하지도 않은 코덱으로 응답할 수 있고, 핸들러가 이를 디코딩한 뒤 제거해 버리기 때문에 그런 일이 일어났다는 사실조차 알 수 없습니다. 마스크를 꺼 두면 선택한 내용만 그대로 전달됩니다.
 </Warning>
 
-<div id="per-query-accept-encoding-errors">
-  #### 오류 본문
-</div>
+<Warning>
+  `AcceptEncoding`이 드라이버가 디코딩할 수 없는 코덱(`snappy`)을 요청하는 경우에는 `ExecuteRawResultAsync`만 안전합니다. `ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`는 해당 코덱 이름을 명시한 `NotSupportedException`과 함께 실패합니다(이전에는 compressed bytes를 결과 포맷으로 파싱하여 의미 없는 데이터를 생성했습니다).
+</Warning>
 
-서버가 4xx/5xx로 응답하고 `enable_http_compression=1`이 설정된 경우, 정상 응답에 사용했을 것과 동일한 코덱으로 오류 본문을 압축합니다. 드라이버는 BCL에 포함된 코덱(`gzip`, `deflate`, `br`/`brotli`)에 대해서는 이를 압축 해제하므로 `ClickHouseServerException`에 표시되는 메시지를 읽을 수 있습니다. 디코딩할 수 없는 코덱(`zstd`, `lz4`, …)의 경우, 드라이버는 코덱 이름을 포함하고 원래 오류 텍스트는 `system.query_log`에서 확인하라고 안내하는 자리표시자 메시지를 반환합니다.
+#### 오류 본문 {#per-query-accept-encoding-errors}
+
+서버가 4xx/5xx로 응답하고 `enable_http_compression=1`이 설정된 경우, 정상 응답에 사용했을 것과 동일한 코덱으로 오류 본문을 압축합니다. 드라이버는 지원하는 모든 코덱(`lz4`, `zstd`, `gzip`, `deflate`, `br`/`brotli`)에 대해 이를 디코딩하므로 `ClickHouseServerException`에 표시되는 메시지를 읽을 수 있습니다. 그 외의 코덱(`snappy`, …)에 대해서는 코덱 이름을 포함하고 원래 오류 텍스트는 `system.query_log`에서 확인하라고 안내하는 플레이스홀더를 반환합니다.
 
 ***
 
-<div id="raw-stream-insert">
-  ### Raw 스트림 삽입
-</div>
+### 응답 압축 해제 {#response-decompression}
 
-`InsertRawStreamAsync`를 사용하면 CSV, JSON, Parquet 또는 기타 [지원되는 ClickHouse 포맷](/ko/reference/formats/index)의 파일 또는 메모리 스트림에서 데이터를 직접 삽입할 수 있습니다.
+`Accept-Encoding`은 서버에 응답을 압축해 달라고 요청할 뿐이며, 이를 디코딩하는 주체는 따로 있어야 합니다. 드라이버가 응답의 `Content-Encoding`을 보고 직접 디코딩하므로, 일반적인 읽기 API(`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, Dapper, EF Core, linq2db)는 별도 설정 없이도 압축된 응답에서 그대로 동작합니다. `lz4`, `zstd`, `gzip`, `deflate`, `br`을 디코딩하며, `snappy`는 지원되지 않습니다.
 
-**CSV 파일에서 삽입:**
+기본적으로 드라이버는 **`zstd, lz4, gzip, deflate`**를 알리며, ClickHouse는 `zstd`로 응답합니다. 다른 방식을 사용하려면 `Accept-Encoding`을 직접 지정하십시오 — 클라이언트 전체에 적용하는 방법:
 
 ```csharp
-await using var fileStream = File.OpenRead("data.csv");
+using var client = new ClickHouseClient(new ClickHouseClientSettings("Host=localhost")
+{
+    AcceptEncoding = "br",      // decodable, but not advertised by default
+});
+```
 
+쿼리별로 지정할 수 있으며, 이 설정이 우선 적용됩니다:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "identity" });   // opt this query out
+```
+
+또는 `ClickHouseClientSettings`를 직접 다루지 않는 ORM 사용자를 위해 연결 문자열에서 지정할 수도 있습니다:
+
+```text
+Host=localhost;AcceptEncoding=br, gzip
+```
+
+이 값을 설정하면 URL에 `enable_http_compression=1`도 함께 강제 적용됩니다. ClickHouse는 이 설정이 있어야만 해당 헤더를 반영하기 때문이며, 이는 `UseCompression`이 `false`인 경우에도 마찬가지입니다. 코덱을 명시적으로 지정하는 것 자체가 압축을 요청하는 것으로 간주되기 때문입니다. 값을 설정하지 않은 상태에서 `UseCompression=false`이면 `Accept-Encoding`을 아예 전송하지 않습니다.
+
+`Accept-Encoding`은 네 곳에서 설정할 수 있으며, 이 중 코덱을 지정하는 첫 번째 항목이 적용됩니다:
+
+1. `QueryOptions.AcceptEncoding` (또는 `ClickHouseCommand.AcceptEncoding`)
+2. 쿼리의 `CustomHeaders["Accept-Encoding"]`
+3. 클라이언트의 `CustomHeaders["Accept-Encoding"]`
+4. `ClickHouseClientSettings.AcceptEncoding` 또는 연결 문자열 키워드 `AcceptEncoding`
+
+어느 곳에서도 지정하지 않으면 드라이버는 기본 목록을 전송합니다. 코덱을 지정하지 않는 값(null, 빈 문자열,
+공백, 쉼표만 있는 경우)은 설정되지 않은 것으로 간주되어 다음 위치로 넘어갑니다. 압축을 비활성화하려면 `identity`를 사용하십시오.
+
+**코덱을 선택하는 주체는 클라이언트가 아니라 서버입니다.** ClickHouse는 `Accept-Encoding`의 토큰을 자체적으로 고정된 우선순위(`zstd` &gt; `br` &gt; `lz4` &gt; `snappy` &gt; `gzip` &gt; `deflate`)에 따라 검사하며, 나열한 순서와 q-value는 모두 무시합니다. 따라서 이 헤더는 요구 사항이 아니라 지원 가능한 기능을 알리는 수단이며, 선택 결과를 조정하는 유일한 방법은 어떤 토큰을 제외할지 결정하는 것입니다. 기본값에는 `zstd`가 포함되어 있으므로 기본 설정의 쿼리는 zstd로 응답되며, 나머지 토큰은 폴백 역할을 합니다. `br`는 디코딩은 가능하지만 기본적으로 알리지는 않습니다.
+
+payload 크기, 서버 CPU, 클라이언트 CPU 측면에서 각 코덱의 비교 결과는 데이터, 네트워크 링크, 서버의 `http_zlib_compression_level`(기본 제공 값: 3)에 따라 달라집니다. [압축 튜닝](#tuning-compression)을 참고하십시오.
+
+* **`http_zlib_compression_level`.** 이 설정은 모든 HTTP 코덱에 적용되며 기본값은 3입니다. 이 값은 데이터, 링크 속도, CPU 사용량에 맞춰 조정해야 합니다.
+* **빠른 링크에서의 CPU 바운드 클라이언트.** 드라이버는 호출한 thread에서 response body를 디코딩하므로, 네트워크가 bottleneck이 아닌 경우 client-side 디코딩 속도가 제한 요인이 될 수 있습니다.
+
+다음 중 하나라도 해당된다면 쿼리별로 또는 클라이언트 전체에 다른 코덱을 요청하십시오:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions { AcceptEncoding = "lz4" });   // decode this one with lz4 instead
+```
+
+이 판단은 응답을 기준으로 이루어지므로, 무엇을 요청했든 관계없이 `Content-Encoding`이 지시하는 대로 body가 디코딩됩니다. 헤더가 없거나 `identity`이면 그대로 통과하고, 지원되는 코덱은 디코딩되며, 그 외의 값은 해당 값을 명시한 오류를 발생시킵니다. 이중 디코딩의 위험은 없습니다. caller가 제공한 handler의 `AutomaticDecompression`이 이미 body를 디코딩했다면 `Content-Encoding`도 함께 제거되므로, driver는 plaintext를 보게 되어 아무런 처리도 하지 않습니다.
+
+**원시(raw) 결과는 어떤 코덱도 광고하지 않습니다.** `ExecuteRawResultAsync`(그리고 공개 API인 `PostStreamAsync` / `InsertRawStreamAsync`)는 응답 본문을 있는 그대로 전달하므로, 직접 코덱을 지정하지 않는 한 아무 코덱도 요청하지 않습니다. 드라이버 내부에서 이러한 본문을 디코딩하는 부분이 없기 때문에, 여기서 코덱을 제안하면 내보내기 작업이 소리 없이 압축 파일 생성으로 바뀌어 버립니다. 따라서 규칙은 단순하며 `HttpClient`가 어떻게 구성되었는지와도 무관합니다. **있는 그대로 전달되는 본문은 서버가 보낸 그대로 도착하며, 코덱을 요청하지 않는 한 서버는 평문(plaintext)을 전송합니다.** 코덱을 명시적으로 요청하는 것(클라이언트 전체 또는 쿼리 단위)이 의도적으로 압축된 바이트를 내보내는 방법입니다.
+
+명시적으로 지정한 `AcceptEncoding`은 어느 수준에서 지정하든 원시 요청에도 그대로 적용되며, 결과를 디코딩하고자 할 때는 `ClickHouseRawResult.ReadDecompressedStreamAsync()`를 사용하면 됩니다. `ReadAsStreamAsync`, `ReadAsByteArrayAsync`, `ReadAsStringAsync`, `CopyToAsync`는 항상 도착한 바이트를 그대로 반환합니다.
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM events FORMAT JSONEachRow",
+    options: new QueryOptions { AcceptEncoding = "lz4" });
+
+Console.WriteLine(result.ContentEncoding); // "lz4"
+
+await using var body = await result.ReadDecompressedStreamAsync();
+using var bodyReader = new StreamReader(body);
+var json = await bodyReader.ReadToEndAsync();
+```
+
+반환된 스트림은 위와 같이 범위를 벗어나기 전에 끝까지 읽으십시오. 응답이 압축된 *경우*에는 `leaveOpen`으로 생성된 디코더를 받게 되므로, 이를 해제해도 응답은 그대로 유지됩니다. 반면 압축되지 **않은** 경우에는 HTTP 콘텐츠 스트림 자체를 받게 되므로, 이를 해제하면 본문이 종료됩니다. 어느 경우든 `ClickHouseRawResult`가 응답을 소유하므로, 스트림을 해제한 뒤에는 다른 읽기 멤버를 호출하지 마십시오. `ClickHouseRawResult`의 해제는 항상 필요하며, 그것만으로 충분합니다. 이 해제로 응답과 여기에 삽입된 디코더(디코더는 풀링된 버퍼를 보유합니다)가 모두 해제됩니다. 따라서 위의 `await using`은 선택 사항이며, 그대로 두어도 안전합니다. 순차적으로 반복 호출하면 동일한 스트림이 반환되며, 이 유형은 동시에 사용하기에 안전하지 않습니다.
+
+실행 가능한 예시는 [Select&#95;007&#95;ResponseCompression.cs](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/Select/Select_007_ResponseCompression.cs)를 참조하십시오.
+
+#### 삽입(request) 압축 {#insert-compression}
+
+Zstd는 삽입 시 사용되는 기본 코덱입니다. `InsertOptions.Compressor`의 초기값은 `ZstdCompressor.Default`이며,
+이는 수준 3의 zstd를 의미합니다. 코덱을 변경하려면 다른 압축기를 지정하고, 본문을 압축하지 않고 전송하려면
+`null`로 설정하십시오.
+
+```csharp
+var options = new InsertOptions { Compressor = GZipCompressor.Default };  // Content-Encoding: gzip
+await client.InsertBinaryAsync("events", columns, rows, options);
+```
+
+드라이버에는 네 가지 코덱이 기본 포함되어 있습니다. 각 코덱은 `Default` 인스턴스와 수준 및 쓰기 버퍼 크기를 인수로 받는 생성자를 제공합니다:
+
+| Compressor         | `Content-Encoding` | 생성자                                                                            | `Default`       |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------ | --------------- |
+| `ZstdCompressor`   | `zstd`             | `(int level = 3, int bufferSize = 262144)`                                     | 수준 3            |
+| `Lz4Compressor`    | `lz4`              | `(Lz4Level level = Lz4Level.Fast, int bufferSize = 262144)`                    | `Lz4Level.Fast` |
+| `GZipCompressor`   | `gzip`             | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest`       |
+| `BrotliCompressor` | `br`               | `(CompressionLevel level = CompressionLevel.Fastest, int bufferSize = 262144)` | `Fastest`       |
+
+```csharp
+var options = new InsertOptions { Compressor = new ZstdCompressor(level: 1) };
+```
+
+<Note>
+  *압축기 인스턴스를 공유하십시오.* 각 `Default`는 하나의 공유 인스턴스이며, 네 가지 압축기 모두 여러 스레드에서 동시에 사용해도 안전합니다. `InsertOptions.MaxDegreeOfParallelism`이 1보다 클 때가 바로 이런 경우로, 하나의 삽입 작업이 모든 배치에 대해 하나의 압축기를 사용하기 때문입니다. 이들 중 `IDisposable`을 구현하는 것은 없습니다. 인스턴스를 직접 한 번만 생성한 뒤, `Default`를 사용하는 방식과 동일하게 재사용하십시오.
+</Note>
+
+##### 사용자 정의 코덱 {#custom-compressor}
+
+`IClickHouseCompressor`는 public이며, 구현체는 다음 두 개의 멤버만 제공하면 됩니다:
+
+```csharp
+public sealed class MyCompressor : IClickHouseCompressor
+{
+    public string ContentEncoding => "my-codec";
+
+    public Stream Compress(Stream destination, bool leaveOpen) => /* a compressing write stream */;
+}
+```
+
+서버는 지정한 `Content-Encoding`을 수용할 수 있어야 합니다. 나머지 멤버인 `Decompress`, `MethodByte`, `MaxEncodedLength`, `Encode`, `Decode`는 `NotSupportedException`을 throw하는 기본 구현을 가지고 있으므로, 코덱에 필요한 것만 재정의하면 됩니다. 요청을 압축할 뿐 아니라 응답 본문도 디코딩하려면 `Decompress`를 구현하고, 본문이 손상되었거나 포맷이 잘못된 경우 반환되는 스트림에서 `InvalidDataException`을 raise하십시오.
+
+`InsertOptions.Compressor`는 바이너리 삽입에만 적용됩니다. driver의 다른 요청 본문은 서로 다른 규칙에 따라 압축되며, 그 어느 것도 이 설정을 거치지 않습니다.
+
+* **모든 SQL 텍스트 요청**(`ExecuteReaderAsync`, `ExecuteScalarAsync`, `ExecuteNonQueryAsync`, `QueryAsync<T>`, `ExecuteRawResultAsync`, ADO.NET 계층)은 `UseCompression`이 `true`인 경우, 즉 기본적으로 statement를 `Content-Encoding: gzip`으로 전송합니다. 코덱은 구성할 수 없습니다. `AcceptEncoding`은 응답에만 영향을 주므로 선택지는 gzip 아니면 압축 없음뿐입니다. `Compression=false`이면 statement를 압축하지 않고 그대로 전송합니다. statement는 크기가 작으므로 이를 신경 쓸 일은 거의 없지만, 프록시나 packet capture로 요청을 들여다볼 때는 알아 두면 유용합니다.
+* **멀티파트 본문** — 매개변수를 폼 데이터로 전송하는 쿼리(`UseFormDataParameters=true`) — 는 `UseCompression` 설정과 관계없이 항상 압축되지 않은 상태로 전송됩니다.
+* **원시 upload**(`InsertRawStreamAsync`, `PostStreamAsync`)는 호출마다 지정하는 자체 flag를 사용하며, `UseCompression`과 `InsertOptions.Compressor` 중 어느 것도 참조하지 않습니다. flag가 설정되어 있으면 gzip으로, 그렇지 않으면 압축하지 않은 상태로 전송합니다. `InsertRawStreamAsync`의 `useCompression` 매개변수는 기본값이 `true`이므로, `false`를 전달하지 않는 한 원시 upload는 클라이언트에 `Compression=false`가 설정되어 있더라도 gzip으로 압축됩니다.
+
+***
+
+### 압축 튜닝 {#tuning-compression}
+
+압축은 CPU를 소모하는 대신 전송 바이트를 줄입니다. 이것이 이득인지 여부는 코덱의 실행 속도 대비
+네트워크 연결이 얼마나 빠른지에 거의 전적으로 달려 있습니다. 모든 상황에 들어맞는 설정은
+존재하지 않습니다.
+
+<div id="the-one-number-that-decides-it">
+  #### 결정을 좌우하는 단 하나의 수치
+</div>
+
+압축은 코덱이 네트워크보다 빠르기만 하면 그만한 가치가 있습니다.
+
+읽기 경로에서 이 임계값은 대부분이 예상하는 것보다 낮습니다. ClickHouse가 출력 버퍼에서 HTTP 응답을
+단일 스레드로 압축하기 때문입니다. 16 vCPU ClickHouse Cloud 서비스에서 측정한 결과(`hits`, RowBinary, 수준 3),
+서버는 대략 100~200MB/s의 속도로 압축된 출력을 생성합니다.
+
+따라서 결과가 크고 한 번에 하나의 쿼리만 처리된다고 가정하면, 대략 100MB/s 부근에서 압축의 이득이 사라집니다. 하나의 클라우드 리전 내에서
+단일 HTTPS 스트림은 흔히 이 수치를 넘어서지만, 공용 인터넷이나 VPN, 리전 경계를 넘는 경우에는 대체로 이보다 낮습니다.
+
+삽입 경로는 더 빠른 링크 속도에서도 압축이 유리합니다. 클라이언트가 자체 코어에서 압축을 수행하므로 일반적으로 서버의 응답 압축보다 빠르기 때문입니다.
+
+<div id="rough-guide-by-deployment">
+  #### 배포 환경별 대략적인 가이드
+</div>
+
+| 클라이언트 실행 위치         | 일반적인 대역폭      | 읽기                  | 삽입                   |
+| ------------------- | ------------- | ------------------- | -------------------- |
+| 동일 호스트 / 루프백        | &gt; 500 MB/s | `identity`          | `lz4`가 가장 빠름, 또는 미사용 |
+| 동일 리전, 동일 클라우드      | ~100–500 MB/s | `identity` 또는 `lz4` | `zstd:1`             |
+| 교차 리전, 동일 클라우드      | ~10–100 MB/s  | `zstd`              | `zstd:3`             |
+| 인터넷 / VPN / 다른 클라우드 | &lt; 25 MB/s  | `zstd`              | `zstd:3`             |
+| 종량제 또는 매우 제한적인 환경   | &lt; 5 MB/s   | `zstd`              | `zstd:5` 이상 또는 `br`  |
+
+이 표에 반영되지 않은 사항이 세 가지 있습니다:
+
+* **이그레스 비용:** 데이터 전송 요금이 부과되는 환경이라면 바이트 자체에 지연 시간 외의 비용이 붙으므로, 링크 속도와 관계없이 압축률을 높이는 쪽이 유리합니다.
+* **작은 결과:** 위 내용은 모두 큰 페이로드를 전제로 합니다. 응답이 작을 때는 코덱의 영향이 거의 없고 요청당 오버헤드가 대부분을 차지합니다.
+* **병렬 삽입은 삽입 기준선을 끌어올립니다.** 위의 처리량 수치는 모두 *단일* 스레드 기준입니다. `InsertOptions.MaxDegreeOfParallelism`의 기본값은 `1`이지만, 이 값을 높이면 배치가 동시에 압축되므로 클라이언트의 전체 인코딩 속도는 할당한 코어 수에 대략 비례해 확장됩니다. 따라서 빠른 링크에서도 병렬 삽입은 단일 스레드 삽입이 압축할 가치를 잃는 속도를 훨씬 넘어서까지 압축할 가치를 유지합니다. 표의 삽입 항목은 *하한선*으로 보고, 이미 병렬로 배치를 처리하고 있다면 링크가 너무 빨라 압축이 불필요하다고 결론짓기 전에 다시 테스트하십시오.
+
+읽기 경로는 여러 쿼리에 걸쳐서만 병렬화됩니다.
+
+<div id="choosing-a-codec">
+  #### 코덱 선택
+</div>
+
+| 코덱     | 압축률           | 사용 시점                                                                                                              | 주의 사항                                                                                                                                                                                                    |
+| ------ | ------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lz4`  | 가장 낮음         | 빠른 회선 환경, 대역폭보다 CPU가 더 부족한 경우. 디코딩 비용이 압도적으로 저렴하고 작은 결과에서 가장 빠르므로, 기본값인 zstd 대신 다른 코덱을 쓰고자 할 때 지정할 만합니다.           | **엔트로피 코더가 없기** 때문에, 편향되어 있지만 반복적이지는 않은 데이터(예: 숫자 텍스트가 길게 이어지는 경우)에서는 압축률이 다른 코덱에 크게 못 미칩니다. 또한 `http_zlib_compression_level`을 높였을 때 가장 손해가 큰 코덱입니다. 수준 1 → 3으로 올리면 바이트는 약 29% 줄어드는 대신 CPU는 약 2.7배가 듭니다. |
+| `zstd` | 높음            | 실제 네트워크가 관여하는 상황이라면 범용으로 선택할 만합니다. 의미 있는 구간에서 CPU 대비 압축률이 가장 우수하며, 수준 3에서는 바이트 수, 서버 CPU, 실행 시간 *모두* `lz4`를 능가합니다. | `lz4`보다 **디코딩** 비용이 큽니다. 측정 결과 수준 3에서 1.6배였으나, 수준 1에서는 둘이 비슷한 수준입니다. 또한 드라이버는 호출 스레드에서 디코딩을 수행합니다. 특히 `http_zlib_compression_level=1`에서는 `lz4`보다 서버 CPU를 *다소 더* 소모합니다.                                   |
+| `gzip` | 중간            | 상호 운용성이 필요한 경우 — 프록시와 게이트웨이가 보편적으로 이해합니다.                                                                          | 측정 결과 모든 측면에서 `lz4`와 `zstd` 양쪽에 뒤처집니다. `zstd`보다 크기가 크면서도 인코딩 CPU는 수 배, 디코딩은 5~9배 더 소모합니다. 성능이 아니라 호환성을 위해 선택하십시오.                                                                                        |
+| `br`   | 낮은 수준에서 가장 높음 | 대역폭이 실질적인 제약 조건이며, 그 대가로 CPU를 쓸 여력이 있는 경우.                                                                         | 수준이 높아지면 급격히 나빠집니다. `http_zlib_compression_level=6`에서 측정한 서버 CPU는 `zstd`의 3~4배였습니다. 기본 목록의 모든 폴백 토큰보다 우선순위가 높아지기 때문에 기본적으로는 광고되지 않습니다.                                                                   |
+
+<div id="levels">
+  #### 수준
+</div>
+
+응답 압축은 `http_zlib_compression_level`이라는 단일 서버 설정으로 제어되며, 이 설정은 zlib뿐만 아니라 *모든* HTTP 코덱에 적용됩니다. 기본값은 3입니다.
+
+측정을 통해 확인한 근거가 없다면 그대로 두십시오. 기본값보다 높이면 CPU를 많이 소모하는 데 비해 크기 감소 효과는 매우 미미하며(`zstd`의 경우 3 → 6으로 올리면 서버 CPU 사용량이 대략 두 배가 되지만 바이트 수는 약 14%만 줄어듭니다), `br`은 비정상적으로 나빠집니다. 반대로 수준 1로 낮추면 양상이 확연히 달라집니다. `lz4`는 비용이 훨씬 낮아지고, `zstd`는 `lz4` 대비 CPU 이점을 잃습니다. 필요하다면 쿼리별로 설정하십시오:
+
+```csharp
+using var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM events",
+    options: new QueryOptions
+    {
+        AcceptEncoding = "zstd",
+        CustomSettings = new Dictionary<string, object> { ["http_zlib_compression_level"] = 1 },
+    });
+```
+
+<div id="measuring-your-own-crossover">
+  #### 직접 교차점 측정하기
+</div>
+
+코덱과 압축 수준 선택을 최적화하는 가장 빠른 방법은 여러 코덱으로 동일한 쿼리를 실행해 소요 시간을 측정하고 비교해 보는 것입니다.
+
+```csharp
+foreach (var codec in new[] { "identity", "lz4", "zstd" })
+{
+    var sw = Stopwatch.StartNew();
+    using var reader = await client.ExecuteReaderAsync(
+        "SELECT ... FROM big_table",
+        options: new QueryOptions { AcceptEncoding = codec });
+    while (await reader.ReadAsync()) { }
+    Console.WriteLine($"{codec,-9} {sw.ElapsedMilliseconds} ms");
+}
+```
+
+같은 내용을 서버 측에서 확인하려면 `system.query_log`에서 `ProfileEvents`를 다시 읽어오십시오. 해당 행을 찾을 수 있도록 `QueryOptions.QueryId`를 설정하십시오:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+직접 벤치마크할 때 빠지기 쉬운 함정이 하나 있습니다. `ORDER BY` 없이 `LIMIT n`만 사용하면 *실행할 때마다 서로 다른 행*이 반환되므로, 반복할 때마다 압축되는 데이터가 달라져 비율이 무의미한 노이즈가 됩니다. 고정된 결과 집합을 기준으로 비교하십시오.
+
+***
+
+### Raw 스트림 삽입 {#raw-stream-insert}
+
+`InsertRawStreamAsync`를 사용하면 CSV, JSON, Parquet 또는 [지원되는 모든 ClickHouse 포맷](/ko/reference/formats/index)으로 된 파일이나 메모리 스트림에서 데이터를 직접 삽입할 수 있습니다.
+
+**CSV 파일에서 삽입하기:**
+
+```csharp
 using var response = await client.InsertRawStreamAsync(
     table: "my_table",
-    stream: fileStream,
+    stream: File.OpenRead("data.csv"),
     format: "CSV",
     columns: ["id", "product", "price"] // Optional: specify columns
 );
 ```
 
+<Warning>
+  *드라이버가 스트림의 소유권을 가져갑니다.* `InsertRawStreamAsync`와 `PostStreamAsync`는 요청이 성공하든 실패하든
+  완료되는 시점에 전달받은 스트림을 dispose합니다. 직접 dispose하지 말고, 이후에 재사용하지도 마십시오. 위 예시에서
+  `FileStream`을 `using`으로 감싸지 않은 이유가 바로 여기에 있습니다.
+
+  사용자가 직접 작성한 `using`은 드라이버가 이미 스트림을 dispose한 뒤에 실행됩니다. `FileStream`이나 `MemoryStream`이라면
+  이 두 번째 호출이 무해하지만, `Dispose`가 풀에 버퍼를 반환하거나 참조 카운트를 감소시키는 스트림이라면
+  리소스가 두 번 해제됩니다.
+
+  소유권은 인수가 수락된 이후에만 넘어갑니다. table, 스트림 또는 포맷이 누락되어 호출이 `ArgumentException`이나
+  `ArgumentNullException`을 throw한 경우, 스트림은 여전히 사용자의 것입니다.
+</Warning>
+
 <Note>
-  데이터 수집 동작을 제어하는 옵션은 [포맷 설정 문서](/ko/reference/settings/formats)에서 확인하십시오.
+  데이터 수집 동작을 제어하는 옵션은 [포맷 설정 문서](/ko/reference/settings/formats)를 참고하십시오.
 </Note>
 
 ***
 
-<div id="more-examples">
-  ### 추가 예시
-</div>
+### 추가 예시 {#more-examples}
 
 실제 사용에 도움이 되는 추가 예시는 GitHub 리포지토리의 [examples 디렉터리](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples)에서 확인하십시오.
 
-<div id="ado-net">
-  ## ADO.NET
-</div>
+## ADO.NET {#ado-net}
 
 이 라이브러리는 `ClickHouseConnection`, `ClickHouseCommand`, `ClickHouseDataReader`를 통해 ADO.NET을 완전하게 지원합니다. 이 API는 ORM 통합(Dapper, Linq2db)과 표준 .NET 데이터베이스 추상화가 필요할 때 사용해야 합니다.
 
-<div id="ado-net-datasource">
-  ### ClickHouseDataSource를 사용한 수명 주기 관리
-</div>
+### ClickHouseDataSource를 사용한 수명 주기 관리 {#ado-net-datasource}
 
 적절한 수명 주기 관리와 연결 풀링을 위해 **항상 `ClickHouseDataSource`에서 연결을 생성하세요**. DataSource는 내부적으로 단일 `ClickHouseClient`를 관리하며, 모든 연결은 해당 HTTP 연결 풀을 공유합니다.
 
@@ -1082,9 +1326,7 @@ public class MyService
 
 ***
 
-<div id="ado-net-command">
-  ### ClickHouseCommand 사용하기
-</div>
+### ClickHouseCommand 사용하기 {#ado-net-command}
 
 연결을 통해 SQL을 실행할 명령을 생성합니다:
 
@@ -1111,9 +1353,7 @@ while (reader.Read())
 
 ***
 
-<div id="ado-net-reader">
-  ### ClickHouseDataReader 사용
-</div>
+### ClickHouseDataReader 사용 {#ado-net-reader}
 
 `ClickHouseDataReader`는 쿼리 결과에 타입이 지정된 형태로 접근할 수 있도록 제공합니다:
 
@@ -1140,13 +1380,24 @@ while (reader.Read())
 }
 ```
 
-<div id="best-practices">
-  ## 모범 사례
-</div>
+#### enum의 서수 값 읽기 {#ado-net-reader-enum-ordinal}
 
-<div id="best-practices-connection-lifetime">
-  ### 연결 수명 및 풀링
-</div>
+`Enum8` 또는 `Enum16` 컬럼은 해당 레이블로 구체화됩니다. `GetFieldType`은 `string`을 반환하고,
+`GetString`, `GetValue`, `GetFieldValue<string>`은 모두 레이블을 반환합니다. 저장된 값이 문자열이므로,
+숫자형 accessor는 enum 컬럼에 대해 `InvalidCastException`을 발생시킵니다.
+
+레이블에 대응하는 숫자를 얻으려면 `TryGetEnumOrdinal`을 사용하세요:
+
+```csharp
+if (reader.TryGetEnumOrdinal(ordinal, out int value))
+    Console.WriteLine(value);   // e.g. 1 for 'Active' in Enum8('Active' = 1)
+```
+
+`Enum8`/`Enum16` 컬럼과, cell이 NULL이 아닌 `Nullable(Enum...)` 컬럼에 대해서는 `true`를 반환하고 `value`를 설정합니다. NULL cell이거나 enum이 아닌 컬럼에 대해서는 `value`를 `0`으로 설정한 뒤 `false`를 반환합니다. 서수 값은 wire에서 전달된 signed 값이므로 음수일 수 있으며, `Enum16`의 서수 값은 1바이트를 초과할 수 있습니다.
+
+## 모범 사례 {#best-practices}
+
+### 연결 수명 및 풀링 {#best-practices-connection-lifetime}
 
 `ClickHouse.Driver`는 내부적으로 `System.Net.Http.HttpClient`를 사용합니다. `HttpClient`에는 엔드포인트별 연결 풀이 있습니다. 그에 따라 다음과 같은 특성이 있습니다.
 
@@ -1172,9 +1423,7 @@ while (reader.Read())
 
 ***
 
-<div id="best-practice-datetime">
-  ### DateTime 처리
-</div>
+### DateTime 처리 {#best-practice-datetime}
 
 1. **가능하면 항상 UTC를 사용하십시오.** 타임스탬프는 `DateTime('UTC')` 컬럼에 저장하고, 코드에서는 `DateTimeKind.Utc`를 사용하십시오. 이렇게 하면 시간대와 관련된 모호성을 없앨 수 있습니다.
 
@@ -1193,9 +1442,7 @@ while (reader.Read())
 
 ***
 
-<div id="async-inserts">
-  ### 비동기 삽입
-</div>
+### 비동기 삽입 {#async-inserts}
 
 [비동기 삽입](/ko/concepts/features/operations/insert/asyncinserts)은 배칭의 책임을 클라이언트에서 서버로 옮깁니다. 클라이언트 측에서 배칭해야 하는 대신, 서버가 들어오는 데이터를 버퍼에 저장했다가 구성 가능한 임계값에 따라 스토리지로 플러시합니다. 이는 많은 에이전트가 작은 페이로드를 전송하는 관측성 워크로드와 같은 고동시성 시나리오에서 유용합니다.
 
@@ -1232,9 +1479,7 @@ settings.CustomSettings["wait_for_async_insert"] = 1; // 권장: 플러시 확�
 
 ***
 
-<div id="best-practices-sessions">
-  ### 세션
-</div>
+### 세션 {#best-practices-sessions}
 
 상태를 유지하는 서버 측 기능이 필요할 때만 세션을 활성화하세요. 예:
 
@@ -1249,7 +1494,7 @@ var settings = new ClickHouseClientSettings
 {
     Host = "localhost",
     UseSession = true,
-    SessionId = "my-session", // 선택 사항 -- 제공하지 않으면 자동 생성됩니다
+    SessionId = "my-session", // Optional -- will be auto-generated if not provided
 };
 
 using var client = new ClickHouseClient(settings);
@@ -1285,19 +1530,15 @@ await using var cmd3 = connection.CreateCommand("SELECT * FROM users WHERE id IN
 await using var reader = await cmd3.ExecuteReaderAsync();
 ```
 
-<div id="supported-data-types">
-  ## 지원 데이터 타입
-</div>
+***
+
+## 지원 데이터 타입 {#supported-data-types}
 
 `ClickHouse.Driver`는 모든 ClickHouse 데이터 타입을 지원합니다. 아래 표는 데이터베이스에서 데이터를 읽을 때 ClickHouse 타입과 네이티브 .NET 타입 간의 매핑을 보여줍니다.
 
-<div id="clickhouse-native-type-map-reading">
-  ### 타입 매핑: ClickHouse에서 읽어올 때
-</div>
+### 타입 매핑: ClickHouse에서 읽어올 때 {#clickhouse-native-type-map-reading}
 
-<div id="type-map-reading-integer">
-  #### 정수 타입
-</div>
+#### 정수 타입 {#type-map-reading-integer}
 
 | ClickHouse 타입 | .NET 타입      |
 | ------------- | ------------ |
@@ -1316,9 +1557,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-floating-points">
-  #### 부동 소수점 타입
-</div>
+#### 부동 소수점 타입 {#type-map-reading-floating-points}
 
 | ClickHouse 타입 | .NET 타입  |
 | ------------- | -------- |
@@ -1328,9 +1567,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-decimal">
-  #### Decimal 타입
-</div>
+#### Decimal 타입 {#type-map-reading-decimal}
 
 | ClickHouse 타입 | .NET 타입                         |
 | ------------- | ------------------------------- |
@@ -1346,9 +1583,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-boolean">
-  #### 불리언 타입
-</div>
+#### 불리언 타입 {#type-map-reading-boolean}
 
 | ClickHouse 타입 | .NET 타입 |
 | ------------- | ------- |
@@ -1356,9 +1591,7 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 ***
 
-<div id="type-map-reading-strings">
-  #### String 타입
-</div>
+#### String 타입 {#type-map-reading-strings}
 
 | ClickHouse 타입  | .NET 타입  |
 | -------------- | -------- |
@@ -1367,13 +1600,15 @@ await using var reader = await cmd3.ExecuteReaderAsync();
 
 <Note>
   기본적으로 `String` 및 `FixedString(N)` 컬럼은 모두 `string`으로 반환됩니다. 이를 `byte[]`로 읽으려면 연결 문자열에서 `ReadStringsAsByteArrays=true`를 설정하세요. 이 옵션은 유효한 UTF-8이 아닐 수 있는 바이너리 데이터를 저장할 때 유용합니다.
+
+  이 설정은 다른 타입 안에 중첩된 문자열에도 적용되므로, `Array(String)`은 `byte[][]`로 읽히고
+  `Map(String, String)`은 키를 포함해 `Dictionary<byte[], byte[]>`로 읽힙니다. 유일한 예외는
+  `JSON` 컬럼으로, 그 안의 문자열 리프는 항상 텍스트입니다. [JSON 타입](#type-map-reading-json)을 참조하세요.
 </Note>
 
 ***
 
-<div id="type-map-reading-datetime">
-  #### 날짜 및 시간 타입
-</div>
+#### 날짜 및 시간 타입 {#type-map-reading-datetime}
 
 | ClickHouse 타입 | .NET Type  |
 | ------------- | ---------- |
@@ -1415,11 +1650,9 @@ var dto = reader.GetDateTimeOffset(0); // 2024-06-15 14:30:00 +02:00 (CEST)
 
 ***
 
-<div id="type-map-reading-json">
-  #### JSON 타입
-</div>
+#### JSON 타입 {#type-map-reading-json}
 
-| ClickHouse Type | .NET Type    | 비고                          |
+| ClickHouse 타입 | .NET 타입    | 참고                          |
 | --------------- | ------------ | --------------------------- |
 | Json            | `JsonObject` | 기본값 (`JsonReadMode=Binary`) |
 | Json            | `string`     | `JsonReadMode=String`일 때    |
@@ -1431,40 +1664,131 @@ JSON 컬럼의 반환 타입은 `JsonReadMode` 설정으로 제어됩니다:
 * **`String`**: 원본 JSON을 `string`으로 반환합니다. ClickHouse의 JSON 표현을 그대로 유지하므로, parsing 없이 JSON을 그대로 전달해야 하거나 역직렬화를 직접 처리하려는 경우에 유용합니다.
 
 ```csharp
-// 설정을 통해 string 모드 구성
+// Configure string mode via settings
 var settings = new ClickHouseClientSettings("Host=localhost")
 {
     JsonReadMode = JsonReadMode.String
 };
 
-// 또는 connection string을 통해 구성
+// Or via connection string
 // "Host=localhost;JsonReadMode=String"
+```
+
+`None`은 세 번째 모드입니다. 읽기 동작은 `Binary`와 완전히 동일하지만, 쿼리와 함께 server setting을 전송하지 않습니다. server setting을 설정할 수 없는 connection에서 사용하십시오.
+
+##### 타입이 지정된 경로와 null {#type-map-reading-json-nulls}
+
+컬럼 타입에 선언된 경로는 **타입이 지정된 경로(typed path)** 이고, 그 외 문서에 포함된 경로는
+**동적 경로(dynamic path)** 입니다. 두 경로는 값이 null일 때 동작이 달라집니다.
+
+타입이 지정된 경로는 항상 `JsonObject`에 나타납니다. `Nullable(T)` 또는 `Dynamic`으로 선언된 경우,
+저장된 값이 null일 때와 문서에 해당 경로가 아예 없을 때 모두 JSON null로 반환되므로 두 경우를 구분할 수 없습니다:
+
+```csharp
+// Column type JSON(x Nullable(Int64))
+// stored '{"x":null}'  ->  {"x":null}
+// stored '{}'          ->  {"x":null}
+```
+
+널을 허용하지 않는 타입으로 선언된 경우, 존재하지 않는 경로는 해당 타입의 기본값을 갖습니다. 즉, `JSON(x String)`은
+`{"x":""}`를, `JSON(x Int64)`는 `{"x":0}`을 반환합니다.
+
+값이 null인 동적 경로는 객체에서 완전히 제거되므로 `ContainsKey`가 false를 반환합니다. 일반 `JSON` 컬럼에서
+`{"x":null}`을 읽으면 `{}`가 됩니다.
+
+중첩된 타입이 지정된 경로는 상위 경로를 함께 생성하므로, 빈 문서에 대해서도 `JSON(a.b Nullable(Int64))`은
+`{"a":{"b":null}}`을 반환합니다.
+
+<Note>
+  이는 server가 직접 렌더링한 결과이므로, 이제 `Binary` 모드와 `String` 모드가 일치합니다. 1.4.0 이전에는
+  null을 담고 있는 타입이 지정된 경로가 `JsonObject`에서 제거되어 `{"x":null}`이 `{}`로 읽혔으며,
+  `JSON(a.b Nullable(Int64))`와 같은 중첩 경로에서는 `a` 하위 트리 전체가 사라졌습니다.
+</Note>
+
+##### JSON 컬럼 내부의 문자열 {#type-map-reading-json-strings}
+
+`JSON` 컬럼 내부의 문자열 리프는 `ReadStringsAsByteArrays` 설정값과 관계없이 항상 텍스트로 반환됩니다. `JsonValue`에는 바이트 배열 형태가 없어 `byte[]`로 반환하면 base64로 표시되기 때문입니다. 이는 `String`, `FixedString`은 물론 이들이 `LowCardinality`, `Nullable`, `SimpleAggregateFunction`으로 감싸진 경우, 그리고 `Array`와 `Map` 내부의 문자열(맵 키 포함)에도 동일하게 적용됩니다.
+
+<Note>
+  JSON 리더가 타입을 알 수 없는 바이트 배열은 여전히 base64로 표시됩니다. `Variant` 또는 `Dynamic` 타입이 지정된 경로는 행마다 타입이 결정되는 값을 담기 때문에, `Variant(Array(UInt8), String)` 아래의 문자열은 base64로 인코딩되어 반환됩니다. 이는 두 설정 모두에서 동일합니다.
+
+  정확히 `String`이 아닌 JSON 맵 키 타입, 예를 들어 `Map(LowCardinality(String), String)`은 `NotSupportedException`을 발생시킵니다.
+</Note>
+
+<div id="overlapping-paths">
+  ##### 겹치는 경로
+</div>
+
+ClickHouse는 하나의 경로를 값으로 선언하면서 동시에 다른 경로의 부모로도 선언하는 컬럼을 허용합니다. 예를 들면 `JSON(a Int64, a.b Int64)`입니다. 두 경로 모두 모든 행에 존재하므로, 서버는 해당 행을 중복 키가 포함된 형태로 렌더링합니다: `{"a":0,"a":{"b":7}}`. `JsonObject`는 하나의 키에 두 개의 값을 담을 수 없으므로, `JsonReadMode.Binary`는 두 경로를 명시한 `SerializationException`을 throw합니다. `JSON(a Map(String, Int64))`처럼 값이 `Map`이고 동일한 행에 동적 `a.b`가 함께 존재할 때도 마찬가지입니다.
+
+이는 해당 행에서 양쪽 모두가 값을 가진 경우에만 해당됩니다. 아무것도 가지지 않은 쪽 — NULL, 빈 객체, 또는 값이 모두 NULL인 하위 트리 — 은 서버가 두 경로 중 어느 쪽을 먼저 전송하든 데이터를 가진 쪽에 자리를 내줍니다. 따라서 `Nullable` 타입으로 선언된 겹침은 행마다 한쪽만 채워지므로 오류 없이 읽힙니다. `JSON(a Nullable(Int64), a.b Nullable(Int64))`는 예상대로 `{"a":5}`와 `{"a":{"b":7}}`를 반환합니다.
+
+이러한 컬럼을 `JsonReadMode.String`으로 읽으면 중복 키를 포함한 서버의 JSON 텍스트를 그대로 얻을 수 있습니다.
+
+`AllowDuplicateJsonKeys`를 설정하면 예외를 throw하는 대신 해당 컬럼을 계속 `JsonObject`로 읽습니다. 이때 드라이버는 행에 담긴 두 값 중 마지막 값만 유지하고 나머지는 버리므로 결과에 손실이 발생합니다. `{"a.b":7}`를 담고 있는 `JSON(a Int64, a.b Int64)`는 `{"a":0}`으로 읽힙니다. 값을 가진 경로의 부모가 스칼라나 배열을 가지는 경우에는 하위 트리를 그 아래에 배치할 수 없으므로 여전히 예외가 throw됩니다.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    AllowDuplicateJsonKeys = true
+};
+
+// Or via connection string
+// "Host=localhost;AllowDuplicateJsonKeys=true"
 ```
 
 ***
 
-<div id="type-map-reading-other">
-  #### 기타 타입
-</div>
+#### 맵(Map) 타입 {#type-map-reading-map}
 
-| ClickHouse 타입           | .NET 타입                                                                                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| UUID                    | `Guid`                                                                                                                     |
-| IPv4                    | `IPAddress`                                                                                                                |
-| IPv6                    | `IPAddress`                                                                                                                |
-| Nothing                 | `DBNull`                                                                                                                   |
-| Dynamic                 | 참고 사항을 참조하세요                                                                                                                      |
-| Array(T)                | `T[]` (중첩된 `Array(Array(T))`는 가변 `T[][]`로 읽히며, 직사각형 데이터를 다차원 CLR 배열로 구체화하려면 `reader.GetFieldValue<T[,]>(ordinal)`를 사용하십시오) |
-| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                        |
-| Map(K, V)               | `Dictionary<K, V>`                                                                                                         |
-| Nullable(T)             | `T?`                                                                                                                       |
-| Enum8                   | `string`                                                                                                                   |
-| Enum16                  | `string`                                                                                                                   |
-| LowCardinality(T)       | T와 동일                                                                                                                      |
-| SimpleAggregateFunction | 기반 타입과 동일                                                                                                                  |
-| Nested(...)             | `Tuple[]`                                                                                                                  |
-| Variant(T1, T2, ...)    | 참고 사항을 참조하세요                                                                                                                      |
-| QBit(T, dimension)      | `T[]`                                                                                                                      |
+| ClickHouse 타입 | .NET 타입                  | 참고                           |
+| --------------- | -------------------------- | ------------------------------- |
+| Map(K, V)       | `Dictionary<K, V>`         | 기본값 (`MapReadMode=Dictionary`)  |
+| Map(K, V)       | `List<KeyValuePair<K, V>>` | `MapReadMode=KeyValuePairs`인 경우 |
+
+ClickHouse의 `Map(K, V)`는 물리적으로 `Array(Tuple(K, V))`이며, 동일한 키를 가진 항목을 여러 개 담을 수 있습니다. 반면 `Dictionary`는 그렇지 않기 때문에, 기본 모드에서는 중복된 키의 마지막 값만 유지되고 앞선 쌍은 삭제됩니다. `MapReadMode` 설정으로 표현 방식을 선택할 수 있습니다.
+
+* **`Dictionary`(기본값)**: `Dictionary<K, V>`를 반환합니다.
+
+* **`KeyValuePairs`**: 서버가 전송한 순서 그대로 `List<KeyValuePair<K, V>>`를 반환하므로, 키가 중복되는 항목까지 모든 쌍이 보존됩니다.
+
+```csharp
+// Configure key-value-pair mode via settings
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    MapReadMode = MapReadMode.KeyValuePairs
+};
+
+// Or via connection string
+// "Host=localhost;MapReadMode=KeyValuePairs"
+```
+
+mode는 `Map` 컬럼의 프레임워크 타입을 결정하므로 `GetFieldValue<T>`, driver가 보고하는 schema 타입, POCO 프로퍼티 매핑에도 동일하게 적용됩니다. 또한 `Array(Map(...))`, `Map(K, Map(...))`, `Tuple(..., Map(...))`, `Dynamic`을 포함하여 컬럼의 타입 트리에 맵이 나타나는 모든 위치에 적용됩니다.
+
+두 표현 방식 모두 어느 mode에서든 쓰기 경로에서 허용됩니다 — [맵 쓰기](#type-map-writing-other)를 참조하십시오.
+
+***
+
+#### 기타 타입 {#type-map-reading-other}
+
+| ClickHouse 타입           | .NET 타입                                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`                                                                                                                        |
+| IPv4                    | `IPAddress`                                                                                                                   |
+| IPv6                    | `IPAddress`                                                                                                                   |
+| Nothing                 | `DBNull`                                                                                                                      |
+| Dynamic                 | 참고 사항을 참조하세요                                                                                                                  |
+| Array(T)                | `T[]` (중첩된 `Array(Array(T))`는 가변 `T[][]`로 읽히며, 직사각형 데이터를 다차원 CLR 배열로 구체화하려면 `reader.GetFieldValue<T[,]>(ordinal)`를 사용하십시오)    |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple`                                                                                           |
+| Map(K, V)               | `Dictionary<K, V>`, 또는 `MapReadMode=KeyValuePairs`인 경우 `List<KeyValuePair<K, V>>` — [맵(Map) 타입](#type-map-reading-map)을 참조하세요 |
+| Nullable(T)             | `T?`                                                                                                                          |
+| Enum8                   | `string`                                                                                                                      |
+| Enum16                  | `string`                                                                                                                      |
+| LowCardinality(T)       | T와 동일                                                                                                                         |
+| SimpleAggregateFunction | 기반 타입과 동일                                                                                                                     |
+| Nested(...)             | `Tuple[]`                                                                                                                     |
+| Variant(T1, T2, ...)    | 참고 사항을 참조하세요                                                                                                                  |
+| QBit(T, dimension)      | `T[]`                                                                                                                         |
 
 <Note>
   Dynamic 및 Variant 타입은 각 행의 실제 기반 타입에 해당하는 타입으로 변환됩니다.
@@ -1472,9 +1796,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-geometry">
-  #### Geometry 타입
-</div>
+#### Geometry 타입 {#type-map-reading-geometry}
 
 | ClickHouse 타입   | .NET 타입                   |
 | --------------- | ------------------------- |
@@ -1492,15 +1814,11 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="clickhouse-native-type-map-writing">
-  ### 타입 매핑: ClickHouse에 쓰기
-</div>
+### 타입 매핑: ClickHouse에 쓰기 {#clickhouse-native-type-map-writing}
 
 데이터를 삽입할 때 드라이버는 .NET 타입을 해당 ClickHouse 타입으로 변환합니다. 아래 표에는 각 ClickHouse 컬럼 타입에 허용되는 .NET 타입이 나와 있습니다.
 
-<div id="type-map-reading-integer">
-  #### 정수 타입
-</div>
+#### 정수 타입 {#type-map-writing-integer}
 
 | ClickHouse 타입 | 허용되는 .NET 타입                                                                                                | 참고 사항 |
 | ------------- | ----------------------------------------------------------------------------------------------------------- | ----- |
@@ -1519,9 +1837,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-floating-points">
-  #### 부동 소수점 타입
-</div>
+#### 부동 소수점 타입 {#type-map-writing-floating-point}
 
 | ClickHouse 타입 | Accepted .NET Types                           | 비고                        |
 | --------------- | --------------------------------------------- | ------------------------- |
@@ -1531,9 +1847,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-boolean">
-  #### 불리언 타입
-</div>
+#### 불리언 타입 {#type-map-writing-boolean}
 
 | ClickHouse 타입 | 허용되는 .NET 타입 | 참고 사항 |
 | ------------- | ------------ | ----- |
@@ -1541,9 +1855,7 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-strings">
-  #### String 타입
-</div>
+#### String 타입 {#type-map-writing-strings}
 
 | ClickHouse 타입  | 허용되는 .NET 타입                                         | 참고                                                  |
 | -------------- | ---------------------------------------------------- | --------------------------------------------------- |
@@ -1552,19 +1864,17 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 ***
 
-<div id="type-map-reading-datetime">
-  #### 날짜 및 시간 타입
-</div>
+#### 날짜 및 시간 타입 {#type-map-writing-datetime}
 
-| ClickHouse 타입 | Accepted .NET Types                                               | 참고 사항                                                                       |
-| ------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Date          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | Unix 일수로 변환되어 UInt16으로 저장되며, 지원 범위는 `[1970-01-01, 2149-06-06]`입니다           |
-| Date32        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | Unix 일수로 변환되어 Int32로 저장되며, 지원 범위는 `[1900-01-01, 2299-12-31]`입니다             |
-| DateTime      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | 자세한 내용은 아래를 참조하십시오. 지원 범위는 UTC 기준 `[1970-01-01, 2106-02-07 06:28:15]`입니다    |
-| DateTime32    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | DateTime과 동일합니다                                                             |
-| DateTime64    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입             | 정밀도는 Scale parameter를 기준으로 결정됩니다                                            |
-| Time          | `TimeSpan`, `int`                                                 | ±999:59:59 범위로 제한되며, int는 초 단위로 처리됩니다                                       |
-| Time64        | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | 문자열은 `[-]HHH:MM:SS[.fraction]` 형식으로 parse되며, ±999:59:59.999999999 범위로 제한됩니다 |
+| ClickHouse 타입 | 허용되는 .NET 타입                                                           | 참고                                                                       |
+| ------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Date          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입                         | Unix 일수로 변환되어 UInt16으로 저장되며, 지원 범위는 `[1970-01-01, 2149-06-06]`입니다           |
+| Date32        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입                         | Unix 일수로 변환되어 Int32로 저장되며, 지원 범위는 `[1900-01-01, 2299-12-31]`입니다             |
+| DateTime      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입                         | 자세한 내용은 아래를 참조하십시오. 지원 범위는 UTC 기준 `[1970-01-01, 2106-02-07 06:28:15]`입니다    |
+| DateTime32    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입                         | DateTime과 동일합니다                                                             |
+| DateTime64    | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 타입                         | 정밀도는 Scale parameter를 기준으로 결정됩니다                                            |
+| Time          | `TimeSpan`, `TimeOnly`, `int`                                                 | ±999:59:59 범위로 제한되며, int는 초 단위로 처리됩니다                                       |
+| Time64        | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | 문자열은 `[-]HHH:MM:SS[.fraction]` 형식으로 parse되며, ±999:59:59.999999999 범위로 제한됩니다 |
 
 <Note>
   **범위를 벗어난 값**
@@ -1601,9 +1911,7 @@ var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
 
 **권장 사항:** 가장 단순하고 예측 가능한 동작을 위해 모든 DateTime 작업에는 `DateTimeKind.Utc` 또는 `DateTimeOffset`을 사용하십시오. 이렇게 하면 서버 시간대, 클라이언트 시간대, 컬럼 시간대와 관계없이 코드가 항상 일관되게 동작합니다.
 
-<div id="datetime-http-param-vs-bulkcopy">
-  #### HTTP 매개변수와 대량 복사
-</div>
+#### HTTP 매개변수와 대량 복사 {#datetime-http-param-vs-bulkcopy}
 
 `Unspecified` DateTime 값을 쓸 때는 HTTP 매개변수 바인딩과 대량 복사 방식 사이에 중요한 차이가 있습니다:
 
@@ -1632,9 +1940,7 @@ command.AddParameter("dt", myDateTime);
 
 ***
 
-<div id="type-map-reading-decimal">
-  #### Decimal 타입
-</div>
+#### Decimal 타입 {#type-map-writing-decimal}
 
 | ClickHouse 타입 | 허용되는 .NET 타입                                                      | 비고                                   |
 | ------------- | ----------------------------------------------------------------- | ------------------------------------ |
@@ -1646,9 +1952,7 @@ command.AddParameter("dt", myDateTime);
 
 ***
 
-<div id="type-map-reading-json">
-  #### JSON 타입
-</div>
+#### JSON 타입 {#type-map-writing-json}
 
 | ClickHouse 타입 | 허용되는 .NET 타입                               | 참고                               |
 | ------------- | ------------------------------------------ | -------------------------------- |
@@ -1685,15 +1989,11 @@ using var client = new ClickHouseClient(settings);
 client.RegisterJsonSerializationType<MyPocoType>();
 ```
 
-<div id="json-typed-columns">
-  ##### 타입이 지정된 JSON 컬럼
-</div>
+##### 타입이 지정된 JSON 컬럼 {#json-typed-columns}
 
 JSON 컬럼에 타입 힌트가 있는 경우(예: `JSON(id UInt64, price Decimal128(2))`), 드라이버는 이 힌트를 사용해 값을 원래 타입 정보를 온전히 유지하면서 직렬화합니다. 이를 통해 일반 JSON으로 직렬화할 때 정밀도가 손실될 수 있는 `UInt64`, `Decimal`, `UUID`, `DateTime64` 같은 타입의 정밀도를 보존할 수 있습니다.
 
-<div id="json-poco-serialization">
-  ##### POCO 직렬화
-</div>
+##### POCO 직렬화 {#json-poco-serialization}
 
 POCO는 `JsonWriteMode`에 따라 두 가지 방식으로 JSON 컬럼에 쓸 수 있습니다:
 
@@ -1754,34 +2054,30 @@ await client.InsertBinaryAsync(
 
 ***
 
-<div id="type-map-reading-other">
-  #### 기타 타입
-</div>
+#### 기타 타입 {#type-map-writing-other}
 
-| ClickHouse 타입           | 허용되는 .NET 타입                     | 비고                                                                                                                                                                                |
-| ----------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UUID                    | `Guid`, `string`                 | 문자열은 Guid로 파싱됨                                                                                                                                                                    |
-| IPv4                    | `IPAddress`, `string`            | IPv4여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨                                                                                                                                          |
-| IPv6                    | `IPAddress`, `string`            | IPv6여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨                                                                                                                                          |
-| Nothing                 | 임의                               | 아무것도 기록하지 않음(no-op)                                                                                                                                                               |
-| Dynamic                 | —                                | **지원되지 않음** (`NotImplementedException` 발생)                                                                                                                                        |
-| Array(T)                | `IList`, `null`                  | `null`은 빈 배열로 기록됨. 중첩 타입(`Array(Array(T))` 및 그보다 더 깊은 중첩)의 경우 계단형 구조(`T[][]`, `List<List<T>>`)와 직사각형 다차원 CLR 배열(`T[,]`, `T[,,]`, …)이 모두 허용되며, CLR rank는 ClickHouse 중첩 깊이와 일치해야 함. |
-| Tuple(T1, T2, ...)      | `ITuple`, `IList`                | 요소 수는 튜플의 원소 수와 일치해야 함. 요소가 7개를 초과하는 경우 [ValueTuple 주의사항](#valuetuple-caveat)을 참조하십시오.                                                                                            |
-| Map(K, V)               | `IDictionary`                    |                                                                                                                                                                                   |
-| Nullable(T)             | `null`, `DBNull`, 또는 T에서 허용하는 타입 | 값 앞에 null 플래그 바이트를 기록함                                                                                                                                                            |
-| Enum8                   | `string`, `sbyte`, 숫자 타입         | 문자열은 enum 딕셔너리에서 조회됨                                                                                                                                                              |
-| Enum16                  | `string`, `short`, 숫자 타입         | 문자열은 enum 딕셔너리에서 조회됨                                                                                                                                                              |
-| LowCardinality(T)       | T에서 허용하는 타입                      | 기반 타입에 위임                                                                                                                                                                         |
-| SimpleAggregateFunction | 기반 타입에서 허용하는 타입                  | 기반 타입에 위임                                                                                                                                                                         |
-| Nested(...)             | 튜플의 `IList`                      | 요소 수는 필드 수와 일치해야 함                                                                                                                                                                |
-| Variant(T1, T2, ...)    | T1, T2, ... 중 하나에 일치하는 값         | 일치하는 타입이 없으면 `ArgumentException` 발생                                                                                                                                               |
-| QBit(T, dim)            | `IList`                          | Array에 위임되며, 차원은 메타데이터로만 사용됨                                                                                                                                                      |
+| ClickHouse 타입           | 허용되는 .NET 타입                                     | 참고                                                                                                                                                                                |
+| ----------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                                 | 문자열은 Guid로 파싱됨                                                                                                                                                                    |
+| IPv4                    | `IPAddress`, `string`                            | IPv4여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨                                                                                                                                          |
+| IPv6                    | `IPAddress`, `string`                            | IPv6여야 하며, 문자열은 `IPAddress.Parse()`로 파싱됨                                                                                                                                          |
+| Nothing                 | 임의                                               | 아무것도 기록하지 않음(no-op)                                                                                                                                                               |
+| Dynamic                 | —                                                | **지원되지 않음** (`NotImplementedException` 발생)                                                                                                                                        |
+| Array(T)                | `IList`, `null`                                  | `null`은 빈 배열로 기록됨. 중첩 타입(`Array(Array(T))` 및 그보다 더 깊은 중첩)의 경우 계단형 구조(`T[][]`, `List<List<T>>`)와 직사각형 다차원 CLR 배열(`T[,]`, `T[,,]`, …)이 모두 허용되며, CLR rank는 ClickHouse 중첩 깊이와 일치해야 함. |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                                | 요소 수는 튜플의 원소 수와 일치해야 함. 요소가 7개를 초과하는 경우 [ValueTuple 주의사항](#valuetuple-caveat)을 참조하십시오.                                                                                            |
+| Map(K, V)               | `IDictionary`, `IEnumerable<KeyValuePair<K, V>>` | 쌍 시퀀스(예: `MapReadMode=KeyValuePairs`로 생성되는 `List<KeyValuePair<K, V>>`)는 어느 읽기 모드에서도 허용되며, 동일한 key가 반복될 수 있음. 바이너리 삽입과 쿼리 매개변수에 모두 적용됨                                             |
+| Nullable(T)             | `null`, `DBNull`, 또는 T에서 허용하는 타입                 | 값 앞에 null 플래그 바이트를 기록함                                                                                                                                                            |
+| Enum8                   | `string`, `sbyte`, 숫자 타입                         | 문자열은 enum 딕셔너리에서 조회됨                                                                                                                                                              |
+| Enum16                  | `string`, `short`, 숫자 타입                         | 문자열은 enum 딕셔너리에서 조회됨                                                                                                                                                              |
+| LowCardinality(T)       | T에서 허용하는 타입                                      | 기반 타입에 위임                                                                                                                                                                         |
+| SimpleAggregateFunction | 기반 타입에서 허용하는 타입                                  | 기반 타입에 위임                                                                                                                                                                         |
+| Nested(...)             | 튜플의 `IList`                                      | 요소 수는 필드 수와 일치해야 함                                                                                                                                                                |
+| Variant(T1, T2, ...)    | T1, T2, ... 중 하나에 일치하는 값                         | 일치하는 타입이 없으면 `ArgumentException` 발생                                                                                                                                               |
+| QBit(T, dim)            | `IList`                                          | Array에 위임되며, 차원은 메타데이터로만 사용됨                                                                                                                                                      |
 
 ***
 
-<div id="type-map-reading-geometry">
-  #### Geometry 타입
-</div>
+#### Geometry 타입 {#type-map-writing-geometry}
 
 | ClickHouse 타입   | 허용되는 .NET 타입                                      | 비고                           |
 | --------------- | ------------------------------------------------- | ---------------------------- |
@@ -1795,9 +2091,7 @@ await client.InsertBinaryAsync(
 
 ***
 
-<div id="type-map-writing-not-supported">
-  #### 쓰기에서 지원되지 않음
-</div>
+#### 쓰기에서 지원되지 않음 {#type-map-writing-not-supported}
 
 | ClickHouse 타입   | 참고 사항                               |
 | ----------------- | ----------------------------------- |
@@ -1806,9 +2100,7 @@ await client.InsertBinaryAsync(
 
 ***
 
-<div id="nested-type-handling">
-  ### 중첩 타입 처리
-</div>
+### 중첩 타입 처리 {#nested-type-handling}
 
 ClickHouse 중첩 타입(`Nested(...)`)은 배열 문법으로 읽고 쓸 수 있습니다.
 
@@ -1830,15 +2122,11 @@ await client.InsertBinaryAsync(
 );
 ```
 
-<div id="logging-and-diagnostics">
-  ## 로깅 및 진단
-</div>
+## 로깅 및 진단 {#logging-and-diagnostics}
 
 ClickHouse .NET 클라이언트는 `Microsoft.Extensions.Logging` 추상화와 통합되어 가볍고 필요할 때 선택적으로 사용할 수 있는 로깅을 제공합니다. 활성화하면 드라이버는 connection 수명 주기 이벤트, 명령 실행, 전송 작업, 대량 삽입 작업에 대해 구조화된 메시지를 출력합니다. 로깅은 완전히 선택 사항이므로 로거를 구성하지 않은 애플리케이션도 추가 오버헤드 없이 계속 실행됩니다.
 
-<div id="logging-quick-start">
-  ### 빠른 시작
-</div>
+### 빠른 시작 {#logging-quick-start}
 
 ```csharp
 using ClickHouse.Driver;
@@ -1859,9 +2147,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-appsettings-config">
-  #### appsettings.json 사용
-</div>
+#### appsettings.json 사용 {#logging-appsettings-config}
 
 표준 .NET 구성을 사용해 로깅 수준을 설정할 수 있습니다:
 
@@ -1890,9 +2176,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-inmemory-config">
-  #### 인메모리 구성 사용하기
-</div>
+#### 인메모리 구성 사용하기 {#logging-inmemory-config}
 
 코드에서 범주별로 로깅 상세도를 설정할 수도 있습니다:
 
@@ -1927,9 +2211,7 @@ var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
 using var client = new ClickHouseClient(settings);
 ```
 
-<div id="logging-categories">
-  ### 범주 및 이미터
-</div>
+### 범주 및 이미터 {#logging-categories}
 
 드라이버는 전용 범주를 사용하므로 구성 요소별로 로그 레벨을 세밀하게 조정할 수 있습니다:
 
@@ -1941,9 +2223,7 @@ using var client = new ClickHouseClient(settings);
 | `ClickHouse.Driver.Client`     | `ClickHouseClient`     | 바이너리 삽입, 쿼리 및 기타 작업                          |
 | `ClickHouse.Driver.NetTrace`   | `TraceHelper`          | 네트워크 추적, 디버그 모드가 활성화된 경우에만 해당                |
 
-<div id="logging-config-example">
-  #### 예시: 연결 문제 진단하기
-</div>
+#### 예시: 연결 문제 진단하기 {#logging-config-example}
 
 ```json
 {
@@ -1966,9 +2246,7 @@ using var client = new ClickHouseClient(settings);
 * 연결 열림/닫힘 이벤트
 * 세션 ID 추적
 
-<div id="logging-debugmode">
-  ### 디버그 모드: 네트워크 추적 및 진단
-</div>
+### 디버그 모드: 네트워크 추적 및 진단 {#logging-debugmode}
 
 네트워킹 문제를 진단하는 데 도움이 되도록, 드라이버 라이브러리에는 .NET 네트워킹 내부 구성의 저수준 트레이싱을 활성화하는 도우미가 포함되어 있습니다. 이를 활성화하려면 수준이 Trace로 설정된 LoggerFactory를 전달하고 EnableDebugMode를 true로 설정해야 합니다(또는 `ClickHouse.Driver.Diagnostic.TraceHelper` 클래스를 통해 수동으로 활성화할 수 있습니다). 이벤트는 `ClickHouse.Driver.NetTrace` 범주에 기록됩니다. 경고: 이렇게 하면 매우 상세한 로그가 대량으로 생성되며 성능에도 영향을 줍니다. 프로덕션 환경에서는 디버그 모드를 활성화하지 않는 것이 좋습니다.
 
@@ -1987,15 +2265,11 @@ var settings = new ClickHouseClientSettings()
 };
 ```
 
-<div id="opentelemetry">
-  ## OpenTelemetry
-</div>
+## OpenTelemetry {#opentelemetry}
 
 이 드라이버는 .NET [`System.Diagnostics.Activity`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/distributed-tracing) API를 통해 OpenTelemetry 분산 트레이싱을 기본으로 지원합니다. 이 기능을 활성화하면 드라이버가 데이터베이스 작업에 대한 스팬을 생성하며, 생성된 스팬은 Jaeger나 ClickHouse 자체([OpenTelemetry Collector](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry) 사용)와 같은 관측성 백엔드로 내보낼 수 있습니다.
 
-<div id="opentelemetry-enabling">
-  ### 트레이싱 활성화
-</div>
+### 트레이싱 활성화 {#opentelemetry-enabling}
 
 ASP.NET Core 애플리케이션에서는 ClickHouse 드라이버의 `ActivitySource`를 OpenTelemetry 구성에 추가하세요:
 
@@ -2019,9 +2293,7 @@ var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .Build();
 ```
 
-<div id="opentelemetry-attributes">
-  ### 스팬 속성
-</div>
+### 스팬 속성 {#opentelemetry-attributes}
 
 각 스팬에는 표준 OpenTelemetry 데이터베이스 속성과, 디버깅에 활용할 수 있는 ClickHouse 전용 쿼리 통계가 포함됩니다.
 
@@ -2037,9 +2309,7 @@ var tracerProvider = Sdk.CreateTracerProviderBuilder()
 | `db.clickhouse.written_bytes` | 쿼리가 기록한 바이트 수     |
 | `db.clickhouse.elapsed_ns`    | 서버 측 실행 시간(나노초)   |
 
-<div id="opentelemetry-configuration">
-  ### 구성 옵션
-</div>
+### 구성 옵션 {#opentelemetry-configuration}
 
 `ClickHouseDiagnosticsOptions`를 사용해 추적 동작을 제어합니다:
 
@@ -2057,15 +2327,11 @@ ClickHouseDiagnosticsOptions.StatementMaxLength = 500;
   `IncludeSqlInActivityTags`를 활성화하면 트레이스에 민감한 데이터가 노출될 수 있습니다. 프로덕션 환경에서 사용할 때는 주의하십시오.
 </Warning>
 
-<div id="tls-configuration">
-  ## TLS 구성
-</div>
+## TLS 구성 {#tls-configuration}
 
 HTTPS를 통해 ClickHouse에 연결할 때 TLS/SSL 동작은 여러 방식으로 구성할 수 있습니다.
 
-<div id="custom-certificate-validation">
-  ### 사용자 지정 인증서 유효성 검사
-</div>
+### 사용자 지정 인증서 유효성 검사 {#custom-certificate-validation}
 
 사용자 지정 인증서 유효성 검사 로직이 필요한 프로덕션 환경에서는 `ServerCertificateCustomValidationCallback` 핸들러가 구성된 자체 `HttpClient`를 제공하십시오:
 
@@ -2076,20 +2342,18 @@ using ClickHouse.Driver;
 
 var handler = new HttpClientHandler
 {
-    // 압축이 활성화된 경우 필요 (기본값)
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-
+    // No AutomaticDecompression needed: the driver decodes compressed responses itself.
     ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) =>
     {
-        // 예시: 특정 인증서 지문 허용
+        // Example: Accept a specific certificate thumbprint
         if (cert?.Thumbprint == "YOUR_EXPECTED_THUMBPRINT")
             return true;
 
-        // 예시: 특정 발급자의 인증서 허용
+        // Example: Accept certificates from a specific issuer
         if (cert?.Issuer.Contains("YourOrganization") == true)
             return true;
 
-        // 기본값: 표준 유효성 검사 사용
+        // Default: Use standard validation
         return sslPolicyErrors == SslPolicyErrors.None;
     },
 };
@@ -2109,13 +2373,201 @@ using var client = new ClickHouseClient(settings);
 <Note>
   사용자 지정 HttpClient를 제공할 때의 중요 사항
 
-  * **자동 압축 해제**: 압축을 비활성화하지 않았다면 `AutomaticDecompression`을 활성화해야 합니다(압축은 기본적으로 활성화되어 있습니다).
+  * **자동 압축 해제**: `AutomaticDecompression`은 꺼 두십시오. 드라이버가 압축된 응답을 직접 디코딩하므로 필요하지 않으며, 오히려 요청 측면에서 역효과를 냅니다. 전송 시점에 핸들러가 자신의 마스크에 포함된 모든 알고리즘을 나가는 `Accept-Encoding`에 *추가로 덧붙여* 드라이버가 알린 범위를 넓히기 때문에, ClickHouse가 요청하지 않은 코덱으로 응답할 수 있습니다. [응답 압축 해제](#response-decompression)를 참조하십시오.
   * **유휴 시간 제한**: 반쯤 열린 연결로 인한 연결 오류를 방지하려면 `PooledConnectionIdleTimeout`을 서버의 `keep_alive_timeout`보다 작게 설정하십시오(ClickHouse Cloud에서는 10초).
 </Note>
 
-<div id="orm-support">
-  ## ORM 지원
-</div>
+## 성능 튜닝 {#performance-tuning}
+
+이 섹션에서는 클라이언트로 최적의 성능을 얻는 방법과, 특정 사용 사례에 맞게 클라이언트 성능을 조정할 수 있는 다양한 옵션을 설명합니다.
+
+### 한눈에 보기 {#perf-at-a-glance}
+
+| 상황 | 권장 조치 |
+|---|---|---|
+| 행을 POCO로 읽는 경우 | `MapTo<T>` 대신 [`QueryAsync<T>`](#perf-read-path) 사용 |
+| 대량 삽입을 수행하는 경우 | [`InsertOptions.BatchSize`](#perf-insert-batching) 값 늘리기 |
+| 삽입이 많은 콘솔 앱이나 워커 앱을 실행하는 경우 | [서버 GC](#perf-gc) 활성화 |
+| 네트워크로 대용량 결과를 읽는 경우 | 응답 압축을 켠 상태로 유지(기본값) |
+| 빠른 연결로 삽입하는 경우 | [`InsertOptions.Compressor = null`](#perf-compression) 시도 |
+| 동일한 테이블에 여러 번 삽입하는 경우 | [`UseSchemaCache` 또는 `ColumnTypes`](#skip-schema-query) 사용 |
+| 매우 큰 결과를 읽는 경우 | [`ReadBufferSize`](#perf-buffers) 값 늘리기 |
+
+***
+
+### 읽기: 머티리얼라이즈 경로 선택 {#perf-read-path}
+
+결과에서 행을 가져오는 방법은 세 가지가 있으며, 비용은 서로 다릅니다. 일부 경로는 값을 박싱하기 때문에 할당(allocation)이 늘어나고 성능이 떨어집니다.
+
+| 읽기 방식                                                                                                       | 각 값 박싱 여부 | 참고                                     |
+| ----------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------- |
+| `QueryAsync<T>`                                                                                             | **아니요**   | stream에서 속성으로 직접 읽습니다. 가장 빠른 경로입니다.   |
+| 유형이 지정된 reader accessor (`GetInt32`, `GetInt64`, `GetDouble`, `GetGuid`, `GetDateTime`, `GetFieldValue<T>`) | **아니요**   | 유형이 지정된 값 저장소에서 박싱 없이 읽습니다.            |
+| `MapTo<T>`                                                                                                  | 예         | 행을 먼저 머티리얼라이즈한 뒤 그 값을 복사해 옵니다.         |
+| `GetValue` 및 `GetValues`                                                                                    | 예         | `object`를 반환하므로 값을 요청하는 시점에 박싱이 발생합니다. |
+
+*hits* 데이터셋의 105개 컬럼을 1,000,000행 읽는 경우:
+
+| API             |          할당량 |
+| --------------- | -----------: |
+| `QueryAsync<T>` | **1,372 MB** |
+| `MapTo<T>`      |     3,133 MB |
+
+```csharp
+// Fast path: register the type once, then stream rows directly into it.
+client.RegisterPocoType<HitRow>();
+
+await foreach (var row in client.QueryAsync<HitRow>("SELECT * FROM hits"))
+    Process(row);
+```
+
+<Note>
+  *ORM은 타입이 지정된 accessor를 사용할 때 빠른 경로를 이용합니다.* linq2db는 각 컬럼에 대해 `GetInt64`,
+  `GetDouble`, `GetDateTime`을 등록하므로 박싱 없이 읽습니다. `GetValue`를 통해 읽는 코드
+  (Dapper의 `dynamic` 결과 포함)는 각 값을 박싱합니다. ORM 쿼리가 자주 실행되면서
+  `GetValue`를 통해 읽는다면, 해당 쿼리에 한해 `QueryAsync<T>`를 사용하십시오.
+</Note>
+
+***
+
+### 삽입: 배치 크기와 병렬성 {#perf-insert-batching}
+
+배치 크기는 삽입 처리량을 좌우하는 가장 중요한 단일 설정입니다. `InsertOptions.BatchSize`의 기본값은
+100,000행입니다.
+
+**큰 배치를 사용하십시오.** 1,000,000행을 삽입할 때 배치당 행 수를 10,000에서 100,000으로 늘린 결과는
+다음과 같습니다:
+
+| 삽입         | 배치당 10,000행 | 배치당 100,000행 |      |
+| ---------- | ----------: | -----------: | ---: |
+| POCO       |   15,308 ms |     7,853 ms | −49% |
+| `object[]` |   17,027 ms |    10,671 ms | −37% |
+
+배치 크기를 제어할 수 없다면(예: 다수의 소규모 producer가 각각 독립적으로 행을 전송하는 경우) [async 삽입](#async-inserts)를 사용해 서버가 배칭을 처리하도록 하십시오.
+
+**병렬 업로드.** `InsertOptions.MaxDegreeOfParallelism`의 기본값은 `1`입니다. 이 값을 늘리면 여러 배치를
+동시에 전송할 수 있습니다. 압축이 활성화된 경우 효과가 가장 큰데, 각 배치가 각자의 thread에서 압축되기
+때문입니다. session은 병렬 삽입에서 동작하지 않으므로, session을 비활성화하거나
+`MaxDegreeOfParallelism = 1`을 유지하십시오.
+
+**스키마 확인 쿼리를 제거하십시오.** `InsertBinaryAsync`를 호출할 때마다 컬럼 타입을 확인하기 위해 먼저
+`SELECT ... WHERE 1=0` 쿼리를 전송합니다. `ColumnTypes` 또는 `UseSchemaCache`로 이 왕복 통신을 없애는
+방법은 [스키마 확인 쿼리 건너뛰기](#skip-schema-query)를 참조하십시오.
+
+<Note>
+  박싱 없는 삽입 경로는 기본 `RowBinary` 포맷에 적용됩니다. `RowBinaryWithDefaults`는 `DBDefault` marker를
+  찾기 위해 각 값을 검사해야 하므로 더 느린 경로를 사용합니다.
+</Note>
+
+***
+
+### 압축: 두 방향의 결론이 다릅니다 {#perf-compression}
+
+압축은 CPU를 바이트와 맞바꾸는 작업입니다. 이 맞바꿈이 이득인지는 전송 방향, ClickHouse 서버까지의 연결 대역폭, 선택한 압축 알고리즘과 데이터의 궁합, 그리고 전송되는 바이트마다 비용을 지불해야 하는지 여부에 따라 달라집니다.
+
+**읽기:** 서버가 동일한 머신에서 실행 중인 경우가 아니라면 압축을 켜 두십시오. 이것이 기본값입니다. 압축을 사용하지 않은 경우와 비교했을 때, 레벨 1의 `zstd`는 다음과 같은 결과를 보였습니다:
+
+| 클라이언트에서 서버로 | 압축의 효과     |
+| ----------- | ---------- |
+| 동일 호스트(루프백) | 8% 손해      |
+| 동일 클라우드 리전  | **16% 절감** |
+| 한 리전 떨어진 위치 | **33% 절감** |
+
+**삽입:** 압축을 적용하기 전에 먼저 측정하십시오. 절감 효과가 압축을 켤 만큼 크지 않을 수 있습니다. 또한 압축 해제가 서버에 추가 부하를 준다는 점도 염두에 두십시오. 이 부하는 Zstd와 LZ4에서는 크지 않지만 다른 알고리즘(예: Brotli)에서는 클 수 있습니다.
+
+삽입 압축을 끄려면 다음과 같이 하십시오:
+
+```csharp
+var options = new InsertOptions { Compressor = null };
+await client.InsertBinaryAsync("my_table", columns, rows, options);
+```
+
+코덱 선택, 압축 수준, 그리고 사용 환경에 맞는 교차점을 찾는 방법은
+[압축 튜닝](#tuning-compression)을 참조하십시오.
+
+***
+
+### 버퍼 {#perf-buffers}
+
+`ReadBufferSize`는 HTTP 응답을 읽는 버퍼의 크기를 설정합니다. 기본값은 64 KiB입니다.
+
+driver는 이 버퍼를 공유 풀에서 빌려 쓰고 reader를 해제할 때 반환하므로, 쿼리마다 메모리를 새로
+할당하지는 않습니다. 결과 크기가 큰 경우 이 값을 늘리면 버퍼를 다시 채우는 횟수를 줄일 수 있습니다.
+driver는 동시에 열려 있는 reader마다 버퍼를 하나씩 유지하므로, 버퍼 size가 크거나 동시 reader 수가
+많을수록 메모리 사용량이 늘어납니다.
+
+```csharp
+var settings = new ClickHouseClientSettings("Host=localhost") { ReadBufferSize = 256 * 1024 };
+```
+
+<Warning>
+  *reader는 항상 dispose하십시오.* reader를 dispose하면 풀에서 가져온 버퍼가 반환되고 HTTP connection이 해제됩니다.
+  reader를 그대로 방치하면 버퍼가 풀로 반환되지 않으며 HTTP connection도 사용할 수 없는 상태로 남을 수 있습니다.
+  일반적인 garbage collection은 dispose를 대체하지 못합니다.
+</Warning>
+
+***
+
+### 런타임과 GC {#perf-gc}
+
+**삽입이 많은 애플리케이션에서는 Server GC를 활성화하십시오.** 동일한 코드와 동일한 할당 바이트 수 기준으로, Workstation GC는 삽입 작업에서 Server GC보다 최대 97% 더 느렸습니다.
+
+```xml
+<PropertyGroup>
+  <ServerGarbageCollection>true</ServerGarbageCollection>
+</PropertyGroup>
+```
+
+ASP.NET Core 프로젝트는 이미 이 설정이 적용되어 있습니다. 반면 콘솔 애플리케이션, 워커 서비스, 대부분의 컨테이너
+이미지에서는 그렇지 않습니다.
+
+원인은 generation 0 예산의 크기입니다. Workstation GC는 예산이 작기 때문에, 삽입 작업에서 만들어지는
+수명이 짧은 버퍼가 generation 0에서 회수되지 못합니다. 대신 generation 1로 승격(promotion)되며, 그 결과
+generation 2 작업이 훨씬 많아집니다. 한 삽입 사례에서는 작업 1,000회당 generation 2 수집 횟수가
+Server GC에서는 4,000회, Workstation GC에서는 73,000회로 측정되었습니다.
+
+<Note>
+  Server GC는 처리량을 위한 설정이지 지연 시간을 위한 설정이 아닙니다. 동일한 측정에서 Server GC는 총 일시 중지 시간이
+  절반 이하였지만, 개별 일시 중지 시간은 더 길었습니다
+  (95백분위수 기준 114.6ms 대 61.9ms). 서비스가 테일 지연 시간에 민감하다면, 선택하기 전에
+  두 mode를 모두 측정해 보십시오.
+</Note>
+
+***
+
+### 지연 시간: 연결 재사용 {#perf-latency}
+
+새로운 TCP 연결을 수립하고 TLS handshake를 수행하는 데는 상당한 시간이 소요됩니다.
+연결을 재사용하면 쿼리의 지연 시간을 크게 줄일 수 있습니다.
+
+* 요청마다 클라이언트를 생성하지 마십시오. 각각 고유한 `HttpClient`를 가진 새 클라이언트는 새로운
+  연결 풀을 생성하며, handshake 비용을 다시 치르게 됩니다. 애플리케이션 수명 전체에 걸쳐 하나의 `ClickHouseClient`를 사용하십시오. 이 클래스는 thread-safe하며
+  singleton 용도로 설계되었습니다.
+* ADO.NET 및 ORM에서는 `ClickHouseDataSource`를 사용하여 모든 연결이 하나의 풀을 공유하도록 하십시오.
+
+전체 패턴은
+[Connection lifetime 및 pooling](#best-practices-connection-lifetime)을 참조하십시오.
+
+***
+
+### 직접 측정하기 {#perf-measuring}
+
+많은 경우 성능은 데이터의 형태, 서버와의 연결 속도, 클라이언트 CPU와 서버 CPU 중 어느 쪽을 더 사용할지에 대한 트레이드오프, 하드웨어 제약 등에 따라 달라집니다.
+따라서 사용자의 데이터와 환경을 기준으로 직접 성능을 측정해 보는 것을 권장합니다.
+
+서버가 담당한 작업량을 확인하려면 `QueryOptions.QueryId`를 설정하고 카운터를 읽어 오십시오:
+
+```sql
+SELECT ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
+       ProfileEvents['NetworkSendBytes'] AS sent_bytes,
+       query_duration_ms
+FROM system.query_log
+WHERE query_id = 'your-query-id' AND type = 'QueryFinish';
+```
+
+***
+
+## ORM 지원 {#orm-support}
 
 ORM은 ADO.NET API(`ClickHouseConnection`)를 사용해야 합니다. 연결 수명 주기를 올바르게 관리하려면 `ClickHouseDataSource`에서 연결을 생성하십시오:
 
@@ -2128,9 +2580,7 @@ await using var connection = await dataSource.OpenConnectionAsync();
 // ORM에 연결 전달...
 ```
 
-<div id="orm-support-dapper">
-  ### Dapper
-</div>
+### Dapper {#orm-support-dapper}
 
 `ClickHouse.Driver`는 Dapper와 함께 사용할 수 있습니다. 드라이버는 Dapper의 `@parameter` 구문을 ClickHouse의 네이티브 `{parameter:Type}` 구문으로 자동 변환하며, 타입은 .NET 값에서 자동으로 추론됩니다.
 
@@ -2143,9 +2593,7 @@ services.AddSingleton(dataSource); // DI에 싱글톤으로 등록
 using var connection = dataSource.CreateConnection();
 ```
 
-<div id="dapper-parameter-passing">
-  #### 매개변수 전달 방식
-</div>
+#### 매개변수 전달 방식 {#dapper-parameter-passing}
 
 Dapper의 모든 표준 매개변수 전달 방식을 지원합니다.
 
@@ -2190,9 +2638,7 @@ var rows = await connection.QueryAsync<User>(
     "SELECT id, name FROM users WHERE id = @Id", dynParams);
 ```
 
-<div id="dapper-pocos">
-  #### POCO로 쿼리 결과 매핑하기
-</div>
+#### POCO로 쿼리 결과 매핑하기 {#dapper-pocos}
 
 Dapper는 이름을 기준으로 컬럼을 속성에 매핑합니다(대소문자를 구분하지 않음).
 
@@ -2211,9 +2657,7 @@ var users = (await connection.QueryAsync<User>("SELECT id, name, balance FROM us
 var row = (await connection.QueryAsync<User>("SELECT 1 as id, 'hello' as name, 2.5 as balance")).Single();
 ```
 
-<div id="dapper-clickhouse-param-syntax">
-  #### ClickHouse 네이티브 매개변수 구문
-</div>
+#### ClickHouse 네이티브 매개변수 구문 {#dapper-clickhouse-param-syntax}
 
 타입을 명시적으로 제어해야 할 때는 SQL에서 ClickHouse의 `{param:Type}` 구문을 직접 사용하고, 매개변수 값에는 `Dictionary<string, object>`를 사용하십시오. 동일한 매개변수에 `@param` 구문과 `{param:Type}` 구문을 함께 사용하지 마십시오.
 
@@ -2222,9 +2666,7 @@ var parameters = new Dictionary<string, object> { { "value", 42 } };
 var result = await connection.QueryAsync<int>("SELECT {value:Int32}", parameters);
 ```
 
-<div id="dapper-where-in">
-  #### WHERE IN
-</div>
+#### WHERE IN {#dapper-where-in}
 
 **Dapper의 네이티브 IN 확장은 정상적으로 동작합니다:**
 
@@ -2245,9 +2687,7 @@ var rows = await connection.QueryAsync<User>(
     parameters);
 ```
 
-<div id="dapper-type-handlers">
-  #### 사용자 지정 타입 핸들러
-</div>
+#### 사용자 지정 타입 핸들러 {#dapper-type-handlers}
 
 일부 ClickHouse 타입(예: `ITuple`, `BigInteger`, `ClickHouseDecimal`)은 애플리케이션 시작 시 핸들러를 등록해야 합니다:
 
@@ -2264,9 +2704,7 @@ SqlMapper.AddTypeHandler(new IpAddressHandler());
 
 type handler 구현 예시는 [Dapper 예시](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/ORM/ORM_001_Dapper.cs)를 참조하십시오.
 
-<div id="dapper-contrib">
-  #### Dapper.Contrib
-</div>
+#### Dapper.Contrib {#dapper-contrib}
 
 `GetAll<T>()` 및 `Get<T>(id)`는 작동합니다. `Insert<T>()`는 작동하지 않습니다. SQL Server 구문(`SCOPE_IDENTITY`, `[]`)을 생성하기 때문입니다. 대신 `ClickHouseClient` 네이티브 `InsertBinaryAsync` 메서드를 사용하는 것이 좋습니다.
 
@@ -2280,9 +2718,7 @@ var one = await connection.GetAsync<UserRecord>(1);
 
 속성 이름은 ClickHouse 컬럼 이름과 정확히 일치해야 합니다(대소문자 구분).
 
-<div id="dapper-limitations">
-  #### 제한 사항
-</div>
+#### 제한 사항 {#dapper-limitations}
 
 | 항목                           | 상태      | 세부 정보                                                           |
 | ---------------------------- | ------- | --------------------------------------------------------------- |
@@ -2293,9 +2729,7 @@ var one = await connection.GetAsync<UserRecord>(1);
 | `Dapper.Contrib.Insert<T>()` | 지원되지 않음 | SQL Server 전용 구문을 생성합니다                                         |
 | `Nothing` 타입                 | 지원되지 않음 | .NET에서 의미 있게 표현할 방법이 없습니다                                       |
 
-<div id="orm-support-linq2db">
-  ### Linq2db
-</div>
+### Linq2db {#orm-support-linq2db}
 
 이 드라이버는 .NET용 경량 ORM 및 LINQ 프로바이더인 [linq2db](https://github.com/linq2db/linq2db)와 호환됩니다. 자세한 내용은 프로젝트 웹사이트 문서를 참조하십시오.
 
@@ -2355,9 +2789,7 @@ var options = new BulkCopyOptions
 await table.BulkCopyAsync(options, products);
 ```
 
-<div id="orm-support-ef-core">
-  ### Entity Framework Core
-</div>
+### Entity Framework Core {#orm-support-ef-core}
 
 ClickHouse용 공식 Entity Framework Core 프로바이더입니다. C# 클래스를 ClickHouse 테이블에 매핑하고, LINQ로 쿼리하고, `SaveChanges`를 통해 데이터를 삽입하는 작업을 모두 익숙한 EF Core 패턴으로 수행할 수 있습니다.
 
@@ -2368,9 +2800,7 @@ ClickHouse용 공식 Entity Framework Core 프로바이더입니다. C# 클래�
   이 프로바이더는 현재 활발히 개발되고 있습니다. 현재 릴리스에서는 LINQ 쿼리(JOIN, 서브쿼리, 집합 연산 포함), `SaveChanges` / `BulkInsertAsync`를 통한 `INSERT`, 전체 DDL(CREATE / ALTER / DROP)을 포함한 마이그레이션, 그리고 ClickHouse 전용 테이블 엔진 구성을 지원합니다. `UPDATE` / `DELETE`는 지원되지 않습니다.
 </Note>
 
-<div id="ef-core-installation">
-  #### 설치
-</div>
+#### 설치 {#ef-core-installation}
 
 ```bash
 dotnet add package ClickHouse.EntityFrameworkCore
@@ -2378,9 +2808,7 @@ dotnet add package ClickHouse.EntityFrameworkCore
 
 .NET 10.0 및 EF Core 10이 필요합니다.
 
-<div id="ef-core-quick-start">
-  #### 빠른 시작
-</div>
+#### 빠른 시작 {#ef-core-quick-start}
 
 엔터티와 `DbContext`를 정의한 다음 LINQ로 쿼리합니다:
 
@@ -2415,9 +2843,7 @@ var topPages = await ctx.PageViews
     .ToListAsync();
 ```
 
-<div id="ef-core-types">
-  #### 지원되는 타입
-</div>
+#### 지원되는 타입 {#ef-core-types}
 
 | 범주          | ClickHouse 타입                                                                           | CLR 타입                                                                                                         |
 | ----------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -2443,9 +2869,7 @@ var topPages = await ctx.PageViews
 
 `Decimal128`/`Decimal256` 컬럼의 전체 정밀도가 필요한 경우 `decimal` 대신 `ClickHouse.Driver.Numerics`의 `ClickHouseDecimal`을 사용하세요 — .NET `decimal`은 유효 자릿수가 28~29자리로 제한됩니다.
 
-<div id="ef-core-linq">
-  #### 지원되는 LINQ 작업
-</div>
+#### 지원되는 LINQ 작업 {#ef-core-linq}
 
 **쿼리:** `Where`, `OrderBy`, `Take`, `Skip`, `Select`, `First`, `Single`, `Any`, `All`, `Count`, `Distinct`, `AsNoTracking`
 
@@ -2463,9 +2887,7 @@ var topPages = await ctx.PageViews
 
 **수학 함수:** 표준 `Math` 및 `MathF` 메서드는 산술, 로그, 삼각, 유틸리티 함수를 비롯해 해당 ClickHouse 함수로 변환됩니다.
 
-<div id="ef-core-join-nulls">
-  ##### LEFT JOIN NULL 의미 체계
-</div>
+##### LEFT JOIN NULL 의미 체계 {#ef-core-join-nulls}
 
 프로바이더는 JOIN 동작에 대한 Entity Framework의 기대에 맞추기 위해 모든 연결 경로에 `set_join_use_nulls=1`을 자동으로 주입합니다.
 
@@ -2477,11 +2899,9 @@ optionsBuilder.UseClickHouse(connectionString, o => o.DisableJoinNullSemantics()
 
 옵트아웃을 활성화하면 LEFT JOIN은 ClickHouse 컬럼의 기본값을 반환하며, EF의 null 기반 탐색 감지 기능이 더 이상 예상대로 작동하지 않습니다. `== null` 대신 `0` / `""`에 대한 명시적 비교를 사용하세요.
 
-<div id="ef-core-insert">
-  #### 데이터 삽입
-</div>
+#### 데이터 삽입 {#ef-core-insert}
 
-`SaveChanges`는 드라이버의 네이티브 `InsertBinaryAsync` API를 사용합니다 — GZip으로 압축된 RowBinary 인코딩을 사용하므로, 매개변수화된 SQL보다 훨씬 효율적입니다:
+`SaveChanges`는 드라이버의 네이티브 `InsertBinaryAsync` API를 사용합니다 — 압축된 요청 본문과 함께 RowBinary 인코딩을 사용하므로, 매개변수화된 SQL보다 훨씬 효율적입니다:
 
 ```csharp
 await using var ctx = new AnalyticsContext();
@@ -2505,11 +2925,9 @@ await ctx.SaveChangesAsync();
 optionsBuilder.UseClickHouse("Host=localhost", o => o.MaxBatchSize(5000));
 ```
 
-<div id="bulk-insert">
-  #### 대량 삽입
-</div>
+#### 대량 삽입 {#ef-core-bulk-insert}
 
-높은 처리량의 로드에는 `SaveChanges` 대신 `BulkInsertAsync`를 사용하세요. 이는 `DbContext`의 확장 메서드로, EF Core의 변경 추적기, identity resolution, 상태 관리를 완전히 우회하고 RowBinary 인코딩과 GZip 압축을 사용해 드라이버의 `InsertBinaryAsync`를 직접 호출합니다.
+높은 처리량의 로드에는 `SaveChanges` 대신 `BulkInsertAsync`를 사용하세요. 이는 `DbContext`의 확장 메서드로, EF Core의 변경 추적기, identity resolution, 상태 관리를 완전히 우회하고 RowBinary 인코딩과 압축된 요청 본문을 사용해 드라이버의 `InsertBinaryAsync`를 직접 호출합니다.
 
 따라서 삽입 후 엔터티 추적이 필요 없는 대규모 데이터셋을 로드하는 데 적합합니다:
 
@@ -2527,9 +2945,7 @@ long rowsInserted = await ctx.BulkInsertAsync(events);
 
 입력은 어떤 `IEnumerable<T>`이든 사용할 수 있으며, 모든 엔터티를 메모리에 로드하지 않고 스트리밍 방식으로 처리합니다. 반환값은 삽입된 행 수입니다. 삽입 후 엔터티는 `DbContext`에 attach되지 않으므로 `Added` → `Unchanged` 상태 전환이 발생하지 않습니다.
 
-<div id="ef-core-enums">
-  #### 열거형
-</div>
+#### 열거형 {#ef-core-enums}
 
 ClickHouse `Enum8`/`Enum16` 컬럼은 `string` 속성 또는 C# `enum` 타입에 매핑할 수 있습니다. C# 열거형을 사용하면 프로바이더가 열거형과 해당 문자열 표현 간에 자동으로 변환합니다:
 
@@ -2548,9 +2964,7 @@ var active = await ctx.Users
     .ToListAsync();
 ```
 
-<div id="ef-core-value-converters">
-  #### 사용자 지정 타입 변환
-</div>
+#### 사용자 지정 타입 변환 {#ef-core-value-converters}
 
 EF Core의 `ValueConverter` 시스템을 사용하면 사용자 지정 타입을 프로바이더가 이미 지원하는 타입에 매핑할 수 있습니다. 프로바이더는 사용자 지정 타입을 직접 처리하지 않으며, EF Core가 그 경계에서 타입을 변환합니다.
 
@@ -2609,9 +3023,7 @@ protected override void ConfigureConventions(ModelConfigurationBuilder configura
 }
 ```
 
-<div id="ef-core-column-types">
-  #### 컬럼 타입 어노테이션
-</div>
+#### 컬럼 타입 어노테이션 {#ef-core-column-types}
 
 `string`, `int`, `DateTime` 등과 같은 스칼라 타입의 경우 프로바이더가 ClickHouse 타입을 자동으로 추론합니다. 매개변수화된 타입과 래퍼의 경우에는 ClickHouse 타입을 명시적으로 지정해야 합니다.
 
@@ -2656,9 +3068,7 @@ modelBuilder.Entity<SensorReading>(e =>
 
 `Array(Nullable(Int32))` 및 `LowCardinality(Nullable(String))`와 같은 중첩된 래퍼 형식이 지원되며, 프로바이더는 모든 중첩 수준에서 `Nullable`과 `LowCardinality`를 자동으로 해제합니다.
 
-<div id="ef-core-variant-dynamic">
-  #### Variant 및 Dynamic 컬럼
-</div>
+#### Variant 및 Dynamic 컬럼 {#ef-core-variant-dynamic}
 
 ClickHouse `Variant(T1, T2, ...)` 및 `Dynamic` 컬럼은 .NET의 `object`에 매핑됩니다. `object`는 자동 형식 유추를 하기에는 너무 범용적이므로, `.HasColumnType()`을 사용해 저장 형식을 명시적으로 선언해야 합니다:
 
@@ -2677,9 +3087,7 @@ entity.Property(e => e.Payload).HasColumnType("Dynamic");
 
 읽는 시점에 값은 저장된 discriminator에 대응하는 .NET 형식으로 자동으로 역직렬화됩니다(예: `string`, `ulong`, `ulong[]`).
 
-<div id="ef-core-json">
-  #### JSON 컬럼
-</div>
+#### JSON 컬럼 {#ef-core-json}
 
 이 프로바이더는 ClickHouse의 `Json` 컬럼 타입을 지원하며, `System.Text.Json.Nodes.JsonNode`(프라이머리) 또는 `string`(자동 `ValueConverter`를 통해)으로 매핑됩니다:
 
@@ -2728,9 +3136,7 @@ entity.Property(e => e.Data).HasColumnType("Json");
   * **정수 정밀도** — ClickHouse JSON은 모든 정수를 `Int64`로 저장합니다. `JsonNode`로 읽을 때는 `GetValue<int>()` 대신 `GetValue<long>()`를 사용하십시오.
 </Note>
 
-<div id="ef-core-engines">
-  #### 테이블 엔진
-</div>
+#### 테이블 엔진 {#ef-core-engines}
 
 `ToTable(name, t => ...)` Fluent API를 사용해 ClickHouse 테이블 엔진과 엔진별 절을 구성합니다. 엔진을 지정하지 않으면 프로바이더는 엔터티의 기본 키(primary key)에서 도출한 `ORDER BY`를 사용하며, 기본 테이블 엔진으로 `MergeTree`를 적용합니다.
 
@@ -2781,9 +3187,7 @@ modelBuilder.Entity<Event>()
 
 표준(스키핑이 아닌) 인덱스는 ClickHouse에 해당 기능이 없으므로 아무 경고 없이 무시됩니다. 고유 인덱스는 ClickHouse가 고유성을 강제하지 않으므로 예외를 발생시킵니다.
 
-<div id="ef-core-migrations">
-  #### 마이그레이션
-</div>
+#### 마이그레이션 {#ef-core-migrations}
 
 EF Core의 표준 마이그레이션 워크플로:
 
@@ -2805,9 +3209,7 @@ dotnet ef database update
 | `ALTER TABLE ADD INDEX` / `DROP INDEX` | 데이터 스키핑 인덱스만 지원합니다                                              |
 | `CREATE DATABASE` / `DROP DATABASE`    | `EnsureCreated` / `EnsureDeleted` 및 마이그레이션을 통해 수행됩니다            |
 
-<div id="ef-core-limitations">
-  #### 마이그레이션 제한 사항
-</div>
+#### 마이그레이션 제한 사항 {#ef-core-limitations}
 
 | 기능                                   | 이유                                                                                                                |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
@@ -2823,13 +3225,9 @@ dotnet ef database update
 * **트랜잭션**: `BeginTransaction`은 no-op입니다. ClickHouse는 ACID 트랜잭션을 지원하지 않습니다.
 * **JSON 경로 쿼리 변환**: LINQ의 `entity.Data["key"]`는 ClickHouse의 `data.key` SQL 구문으로 변환되지 않습니다. JSON이 아닌 컬럼을 기준으로 필터링하고, 메모리에서 JSON을 확인하십시오.
 
-<div id="limitations">
-  ## 제한 사항
-</div>
+## 제한 사항 {#limitations}
 
-<div id="valuetuple-caveat">
-  ### 요소가 8개 이상이고 마지막 위치에 중첩 튜플이 있는 튜플
-</div>
+### 요소가 8개 이상이고 마지막 위치에 중첩 튜플이 있는 튜플 {#valuetuple-caveat}
 
 요소가 7개를 초과하는 C# `ValueTuple` 타입은 컴파일러가 생성한 중첩 방식을 사용합니다. 즉, 8번째 제네릭 인수(`TRest`)는 나머지 요소를 담는 또 다른 `ValueTuple`입니다. 예를 들어 `(int, int, int, int, int, int, int, string, string)`는 `ValueTuple<int, int, int, int, int, int, int, ValueTuple<string, string>>`로 컴파일됩니다.
 
@@ -2856,9 +3254,7 @@ Tuple.Create(1, 2, 3, 4, 5, 6, 7, Tuple.Create(Tuple.Create("a", "b")))
 
 ***
 
-<div id="aggregatefunction-columns">
-  ### AggregateFunction 컬럼
-</div>
+### AggregateFunction 컬럼 {#aggregatefunction-columns}
 
 `AggregateFunction(...)` 유형의 컬럼은 직접 쿼리하거나 삽입할 수 없습니다.
 

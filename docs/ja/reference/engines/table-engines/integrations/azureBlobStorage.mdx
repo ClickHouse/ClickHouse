@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 このエンジンは、[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) エコシステム向けのインテグレーションを提供します。
 
-<div id="create-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -21,9 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="engine-parameters">
-  ### エンジンパラメータ
-</div>
+### エンジンパラメータ {#engine-parameters}
 
 * `endpoint` — コンテナーとプレフィックスを含む AzureBlobStorage のエンドポイント URL。使用する認証方式で必要な場合は、任意で account&#95;name を含めることもできます。(`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`)。または、storage&#95;account&#95;url、account&#95;name、container を使ってこれらのパラメータを個別に指定することもできます。プレフィックスを指定する場合は、endpoint を使用する必要があります。
 * `endpoint_contains_account_name` - endpoint に account&#95;name が含まれるかどうかを指定するフラグです。これは一部の認証方式でのみ必要です。(デフォルト: true)
@@ -33,7 +29,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_name` - storage&#95;account&#95;url を使用する場合は、ここで account name を指定できます
 * `account_key` - storage&#95;account&#95;url を使用する場合は、ここで account key を指定できます
 * `format` — ファイルの[フォーマット](/ja/reference/formats/index)。
-* `compression` — サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、ファイル拡張子から圧縮を自動判別します (`auto` を設定した場合と同じです) 。
+* `compression` — サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、ファイル拡張子から圧縮を自動判別します (`auto` を設定した場合と同じです) 。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。
 * `partition_strategy` – オプション: `wildcard` または `hive`。`wildcard` ではパス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスをテーブルのルートとみなし、Snowflake IDs をファイル名、ファイルフォーマットを拡張子とする Hive スタイルのパーティションディレクトリを生成します。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `wildcard` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` が使用され、それ以外の場合はパーティション方式は使用されません。
 * `partition_columns_in_data_file` - `hive` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして ClickHouse が扱うかどうかを指定します。デフォルトは `false` です。
 * `extra_credentials` - 認証には `client_id` と `tenant_id` を使用します。extra&#95;credentials が指定されている場合、`account_name` と `account_key` より優先されます。
@@ -59,18 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — ファイルのパス。型: `LowCardinality(String)`.
 * `_file` — ファイル名。型: `LowCardinality(String)`.
 * `_size` — ファイルのサイズ (バイト単位) 。型: `Nullable(UInt64)`。サイズが不明な場合、値は `NULL` です。
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 
-<div id="authentication">
-  ## 認証
-</div>
+## 認証 {#authentication}
 
 現在、認証方式は 3 つあります。
 
@@ -78,9 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` - `endpoint`、`connection_string`、または `storage_account_url` を指定して使用できます。URL に `?` が含まれていることで識別されます。例については、[azureBlobStorage](/ja/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) を参照してください。
 * `Workload Identity` - `endpoint` または `storage_account_url` を指定して使用できます。config で `use_workload_identity` パラメータが設定されている場合、認証には ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) が使用されます。
 
-<div id="data-cache">
-  ### データキャッシュ
-</div>
+### データキャッシュ {#data-cache}
 
 `Azure` テーブルエンジンは、ローカルディスク上でのデータキャッシュをサポートしています。
 ファイルシステムキャッシュの設定オプションと使用方法については、この[セクション](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)を参照してください。
@@ -109,17 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. ClickHouse の `storage_configuration` セクションの cache 構成 (したがって cache ストレージも) を再利用します。詳しくは[こちら](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)を参照してください
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化してもクエリは高速化されません (`ORDER BY` 式とは対照的です) 。細かすぎるパーティション化は決して行わないでください。クライアント識別子や名前でデータをパーティション化しないでください (代わりに、クライアント識別子または名前を `ORDER BY` 式の最初のカラムにしてください) 。
 
 月単位でパーティション化するには、`toYYYYMM(date_column)` 式を使用します。ここで、`date_column` は [Date](/ja/reference/data-types/date) 型の日付を持つカラムです。この場合、パーティション名は `"YYYYMM"` フォーマットになります。
 
-<div id="partition-strategy">
-  #### パーティション方式
-</div>
+#### パーティション方式 {#partition-strategy}
 
 `wildcard`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。パスに `{_partition_id}` が含まれる場合、デフォルトで選択されます。
 
@@ -146,9 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 [Azure Blob Storageテーブル関数](/ja/reference/functions/table-functions/azureBlobStorage)
 

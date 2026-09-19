@@ -14,9 +14,25 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="webassembly_udf_max_fuel">
-  ## webassembly_udf_max_fuel
-</div>
+## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "新增设置，用于控制单次调用的序列化输入可占用 WebAssembly UDF 实例线性内存的比例，同时启用按序列化大小对该输入进行动态切分；`compatibility` 低于 26.9 时会将其设为 0 并恢复此前的行为，即 `webassembly_udf_max_input_block_size = 0` 表示每个管道块对应一次调用。"}]}]} />
+
+单次调用的序列化输入可占用 WebAssembly UDF 实例线性内存的比例。取值必须不小于 0 且不大于 1；默认值会把另一半留给 guest，供其在输入 buffer 之外存放自身的 working set。
+
+预留出低于 1 的余量正是批处理得以安全进行的关键：guest 自身的数据、栈和 allocator 共享这块内存，且对宿主不可见。比例接近 1 时它们将无内存可用，因此即使调用大小是按该比例计算的，仍可能在 guest 的 allocator 中失败。
+
+该设置仅在 `ABI BUFFERED_V1` 下读取，并且只有当 `webassembly_udf_max_input_block_size` 为 0 时才用于确定调用大小——块大小非零时，则改为限制每次调用的行数。
+
+批次永远不会小于一行，因此当某一行自身的序列化大小已超出预算时，该行会被单独传递；若某一行大到超过模块的线性内存，则会在 guest 的 allocator 中失败。
+
+设为 0 表示不切分输入：整个管道块在一次调用中传入。
+
+## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
 
 <ExperimentalBadge />
 
@@ -26,9 +42,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 每个 WebAssembly UDF 实例执行期间的 fuel 限制。每条 WebAssembly 指令都会消耗一定数量的 fuel。该值在传递给运行时之前会先乘以 1024，因此 `webassembly_udf_max_fuel = 1` 大致相当于 1024 个 fuel 单位。设为 0 表示不设有限值限制。仅适用于每个函数的 `webassembly_udf_enable_fuel` 设置为 true 的函数；该值默认为 true。
 
-<div id="webassembly_udf_max_input_block_size">
-  ## webassembly_udf_max_input_block_size
-</div>
+## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
 
 <ExperimentalBadge />
 
@@ -36,11 +50,11 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "用于限制 WebAssembly UDF 输入块大小的新设置。"}]}]} />
 
-单个块中传递给 WebAssembly UDF 的最大行数。设置为 0 时，将一次处理所有行。
+单次调用中传递给 WebAssembly UDF 的最大行数。非零值会限制每次调用的行数，并对所有 ABI 生效。
 
-<div id="webassembly_udf_max_instances">
-  ## webassembly_udf_max_instances
-</div>
+设置为 0 时，改为按序列化输入大小来确定每次调用的规模。这仅适用于 `ABI BUFFERED_V1`，它是唯一会将整个输入块序列化到 guest 内存中的 ABI：其块会被拆分，使单次调用的输入不超过模块线性内存的 `webassembly_udf_input_split_memory_ratio`。`ROW_DIRECT` 以 WebAssembly 值的形式传递参数，`ASSEMBLYSCRIPT` 则为每行构建一个 object，因此二者都没有可用于衡量调用规模的序列化输入，设置为 0 时它们的管道块将保持完整。
+
+## webassembly_udf_max_instances {#webassembly_udf_max_instances}
 
 <ExperimentalBadge />
 
@@ -50,9 +64,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 每个函数可并行运行的 WebAssembly UDF 实例最大数量。
 
-<div id="webassembly_udf_max_memory">
-  ## webassembly_udf_max_memory
-</div>
+## webassembly_udf_max_memory {#webassembly_udf_max_memory}
 
 <ExperimentalBadge />
 

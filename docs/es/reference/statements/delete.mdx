@@ -12,23 +12,21 @@ doc_type: 'reference'
 La sentencia de eliminación ligera elimina filas de la tabla `[db.]table` que coinciden con la expresión `expr`. Solo está disponible para la familia *MergeTree de motores de tabla.
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 Se denomina &quot;eliminación ligera&quot; para diferenciarlo del comando [ALTER TABLE ... DELETE](/es/reference/statements/alter/delete), que implica un proceso pesado.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+La cláusula `IN PARTITION` limita la eliminación a las particiones indicadas. Sin ella, en las tablas de la familia `ReplicatedMergeTree`, cuando el ajuste [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/es/reference/settings/session-settings/optimize) está habilitado (valor predeterminado), ClickHouse detecta automáticamente las condiciones sobre la clave de partición en `expr` y solo elimina de las particiones afectadas. En tablas `MergeTree` no replicadas, utilice una cláusula `IN PARTITION` explícita para limitar una eliminación a particiones específicas.
+
+## Ejemplos {#examples}
 
 ```sql
 -- Elimina todas las filas de la tabla `hits` donde la columna `Title` contiene el texto `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## La eliminación ligera no elimina los datos inmediatamente
-</div>
+## La eliminación ligera no elimina los datos inmediatamente {#lightweight-delete-does-not-delete-data-immediately}
 
 La eliminación ligera se implementa como una [mutación](/es/reference/statements/alter/index#mutations) que marca las filas como eliminadas, pero no las elimina físicamente de inmediato.
 
@@ -38,27 +36,19 @@ La mutación no elimina físicamente las filas que se han marcado como eliminada
 
 Si necesita garantizar que sus datos se eliminen del almacenamiento en un plazo predecible, considere usar la configuración de tabla [`min_age_to_force_merge_seconds`](/es/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). O bien, puede usar el comando [ALTER TABLE ... DELETE](/es/reference/statements/alter/delete). Tenga en cuenta que eliminar datos mediante `ALTER TABLE ... DELETE` puede consumir una cantidad significativa de recursos, ya que vuelve a crear todas las partes afectadas.
 
-<div id="deleting-large-amounts-of-data">
-  ## Eliminar grandes cantidades de datos
-</div>
+## Eliminar grandes cantidades de datos {#deleting-large-amounts-of-data}
 
 Las eliminaciones de gran volumen pueden afectar negativamente el rendimiento de ClickHouse. Si intenta eliminar todas las filas de una tabla, considere usar el comando [`TRUNCATE TABLE`](/es/reference/statements/truncate).
 
 Si prevé eliminaciones frecuentes, considere usar una [clave de particionamiento personalizada](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Después, puede usar el comando [`ALTER TABLE ... DROP PARTITION`](/es/reference/statements/alter/partition#drop-partitionpart) para eliminar rápidamente todas las filas asociadas a esa partición.
 
-<div id="limitations-of-lightweight-delete">
-  ## Limitaciones de la eliminación ligera
-</div>
+## Limitaciones de la eliminación ligera {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### Eliminaciones ligeras con proyecciones
-</div>
+### Eliminaciones ligeras con proyecciones {#lightweight-deletes-with-projections}
 
 De forma predeterminada, `DELETE` no funciona en tablas con proyecciones. Esto se debe a que las filas de una proyección pueden verse afectadas por una operación `DELETE`. Sin embargo, existe una [configuración de MergeTree](/es/reference/settings/merge-tree-settings), `lightweight_mutation_projection_mode`, para cambiar este comportamiento.
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## Consideraciones de rendimiento al usar la eliminación ligera
-</div>
+## Consideraciones de rendimiento al usar la eliminación ligera {#performance-considerations-when-using-lightweight-delete}
 
 **Eliminar grandes volúmenes de datos con la sentencia de eliminación ligera puede afectar negativamente al rendimiento de las consultas SELECT.**
 
@@ -69,9 +59,7 @@ Lo siguiente también puede afectar negativamente al rendimiento de la eliminaci
 * La tabla afectada tiene un número muy elevado de partes de datos.
 * Tener muchos datos en partes compactas. En una parte compacta, todas las columnas se almacenan en un único archivo.
 
-<div id="delete-permissions">
-  ## Permisos para DELETE
-</div>
+## Permisos para DELETE {#delete-permissions}
 
 `DELETE` requiere el privilegio `ALTER DELETE`. Para habilitar sentencias `DELETE` en una tabla específica para un usuario concreto, ejecute el siguiente comando:
 
@@ -79,9 +67,7 @@ Lo siguiente también puede afectar negativamente al rendimiento de la eliminaci
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## Cómo funciona internamente la eliminación ligera con DELETE en ClickHouse
-</div>
+## Cómo funciona internamente la eliminación ligera con DELETE en ClickHouse {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **Se aplica una &quot;máscara&quot; a las filas afectadas**
 
@@ -111,9 +97,7 @@ GRANT ALTER DELETE ON db.table to username;
 
    Como se desprende de los pasos anteriores, la técnica de enmascaramiento de `DELETE` ligero mejora el rendimiento frente al método tradicional `ALTER TABLE ... DELETE`, porque no vuelve a escribir todos los archivos de columnas de las partes afectadas.
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Cómo gestionar actualizaciones y eliminaciones en ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

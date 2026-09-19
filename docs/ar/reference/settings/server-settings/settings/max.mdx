@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدم هذه الإعدادات لتهيئة خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="max_active_parts_loading_thread_pool_size">
-  ## max_active_parts_loading_thread_pool_size
-</div>
+## max_active_parts_loading_thread_pool_size {#max_active_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Yes" />عدد خيوط اللازمة لتحميل مجموعة أجزاء البيانات النشطة (العناصر النشطة) عند بدء التشغيل.
 
-<div id="max_authentication_methods_per_user">
-  ## max_authentication_methods_per_user
-</div>
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />
 
@@ -32,15 +28,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   تعني القيمة `0` عدم وجود حد أقصى.
 </Note>
 
-<div id="max_backup_bandwidth_for_server">
-  ## max_backup_bandwidth_for_server
-</div>
+## max_backup_bandwidth_for_server {#max_backup_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لسرعة القراءة، بالبايت في الثانية، لجميع النسخ الاحتياطية على الخادم. تعني القيمة صفر عدم وجود حد.
 
-<div id="max_build_vector_similarity_index_thread_pool_size">
-  ## max_build_vector_similarity_index_thread_pool_size
-</div>
+## max_build_vector_similarity_index_thread_pool_size {#max_build_vector_similarity_index_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 
@@ -50,33 +42,23 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   تعني القيمة `0` استخدام جميع الأنوية.
 </Note>
 
-<div id="max_connections">
-  ## max_connections
-</div>
+## max_connections {#max_connections}
 
 <SettingsInfoBlock type="Int32" default_value="4096" changeable_without_restart="No" />الحد الأقصى لعدد اتصالات الخادم.
 
-<div id="max_entries_for_hash_table_stats">
-  ## max_entries_for_hash_table_stats
-</div>
+## max_entries_for_hash_table_stats {#max_entries_for_hash_table_stats}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />الحد الأقصى لعدد الإدخالات المسموح به في إحصاءات جدول hash التي تُجمع أثناء التجميع
 
-<div id="max_fetch_partition_thread_pool_size">
-  ## max_fetch_partition_thread_pool_size
-</div>
+## max_fetch_partition_thread_pool_size {#max_fetch_partition_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Yes" />عدد الخيوط المستخدمة لأمر ALTER TABLE FETCH PARTITION.
 
-<div id="max_held_snapshots">
-  ## max_held_snapshots
-</div>
+## max_held_snapshots {#max_held_snapshots}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لعدد اللقطات الخفيفة التي يمكن الاحتفاظ بها في الوقت نفسه. يشير الصفر إلى عدم وجود حد. إذا بلغ عدد اللقطات هذا الحد، يُثار استثناء عند محاولة إنشاء لقطة جديدة.
 
-<div id="max_http_index_page_size">
-  ## max_http_index_page_size
-</div>
+## max_http_index_page_size {#max_http_index_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
 
@@ -85,9 +67,21 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 القيمة الافتراضية: `10485760` (10 MiB).
 
-<div id="max_keep_alive_requests">
-  ## max_keep_alive_requests
-</div>
+## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+الحد الأقصى لعدد الخيوط (threads) الخاملة الاحتياطية التي يُحتفظ بها في مجمّع خيوط المخصص لفك ترميز ملفات manifest الخاصة ببيانات Iceberg.
+
+## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
+
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
+
+الحد الأقصى للعدد الإجمالي للخيوط المستخدمة في فك ترميز ملفات manifest الخاصة ببيانات Iceberg.
+
+يُفصل هذا الـ مجمّع خيوط عن مجمّع خيوط الـ IO عن قصد: فمهمة فك الترميز قد تتوقف إلى أن يستهلك الاستعلام العناصر التي أنتجتها، بينما ينتظر فك ترميز manifest الحذف مهامه في مجمّع خيوط الـ IO قبل استهلاك أي عنصر — لذا فإن مشاركة مجمّع خيوط واحد قد تؤدي إلى تجمّد متبادل (deadlock).
+
+## max_keep_alive_requests {#max_keep_alive_requests}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="لا" />
 
@@ -99,9 +93,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
-<div id="max_materialized_views_count_for_table">
-  ## max_materialized_views_count_for_table
-</div>
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -111,21 +103,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   لا تُؤخذ هنا في الحسبان إلا العروض التابعة مباشرةً، ولا يُؤخذ في الاعتبار إنشاء عرض فوق عرض آخر.
 </Note>
 
-<div id="max_merges_bandwidth_for_server">
-  ## max_merges_bandwidth_for_server
-</div>
+## max_merges_bandwidth_for_server {#max_merges_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لسرعة قراءة جميع عمليات الدمج على الخادم، بالبايت في الثانية. تعني القيمة صفر عدم وجود حد.
 
-<div id="max_mutations_bandwidth_for_server">
-  ## max_mutations_bandwidth_for_server
-</div>
+## max_mutations_bandwidth_for_server {#max_mutations_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لسرعة قراءة جميع عمليات mutation على الخادم، بالبايت في الثانية. وتعني القيمة صفر عدم وجود حد.
 
-<div id="max_open_files">
-  ## max_open_files
-</div>
+## max_open_files {#max_open_files}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -135,24 +121,18 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   نوصي باستخدام هذا الخيار في MacOS لأن الدالة getrlimit() تُرجع قيمة غير دقيقة.
 </Note>
 
-<div id="max_os_cpu_wait_time_ratio_to_drop_connection">
-  ## max_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## max_os_cpu_wait_time_ratio_to_drop_connection {#max_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="نعم" />
 
 الحد الأقصى للنسبة بين أزمنة انتظار CPU في نظام التشغيل (المقياس OSCPUWaitMicroseconds) وأزمنة الانشغال (المقياس OSCPUVirtualTimeMicroseconds) التي عندها يمكن النظر في قطع الاتصالات. يُستخدم الاستيفاء الخطي بين الحدين الأدنى والأقصى لهذه النسبة لحساب الاحتمال، ويبلغ الاحتمال 1 عند هذه النقطة.
 راجع [التحكم في السلوك عند زيادة حمل CPU على الخادم](/ar/concepts/features/configuration/settings/server-overload) لمزيد من التفاصيل.
 
-<div id="max_outdated_parts_loading_thread_pool_size">
-  ## max_outdated_parts_loading_thread_pool_size
-</div>
+## max_outdated_parts_loading_thread_pool_size {#max_outdated_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="32" changeable_without_restart="نعم" />عدد الخيوط المخصّصة لتحميل المجموعة غير النشطة من أجزاء البيانات (outdated) عند بدء التشغيل.
 
-<div id="max_part_num_to_warn">
-  ## max_part_num_to_warn
-</div>
+## max_part_num_to_warn {#max_part_num_to_warn}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="نعم" />
 
@@ -164,9 +144,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
-<div id="max_partition_size_to_drop">
-  ## max_partition_size_to_drop
-</div>
+## max_partition_size_to_drop {#max_partition_size_to_drop}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" changeable_without_restart="Yes" />
 
@@ -187,23 +165,17 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
-<div id="max_parts_cleaning_thread_pool_size">
-  ## max_parts_cleaning_thread_pool_size
-</div>
+## max_parts_cleaning_thread_pool_size {#max_parts_cleaning_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="Yes" />عدد خيوط المستخدمة في الإزالة المتزامنة لأجزاء البيانات غير النشطة.
 
-<div id="max_per_cpu_untracked_memory">
-  ## max_per_cpu_untracked_memory
-</div>
+## max_per_cpu_untracked_memory {#max_per_cpu_untracked_memory}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
 
 الحد الأعلى، بالبايت، للذاكرة غير المتعقَّبة التي يمكن أن تحتفظ بها جميع الخيوط العاملة على CPU واحد في الوقت نفسه قبل تفريغها إلى متعقّب الذاكرة. وبينما يفرض `max_untracked_memory` حدًا على خيط واحد، فإن هذا الإعداد يقيِّد الإجمالي لكل CPU، بحيث لا تتمكن الخيوط المتعددة من مضاعفة الحصة المسموح بها لكل خيط إلى overcommit كبير على مستوى الخادم بأكمله. لذلك يكون إجمالي الذاكرة غير المتعقَّبة مقيَّدًا تقريبًا بـ `number_of_cpus * max_per_cpu_untracked_memory`. تؤدي القيمة `0` إلى تعطيل القيد لكل CPU (وعندها لا يُطبَّق إلا `max_untracked_memory` لكل خيط). Linux فقط.
 
-<div id="max_session_timeout">
-  ## max_session_timeout
-</div>
+## max_session_timeout {#max_session_timeout}
 
 الحد الأقصى لمهلة الجلسة، بالثواني.
 
@@ -213,9 +185,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-<div id="max_temporary_data_on_disk_size">
-  ## max_temporary_data_on_disk_size
-</div>
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -231,15 +201,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * [`max_temporary_data_on_disk_size_for_user`](/ar/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
 * [`max_temporary_data_on_disk_size_for_query`](/ar/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
-<div id="max_unexpected_parts_loading_thread_pool_size">
-  ## max_unexpected_parts_loading_thread_pool_size
-</div>
+## max_unexpected_parts_loading_thread_pool_size {#max_unexpected_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="8" changeable_without_restart="No" />عدد خيوط المستخدمة لتحميل مجموعة أجزاء البيانات غير النشطة (Unexpected) عند بدء التشغيل.
 
-<div id="max_waiting_queries">
-  ## max_waiting_queries
-</div>
+## max_waiting_queries {#max_waiting_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -264,9 +230,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا. أما الاستعلامات التي تكون قيد التشغيل بالفعل فستبقى دون تغيير.
 </Note>
 
-<div id="max_zookeeper_pooled_connections">
-  ## max_zookeeper_pooled_connections
-</div>
+## max_zookeeper_pooled_connections {#max_zookeeper_pooled_connections}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 

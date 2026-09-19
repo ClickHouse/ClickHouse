@@ -9,10 +9,10 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-BYOCデプロイメントには包括的なオブザーバビリティ機能が備わっており、専用のPrometheus監視スタックや ClickHouseサーバーが直接公開するメトリクスエンドポイントを通じて、ClickHouseサービスを監視できます。すべてのオブザーバビリティデータはお使いのクラウドアカウント内に保持されるため、監視インフラストラクチャを完全に制御できます。
+BYOCデプロイメントには包括的なオブザーバビリティ機能が備わっており、専用のPrometheus監視スタックや ClickHouseサーバーが直接公開するメトリクスエンドポイントを通じて、ClickHouseサービスを監視できます。監視データはお使いのクラウドアカウント内に保持されるため、監視インフラストラクチャを完全に制御できます。ClickHouseにエクスポートされる監視データは、[ネットワーク境界](/ja/products/bring-your-own-cloud/reference/network-security#outbound-connections)に記載された限定的な使用状況およびヘルステレメトリーのみです。これとは別に、ClickHouseのダッシュボードや、承認されたエスカレーション時にはClickHouseのエンジニアが、Tailscale経由でこのスタックをその場でクエリできますが、ClickHouse側には何も保持されません — [ClickHouse データアクセス](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)を参照してください。
 
 <div id="prometheus-monitoring">
-  ## Prometheus の監視アプローチ
+  ## Prometheus の監視アプローチ {#prometheus-monitoring}
 </div>
 
 BYOC では、Prometheus を使用してメトリクスを収集・可視化する主な方法が 2 つあります。
@@ -21,7 +21,7 @@ BYOC では、Prometheus を使用してメトリクスを収集・可視化す�
 2. **ClickHouse のメトリクスを直接スクレイプする**: 各 ClickHouse サービスが公開する `/metrics_all` エンドポイントに、独自の Prometheus デプロイメントを向けます。
 
 <div id="monitoring-approaches-comparison">
-  ### 監視方法の比較
+  ### 監視方法の比較 {#monitoring-approaches-comparison}
 </div>
 
 | Capability                | 組み込みのPrometheusスタック                                   | ClickHouseサービスからの直接スクレイピング                                  |
@@ -37,7 +37,7 @@ BYOC では、Prometheus を使用してメトリクスを収集・可視化す�
 **推奨**: ほとんどのユースケースでは、組み込みのPrometheusスタックとのインテグレーションを推奨します。これは、ClickHouseサーバーのメトリクスだけでなく、BYOCデプロイメント内のすべてのコンポーネント (ClickHouseサービス、Kubernetesクラスター、補助サービス) から包括的なメトリクスを取得できるためです。
 
 <div id="builtin-prometheus-stack">
-  ## 組み込み BYOC Prometheus スタック
+  ## 組み込み BYOC Prometheus スタック {#builtin-prometheus-stack}
 </div>
 
 ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に応じてメトリクスの長期保存用の Thanos を含む、完全な Prometheus 監視スタックを Kubernetes クラスター内にデプロイします。このスタックは、次の対象からメトリクスを収集します。
@@ -46,9 +46,7 @@ ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に�
 * Kubernetes クラスターおよびシステムコンポーネント
 * 基盤インフラストラクチャのノード
 
-<div id="accessing-prometheus-stack">
-  ### Prometheus スタックへのアクセス
-</div>
+### Prometheus スタックへのアクセス {#accessing-prometheus-stack}
 
 組み込みの Prometheus スタックに接続するには、次の手順を実行します。
 
@@ -70,7 +68,7 @@ ClickHouse BYOC は、Prometheus、Grafana、AlertManager、さらに必要に�
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### お使いの監視ツールとの統合
+  ### お使いの監視ツールとの統合 {#prometheus-stack-integration}
 </div>
 
 BYOC Prometheus スタックは、監視環境の中でいくつかの方法で活用できます。
@@ -109,14 +107,12 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## ClickHouse service の Prometheus インテグレーション
+  ## ClickHouse service の Prometheus インテグレーション {#direct-prometheus-integration}
 </div>
 
 ClickHouse service は Prometheus 互換のメトリクスエンドポイントを公開しているため、お使いの Prometheus インスタンスから直接スクレイプできます。この方法では ClickHouse 固有のメトリクスは取得できますが、Kubernetes や関連サービスのメトリクスは含まれません。
 
-<div id="metrics-endpoint">
-  ### メトリクスエンドポイントへのアクセス
-</div>
+### メトリクスエンドポイントへのアクセス {#metrics-endpoint}
 
 メトリクスエンドポイントは、ClickHouse サービスのエンドポイント上の`/metrics_all`で利用できます。
 
@@ -139,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### 認証
+  ### 認証 {#authentication}
 </div>
 
 メトリクスエンドポイントへのアクセスには、ClickHouseの認証情報による認証が必要です。`default` ユーザーを使用するか、メトリクスのスクレイピング専用に必要最小限の権限を持つ専用ユーザーを作成することを推奨します。
@@ -171,9 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-<div id="configuring-prometheus">
-  ### Prometheus の設定
-</div>
+### Prometheus の設定 {#configuring-prometheus}
 
 Prometheus インスタンスが ClickHouse のメトリクスエンドポイントをスクレイプするよう設定します。
 
@@ -199,14 +193,12 @@ scrape_configs:
 * `<username>` と `<password>` をスクレイピングユーザーの認証情報に
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin
+  ## ClickHouse Mixin {#clickhouse-mixin}
 </div>
 
 すぐに使えるダッシュボード群を必要とするチーム向けに、ClickHouse は Prometheus **ClickHouse Mixin** を提供しています。これは、ClickHouse クラスターの監視用に特別に設計された、あらかじめ用意された Grafana ダッシュボードです。
 
-<div id="setup-grafana-mixin">
-  ### Grafana のセットアップと ClickHouse Mix-in のインポート
-</div>
+### Grafana のセットアップと ClickHouse Mix-in のインポート {#setup-grafana-mixin}
 
 Prometheus インスタンスを ClickHouse の監視スタックに統合したら、次の手順で Grafana からメトリクスを可視化できます。
 

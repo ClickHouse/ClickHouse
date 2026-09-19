@@ -13,9 +13,21 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_bytes_before_external_group_by">
-  ## max_bytes_before_external_group_by
-</div>
+## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка для включения сброса данных `DISTINCT` на диск, если использование памяти превышает заданный порог в байтах. Если значение равно 0, применяется только `max_bytes_ratio_before_external_distinct`."}]}]} />
+
+Порог использования памяти запросом в байтах, при достижении которого данные `DISTINCT` сбрасываются на диск. Фактическое использование памяти может превышать
+этот порог.
+
+`0` отключает этот порог. Если `max_bytes_ratio_before_external_distinct` также задаёт порог,
+используется меньшее из значений. Установите для обеих настроек значение `0`, чтобы отключить сброс данных на диск.
+
+См. [DISTINCT во внешней памяти](/ru/reference/statements/select/distinct#distinct-in-external-memory).
+
+## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -36,9 +48,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Рекомендуемое значение — половина доступной системной памяти.
 </Note>
 
-<div id="max_bytes_before_external_join">
-  ## max_bytes_before_external_join
-</div>
+## max_bytes_before_external_join {#max_bytes_before_external_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -46,9 +56,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если задано ненулевое значение и `join_algorithm` имеет значение `hash`, `parallel_hash`, `default` или `auto`, hash JOIN будет автоматически преобразован в grace hash JOIN, что позволит сбрасывать данные на диск, когда объём данных с правой стороны превысит этот порог в байтах. При значении `0` (по умолчанию) этот абсолютный порог в байтах отключён, однако автоматический сброс на диск всё равно может происходить через `max_bytes_ratio_before_external_join` (по умолчанию — `0.5`); установите оба значения в `0`, чтобы полностью отключить автоматический сброс на диск. Это предотвращает оптимизацию чтения по порядку через JOIN.
 
-<div id="max_bytes_before_external_sort">
-  ## max_bytes_before_external_sort
-</div>
+## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -63,17 +71,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Рекомендуемое значение — половина доступной системной памяти
 * `0` — `ORDER BY` во внешней памяти отключён.
 
-<div id="max_bytes_before_remerge_sort">
-  ## max_bytes_before_remerge_sort
-</div>
+## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 При использовании ORDER BY с LIMIT, если использование памяти превышает указанный порог, перед окончательным слиянием выполняются дополнительные шаги по слиянию блоков, чтобы оставить только первые LIMIT строк.
 
-<div id="max_bytes_for_lazy_final">
-  ## max_bytes_for_lazy_final
-</div>
+## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -81,18 +85,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимальное количество байт в наборе для оптимизации отложенного FINAL. При превышении этого значения используется обычный FINAL.
 
-<div id="max_bytes_in_distinct">
-  ## max_bytes_in_distinct
-</div>
+## max_bytes_in_distinct {#max_bytes_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальный размер состояния в памяти (в несжатых байтах),
 используемого хеш-таблицей при выполнении DISTINCT.
 
-<div id="max_bytes_in_join">
-  ## max_bytes_in_join
-</div>
+## max_bytes_in_join {#max_bytes_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -107,17 +107,25 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * Положительное целое число.
 * 0 — контроль памяти отключен.
 
-<div id="max_bytes_in_set">
-  ## max_bytes_in_set
-</div>
+## max_bytes_in_set {#max_bytes_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальное количество байтов (несжатых данных), используемых множеством в выражении IN, созданным из подзапроса.
 
-<div id="max_bytes_ratio_before_external_group_by">
-  ## max_bytes_ratio_before_external_group_by
-</div>
+## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Новая настройка, включающая сброс `DISTINCT` на диск, когда использование памяти превышает заданную долю доступной памяти. Если равно 0, применяется только `max_bytes_before_external_distinct`."}]}]} />
+
+Доля доступной памяти сервера или пользователя, используемая для расчёта порога внешнего `DISTINCT` в начале выполнения. Например, при значении `0.5` используется половина доступной памяти.
+
+Значение должно быть не меньше `0` и меньше `1`. Значение `0` отключает этот порог. При отсутствии применимого ограничения памяти сервера или пользователя эта доля не действует.
+
+`max_memory_usage` не влияет на этот расчёт. Чтобы настроить сброс на диск относительно этого ограничения, используйте `max_bytes_before_external_distinct`, оставив запас для дополнительного использования памяти.
+
+## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -130,9 +138,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 (server/user/merges) на начальном этапе выполнения, после чего
 начнёт использовать внешнюю агрегацию.
 
-<div id="max_bytes_ratio_before_external_join">
-  ## max_bytes_ratio_before_external_join
-</div>
+## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -146,9 +152,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Действует только если `join_algorithm` имеет значение `hash`, `parallel_hash`, `default` или `auto` и настроен путь для временных данных.
 
-<div id="max_bytes_ratio_before_external_sort">
-  ## max_bytes_ratio_before_external_sort
-</div>
+## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -160,9 +164,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Обратите внимание, что ограничение `max_bytes_before_external_sort` по-прежнему действует: выгрузка на диск выполняется только в том случае, если блок сортировки превышает `max_bytes_before_external_sort`.
 
-<div id="max_bytes_to_read">
-  ## max_bytes_to_read
-</div>
+## max_bytes_to_read {#max_bytes_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -171,9 +173,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 наиболее глубокому табличному выражению, а при чтении с удалённого сервера проверяется только на
 удалённом сервере.
 
-<div id="max_bytes_to_read_leaf">
-  ## max_bytes_to_read_leaf
-</div>
+## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -195,17 +195,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Этот параметр нестабилен при `prefer_localhost_replica=1`.
 </Note>
 
-<div id="max_bytes_to_sort">
-  ## max_bytes_to_sort
-</div>
+## max_bytes_to_sort {#max_bytes_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальное количество байт, обрабатываемых перед сортировкой. Если для операции ORDER BY требуется обработать больше указанного объёма несжатых данных, поведение определяется параметром `sort_overflow_mode`, который по умолчанию имеет значение `throw`.
 
-<div id="max_bytes_to_transfer">
-  ## max_bytes_to_transfer
-</div>
+## max_bytes_to_transfer {#max_bytes_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

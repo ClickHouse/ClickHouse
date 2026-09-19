@@ -37,6 +37,8 @@ Kafka ClickPipes можно развертывать и настраивать �
 
   <Step title="Настройте реестр схем (необязательно)" id="4-configure-your-schema-registry">
     Для топиков Avro и Protobuf требуется корректная схема. Подробнее о том, как настроить реестр схем, см. в разделе [Реестры схем](/ru/integrations/clickpipes/kafka/schema-registries).
+
+    Для Protobuf вы можете вместо этого оставить **Schema registry** отключённым и [загрузить схему при выборе топика](#7-select-your-topic).
   </Step>
 
   <Step title="Настройте обратную частную конечную точку (необязательно)" id="5-configure-reverse-private-endpoint">
@@ -64,7 +66,9 @@ Kafka ClickPipes можно развертывать и настраивать �
   </Step>
 
   <Step title="Выберите топик" id="7-select-your-topic">
-    Выберите топик, и интерфейс отобразит пример документа из этого топика.
+    Выберите топик. Если вы не используете реестр схем, выберите формат данных в разделе **Schema format**. Для `Protobuf` загрузите файл `.proto` или сериализованный `FileDescriptorSet` (максимум 768 KiB).
+
+    Затем интерфейс отобразит пример документа из этого топика.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Выберите топик" size="md" />
   </Step>

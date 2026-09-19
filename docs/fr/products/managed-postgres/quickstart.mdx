@@ -19,24 +19,24 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
   <View title="UI Cloud">
     <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
-    ClickHouse Managed Postgres est un Postgres de qualité entreprise reposant sur un stockage NVMe, offrant des performances jusqu’à 10 fois supérieures pour les charges de travail limitées par le disque par rapport au stockage en réseau comme EBS. Ce guide de démarrage rapide est divisé en deux parties :
+    ClickHouse Managed Postgres est un Postgres de qualité entreprise reposant sur un stockage NVMe, offrant des performances jusqu’à 10 fois supérieures pour les charges de travail limitées par le disque par rapport au stockage en réseau comme EBS. Ce guide de démarrage rapide est divisé en deux parties :
 
-    * **Partie 1 :** Prenez en main Postgres sur NVMe et découvrez ses performances
-    * **Partie 2 :** Débloquez l’analytique en temps réel en l’intégrant à ClickHouse
+    * **Partie 1 :** Prenez en main Postgres sur NVMe et découvrez ses performances
+    * **Partie 2 :** Débloquez l’analytique en temps réel en l’intégrant à ClickHouse
 
-    ClickHouse Managed Postgres est actuellement disponible sur AWS dans plusieurs régions et en Public Beta.
+    ClickHouse Managed Postgres est actuellement disponible sur AWS dans plusieurs régions et en Public Beta. GCP est en Private Preview. Vous pouvez vous inscrire sur la liste d&#39;attente de la Private Preview GCP [ici](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
     **Dans ce guide de démarrage rapide, vous allez :**
 
     * Créez une instance Managed Postgres avec des performances optimisées par le NVMe
-    * Chargez 1 million d’événements d’exemple et observez la vitesse du NVMe
+    * Chargez 1 million d’événements d’exemple et observez la vitesse du NVMe
     * Exécutez des requêtes et bénéficiez de performances à faible latence
     * Répliquez les données vers ClickHouse pour l’analytique en temps réel
     * Interrogez directement ClickHouse depuis Postgres à l’aide de `pg_clickhouse`
 
-    ## Partie 1 : Premiers pas avec NVMe Postgres
+    ## Partie 1 : Premiers pas avec NVMe Postgres {#part-1}
 
-    ### Créer une base de données
+    ### Créer une base de données {#create-postgres-database}
 
     Pour créer un nouveau service ClickHouse Managed Postgres, cliquez sur le bouton **New service** dans la liste des services de la Cloud Console. Vous pourrez ensuite sélectionner Postgres comme type de base de données.
 
@@ -48,7 +48,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
 
     Votre instance ClickHouse Managed Postgres sera provisionnée et prête à l&#39;emploi dans 3 à 5 minutes.
 
-    ### Connectez-vous à votre base de données
+    ### Connectez-vous à votre base de données {#connect}
 
     Dans la barre latérale gauche, vous verrez un [**bouton Connect**](/fr/products/managed-postgres/connection). Cliquez dessus pour afficher vos informations de connexion et vos chaînes de connexion dans plusieurs formats.
 
@@ -56,7 +56,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
 
     Copiez la chaîne de connexion `psql` et connectez-vous à votre base de données. Vous pouvez également utiliser n&#39;importe quel client compatible Postgres, comme DBeaver, ou n&#39;importe quelle bibliothèque d&#39;application.
 
-    ### Découvrez les performances du NVMe
+    ### Découvrez les performances du NVMe {#nvme-performance}
 
     Voyons concrètement les performances offertes par le NVMe. Commencez par activer le chronométrage dans psql pour mesurer le temps d&#39;exécution des requêtes :
 
@@ -88,7 +88,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
     );
     ```
 
-    Insérez maintenant 1 million d&#39;événements et observez la vitesse du NVMe :
+    Insérez maintenant 1 million d&#39;événements et observez la vitesse du NVMe :
 
     ```sql
     INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
@@ -154,7 +154,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-    ### Exécuter des requêtes sur vos données
+    ### Exécuter des requêtes sur vos données {#run-queries}
 
     Exécutons maintenant quelques requêtes pour voir à quelle vitesse Postgres répond avec le stockage NVMe.
 
@@ -226,12 +226,12 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
 
       À ce stade, vous disposez d’une base de données Postgres entièrement fonctionnelle et performante, prête pour vos charges de travail transactionnelles.
 
-      Passez à la Partie 2 pour découvrir comment l’intégration native de ClickHouse peut booster vos analyses.
+      Passez à la Partie 2 pour découvrir comment l’intégration native de ClickHouse peut booster vos analyses.
     </Info>
 
     ***
 
-    ## Partie 2 : Ajoutez des analyses en temps réel avec ClickHouse
+    ## Partie 2 : Ajoutez des analyses en temps réel avec ClickHouse {#part-2}
 
     Tandis que Postgres excelle dans les charges de travail transactionnelles (OLTP), ClickHouse est conçu spécifiquement pour les requêtes analytiques (OLAP) sur de grands ensembles de données. En intégrant les deux, vous bénéficiez du meilleur des deux mondes :
 
@@ -240,7 +240,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
 
     Cette section vous explique comment répliquer vos données Postgres vers ClickHouse et les interroger de manière transparente.
 
-    ### Configurer l&#39;intégration ClickHouse
+    ### Configurer l&#39;intégration ClickHouse {#setup-integrate-clickhouse}
 
     Maintenant que nous disposons de tables et de données dans Postgres, répliquons ces tables vers ClickHouse à des fins d&#39;analytics. Commencez par cliquer sur **Sync to ClickHouse** dans la barre latérale. Vous pouvez ensuite cliquer sur **Replicate data in ClickHouse**.
 
@@ -266,7 +266,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
 
     Le processus de réplication va démarrer et vous serez redirigé vers la page d&#39;aperçu de l&#39;intégration. Étant la première intégration, la mise en place de l&#39;infrastructure initiale peut prendre 2 à 3 minutes. En attendant, découvrons la nouvelle extension **pg&#95;clickhouse**.
 
-    ### Interroger ClickHouse depuis Postgres
+    ### Interroger ClickHouse depuis Postgres {#pg-clickhouse-extension}
 
     L&#39;extension `pg_clickhouse` vous permet d&#39;interroger les données ClickHouse directement depuis Postgres en utilisant le SQL standard. Cela signifie que votre application peut utiliser Postgres comme couche de requête unifiée pour les données transactionnelles et analytiques. Consultez la [documentation complète](/fr/products/managed-postgres/extensions/pg_clickhouse/introduction) pour plus de détails.
 
@@ -288,7 +288,7 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
     <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Récupérer l’hôte de ClickHouse" size="md" border />
 
     <Note>
-      Si vous utilisez la console ClickHouse Cloud pour exécuter des requêtes SQL, accordez à l’utilisateur admin de la console l’accès au serveur étranger :
+      Si vous utilisez la console ClickHouse Cloud pour exécuter des requêtes SQL, accordez à l’utilisateur admin de la console l’accès au serveur étranger :
 
       ```sql
       GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
@@ -317,17 +317,17 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-    ### Visualisez vos analyses en action
+    ### Visualisez vos analyses en action {#analytics-after-integration}
 
     Revenez à la page d&#39;intégration. Vous devriez constater que la réplication initiale est terminée. Cliquez sur le nom de l&#39;intégration pour afficher les détails.
 
-    <Image img="/images/managed-postgres/analytics-list.webp" alt="Liste des analyses de ClickHouse Managed Postgres" size="md" border />
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="Liste analytique de ClickHouse Managed Postgres" size="md" border />
 
     Cliquez sur le nom du service pour ouvrir la console ClickHouse et consulter vos tables répliquées.
 
     <Image img="/images/managed-postgres/replicated-tables.webp" alt="Tables répliquées de ClickHouse Managed Postgres dans ClickHouse" size="md" border />
 
-    ### Comparer les performances de Postgres et ClickHouse
+    ### Comparer les performances de Postgres et ClickHouse {#performance-comparison}
 
     Exécutons maintenant quelques requêtes analytiques et comparons les performances entre Postgres et ClickHouse. Notez que les tables répliquées utilisent la convention de nommage `public_<table_name>`.
 
@@ -407,12 +407,12 @@ import QuickstartCLI from "/snippets/fr/managed-postgres/_quickstart_cli.mdx";
     <Tip>
       **Quand utiliser ClickHouse**
 
-      Même sur ce jeu de données d’1 M de lignes, ClickHouse offre des performances 3 à 7 fois supérieures sur les requêtes analytiques complexes avec des JOINs et plusieurs agrégations. La différence devient encore plus spectaculaire à plus grande échelle (100 M+ de lignes), où le stockage en colonnes de ClickHouse et l’exécution vectorisée peuvent offrir des accélérations de 10 à 100 fois.
+      Même sur ce jeu de données d’1 M de lignes, ClickHouse offre des performances 3 à 7 fois supérieures sur les requêtes analytiques complexes avec des JOINs et plusieurs agrégations. La différence devient encore plus spectaculaire à plus grande échelle (100 M+ de lignes), où le stockage en colonnes de ClickHouse et l’exécution vectorisée peuvent offrir des accélérations de 10 à 100 fois.
 
       Le temps d’exécution des requêtes varie en fonction de la taille de l’instance, de la latence réseau entre les services, des caractéristiques des données et de la charge actuelle.
     </Tip>
 
-    ## Nettoyage
+    ## Nettoyage {#cleanup}
 
     Pour supprimer les ressources créées dans ce guide de démarrage rapide :
 

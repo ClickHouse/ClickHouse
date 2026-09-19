@@ -13,12 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatu
 Os backups do banco de dados foram projetados para permitir que você restaure um serviço a um estado anterior com base no último backup bem-sucedido.
 
 <div id="backups">
-  ## Backups
+  ## Backups {#backups}
 </div>
 
-<div id="how-backups-work-in-clickhouse-cloud">
-  ### Como os backups funcionam no ClickHouse Cloud
-</div>
+### Como os backups funcionam no ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 Os backups do ClickHouse Cloud são uma combinação de backups &quot;completos&quot; e &quot;incrementais&quot; que formam uma cadeia de backups. A cadeia começa com um backup completo, e os backups incrementais são feitos ao longo dos períodos programados seguintes para criar uma sequência de backups. Quando uma cadeia de backups atinge determinado tamanho, uma nova cadeia é iniciada. Toda essa cadeia de backups pode então ser usada para restaurar dados em um novo serviço, se necessário. Quando todos os backups incluídos em uma determinada cadeia ultrapassam o período de retenção definido para o serviço (mais sobre retenção abaixo), a cadeia é descartada.
 
@@ -28,18 +26,14 @@ No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemplo de cadeia de backups no ClickHouse Cloud" />
 
-<div id="default-backup-policy">
-  ### Política de backup padrão
-</div>
+### Política de backup padrão {#default-backup-policy}
 
 Os backups são contabilizados e cobrados separadamente do armazenamento nos níveis Basic, Scale e Enterprise.
 Atualmente, os serviços têm por padrão um backup diário com retenção de 24 horas. A configuração de backup pode variar conforme o serviço e o contrato.
 
 Consulte [&quot;Revisar e restaurar backups&quot;](/pt-BR/products/cloud/guides/backups/review-and-restore-backups) para mais detalhes.
 
-<div id="configurable-backups">
-  ## Backups configuráveis
-</div>
+## Backups configuráveis {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Backups configuráveis" linking_verb_are="True" />
 
@@ -58,11 +52,12 @@ O ClickHouse Cloud permite configurar o agendamento dos seus backups para servi�
 Consulte [&quot;Configurar agendamentos de backup&quot;](/pt-BR/products/cloud/guides/backups/configurable-backups) para ver as etapas de configuração dos seus backups.
 
 <div id="byob">
-  ## Backups com seu próprio bucket (BYOB)
+  ## Backups com seu próprio bucket (BYOB) {#byob}
 </div>
 
 O ClickHouse Cloud permite exportar backups para o armazenamento na conta do seu provedor de serviços em nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
 Se você configurar os backups para o seu próprio bucket, o ClickHouse Cloud também continuará fazendo os próprios backups por padrão.
+A configuração de retenção de backups se aplica aos backups gravados no seu bucket. Os backups gerenciados pelo ClickHouse Cloud usam a política de retenção padrão.
 
 Para saber como funcionam os backups do ClickHouse Cloud, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups).
 
@@ -80,9 +75,7 @@ Também compartilhamos comandos de backup / restore que permitem exportar backup
 
 Consulte [&quot;Exportar backups para sua própria conta Cloud&quot;](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para ver exemplos de como fazer backups completos e backups incrementais no armazenamento de objetos da AWS, GCP e Azure, bem como como restaurá-los.
 
-<div id="backup-options">
-  ### Opções de backup
-</div>
+### Opções de backup {#backup-options}
 
 Para exportar backups para sua própria conta Cloud, você tem duas opções:
 
@@ -100,7 +93,7 @@ Para exportar backups para sua própria conta Cloud, você tem duas opções:
 </Steps>
 
 <Warning>
-  O ClickHouse Cloud não gerenciará o ciclo de vida dos backups em buckets de clientes.
-  Os clientes são responsáveis por garantir que os backups em seus buckets sejam gerenciados adequadamente para atender aos requisitos de compliance, além de controlar os custos.
+  O ClickHouse Cloud não gerencia o ciclo de vida dos backups exportados por meio de comandos SQL.
+  Os clientes são responsáveis por garantir que esses backups sejam gerenciados adequadamente para atender aos requisitos de compliance, além de controlar os custos.
   Se os backups estiverem corrompidos, não poderão ser restaurados.
 </Warning>

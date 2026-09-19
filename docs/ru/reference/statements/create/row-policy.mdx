@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -55,9 +55,9 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 
 Необязательное предложение `ON CLUSTER` применяется ко всему оператору (одно имя кластера). ClickHouse **не** поддерживает отдельное `ON CLUSTER` для каждого имени политики, сгруппированного в одном операторе создания — если политики необходимо создать в разных кластерах, выполните отдельные операторы `CREATE ROW POLICY`.
 
-<div id="multiple-names-and-tables">
-  ## Несколько имён и таблиц
-</div>
+Для `CREATE ROW POLICY` требуется привилегия [CREATE ROW POLICY](/ru/reference/statements/grant#access-management) на таблицу, для которой создаётся политика. `OR REPLACE` отбрасывает существующую политику с тем же именем, включая роли, к которым она применяется, поэтому дополнительно требуется привилегия [DROP ROW POLICY](/ru/reference/statements/grant#access-management) на эту таблицу. Привилегия `DROP ROW POLICY` требуется независимо от того, существует политика или нет, поэтому этот оператор нельзя использовать для того, чтобы узнать, какие политики существуют.
+
+## Несколько имён и таблиц {#multiple-names-and-tables}
 
 Допустимо:
 
@@ -94,23 +94,19 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-<div id="using-clause">
-  ## USING предложение
-</div>
+## USING предложение {#using-clause}
 
 Позволяет задать условие для фильтрации строк. Пользователь увидит строку, если значение условия для этой строки не равно нулю.
 
-<div id="to-clause">
-  ## Предложение TO
-</div>
+## Предложение TO {#to-clause}
 
 В секции `TO` можно указать список пользователей и ролей, для которых должна действовать эта политика. Например, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
 Ключевое слово `ALL` означает всех пользователей ClickHouse, включая текущего пользователя. Ключевое слово `ALL EXCEPT` позволяет исключить отдельных пользователей из списка всех пользователей, например: `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-<div id="as-clause">
-  ## Предложение AS
-</div>
+Роли, указанные в секции `TO`, в том числе после `ALL EXCEPT`, сопоставляются с включенными ролями текущего пользователя ([`system.enabled_roles`](/ru/reference/system-tables/enabled_roles)), а не со всеми ролями, выданными пользователю, поэтому [`SET ROLE`](/ru/reference/statements/set-role) может изменить набор применяемых политик.
+
+## Предложение AS {#as-clause}
 
 Допускается, чтобы для одной и той же таблицы и одного и того же пользователя одновременно было включено несколько политик. Поэтому нужен способ объединять условия из нескольких политик.
 
@@ -130,9 +126,11 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 Вот общая формула:
 
 ```text
-row_is_visible = (одно или несколько состояний разрешающих политик не равны нулю) AND
-                 (все состояния ограничивающих политик не равны нулю)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+Если ни одно разрешающее условие не применимо, первое условие не действует и решение принимается только на основании ограничивающих политик, поскольку `access_control_improvements.users_without_row_policies_can_read_rows` включен по умолчанию. Поэтому пользователь, к которому не применимо ни одно условие, видит все строки, а параметр `access_control_improvements.throw_on_unmatched_row_policies`, отключенный по умолчанию, вместо этого генерирует исключение, если для таблицы условия заданы, но ни одно из них не применимо.
 
 Например, следующие политики:
 
@@ -155,9 +153,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 разрешить пользователю `peter` видеть строки таблицы table1 только при одновременном выполнении условий `b=1` И `c=2`, хотя
 для любой другой таблицы в mydb к пользователю применялась бы только политика `b=1`.
 
-<div id="distributed-and-remote-backed-tables">
-  ## Распределённые таблицы и таблицы с удалённым доступом к данным
-</div>
+## Распределённые таблицы и таблицы с удалённым доступом к данным {#distributed-and-remote-backed-tables}
 
 ROW POLICY фильтрует строки там, где фактически читаются данные таблицы. Таблица, делегирующая чтение удалённым серверам, например таблица [Distributed](/ru/reference/engines/table-engines/special/distributed) или обёртка над ней (например, materialized view с целью `Distributed`), отправляет удалённым серверам только текст запроса и не может применить фильтр политики при удалённом чтении. Чтобы фильтр не был незаметно отброшен, запросы к такой таблице от пользователей, к которым применяется политика, отклоняются с ошибкой `ILLEGAL_PREWHERE`.
 
@@ -172,15 +168,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   Это работает, пока запрос передаётся в виде текста, что используется по умолчанию. При [`serialize_query_plan = 1`](/ru/reference/settings/session-settings/serialize#serialize_query_plan) инициатор вместо этого передаёт уже сформированный план чтения, а удалённый сервер, выполняющий такой план, не применяет собственные ROW POLICY. Поэтому чтение таблицы `Distributed` через `local_table` возвращает неотфильтрованные строки. Для пользователей, к которым должны применяться ROW POLICY, сохраняйте значение `serialize_query_plan = 0`. См. [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
-<div id="on-cluster-clause">
-  ## Предложение ON CLUSTER
-</div>
+## Предложение ON CLUSTER {#on-cluster-clause}
 
 Позволяет создавать политики строк в кластере, см. [Distributed DDL](/ru/reference/statements/distributed-ddl). Это также удобный способ создать политику для локальных таблиц каждого сервера кластера.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

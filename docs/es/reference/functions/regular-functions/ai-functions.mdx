@@ -29,9 +29,7 @@ Todas las funciones comparten una infraestructura común que proporciona:
 * **Aplicación de cuotas**: Límites por consulta de tokens ([`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) y llamadas a la API ([`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Reintentos con backoff**: Los fallos transitorios se reintentan ([`ai_function_max_retries`](/es/reference/settings/session-settings/ai-function#ai_function_max_retries)) con backoff exponencial ([`ai_function_retry_initial_delay_ms`](/es/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
-<div id="configuration">
-  ## Configuración
-</div>
+## Configuración {#configuration}
 
 Las funciones de IA hacen referencia a una **colección nombrada** que almacena las credenciales del proveedor y la configuración. Se pueden crear y usar distintas colecciones nombradas para diferentes funciones o llamadas a funciones. Por ejemplo, quizá quiera definir una colección nombrada distinta para usar con las funciones de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) en lugar de las funciones de embedding (`aiEmbed`, `aiSimilarity`), ya que requieren endpoints diferentes y normalmente usan modelos distintos.
 
@@ -53,9 +51,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     api_key = 'sk-...';
 ```
 
-<div id="named-collection-parameters">
-  ### Parámetros de la colección nombrada
-</div>
+### Parámetros de la colección nombrada {#named-collection-parameters}
 
 | Parámetro     | Tipo   | Predeterminado | Descripción                                                                                                                                                                                                                                              |
 | ------------- | ------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,9 +66,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   Se puede usar cualquier API compatible con OpenAI (p. ej. vLLM, Ollama, LiteLLM) configurando `provider = 'openai'` y apuntando `endpoint` a su servicio.
 </Note>
 
-<div id="selecting-credentials">
-  ### Selección de credenciales
-</div>
+### Selección de credenciales {#selecting-credentials}
 
 Una función determina la colección nombrada que debe usar según, en este orden:
 
@@ -100,9 +94,7 @@ SELECT * FROM reviews
 WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
-<div id="parameter-map">
-  ### Mapa de parámetros
-</div>
+### Mapa de parámetros {#parameter-map}
 
 Cada función acepta opcionalmente un `Map(String, String)` de parámetros al final. Todos los valores son cadenas (ponga entre comillas los números, por ejemplo, `'0.2'`). Las claves desconocidas se rechazan. Si una clave está presente, sobrescribe el valor correspondiente de la colección nombrada; si una clave no está presente, se usa el valor de la colección nombrada (para `model`/`max_tokens`) o el valor predeterminado integrado. La excepción son las funciones de embedding (`aiEmbed`, `aiSimilarity`), que toman `model` como un argumento posicional obligatorio (por ejemplo, `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`) y generan un error si, en su lugar, se establece en el mapa de parámetros o en la colección nombrada. Esto tiene como objetivo garantizar embeddings reproducibles.
 
@@ -119,15 +111,11 @@ Las funciones individuales aceptan parámetros adicionales específicos de cada 
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
-<div id="query-level-settings">
-  ### Configuración a nivel de consulta
-</div>
+### Configuración a nivel de consulta {#query-level-settings}
 
 Toda la configuración relacionada con la IA se enumera en [Configuración](/es/reference/settings/session-settings) con el prefijo `ai_function_`.
 
-<div id="restricting-endpoint-hosts">
-  ### Restricción de hosts de endpoint
-</div>
+### Restricción de hosts de endpoint {#restricting-endpoint-hosts}
 
 La URL de `endpoint` en una colección nombrada de IA es un destino saliente al que el servidor se conecta con su propia identidad, y puede enviar (si se especifica) la `api_key` de la colección nombrada en los encabezados de la solicitud. De forma predeterminada, ClickHouse permite cualquier host. Para restringir las funciones a un conjunto específico de proveedores, configure [`remote_url_allow_hosts`](/es/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) en la configuración del servidor, por ejemplo:
 
@@ -140,9 +128,7 @@ La URL de `endpoint` en una colección nombrada de IA es un destino saliente al 
 
 Ten en cuenta que esta configuración es global para el servidor y se aplica a todas las funciones que usan HTTP.
 
-<div id="transport-security">
-  ### Seguridad del transporte (HTTP vs HTTPS)
-</div>
+### Seguridad del transporte (HTTP vs HTTPS) {#transport-security}
 
 El transporte se determina únicamente por el esquema de la URL del `endpoint`. No hay cifrado del payload de la solicitud a nivel de la aplicación; la protección de los datos en tránsito depende por completo del esquema:
 
@@ -153,18 +139,14 @@ De forma predeterminada, las funciones de IA rechazan un `endpoint` que enviarí
 
 Tenga en cuenta que, en cualquiera de los dos casos, el proveedor recibe los datos de entrada en texto sin formato después de la terminación de TLS; TLS protege los datos solo en la ruta de red entre el servidor y el proveedor.
 
-<div id="supported-providers">
-  ## Proveedores compatibles
-</div>
+## Proveedores compatibles {#supported-providers}
 
 | Proveedor | Valor de `provider` | Funciones de chat | Notas                           |
 | --------- | ------------------- | ----------------- | ------------------------------- |
 | OpenAI    | `'openai'`          | Sí                | Proveedor por defecto.          |
 | Anthropic | `'anthropic'`       | Sí                | Usa el endpoint `/v1/messages`. |
 
-<div id="observability">
-  ## Observabilidad
-</div>
+## Observabilidad {#observability}
 
 La actividad de la función de IA se supervisa mediante los [ProfileEvents](/es/reference/system-tables/query_log) de ClickHouse:
 
@@ -197,9 +179,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-<div id="aiClassify">
-  ## aiClassify
-</div>
+## aiClassify {#aiClassify}
 
 Introducido en: v26.4.0
 
@@ -208,6 +188,10 @@ Clasifica el texto dado en una de las categorías proporcionadas mediante un pro
 Las credenciales (una colección nombrada que especifica el proveedor, el modelo, el endpoint y, opcionalmente, una API key)
 se toman de la clave `credentials` del mapa de parámetros opcional, o de la configuración
 `ai_function_text_default_credentials` cuando el mapa la omite.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -232,7 +216,6 @@ Una de las etiquetas de categoría proporcionadas, o el valor predeterminado del
 **Clasificación de sentimiento**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -243,15 +226,12 @@ positive
 **Clasificar una columna con credenciales explícitas**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-<div id="aiEmbed">
-  ## aiEmbed
-</div>
+## aiEmbed {#aiEmbed}
 
 Introducido en: v26.6.0
 
@@ -298,29 +278,24 @@ El vector de embedding, o un array vacío si la entrada es NULL o está vacía, 
 **Generar el embedding de una sola cadena (`credentials` puede omitirse si la configuración `ai_function_embedding_default_credentials` está establecida)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Con dimensiones explícitas**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Generar el embedding de una columna de textos**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (title String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-<div id="aiExtract">
-  ## aiExtract
-</div>
+## aiExtract {#aiExtract}
 
 Introducido en: v26.4.0
 
@@ -335,6 +310,10 @@ En el modo de esquema, la función devuelve una cadena que contiene un objeto JS
 Las credenciales (una colección nombrada que especifica el proveedor, el modelo, el endpoint y, opcionalmente, una API key)
 se toman de la clave `credentials` del mapa de parámetros opcional, o de la
 configuración `ai_function_text_default_credentials` cuando el mapa la omite.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -359,7 +338,6 @@ Un único valor extraído (modo de instrucción) o una cadena con un objeto JSON
 **Instrucción en formato libre**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -370,15 +348,12 @@ late and damaged package
 **Extracción del esquema**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (review String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-<div id="aiFilter">
-  ## aiFilter
-</div>
+## aiFilter {#aiFilter}
 
 Introducido en: v26.8.0
 
@@ -398,6 +373,10 @@ se obtienen de la clave `credentials` del mapa de parámetros opcional o de la
 configuración `ai_function_text_default_credentials` cuando el mapa no la incluye.
 
 Nota: al usar `aiFilter` en `JOIN ... ON`, el LLM se evalúa una vez por cada par candidato, lo que puede resultar costoso.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -422,7 +401,6 @@ aiFilter(text, condition[, params])
 **Filtrar reseñas de usuarios enfadados**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (body String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
@@ -431,15 +409,12 @@ SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping
 **Filtra una columna con credenciales explícitas**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-<div id="aiGenerate">
-  ## aiGenerate
-</div>
+## aiGenerate {#aiGenerate}
 
 Introducido en: v26.4.0
 
@@ -454,6 +429,10 @@ configuración `ai_function_text_default_credentials` cuando el mapa no la inclu
 El mapa de parámetros opcional también puede establecer `system_prompt` (una instrucción que guía el
 comportamiento del modelo, p. ej., tono, formato y rol), `temperature`, `max_tokens` y `model`. Si `system_prompt` no está
 establecido, el valor predeterminado es: `You are a helpful assistant. Provide a clear and concise response.`
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -477,7 +456,6 @@ La respuesta de texto generada, o el valor predeterminado del tipo de columna (c
 **Pregunta simple**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -488,22 +466,18 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **Con credenciales explícitas y prompt del sistema**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Resumir los valores de una columna**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-<div id="aiRedact">
-  ## aiRedact
-</div>
+## aiRedact {#aiRedact}
 
 Introducido en: v26.8.0
 
@@ -533,6 +507,10 @@ Establezca `max_tokens` (valor predeterminado: `1024`) por encima de la longitud
 rechaza con `AI_PROVIDER_RESPONSE_TRUNCATED` (o devuelve el valor predeterminado de la columna cuando `ai_function_throw_on_error`
 está deshabilitado) en lugar de devolver texto parcialmente redactado.
 
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
@@ -556,7 +534,6 @@ El texto con la PII detectada reemplazada por el token de redacción, o el valor
 **Redactar categorías específicas**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -567,15 +544,12 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Redacta las categorías de PII predeterminadas con un token personalizado**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE tickets (body String) ENGINE = Memory;
 INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-<div id="aiSimilarity">
-  ## aiSimilarity
-</div>
+## aiSimilarity {#aiSimilarity}
 
 Introducido en: v26.8.0
 
@@ -608,7 +582,7 @@ aiSimilarity(text1, text2, model[, params])
 * `text1` — Primer texto. [`String`](/es/reference/data-types/string)
 * `text2` — Segundo texto. [`String`](/es/reference/data-types/string)
 * `model` — Nombre del modelo de embedding. [`const String`](/es/reference/data-types/string)
-* `params` — `Map(String, String)` constante opcional de parámetros. Clave específica de la función: `dimensions` (dimensionalidad objetivo de los embeddings; `0` o su omisión indica el tamaño nativo del modelo). También se aplica el parámetro común `credentials` (consulte [Funciones de IA](/es/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/es/reference/data-types/map)
+* `params` — `Map(String, String)` constante opcional de parámetros. Clave específica de la función: `dimensions` (dimensionalidad de destino de los embeddings; `0` o su omisión indica el tamaño nativo del modelo). También se aplica el parámetro común `credentials` (consulte [Funciones de IA](/es/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/es/reference/data-types/map)
 
 **Valor devuelto**
 
@@ -619,14 +593,12 @@ La similitud coseno en `[-1, 1]`, o NULL si alguno de los textos es NULL o está
 **Compare dos cadenas (`credentials` puede omitirse si está configurado el ajuste `ai_function_embedding_default_credentials`)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Ordena las reseñas por similitud con una consulta**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE product_reviews (review String) ENGINE = Memory;
 INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
@@ -635,15 +607,12 @@ SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well 
 **Deduplicación semántica con una autounión**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
 INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-<div id="aiTranslate">
-  ## aiTranslate
-</div>
+## aiTranslate {#aiTranslate}
 
 Introducido en: v26.4.0
 
@@ -654,6 +623,10 @@ Se pueden proporcionar instrucciones adicionales de estilo o dialecto mediante l
 Las credenciales (una colección nombrada que especifica el proveedor, el modelo, el endpoint y, opcionalmente, una API key)
 se obtienen de la clave `credentials` del mapa de parámetros opcional, o de la
 configuración `ai_function_text_default_credentials` cuando el mapa la omite.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -678,7 +651,6 @@ El texto traducido, o el valor predeterminado del tipo de columna (cadena vacía
 **Traducir al francés**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -689,7 +661,6 @@ Bonjour le monde!
 **Traducir al japonés siguiendo las instrucciones de estilo**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5

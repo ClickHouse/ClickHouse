@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 `file` 函数可在 `SELECT` 和 `INSERT` 查询中使用，用于从文件中读取数据或向文件中写入数据。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -29,17 +27,15 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
-| Parameter         | Description                                                                                                                                                                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`            | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 的文件路径，或在 `SELECT` 查询中使用的路径 `Array(String)`。在只读模式下支持以下 [通配符](#globs-in-path)：`*`、`?`、`{abc,def}` (其中 `'abc'` 和 `'def'` 是字符串) 以及 `{N..M}` (其中 `N` 和 `M` 是数字) 。 |
-| `path_to_archive` | zip/tar/7z 归档文件的相对路径。支持与 `path` 相同的通配符。                                                                                                                                                                                                                       |
-| `format`          | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                            |
-| `structure`       | 表的结构。格式：`'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                        |
-| `compression`     | 在 `SELECT` 查询中使用时，表示现有的压缩类型；在 `INSERT` 查询中使用时，表示所需的压缩类型。支持的压缩类型包括 `gz`、`br`、`xz`、`zst`、`lz4` 和 `bz2`。                                                                                                                                                         |
+| Parameter         | Description                                                                                                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 的文件路径，或在 `SELECT` 查询中使用的路径 `Array(String)`。在只读模式下支持以下 [通配符](#globs-in-path)：`*`、`?`、`{abc,def}` (其中 `'abc'` 和 `'def'` 是字符串) 以及 `{N..M}` (其中 `N` 和 `M` 是数字) 。             |
+| `path_to_archive` | zip/tar/7z 归档文件的相对路径。支持与 `path` 相同的通配符。                                                                                                                                                                                                                                   |
+| `format`          | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                        |
+| `structure`       | 表的结构。格式：`'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                    |
+| `compression`     | 在 `SELECT` 查询中使用时，表示现有的压缩类型；在 `INSERT` 查询中使用时，表示所需的压缩类型。支持的值包括 `none` (不压缩) 、`gzip/gz`、`deflate`、`brotli/br`、`lzma/xz`、`zstd/zst`、`lz4`、`bz2` 和 `snappy`。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认为 `basic`) 。 |
 
 <Tip>
   省略 `structure` 参数时，ClickHouse 会根据格式本身推断 schema。
@@ -59,19 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 可用于读取或写入文件中数据的表。
 
-<div id="examples-for-writing-to-a-file">
-  ## 写入文件示例
-</div>
+## 写入文件示例 {#examples-for-writing-to-a-file}
 
-<div id="write-to-a-tsv-file">
-  ### 写入 TSV 文件
-</div>
+### 写入 TSV 文件 {#write-to-a-tsv-file}
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -88,9 +78,7 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    3    2
 ```
 
-<div id="partitioned-write-to-multiple-tsv-files">
-  ### 按分区写入多个 TSV 文件
-</div>
+### 按分区写入多个 TSV 文件 {#partitioned-write-to-multiple-tsv-files}
 
 如果在向 `file` 类型的表函数插入数据时指定了 `PARTITION BY` 表达式，则会为每个分区分别创建一个文件。将数据拆分到不同文件中有助于提升读取操作的性能。
 
@@ -114,13 +102,9 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    2    3
 ```
 
-<div id="examples-for-reading-from-a-file">
-  ## 从文件中读取的示例
-</div>
+## 从文件中读取的示例 {#examples-for-reading-from-a-file}
 
-<div id="select-from-a-csv-file">
-  ### 从 CSV 文件中执行 SELECT
-</div>
+### 从 CSV 文件中执行 SELECT {#select-from-a-csv-file}
 
 首先，在服务端配置中设置 `user_files_path`，并准备文件 `test.csv`：
 
@@ -149,9 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="inserting-data-from-a-file-into-a-table">
-  ### 将文件中的数据插入到表中
-</div>
+### 将文件中的数据插入到表中 {#inserting-data-from-a-file-into-a-table}
 
 ```sql
 INSERT INTO FUNCTION
@@ -177,9 +159,7 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-<div id="globs-in-path">
-  ## 路径中的通配符
-</div>
+## 路径中的通配符 {#globs-in-path}
 
 路径中可以使用通配符。文件必须匹配整个路径模式，而不只是后缀或前缀。只有一种例外情况：如果路径指向一个现有的
 目录，且未使用通配符，则会在路径后隐式添加一个 `*`，从而
@@ -193,9 +173,7 @@ SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 
 带有 `{}` 的构造与 [remote](/zh/reference/functions/table-functions/remote) 和 [hdfs](/zh/reference/functions/table-functions/hdfs) 表函数类似。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 **示例**
 
@@ -254,18 +232,14 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
 * `_size` — 文件大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果文件大小未知，则该值为 `NULL`。
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则该值为 `NULL`。
 
-<div id="hive-style-partitioning">
-  ## `use_hive_partitioning` 设置
-</div>
+## `use_hive_partitioning` 设置 {#hive-style-partitioning}
 
 当 `use_hive_partitioning` 设置为 1 时，ClickHouse 会识别路径中的 Hive 风格分区 (`/name=value/`) ，并允许在查询中将分区列作为虚拟列使用。这些虚拟列的名称将与分区路径中的名称相同。
 
@@ -277,9 +251,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 | 设置项                                                                                                                                                     | 说明                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -289,9 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | 允许在读取时跳过空文件。默认禁用。                                                                                                      |
 | [storage&#95;file&#95;read&#95;method](/zh/reference/settings/session-settings/storage#storage_file_read_method)                                           | 从存储文件读取数据的方法，可选值包括：read、pread、mmap (仅适用于 clickhouse-local) 。默认值：clickhouse-server 为 `pread`，clickhouse-local 为 `mmap`。 |
 
-<div id="related">
-  ## 相关
-</div>
+## 相关 {#related}
 
 * [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [处理后重命名文件](/zh/reference/settings/session-settings/other#rename_files_after_processing)
