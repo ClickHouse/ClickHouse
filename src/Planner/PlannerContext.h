@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
 
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -20,6 +21,8 @@ namespace DB
 class QueryNode;
 class TableNode;
 class UnionNode;
+
+using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 
 struct FiltersForTableExpression
 {
@@ -195,6 +198,30 @@ public:
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
+    void addInSubqueryForJoinRewrite(InToJoinScope scope, const QueryTreeNodePtr & node)
+    {
+        in_to_join_subqueries.insert(node.get());
+        in_to_join_subqueries_by_scope[scope].push_back(node);
+    }
+
+    void removeInSubqueryForJoinRewrite(const QueryTreeNodePtr & node)
+    {
+        in_to_join_subqueries.erase(node.get());
+
+        for (auto & [_, nodes] : in_to_join_subqueries_by_scope)
+            std::erase(nodes, node);
+    }
+
+    bool isInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) const { return in_to_join_subqueries.contains(node.get()); }
+
+    const QueryTreeNodes & getInSubqueriesForJoinRewrite(InToJoinScope scope) const
+    {
+        static const QueryTreeNodes none;
+
+        auto it = in_to_join_subqueries_by_scope.find(scope);
+        return it == in_to_join_subqueries_by_scope.end() ? none : it->second;
+    }
+
     /// Returns false if any of following conditions met:
     /// 1. Query is executed on a follower node.
     /// 2. ignore_ast_optimizations is set.
@@ -222,6 +249,9 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
+
+    std::unordered_set<const IQueryTreeNode *> in_to_join_subqueries;
+    std::unordered_map<InToJoinScope, QueryTreeNodes> in_to_join_subqueries_by_scope;
 };
 
 }

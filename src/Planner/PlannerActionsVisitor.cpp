@@ -55,6 +55,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -1276,6 +1277,23 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// captured Levels must be recomputed per scope.
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
+
+    /// A join below this expression evaluates this `IN`, so its result is a column of the stream that
+    /// `analyzeInToJoin` added the joins to, and here it is read rather than computed.
+    if (planner_context->isInSubqueryForJoinRewrite(node))
+    {
+        if (!actions_stack.front().containsInputOrConstantNode(function_node_name))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Expression '{}' reads the result of an `IN` that a join evaluates above it. "
+                "Disable setting `rewrite_in_to_join` to evaluate that `IN` with a set",
+                node->formatASTForErrorMessage());
+
+        for (auto & scope : actions_stack)
+            scope.addInputColumnIfNecessary(function_node_name, function_node.getResultType());
+
+        return {function_node_name, Levels(0)};
+    }
 
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
