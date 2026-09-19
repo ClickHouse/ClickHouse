@@ -13393,6 +13393,7 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
 
     MutationsInterpreter::Settings mutation_settings(true);
     mutation_settings.return_mutated_rows = true;
+    mutation_settings.allow_correlated_subqueries = true;
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
