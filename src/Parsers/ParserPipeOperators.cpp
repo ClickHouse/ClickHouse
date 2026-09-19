@@ -16,6 +16,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/SelectUnionMode.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
@@ -56,40 +57,51 @@ ASTPtr wrapIntoUnion(ASTPtr query)
 }
 
 /// If the position is at a set operation (UNION/INTERSECT/EXCEPT with an optional ALL/DISTINCT modifier),
-/// consume it and return the mode.
-std::optional<SelectUnionMode> parseSetOperationMode(IParser::Pos & pos, Expected & expected)
+/// consume it and return the mode and column matching mode.
+std::optional<SetOperationDescriptor> parseSetOperationMode(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_union(Keyword::UNION);
     ParserKeyword s_intersect(Keyword::INTERSECT);
     ParserKeyword s_except(Keyword::EXCEPT);
     ParserKeyword s_all(Keyword::ALL);
     ParserKeyword s_distinct(Keyword::DISTINCT);
+    ParserKeyword s_by(Keyword::BY);
+    ParserKeyword s_name(Keyword::NAME);
 
     if (s_union.ignore(pos, expected))
     {
         if (s_all.ignore(pos, expected))
-            return SelectUnionMode::UNION_ALL;
+        {
+            SetOperationDescriptor result{.mode = SelectUnionMode::UNION_ALL};
+            if (s_by.ignore(pos, expected))
+            {
+                if (!s_name.ignore(pos, expected))
+                    return std::nullopt;
+                result.column_match_mode = SetOperationColumnMatchMode::Name;
+            }
+            return result;
+        }
         if (s_distinct.ignore(pos, expected))
-            return SelectUnionMode::UNION_DISTINCT;
-        return SelectUnionMode::UNION_DEFAULT;
+            return SetOperationDescriptor{.mode = SelectUnionMode::UNION_DISTINCT};
+        return SetOperationDescriptor{.mode = SelectUnionMode::UNION_DEFAULT};
     }
 
     if (s_intersect.ignore(pos, expected))
     {
         if (s_all.ignore(pos, expected))
-            return SelectUnionMode::INTERSECT_ALL;
+            return SetOperationDescriptor{.mode = SelectUnionMode::INTERSECT_ALL};
         if (s_distinct.ignore(pos, expected))
-            return SelectUnionMode::INTERSECT_DISTINCT;
-        return SelectUnionMode::INTERSECT_DEFAULT;
+            return SetOperationDescriptor{.mode = SelectUnionMode::INTERSECT_DISTINCT};
+        return SetOperationDescriptor{.mode = SelectUnionMode::INTERSECT_DEFAULT};
     }
 
     if (s_except.ignore(pos, expected))
     {
         if (s_all.ignore(pos, expected))
-            return SelectUnionMode::EXCEPT_ALL;
+            return SetOperationDescriptor{.mode = SelectUnionMode::EXCEPT_ALL};
         if (s_distinct.ignore(pos, expected))
-            return SelectUnionMode::EXCEPT_DISTINCT;
-        return SelectUnionMode::EXCEPT_DEFAULT;
+            return SetOperationDescriptor{.mode = SelectUnionMode::EXCEPT_DISTINCT};
+        return SetOperationDescriptor{.mode = SelectUnionMode::EXCEPT_DEFAULT};
     }
 
     return std::nullopt;
@@ -432,11 +444,12 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
         }
         else if (auto set_operation_mode = parseSetOperationMode(pos, expected))
         {
-            /// |> UNION [ALL/DISTINCT] query1 [, query2, ...]
+            /// |> UNION [ALL [BY NAME]/DISTINCT] query1 [, query2, ...]
             /// |> INTERSECT [ALL/DISTINCT] query1 [, query2, ...]
             /// |> EXCEPT [ALL/DISTINCT] query1 [, query2, ...]
             /// Every query is typically enclosed in parentheses (mandatory for the comma-separated list form).
-            SelectUnionMode mode = *set_operation_mode;
+            const auto set_operation = *set_operation_mode;
+            SelectUnionMode mode = set_operation.mode;
 
             ParserUnionQueryElement element_parser;
 
@@ -489,6 +502,8 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
                 res->list_of_selects->children.push_back(std::move(elem));
             res->children.push_back(res->list_of_selects);
             res->list_of_modes = SelectUnionModes(elements.size(), mode);
+            if (set_operation.column_match_mode == SetOperationColumnMatchMode::Name)
+                res->list_of_column_match_modes = SetOperationColumnMatchModes(elements.size(), SetOperationColumnMatchMode::Name);
 
             query = res;
         }
@@ -738,13 +753,18 @@ As in the `FROM` clause of an ordinary query, a comma (cross) join is not suppor
 
 ### UNION, INTERSECT, and EXCEPT {#union-intersect-and-except}
 
-`|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...`, and `|> EXCEPT [ALL/DISTINCT] ...` combine the input with the results of other queries:
+`|> UNION [DISTINCT | ALL [BY NAME]] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...`, and `|> EXCEPT [ALL/DISTINCT] ...` combine the input with the results of other queries. `BY NAME` matches columns by name instead of position and is supported with `UNION ALL`:
 
 ```sql
 FROM orders
 |> SELECT customer
 |> UNION ALL (FROM customers |> SELECT name)
 |> DISTINCT
+```
+
+```sql
+SELECT 1 AS a, 'one' AS b
+|> UNION ALL BY NAME (SELECT 'two' AS b, 3 AS c)
 ```
 
 The parentheses around an operand are optional for a single query, but they are required when the chain continues with another pipe operator after the set operation - otherwise it would be unclear whether the next operator applies to the last operand or to the whole result.
@@ -761,7 +781,7 @@ The parentheses around an operand are optional for a single query, but they are 
 )DOCS_MD",
         .syntax = R"(
 FROM table
-|> SELECT ... | WHERE ... | ORDER BY ... | LIMIT ... | AGGREGATE ... [GROUP BY ...] | EXTEND ... | SET ... | DROP ... | RENAME ... | DISTINCT | UNION ... | INTERSECT ... | EXCEPT ... | JOIN ... | ARRAY JOIN ... | CALL ...
+|> SELECT ... | WHERE ... | ORDER BY ... | LIMIT ... | AGGREGATE ... [GROUP BY ...] | EXTEND ... | SET ... | DROP ... | RENAME ... | DISTINCT | UNION [DISTINCT | ALL [BY NAME]] ... | INTERSECT ... | EXCEPT ... | JOIN ... | ARRAY JOIN ... | CALL ...
 [|> ...]
 )",
         .parent = "SELECT",
