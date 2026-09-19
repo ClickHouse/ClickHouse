@@ -1,0 +1,65 @@
+<clickhouse>
+  <profiles>
+    <!-- env var with XML special characters (&, <, >): it must be auto-escaped before being
+         embedded into the synthetic <from_env> XML document, so the setting resolves to the
+         exact original bytes. -->
+    <profile_env_special>
+        <log_comment from_env="ENV_XML_SPECIAL" />
+    </profile_env_special>
+    <!-- env var that looks like an XML fragment: an env var value is always plain text, so it
+         must be taken as literal text, not parsed as XML. -->
+    <profile_env_fragment>
+        <log_comment from_env="ENV_XML_FRAGMENT" />
+    </profile_env_fragment>
+    <!-- env var whose value contains the `]]>` sequence: the XML grammar forbids `]]>` in
+         character data, so it must be escaped (as `]]&gt;`) rather than embedded verbatim,
+         otherwise the synthetic document `<from_env>]]></from_env>` would be rejected as not
+         well-formed before substitution. -->
+    <profile_env_cdata>
+        <log_comment from_env="ENV_CDATA_END" />
+    </profile_env_cdata>
+    <!-- A value entity-encoded for the old from_env XML parser must now remain literal text,
+         because direct from_env values are escaped and no longer parsed as XML. -->
+    <profile_env_entity_encoded>
+        <log_comment from_env="ENV_ENTITY_ENCODED" />
+    </profile_env_entity_encoded>
+    <profile_env_subtree>
+        <include from_env="ENV_XML_SUBTREE" />
+    </profile_env_subtree>
+    <!-- Direct from_env is literal even on an ordinary container. Existing subtree imports in
+         this form must use the structural <include from_env=.../> form above instead. -->
+    <profile_env_direct_subtree from_env="ENV_XML_SUBTREE" />
+  </profiles>
+  <users>
+      <env_special>
+          <password></password>
+          <profile>profile_env_special</profile>
+          <quota>default</quota>
+      </env_special>
+      <env_fragment>
+          <password></password>
+          <profile>profile_env_fragment</profile>
+          <quota>default</quota>
+      </env_fragment>
+      <env_cdata>
+          <password></password>
+          <profile>profile_env_cdata</profile>
+          <quota>default</quota>
+      </env_cdata>
+      <env_entity_encoded>
+          <password></password>
+          <profile>profile_env_entity_encoded</profile>
+          <quota>default</quota>
+      </env_entity_encoded>
+      <env_subtree>
+          <password></password>
+          <profile>profile_env_subtree</profile>
+          <quota>default</quota>
+      </env_subtree>
+      <env_direct_subtree>
+          <password></password>
+          <profile>profile_env_direct_subtree</profile>
+          <quota>default</quota>
+      </env_direct_subtree>
+  </users>
+</clickhouse>
