@@ -432,9 +432,6 @@ void ThreadStatus::detachFromGroup()
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// flush untracked memory before resetting memory_tracker parent
-    flushUntrackedMemory();
-
     if (boundToOSThread())
     {
         finalizeQueryProfiler();
@@ -442,6 +439,35 @@ void ThreadStatus::detachFromGroup()
     }
 
     performance_counters.setParent(&ProfileEvents::global_counters);
+
+    /// Query-scoped thread-local objects were allocated while this thread's tracker parent was the
+    /// query/user. Destroy them before changing the parent, otherwise the matching frees are
+    /// credited to `total_memory_tracker` and the query/user amount never comes down. Pool threads
+    /// that attach and detach once per task (for example `pread_threadpool`) would otherwise
+    /// accumulate a live charge per task.
+    ///
+    /// `finalizeQueryProfiler` / `finalizePerformanceCounters` must run first: they still read
+    /// `query_context`, `query_id`, and `local_data`.
+    clearQueryId();
+    local_data = {};
+    fatal_error_callback = {};
+    query_context.reset();
+
+#if USE_JEMALLOC
+    if (std::exchange(jemalloc_profiler_enabled, false))
+    {
+        /// `prof.thread_active_init` / `thread.prof.active` are only available on jemalloc builds
+        /// with `JEMALLOC_PROF`. If either MIB is unavailable, the matching `setValue`/`getValue`
+        /// in `MibCache` is a no-op / would assert, so route the read through `tryGetValue` and
+        /// skip the per-thread reset entirely on builds without prof.
+        if (bool thread_active_init = false; Jemalloc::getThreadProfileInitMib().tryGetValue(thread_active_init))
+            Jemalloc::getThreadProfileActiveMib().setValue(thread_active_init);
+    }
+    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
+#endif
+
+    /// Flush after the destructions above so those credits reach the query/user tracker.
+    flushUntrackedMemory();
 
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
@@ -459,26 +485,6 @@ void ThreadStatus::detachFromGroup()
     }
 
     thread_group.reset();
-
-#if USE_JEMALLOC
-    if (std::exchange(jemalloc_profiler_enabled, false))
-    {
-        /// `prof.thread_active_init` / `thread.prof.active` are only available on jemalloc builds
-        /// with `JEMALLOC_PROF`. If either MIB is unavailable, the matching `setValue`/`getValue`
-        /// in `MibCache` is a no-op / would assert, so route the read through `tryGetValue` and
-        /// skip the per-thread reset entirely on builds without prof.
-        if (bool thread_active_init = false; Jemalloc::getThreadProfileInitMib().tryGetValue(thread_active_init))
-            Jemalloc::getThreadProfileActiveMib().setValue(thread_active_init);
-    }
-    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
-#endif
-
-    clearQueryId();
-    query_context.reset();
-
-    local_data = {};
-
-    fatal_error_callback = {};
 
 }
 

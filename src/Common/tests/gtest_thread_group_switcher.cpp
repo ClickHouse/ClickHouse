@@ -130,4 +130,46 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
     t.join();
 }
 
+/// Pool threads (`pread_threadpool`, remote threadpool, ...) attach and detach once per task.
+/// `ThreadGroup::SharedData` (including `query_for_logs`) is copied on attach. If that copy is
+/// destroyed after the thread tracker is reparented to `total_memory_tracker`, the query keeps
+/// the allocation and the free is credited globally. With `untracked_memory_limit = 0` the leak
+/// is one copy per cycle rather than being hidden in per-thread slack.
+TEST(ThreadGroupSwitcher, RepeatedAttachDetachDoesNotLeakQueryMemory)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        ts.untracked_memory_limit = 0;
+
+        auto context = getContext().context;
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t payload_size = 68 * 1024;
+        group->attachQueryForLog(std::string(payload_size, 'x'));
+
+        /// Warm up one-time attach allocations (profile counters, settings, ...).
+        {
+            ThreadGroupSwitcher switcher(group, ThreadName::READ_THREAD_POOL);
+        }
+        const Int64 after_warmup = group->memory_tracker.get();
+
+        constexpr int cycles = 40;
+        for (int i = 0; i < cycles; ++i)
+        {
+            ThreadGroupSwitcher switcher(group, ThreadName::READ_THREAD_POOL);
+        }
+
+        const Int64 after = group->memory_tracker.get();
+        const Int64 growth = after - after_warmup;
+        const Int64 leaked_if_per_cycle = static_cast<Int64>(cycles) * static_cast<Int64>(payload_size);
+
+        EXPECT_LT(growth, leaked_if_per_cycle / 4)
+            << "query tracker grew by " << growth
+            << " over " << cycles << " attach/detach cycles with a "
+            << payload_size << "-byte query_for_logs copy; "
+            << leaked_if_per_cycle << " would mean one copy leaked per cycle";
+    });
+    t.join();
+}
+
 } // namespace DB
