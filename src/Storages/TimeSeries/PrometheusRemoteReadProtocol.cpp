@@ -73,6 +73,15 @@ namespace
             res_matchers.emplace_back(std::move(res_matcher));
         }
 
+        /// RemoteRead matchers are not PromQL text, and the protocol permits matcher sets
+        /// such as job=~".*" that match an empty label value. TimeSeries rows always have
+        /// a non-empty metric name, so preserve that invariant when the matchers are later
+        /// serialized to PromQL and reparsed by timeSeriesSelector.
+        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
+            .label_name = "__name__",
+            .label_value = ".+",
+            .matcher_type = PrometheusQueryTree::MatcherType::RE});
+
         return PrometheusQueryTree{std::move(instant_selector)};
     }
 
