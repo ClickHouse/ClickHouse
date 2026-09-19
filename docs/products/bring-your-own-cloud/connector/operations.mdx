@@ -245,6 +245,10 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 ```
 
+### The platform layer {#uninstall-platform-layer}
+
+Uninstalling the connector does not remove the platform layer. The platform namespaces and workloads, the `pcm-platform` RBAC, and the admission objects your approvals installed stay in the cluster, and so does every managed service. Delete the services first; see [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service). On a test cluster with no services, `clicklink clctl platform reset` uninstalls the platform releases, and the CustomResourceDefinitions, RBAC, and StorageClass it leaves need deleting by hand; see [resetting a test cluster](/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). Outside a test cluster, agree a removal plan with your ClickHouse account team before touching the platform layer.
+
 ### ClickHouse users {#uninstall-clickhouse-users}
 
 Uninstalling on either target leaves the provisioned read-only users in place on instances you registered yourself. Drop them as an admin on each instance (append your `--ch-user-suffix` to the names if you set one):

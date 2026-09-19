@@ -138,7 +138,7 @@ On a VM, `clicklink clctl executor prepare` also applies a per-service bundle. T
 | `serviceaccounts` | `get`, `create`, `update`, `patch`, `delete` | The service's ServiceAccount, which carries the IAM role annotation |
 | `services` | `get`, `list`, `create` | The service's internal load balancer, when requested |
 | `namespaces` | `get`, `create`, `update`, `delete` | Creating a service namespace and deleting it with the service; prefixed names only |
-| `roles`, `rolebindings` (`rbac.authorization.k8s.io`) | `get`, `create`, `update`, `patch` | The scraper's read-only access inside each service namespace; Kubernetes escalation prevention limits these to permissions the executor already holds |
+| `roles`, `rolebindings` (`rbac.authorization.k8s.io`) | `get`, `create`, `update`, `patch` | The scraper's read-only access inside each service namespace; Kubernetes escalation prevention limits these to permissions the executor already holds. The executor provisions nothing for the troubleshooter; see [support sessions for a managed service](/products/bring-your-own-cloud/connector/managed-services#support-sessions) |
 | `serviceaccounts/token` | `create` | Exact names only: `pcm-executor` and the scraper's ServiceAccount, for token renewal |
 | `secrets` | `get`, `update` | The connector's mTLS Secret only, by exact name, to persist the renewed client certificate. Kubernetes installs only, granted by the chart's Role in the connector namespace |
 | `configmaps` | `get`, `update`, `patch`, `create` | The `clicklink-instance-registry` ConfigMap in the connector namespace. Kubernetes installs only, granted by the chart's Role; `get`, `update`, and `patch` are pinned by name, and the admission policy confines `create` to that name |

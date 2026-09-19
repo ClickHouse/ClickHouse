@@ -157,6 +157,33 @@ Creates, scales, and starts complete asynchronously. The executor reports the co
 
 The `instances scale`, `instances patch`, and `instances delete` subcommands post commands straight to the executor's local API, without ClickHouse Cloud's involvement. Leave them alone unless your ClickHouse account team asks you to run one.
 
+## Support sessions for a managed service {#support-sessions}
+
+The executor wires the scraper into each service it creates. It does not provision the troubleshooter, so a [support session](/products/bring-your-own-cloud/connector/support-sessions) cannot run diagnostics on a managed service until you do. Provision it once per service, with the service namespace `ns-<name>`, the same way as for an instance you registered yourself:
+
+<Tabs>
+<Tab title="Kubernetes" id="troubleshooter-kubernetes">
+```bash
+clicklink clctl troubleshoot access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <name> --instance-namespace ns-<name> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
+```
+
+Then add the Secret and ServiceAccount pair to `troubleshooter.accessBundles` and run `helm upgrade`, as shown under [adding ClickHouse instances](/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+</Tab>
+<Tab title="Linux VM" id="troubleshooter-vm">
+```bash
+printf '%s\n' "$CH_DEFAULT_PASSWORD" | sudo clicklink clctl troubleshoot access provision --provider local \
+  --instance <name> --instance-namespace ns-<name> --ch-admin-password-stdin
+```
+
+`$CH_DEFAULT_PASSWORD` is the `default` user's password that `prepare` printed.
+</Tab>
+</Tabs>
+
+Grant the ClickHouse user with SQL, as above, not with `--ch-user-via cr`: ClickHouse Cloud owns the service definition and re-applies it, which would drop a user added there. When the service is deleted, the executor removes the troubleshooter's bundle on a VM. On Kubernetes the bundle Secret and ServiceAccount stay until you delete them, as listed under [uninstall](/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
+
 ## Delete a service {#delete-a-service}
 
 There is no customer delete command through your connector endpoint: ask your ClickHouse account team to delete the service. ClickHouse Cloud terminates it, and the executor deletes the workload and its namespace (`terminating`, then `terminated`). Nothing in AWS is touched: the buckets, their data, and the IAM role remain until you remove them.
