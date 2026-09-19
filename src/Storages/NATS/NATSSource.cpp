@@ -76,10 +76,27 @@ NATSSource::~NATSSource()
     if (!consumer)
         return;
 
-    consumer->dropConsumed();
-
     if (unsubscribe_on_destroy)
+    {
+        /// This source subscribed the consumer itself - the direct `SELECT` case - so the
+        /// subscription ends here, and everything the client has delivered through it has to be
+        /// resolved while it is still alive. `read` gives each of these sources
+        /// `max_block_size = 1` while the pull subscription keeps unbounded pending limits, so the
+        /// query can return its first row with more messages already in the local queue. Destroying
+        /// those leaves the broker counting them as delivered until the ACK deadline, which hides
+        /// them from the next query and from a view attached right afterwards, so they go back to
+        /// the broker instead. A direct `SELECT` consumes only what it has committed: by the time
+        /// this destructor runs, `generate` has acknowledged what the query committed (with
+        /// `nats_commit_on_select`), and whatever is left owes its rows to nothing.
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::ReturnToBroker);
         consumer->unsubscribe();
+    }
+    else
+    {
+        /// A background streaming consumer stays subscribed for the next cycle, which keeps
+        /// consuming from the same local queue, so only the handles of this cycle are released.
+        consumer->dropConsumed();
+    }
 
     storage.pushConsumer(consumer);
 }

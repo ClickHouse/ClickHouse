@@ -2257,6 +2257,64 @@ def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_le
     _publish_and_expect("test_subject", range(20, 40), 20 + detached + 20)
 
 
+def test_nats_jet_stream_direct_select_hands_back_the_backlog_it_did_not_read(nats_cluster):
+    # A direct `SELECT` that finds its consumer unsubscribed subscribes it itself and unsubscribes
+    # it again when the query ends. `read` gives each of those sources `max_block_size = 1` while
+    # the pull subscription keeps unbounded pending limits, so the query returns its first row while
+    # the client has already delivered the rest of the backlog into the local queue. Those messages
+    # owe their rows to nothing - the query is over and has committed only what it returned - and
+    # the subscription they arrived on is about to be destroyed, so they have to go back to the
+    # broker while it is still alive. Destroying them instead leaves the broker counting them as
+    # delivered until the ACK deadline, which is far beyond every wait below, so both the
+    # acknowledgement count and the view attached afterwards hold only if the backlog was returned.
+    total_expected = 500
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.consume")
+
+    # Published with no view attached, so the whole backlog is waiting when the query below
+    # subscribes and the client pulls far more of it than the single row the query returns.
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+
+    read = instance.query("SELECT count() FROM test.consume SETTINGS rabbitmq_max_wait_ms = 5000")
+    assert int(read) >= 1, "the direct SELECT read nothing of a backlog of {} messages".format(total_expected)
+
+    logging.debug("consumer state after the direct SELECT: {}".format(
+        asyncio.run(get_consumer_info(cluster, "test_stream", "test_consumer"))))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 120,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, (
+        "the backlog the direct SELECT did not read was destroyed instead of returned to the broker, "
+        "view holds {} of {} keys".format(result, total_expected))
+
+
 def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluster):
     # A one-shot recovery would pass the single-restart test above, so require it to work twice.
     _setup_restart_table("test_subject", "test_consumer")
