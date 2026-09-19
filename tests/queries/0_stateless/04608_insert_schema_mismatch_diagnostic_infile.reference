@@ -1,0 +1,9 @@
+-- type mismatch in the file
+insert failed as expected
+explanation present
+-- compatible structure, the parse fails only on a fractional value (no false positive)
+insert failed as expected
+explanation missing
+-- type mismatch in a compressed file
+insert failed as expected
+explanation present

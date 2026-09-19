@@ -1,0 +1,12 @@
+-- JSONEachRow, integer into DateTime (a Unix timestamp) plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, integer into Date plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, integer into an Enum (by its numeric value) plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- TSV, integer into an Array destination is a genuine structure mismatch (a scalar cannot build a nested value)
+insert failed as expected
+explanation present

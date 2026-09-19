@@ -1,0 +1,10 @@
+-- Avro string into String: a parse error on the other column gets no false-positive suffix
+parse error as expected
+explanation missing
+-- Avro enum into String: accepted by the parser, no false-positive suffix
+parse error as expected
+explanation missing
+-- Avro int into String: rejected eagerly while reading the header, before any value is parsed
+incompatibility reported by the parser
+no parse error
+explanation missing

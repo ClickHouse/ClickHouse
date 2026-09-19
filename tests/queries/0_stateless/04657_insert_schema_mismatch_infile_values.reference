@@ -1,0 +1,6 @@
+-- only the failing row is sampled, so its mismatch with the destination is explained
+insert failed as expected
+explanation present
+-- the failing row matches the expected structure; the second row is not sampled (no false positive)
+insert failed as expected
+explanation missing

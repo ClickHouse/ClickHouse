@@ -1,0 +1,8 @@
+-- JSONCompactColumns: fewer columns than the destination (trailing columns default-filled), only a value fails (no false positive)
+explanation missing
+-- JSONCompactColumns: the value present is genuinely the wrong shape (a string for a numeric column), so the mismatch is still explained
+explanation present
+-- TSV, input_format_tsv_allow_variable_number_of_columns=1: fewer columns accepted, only a value fails (no false positive)
+explanation missing
+-- TSV, input_format_tsv_allow_variable_number_of_columns=0 (default): the parser requires the exact number of columns, so the differing structure is explained
+explanation present

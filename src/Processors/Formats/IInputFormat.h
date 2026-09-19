@@ -8,6 +8,9 @@
 #include <base/types.h>
 #include <Processors/ISource.h>
 
+#include <functional>
+#include <optional>
+
 
 namespace DB
 {
@@ -132,6 +135,26 @@ public:
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
+    /// Set a callback that produces an additional explanation to attach to the message of a
+    /// parse-error exception thrown while reading. It is used for INSERT queries to compare the
+    /// structure of the data being inserted with the expected structure and report a mismatch.
+    /// The callback receives the number of the row the parser had reached when the error was thrown
+    /// (see getRowsReachedOnParseError), so the explanation can be derived from the data the parser
+    /// actually read rather than from rows it never reached.
+    /// The callback must return an empty string when there is nothing to report.
+    void setParseErrorDiagnosticProvider(std::function<String(std::optional<size_t>)> provider)
+    {
+        parse_error_diagnostic_provider = std::move(provider);
+    }
+
+    /// For the parse-error diagnostic above: the 1-based number of the input row the parser had
+    /// reached when the error was thrown, counting the row whose parsing failed. Row-based formats
+    /// override this, and `ParallelParsingInputFormat` propagates the value from the child parser
+    /// whose unit failed (its segmenting thread reads ahead of the parsers, but the child parsers
+    /// count rows globally); `nullopt` means the format cannot tell, in which case the diagnostic
+    /// falls back to sampling the data without a row bound.
+    virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
@@ -147,6 +170,9 @@ private:
     void resetOwnedBuffers();
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+
+    /// See setParseErrorDiagnosticProvider.
+    std::function<String(std::optional<size_t>)> parse_error_diagnostic_provider;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
