@@ -17,6 +17,8 @@ for key 'select' has no 'arguments' list
 for key 'predicate' has no 'arguments' list
 for key 'table_function' has no 'arguments' list
 for key 'as_table_function' has no 'arguments' list
+for key 'table_function' has no 'arguments' list
+for key 'table_function' has no 'arguments' list
 for key 'ttl' has no 'arguments' list
 must be a list of TTL elements
 must not be an empty list

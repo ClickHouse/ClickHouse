@@ -84,10 +84,15 @@ send "$(payload "INSERT INTO tkd SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "ALTER TABLE tk (DELETE WHERE a IN (1))" "$ARGS_A_1")"
 
 # A table function is the other node the parser always gives an `arguments` list, even with no arguments
-# at all, and the two slots holding one directly pass it to a table function that reads that list.
+# at all, and the four slots holding one pass it to a table function that reads that list. Query analysis
+# rebuilds the list from the query tree, so the two slots inside a `SELECT` need a route that runs the
+# table function before it: `EXPLAIN AST optimize = 1` builds the pre-analyzer interpreter for each
+# `SELECT` it walks, and `EXPLAIN TABLE OVERRIDE` executes its own table function directly.
 EMPTY_ARGS=',"arguments":{"type":"ExpressionList"}'
 send "$(payload "INSERT INTO FUNCTION numbers() SELECT 1" "$EMPTY_ARGS")"
 send "$(payload "CREATE TABLE tkn AS numbers()" "$EMPTY_ARGS")"
+send "$(payload "EXPLAIN AST optimize = 1 SELECT * FROM numbers()" "$EMPTY_ARGS")"
+send "$(payload "EXPLAIN TABLE OVERRIDE mysql() PARTITION BY x" "$EMPTY_ARGS")"
 
 # `MODIFY TTL` also escapes through a substituted child type: the ALTER side imposed no type on the `ttl`
 # list, so a function can sit directly in it instead of inside an `ASTTTLElement`, and
