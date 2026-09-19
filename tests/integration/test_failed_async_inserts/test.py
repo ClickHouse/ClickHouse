@@ -4,6 +4,12 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+# This test relies only on the per-query `max_memory_usage`, which is unaffected
+# by the server-wide `additional_memory_tracking_per_thread` reservation (it is
+# charged to the total tracker via `CurrentMemoryTracker::allocGlobal`, never the
+# query tracker chain). Keep the setting at its default so the async-insert flush
+# path (`AsynchronousInsertQueue` → `CompletedPipelineExecutor::execute`) also
+# exercises the feature and confirms it leaves query-level accounting unaffected.
 node = cluster.add_instance(
     "node",
     with_zookeeper=True,
