@@ -1,5 +1,5 @@
 ---
-description: '包含由采样查询分析器收集的堆栈跟踪的系统表'
+description: '包含由采样查询分析器以及 trace_type 列中所列其他来源收集的堆栈跟踪的系统表'
 keywords: ['系统表', 'trace_log']
 slug: /operations/system-tables/trace_log
 title: 'system.trace_log'
@@ -12,7 +12,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 ## 说明 {#description}
 
-包含由[采样查询分析器](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)收集的堆栈跟踪。
+包含由[采样查询分析器](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)以及 `trace_type` 列中所列的其他来源收集的堆栈跟踪。
 
 当服务器配置中的 [trace&#95;log](/zh/reference/settings/server-settings/settings/other#trace_log) 部分启用时，ClickHouse 会创建此表。另请参见以下设置：[query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/zh/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns)、[query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/zh/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns)、[memory&#95;profiler&#95;step](/zh/reference/settings/session-settings/memory-profiler#memory_profiler_step)、
 [memory&#95;profiler&#95;sample&#95;probability](/zh/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability)、[trace&#95;profile&#95;events](/zh/reference/settings/session-settings/trace-profile-events#trace_profile_events)。

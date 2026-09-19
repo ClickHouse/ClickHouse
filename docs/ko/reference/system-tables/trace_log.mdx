@@ -1,5 +1,5 @@
 ---
-description: '샘플링 쿼리 프로파일러가 수집한 스택 트레이스를 담고 있는 시스템 테이블입니다.'
+description: '샘플링 쿼리 프로파일러와 trace_type 컬럼에 명시된 다른 소스가 수집한 스택 트레이스를 담고 있는 시스템 테이블입니다.'
 keywords: ['시스템 테이블', 'trace_log']
 slug: /operations/system-tables/trace_log
 title: 'system.trace_log'
@@ -12,12 +12,12 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 
 ## 설명 {#description}
 
-[샘플링 쿼리 프로파일러](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler)에서 수집된 스택 트레이스를 포함합니다.
+[샘플링 쿼리 프로파일러](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler)와 `trace_type` 컬럼에 명시된 기타 소스에서 수집된 스택 트레이스를 포함합니다.
 
 서버 구성의 [trace&#95;log](/ko/reference/settings/server-settings/settings/other#trace_log) 섹션이 설정되어 있으면 ClickHouse가 이 테이블을 생성합니다. 다음 설정도 참조하십시오: [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/ko/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/ko/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory&#95;profiler&#95;step](/ko/reference/settings/session-settings/memory-profiler#memory_profiler_step),
 [memory&#95;profiler&#95;sample&#95;probability](/ko/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace&#95;profile&#95;events](/ko/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
-심볼화가 활성화되어 있으면(기본값) 디맹글된 함수 이름과 소스 위치가 이미 `symbols` 및 `lines` 컬럼에 उपलब्ध하므로 인트로스펙션 함수 없이 로그를 직접 분석할 수 있습니다. `symbolize` 설정은 프로파일러가 수집한 트레이스 유형에 적용되지만, `Instrumentation` 트레이스 유형의 행은 이 설정과 관계없이 심볼화됩니다. 심볼화는 ELF 플랫폼(예: Linux) 및 macOS에서 지원됩니다. FreeBSD에서는 `symbols` 및 `lines` 컬럼이 항상 비어 있습니다. `symbols`의 함수 이름은 바이너리의 심볼 테이블에서 가져오며 기본적으로 사용할 수 있습니다. 반면 `lines`의 소스 위치는 가능한 범위에서 제공됩니다. 이를 위해 디버그 정보(macOS에서는 `.dSYM` 번들)가 필요하며, ELF 플랫폼에서는 기본 ClickHouse 바이너리 내부의 프레임에 대해서만 해석됩니다. 해석되지 않은 프레임의 `lines` 항목은 비어 있습니다.
+심볼화가 활성화되어 있으면(기본값) 디맹글된 함수 이름과 소스 위치가 이미 `symbols` 및 `lines` 컬럼에 제공되므로 인트로스펙션 함수 없이 로그를 직접 분석할 수 있습니다. `symbolize` 설정은 프로파일러가 수집한 트레이스 유형에 적용되지만, `Instrumentation` 트레이스 유형의 행은 이 설정과 관계없이 심볼화됩니다. 심볼화는 ELF 플랫폼(예: Linux) 및 macOS에서 지원됩니다. FreeBSD에서는 `symbols` 및 `lines` 컬럼이 항상 비어 있습니다. `symbols`의 함수 이름은 바이너리의 심볼 테이블에서 가져오며 기본적으로 사용할 수 있습니다. 반면 `lines`의 소스 위치는 가능한 범위에서 제공됩니다. 이를 위해 디버그 정보(macOS에서는 `.dSYM` 번들)가 필요하며, ELF 플랫폼에서는 기본 ClickHouse 바이너리 내부의 프레임에 대해서만 해석됩니다. 해석되지 않은 프레임의 `lines` 항목은 비어 있습니다.
 심볼화가 비활성화되어 있거나 `trace` 컬럼의 원시 주소를 동적으로 해석하려는 경우(예: 인라인 프레임 확장) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol`, `demangle` 인트로스펙션 함수를 사용하십시오. 이 함수들은 심볼화와 동일한 플랫폼(예: Linux 등의 ELF 플랫폼 및 macOS)에서 사용할 수 있습니다. FreeBSD에서는 이 함수들도 컴파일되지 않으므로 `trace`의 주소를 서버 외부에서 해석해야 합니다.
 
 ## 컬럼 {#columns}

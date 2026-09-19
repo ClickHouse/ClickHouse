@@ -1,6 +1,6 @@
 ---
 description: 'Tabla del sistema que contiene trazas de pila recopiladas por el
-  perfilador de consultas por muestreo.'
+  perfilador de consultas por muestreo y por las demás fuentes indicadas en la columna trace_type.'
 keywords: ['tabla del sistema', 'trace_log']
 slug: /operations/system-tables/trace_log
 title: 'system.trace_log'
@@ -13,12 +13,12 @@ import SystemTableCloud from '/snippets/es/_system_table_cloud.mdx';
 
 ## Descripción {#description}
 
-Contiene trazas de pila recopiladas por el [perfilador de consultas por muestreo](/es/concepts/features/performance/troubleshoot/sampling-query-profiler).
+Contiene trazas de pila recopiladas por el [perfilador de consultas por muestreo](/es/concepts/features/performance/troubleshoot/sampling-query-profiler) y por las demás fuentes indicadas en la columna `trace_type`.
 
 ClickHouse crea esta tabla cuando está definida la sección de configuración del servidor [trace&#95;log](/es/reference/settings/server-settings/settings/other#trace_log). Consulte también estas opciones de configuración: [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/es/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/es/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory&#95;profiler&#95;step](/es/reference/settings/session-settings/memory-profiler#memory_profiler_step),
 [memory&#95;profiler&#95;sample&#95;probability](/es/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace&#95;profile&#95;events](/es/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
-Cuando la simbolización está habilitada (de forma predeterminada), los nombres de función desmanglados y las ubicaciones de origen ya están disponibles en las columnas `symbols` y `lines`, por lo que puede analizar los logs directamente sin funciones de introspección. La opción de configuración `symbolize` se aplica a los tipos de trazas recopiladas por el perfilador; las filas con el tipo de traza `Instrumentation` se simbolizan independientemente de esta opción. La simbolización es compatible con plataformas ELF (como Linux) y macOS; en FreeBSD, las columnas `symbols` y `lines` siempre están vacías. Los nombres de función en `symbols` proceden de la tabla de símbolos del binario y están disponibles de forma predeterminada, mientras que las ubicaciones de origen en `lines` se obtienen según disponibilidad: requieren información de depuración (un paquete `.dSYM` en macOS) y, en plataformas ELF, solo se resuelven para los marcos dentro del binario principal de ClickHouse; los marcos no resueltos tienen entradas `lines` vacías.
+Cuando la simbolización está habilitada (de forma predeterminada), los nombres de función desmanglados y las ubicaciones de origen ya están disponibles en las columnas `symbols` y `lines`, por lo que puede analizar los logs directamente sin funciones de introspección. La configuración `symbolize` se aplica a los tipos de trazas recopiladas por el perfilador; las filas con el tipo de traza `Instrumentation` se simbolizan independientemente de esta opción. La simbolización es compatible con plataformas ELF (como Linux) y macOS; en FreeBSD, las columnas `symbols` y `lines` siempre están vacías. Los nombres de función en `symbols` proceden de la tabla de símbolos del binario y están disponibles de forma predeterminada, mientras que las ubicaciones de origen en `lines` se obtienen según disponibilidad: requieren información de depuración (un paquete `.dSYM` en macOS) y, en plataformas ELF, solo se resuelven para los marcos dentro del binario principal de ClickHouse; los marcos no resueltos tienen entradas `lines` vacías.
 Si la simbolización está deshabilitada o desea resolver sobre la marcha las direcciones sin procesar de la columna `trace` (por ejemplo, para expandir marcos inline), use las funciones de introspección `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` y `demangle`. Estas funciones están disponibles en las mismas plataformas que la simbolización (plataformas ELF como Linux y macOS); en FreeBSD tampoco están compiladas, por lo que las direcciones de `trace` deben resolverse fuera del servidor.
 
 ## Columnas {#columns}
