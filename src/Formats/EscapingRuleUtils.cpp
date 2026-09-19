@@ -561,6 +561,13 @@ void checkSupportedDelimiterAfterField(FormatSettings::EscapingRule escaping_rul
     /// Nullptr means that field is skipped and it's equivalent to String
     if (!type || isString(removeNullable(removeLowCardinality(type))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'Escaped' serialization requires delimiter after String field to start with '\\t' or '\\n'");
+
+    /// The `Escaped` serialization of `AggregateFunction` consumes the field like `String`, up to an unescaped
+    /// '\t' or '\n': the state form is written and read as one escaped string, and the value forms of
+    /// `aggregate_function_input_format` keep whole-field reads for the released quoted compatibility payloads
+    /// (see `useLegacyQuotedValueParsing` in `SerializationAggregateFunction`).
+    if (WhichDataType(removeNullable(removeLowCardinality(type))).isAggregateFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'Escaped' serialization requires delimiter after AggregateFunction field to start with '\\t' or '\\n'");
 }
 
 }

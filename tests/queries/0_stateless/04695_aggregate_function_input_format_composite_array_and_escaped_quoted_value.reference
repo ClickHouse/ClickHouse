@@ -1,0 +1,19 @@
+-- array mode, composite argument, released double-quoted element
+[[1,2],[3]]
+[{'a':1},{'b':2}]
+['{"a":1}']
+[(1,'a')]
+-- array mode, composite argument, native element
+[[1,2],[3]]
+[{'a':1},{'b':2}]
+[(1,'a'),(2,'b')]
+-- value mode, escaped format, escaped surrounding quotes
+42
+42
+abc
+2020-01-01
+42
+-- value mode, escaped format, other escape sequences are unaffected
+1
+1
+1

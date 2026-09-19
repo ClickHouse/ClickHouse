@@ -1,0 +1,18 @@
+=== Nullable(String): barewords NaN, NULLIFY and NULL parse as strings (JSONEachRow legacy string-wrapped) ===
+1	['NaN','a']
+2	['NULL','b']
+3	['NULLIFY','c']
+4	['d','nan']
+=== Nullable(String): barewords in VALUES string-wrapped and CSV ===
+1	['NaN','a']
+2	['NULL','b']
+5	['NaN','e']
+6	['NULL','f']
+=== Nullable(Enum8): bareword starting with N parses via CSV (released form) ===
+1	['no','yes']
+=== Nullable(Float64): NaN and native NULL still parse (N/n -> quoted dispatch kept for non-string types) ===
+1	[nan,1.5,2]
+2	[3.5]
+3	[4.5]
+=== Nullable(UInt64): native NULL parses, quoted number kept ===
+1	[1,2]

@@ -1,0 +1,11 @@
+tsvraw number	1
+tsvraw string	1
+tsvraw low cardinality	1
+tsvraw float	1
+tsvraw number value	0	42
+tsvraw string value	0	abc
+tsvraw string NULL word	0	NULL
+tsvraw plain	abc
+custom separated number	1
+custom separated string	1
+custom separated value	0	42

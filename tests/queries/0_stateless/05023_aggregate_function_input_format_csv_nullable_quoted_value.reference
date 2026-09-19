@@ -1,0 +1,5 @@
+nullable uint64	42
+nullable uint64 single quotes	42
+nullable string	abc
+low cardinality nullable string	abc
+nullable enum	b

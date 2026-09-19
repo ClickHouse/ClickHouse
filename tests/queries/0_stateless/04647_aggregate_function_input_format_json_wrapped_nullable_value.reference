@@ -1,0 +1,24 @@
+=== Nullable(UInt64): legacy string-wrapped \\N is a null ===
+1	1	\N
+2	0	42
+3	0	43
+4	1	\N
+5	1	\N
+=== Nullable(String): only \\N is a null, the words NULL and null stay strings ===
+1	1	\N
+2	0	NULL
+3	0	null
+4	0	hello
+5	0	a,b
+6	1	\N
+=== LowCardinality(Nullable(String)): the same forms ===
+1	1	\N
+2	0	NULL
+3	0	text
+=== Nullable(Float64): \\N is a null and NaN still parses ===
+1	1	\N
+2	0	nan
+3	0	1.5
+=== Nullable(String) in array mode: the legacy string-wrapped array is unaffected ===
+1	['a','b']
+2	['c']
