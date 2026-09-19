@@ -10,6 +10,7 @@ SET query_plan_direct_read_from_text_index = 1; -- exercise the direct read (ran
 SET use_skip_indexes = 1;                       -- ... which needs skip indexes at all
 SET use_skip_indexes_if_final = 1;              -- ... and under FINAL
 SET use_skip_indexes_if_final_exact_mode = 1;   -- must stay in sync with the setting above
+SET use_skip_indexes_on_data_read = 0;          -- the granule then reaches the reader as a constructor argument
 SET optimize_move_to_prewhere = 0;              -- keep each predicate in the clause it is written in
 SET query_plan_optimize_prewhere = 1;           -- ... and let PREWHERE reach the reading step
 SET enable_analyzer = 1;                        -- lazy FINAL requires the analyzer
@@ -50,6 +51,9 @@ SELECT count() FROM tab FINAL PREWHERE str = 'baz' WHERE str = 'bar';           
 SELECT count(str) FROM tab FINAL PREWHERE hasAnyTokens(str, ['bar', 'baz']) WHERE str = 'bar';  -- 1: 'bar' passes both
 SELECT str FROM tab FINAL PREWHERE hasAnyTokens(str, ['bar', 'baz']) WHERE str = 'bar';         -- bar: and it is that row
 
+-- 1: two text search predicates in one PREWHERE, only one of them known to the WHERE filter's analysis
+SELECT count(str) FROM tab FINAL PREWHERE str = 'bar' AND hasAnyTokens(str, ['bar']) WHERE str = 'bar';
+
 SELECT 'The same, with the index granule read on data read';
 
 SELECT count(str) FROM tab FINAL PREWHERE str = 'baz' WHERE str = 'bar'
@@ -62,6 +66,8 @@ SELECT 'The counts do not depend on the optimizations';
 SELECT count(str) FROM tab FINAL PREWHERE str = 'baz' WHERE str = 'bar'
 SETTINGS query_plan_optimize_lazy_final = 0, query_plan_direct_read_from_text_index = 0;        -- 0
 SELECT count(str) FROM tab FINAL PREWHERE hasAnyTokens(str, ['bar', 'baz']) WHERE str = 'bar'
+SETTINGS query_plan_optimize_lazy_final = 0, query_plan_direct_read_from_text_index = 0;        -- 1
+SELECT count(str) FROM tab FINAL PREWHERE str = 'bar' AND hasAnyTokens(str, ['bar']) WHERE str = 'bar'
 SETTINGS query_plan_optimize_lazy_final = 0, query_plan_direct_read_from_text_index = 0;        -- 1
 
 SELECT 'The same predicate in both clauses hashes to one search query and always worked';
