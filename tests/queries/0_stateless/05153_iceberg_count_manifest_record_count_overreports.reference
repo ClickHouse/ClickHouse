@@ -1,0 +1,10 @@
+-- trivial_count scan_count manifest_rows optimization_applied, then the DROP TABLE IF EMPTY refusal
+-- consistent metadata: the metadata-only count is used
+3	3	3	1
+TABLE_NOT_EMPTY
+-- the manifest files over-report: count() must not return 5
+3	3	5	0
+TABLE_NOT_EMPTY
+-- the snapshot summary over-reports: count() must not return 100
+3	3	3	0
+TABLE_NOT_EMPTY
