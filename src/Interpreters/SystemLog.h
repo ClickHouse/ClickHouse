@@ -788,6 +788,9 @@ exception:
 stack_trace:
 ```
 
+.see_also
+- [system.query_log](/reference/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_thread_log](/reference/system-tables/query_thread_log) — This table contains information about each query execution thread.
 )DOCS_MD";
 
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_ZOOKEEPER_LOG[] = R"DOCS_MD(

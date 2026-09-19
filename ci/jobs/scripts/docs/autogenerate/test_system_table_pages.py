@@ -38,9 +38,9 @@ EXPECTED_ATTACH_DOCUMENTATION_COUNT = 142
 EXPECTED_SYSTEM_LOG_DOCUMENTATION_COUNT = 30
 EXPECTED_FIELD_COUNTS = {
     "description": EXPECTED_DOCUMENTATION_COUNT,
-    "columns_notes": 10,
+    "columns_notes": 11,
     "examples": 107,
-    "see_also": 61,
+    "see_also": 62,
 }
 PLACEHOLDERS = {
     "{{PROFILE_EVENTS}}": 1,
