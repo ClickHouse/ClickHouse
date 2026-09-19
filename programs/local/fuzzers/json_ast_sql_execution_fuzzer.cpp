@@ -50,6 +50,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Stopwatch.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
@@ -279,6 +280,25 @@ bool isDeterministicForOracle(const std::string & sql_original)
     for (const char * f : forbidden)
         if (sql.find(f) != std::string::npos)
             return false;
+
+    /// Zero-argument functions may be written without parentheses (`SELECT now FROM t` calls `now()`), so the
+    /// entries above that end with `(` do not catch them; these are matched as whole words.
+    static const char * forbidden_words[] = {
+        "now", "now64", "today", "yesterday", "currentdatabase", "currentuser", "hostname", "uptime", "version",
+        "timezone", "servertimezone", "serveruuid", "queryid", "tcpport", "getos", "fqdn", "displayname", "buildid",
+        "revision", "blocknumber", "blocksize", "rownumberinblock", "rownumberinallblocks", "transactionid",
+        "randcanonical", "generateuuidv4", "generateuuidv7", "currentschemas", "currentroles", "currentprofiles",
+        "enabledroles", "enabledprofiles", "defaultroles", "defaultprofiles", "initialqueryid", "initialquerystarttime",
+        "getservermacro", "getclienthttpheader", "hasthreadfuzzer", "runningconcurrency", "zookeepersessionuptime",
+    };
+    const auto is_word_char = [](char c) { return isAlphaNumericASCII(c) || c == '_'; };
+    for (const char * word : forbidden_words)
+    {
+        const size_t len = strlen(word);
+        for (size_t pos = sql.find(word); pos != std::string::npos; pos = sql.find(word, pos + 1))
+            if (!is_word_char(sql[pos - 1]) && !is_word_char(sql[pos + len]))
+                return false;
+    }
     return true;
 }
 
