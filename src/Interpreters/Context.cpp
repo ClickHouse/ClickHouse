@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <atomic>
+#include <functional>
 #include <map>
 #include <set>
 #include <optional>
@@ -3529,6 +3531,58 @@ Settings Context::getSettingsCopy() const
     return *settings;
 }
 
+namespace
+{
+/// `profile` is recognised by its literal name, as `Context::setSettingWithLock` does.
+bool hasProfileChange(const SettingsChanges & changes)
+{
+    return std::any_of(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
+}
+
+/// Enforces the settings constraints on `changes` the way they will actually take effect. A `profile`
+/// change replaces the constraint set halfway through the list, so a change that follows one has to be
+/// enforced against the profile's own constraints, and against the values the changes before it leave
+/// behind: the constraint checker skips a change whose value equals the current value, so enforcing
+/// after the whole list is applied would check nothing. Runs on a scratch copy of `context` and
+/// returns the enforced list - nothing is applied to `context`, the caller is what applies it.
+SettingsChanges enforceConstraintsAlongProfileChanges(
+    const ContextPtr & context,
+    const SettingsChanges & changes,
+    const std::function<void(Context &, SettingsChanges &)> & enforce_segment)
+{
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges enforced;
+    SettingsChanges segment;
+
+    auto flush_segment = [&]
+    {
+        if (segment.empty())
+            return;
+        /// A whole run of changes at a time, so that `compatibility` keeps its meaning for the changes
+        /// next to it.
+        enforce_segment(*scratch_context, segment);
+        scratch_context->applySettingsChanges(segment);
+        enforced.insert(enforced.end(), segment.begin(), segment.end());
+        segment.clear();
+    };
+
+    for (const auto & change : changes)
+    {
+        if (change.name != "profile")
+        {
+            segment.push_back(change);
+            continue;
+        }
+        flush_segment();
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
+        scratch_context->applySettingsChanges(SettingsChanges{change});
+        enforced.push_back(change);
+    }
+    flush_segment();
+    return enforced;
+}
+}
+
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
@@ -3689,6 +3743,14 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
+    /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.
+    if (hasProfileChange(changes))
+    {
+        enforceConstraintsAlongProfileChanges(
+            shared_from_this(), changes, [source](Context & context, SettingsChanges & segment) { context.checkSettingsConstraints(std::as_const(segment), source); });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
@@ -3701,14 +3763,45 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(
+    const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
+{
+    if (!hasProfileChange(changes_applied_first))
+    {
+        checkSettingsConstraintsForSettingsReset(names, source);
+        return;
+    }
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides
+    /// which constraints they have to pass. `changes_applied_first` is checked by the caller.
+    auto scratch_context = Context::createCopy(shared_from_this());
+    scratch_context->applySettingsChanges(changes_applied_first);
+    scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.
+    if (hasProfileChange(changes))
+    {
+        changes = enforceConstraintsAlongProfileChanges(
+            shared_from_this(), changes, [source](Context & context, SettingsChanges & segment) { context.checkSettingsConstraints(segment, source); });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.
+    if (hasProfileChange(changes))
+    {
+        changes = enforceConstraintsAlongProfileChanges(
+            shared_from_this(), changes, [source](Context & context, SettingsChanges & segment) { context.clampToSettingsConstraints(segment, source); });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
 }
