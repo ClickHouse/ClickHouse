@@ -10,6 +10,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # through several fragments. The slot it takes must therefore stay taken until the last of those
 # fragments stops reading, not until the first one finishes.
 
+# The system.query_log rows the statements below are found through outlive their database, and a run
+# with a fixed --database repeats $CLICKHOUSE_DATABASE, so an id must be one no other run can send.
+run_id="${CLICKHOUSE_DATABASE}_${RANDOM}_$$"
+
 # A fragment of the plan, identified by the initiator it is rooted at, that has started reading.
 function wait_for_two_reading_fragments() {
     for _ in {1..600}; do
@@ -36,7 +40,7 @@ for locally in 1 0; do
     "
 
     echo "distributed_plan_execute_locally = $locally"
-    query_id="05232_dp_limit_${locally}_$CLICKHOUSE_DATABASE"
+    query_id="05232_dp_limit_${locally}_$run_id"
 
     # Only the first 20000 keys sleep, and they are the leading marks of the first part, so the
     # fragment that owns them reads for ~20 s while its siblings finish at once. One granule per
@@ -91,7 +95,7 @@ INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_inser
 INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
 "
 
-query_id="05232_pr_$CLICKHOUSE_DATABASE"
+query_id="05232_pr_$run_id"
 # Once every mark range is assigned the coordinator cancels the replicas that have not connected yet, and one
 # request takes more marks than this table has, so the replica that announces first can be left reading alone.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
@@ -156,7 +160,7 @@ for locally in 1 0; do
     INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
     "
 
-    query_id="05232_dp_secondary_${locally}_$CLICKHOUSE_DATABASE"
+    query_id="05232_dp_secondary_${locally}_$run_id"
     ${CLICKHOUSE_CLIENT} --query_kind secondary_query --query_id "$query_id" --query "
         SELECT count() FROM $table WHERE k < 150000
         SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = $locally,
