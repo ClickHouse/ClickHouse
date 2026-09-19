@@ -24,16 +24,19 @@ EOF
 # (allow_experimental_delta_kernel_rs = 1) and the legacy DeltaLakeMetadata
 # reader (allow_experimental_delta_kernel_rs = 0). The path-containment
 # invariant must hold for both.
+# `Parquet` is the only data file format `DeltaLake` accepts; the path
+# containment check fires while the log is parsed, before any data file is
+# opened, so the format does not affect what is being tested here.
 check_reader() {
     local kernel="$1"
     echo "--- allow_experimental_delta_kernel_rs = ${kernel} ---"
 
     ${CLICKHOUSE_LOCAL} --allow_experimental_delta_kernel_rs="${kernel}" -q \
-        "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'RawBLOB') LIMIT 100 FORMAT TabSeparated" 2>&1 \
+        "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
         | grep -q 'PATH_ACCESS_DENIED' && echo "GOT ACCESS DENIED ERROR"
 
     ${CLICKHOUSE_LOCAL} --allow_experimental_delta_kernel_rs="${kernel}" -q \
-        "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'RawBLOB') LIMIT 100 FORMAT TabSeparated" 2>&1 \
+        "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
         | grep -q 'TOP_SECRET_CONTENTS' && echo "LEAKED" || echo "NO LEAK"
 }
 

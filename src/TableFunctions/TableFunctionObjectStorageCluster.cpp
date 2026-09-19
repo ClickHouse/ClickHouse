@@ -313,7 +313,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergLocalCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on shared storage in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergLocalCluster(cluster, filename, format, [,compression])",
+            .syntax = "icebergLocalCluster(cluster, filename, format)",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -329,15 +329,19 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 ## Syntax {#syntax}
 
 ```sql
-icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,extra_credentials])
 icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
 
-icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, path_to_table, [,format])
 icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 ```
+
+`format` accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -374,7 +378,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
+            .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format)",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -385,7 +389,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergAzureCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -396,7 +400,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
-            .syntax = "icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
+            .syntax = "icebergHDFSCluster(cluster, uri, [format], [structure])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -423,12 +427,16 @@ Allows processing files from Apache [Paimon](https://paimon.apache.org/) in para
 ## Syntax {#syntax}
 
 ```sql
-paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 
-paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
-paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+paimonHDFSCluster(cluster_name, path_to_table, [,format])
 ```
+
+`format` accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -458,7 +466,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonS3Cluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
+            .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format)",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -469,7 +477,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonAzureCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -480,7 +488,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
-            .syntax = "paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
+            .syntax = "paimonHDFSCluster(cluster, uri, [format], [structure])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -505,16 +513,20 @@ Allows processing files from [Delta Lake](https://github.com/delta-io/delta) tab
 ## Syntax {#syntax}
 
 ```sql
-deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
 
-deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
-deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 ```
-`deltaLakeS3Cluster` is an alias to `deltaLakeCluster`, both are for S3. 
+`deltaLakeS3Cluster` is an alias to `deltaLakeCluster`, both are for S3.
+
+`format` accepts only `Parquet`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -555,7 +567,7 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionDeltaLakeAzureCluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
+            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -577,8 +589,12 @@ Allows processing files from Apache [Hudi](https://hudi.apache.org/) tables in A
 ## Syntax {#syntax}
 
 ```sql
-hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 ```
+
+`format` accepts only `Parquet` or `ORC`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -589,7 +605,6 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `aws_access_key_id`, `aws_secret_access_key` | Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
 | `format`                                     | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                        |
 | `structure`                                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                         |
-| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, compression will be autodetected by the file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                          |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                     |
 
 ## Returned value {#returned-value}

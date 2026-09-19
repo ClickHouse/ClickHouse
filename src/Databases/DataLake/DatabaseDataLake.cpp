@@ -177,6 +177,7 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
+    LoadingStrictnessLevel table_definition_mode_,
     bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
@@ -186,6 +187,7 @@ DatabaseDataLake::DatabaseDataLake(
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
+    , table_definition_mode(table_definition_mode_)
     , db_uuid(uuid)
 {
     validateSettings();
@@ -372,6 +374,7 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
                 table_engine_definition,
+                table_definition_mode,
                 allow_server_credentials_in_user_queries);
             break;
 #else
@@ -908,7 +911,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+    /// `table_definition_mode`: the engine arguments come verbatim from the `CREATE DATABASE` query, so they
+    /// are validated as a fresh definition only while the database that supplied them is the one created
+    /// in this server run; a database replayed from persisted metadata is a compatibility path.
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args,
+        context_copy,
+        /* with_table_structure */ false,
+        /* table_id */ nullptr,
+        table_definition_mode);
 
     const auto & query_settings = context_->getSettingsRef();
 
@@ -1697,6 +1709,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
+            /// Only a user `CREATE DATABASE` supplies a fresh table engine definition; `ATTACH DATABASE`
+            /// (server startup or by hand) and internal creates (`RESTORE DATABASE`) replay an accepted one.
+            /*table_definition_mode=*/(args.create_query.attach || args.internal) ? LoadingStrictnessLevel::ATTACH : LoadingStrictnessLevel::CREATE,
             /// Internal creates (`RESTORE DATABASE`) shouldn't do network I/O.
             /// We don't want an unreachable or unauthorized catalog to block replica startup.
             /*lazy_init=*/args.create_query.attach || args.internal);
