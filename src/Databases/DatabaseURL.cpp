@@ -291,10 +291,14 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// the filesystem is then the archive, not the whole name: probing the name itself would make
     /// every table inside an archive unresolvable.
     String local_path = getLocalPathFromFileURL(url);
+    String path_in_archive;
     if (context_->getSettingsRef()[Setting::allow_archive_path_syntax])
     {
-        if (String path_to_archive = splitToArchivePathAndPathInArchive(local_path).first; !path_to_archive.empty())
+        if (auto [path_to_archive, path_inside] = splitToArchivePathAndPathInArchive(local_path); !path_to_archive.empty())
+        {
             local_path = std::move(path_to_archive);
+            path_in_archive = std::move(path_inside);
+        }
     }
 
     fs::path fs_path(local_path);
@@ -333,6 +337,17 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);
+        return false;
+    }
+
+    /// The name addresses a file stored inside the archive, so the table exists only if that file
+    /// does. Answering with the presence of the archive alone would claim a table for a member that
+    /// is not there, and its resolution would fail with a schema inference error instead of
+    /// reporting the missing table, as this database does for a plain path.
+    if (!path_in_archive.empty() && !archiveContainsFile(path, path_in_archive))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist inside the archive {}: {}", path, path_in_archive);
         return false;
     }
 

@@ -1,5 +1,9 @@
 #include <IO/Archives/ArchiveUtils.h>
 
+#include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/createArchiveReader.h>
+#include <Common/StringUtils.h>
+
 #include <string_view>
 #include <array>
 
@@ -71,6 +75,14 @@ std::pair<std::string, std::string> splitToArchivePathAndPathInArchive(const std
         return {{}, source};
 
     return {std::string{path_to_archive_view}, std::string{filename_view}};
+}
+
+bool archiveContainsFile(const std::string & path_to_archive, const std::string & path_in_archive)
+{
+    if (containsGlobs(path_in_archive))
+        return true;
+
+    return createArchiveReader(path_to_archive)->fileExists(path_in_archive);
 }
 
 std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source)

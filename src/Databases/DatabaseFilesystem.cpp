@@ -47,14 +47,22 @@ namespace ErrorCodes
 namespace
 {
 
-/// The path to the archive a name resolves to through the archive path syntax
-/// (`archive.tar.zst::data.native`), or an empty string if the name is a plain path in this context.
-String getPathToArchive(const String & table_path, const ContextPtr & context)
+/// The archive and the path inside it a name resolves to through the archive path syntax
+/// (`archive.tar.zst::data.native`). The first part is empty if the name is a plain path in this
+/// context, and the second one is then the name itself.
+std::pair<String, String> splitToArchiveParts(const String & table_path, const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        return {};
+        return {{}, table_path};
 
-    return splitToArchivePathAndPathInArchive(table_path).first;
+    return splitToArchivePathAndPathInArchive(table_path);
+}
+
+/// The path to the archive a name resolves to through the archive path syntax, or an empty string
+/// if the name is a plain path in this context.
+String getPathToArchive(const String & table_path, const ContextPtr & context)
+{
+    return splitToArchiveParts(table_path, context).first;
 }
 
 /// The file whose presence decides whether a table name resolves to a table. A name can use the
@@ -122,7 +130,8 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
     const auto & user_files_path = context_->getUserFilesPath();
 
-    const String path_to_probe = getPathToProbe(table_path, context_);
+    const auto [path_to_archive, path_in_archive] = splitToArchiveParts(table_path, context_);
+    const String path_to_probe = path_to_archive.empty() ? table_path : path_to_archive;
 
     /// Check access for file before checking its existence.
     if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
@@ -145,6 +154,18 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path_to_probe);
+            return false;
+        }
+
+        /// The name addresses a file stored inside the archive, so the table exists only if that file
+        /// does. Answering with the presence of the archive alone would claim a table for a member
+        /// that is not there, and its resolution would fail with a schema inference error instead of
+        /// reporting the missing table, as this database does for a plain path.
+        if (!path_to_archive.empty() && !archiveContainsFile(path_to_archive, path_in_archive))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
+                                "File does not exist inside the archive {}: {}", path_to_archive, path_in_archive);
             return false;
         }
     }
