@@ -9161,7 +9161,7 @@ Controls how posting lists are applied during text index queries.
 )", 0) \
     DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
-Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
+Brute-force bitmap intersection is used when the minimum density across the posting lists is at or above the threshold, or when the sparsest posting list has at least one posting per packed block of the densest one (`min_density * 128 >= max_density`), because leapfrog cannot skip whole blocks then. Otherwise leapfrog intersection is used. `0` always selects brute force, `1` always selects leapfrog.
 )", 0, text_index_density_threshold) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.

@@ -375,29 +375,8 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     index = 0;
 }
 
-/// Lower bound over decoded posting values. The target is usually close to `first`.
-/// Probe at offsets 1, 2, 4, ... and binary-search only the last interval.
-static const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32_t * last, uint32_t target)
+void PostingListCursor::advanceSlow(uint32_t target)
 {
-    const size_t size = static_cast<size_t>(last - first);
-    if (size == 0 || *first >= target)
-        return first;
-
-    size_t bound = 1;
-    while (bound < size && first[bound] < target)
-        bound *= 2;
-
-    /// first[bound / 2] < target, so the answer is in (bound / 2, bound], clamped to the range.
-    return std::lower_bound(first + bound / 2 + 1, first + std::min(bound + 1, size), target);
-}
-
-void PostingListCursor::advance(uint32_t target)
-{
-    ++counters.advance_count;
-
-    if (!is_valid)
-        return;
-
     if (is_embedded)
     {
         const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
@@ -473,40 +452,32 @@ bool PostingListCursor::advanceImpl(uint32_t target)
     return false;
 }
 
-void PostingListCursor::next()
+void PostingListCursor::nextSlow()
 {
-    if (!is_valid)
-        return;
-
-    ++index;
-
+    /// The inline `next` has already moved `index` past the decoded values of the current block.
     if (is_embedded)
     {
-        if (index >= decoded_count)
-            is_valid = false;
+        is_valid = false;
         return;
     }
 
-    if (index >= decoded_count)
+    ++current_block;
+    if (current_block < current_segment->block_count)
     {
-        ++current_block;
-        if (current_block < current_segment->block_count)
-        {
-            decodeBlock(current_block);
-            return;
-        }
-
-        /// Current segment exhausted — advance to next one.
-        size_t next_segment = current_segment_idx + 1;
-        if (next_segment >= total_segments)
-        {
-            is_valid = false;
-            return;
-        }
-
-        prepareSegment(next_segment);
-        decodeBlock(0);
+        decodeBlock(current_block);
+        return;
     }
+
+    /// Current segment exhausted — advance to next one.
+    size_t next_segment = current_segment_idx + 1;
+    if (next_segment >= total_segments)
+    {
+        is_valid = false;
+        return;
+    }
+
+    prepareSegment(next_segment);
+    decodeBlock(0);
 }
 
 /// Scatter-write into `out` for doc_ids in values[begin..length).
@@ -1130,13 +1101,27 @@ void lazyIntersectPostingLists(
         return;
     }
 
-    /// Algorithm selection uses the MINIMUM density across all cursors.
+    /// Algorithm selection. Leapfrog pays off only when the sparsest cursor can skip whole packed blocks of
+    /// the densest one: a block of BLOCK_SIZE postings of a list with density `max_density` spans about
+    /// BLOCK_SIZE / max_density rows, and the sparsest list has about min_density * BLOCK_SIZE / max_density
+    /// postings in that span. Once that is >= 1 every block gets decoded anyway and leapfrog only adds a
+    /// search per posting on top; the linear counting pass is then 2.5-3x cheaper on correlated lists of
+    /// density 0.05-0.11. `density_threshold` stays an absolute cap: `min_density >= threshold` also selects
+    /// brute force, `threshold <= 0` forces it and `threshold >= 1` forces leapfrog (tests pin either path).
     double min_density = std::numeric_limits<double>::max();
+    double max_density = 0.0;
     for (size_t i = 0; i < n; ++i)
+    {
         min_density = std::min(min_density, cursors[i]->density());
+        max_density = std::max(max_density, cursors[i]->density());
+    }
+
+    const bool force_leapfrog = density_threshold >= 1.0f;
+    const bool dense_by_threshold = min_density >= static_cast<double>(density_threshold);
+    const bool cannot_skip_blocks = min_density * static_cast<double>(BLOCK_SIZE) >= max_density;
 
     /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
-    if (n < 256 && min_density >= static_cast<double>(density_threshold))
+    if (n < 256 && !force_leapfrog && (dense_by_threshold || cannot_skip_blocks))
     {
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
         intersectBruteForce(out, cursors, row_offset, num_rows);

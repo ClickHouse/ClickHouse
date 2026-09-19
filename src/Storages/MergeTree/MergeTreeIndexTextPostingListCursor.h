@@ -40,6 +40,22 @@ enum class PadOp { Or, And };
 /// Two access patterns:
 ///   1. Iterator: `valid` / `value` / `next` / `advance` — for leapfrog intersection.
 ///   2. Linear scan: `linearOr` / `linearAnd` — for brute-force bitmap operations.
+/// Lower bound by galloping search: cheap when the answer is close to `first`, which is the common
+/// case for a cursor advancing over dense posting lists, and O(log n) otherwise.
+inline const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32_t * last, uint32_t target)
+{
+    const size_t size = static_cast<size_t>(last - first);
+    if (size == 0 || *first >= target)
+        return first;
+
+    size_t bound = 1;
+    while (bound < size && first[bound] < target)
+        bound *= 2;
+
+    /// first[bound / 2] < target, so the answer is in (bound / 2, bound], clamped to the range.
+    return std::lower_bound(first + bound / 2 + 1, first + std::min(bound + 1, size), target);
+}
+
 class PostingListCursor
 {
 public:
@@ -60,8 +76,16 @@ public:
     /// Increment counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     void linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
 
-    /// Move to the next doc_id.
-    void next();
+    /// Move to the next doc_id. The common case, the next value being in the decoded block, is resolved
+    /// inline; block and segment transitions go through `nextSlow`.
+    ALWAYS_INLINE void next()
+    {
+        if (!is_valid)
+            return;
+        if (++index < decoded_count)
+            return;
+        nextSlow();
+    }
 
     /// True if cursor points to a valid doc_id.
     bool valid() const { return is_valid; }
@@ -69,8 +93,23 @@ public:
     /// Current doc_id. Undefined when `valid` returns false.
     uint32_t value() const { return decoded_values_ptr[index]; }
 
-    /// Advance to the first doc_id >= target.
-    void advance(uint32_t target);
+    /// Advance to the first doc_id >= target. The common case, the target lying within the decoded
+    /// values of the current block, is resolved inline; block and segment transitions go through
+    /// `advanceSlow`. Leapfrog intersections call this once per posting of the leading list, so the
+    /// fast path must stay a handful of instructions.
+    ALWAYS_INLINE void advance(uint32_t target)
+    {
+        ++counters.advance_count;
+        if (!is_valid)
+            return;
+        if (index < decoded_count && target <= decoded_values_ptr[decoded_count - 1])
+        {
+            const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
+            index = static_cast<size_t>(it - decoded_values_ptr);
+            return;
+        }
+        advanceSlow(target);
+    }
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
@@ -96,6 +135,12 @@ private:
 
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
+
+    /// Slow path of `advance`: the target lies beyond the decoded values of the current block.
+    void advanceSlow(uint32_t target);
+
+    /// Slow path of `next`: `index` has run past the decoded values of the current block.
+    void nextSlow();
 
     /// Linear scan over an embedded (fully materialized) posting list.
     template <PadOp op>
@@ -187,11 +232,14 @@ void lazyUnionPostingLists(
 ///
 /// Adaptive algorithm selection based on posting list density:
 ///   - n == 1:  direct linear scan (degenerate case, same as union).
-///   - Dense (min density >= threshold):
-///     Brute-force bitmap counting — first cursor sets bits, remaining cursors increment counters,
-///     then a final pass keeps only rows where count == n.
-///   - Sparse:  leapfrog intersection — cursors sorted by ascending cardinality, the sparsest
-///     cursor leads and others advance forward.
+///   - Brute-force bitmap counting — first cursor sets bits, remaining cursors increment counters,
+///     then a final pass keeps only rows where count == n. Chosen when the minimum density is at or
+///     above `density_threshold`, or when the sparsest list has at least one posting per packed block
+///     of the densest one (`min_density * BLOCK_SIZE >= max_density`): leapfrog then decodes every
+///     block anyway and only adds a search per posting.
+///   - Leapfrog intersection — cursors sorted by ascending cardinality, the sparsest cursor leads and
+///     others advance forward, skipping whole blocks. Chosen otherwise.
+///   `density_threshold <= 0` forces brute force, `>= 1` forces leapfrog.
 void lazyIntersectPostingLists(
     IColumn & column,
     const std::vector<PostingListCursorPtr> & cursors,
