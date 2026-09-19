@@ -91,7 +91,22 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
+    if (position == static_cast<size_t>(read_until_position))
+        return;
+
     read_until_position = position;
+
+    /// The bytes that the previous bound allowed to buffer are already in `working_buffer`, and
+    /// some of them can be past the new bound. Give them up and let the next `nextImpl` download
+    /// the range again, so that the new bound takes effect immediately, as required by
+    /// `supportsRightBoundedReads`. `offset` is rewound to the position the caller has read up to,
+    /// because the buffered bytes after it are no longer handed out.
+    if (!working_buffer.empty())
+    {
+        offset = getPosition();
+        resetWorkingBuffer();
+    }
+
     initialized = false;
 }
 

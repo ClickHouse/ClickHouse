@@ -264,4 +264,169 @@ TEST(AzureReadUntilPosition, ShortRangeResponse)
     assertCountsUpFromZero(data);
 }
 
+namespace
+{
+
+/// Serves every ranged request with the bytes of a blob that counts up from zero, and optionally
+/// with `extra_bytes` more than were requested, so that a reader that trusts the length of the
+/// response hands out bytes from outside the requested range.
+class CountingRangeTransport : public Azure::Core::Http::HttpTransport
+{
+public:
+    explicit CountingRangeTransport(size_t extra_bytes_) : extra_bytes(extra_bytes_)
+    {
+    }
+
+    std::unique_ptr<Azure::Core::Http::RawResponse> Send(
+        Azure::Core::Http::Request & request, const Azure::Core::Context &) override
+    {
+        const bool is_download = request.GetMethod() == Azure::Core::Http::HttpMethod::Get;
+
+        auto response = std::make_unique<Azure::Core::Http::RawResponse>(
+            1,
+            1,
+            is_download ? Azure::Core::Http::HttpStatusCode::PartialContent : Azure::Core::Http::HttpStatusCode::Ok,
+            is_download ? "Partial Content" : "OK");
+        response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
+        response->SetHeader("ETag", "\"0x8DA000000000000\"");
+        response->SetHeader("x-ms-blob-type", "BlockBlob");
+
+        if (!is_download)
+        {
+            response->SetHeader("Content-Length", "0");
+            response->SetBodyStream(std::make_unique<FixedBodyStream>(std::vector<uint8_t>{}, 0));
+            return response;
+        }
+
+        const auto [range_begin, range_end] = parseRange(request);
+        const size_t length = range_end - range_begin + extra_bytes;
+
+        std::vector<uint8_t> data(length);
+        for (size_t i = 0; i < length; ++i)
+            data[i] = static_cast<uint8_t>(range_begin + i);
+
+        response->SetHeader("Content-Length", std::to_string(length));
+        response->SetHeader(
+            "Content-Range",
+            "bytes " + std::to_string(range_begin) + "-" + std::to_string(range_begin + length - 1) + "/" + std::to_string(blob_size));
+        response->SetBodyStream(std::make_unique<FixedBodyStream>(std::move(data), static_cast<int64_t>(length)));
+        return response;
+    }
+
+private:
+    /// `bytes=<begin>-<end>`, where `<end>` is inclusive and can be absent. Returns the
+    /// half-open range.
+    std::pair<size_t, size_t> parseRange(const Azure::Core::Http::Request & request) const
+    {
+        const auto headers = request.GetHeaders();
+        auto it = headers.find("x-ms-range");
+        if (it == headers.end())
+            it = headers.find("range");
+        if (it == headers.end())
+            return {0, blob_size};
+
+        const std::string & value = it->second;
+        const size_t equals_pos = value.find('=');
+        const size_t dash_pos = value.find('-', equals_pos + 1);
+
+        const size_t range_begin = std::stoul(value.substr(equals_pos + 1, dash_pos - equals_pos - 1));
+        if (dash_pos + 1 == value.size())
+            return {range_begin, blob_size};
+
+        return {range_begin, std::stoul(value.substr(dash_pos + 1)) + 1};
+    }
+
+    static constexpr size_t blob_size = 1024;
+    size_t extra_bytes;
+};
+
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeCountingBuffer(size_t extra_bytes, size_t buffer_size)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = std::make_shared<CountingRangeTransport>(extra_bytes);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = buffer_size;
+
+    return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
+        container_client,
+        "blob",
+        read_settings,
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1);
+}
+
+}
+
+/// `supportsRightBoundedReads` promises that a bound set by `setReadUntilPosition` takes effect
+/// immediately. Tightening it after a part of a wider download has already been buffered must not
+/// hand out the bytes past the new bound that are still sitting in the working buffer.
+TEST(AzureReadUntilPosition, TightenedAfterPartialRead)
+{
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 0, /* buffer_size */ 64);
+    buffer->setReadUntilPosition(100);
+
+    std::array<char, 10> head{};
+    ASSERT_EQ(buffer->read(head.data(), head.size()), head.size());
+    ASSERT_EQ(buffer->getPosition(), static_cast<off_t>(10));
+
+    buffer->setReadUntilPosition(20);
+
+    std::string rest;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(rest, *buffer));
+
+    ASSERT_EQ(rest.size(), static_cast<size_t>(10));
+    for (size_t i = 0; i < rest.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(rest[i]), static_cast<uint8_t>(10 + i)) << "at position " << i;
+
+    ASSERT_TRUE(buffer->eof());
+    ASSERT_EQ(buffer->getPosition(), static_cast<off_t>(20));
+}
+
+/// The same, with an endpoint that answers every ranged request with more bytes than were
+/// requested: neither the stale buffer nor the overlong response may cross the new bound.
+TEST(AzureReadUntilPosition, TightenedAfterPartialReadWithOverlongResponse)
+{
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 28, /* buffer_size */ 64);
+    buffer->setReadUntilPosition(100);
+
+    std::array<char, 10> head{};
+    ASSERT_EQ(buffer->read(head.data(), head.size()), head.size());
+
+    buffer->setReadUntilPosition(20);
+
+    std::string rest;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(rest, *buffer));
+
+    ASSERT_EQ(rest.size(), static_cast<size_t>(10));
+    for (size_t i = 0; i < rest.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(rest[i]), static_cast<uint8_t>(10 + i)) << "at position " << i;
+
+    ASSERT_TRUE(buffer->eof());
+}
+
+/// Widening the bound after a partial read must keep the already-read prefix and continue from the
+/// position the caller has read up to.
+TEST(AzureReadUntilPosition, WidenedAfterPartialRead)
+{
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 0, /* buffer_size */ 64);
+    buffer->setReadUntilPosition(20);
+
+    std::array<char, 10> head{};
+    ASSERT_EQ(buffer->read(head.data(), head.size()), head.size());
+
+    buffer->setReadUntilPosition(200);
+
+    std::string rest;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(rest, *buffer));
+
+    ASSERT_EQ(rest.size(), static_cast<size_t>(190));
+    for (size_t i = 0; i < rest.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(rest[i]), static_cast<uint8_t>(10 + i)) << "at position " << i;
+}
+
 #endif
