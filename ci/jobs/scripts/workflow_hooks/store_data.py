@@ -441,11 +441,20 @@ def get_product_changed_lines(info):
     per GitHub's per-file `changes` counter from the paginated `pulls/{pr}/files`
     listing.
 
+    A renamed file counts when either side of the rename is product code, so that
+    moving a source file out of `src/` and editing it on the way counts as the
+    product-code change it is, instead of as nothing.
+
     Raises on any failure: the caller decides whether a missing count is fatal."""
     selector = " or ".join(f'startswith("{path}")' for path in PRODUCT_CODE_PATHS)
+    # One `select` per side of a rename; an entry matching both is still counted once.
+    jq = (
+        f'[.[] | select((.filename | {selector}) '
+        f'or ((.previous_filename // "") | {selector})) | .changes] | add // 0'
+    )
     out = GH.get_output_with_retries(
         f"gh api repos/{info.repo_name}/pulls/{info.pr_number}/files --paginate "
-        f"--jq '[.[] | select(.filename | {selector}) | .changes] | add // 0'",
+        f"--jq '{jq}'",
         verbose=True,
         strict=True,
     )

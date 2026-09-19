@@ -194,6 +194,8 @@ _EXTRA_STRESS_AND_FUZZER_PATHS = (
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
     "ci/workflows/pull_request.py",
+    # And praktika itself, which decides how any of it is scheduled and run.
+    "ci/praktika/",
 )
 
 
