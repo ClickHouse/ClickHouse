@@ -1,4 +1,5 @@
--- Tags: no-replicated-database
+-- Tags: zookeeper, no-replicated-database
+-- zookeeper: most sources below are `ReplicatedMergeTree`, which needs Keeper.
 -- no-replicated-database: the oracles below count parts and sum columns per table, which the extra
 -- shard perturbs (same reason as 03100_lwu_51_replace_partition_pending_patch on this code path).
 
@@ -7,7 +8,8 @@
 -- the table's mutation history. A cross-table clone records the DESTINATION's metadata version, and
 -- the destination's history has no such entry, so the conversion is lost and the affected column
 -- reads as default (RENAME) or as stale pre-drop data (DROP + ADD), with no error and no row loss.
--- ATTACH/REPLACE PARTITION FROM and MOVE PARTITION TO TABLE must refuse such a source instead.
+-- ATTACH/REPLACE PARTITION FROM and MOVE PARTITION TO TABLE must refuse such a source instead. A
+-- conversion that no column of the tables reads through is not such a case, and is still cloned.
 
 DROP TABLE IF EXISTS t_mvclone_src SYNC;
 DROP TABLE IF EXISTS t_mvclone_dst SYNC;
@@ -17,6 +19,22 @@ DROP TABLE IF EXISTS t_mvclone_mt_src SYNC;
 DROP TABLE IF EXISTS t_mvclone_mt_dst SYNC;
 DROP TABLE IF EXISTS t_mvclone_drop_src SYNC;
 DROP TABLE IF EXISTS t_mvclone_drop_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_swap_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_swap_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_share_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_share_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_marker_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_marker_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_mark2_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_mark2_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_clear_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_clear_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_gone_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_gone_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_late_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_late_dst SYNC;
+DROP TABLE IF EXISTS t_mvclone_nested_src SYNC;
+DROP TABLE IF EXISTS t_mvclone_nested_dst SYNC;
 DROP TABLE IF EXISTS t_mvclone_clean_src SYNC;
 DROP TABLE IF EXISTS t_mvclone_clean_dst SYNC;
 DROP TABLE IF EXISTS t_mvclone_read_src SYNC;
@@ -108,6 +126,204 @@ ALTER TABLE t_mvclone_drop_dst ATTACH PARTITION 1 FROM t_mvclone_drop_src; -- { 
 SELECT 'after refused ATTACH FROM: drop dst parts', count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_mvclone_drop_dst' AND active;
 
+-- ============ RENAME onto a name the part also stores: the clone would read the other column ============
+-- Dropping `b` before renaming `a` to `b` leaves the part holding both names, so the destination reads
+-- the part's own stale `b` where the source reads the renamed `a`.
+CREATE TABLE t_mvclone_swap_src (id UInt64, a UInt32, b UInt32, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_swap_src', '1')
+PARTITION BY p ORDER BY id;
+
+INSERT INTO t_mvclone_swap_src SELECT number, 1000 + number, 7, 1 FROM numbers(10);
+ALTER TABLE t_mvclone_swap_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_swap_src DROP COLUMN b;
+ALTER TABLE t_mvclone_swap_src RENAME COLUMN a TO b;
+ALTER TABLE t_mvclone_swap_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_swap_src;
+
+SELECT 'src reads the renamed column and not the stale one', count(), sum(b) FROM t_mvclone_swap_src;
+
+CREATE TABLE t_mvclone_swap_dst (id UInt64, b UInt32, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_swap_dst', '1')
+PARTITION BY p ORDER BY id;
+
+ALTER TABLE t_mvclone_swap_dst ATTACH PARTITION 1 FROM t_mvclone_swap_src; -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'after refused ATTACH FROM: swap dst parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_mvclone_swap_dst' AND active;
+
+-- ============ DROP COLUMN of a Nested parent, which shared offsets extend to its subcolumns ============
+-- `share_nested_offsets` is on by default, so dropping `n` makes the part's `n.a` stale as well, and
+-- re-adding the column gives the destination a name to read it under. The offsets are shared, so the
+-- array lengths survive the masking and the values are what has to be read as defaults.
+CREATE TABLE t_mvclone_share_src (id UInt64, n Nested(a UInt32), p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_share_src', '1')
+PARTITION BY p ORDER BY id;
+
+INSERT INTO t_mvclone_share_src SELECT number, [number], 1 FROM numbers(10);
+ALTER TABLE t_mvclone_share_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_share_src DROP COLUMN n;
+ALTER TABLE t_mvclone_share_src ADD COLUMN n Nested(a UInt32);
+ALTER TABLE t_mvclone_share_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_share_src;
+
+SELECT 'src reads the re-added nested column as defaults', count(), sum(arraySum(n.a)) FROM t_mvclone_share_src;
+
+CREATE TABLE t_mvclone_share_dst (id UInt64, n Nested(a UInt32), p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_share_dst', '1')
+PARTITION BY p ORDER BY id;
+
+ALTER TABLE t_mvclone_share_dst ATTACH PARTITION 1 FROM t_mvclone_share_src; -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'after refused ATTACH FROM: share dst parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_mvclone_share_dst' AND active;
+
+-- ============ a column skipped on insert is carried by a marker instead of by files ============
+-- `skip_empty_columns_on_insert` writes no files for an all-default column and records its type in
+-- `serialization.json` instead. The pending DROP invalidates that marker, so the source evaluates the
+-- re-added DEFAULT where a clone would honour the marker and read the recorded type's default.
+CREATE TABLE t_mvclone_marker_src (id UInt64, e UInt32, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_marker_src', '1')
+PARTITION BY p ORDER BY id
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+         ratio_of_defaults_for_sparse_serialization = 1.0;
+
+INSERT INTO t_mvclone_marker_src SELECT number, 0, 1 FROM numbers(10);
+ALTER TABLE t_mvclone_marker_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_marker_src DROP COLUMN e;
+ALTER TABLE t_mvclone_marker_src ADD COLUMN e UInt32 DEFAULT 999;
+ALTER TABLE t_mvclone_marker_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_marker_src;
+
+SELECT 'the skipped column has no files in the part', countIf(column = 'e') FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_mvclone_marker_src' AND active;
+SELECT 'src reads the re-added default and not the marker', count(), sum(e) FROM t_mvclone_marker_src;
+
+CREATE TABLE t_mvclone_marker_dst (id UInt64, e UInt32 DEFAULT 999, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_marker_dst', '1')
+PARTITION BY p ORDER BY id
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+         ratio_of_defaults_for_sparse_serialization = 1.0;
+
+ALTER TABLE t_mvclone_marker_dst ATTACH PARTITION 1 FROM t_mvclone_marker_src; -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'after refused ATTACH FROM: marker dst parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_mvclone_marker_dst' AND active;
+
+-- ============ control: a DROP COLUMN that no schema names any more must not be refused ============
+-- Without the re-ADD above, the column is in neither table, so no read resolves through the conversion and
+-- losing it changes nothing. `05210_materialize_ttl_of_attached_part_with_dropped_column` clones exactly this
+-- partition to reach the state it covers.
+CREATE TABLE t_mvclone_gone_src (id UInt64, c UInt32, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_gone_src', '1')
+PARTITION BY p ORDER BY id;
+
+INSERT INTO t_mvclone_gone_src SELECT number, 1000 + number, 1 FROM numbers(10);
+ALTER TABLE t_mvclone_gone_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_gone_src DROP COLUMN c;
+ALTER TABLE t_mvclone_gone_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_gone_src;
+
+-- The DROP moved the table's version while the returning part kept its own, and the part still holds the
+-- column: that pair is what makes the conversion live for it, so the clone below really does lose one.
+SELECT 'the dropping table moved its metadata version', metadata_version FROM system.tables
+WHERE database = currentDatabase() AND name = 't_mvclone_gone_src';
+SELECT 'the source part still holds the dropped column', countIf(column = 'c') FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_mvclone_gone_src' AND active;
+
+CREATE TABLE t_mvclone_gone_dst (id UInt64, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_gone_dst', '1')
+PARTITION BY p ORDER BY id;
+
+ALTER TABLE t_mvclone_gone_dst ATTACH PARTITION 1 FROM t_mvclone_gone_src;
+SELECT 'a part whose dropped column no schema has is cloned', count(), sum(id) FROM t_mvclone_gone_dst;
+
+-- ============ control: a rename of a column the part never stored must not be refused ============
+-- The part predates the `ADD COLUMN`, so the source reads the renamed column as a default too and the
+-- clone reads exactly what the source reads.
+CREATE TABLE t_mvclone_late_src (id UInt64, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_late_src', '1')
+PARTITION BY p ORDER BY id;
+
+INSERT INTO t_mvclone_late_src SELECT number, 1 FROM numbers(10);
+ALTER TABLE t_mvclone_late_src ADD COLUMN a UInt32;
+ALTER TABLE t_mvclone_late_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_late_src RENAME COLUMN a TO b;
+ALTER TABLE t_mvclone_late_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_late_src;
+
+SELECT 'src reads the never-written renamed column', count(), sum(b) FROM t_mvclone_late_src;
+
+CREATE TABLE t_mvclone_late_dst (id UInt64, p UInt8, b UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_late_dst', '1')
+PARTITION BY p ORDER BY id;
+
+ALTER TABLE t_mvclone_late_dst ATTACH PARTITION 1 FROM t_mvclone_late_src;
+SELECT 'the clone reads the renamed column the same way', count(), sum(b) FROM t_mvclone_late_dst;
+
+-- ============ control: `share_nested_offsets = 0` makes a dotted name independent ============
+-- With the setting off, dropping `n` leaves `n.a` alone, so the part's `n.a` is what both tables read
+-- and the clone must be allowed. With it on, the same drop would reach `n.a` and be refused.
+CREATE TABLE t_mvclone_nested_src (id UInt64, `n.a` Array(UInt32), p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_nested_src', '1')
+PARTITION BY p ORDER BY id SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE t_mvclone_nested_src ADD COLUMN n String;
+INSERT INTO t_mvclone_nested_src SELECT number, [number], 1, 'x' FROM numbers(10);
+ALTER TABLE t_mvclone_nested_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_nested_src DROP COLUMN n;
+ALTER TABLE t_mvclone_nested_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_nested_src;
+
+CREATE TABLE t_mvclone_nested_dst (id UInt64, `n.a` Array(UInt32), p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_nested_dst', '1')
+PARTITION BY p ORDER BY id SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE t_mvclone_nested_dst ATTACH PARTITION 1 FROM t_mvclone_nested_src;
+SELECT 'an independent dotted column survives its prefix being dropped', count(), sum(`n.a`[1])
+FROM t_mvclone_nested_dst;
+
+-- ============ control: a marker that the dropped current name invalidates must not be refused ============
+-- The drop of `b` invalidates the marker standing in for `a` as well, so the source falls back to the
+-- re-declared `DEFAULT` and the destination, which has no carrier for `b` at all, reads the same value.
+CREATE TABLE t_mvclone_mark2_src (id UInt64, a UInt32, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_mark2_src', '1')
+PARTITION BY p ORDER BY id
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+         ratio_of_defaults_for_sparse_serialization = 1.0;
+
+INSERT INTO t_mvclone_mark2_src SELECT number, 0, 1 FROM numbers(10);
+ALTER TABLE t_mvclone_mark2_src ADD COLUMN b UInt32;
+ALTER TABLE t_mvclone_mark2_src DETACH PARTITION 1;
+ALTER TABLE t_mvclone_mark2_src DROP COLUMN b;
+ALTER TABLE t_mvclone_mark2_src RENAME COLUMN a TO b;
+ALTER TABLE t_mvclone_mark2_src MODIFY COLUMN b UInt32 DEFAULT 555;
+ALTER TABLE t_mvclone_mark2_src ATTACH PARTITION 1;
+SYSTEM STOP MERGES t_mvclone_mark2_src;
+
+SELECT 'src reads the default that the invalidated marker left', count(), sum(b) FROM t_mvclone_mark2_src;
+
+CREATE TABLE t_mvclone_mark2_dst (id UInt64, b UInt32 DEFAULT 555, p UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_mark2_dst', '1')
+PARTITION BY p ORDER BY id
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+         ratio_of_defaults_for_sparse_serialization = 1.0;
+
+ALTER TABLE t_mvclone_mark2_dst ATTACH PARTITION 1 FROM t_mvclone_mark2_src;
+SELECT 'the clone reads that same default', count(), sum(b) FROM t_mvclone_mark2_dst;
+
+-- ============ CLEAR COLUMN masks the part the same way and must be refused as well ============
+-- It is a `DROP_COLUMN` carrying `clear`, so the destination would read the values the source masks.
+-- Merges stay stopped for the whole arm: the mutation is what discharges the command, and the refusal
+-- names it instead of OPTIMIZE, which only writes the defaults into a merged part.
+CREATE TABLE t_mvclone_clear_src (id UInt64, c UInt32, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+CREATE TABLE t_mvclone_clear_dst (id UInt64, c UInt32, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+
+INSERT INTO t_mvclone_clear_src SELECT number, 1000 + number, 1 FROM numbers(10);
+SYSTEM STOP MERGES t_mvclone_clear_src;
+ALTER TABLE t_mvclone_clear_src CLEAR COLUMN c IN PARTITION 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'src reads the cleared column as defaults', count(), sum(c) FROM t_mvclone_clear_src;
+ALTER TABLE t_mvclone_clear_dst ATTACH PARTITION 1 FROM t_mvclone_clear_src; -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'after refused ATTACH FROM: clear dst parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_mvclone_clear_dst' AND active;
+
 -- ============ control: a source with nothing pending must not be refused ============
 CREATE TABLE t_mvclone_clean_src (id UInt64, b UInt32, p UInt8)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mvclone_clean_src', '1')
@@ -148,6 +364,22 @@ DROP TABLE t_mvclone_mt_src SYNC;
 DROP TABLE t_mvclone_mt_dst SYNC;
 DROP TABLE t_mvclone_drop_src SYNC;
 DROP TABLE t_mvclone_drop_dst SYNC;
+DROP TABLE t_mvclone_swap_src SYNC;
+DROP TABLE t_mvclone_swap_dst SYNC;
+DROP TABLE t_mvclone_share_src SYNC;
+DROP TABLE t_mvclone_share_dst SYNC;
+DROP TABLE t_mvclone_marker_src SYNC;
+DROP TABLE t_mvclone_marker_dst SYNC;
+DROP TABLE t_mvclone_mark2_src SYNC;
+DROP TABLE t_mvclone_mark2_dst SYNC;
+DROP TABLE t_mvclone_clear_src SYNC;
+DROP TABLE t_mvclone_clear_dst SYNC;
+DROP TABLE t_mvclone_gone_src SYNC;
+DROP TABLE t_mvclone_gone_dst SYNC;
+DROP TABLE t_mvclone_late_src SYNC;
+DROP TABLE t_mvclone_late_dst SYNC;
+DROP TABLE t_mvclone_nested_src SYNC;
+DROP TABLE t_mvclone_nested_dst SYNC;
 DROP TABLE t_mvclone_clean_src SYNC;
 DROP TABLE t_mvclone_clean_dst SYNC;
 DROP TABLE t_mvclone_read_src SYNC;

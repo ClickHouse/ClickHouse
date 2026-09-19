@@ -11087,14 +11087,52 @@ void MergeTreeData::assertNoUnappliedMetadataMutationsForParts(
     if (!mutations_snapshot->hasMetadataMutations())
         return;
 
+    auto table_columns = metadata_snapshot->getColumns().getAllPhysical();
+
     for (const auto & part : parts)
     {
         auto commands = mutations_snapshot->getOnFlyMutationCommandsForPart(part);
         if (commands.empty())
             continue;
 
+        /// A lost conversion matters only where it changes which column of the part a column of the table
+        /// reads, so these are a reader's own lookups: the `Nested` sharing that decides whether dropping
+        /// `n` also drops the part's `n.a`, and the marker that stands in for a column skipped on insert.
+        AlterConversions conversions(commands, PatchPartsForReader{}, getContext());
+        bool share_nested = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+        auto part_columns = part->getColumns().getNameSet();
+        const auto & serialization_infos = part->getSerializationInfos();
+
+        bool reads_differently = std::ranges::any_of(table_columns, [&](const auto & column)
+        {
+            auto name_in_part = conversions.isColumnRenamed(column.name)
+                ? conversions.getColumnOldName(column.name)
+                : column.name;
+
+            bool dropped_in_part = conversions.isColumnDropped(name_in_part, share_nested);
+            /// A marker is invalidated by a drop of the name the table has now as well.
+            bool marker_dropped = dropped_in_part || conversions.isColumnDropped(column.name, share_nested);
+
+            bool read_in_source = (part_columns.contains(name_in_part) && !dropped_in_part)
+                || (serialization_infos.isMissingColumn(name_in_part) && !marker_dropped);
+            bool read_in_clone = part_columns.contains(column.name) || serialization_infos.isMissingColumn(column.name);
+
+            return read_in_source != read_in_clone || (read_in_source && name_in_part != column.name);
+        });
+
+        if (!reads_differently)
+            continue;
+
         const auto & partition_id = part->info.getPartitionId();
         auto table_name = getStorageID().getFullTableName();
+
+        /// A merge does replace a cleared column's values with defaults, but leaves the command pending,
+        /// so only the mutation itself discharges a `CLEAR COLUMN`.
+        bool any_clear = std::ranges::any_of(commands, [](const auto & mutation_command) { return mutation_command.clear; });
+        auto materialize_step = any_clear
+            ? fmt::format("1. Wait for the pending CLEAR COLUMN mutation of table {} to complete.", table_name)
+            : fmt::format("1. Run query \"OPTIMIZE TABLE {} PARTITION ID '{}' FINAL\" to materialize them into the parts.",
+                table_name, partition_id);
 
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Cannot execute command \"{}\" because part {} of table {} has {} unapplied metadata mutation command(s). "
@@ -11102,9 +11140,9 @@ void MergeTreeData::assertNoUnappliedMetadataMutationsForParts(
             "metadata version, whose mutation history does not contain them, so the affected columns would read "
             "as default (or as stale pre-drop data) with no error.\n"
             "To execute it you need to:\n"
-            "1. Run query \"OPTIMIZE TABLE {} PARTITION ID '{}' FINAL\" to materialize them into the parts.\n"
+            "{}\n"
             "2. Retry command \"{}\"",
-            command, part->name, table_name, commands.size(), table_name, table_name, partition_id, command);
+            command, part->name, table_name, commands.size(), table_name, materialize_step, command);
     }
 }
 
