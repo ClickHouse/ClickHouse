@@ -1,0 +1,8 @@
+log entries: 6
+full-syntax attach with an out-of-range value: BAD_ARGUMENTS
+attached: 1
+log entries after cleanup with an out-of-range value: 6
+lag exceeds the window the overflowing check would wrap to: 1
+lost replica warnings with an out-of-range value: 0
+lost replica warnings with 4: 1
+log entries after cleanup with 4: 5
