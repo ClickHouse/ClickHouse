@@ -3072,4 +3072,137 @@ TEST(PcoCodec, TypedDecodeRejectsMismatchedBlock)
     }
 }
 
+namespace
+{
+
+/// Wraps a hand-written `PCO` block body into a full compressed frame, the way `CompressedReadBuffer`
+/// hands it to the codec: `[method byte][compressed size][decompressed size][block]`.
+std::vector<UInt8> constructPcoFrame(const std::vector<UInt8> & block, UInt32 uncompressed_size)
+{
+    const auto frame_size = static_cast<UInt32>(block.size() + ICompressionCodec::getHeaderSize());
+
+    std::vector<UInt8> frame = {
+        static_cast<UInt8>(CompressionMethodByte::PCO),
+        static_cast<UInt8>(frame_size & 0xFF),
+        static_cast<UInt8>((frame_size >> 8) & 0xFF),
+        static_cast<UInt8>((frame_size >> 16) & 0xFF),
+        static_cast<UInt8>((frame_size >> 24) & 0xFF),
+        static_cast<UInt8>(uncompressed_size & 0xFF),
+        static_cast<UInt8>((uncompressed_size >> 8) & 0xFF),
+        static_cast<UInt8>((uncompressed_size >> 16) & 0xFF),
+        static_cast<UInt8>((uncompressed_size >> 24) & 0xFF),
+    };
+    frame.append_range(block);
+
+    return frame;
+}
+
+void verifyUntypedPcoDecompressThrows(
+    const std::vector<UInt8> & block, UInt32 uncompressed_size, const std::string & expected_message)
+{
+    const auto codec = CompressionCodecFactory::instance().get(static_cast<uint8_t>(CompressionMethodByte::PCO));
+    const std::vector<UInt8> frame = constructPcoFrame(block, uncompressed_size);
+    /// Room for the declared output plus a margin, so a failure to fail closed shows up as a wrong
+    /// message rather than as a buffer overrun.
+    std::vector<char> dest(uncompressed_size + 64, 0);
+
+    try
+    {
+        codec->decompress(reinterpret_cast<const char *>(frame.data()), static_cast<UInt32>(frame.size()), dest.data());
+        FAIL() << "Expected an exception with message: " << expected_message;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(expected_message, e.message());
+    }
+}
+
+}
+
+/// The `PCO` method byte `0xa0` is dispatched by the shared `CompressedReadBuffer`, so the untyped
+/// instance decodes whatever framed input arrives — including the HTTP `decompress=1` path, where the
+/// block comes straight from the client. Every field of the `[W|flags][B][B raw bytes][payload]` wrapper
+/// that `doDecompressData` parses before handing the payload to `pco_decompress` must therefore fail
+/// closed on its own, with the inner `.pco` stream never even reached. The typed-instance width and
+/// number-type expectations are covered by `TypedDecodeRejectsMismatchedBlock` above.
+TEST(PcoCodec, UntypedDecodeRejectsMalformedWrapper)
+{
+    /// A block shorter than the two-byte wrapper header.
+    verifyUntypedPcoDecompressThrows({0x08}, 24, "Cannot decompress PCO-encoded data: header too small");
+
+    /// An element width that is not 1, 2, 4 or 8 (here 3, with the stored flag clear).
+    verifyUntypedPcoDecompressThrows({0x03, 0x00}, 24, "Cannot decompress PCO-encoded data: invalid element width 3");
+
+    /// A width of 0 is not a width either, and must not reach the `uncompressed_size % width` division.
+    verifyUntypedPcoDecompressThrows({0x00, 0x00}, 24, "Cannot decompress PCO-encoded data: invalid element width 0");
+
+    /// A leading-byte count that disagrees with the one implied by the declared output size
+    /// (24 bytes of `UInt64` values leave no leading bytes).
+    verifyUntypedPcoDecompressThrows(
+        {0x08, 0x05},
+        24,
+        "Cannot decompress PCO-encoded data: the stored leading-byte count 5 does not match the 0 implied by the output size");
+
+    /// The implied leading bytes do not fit in the block (27 bytes of output at width 8 imply 3 of them,
+    /// but only one byte follows the wrapper header).
+    verifyUntypedPcoDecompressThrows({0x08, 0x03, 0x00}, 27, "Cannot decompress PCO-encoded data: wrong header");
+
+    /// A stored (uncompressed) payload whose length does not match the declared output size.
+    verifyUntypedPcoDecompressThrows(
+        {0x88, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+        24,
+        "Cannot decompress PCO-encoded data: stored payload is 8 bytes but expected 24");
+
+    /// A well-formed stored block — the fallback `doCompressData` writes when compression would expand
+    /// the data — round-trips, leading bytes included: this is the branch the checks above guard, and it
+    /// must keep working through the untyped instance.
+    {
+        std::vector<UInt8> raw(27);
+        for (size_t i = 0; i < raw.size(); ++i)
+            raw[i] = static_cast<UInt8>(i * 7 + 1);
+
+        std::vector<UInt8> block = {0x88, 0x03};
+        block.append_range(raw);
+
+        const auto codec = CompressionCodecFactory::instance().get(static_cast<uint8_t>(CompressionMethodByte::PCO));
+        const std::vector<UInt8> frame = constructPcoFrame(block, static_cast<UInt32>(raw.size()));
+        std::vector<char> dest(raw.size());
+        ASSERT_EQ(
+            codec->decompress(reinterpret_cast<const char *>(frame.data()), static_cast<UInt32>(frame.size()), dest.data()),
+            raw.size());
+        ASSERT_EQ(0, memcmp(raw.data(), dest.data(), raw.size()));
+    }
+
+    /// Finally, a wrapper that passes every check but carries a truncated `.pco` payload: the inner
+    /// stream is rejected by the crate and surfaces as a decompression error, not as a short read.
+    {
+        constexpr size_t num_values = 4096;
+        std::vector<UInt64> values(num_values);
+        for (size_t i = 0; i < num_values; ++i)
+            values[i] = i * 1000;
+
+        const auto codec_u64 = makeCodec("PCO", std::make_shared<DataTypeUInt64>());
+        const auto * source = reinterpret_cast<const char *>(values.data());
+        const auto source_size = static_cast<UInt32>(values.size() * sizeof(UInt64));
+        PODArray<char> encoded(codec_u64->getCompressedReserveSize(source_size));
+        const UInt32 encoded_size = codec_u64->compress(source, source_size, encoded.data());
+        /// The stored fallback would make the truncation a length mismatch instead; this test is about
+        /// the compressed payload, so make sure the block really carries one.
+        ASSERT_EQ(0, static_cast<UInt8>(encoded[ICompressionCodec::getHeaderSize()]) & 0x80);
+
+        const auto codec = CompressionCodecFactory::instance().get(static_cast<uint8_t>(CompressionMethodByte::PCO));
+        PODArray<char> decoded(source_size);
+        try
+        {
+            codec->decompress(encoded.data(), encoded_size - 8, decoded.data());
+            FAIL() << "Expected an exception for a truncated pco payload";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(
+                "Cannot decompress PCO-encoded data: the embedded pco stream is corrupt or its type does not match", e.message());
+        }
+    }
+}
+
 #endif

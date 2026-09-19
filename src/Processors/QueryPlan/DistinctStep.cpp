@@ -58,6 +58,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
@@ -125,6 +126,7 @@ DistinctStep::Settings::Settings(const DB::Settings & settings_)
     min_free_disk_space = settings_[Setting::min_free_disk_space_for_temporary_data];
     temporary_files_codec = settings_[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings_[Setting::temporary_files_buffer_size];
+    spill_codec_authorized = spillCodecAuthorizedBySession(settings_);
 }
 
 DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings_)
@@ -141,9 +143,11 @@ DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings
     min_free_disk_space = settings_[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     temporary_files_codec = settings_[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings_[QueryPlanSerializationSetting::temporary_files_buffer_size]);
+    spill_codec_authorized = settings_[QueryPlanSerializationSetting::spill_codec_authorized];
 }
 
-void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
+void DistinctStep::Settings::updatePlanSettings(
+    QueryPlanSerializationSettings & plan_settings, bool distinct_is_reachable, UInt64 version) const
 {
     plan_settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
     plan_settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
@@ -158,6 +162,21 @@ void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings &
 
     plan_settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     plan_settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    /// `spill_codec_authorized` goes on the wire only when the spill behavior of this step actually
+    /// depends on it: a preliminary `DISTINCT` and a `DISTINCT` with both spill thresholds disabled never
+    /// reach the temporary data, so they never resolve the codec and must not carry the opt-in. A peer
+    /// below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC` predates the gate
+    /// itself, so withholding the name leaves it with exactly the behavior it has today rather than having
+    /// the plan refused. See the matching comments in `SortingStep::Settings::updatePlanSettings` and
+    /// `spillCodecAuthorizationMustBeSerialized`.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
+        && spillCodecAuthorizationMustBeSerialized(
+            distinct_is_reachable && (max_bytes_before_external_distinct != 0 || max_bytes_ratio_before_external_distinct != 0.),
+            spill_codec_authorized,
+            temporary_files_codec))
+    {
+        plan_settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
+    }
     plan_settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 
@@ -246,7 +265,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
              .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
              .num_files = ProfileEvents::ExternalDistinctWritePart},
             settings.temporary_files_buffer_size,
-            settings.temporary_files_codec);
+            settings.temporary_files_codec,
+            settings.spill_codec_authorized);
 
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -338,7 +358,8 @@ void DistinctStep::updateOutputHeader()
 
 void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
 {
-    settings.updatePlanSettings(plan_settings, version);
+    /// Only the final `DISTINCT` can spill; the preliminary one deduplicates each stream in memory.
+    settings.updatePlanSettings(plan_settings, /*distinct_is_reachable=*/!pre_distinct, version);
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
