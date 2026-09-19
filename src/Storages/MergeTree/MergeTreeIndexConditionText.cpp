@@ -2,8 +2,10 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <set>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
@@ -914,6 +916,13 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
+    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
+    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
+    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
+    /// branch below, because every shape is matched the same way.
+    if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
+        return {};
+
     auto compile_pattern = [&](const String & pattern)
     {
         std::vector<OptimizedRegularExpression> patterns;
@@ -1556,7 +1565,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+        if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
         if (has_postprocessor)
             return false;
