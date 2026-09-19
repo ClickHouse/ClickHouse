@@ -4,6 +4,10 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/ParserSQLClusterQuery.h>
+#include <Parsers/parseQuery.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -29,6 +33,8 @@ namespace Setting
     extern const SettingsSeconds distributed_replica_error_half_life;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
@@ -363,6 +369,12 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
     impl[cluster_name] = cluster;
 }
 
+void Clusters::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(mutex);
+    impl.erase(cluster_name);
+}
+
 
 void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {
@@ -392,7 +404,13 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         for (const auto & key : deleted_keys)
         {
             if (!automatic_clusters.contains(key))
+            {
+                auto it = impl.find(key);
+                if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                    continue;
+
                 impl.erase(key);
+            }
         }
     }
     else
@@ -400,7 +418,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         if (!automatic_clusters.empty())
             std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
         else
-            impl.clear();
+            std::erase_if(impl, [](const auto & e) { return e.second->getSourceId() != Cluster::SourceId::SQL; });
     }
 
 
@@ -418,7 +436,13 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
+        {
+            auto it = impl.find(key);
+            if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                continue;
+
             impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+        }
     }
 }
 
@@ -435,7 +459,12 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name)
+    const String & cluster_name,
+    SourceId source_id_,
+    String create_query_)
+    : name(cluster_name)
+    , source_id(source_id_)
+    , create_query(std::move(create_query_))
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -582,6 +611,7 @@ Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params)
+    : source_id(SourceId::NONE)
 {
     UInt32 current_shard_num = 1;
 
@@ -614,6 +644,7 @@ Cluster::Cluster(
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication)
+    : source_id(SourceId::NONE)
 {
     UInt32 current_shard_num = 1;
 
@@ -873,6 +904,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
 
     initMisc();
 }
@@ -894,6 +927,8 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
 
     initMisc();
 }
@@ -974,6 +1009,32 @@ bool Cluster::maybeCrossReplication() const
                 return true;
 
     return false;
+}
+
+String Cluster::getCreateStatement(bool show_secrets) const
+{
+    if (source_id != SourceId::SQL || create_query.empty())
+        return {};
+
+    const auto context = Context::getGlobalContextInstance();
+    const auto & settings = context->getSettingsRef();
+
+    ParserCreateSQLClusterQuery parser;
+    const auto ast = parseQuery(
+        parser,
+        create_query,
+        "",
+        0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
+
+    return ast->formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        show_secrets,
+        /*print_pretty_type_names=*/false,
+        IdentifierQuotingRule::WhenNecessary,
+        IdentifierQuotingStyle::Backticks);
 }
 
 }

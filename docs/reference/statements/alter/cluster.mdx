@@ -1,0 +1,69 @@
+---
+description: 'Documentation for ALTER CLUSTER'
+sidebarTitle: 'CLUSTER'
+slug: /sql-reference/statements/alter/cluster
+title: 'ALTER CLUSTER'
+doc_type: 'reference'
+---
+
+Replaces the definition of an existing SQL-managed cluster.
+
+## Syntax {#syntax}
+
+```sql
+ALTER CLUSTER [IF EXISTS] name [ON CLUSTER cluster] (
+    cluster_property = value,
+    SHARD (
+        shard_property = value,
+        REPLICA (replica_property = value, ...),
+        ...
+    ),
+    ...
+)
+```
+
+## Description {#description}
+
+`ALTER CLUSTER` replaces the entire cluster topology. Incremental updates are not supported: you cannot add or remove individual shards or replicas, or change only part of the definition. Provide the full target topology in every `ALTER CLUSTER` statement. The new definition is stored as a `CREATE CLUSTER` statement in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters#storing-sql-cluster-metadata) and applied immediately.
+
+Property names and semantics are the same as in [`CREATE CLUSTER`](/reference/statements/create/cluster).
+
+## Access control {#access-control}
+
+Requires the `ALTER SQL CLUSTER` grant.
+
+## ON CLUSTER {#on-cluster}
+
+An optional `ON CLUSTER` clause runs the statement through the [distributed DDL](/reference/statements/distributed-ddl) mechanism.
+
+With [local metadata storage](/concepts/features/configuration/server-config/sql-clusters#local-storage-example), use `ON CLUSTER` to update metadata on every node.
+
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), a single-node `ALTER CLUSTER` is sufficient.
+
+## Example {#example}
+
+```sql
+CREATE CLUSTER my_cluster (
+    user = 'default',
+    SHARD (
+        REPLICA (host = '127.0.0.1', port = 9000)
+    )
+);
+
+ALTER CLUSTER my_cluster (
+    user = 'default',
+    SHARD (
+        REPLICA (host = '127.0.0.1', port = 9000),
+        REPLICA (host = '127.0.0.2', port = 9000)
+    )
+);
+```
+
+## Related statements {#related-statements}
+
+- [CREATE CLUSTER](/reference/statements/create/cluster)
+- [DROP CLUSTER](/reference/statements/drop#drop-cluster)
+
+## See also {#see-also}
+
+- [SQL-managed clusters guide](/concepts/features/configuration/server-config/sql-clusters)

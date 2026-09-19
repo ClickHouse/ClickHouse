@@ -147,6 +147,7 @@
                 "concepts/features/configuration/server-config/configuration-files",
                 "concepts/features/configuration/server-config/storing-data",
                 "concepts/features/configuration/server-config/named-collections",
+                "concepts/features/configuration/server-config/sql-clusters",
                 "concepts/features/configuration/server-config/workload-scheduling",
                 "concepts/features/configuration/server-config/quotas",
                 "concepts/features/configuration/server-config/composable-protocols",

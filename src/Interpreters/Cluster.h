@@ -66,10 +66,19 @@ struct ClusterConnectionParameters
 class Cluster
 {
 public:
+    enum class SourceId : uint8_t
+    {
+        NONE = 0,
+        CONFIG = 1,
+        SQL = 2,
+    };
+
     Cluster(const Poco::Util::AbstractConfiguration & config,
             const Settings & settings,
             const String & config_prefix_,
-            const String & cluster_name);
+            const String & cluster_name,
+            SourceId source_id_ = SourceId::CONFIG,
+            String create_query_ = {});
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -296,6 +305,11 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Where the cluster was defined. Subclusters derived from an existing cluster keep the source of the original.
+    SourceId getSourceId() const { return source_id; }
+
+    String getCreateStatement(bool show_secrets) const;
+
 private:
     SlotToShard slot_to_shard;
 
@@ -342,6 +356,9 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+
+    SourceId source_id = SourceId::CONFIG;
+    String create_query;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
@@ -357,6 +374,7 @@ public:
 
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
+    void removeCluster(const String & cluster_name);
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
