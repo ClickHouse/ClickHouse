@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -60,6 +61,12 @@ std::optional<String> tryGetConstString(const ActionsDAG::Node * node)
     node = skipAliases(node);
 
     if (!node->column || !isColumnConst(*node->column))
+        return {};
+
+    /// Only a `String` constant, because a `FixedString` one carries its zero padding in the `Field`,
+    /// while the comparison itself ignores it: `'hello' = toFixedString('hello', 10)` is true, but the
+    /// needle would be the ten-byte `hello\0\0\0\0\0` and would match no value at all.
+    if (!isString(removeLowCardinality(removeNullable(node->result_type))))
         return {};
 
     Field field = (*node->column)[0];

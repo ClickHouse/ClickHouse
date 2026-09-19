@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -824,6 +825,10 @@ bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(const RPNB
         Field value;
         DataTypePtr type;
         if (!argument.tryGetConstant(value, type) || value.getType() != Field::Types::String)
+            return {};
+        /// Only a `String` constant, the same restriction as in `extractStringValueFilters`:
+        /// a `FixedString` one carries its zero padding in the `Field`, so no filter is extracted for it.
+        if (!isString(removeLowCardinality(removeNullable(type))))
             return {};
         return value.safeGet<String>();
     };
