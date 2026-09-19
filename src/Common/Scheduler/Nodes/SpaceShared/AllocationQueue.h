@@ -60,6 +60,7 @@ private:
     std::exception_ptr cancel_error; /// preallocated exception for cancelling requests
 
     ResourceAllocation::PendingList pending_allocations; /// Pending new allocations
+    ResourceAllocation::AdmittingList admitting_allocations; /// Zero-size allocations awaiting scheduler-thread admission
     ResourceAllocation::RunningSet running_allocations; /// Currently running (not pending) allocations
     ResourceAllocation::IncreasingSet increasing_allocations; /// Allocations with pending increase request
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request

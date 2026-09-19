@@ -28,8 +28,7 @@ class IncreaseRequest final
 public:
     enum class Kind
     {
-        Regular, /// Regular increase request of running allocation
-        Initial, /// The first increase request of a running allocation with zero size (e.g. due to `reserve_memory = 0`)
+        Regular, /// Regular increase request of a running allocation (including the first grow after a zero-size admission)
         Pending, /// The first increase request of a pending allocation (often handled differently than previous because query is not running yet)
     };
 

@@ -14,6 +14,7 @@ namespace DB
 class ISpaceSharedNode;
 class IAllocationQueue;
 class AllocationQueue;
+class AllocationLimit;
 
 /// Represents a resource allocation that could change its size during its lifetime.
 /// Both increase and decrease of size are done through interaction with IAllocationQueue.
@@ -24,8 +25,8 @@ class AllocationQueue;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
-    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
-        : queue(queue_), id(id_), increase(*this), decrease(*this)
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {}, Int32 eviction_score_ = 0)
+        : queue(queue_), id(id_), eviction_score(eviction_score_), increase(*this), decrease(*this)
     {}
 
     virtual ~ResourceAllocation();
@@ -46,23 +47,26 @@ public:
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
+    Int32 const eviction_score; /// Eviction priority: higher values are evicted first when the resource is under pressure (0 by default). Immutable after construction, so the scheduler thread can read it safely.
 
 private:
     friend class AllocationQueue;
+    friend class AllocationLimit; // reads `fair_key` to self-kill a requester whose grow exceeds the limit
 
     ResourceCost allocated = 0; /// Currently allocated.
-    bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;
 
     /// Hooks required for integration with AllocationQueue.
     boost::intrusive::list_member_hook<> pending_hook;
+    boost::intrusive::list_member_hook<> admitting_hook;
     boost::intrusive::set_member_hook<> running_hook;
     boost::intrusive::set_member_hook<> increasing_hook;
     boost::intrusive::list_member_hook<> decreasing_hook;
     boost::intrusive::list_member_hook<> removing_hook;
     using PendingHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::pending_hook>;
+    using AdmittingHook  = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::admitting_hook>;
     using RunningHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::running_hook>;
     using IncreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::increasing_hook>;
     using DecreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::decreasing_hook>;
@@ -73,15 +77,24 @@ private:
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
     ResourceCost fair_key = 0; /// Currently allocated plus pending increase (key for max-min fair ordering).
 
-    /// Ordering by size and unique id for tie breaking
-    /// Used for both running and increasing allocations for consistent ordering
+    /// Ordering by size and unique id for tie breaking.
+    /// Used for `increasing_allocations`: the next increase to process is the one with the smallest `fair_key`.
     /// NOTE: called outside of the scheduler thread and thus requires queue.mutex
     struct ByFairKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.fair_key, lhs.unique_id) < std::tie(rhs.fair_key, rhs.unique_id); } };
+
+    /// Ordering for eviction victim selection (`running_allocations`): the victim is `rbegin()` (the greatest
+    /// key) — the highest `eviction_score`, then the largest `fair_key`, then `unique_id` for tie-breaking.
+    /// Pending and admitting allocations are structurally absent from `running_allocations`, so they are never
+    /// selected as victims. `fair_key` is a mutable key, so an allocation must be erased from the set before it
+    /// changes and re-inserted afterwards.
+    /// NOTE: called outside of the scheduler thread and thus requires queue.mutex
+    struct ByEvictionKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.eviction_score, lhs.fair_key, lhs.unique_id) < std::tie(rhs.eviction_score, rhs.fair_key, rhs.unique_id); } };
 
     /// Intrusive data structures for managing allocations
     /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
     using PendingList    = boost::intrusive::list<ResourceAllocation, PendingHook>;
-    using RunningSet     = boost::intrusive::set<ResourceAllocation, RunningHook, boost::intrusive::compare<ByFairKey>>;
+    using AdmittingList  = boost::intrusive::list<ResourceAllocation, AdmittingHook>;
+    using RunningSet     = boost::intrusive::set<ResourceAllocation, RunningHook, boost::intrusive::compare<ByEvictionKey>>;
     using IncreasingSet  = boost::intrusive::set<ResourceAllocation, IncreasingHook, boost::intrusive::compare<ByFairKey>>;
     using DecreasingList = boost::intrusive::list<ResourceAllocation, DecreasingHook>;
     using RemovingList   = boost::intrusive::list<ResourceAllocation, RemovingHook>;
