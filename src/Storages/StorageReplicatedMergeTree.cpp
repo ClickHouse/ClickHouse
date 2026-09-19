@@ -178,7 +178,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;

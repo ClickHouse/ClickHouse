@@ -10,7 +10,6 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
 #include <Core/ConstantValue.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -21,13 +20,10 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -52,11 +48,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool normalize_function_names;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -68,9 +59,9 @@ namespace ErrorCodes
 /// re-adds a `Field` materialization (which the ongoing removal of `Field` aims to avoid) purely to
 /// preserve behavior: without it a literal round-trips through the size-1 column and `operator[]`
 /// canonicalizes tags (`Bool`->`UInt64`), so e.g. `values('x String', true)` returns `'1'` instead of
-/// `'true'`. It is used at both literal sites in the impl below (the original `node`, and an AST that
-/// `TreeRewriter` folds into a literal). Delete this together with the `Field`-returning
-/// `evaluateConstantExpression` once its callers move to the column API (`evaluateConstantExpressionAsColumn`).
+/// `'true'`. It is used at the literal site in the impl below. Delete this together with the
+/// `Field`-returning `evaluateConstantExpression` once its callers move to the column API
+/// (`evaluateConstantExpressionAsColumn`).
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
@@ -88,12 +79,11 @@ static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(AS
 }
 
 /// `literal_out` (the compatibility shim documented on `getFieldAndDataTypeFromLiteral`): a literal
-/// result can arise either directly (`node` is an `ASTLiteral`) or after `TreeRewriter::analyze` folds
-/// a non-literal into one. When `literal_out` is
-/// non-null (the `Field`-returning API is calling), such a literal is handed back through it as a
-/// tag-preserving `Field` and NO column is built (the function returns `std::nullopt`); when it is
-/// null (the column API is calling), the size-1 column is built as usual. This keeps the legacy
-/// `Field` API tag-faithful without building a column only to discard it.
+/// result arises when `node` is an `ASTLiteral`. When `literal_out` is non-null (the `Field`-returning
+/// API is calling), such a literal is handed back through it as a tag-preserving `Field` and NO column
+/// is built (the function returns `std::nullopt`); when it is null (the column API is calling), the
+/// size-1 column is built as usual. This keeps the legacy `Field` API tag-faithful without building a
+/// column only to discard it.
 static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExpressionAsColumnImpl(
     const ASTPtr & node, const ContextPtr & context,
     std::optional<EvaluateConstantExpressionResult> * literal_out = nullptr)

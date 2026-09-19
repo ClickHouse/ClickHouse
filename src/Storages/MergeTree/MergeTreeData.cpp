@@ -266,8 +266,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
-    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsUInt64 dead_blobs_to_delay_insert;
     extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
@@ -11942,17 +11940,6 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
 
     return filter_nodes;
 }
-
-QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
-    ContextPtr,
-    QueryProcessingStage::Enum,
-    const StorageSnapshotPtr &,
-    SelectQueryInfo &) const
-{
-    /// The Planner decides whether parallel replicas are used, and with that the processing stage on reading.
-    return QueryProcessingStage::Enum::FetchColumns;
-}
-
 
 UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const

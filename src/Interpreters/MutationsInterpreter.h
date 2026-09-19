@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
@@ -267,19 +266,12 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
-        /// --- Old analyzer path (populated when analyzer is not enabled) ---
-        std::unique_ptr<ExpressionAnalyzer> analyzer;
-
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
-        ExpressionActionsChain expressions_chain;
-
-        /// --- Analyzer path (populated when analyzer is enabled) ---
         std::unique_ptr<ActionsChain> new_actions_chain;
         PreparedSetsPtr new_prepared_sets;
 
-        /// --- Common ---
         Names filter_column_names;
 
         bool affects_all_columns = false;

@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -27,21 +26,11 @@
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 
 #include <stack>
-
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsBool query_plan_read_in_order;
-    extern const SettingsBool optimize_read_in_order;
-}
-}
 
 namespace DB::QueryPlanOptimizations
 {

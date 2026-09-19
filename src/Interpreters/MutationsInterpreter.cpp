@@ -1818,7 +1818,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         }
     }
 
-    /// Now, calculate `expressions_chain` for each stage except the first.
+    /// Now, calculate the chain of actions for each stage except the first.
     /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
     for (int64_t i = prepared_stages.size() - 1; i >= 0; --i)
     {
@@ -1832,7 +1832,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         for (const auto & kv : stage.column_to_updated)
             all_asts->children.push_back(kv.second);
 
-        /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
+        /// Add all output columns, so that resolving the expression list keeps them among the source columns.
         for (const auto & column : stage.output_columns)
             all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
 
@@ -2146,7 +2146,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     }
 }
 
-MutationsInterpreter::Stage::Stage(ContextPtr context_) : expressions_chain(context_) {}
+MutationsInterpreter::Stage::Stage(ContextPtr) {}
 MutationsInterpreter::Stage::~Stage() = default;
 MutationsInterpreter::Stage::Stage(Stage &&) noexcept = default;
 MutationsInterpreter::Stage & MutationsInterpreter::Stage::operator=(Stage &&) noexcept = default;
@@ -2234,19 +2234,9 @@ std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const St
         return std::nullopt;
 
     ActionsDAG::NodeRawConstPtrs nodes(names.size());
-    if (stage.analyzer)
-    {
-        /// Old path
-        for (size_t i = 0; i < names.size(); ++i)
-            nodes[i] = &stage.expressions_chain.steps[i]->actions()->dag.findInOutputs(names[i]);
-    }
-    else
-    {
-        /// New path
-        const auto & chain_steps = stage.new_actions_chain->getSteps();
-        for (size_t i = 0; i < names.size(); ++i)
-            nodes[i] = &chain_steps[i]->getActions()->dag.findInOutputs(names[i]);
-    }
+    const auto & chain_steps = stage.new_actions_chain->getSteps();
+    for (size_t i = 0; i < names.size(); ++i)
+        nodes[i] = &chain_steps[i]->getActions()->dag.findInOutputs(names[i]);
 
     return ActionsDAG::buildFilterActionsDAG(nodes);
 }
@@ -2259,25 +2249,21 @@ void MutationsInterpreter::Source::read(
     const Settings & mutation_settings) const
 {
     Names required_columns;
-    if (first_stage.analyzer)
-        required_columns = first_stage.expressions_chain.steps.front()->getRequiredColumns().getNames();
-    else
-    {
-        const auto & first_step = first_stage.new_actions_chain->getSteps().front();
-        for (const auto & col_name : first_step->getInputColumnNames())
-            required_columns.push_back(col_name);
+    const auto & first_step = first_stage.new_actions_chain->getSteps().front();
+    for (const auto & col_name : first_step->getInputColumnNames())
+        required_columns.push_back(col_name);
 
-        /// When all expressions are constants/scalar subqueries (e.g.
-        /// UPDATE c0 = (), c1 = 2 WHERE EXISTS(SELECT 1)), no table
-        /// columns are required.  We still need to read at least one
-        /// column to determine the number of rows.  Pick the smallest
-        /// column, matching the old analyzer path (TreeRewriter::collectUsedColumns).
-        if (required_columns.empty())
-        {
-            auto all_physical = snapshot_->getColumns().getAllPhysical();
-            if (!all_physical.empty())
-                required_columns.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
-        }
+    /// When all expressions are constants/scalar subqueries (e.g.
+    /// UPDATE c0 = (), c1 = 2 WHERE EXISTS(SELECT 1)), no table
+    /// columns are required.  We still need to read at least one
+    /// column to determine the number of rows.  Pick the smallest
+    /// column, as the query analysis that preceded the analyzer did
+    /// (TreeRewriter::collectUsedColumns).
+    if (required_columns.empty())
+    {
+        auto all_physical = snapshot_->getColumns().getAllPhysical();
+        if (!all_physical.empty())
+            required_columns.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
     }
 
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
@@ -2380,70 +2366,34 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 
     source.read(first_stage, plan, metadata_snapshot, context, settings);
 
-    if (first_stage.analyzer)
-        addDelayedCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
-    else
-        buildSubqueryPlansForSetsAndAdd(plan, first_stage.new_prepared_sets, context);
+    buildSubqueryPlansForSetsAndAdd(plan, first_stage.new_prepared_sets, context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (const Stage & stage : prepared_stages)
     {
-        if (stage.analyzer)
+        const auto & chain_steps = stage.new_actions_chain->getSteps();
+        for (size_t i = 0; i < chain_steps.size(); ++i)
         {
-            /// Old path
-            for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
-            {
-                const auto & step = stage.expressions_chain.steps[i];
-                if (step->actions()->dag.hasArrayJoin())
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
+            const auto & step = chain_steps[i];
+            if (step->getActions()->dag.hasArrayJoin())
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
 
-                if (i < stage.filter_column_names.size())
-                {
-                    auto dag = step->actions()->dag.clone();
-                    if (step->actions()->project_input)
-                        dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
-                    /// Execute DELETEs.
-                    plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
-                }
-                else
-                {
-                    auto dag = step->actions()->dag.clone();
-                    if (step->actions()->project_input)
-                        dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
-                    /// Execute UPDATE or final projection.
-                    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
-                }
-            }
+            auto dag = step->getActions()->dag.clone();
+            if (step->getActions()->project_input)
+                dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
 
-            addDelayedCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
+            if (i < stage.filter_column_names.size())
+                plan.addStep(std::make_unique<FilterStep>(
+                    plan.getCurrentHeader(), std::move(dag),
+                    stage.filter_column_names[i], false));
+            else
+                plan.addStep(std::make_unique<ExpressionStep>(
+                    plan.getCurrentHeader(), std::move(dag)));
         }
-        else
-        {
-            /// New path
-            const auto & chain_steps = stage.new_actions_chain->getSteps();
-            for (size_t i = 0; i < chain_steps.size(); ++i)
-            {
-                const auto & step = chain_steps[i];
-                if (step->getActions()->dag.hasArrayJoin())
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
 
-                auto dag = step->getActions()->dag.clone();
-                if (step->getActions()->project_input)
-                    dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
-
-                if (i < stage.filter_column_names.size())
-                    plan.addStep(std::make_unique<FilterStep>(
-                        plan.getCurrentHeader(), std::move(dag),
-                        stage.filter_column_names[i], false));
-                else
-                    plan.addStep(std::make_unique<ExpressionStep>(
-                        plan.getCurrentHeader(), std::move(dag)));
-            }
-
-            buildSubqueryPlansForSetsAndAdd(plan, stage.new_prepared_sets, context);
-        }
+        buildSubqueryPlansForSetsAndAdd(plan, stage.new_prepared_sets, context);
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
@@ -2563,32 +2513,15 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
     std::vector<MutationActions> result;
     for (const auto & stage : stages)
     {
-        if (stage.analyzer)
+        const auto & chain_steps = stage.new_actions_chain->getSteps();
+        for (size_t i = 0; i < chain_steps.size(); ++i)
         {
-            /// Old path
-            for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
-            {
-                const auto & step = stage.expressions_chain.steps[i];
-                bool project_input = step->actions()->project_input;
-                if (i < stage.filter_column_names.size())
-                    result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input, stage.mutation_version});
-                else
-                    result.push_back({step->actions()->dag.clone(), "", project_input, stage.mutation_version});
-            }
-        }
-        else
-        {
-            /// New path
-            const auto & chain_steps = stage.new_actions_chain->getSteps();
-            for (size_t i = 0; i < chain_steps.size(); ++i)
-            {
-                const auto & step = chain_steps[i];
-                bool project_input = step->getActions()->project_input;
-                if (i < stage.filter_column_names.size())
-                    result.push_back({step->getActions()->dag.clone(), stage.filter_column_names[i], project_input, stage.mutation_version});
-                else
-                    result.push_back({step->getActions()->dag.clone(), "", project_input, stage.mutation_version});
-            }
+            const auto & step = chain_steps[i];
+            bool project_input = step->getActions()->project_input;
+            if (i < stage.filter_column_names.size())
+                result.push_back({step->getActions()->dag.clone(), stage.filter_column_names[i], project_input, stage.mutation_version});
+            else
+                result.push_back({step->getActions()->dag.clone(), "", project_input, stage.mutation_version});
         }
     }
 
