@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # Only partition 1 exists when the pruned partition set is computed.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_local_race DELETE WHERE p >= 1 SETTINGS mutations_sync = 1" &
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_local_race DELETE WHERE p >= 1 SETTINGS mutations_sync = 1, optimize_mutations_with_partition_pruning = 1" &
 
 # Wait until the mutation is paused between the pruning analysis and reading the ZooKeeper partition list.
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_mutation_prune_pause_before_zk_partition_list PAUSE"

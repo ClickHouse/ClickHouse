@@ -216,8 +216,9 @@ report IcebergPartitionPrunedFiles partition_narrow_lead
 echo '--- A9 the manifest list prunes both tables before their patched manifests are read ---'
 # The manifest list is written from the partition spec in the table metadata, which this test never
 # patches, so its summaries prune these manifests whatever the patched manifest header claims - and
-# the rows that survive are still the right ones.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+# the rows that survive are still the right ones. This arm is the one that needs the pruner on, so
+# pin it against the settings randomizer.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --use_iceberg_manifest_list_partition_pruning=1 --query "
     SELECT sum(v) FROM t_narrow WHERE p = 1 SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_list_narrow';
     SELECT sum(v) FROM t_narrow_lead WHERE p = 1 SETTINGS log_comment = '${CLICKHOUSE_DATABASE}_list_narrow_lead';
     SYSTEM FLUSH LOGS query_log;"

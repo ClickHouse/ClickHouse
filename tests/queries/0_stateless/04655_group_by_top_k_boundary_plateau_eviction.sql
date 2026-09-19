@@ -14,6 +14,9 @@ SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
+-- CI randomizes group_by_top_k_optimization_observation_rows: a tiny window freezes the heap
+-- before it can prune, which is what the assertions below check does not happen.
+SET group_by_top_k_optimization_observation_rows = 65536;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
 SET log_queries = 1;

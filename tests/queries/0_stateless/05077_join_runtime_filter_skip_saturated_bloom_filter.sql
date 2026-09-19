@@ -19,6 +19,8 @@ SET enable_analyzer = 1, enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 1,
     join_runtime_filter_size_from_hash_table_stats = 1, join_runtime_bloom_filter_max_ratio_of_set_bits = 0.05,
     query_plan_join_swap_table = 0;
+-- Pinned (randomized in CI): a threshold above the probe side's 100000 rows skips the filter altogether.
+SET join_runtime_filter_min_probe_rows = 1000;
 -- The hash table statistics are keyed by the join order optimization, which assigns no key when it is disabled.
 SET query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0;
 

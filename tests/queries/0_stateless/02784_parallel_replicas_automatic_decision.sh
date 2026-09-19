@@ -57,6 +57,8 @@ function run_query_with_pure_parallel_replicas () {
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
         --max_threads 5 \
         --parallel_replicas_only_with_analyzer 0 \
+        --use_partition_minmax_for_primary_key_pruning 1 \
+        --use_constant_folding_in_index_analysis 0 \
     |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 

@@ -10,6 +10,11 @@ SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 
+-- Both assertions below need the setting unset: the first reads its default, and `compatibility`
+-- only moves settings the session has not set itself. CI randomizes it on the command line, which
+-- counts as set, so reset it here - before `compatibility` is applied.
+SET enable_group_by_top_k_optimization = DEFAULT;
+
 DROP TABLE IF EXISTS t_top_k_compat;
 CREATE TABLE t_top_k_compat (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_top_k_compat SELECT number, number FROM numbers(1000);

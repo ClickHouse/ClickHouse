@@ -112,6 +112,9 @@ SET query_plan_join_swap_table = 0;
 -- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
 -- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
 SET query_plan_optimize_join_order_randomize = 0;
+-- A smaller search budget makes dpsize give up mid-search and fall back to greedy, which picks
+-- a different join order for the denser queries.
+SET query_plan_optimize_join_order_max_searched_plans = 100000;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
@@ -122,7 +125,11 @@ SET optimize_move_to_prewhere = 1;
 SET optimize_extract_common_expressions = 1;
 SET optimize_syntax_fuse_functions = 1;
 SET optimize_and_compare_chain = 1;
+-- The work budget of the pin above: a small one stops the optimization part-way through the
+-- query, so the derived `indexHint` conjunct the reference asserts is never added.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 SET enable_join_transitive_predicates = 1;
+SET query_plan_merge_expression_into_join = 1;
 SET send_logs_level = 'error';
 
 -- Simulate 20 node cluster, and set cost weights to optimize for lower sequential time, i.e. more parallelism
