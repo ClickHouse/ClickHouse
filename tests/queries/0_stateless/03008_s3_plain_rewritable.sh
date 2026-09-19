@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-replicated-database
+# Tags: no-fasttest, no-shared-merge-tree, no-replicated-database, no-flaky-check
 # Tag no-fasttest: requires S3
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
+# Tag no-flaky-check: the flaky check enables the thread fuzzer, which multiplies the runtime of this
+# S3 test far past the 180s per-run cap.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +19,8 @@ settings disk = disk(
     type = s3_plain_rewritable,
     endpoint = 'http://localhost:11111/test/03008_test_s3_mt/',
     access_key_id = clickhouse,
-    secret_access_key = clickhouse);
+    secret_access_key = clickhouse),
+    enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -52,7 +55,8 @@ settings disk = disk(
     type = s3_plain_rewritable,
     endpoint = 'http://localhost:11111/test/03008_test_s3_mt/',
     access_key_id = clickhouse,
-    secret_access_key = clickhouse);
+    secret_access_key = clickhouse),
+    enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
