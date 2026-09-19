@@ -174,7 +174,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
-    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
+    new_context->setInsertionTable(
+        context->getInsertionTable(),
+        context->getInsertionTableColumnNames(),
+        context->getInsertionTableColumnsDescription(),
+        context->isInsertionTableByName());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
     /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing

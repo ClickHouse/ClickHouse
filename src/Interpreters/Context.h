@@ -419,6 +419,7 @@ protected:
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
         std::shared_ptr<ColumnsDescription> columns_description;
+        bool by_name = false;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -1245,10 +1246,15 @@ public:
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
     bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description != nullptr; }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::shared_ptr<ColumnsDescription> column_description = nullptr);
+    void setInsertionTable(
+        StorageID db_and_table,
+        std::optional<Names> column_names = std::nullopt,
+        std::shared_ptr<ColumnsDescription> column_description = nullptr,
+        bool by_name = false);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
     const std::shared_ptr<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
+    bool isInsertionTableByName() const { return insertion_table_info.by_name; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }

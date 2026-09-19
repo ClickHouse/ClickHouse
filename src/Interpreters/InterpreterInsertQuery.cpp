@@ -60,6 +60,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
+#include <algorithm>
+
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <memory>
 
 
@@ -116,6 +120,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
@@ -400,6 +405,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
+
+    if (was_by_name && pipeline.getHeader().getNames() != query_sample_block.getNames())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The SELECT result columns changed while analyzing the INSERT query");
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
     if (context->getSettingsRef()[Setting::insert_null_as_default])
@@ -1268,7 +1276,13 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
+    was_by_name = query.by_name || query.by_name_resolved;
     setInsertContextValues(context, query, table);
+    if (was_by_name)
+    {
+        resolveInsertByNameColumns(context, query);
+        setInsertContextValues(context, query, table);
+    }
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -1417,7 +1431,38 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         insert_columns = std::move(names);
     }
 
-    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
+    context_->setInsertionTable(
+        insert_query.table_id,
+        insert_columns,
+        std::make_shared<ColumnsDescription>(metadata_snapshot->columns),
+        insert_query.by_name);
+}
+
+void InterpreterInsertQuery::resolveInsertByNameColumns(ContextMutablePtr context_, ASTInsertQuery & query)
+{
+    if (!query.by_name)
+        return;
+
+    SharedHeader header;
+    auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+    if (context_->getSettingsRef()[Setting::allow_experimental_analyzer])
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, context_, select_query_options);
+    else
+        header = InterpreterSelectWithUnionQuery::getSampleBlock(query.select, context_);
+
+    auto columns = make_intrusive<ASTExpressionList>(',');
+    columns->children.reserve(header->columns());
+    for (const auto & name : header->getNames())
+        columns->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+
+    query.columns = columns;
+    auto insert_position = std::find_if(query.children.begin(), query.children.end(), [&](const ASTPtr & child)
+    {
+        return child == query.settings_ast || child == query.select || child == query.infile || child == query.compression;
+    });
+    query.children.insert(insert_position, columns);
+    query.by_name = false;
+    query.by_name_resolved = true;
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory);

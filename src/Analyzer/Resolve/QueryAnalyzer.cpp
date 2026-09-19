@@ -5100,11 +5100,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insert_columns = *scope_context->getInsertionTableColumnsDescription();
         const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
         DB::ColumnsDescription structure_hint;
+        const bool insert_by_name = scope_context->isInsertionTableByName();
 
         bool use_columns_from_insert_query = true;
 
-        /// Insert table matches columns against SELECT expression by position, so we want to map
-        /// insert table columns to table function columns through names from SELECT expression.
+        /// For a regular INSERT, match insert table columns against SELECT expressions by position.
+        /// During INSERT ... BY NAME lowering, use the SELECT expression's output name instead.
 
         auto insert_column_name_it = insert_column_names.begin();
         auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
@@ -5131,7 +5132,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         break;
                     }
 
-                    ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                    const String & output_name = identifier_node->hasAlias()
+                        ? identifier_node->getAlias()
+                        : identifier_node->getIdentifier().getFullName();
+                    ColumnDescription column = insert_columns.get(insert_by_name ? output_name : *insert_column_name_it);
                     column.name = identifier_node->getIdentifier().getFullName();
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;

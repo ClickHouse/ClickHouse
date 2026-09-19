@@ -59,6 +59,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_values(Keyword::VALUES);
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_by_name(Keyword::BY_NAME);
     ParserKeyword s_select(Keyword::SELECT);
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
@@ -84,6 +85,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr partition_by_expr;
     ASTPtr compression;
     ASTPtr with_expression_list;
+    bool by_name = false;
 
     /// Insertion data
     const char * data = nullptr;
@@ -161,6 +163,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
     }
+
+    if (!columns && s_by_name.ignore(pos, expected))
+        by_name = true;
 
     /// Check if file is a source of data.
     if (s_from_infile.ignore(pos, expected))
@@ -274,6 +279,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             data = pos->begin;
     }
 
+    if (by_name && table_function)
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "INSERT ... BY NAME is supported only for ordinary table destinations");
+
+    if (by_name && !select)
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "INSERT ... BY NAME requires a SELECT query");
+
     if (select)
     {
         /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
@@ -351,6 +364,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     query->columns = columns;
+    query->by_name = by_name;
     query->format = std::move(format_str);
     query->select = select;
     query->settings_ast = settings_ast;
@@ -530,9 +544,18 @@ As a consequence, a client with a newer version (where a setting is enabled by d
 
 ```sql
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
+INSERT INTO [TABLE] [db.]table BY NAME SELECT ...
 ```
 
 Columns are mapped according to their position in the `SELECT` clause. However, their names in the `SELECT` expression and the table for `INSERT` may differ. If necessary, type casting is performed.
+
+To map the result columns of the `SELECT` query by name, use `BY NAME`:
+
+```sql
+INSERT INTO table BY NAME SELECT value_2 AS column_2, value_1 AS column_1;
+```
+
+The names are taken from the final `SELECT` result. The order of the result columns does not need to match the order of the destination columns. Destination columns that are not present in the result use the same default value behavior as an `INSERT` with an explicit column list. `BY NAME` can only be used with `SELECT` and cannot be combined with an explicit column list.
 
 None of the data formats except the Values format allow setting values to expressions such as `now()`, `1 + 2`, and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
 
@@ -687,6 +710,7 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] SELECT ...
+INSERT INTO [TABLE] [db.]table BY NAME [SETTINGS ...] SELECT ...
 INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] [SETTINGS ...] SELECT ...
 )",
         .related = {"SELECT", "FORMAT", "CREATE TABLE", "UPDATE", "DELETE"},

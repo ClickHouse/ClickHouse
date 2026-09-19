@@ -2930,6 +2930,16 @@ static BlockIO executeQueryImpl(
             }
         }
 
+        /// Resolve BY NAME before any inline input() storage is created. The input table function
+        /// uses the insertion context to infer its structure, so waiting for InterpreterInsertQuery
+        /// would leave it with the positional, pre-BY-NAME context.
+        if (insert_query && insert_query->by_name && insert_table)
+        {
+            InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+            InterpreterInsertQuery::resolveInsertByNameColumns(context, *insert_query);
+            InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+        }
+
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.

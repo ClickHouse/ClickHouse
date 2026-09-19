@@ -3254,11 +3254,12 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
+            const bool insert_by_name = isInsertionTableByName();
 
             bool use_columns_from_insert_query = true;
 
-            /// Insert table matches columns against SELECT expression by position, so we want to map
-            /// insert table columns to table function columns through names from SELECT expression.
+            /// For a regular INSERT, match insert table columns against SELECT expressions by position.
+            /// During INSERT ... BY NAME lowering, use the SELECT expression's output name instead.
 
             auto insert_column_name_it = insert_column_names.begin();
             auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
@@ -3284,7 +3285,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             break;
                         }
 
-                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                        const String insert_column_name = insert_by_name ? identifier->getAliasOrColumnName() : *insert_column_name_it;
+                        ColumnDescription column = insert_columns.get(insert_column_name);
                         column.name = identifier->name();
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
@@ -3887,12 +3889,17 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
-void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::shared_ptr<ColumnsDescription> column_description)
+void Context::setInsertionTable(
+    StorageID db_and_table,
+    std::optional<Names> column_names,
+    std::shared_ptr<ColumnsDescription> column_description,
+    bool by_name)
 {
     insertion_table_info = {
         .table = std::move(db_and_table),
         .column_names = std::move(column_names),
         .columns_description = std::move(column_description),
+        .by_name = by_name,
     };
 }
 
