@@ -36,3 +36,18 @@ SELECT
     toTypeName(leadInFrame(toUInt8(number), 1, toInt16(-1)) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)),
     leadInFrame(toUInt8(number), 1, toInt16(-1)) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 FROM numbers(2);
+
+-- Force value and default access across WindowTransformBlock boundaries.
+SET max_block_size = 1;
+
+SELECT
+    lag(number, 1, NULL) OVER (ORDER BY number),
+    lead(number, 1, NULL) OVER (ORDER BY number)
+FROM numbers(3);
+
+SELECT
+    lagInFrame(toUInt8(number), 1, toInt16(-1))
+        OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),
+    leadInFrame(toUInt8(number), 1, toInt16(-1))
+        OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM numbers(3);
