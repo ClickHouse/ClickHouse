@@ -267,7 +267,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Int64 inherited_snapshot_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    const std::atomic<bool> * stop_flag_)
 {
     insertRowToLogTable(
         context_,
@@ -370,7 +371,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         std::move(partition_key_description),
         total_rows,
         std::move(filter_dag_),
-        table_snapshot_schema_id_));
+        table_snapshot_schema_id_,
+        stop_flag_));
 }
 
 ManifestFileIterator::ManifestFileIterator(
@@ -387,7 +389,8 @@ ManifestFileIterator::ManifestFileIterator(
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    const std::atomic<bool> * stop_flag_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -400,6 +403,7 @@ ManifestFileIterator::ManifestFileIterator(
     , partition_key_description(std::move(partition_key_description_))
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
+    , stop_flag(stop_flag_)
     , data_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , position_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
@@ -649,6 +653,11 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
             fully_initialized.store(true);
             return nullptr;
         }
+        /// The data manifest decode tasks pass the stream's stopped flag here, so a cancelled
+        /// query stops decoding mid-manifest. Checked between rows rather than by the caller,
+        /// because a long stretch of pruned rows yields nothing the caller could check on.
+        if (stop_flag && stop_flag->load(std::memory_order_relaxed))
+            return nullptr;
         auto entry = processRow(row_index);
         if (entry)
             return entry;
