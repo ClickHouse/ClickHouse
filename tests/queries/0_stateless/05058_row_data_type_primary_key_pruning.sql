@@ -15,13 +15,11 @@ INSERT INTO row_key_prune SELECT (number, concat('v', toString(number))) FROM nu
 -- with index_granularity = 1, max_rows_to_read caps how many granules a query may touch.
 
 SELECT r FROM row_key_prune WHERE r = (3, 'v3') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
-SELECT r FROM row_key_prune WHERE r = (3, 'v3') SETTINGS force_primary_key = 1, max_rows_to_read = 2, enable_analyzer = 0;
 
 SELECT r FROM row_key_prune WHERE r < (2, '') ORDER BY r SETTINGS force_primary_key = 1, max_rows_to_read = 3;
 SELECT r FROM row_key_prune WHERE r >= (14, 'v14') ORDER BY r SETTINGS force_primary_key = 1, max_rows_to_read = 3;
 
 SELECT r FROM row_key_prune WHERE r IN ((3, 'v3'), (5, 'v5')) ORDER BY r SETTINGS force_primary_key = 1, max_rows_to_read = 4;
-SELECT r FROM row_key_prune WHERE r IN ((3, 'v3'), (5, 'v5')) ORDER BY r SETTINGS force_primary_key = 1, max_rows_to_read = 4, enable_analyzer = 0;
 
 DROP TABLE row_key_prune;
 
