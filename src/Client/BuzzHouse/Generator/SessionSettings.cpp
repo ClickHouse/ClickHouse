@@ -2521,7 +2521,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (fc.enable_sync_settings)
     {
         serverSettings.insert(
-            {{"alter_sync", CHSetting(zeroOneTwo, {}, false)},
+            {{"alter_sync", CHSetting(zeroToThree, {}, false)},
              {"lightweight_deletes_sync", CHSetting(zeroToThree, {}, false)},
              {"mutations_sync", CHSetting(zeroToThree, {}, false)}});
     }
