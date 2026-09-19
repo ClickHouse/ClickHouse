@@ -36,12 +36,14 @@ ${CLICKHOUSE_CLIENT} --max_ast_depth 0 --query "
     grep -om1 'Structured Field value exceeds maximum AST depth limit'
 
 # 4. A deeply nested `Field` dump hides its nesting inside a JSON string, so the bracket
-#    pre-scan does not see it either; `Field::restoreFromDump` must not recurse unbounded.
+#    pre-scan does not see it either. The dump payload has to start with the declared type's
+#    prefix, and the nesting types (`Array`, `Tuple`, `Map`) are read structurally, so a deep
+#    dump never reaches `Field::restoreFromDump`; the mismatched prefix is rejected first.
 ${CLICKHOUSE_CLIENT} --max_ast_depth 0 --query "
     SELECT formatQueryFromJSON(concat(
         '{\"type\":\"Literal\",\"value\":{\"field_type\":\"Object\",\"value\":\"',
         repeat('Array_[', 2000), repeat(']', 2000), '\"}}'))" 2>&1 |
-    grep -om1 'Field dump payload exceeds maximum AST depth limit'
+    grep -om1 "Field 'value' dump must start with 'Object_'"
 
 # 5. Sanity: with `max_ast_depth = 0` a normal query still round-trips byte-identically.
 ${CLICKHOUSE_CLIENT} --max_ast_depth 0 --query "
