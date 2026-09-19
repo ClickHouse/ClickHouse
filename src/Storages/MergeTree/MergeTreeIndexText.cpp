@@ -107,6 +107,16 @@ static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_Wit
 /// within one index.
 static constexpr bool DEFAULT_POSITIONS = false;
 
+static String formatTokensForLogs(const ITokenizer & tokenizer, const std::vector<String> & tokens)
+{
+    Strings formatted;
+    formatted.reserve(tokens.size());
+    for (const auto & token : tokens)
+        formatted.push_back(tokenizer.formatTokenForLogs(token));
+
+    return fmt::format("[{}]", fmt::join(formatted, ", "));
+}
+
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
     : tokens(std::move(tokens_))
     , token_infos(std::move(token_infos_))
@@ -623,7 +633,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     const bool use_negative_tokens_cache = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
     cardinalities_cache->sortTokens(tokens_to_read);
 
-    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part_info.getDataPartStorage()->getFullPath());
+    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}",
+        formatTokensForLogs(*condition_text.getTokenizer(), tokens_to_read), state.part_info.getDataPartStorage()->getFullPath());
 
     /// Collect blocks ids in the same order as tokens are sorted by cardinality.
     std::vector<size_t> blocks_ids_to_read;

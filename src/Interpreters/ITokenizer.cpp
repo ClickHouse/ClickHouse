@@ -40,10 +40,16 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 #if USE_ICU
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
+}
+
+String ITokenizer::formatTokenForLogs(std::string_view token) const
+{
+    return quoteString(token);
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -558,6 +564,50 @@ String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_vie
     String out;
     encodeToken(key, value, is_rest, out);
     return out;
+}
+
+KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::string_view token)
+{
+    /// The trailer is read backwards: the last byte of the token is the first byte of the varint,
+    /// and every byte of the varint except its last one has the continuation bit set.
+    UInt64 packed = 0;
+    size_t trailer_start = token.size();
+
+    for (size_t shift = 0;; shift += 7)
+    {
+        if (trailer_start == 0 || shift >= 64)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Cannot decode a token of the `keyValuePairs` tokenizer: the trailer is malformed (token size: {})", token.size());
+        }
+
+        const UInt8 byte = static_cast<UInt8>(token[--trailer_start]);
+        packed |= static_cast<UInt64>(byte & 0x7F) << shift;
+
+        if (!(byte & 0x80))
+            break;
+    }
+
+    const size_t key_size = packed >> 1;
+    if (key_size > trailer_start)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot decode a token of the `keyValuePairs` tokenizer: the key length {} exceeds the {} bytes before the trailer",
+            key_size, trailer_start);
+    }
+
+    return DecodedToken
+    {
+        .key = token.substr(0, key_size),
+        .value = token.substr(key_size, trailer_start - key_size),
+        .is_rest = (packed & 1) != 0,
+    };
+}
+
+String KeyValuePairsTokenizer::formatTokenForLogs(std::string_view token) const
+{
+    const auto decoded = decodeToken(token);
+    return fmt::format("{{{}: {}}}", quoteString(decoded.key), quoteString(decoded.value));
 }
 
 bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
