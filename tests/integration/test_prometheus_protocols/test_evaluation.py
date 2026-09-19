@@ -187,7 +187,13 @@ def send_test_data():
                     120: 2,
                     140: STALE_NAN,
                 },
-            )
+            ),
+            (
+                {"__name__": "ordinary_nan_metric"},
+                {
+                    140: float("nan"),
+                },
+            ),
         ]
     )
 
@@ -896,6 +902,14 @@ def test_stale_markers():
         145,
         '{"resultType": "vector", "result": []}',
         [],
+    )
+
+    # An ordinary NaN is still a real sample. Only Prometheus's exact stale payload is absent.
+    do_query_test(
+        "ordinary_nan_metric",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "ordinary_nan_metric"}, "value": [145, "NaN"]}]}',
+        [["[('__name__','ordinary_nan_metric')]", "1970-01-01 00:02:25.000", "nan"]],
     )
 
     # Downstream presence-based operators must see the stale selector as absent too.
