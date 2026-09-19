@@ -1487,10 +1487,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"ttl_resort_max_bytes_before_external_sort", 0, 268435456, "New setting bounding the memory of the re-sort a merge performs after a `TTL ... GROUP BY ... SET` that rewrites a sorting key column; the previous value disables spilling to keep the pre-26.10 in-memory behavior"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
-            {"ttl_resort_max_bytes_before_external_sort", 0, 268435456, "New setting bounding the memory of the re-sort a merge performs after a `TTL ... GROUP BY ... SET` that rewrites a sorting key column; the previous value disables spilling to keep the pre-26.9 in-memory behavior"},
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
