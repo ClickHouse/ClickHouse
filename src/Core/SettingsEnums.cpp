@@ -210,6 +210,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot},
      {"clickhouse_json", Dialect::clickhouse_json},
+     {"logsql", Dialect::logsql},
      {"trino", Dialect::trino}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
