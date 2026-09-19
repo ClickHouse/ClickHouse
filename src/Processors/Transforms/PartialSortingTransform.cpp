@@ -2,6 +2,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
@@ -109,6 +110,18 @@ void PartialSortingTransform::transform(Chunk & chunk)
         // rows when there are no columns. We shouldn't get such block, because
         // we have to sort by at least one column.
         chassert(chunk.getNumColumns());
+    }
+
+    /// A query result preview is a self-contained chunk (see `QueryResultPreview.h`): sort it and
+    /// cut it to the limit, but keep it away from the shared threshold optimization (its interim
+    /// rows must not filter real rows, and the main threshold must not filter preview rows) and
+    /// from the `rows_before_limit_at_least` counter.
+    if (isQueryResultPreview(chunk))
+    {
+        auto preview_block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        sortBlock(preview_block, description, limit);
+        chunk.setColumns(preview_block.getColumns(), preview_block.rows());
+        return;
     }
 
     if (read_rows)

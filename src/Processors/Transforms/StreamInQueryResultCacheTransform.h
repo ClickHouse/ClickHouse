@@ -21,6 +21,9 @@ public:
     void finalizeWriteInQueryResultCache();
     String getName() const override { return "StreamInQueryResultCacheTransform"; }
 
+    /// Preview chunks pass through and are never written into the query result cache.
+    bool supportsQueryResultPreviews() const override { return true; }
+
 private:
     const std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer;
     const QueryResultCacheWriter::ChunkType chunk_type;

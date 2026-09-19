@@ -1,3 +1,4 @@
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
@@ -144,6 +145,11 @@ void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk)
 
 void ExtremesTransform::transform(DB::Chunk & chunk)
 {
+    /// Query result previews (see `QueryResultPreview.h`) are not part of the result and must not
+    /// contribute to the extremes.
+    if (isQueryResultPreview(chunk))
+        return;
+
     accumulateExtremes(extremes_columns, chunk);
 }
 

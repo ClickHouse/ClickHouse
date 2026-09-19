@@ -436,7 +436,14 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.group_by_two_level_threshold_bytes = 0;
     }
 
-    const char * adaptive_rejection = adaptiveAggregatorRejectionReason(pipeline);
+    /// Query result previews snapshot the per-thread hash tables (see `QueryResultPreview.h`),
+    /// which the adaptive aggregation breaks (a frozen table routes new keys into backlogs), so
+    /// the explicitly requested experimental preview mode takes priority over the adaptive algorithm.
+    const bool query_result_previews_requested
+        = settings.query_result_previews.enabled && final && !skip_merging && !params.overflow_row;
+
+    const char * adaptive_rejection
+        = query_result_previews_requested ? "query result previews are enabled" : adaptiveAggregatorRejectionReason(pipeline);
     const bool use_adaptive_aggregator = adaptive_rejection == nullptr;
     if (!use_adaptive_aggregator && params.enable_adaptive_aggregator)
         LOG_TRACE(getLogger("AggregatingStep"), "Adaptive aggregation is not engaged: {}", adaptive_rejection);
@@ -671,6 +678,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// step (and to the whole pipeline execution) without any parallelism to gain.
     const size_t streams_after_aggregation = (should_produce_results_in_order_of_bucket_number || params.keys.empty()) ? 1 : max_threads;
 
+    /// Query result previews (see `QueryResultPreview.h`): only the standard final aggregation
+    /// emits them. Non-final stages (distributed shards, TOTALS, ROLLUP, CUBE), grouping sets,
+    /// aggregation in order, sharded and adaptive aggregation, and the overflow row are excluded.
+    /// Emission stays dormant until `QueryPipeline::complete` proves the downstream path safe.
+    const bool make_query_result_previews = query_result_previews_requested && !use_adaptive_aggregator;
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -682,6 +695,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
             many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
+
+        AggregationQueryResultPreviewsPtr query_result_previews;
+        if (make_query_result_previews)
+            query_result_previews
+                = std::make_shared<AggregationQueryResultPreviews>(settings.query_result_previews, pipeline.getNumStreams());
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
@@ -696,7 +714,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
                     skip_merging,
-                    dataflow_cache_updater);
+                    dataflow_cache_updater,
+                    query_result_previews);
             });
 
         pipeline.resize(streams_after_aggregation, false, settings.min_outstreams_per_resize_after_split);
@@ -705,8 +724,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+        AggregationQueryResultPreviewsPtr query_result_previews;
+        if (make_query_result_previews)
+            query_result_previews = std::make_shared<AggregationQueryResultPreviews>(settings.query_result_previews, 1);
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header)
+            { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater, query_result_previews); });
 
         pipeline.resize(streams_after_aggregation);
 
