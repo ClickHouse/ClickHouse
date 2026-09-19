@@ -22,6 +22,7 @@ class IDataType;
   *   convertFieldToType(Field(256), Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Field(1),   Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Decimal64("33.33"), Decimal64(1)) -> Decimal64("33.3")  (truncated)
+  *   convertFieldToType(DateTime64("12:00:00.5"), DateTime)  -> DateTime("12:00:00")  (truncated)
   *
   * Conversion to a floating-point type, however, stays exact by default: a value that is not exactly
   * representable in the target type returns Null, e.g. convertFieldToType(Field(0.1), Float32) -> Null.
@@ -90,5 +91,11 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 /// `WITH FILL`, window frame offsets, ...) pass it as true to convert to the nearest representable
 /// floating-point value like CAST.
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false);
+
+/// For a constant that becomes an exact bound or key: strict, and the result has to convert back to the
+/// original value, because `strict` still truncates a `DateTime` to a `Date` and a `DateTime64` to a lower
+/// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
+/// those skip the round trip. Returns Null when the value is not representable.
+Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
 
 }
