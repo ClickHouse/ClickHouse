@@ -121,6 +121,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `ORDER BY ... WITH FILL` can be shipped in full.
 /// Version 19 writes a per-step serialization version next to every step, so a step can change its
 /// own bytes without moving this global version (see the constant below).
+/// Version 19 also adds a second flags byte on `AggregatingStep` carrying `group_by_keys_semantically_constant`
+/// (bit 1), which keeps the gradual pre-aggregation resize off for `GROUP BY materialize(1)`-like keys
+/// on the shard, and `gradual_resize_enabled` (bit 2), which keeps it on for the pre-aggregation of a
+/// user `GROUP BY` only. Left off the wire towards older peers, which fall back to the header-based
+/// check and to the strict resize.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
@@ -168,6 +173,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First query-plan serialization version with the second flags byte on `AggregatingStep`, whose bit 1
+/// is `group_by_keys_semantically_constant` and whose bit 2 is `gradual_resize_enabled`. Not gated by
+/// throwing: an older peer simply does not get the byte and falls back to the header-based constness
+/// check and to the strict pre-aggregation resize.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS = 19;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
