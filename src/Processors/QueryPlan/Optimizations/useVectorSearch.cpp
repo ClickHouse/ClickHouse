@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -254,15 +255,41 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
 }
 
 /// Finds the INPUT node of `dag` which reads the vector search column, or nullptr if the column is not an input.
-static const ActionsDAG::Node * findSearchColumnInput(const ActionsDAG & dag, const String & search_column)
+///
+/// `search_column` is the unqualified name of the storage column. An exact match always wins. The old analyzer can
+/// name the input with a table qualifier (`tab.vec`), so as a fallback a single leading qualifier is stripped, the
+/// same way `optimizeVectorSearchWithQuantizedCodes` resolves a dotted name. The fallback must not fire for an
+/// unrelated column that merely ends in the same leaf name: the `vec` element of a `Nested` column `n` is a physical
+/// column literally named `n.vec`, hence the check against the storage columns.
+static const ActionsDAG::Node * findSearchColumnInput(const ActionsDAG & dag, const String & search_column, const ColumnsDescription & storage_columns)
 {
+    const ActionsDAG::Node * qualified_match = nullptr;
+
     for (const auto * input : dag.getInputs())
     {
-        if (input->result_name == search_column
-            || (input->result_name.contains('.') && input->result_name.ends_with("." + search_column)))
+        if (input->result_name == search_column)
             return input;
+
+        if (qualified_match)
+            continue;
+
+        const auto qualifier_end = input->result_name.find('.');
+        if (qualifier_end == String::npos)
+            continue;
+
+        /// Only a single qualifier may be stripped: for a table `tab` with a `Nested` column `n`, the input
+        /// `tab.n.vec` refers to the column `n.vec` and not to `vec`.
+        if (std::string_view(input->result_name).substr(qualifier_end + 1) != search_column)
+            continue;
+
+        /// A physical column with exactly this name is a different column, not a qualified reference to `search_column`.
+        if (storage_columns.hasPhysical(input->result_name))
+            continue;
+
+        qualified_match = input;
     }
-    return nullptr;
+
+    return qualified_match;
 }
 
 /// Checks whether any output of `dag` other than `excluded_output` transitively consumes `input`.
@@ -454,11 +481,12 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
+        const ColumnsDescription & storage_columns = read_from_mergetree_step->getStorageMetadata()->getColumns();
 
         /// If any output other than the ORDER BY distance expression still consumes the vector column -
         /// the column itself (rare situation), an alias of it, or an expression over it (e.g. `length(vec)`) -
         /// the column cannot be removed from the read header, so skip the optimization.
-        if (const auto * search_column_input = findSearchColumnInput(expression, search_column))
+        if (const auto * search_column_input = findSearchColumnInput(expression, search_column, storage_columns))
         {
             const ActionsDAG::Node * sort_column_output = expression.tryFindInOutputs(sort_column);
             if (anyOutputConsumesInput(expression, search_column_input, sort_column_output))
@@ -471,7 +499,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         if (optimize_plan && filter_or_prewhere_node)
         {
             const ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
-            if (const auto * search_column_input = findSearchColumnInput(filter_expression, search_column))
+            if (const auto * search_column_input = findSearchColumnInput(filter_expression, search_column, storage_columns))
             {
                 if (anyOutputConsumesInput(filter_expression, search_column_input, findPassthroughOutput(filter_expression, search_column_input)))
                     optimize_plan = false;
@@ -489,7 +517,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
             {
                 const ActionsDAG & row_level_filter_expression = row_level_filter->actions;
-                if (const auto * search_column_input = findSearchColumnInput(row_level_filter_expression, search_column))
+                if (const auto * search_column_input = findSearchColumnInput(row_level_filter_expression, search_column, storage_columns))
                 {
                     if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, findPassthroughOutput(row_level_filter_expression, search_column_input)))
                         optimize_plan = false;
@@ -499,7 +527,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             if (const auto & deferred_row_level_filter = read_from_mergetree_step->getDeferredRowLevelFilter())
             {
                 const ActionsDAG & deferred_row_level_filter_expression = deferred_row_level_filter->actions;
-                if (const auto * search_column_input = findSearchColumnInput(deferred_row_level_filter_expression, search_column))
+                if (const auto * search_column_input = findSearchColumnInput(deferred_row_level_filter_expression, search_column, storage_columns))
                 {
                     if (anyOutputConsumesInput(deferred_row_level_filter_expression, search_column_input, findPassthroughOutput(deferred_row_level_filter_expression, search_column_input)))
                         optimize_plan = false;
