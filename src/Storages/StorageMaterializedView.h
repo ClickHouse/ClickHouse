@@ -3,6 +3,7 @@
 #include <optional>
 #include <Parsers/IAST_fwd.h>
 
+#include <Common/ActionBlocker.h>
 #include <Common/QueryScope.h>
 
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -146,6 +147,9 @@ private:
     StorageID target_table_id = StorageID::createEmpty();
 
     OwnedRefreshTask refresher;
+    /// Only carries the lifetime of explicit refresh controls tracked by `ActionLocksManager`.
+    /// Refresh execution is still controlled by `RefreshTask::stop`, `pause`, and `start`.
+    ActionBlocker refresh_action_blocker;
     bool refresh_coordinated = false;
 
     bool has_inner_table = false;

@@ -301,10 +301,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         if (table)
         {
             if (start)
-            {
                 manager->remove(table, action_type);
-                table->onActionLockRemove(action_type);
-            }
             else
                 manager->add(table, action_type);
         }
@@ -339,10 +336,7 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
         }
 
         if (start)
-        {
             manager->remove(table, action_type);
-            table->onActionLockRemove(action_type);
-        }
         else
             manager->add(table, action_type);
     }
@@ -963,11 +957,8 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_VIEW:
         case Type::START_VIEWS:
-            /// `SYSTEM START VIEW` must undo both `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW`.
-            /// Each call drops the corresponding lock (if any) and invokes `refresher->start()`;
-            /// `start` is idempotent so calling it twice is safe.
+            /// The manager removes both refresh controls and resumes the view atomically with respect to other controls.
             startStopAction(ActionLocks::ViewRefresh, true);
-            startStopAction(ActionLocks::ViewRefreshPause, true);
             break;
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
@@ -1028,7 +1019,6 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_ALL_BACKGROUND:
             startStopAction(ActionLocks::ViewRefresh, true);
-            startStopAction(ActionLocks::ViewRefreshPause, true);
             startStopAction(ActionLocks::StreamConsume, true);
             break;
         case Type::PAUSE_ALL_BACKGROUND:
@@ -2696,7 +2686,6 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
                 break;
             case Type::START:
                 startStopAction(ActionLocks::ViewRefresh, true);
-                startStopAction(ActionLocks::ViewRefreshPause, true);
                 break;
             case Type::PAUSE:
                 startStopAction(ActionLocks::ViewRefreshPause, false);

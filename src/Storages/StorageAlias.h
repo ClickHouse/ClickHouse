@@ -245,6 +245,12 @@ public:
         return target->getActionLock(type);
     }
 
+    void onActionLockRemove(StorageActionBlockType type) override
+    {
+        if (auto target = tryGetTargetTable())
+            target->onActionLockRemove(type);
+    }
+
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000)); }
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
     {

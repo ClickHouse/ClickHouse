@@ -1,0 +1,48 @@
+STOP mv -> mv deferred	1
+STOP mv -> mv resumed	1
+STOP mv -> alias_a deferred	1
+STOP mv -> alias_a resumed	1
+STOP mv -> alias_b deferred	1
+STOP mv -> alias_b resumed	1
+STOP alias_a -> mv deferred	1
+STOP alias_a -> mv resumed	1
+STOP alias_a -> alias_a deferred	1
+STOP alias_a -> alias_a resumed	1
+STOP alias_a -> alias_b deferred	1
+STOP alias_a -> alias_b resumed	1
+STOP alias_b -> mv deferred	1
+STOP alias_b -> mv resumed	1
+STOP alias_b -> alias_a deferred	1
+STOP alias_b -> alias_a resumed	1
+STOP alias_b -> alias_b deferred	1
+STOP alias_b -> alias_b resumed	1
+PAUSE mv -> mv deferred	1
+PAUSE mv -> mv resumed	1
+PAUSE mv -> alias_a deferred	1
+PAUSE mv -> alias_a resumed	1
+PAUSE mv -> alias_b deferred	1
+PAUSE mv -> alias_b resumed	1
+PAUSE alias_a -> mv deferred	1
+PAUSE alias_a -> mv resumed	1
+PAUSE alias_a -> alias_a deferred	1
+PAUSE alias_a -> alias_a resumed	1
+PAUSE alias_a -> alias_b deferred	1
+PAUSE alias_a -> alias_b resumed	1
+PAUSE alias_b -> mv deferred	1
+PAUSE alias_b -> mv resumed	1
+PAUSE alias_b -> alias_a deferred	1
+PAUSE alias_b -> alias_a resumed	1
+PAUSE alias_b -> alias_b deferred	1
+PAUSE alias_b -> alias_b resumed	1
+STOP PAUSE all -> mv deferred	1
+STOP PAUSE all -> mv resumed	1
+STOP PAUSE all -> alias_a deferred	1
+STOP PAUSE all -> alias_a resumed	1
+STOP PAUSE all -> alias_b deferred	1
+STOP PAUSE all -> alias_b resumed	1
+PAUSE STOP all -> mv deferred	1
+PAUSE STOP all -> mv resumed	1
+PAUSE STOP all -> alias_a deferred	1
+PAUSE STOP all -> alias_a resumed	1
+PAUSE STOP all -> alias_b deferred	1
+PAUSE STOP all -> alias_b resumed	1

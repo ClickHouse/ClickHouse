@@ -1189,11 +1189,17 @@ std::optional<UInt64> StorageMaterializedView::totalBytesUncompressed(const Sett
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     if (type == ActionLocks::ViewRefresh && refresher)
+    {
         refresher->stop();
+        return refresh_action_blocker.cancel();
+    }
     /// `SYSTEM PAUSE VIEW` prevents future refreshes but does not interrupt the currently running
     /// refresh. `SYSTEM START VIEW` undoes it by clearing `stop_requested` via `onActionLockRemove`.
     else if (type == ActionLocks::ViewRefreshPause && refresher)
+    {
         refresher->pause();
+        return refresh_action_blocker.cancel();
+    }
     if (has_inner_table)
     {
         if (auto target_table = tryGetTargetTable())
@@ -1212,7 +1218,14 @@ bool StorageMaterializedView::isRemote() const
 void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_type)
 {
     if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)
+    {
+        /// Allocate before `start`, so allocation failure cannot leave a resumed task with old markers.
+        ActionBlocker next_refresh_action_blocker;
         refresher->start();
+        /// Revoke explicit controls registered through any alias of this task in `ActionLocksManager`.
+        /// Internal reasons for remaining disabled, such as unavailable coordination, are unaffected.
+        refresh_action_blocker = std::move(next_refresh_action_blocker);
+    }
 }
 
 StorageID StorageMaterializedView::getTargetTableId() const
