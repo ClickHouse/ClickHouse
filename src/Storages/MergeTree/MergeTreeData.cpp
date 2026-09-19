@@ -67,6 +67,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -126,6 +127,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeKeyTypeCompatibility.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
@@ -5729,6 +5731,107 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
+
+    auto is_direct_integer_key_widening = [&](const AlterCommand & command)
+    {
+        if (command.type != AlterCommand::MODIFY_COLUMN
+            || !command.data_type
+            || !columns_alter_type_metadata_only.contains(command.column_name)
+            || columns_alter_type_forbidden.contains(command.column_name)
+            || !old_metadata.getColumns().hasPhysical(command.column_name)
+            || !new_metadata.getColumns().hasPhysical(command.column_name))
+            return false;
+
+        auto old_type = old_types.find(command.column_name);
+        return old_type != old_types.end()
+            && isOrderPreservingIntegerWidening(old_type->second, command.data_type.get());
+    };
+
+    auto check_integer_key_widening = [&](const AlterCommand & command)
+    {
+        if (columns_alter_type_check_safe_for_partition.contains(command.column_name))
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of partition key column {} with integer widening is not supported because it can change the "
+                "representation of partition key",
+                backQuoteIfNeed(command.column_name));
+
+        if (supportsReplication())
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of key column {} with integer widening is not supported for replicated MergeTree tables",
+                backQuoteIfNeed(command.column_name));
+
+        if (old_metadata.hasUniqueKey())
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of key column {} with integer widening is not supported with UNIQUE KEY",
+                backQuoteIfNeed(command.column_name));
+
+        if (old_metadata.hasSamplingKey()
+            && std::ranges::contains(old_metadata.getColumnsRequiredForSampling(), command.column_name))
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of key column {} with integer widening is not supported when the column is used by "
+                "SAMPLE BY",
+                backQuoteIfNeed(command.column_name));
+
+        if (!getPatchPartsVectorForInternalUsage().empty())
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of key column {} with integer widening is not supported while the table has active patch "
+                "parts",
+                backQuoteIfNeed(command.column_name));
+
+        NameSet changed_columns;
+        changed_columns.insert(command.column_name);
+
+        auto dependencies = old_metadata.getColumnDependencies(
+            changed_columns,
+            /* include_ttl_target = */ true,
+            [](const String &, ColumnDependency::Kind kind)
+            {
+                return kind == ColumnDependency::PROJECTION
+                    || kind == ColumnDependency::TTL_EXPRESSION
+                    || kind == ColumnDependency::TTL_TARGET;
+            });
+
+        if (!dependencies.empty())
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of key column {} with integer widening is not supported when the column is used by a "
+                "projection or TTL",
+                backQuoteIfNeed(command.column_name));
+
+        bool has_materialized_columns = false;
+        for (const auto & column : old_metadata.getColumns())
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
+            {
+                has_materialized_columns = true;
+                break;
+            }
+        }
+
+        if (has_materialized_columns)
+        {
+            MaterializedColumnDependencies materialized_dependencies(old_metadata.getColumns(), local_context);
+            for (const auto & column : old_metadata.getColumns())
+            {
+                if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+                    continue;
+
+                if (!materialized_dependencies.findColumnsToRecalculate(column.name, changed_columns).empty())
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of key column {} with integer widening is not supported when it is used by "
+                        "MATERIALIZED column {}",
+                        backQuoteIfNeed(command.column_name),
+                        backQuoteIfNeed(column.name));
+            }
+        }
+    };
+
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
@@ -5756,6 +5859,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
                 if (new_type && it != old_types.end())
                     checkVersionColumnTypesConversion(it->second, new_type, command.column_name);
+
+                if (is_direct_integer_key_widening(command))
+                    check_integer_key_widening(command);
 
                 /// No other checks required
                 continue;
@@ -5988,7 +6094,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 {
                     auto it = old_types.find(command.column_name);
                     chassert(it != old_types.end());
-                    if (!isSafeForKeyConversion(it->second, command.data_type.get()))
+                    if (is_direct_integer_key_widening(command))
+                        check_integer_key_widening(command);
+                    else if (!isSafeForKeyConversion(it->second, command.data_type.get()))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                                         "ALTER of key column {} from type {} "
                                         "to type {} is not safe because it can change the representation "

@@ -1,0 +1,20 @@
+UInt32	1	one
+UInt32	65535	old-max
+UInt32	1	one
+UInt32	65535	old-max
+UInt32	1	one
+UInt32	65535	old-max
+UInt32	70000	new
+3	1	70000	UInt32
+UInt32	1	1	one
+UInt32	1	65535	old-max
+Int64	-128	old-min
+Int64	127	old-max
+Int16	1	a
+Int16	2	b
+rejected: shrinking integer key
+rejected: signedness change
+rejected: integer to float
+rejected: native integer to UInt128
+rejected: partition key widening
+rejected: sampling key widening

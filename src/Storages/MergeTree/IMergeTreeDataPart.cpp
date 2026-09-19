@@ -21,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
@@ -38,6 +39,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeKeyTypeCompatibility.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
@@ -76,6 +78,7 @@
 #include <Disks/IDisk.h>
 
 #include <base/defines.h>
+#include <algorithm>
 #include <atomic>
 #include <exception>
 #include <mutex>
@@ -688,7 +691,7 @@ void SharedPartColumnsHolder::release() noexcept
     bundle = SharedPartColumns::getEmpty();
 }
 
-IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getPhysicalIndex() const
 {
     std::scoped_lock lock(index_mutex);
 
@@ -702,10 +705,56 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     return index;
 }
 
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
+{
+    auto physical_index = getPhysicalIndex();
+    auto metadata_snapshot = getMetadataSnapshot();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+
+    const size_t key_size = std::min(physical_index->size(), primary_key.column_names.size());
+    bool needs_conversion = false;
+    for (size_t i = 0; i < key_size; ++i)
+    {
+        auto physical_column = tryGetColumn(primary_key.column_names[i]);
+        if (physical_column
+            && isOrderPreservingIntegerWidening(physical_column->type.get(), primary_key.data_types[i].get()))
+        {
+            needs_conversion = true;
+            break;
+        }
+    }
+
+    if (!needs_conversion)
+        return physical_index;
+
+    /// The physical index is part-lifetime data, but this widened view is a transient per-reader copy.
+    /// Keep its allocations in the query memory tracker.
+    Columns logical_index = *physical_index;
+    for (size_t i = 0; i < key_size; ++i)
+    {
+        auto physical_column = tryGetColumn(primary_key.column_names[i]);
+        if (!physical_column
+            || !isOrderPreservingIntegerWidening(physical_column->type.get(), primary_key.data_types[i].get()))
+            continue;
+
+        logical_index[i] = castColumn(
+            {physical_index->at(i), physical_column->type, primary_key.column_names[i]},
+            primary_key.data_types[i]);
+        logical_index[i]->protect();
+    }
+
+    return std::make_shared<Index>(std::move(logical_index));
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
 {
-    std::scoped_lock lock(index_mutex);
-    return index;
+    {
+        std::scoped_lock lock(index_mutex);
+        if (!index)
+            return nullptr;
+    }
+
+    return getIndex();
 }
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
@@ -1773,7 +1822,12 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     for (size_t i = 0; i < key_size; ++i)
     {
-        loaded_index[i] = primary_key.data_types[i]->createColumn();
+        auto index_type = primary_key.data_types[i];
+        if (auto physical_column = tryGetColumn(primary_key.column_names[i]);
+            physical_column && isOrderPreservingIntegerWidening(physical_column->type.get(), index_type.get()))
+            index_type = physical_column->type;
+
+        loaded_index[i] = index_type->createColumn();
         loaded_index[i]->reserve(index_granularity->getMarksCount());
     }
 
@@ -1784,7 +1838,14 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     Serializations key_serializations(key_size);
     for (size_t j = 0; j < key_size; ++j)
-        key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+    {
+        auto index_type = primary_key.data_types[j];
+        if (auto physical_column = tryGetColumn(primary_key.column_names[j]);
+            physical_column && isOrderPreservingIntegerWidening(physical_column->type.get(), index_type.get()))
+            index_type = physical_column->type;
+
+        key_serializations[j] = index_type->getDefaultSerialization();
+    }
 
     FormatSettings format_settings;
     for (size_t i = 0; i < marks_count; ++i)
