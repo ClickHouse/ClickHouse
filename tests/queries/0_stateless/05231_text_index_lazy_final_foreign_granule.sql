@@ -16,6 +16,7 @@ SET query_plan_optimize_prewhere = 1;           -- ... and let PREWHERE reach th
 SET enable_analyzer = 1;                        -- lazy FINAL requires the analyzer
 
 DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab_reuse;
 
 CREATE TABLE tab
 (
@@ -56,10 +57,52 @@ SELECT count(str) FROM tab FINAL PREWHERE str = 'bar' AND hasAnyTokens(str, ['ba
 
 SELECT 'The same, with the index granule read on data read';
 
+-- Reading the index on data read needs `max_rows_to_read` unset: a `throw` row limit disables that
+-- route outright, and the stateless test profile sets one.
 SELECT count(str) FROM tab FINAL PREWHERE str = 'baz' WHERE str = 'bar'
-SETTINGS use_skip_indexes_on_data_read = 1;                                                     -- 0
+SETTINGS use_skip_indexes_on_data_read = 1, max_rows_to_read = 0;                               -- 0
 SELECT count(str) FROM tab FINAL PREWHERE hasAnyTokens(str, ['bar', 'baz']) WHERE str = 'bar'
-SETTINGS use_skip_indexes_on_data_read = 1;                                                     -- 1
+SETTINGS use_skip_indexes_on_data_read = 1, max_rows_to_read = 0;                               -- 1
+
+SELECT 'Several read tasks of one part reuse the reader';
+
+CREATE TABLE tab_reuse
+(
+    id UInt64,
+    version UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = array)
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS index_granularity = 8; -- 8-row marks, so one part holds enough marks to be cut into many read tasks
+
+INSERT INTO tab_reuse SELECT number, 1, ['foo', 'bar', 'baz', 'foo'][number % 4 + 1] FROM numbers(4096);
+INSERT INTO tab_reuse VALUES (0, 2, 'foo_updated');
+OPTIMIZE TABLE tab_reuse FINAL;
+
+-- 1: one part of at least 512 marks, so the settings below really do yield several read tasks
+SELECT count() = 1 AND min(rows) = 4096 AND min(marks) >= 512
+FROM system.parts WHERE database = currentDatabase() AND table = 'tab_reuse' AND active;
+
+-- 1: the PREWHERE predicate is read from the text index on this route too
+SELECT countIf(explain ILIKE '%__text_index%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count(str) FROM tab_reuse FINAL PREWHERE str = 'baz' WHERE str = 'bar'
+      SETTINGS use_skip_indexes_on_data_read = 1, max_rows_to_read = 0);
+
+-- `max_threads` above 1 picks the read pool that cuts a part into several tasks, and
+-- `merge_tree_min_rows_for_concurrent_read` keeps each of them 8 marks wide. Both are randomized
+-- in CI, so they are pinned here per query.
+SELECT count(str) FROM tab_reuse FINAL PREWHERE str = 'baz' WHERE str = 'bar'
+SETTINGS use_skip_indexes_on_data_read = 1, max_rows_to_read = 0,
+         max_threads = 2, merge_tree_min_rows_for_concurrent_read = 8;                                            -- 0
+SELECT count(str) FROM tab_reuse FINAL PREWHERE hasAnyTokens(str, ['bar', 'baz']) WHERE str = 'bar'
+SETTINGS use_skip_indexes_on_data_read = 1, max_rows_to_read = 0,
+         max_threads = 2, merge_tree_min_rows_for_concurrent_read = 8;                                            -- 1024
+
+SELECT count(str) FROM tab_reuse FINAL PREWHERE str = 'baz' WHERE str = 'bar'
+SETTINGS query_plan_optimize_lazy_final = 0, query_plan_direct_read_from_text_index = 0;                          -- 0
+SELECT count(str) FROM tab_reuse FINAL PREWHERE hasAnyTokens(str, ['bar', 'baz']) WHERE str = 'bar'
+SETTINGS query_plan_optimize_lazy_final = 0, query_plan_direct_read_from_text_index = 0;                          -- 1024
 
 SELECT 'The counts do not depend on the optimizations';
 
@@ -77,3 +120,4 @@ SELECT count(str) FROM tab FINAL PREWHERE str = 'bar' WHERE str = 'bar'
 SETTINGS query_plan_optimize_lazy_final = 0, query_plan_direct_read_from_text_index = 0;        -- 1
 
 DROP TABLE tab;
+DROP TABLE tab_reuse;

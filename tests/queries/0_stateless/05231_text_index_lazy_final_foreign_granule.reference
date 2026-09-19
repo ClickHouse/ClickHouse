@@ -11,6 +11,13 @@ bar
 The same, with the index granule read on data read
 0
 1
+Several read tasks of one part reuse the reader
+1
+1
+0
+1024
+0
+1024
 The counts do not depend on the optimizations
 0
 1

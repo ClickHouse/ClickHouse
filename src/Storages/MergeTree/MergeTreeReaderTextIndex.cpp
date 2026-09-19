@@ -1176,12 +1176,18 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 {
     auto it = granules.find(index.index->index.name);
 
-    if (it != granules.end() && it->second)
-    {
-        resetCursors();
-        postings_blocks.clear();
-        setIndexGranule(it->second);
-    }
+    if (it == granules.end() || !it->second)
+        return;
+
+    /// A granule analyzed for another step's filter must not replace one this reader can use,
+    /// including on a reader the read pool moved to the next task of the same part.
+    const auto * text_granule = typeid_cast<const MergeTreeIndexGranuleText *>(it->second.get());
+    if (!text_granule || !granuleAnalyzedSearchQueries(*text_granule))
+        return;
+
+    resetCursors();
+    postings_blocks.clear();
+    setIndexGranule(it->second);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
