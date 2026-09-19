@@ -265,7 +265,7 @@ echo "$page" | grep -q -F 'function downsampleHistoryByHalf(' && echo 'metric hi
 # records the view on the active tab and applies it only to that tab's results, `_markLogsAvailable`
 # marks availability on the owning tab, and `syncActiveTabChrome` replays both via `setViewState`.
 echo "$page" | grep -q -F 'if (tab) tab.view = e.detail.view;' && echo 'view is tab-owned: OK'
-echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
+echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable, flameAvailable)' && echo 'toggles replayed per tab: OK'
 # The realtime resource meters are tab-owned too: CPU counters in `profile_events` packets are
 # per-packet increments, so a backgrounded tab's batches keep accumulating on the tab
 # (`accumulateResourceEvents`) instead of being dropped, and `syncActiveTabChrome` re-adopts the

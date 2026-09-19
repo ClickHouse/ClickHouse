@@ -13,6 +13,7 @@ namespace DB
 {
 
 class TraceLog;
+struct ProfileTracesRegistry;
 
 class TraceCollector
 {
@@ -28,6 +29,9 @@ private:
     std::atomic<bool> is_trace_log_initialized = false;
     std::shared_ptr<TraceLog> trace_log_ptr;
     bool symbolize = false;
+
+    /// Keep the subscription registry alive until the collector thread has stopped.
+    std::shared_ptr<ProfileTracesRegistry> profile_traces_registry;
 
     /// Use a thread that does not call `ThreadStatus::initGlobalProfiler` on startup:
     /// `initGlobalProfiler` reads `Context::hasTraceCollector`, which races with

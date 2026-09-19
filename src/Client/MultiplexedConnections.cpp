@@ -451,6 +451,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
         case Protocol::Server::ProfileEvents:
+        case Protocol::Server::ProfileTraces:
             break;
 
         case Protocol::Server::EndOfStream:

@@ -43,6 +43,7 @@ using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
 using QueryFinishCallback = std::function<void()>;
 using HTTPContinueCallback = std::function<void()>;
+using QuerySettingsAppliedCallback = std::function<void()>;
 
 
 /// Parse and execute a query.
@@ -88,7 +89,7 @@ void executeQuery(
 
 
 /// More low-level function for server-to-server interaction.
-/// Prepares a query for execution but doesn't execute it.
+/// Prepares a query's pipeline. Interpreters may execute synchronous work before returning.
 /// Returns a pair of parsed query and BlockIO which, when used, will result in query execution.
 /// This means that the caller can to the extent control the query execution pipeline.
 ///
@@ -105,7 +106,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,   /// To which stage the query must be executed.
+    const QuerySettingsAppliedCallback & on_query_settings_applied = {} /// Called synchronously after SQL settings, before interpreter work.
 );
 
 void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);

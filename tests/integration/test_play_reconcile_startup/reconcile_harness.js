@@ -207,6 +207,7 @@ function makeElement(tag) {
         /// were numbered from); the stub never paginates, so it is the unpaginated first page.
         _rowNumberOffset() { return 0; },
         start() {},
+        startProfileTraces() {},
         finish() {},
         updateProgress() {},
         updateText() {},
@@ -394,7 +395,7 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm }) {
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm, flameControls }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
@@ -469,6 +470,34 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
     sandbox.self = sandbox;
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
+    if (flameControls) {
+        /// Bind the real profiler lifecycle to the stub DOM while keeping unrelated renderers inert.
+        document.createElement = tag => {
+            const el = makeElement(tag);
+            Object.defineProperty(el, 'innerHTML', {
+                set(value) { el.replaceChildren(); },
+            });
+            if (tag !== 'query-result') return el;
+            const prototype = vm.runInContext('QueryResultElement.prototype', sandbox);
+            for (const name of ['clear', '_markFlameAvailable', 'startProfileTraces', 'appendProfileTraces', '_showFlameGraph'])
+                el[name] = prototype[name];
+            for (const field of ['_dataTable', '_graph', '_chart', '_dataUnparsed', '_error', '_dataDiv', '_pager', '_logsContent',
+                '_flameGraph', '_flameStatus', '_flameHost', '_flameType', '_flamePeriod', '_metricsTable', '_metricsBody',
+                '_resultGroup', '_logsDiv', '_metricsDiv', '_flameDiv', '_viewToggle', '_btnLogs', '_btnResult'])
+                el[field] = makeElement('div');
+            el._flameType.value = 'CPU';
+            el._clearElement = element => element.replaceChildren();
+            el._clearImage = () => {};
+            el.expandSingleValueIfNeeded = () => {};
+            el.renderError = message => { el._lastError = message; };
+            el.rowCount = 0;
+            el.elapsedNs = 0;
+            el.clear();
+            return el;
+        };
+        document.getElementById('query-progress').showFlameToggle = () => {};
+        document.getElementById('query-progress').clearBar = () => {};
+    }
     return { sandbox, stores, stats };
 }
 
@@ -1639,6 +1668,139 @@ async function main() {
         check('close-folds-draft', 'Back recreates the closed tab with the draft',
             vm.runInContext("tabs.some(t => t.query === 'SELECT 2')", r.sandbox),
             vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
+    }
+
+    /// A profiling run may finish without any profiler packets. Its saved request state must
+    /// survive the same history, IndexedDB, and panel lifecycle as a result with samples.
+    {
+        const query = 'SELECT 1 FORMAT TSV';
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            flameControls: true,
+            seedTabs: [
+                { id: 't7', title: 'Profile', query, params: {}, result: null, lastSavedQuery: query },
+                { id: 't8', title: 'Other', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        let requests = 0;
+        r.sandbox.fetch = async () => {
+            ++requests;
+            return new Response('event: data\ndata: MQo=\n\n', {
+                headers: { 'Content-Type': 'text/event-stream; payload=base64', 'X-ClickHouse-Format': 'TSV' },
+            });
+        };
+        const run = async (sql, enabled) => {
+            r.sandbox.fixtureQuery = sql;
+            r.sandbox.fixtureProfiling = enabled;
+            await vm.runInContext(`(async () => {
+                const tab = getActiveTab();
+                query_area.value = tab.query = fixtureQuery;
+                tab.profileTraces = fixtureProfiling;
+                tab.materialized = true;
+                await postSingle(tab, ++tab.reqNum, fixtureQuery, undefined, {}, 0,
+                    {url: url_elem.value, user: user_elem.value, password: ''}, selected_database);
+            })()`, r.sandbox);
+        };
+        const flameState = context => JSON.parse(vm.runInContext(`JSON.stringify((() => {
+            const tab = getActiveTab();
+            tab.resultEl._showFlameGraph();
+            return { available: tab.flameAvailable, requested: tab.resultEl._flame_requested,
+                saved: tab.result?.flame_available, status: tab.resultEl._flameStatus.textContent,
+                samples: [...tab.resultEl._flame_data.types.values()].reduce((total, tree) => total + tree.samples, 0),
+                phase: tab.progressPhase };
+        })())`, context));
+        const checkFlame = (label, context, expected) => {
+            const state = flameState(context);
+            check('flame-zero-packets', label,
+                state.available === expected && state.requested === expected && state.saved === expected
+                    && state.samples === 0 && (!expected || state.status.includes('No CPU samples received')),
+                state);
+        };
+        await run(query, false);
+        checkFlame('an unprofiled run remains unavailable', r.sandbox, false);
+        const disabledEntry = structuredClone(r.sandbox.history.state);
+        await run(query, true);
+        checkFlame('a completed zero-packet run keeps its requested state', r.sandbox, true);
+        const enabledEntry = structuredClone(r.sandbox.history.state);
+        check('flame-zero-packets', 'the response completed successfully',
+            vm.runInContext('getActiveTab().result.ok && !getActiveTab().result.error', r.sandbox),
+            flameState(r.sandbox));
+        /// Changing the next-run option cannot change the already saved result.
+        vm.runInContext('getActiveTab().profileTraces = false', r.sandbox);
+        const persisted = await waitForNextPersist(r);
+        const reloaded = await runScenario(js, {
+            href: r.sandbox.location.href,
+            historyState: enabledEntry,
+            seedTabs: persisted,
+            seedMeta: r.stores.get('meta').data.get('state'),
+            flameControls: true,
+        });
+        checkFlame('reload restores the toggle and no-samples guidance', reloaded.sandbox, true);
+        const restoredWorkspace = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: persisted,
+            seedMeta: r.stores.get('meta').data.get('state'),
+            flameControls: true,
+        });
+        checkFlame('IndexedDB alone restores the zero-packet state', restoredWorkspace.sandbox, true);
+        await vm.runInContext("switchToTab('t8')", r.sandbox);
+        vm.runInContext("tabs.find(t => t.id === 't7').materialized = false", r.sandbox);
+        await vm.runInContext("switchToTab('t7')", r.sandbox);
+        checkFlame('tab re-materialization restores the zero-packet state', r.sandbox, true);
+        for (const [entry, enabled, label] of [[disabledEntry, false, 'Back'], [enabledEntry, true, 'Forward']]) {
+            r.sandbox.fixtureEntry = entry;
+            vm.runInContext("window.onpopstate({ type: 'popstate', isTrusted: true, state: fixtureEntry })", r.sandbox);
+            await sleep(100);
+            checkFlame(label + ' restores the selected result state', r.sandbox, enabled);
+        }
+        for (const sql of ['SELECT 1 FORMAT JSONCompactColumns', "SET framing_output_format = 'EventStream'",
+            "INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nSETTINGS send_profile_traces = 0"]) {
+            const before = requests;
+            await run(sql, true);
+            checkFlame('preflight rejection saves no Flame availability: ' + sql, r.sandbox, false);
+            check('flame-preflight', 'no fetch and an error result: ' + sql,
+                requests === before && vm.runInContext('getActiveTab().result.error', r.sandbox),
+                { requests, before, state: flameState(r.sandbox) });
+        }
+        await vm.runInContext(`(async () => {
+            const tab = getActiveTab();
+            const parsed = [
+                {query: 'SELECT 1 FORMAT TSV', is_select: true, queryStart: 0},
+                {query: 'SELECT 2 SETTINGS send_profile_traces = 0 FORMAT TSV', is_select: true, queryStart: 0},
+            ];
+            query_area.value = tab.query = parsed.map(s => s.query).join('; ');
+            tab.profileTraces = true;
+            await postMulti(tab, ++tab.reqNum, parsed, {}, tab.query,
+                {url: url_elem.value, user: user_elem.value, password: ''}, true, selected_database);
+            await materializeResult(tab);
+        })()`, r.sandbox);
+        const multi = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+            const tab = getActiveTab();
+            return {available: tab.flameAvailable, saved: tab.result.multi.map(s => s.flame_available),
+                requested: [...tab.multiContainer.children].map(el => el._flame_requested)};
+        })())`, r.sandbox));
+        check('flame-zero-packets', 'multi-query restore preserves each statement opt-in independently',
+            multi.available && JSON.stringify(multi.saved) === '[true,false]'
+                && JSON.stringify(multi.requested) === '[true,false]', multi);
+        r.sandbox.fixtureSnapshot = {
+            ...enabledEntry.result,
+            flame_available: undefined,
+            data: 'event: profile_traces\ndata: ' + JSON.stringify([{
+                host_name: 'node', query_id: 'query', thread_id: '1', event_time_microseconds: '1788690000000000',
+                trace_type: 'CPU', size: '0', trace: ['1', '2'], symbols: ['leaf', 'root'],
+            }]) + '\n\n',
+        };
+        await vm.runInContext(`(async () => {
+            const tab = getActiveTab();
+            tab.result = fixtureSnapshot;
+            await materializeResult(tab);
+        })()`, r.sandbox);
+        const legacy = flameState(r.sandbox);
+        check('flame-snapshot-compatibility', 'a legacy snapshot still discovers Flame from received packets',
+            legacy.available && legacy.requested && legacy.samples === 1 && legacy.status === '1 samples received.', legacy);
     }
 
     if (failures) {

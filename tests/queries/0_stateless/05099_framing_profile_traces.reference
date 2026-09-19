@@ -1,0 +1,12 @@
+JSONEachPacketString: bounded samples and final progress
+JSONEachPacketBase64: bounded samples and final progress
+EventStream: bounded samples and final progress
+default and explicit disable: no samples
+query settings disable URL capture
+query settings enable framing and samples
+plain HTTP and query settings disable framing
+buffering=0: samples precede terminal exception
+buffering=1: samples precede terminal exception
+query identifiers are sanitized to UTF-8
+samples do not require access to system.trace_log
+samples arrive while the query is running
