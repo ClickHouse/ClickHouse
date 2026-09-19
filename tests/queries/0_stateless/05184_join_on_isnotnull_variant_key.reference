@@ -1,0 +1,14 @@
+variant inner	1
+variant left		
+variant left	10	ten
+variant guard kept	2
+variant true collapsed	0
+variant true merge join	2
+nullable inner	1
+nullable guard dropped	0
+lc nullable inner	1
+lc nullable guard dropped	0
+plain inner	1
+plain guard dropped	0
+dynamic inner	1
+dynamic guard kept	2
