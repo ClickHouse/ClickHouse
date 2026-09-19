@@ -25,6 +25,19 @@ namespace Setting
 
 namespace
 {
+    /// `limitk` ranks by the sampling key, so its `rank` already is it, and a 3-argument call has none:
+    /// only the 4-argument `topk`/`bottomk` keep a sampling key in their entries.
+    template <TimeSeriesTopKMasksKind kind, typename ValueType>
+    AggregateFunctionPtr createWithStateLayout(const DataTypes & argument_types)
+    {
+        if constexpr (kind != TimeSeriesTopKMasksKind::LimitK)
+        {
+            if (argument_types.size() == 4)
+                return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, true>>(argument_types);
+        }
+        return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, false>>(argument_types);
+    }
+
     template <TimeSeriesTopKMasksKind kind>
     AggregateFunctionPtr createAggregateFunctionTimeSeriesTopKMasks(
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -39,12 +52,18 @@ namespace
 
         assertNoParameters(name, parameters);
 
-        const size_t expected_num_arguments = (kind == TimeSeriesTopKMasksKind::LimitK) ? 4 : 3;
-        if (argument_types.size() != expected_num_arguments)
+        /// `limitk` ranks by the sampling key and requires it; `topk` and `bottomk` rank by value and take
+        /// it only to break a tie, so it is optional there and a call without it ranks ties by read order.
+        constexpr bool sampling_key_is_required = (kind == TimeSeriesTopKMasksKind::LimitK);
+        const bool arity_ok = sampling_key_is_required ? (argument_types.size() == 4)
+                                                       : (argument_types.size() == 3 || argument_types.size() == 4);
+        if (!arity_ok)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Aggregate function {} requires {} arguments: {}(k, key, {}values)",
-                            name, expected_num_arguments, name,
-                            (kind == TimeSeriesTopKMasksKind::LimitK) ? "sampling_key, " : "");
+                            "Aggregate function {} requires {}: {}(k, key, {}values)",
+                            name,
+                            sampling_key_is_required ? "4 arguments" : "3 or 4 arguments",
+                            name,
+                            sampling_key_is_required ? "sampling_key, " : "[sampling_key, ]");
 
         const auto * k_array_type = typeid_cast<const DataTypeArray *>(argument_types[0].get());
         const DataTypePtr k_type = k_array_type ? k_array_type->getNestedType() : argument_types[0];
@@ -59,15 +78,12 @@ namespace
                             "Illegal type {} of 2nd argument (key) for aggregate function {}, expected UInt64",
                             argument_types[1]->getName(), name);
 
-        if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
-        {
-            if (!isUInt64(argument_types[2]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of 3rd argument (sampling_key) for aggregate function {}, expected UInt64",
-                                argument_types[2]->getName(), name);
-        }
+        if (argument_types.size() == 4 && !isUInt64(argument_types[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of 3rd argument (sampling_key) for aggregate function {}, expected UInt64",
+                            argument_types[2]->getName(), name);
 
-        const size_t values_argument_index = expected_num_arguments - 1;
+        const size_t values_argument_index = argument_types.size() - 1;
         const auto * values_type = typeid_cast<const DataTypeArray *>(argument_types[values_argument_index].get());
         const DataTypePtr value_type = values_type ? removeNullable(values_type->getNestedType()) : nullptr;
         if (!value_type || !isNativeFloat(value_type))
@@ -75,12 +91,12 @@ namespace
                             "Illegal type {} of {} argument (values) for aggregate function {}, "
                             "expected an array of Float32, Float64, Nullable(Float32) or Nullable(Float64)",
                             argument_types[values_argument_index]->getName(),
-                            (kind == TimeSeriesTopKMasksKind::LimitK) ? "4th" : "3rd", name);
+                            (values_argument_index == 3) ? "4th" : "3rd", name);
 
         if (value_type->getTypeId() == TypeIndex::Float64)
-            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float64>>(argument_types);
+            return createWithStateLayout<kind, Float64>(argument_types);
         else
-            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float32>>(argument_types);
+            return createWithStateLayout<kind, Float32>(argument_types);
     }
 
     FunctionDocumentation::ReturnedValue getReturnedValueDocumentation()
@@ -98,10 +114,12 @@ void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & fac
     FunctionDocumentation::Description description_topk = R"(
 Selects the time series with the k greatest values at each time step of a time grid.
 
-Each input row is one time series: `key` identifies the series and `values` contains its values aligned to a common
-time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest
-non-NULL values at that step are selected (NaN is considered smaller than any other value). Value ties are broken by
-preferring the series with the smaller `key`.
+Each input row is one time series: `key` identifies the series, the optional `sampling_key` is a per-series hash used
+to break a tie between equal values, and `values` contains the values of the series aligned to a common time grid, so
+the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest non-NULL
+values at that step are selected (NaN is considered smaller than any other value). A value tie is broken by preferring
+the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
+tie falls back to `key`, which the caller assigns in the order the rows were read in.
 
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -111,11 +129,12 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Note>
     )";
     FunctionDocumentation::Syntax syntax_topk = R"(
-timeSeriesTopKMasks(k, key, values)
+timeSeriesTopKMasks(k, key[, sampling_key], values)
     )";
     FunctionDocumentation::Arguments arguments_topk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
+        {"sampling_key", "Optional. A per-series hash breaking a tie between equal values, e.g. `timeSeriesGroupToSamplingKey(key)`. Without it a tie is broken by `key` instead.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Parameters parameters = {};
@@ -144,10 +163,12 @@ FROM (SELECT arrayJoin(series) AS s);
     FunctionDocumentation::Description description_bottomk = R"(
 Selects the time series with the k smallest values at each time step of a time grid.
 
-Each input row is one time series: `key` identifies the series and `values` contains its values aligned to a common
-time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest
-non-NULL values at that step are selected (NaN is considered greater than any other value). Value ties are broken by
-preferring the series with the smaller `key`.
+Each input row is one time series: `key` identifies the series, the optional `sampling_key` is a per-series hash used
+to break a tie between equal values, and `values` contains the values of the series aligned to a common time grid, so
+the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest non-NULL
+values at that step are selected (NaN is considered greater than any other value). A value tie is broken by preferring
+the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
+tie falls back to `key`, which the caller assigns in the order the rows were read in.
 
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -157,7 +178,7 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Note>
     )";
     FunctionDocumentation::Syntax syntax_bottomk = R"(
-timeSeriesBottomKMasks(k, key, values)
+timeSeriesBottomKMasks(k, key[, sampling_key], values)
     )";
     FunctionDocumentation::Examples examples_bottomk = {
     {
@@ -199,7 +220,7 @@ timeSeriesLimitKMasks(k, key, sampling_key, values)
     FunctionDocumentation::Arguments arguments_limitk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
-        {"sampling_key", "A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
+        {"sampling_key", "Required. A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Examples examples_limitk = {

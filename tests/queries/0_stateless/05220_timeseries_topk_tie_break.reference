@@ -1,0 +1,20 @@
+--- the sampling key decides a tie, whichever order the rows arrive in ---
+[(2,[1])]
+[(2,[1])]
+--- and the same for topk ---
+[(2,[1])]
+[(2,[1])]
+--- a value that is not tied still decides on its own ---
+[(2,[1])]
+--- the sampling key is optional: without one a tie falls back to the key ---
+[(1,[1])]
+--- the sampling key survives a State/Merge round-trip ---
+[(2,[1])]
+--- limitk ties the same way whichever side crossed a serialization boundary ---
+[(1,[1])]
+[(1,[1])]
+--- rejected: limitk still requires the sampling key it ranks by ---
+--- PromQL: a tie is decided the same way however the parts are laid out ---
+[('__name__','m'),('host','h2')]	1970-01-01 00:01:40.000	1
+[('__name__','m'),('host','h2')]	1970-01-01 00:01:40.000	1
+[('__name__','m'),('host','h3')]	1970-01-01 00:01:40.000	2
