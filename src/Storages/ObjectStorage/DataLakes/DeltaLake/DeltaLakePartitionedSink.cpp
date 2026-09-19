@@ -12,6 +12,9 @@
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
@@ -175,7 +178,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
 {
     delta_transaction->validateSchema(getHeader());
 
-    /// Per partition column: `toString(<cast>(<column>))` casts to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim.
+    /// Each partition value is cast to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim.
     const auto & write_schema = delta_transaction->getWriteSchema();
     partition_value_actions.reserve(partition_columns.size());
     partition_column_nullable.reserve(partition_columns.size());
@@ -191,8 +194,21 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
             accurate_write_cast ? "accurateCast" : "_CAST",
             make_intrusive<ASTIdentifier>(column),
             make_intrusive<ASTLiteral>(schema_column->type->getName()));
-        ASTPtr to_string_ast = makeASTFunction("toString", std::move(value_ast));
-        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
+
+        /// A Delta `decimal` partition value carries exactly `scale` fractional digits, and a
+        /// `timestamp`/`timestamp_ntz` one is a UTC wall clock, whatever the session time zone.
+        const auto & value_type = removeNullable(schema_column->type);
+        ASTPtr text_ast;
+        if (isDecimal(value_type))
+            text_ast = makeASTFunction(
+                "toDecimalString",
+                value_ast,
+                make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(getDecimalScale(*value_type)))));
+        else if (isDateTime64(value_type))
+            text_ast = makeASTFunction("toString", value_ast, make_intrusive<ASTLiteral>("UTC"));
+        else
+            text_ast = makeASTFunction("toString", value_ast);
+        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(text_ast));
 
         partition_column_nullable.push_back(schema_column->type->isNullable());
     }
