@@ -135,6 +135,13 @@ namespace DimensionalMetrics
         return *it->second;
     }
 
+    bool MetricFamily::removeLabels(const LabelValues & label_values)
+    {
+        chassert(label_values.size() == labels.size());
+        std::lock_guard lock(mutex);
+        return metrics.erase(label_values) != 0;
+    }
+
     const Labels & MetricFamily::getLabels() const { return labels; }
     const String & MetricFamily::getName() const { return name; }
     const String & MetricFamily::getDocumentation() const { return documentation; }

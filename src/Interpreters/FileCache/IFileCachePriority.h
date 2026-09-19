@@ -10,6 +10,9 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <unordered_map>
 #include <utility>
 
 #include <fmt/ranges.h>
@@ -24,6 +27,39 @@ class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsage;
 using CacheUsagePtr = std::shared_ptr<CacheUsage>;
+
+struct FileCacheUsageStat
+{
+    size_t size = 0;
+    size_t elements = 0;
+    /// Client weight for proportional cache sharing (0 if not set).
+    UInt64 weight = 0;
+    /// Approximate wall-clock time of the client's last cache access (converted from the
+    /// steady-clock timestamp of the idle-client TTL). Empty if there was no access yet.
+    std::optional<time_t> last_access_time;
+};
+
+struct FileCacheUsageCounters
+{
+    std::atomic<size_t> size = 0;
+    std::atomic<size_t> elements = 0;
+
+    void add(size_t size_delta, size_t elements_delta) noexcept;
+    void sub(size_t size_delta, size_t elements_delta) noexcept;
+};
+using FileCacheUsageCountersPtr = std::shared_ptr<FileCacheUsageCounters>;
+
+class FileCacheUsageTracker
+{
+public:
+    FileCacheUsageCountersPtr getOrCreate(const String & user_id);
+    std::unordered_map<String, FileCacheUsageStat> snapshotAndPrune();
+
+private:
+    std::mutex mutex;
+    std::unordered_map<String, std::weak_ptr<FileCacheUsageCounters>> usage_by_user;
+};
+using FileCacheUsageTrackerPtr = std::shared_ptr<FileCacheUsageTracker>;
 
 
 class IFileCachePriority : private boost::noncopyable
@@ -70,6 +106,8 @@ public:
         /// Locks `key_metadata`, throwing if it expired.
         KeyMetadataPtr getKeyMetadata() const;
 
+        bool tracksUsage() const { return tracks_usage; }
+
         enum class State
         {
             Active,
@@ -94,8 +132,13 @@ public:
             Removed,
         };
 
-        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_, State initial_state = State::Active);
-        Entry(const Entry & other);
+        Entry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            State initial_state = State::Active);
+        Entry(const Entry &) = delete;
 
         State getState() const { return state.load(); }
 
@@ -153,6 +196,15 @@ public:
                 printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));
         }
 
+    protected:
+        Entry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            State initial_state,
+            bool tracks_usage_);
+
     private:
         std::string printUnexpectedState(
             State prev_state, std::string_view expected_state, std::string type) const
@@ -162,6 +214,7 @@ public:
                 magic_enum::enum_name(prev_state), expected_state, type, toString());
         }
 
+        const bool tracks_usage;
         std::atomic<State> state = State::Active;
     };
     using EntryPtr = std::shared_ptr<Entry>;
@@ -372,17 +425,12 @@ public:
     /// Returns the number removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
 
-    struct UsageStat
-    {
-        size_t size = 0;
-        size_t elements = 0;
-        /// Client weight for proportional cache sharing (0 if not set).
-        UInt64 weight = 0;
-        /// Approximate wall-clock time of the client's last cache access (converted from the
-        /// steady-clock timestamp of the idle-client TTL). Empty if there was no access yet.
-        std::optional<time_t> last_access_time;
-    };
-    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+    using UsageStat = FileCacheUsageStat;
+    /// Requires the state lock: SLRU queue moves charge the segment's usage counters
+    /// for the new queue entry before discharging the old one, and both steps happen
+    /// under the state lock. Snapshotting under the same lock guarantees the sampler
+    /// cannot observe the intermediate state where a moved segment is counted twice.
+    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient(const CacheStateGuard::Lock &);
 
     class HoldSpace;
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
@@ -462,13 +510,69 @@ public:
     }
     const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 
+    virtual void setUsageTracker(FileCacheUsageTrackerPtr tracker)
+    {
+        chassert(!usage_tracker, "usage_tracker cannot be set twice");
+        usage_tracker = std::move(tracker);
+    }
+    const FileCacheUsageTrackerPtr & getUsageTracker() const { return usage_tracker; }
+
 protected:
+    struct TrackedEntry final : Entry
+    {
+        TrackedEntry(
+            const Key & key_,
+            size_t offset_,
+            size_t size_,
+            KeyMetadataPtr key_metadata_,
+            FileCacheUsageCountersPtr usage_counters_,
+            State initial_state);
+
+        const FileCacheUsageCountersPtr usage_counters;
+    };
+
     IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
 
     virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
     /// No lock is required in releaseImpl unlike holdImpl,
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
+
+    FileCacheUsageCountersPtr getOrCreateUsageCounters(const UserID & user_id) const
+    {
+        if (queue_type != QueueType::Main || !usage_tracker)
+            return {};
+        return usage_tracker->getOrCreate(user_id);
+    }
+
+    static EntryPtr createEntry(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        KeyMetadataPtr key_metadata,
+        FileCacheUsageCountersPtr usage_counters,
+        Entry::State initial_state = Entry::State::Active);
+
+    static const FileCacheUsageCountersPtr & getUsageCounters(const Entry & entry);
+
+    /// Charge the entry's client. Callers must charge here *before* the queue state grows,
+    /// and every growth site holds `CacheStateGuard::Lock`, so a sampler taking that lock
+    /// never sees a charge whose queue-state counterpart is still missing.
+    static void addTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
+    {
+        if (const auto & counters = getUsageCounters(entry))
+            counters->add(size_delta, elements_delta);
+    }
+
+    /// Discharge the entry's client. Callers must discharge here *before* the queue state
+    /// shrinks. Shrinking is lock-free by design (see the lock order in `Guards.h`), so a
+    /// sampler cannot be excluded from it; discharging in this order makes the per-client
+    /// sample lag a removal in flight instead of over-reporting it.
+    static void subTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
+    {
+        if (const auto & counters = getUsageCounters(entry))
+            counters->sub(size_delta, elements_delta);
+    }
 
     /// Guard protecting this priority queue's structure (add/remove/move of entries), so
     /// operations on different queues do not contend. Overridden by `LRUFileCachePriority` to
@@ -486,6 +590,7 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
+    FileCacheUsageTrackerPtr usage_tracker;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
