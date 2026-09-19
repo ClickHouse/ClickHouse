@@ -72,9 +72,9 @@ stringJaccardIndexUTF8	clickhouse	mouse	0.4
 stringJaccardIndexUTF8	我是谁	Tom	0
 stringJaccardIndexUTF8	我是谁	我是我	0.6666666666666666
 jaroSimilarity			0
-jaroSimilarity		abc	3
+jaroSimilarity		abc	0
 jaroSimilarity	Jerry	我是谁	0
-jaroSimilarity	abc		3
+jaroSimilarity	abc		0
 jaroSimilarity	abc	ab	0.8888888888888888
 jaroSimilarity	abc	abc	1
 jaroSimilarity	abc	bc	0
@@ -82,9 +82,9 @@ jaroSimilarity	clickhouse	mouse	0
 jaroSimilarity	我是谁	Tom	0
 jaroSimilarity	我是谁	我是我	0.7777777777777777
 jaroWinklerSimilarity			0
-jaroWinklerSimilarity		abc	3
+jaroWinklerSimilarity		abc	0
 jaroWinklerSimilarity	Jerry	我是谁	0
-jaroWinklerSimilarity	abc		3
+jaroWinklerSimilarity	abc		0
 jaroWinklerSimilarity	abc	ab	0.9111111111111111
 jaroWinklerSimilarity	abc	abc	1
 jaroWinklerSimilarity	abc	bc	0
