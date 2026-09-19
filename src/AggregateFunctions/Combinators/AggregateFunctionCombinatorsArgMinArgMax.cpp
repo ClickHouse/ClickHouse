@@ -1,6 +1,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <Common/memory.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 namespace DB
@@ -85,8 +86,7 @@ public:
                     getName(),
                     getNumericVariantSupertypeHint(type.getPtr()));
         };
-        check_not_dynamic_or_variant(*arguments[key_col]);
-        arguments[key_col]->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*arguments[key_col], check_not_dynamic_or_variant);
     }
 
     String getName() const override

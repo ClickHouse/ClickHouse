@@ -102,6 +102,11 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
         }
     }
+
+    sorted_typed_paths.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        sorted_typed_paths.emplace_back(path, type);
+    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 }
 
 DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
@@ -256,19 +261,14 @@ String DataTypeObject::doGetName() const
         out << "max_dynamic_paths=" << max_dynamic_paths;
     }
 
-    std::vector<String> sorted_typed_paths;
-    sorted_typed_paths.reserve(typed_paths.size());
-    for (const auto & [path, _] : typed_paths)
-        sorted_typed_paths.push_back(path);
-    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
-    for (const auto & path : sorted_typed_paths)
+    for (const auto & [path, type] : sorted_typed_paths)
     {
         write_separator();
         /// We must quote path "SKIP" to avoid its confusion with SKIP keyword.
         if (boost::to_upper_copy(path) == "SKIP")
-            out << backQuote(path) << " " << typed_paths.at(path)->getName();
+            out << backQuote(path) << " " << type->getName();
         else
-            out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
+            out << backQuoteIfNeed(path) << " " << type->getName();
     }
 
     std::vector<String> sorted_skip_paths;
@@ -304,13 +304,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }
 
-void DataTypeObject::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) const
 {
-    for (const auto & [path, type] : typed_paths)
-    {
-        callback(*type);
-        type->forEachChild(callback);
-    }
+    std::unordered_map<String, DataTypePtr> new_typed_paths;
+    new_typed_paths.reserve(sorted_typed_paths.size());
+    for (size_t i = 0; i < sorted_typed_paths.size(); ++i)
+        new_typed_paths.emplace(sorted_typed_paths[i].first, new_children[i]);
+
+    return std::make_shared<DataTypeObject>(
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
 }
 
 namespace

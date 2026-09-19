@@ -1,8 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <cstddef>
 #include <Core/Types_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -13,6 +15,9 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
+struct DataTypeCustomDesc;
+using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
+
 /** Allow to customize an existing data type and set a different name and/or text serialization/deserialization methods.
  * See use in IPv4 and IPv6 data types, and also in SimpleAggregateFunction.
   */
@@ -22,6 +27,23 @@ public:
     virtual ~IDataTypeCustomName() = default;
 
     virtual String getName() const = 0;
+
+    /// Applies to one nested type the same rewrite that produced `rebuilt` below, returning nullptr
+    /// if that rewrite has to be abandoned.
+    using RewriteNestedFn = std::function<DataTypePtr(const DataTypePtr &)>;
+
+    /// The customization this one becomes when the type it decorates is rebuilt with different
+    /// children as `rebuilt`, or nullptr when it no longer applies - a `Point` over a `Tuple` that is
+    /// no longer two `Float64` is not a `Point`.
+    /// A customization that keeps its own copy of nested types - `SimpleAggregateFunction` does - has
+    /// to put that copy through `rewrite_nested`, or the name ends up describing something the values
+    /// no longer are.
+    /// The default refuses, because a name that cannot be shown to be still correct must not be
+    /// reattached: the name is what `toTypeName`, `DESCRIBE` and the binary type encoding report.
+    virtual DataTypeCustomDescPtr rederiveFor(const DataTypePtr & /*rebuilt*/, const RewriteNestedFn & /*rewrite_nested*/) const
+    {
+        return nullptr;
+    }
 };
 
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;

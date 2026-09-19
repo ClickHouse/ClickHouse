@@ -41,6 +41,40 @@ String IDataType::getName() const
     return doGetName();
 }
 
+const DataTypePtr & IDataType::getChild(size_t index) const
+{
+    /// Reached only for a type without children, which never has a valid index.
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Data type {} has {} children, but child {} was requested", getName(), getNumberOfChildren(), index);
+}
+
+DataTypes IDataType::getChildren() const
+{
+    const size_t num_children = getNumberOfChildren();
+    DataTypes children;
+    children.reserve(num_children);
+    for (size_t i = 0; i < num_children; ++i)
+        children.push_back(getChild(i));
+    return children;
+}
+
+DataTypePtr IDataType::cloneWithChildren(const DataTypes & new_children) const
+{
+    const size_t num_children = getNumberOfChildren();
+    if (new_children.size() != num_children)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Data type {} has {} children, but {} were given to cloneWithChildren",
+            getName(), num_children, new_children.size());
+
+    return doCloneWithChildren(new_children);
+}
+
+DataTypePtr IDataType::doCloneWithChildren(const DataTypes &) const
+{
+    /// Reached only for a type without children, which `cloneWithChildren` has already checked.
+    return shared_from_this();
+}
+
 String IDataType::getPrettyName(size_t indent) const
 {
     if (custom_name)

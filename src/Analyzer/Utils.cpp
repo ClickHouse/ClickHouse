@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -1606,15 +1607,11 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 /// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested)
+    return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
-    };
-    check(type);
-    type.forEachChild(check);
-    return result;
+        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+    });
 }
 
 namespace
