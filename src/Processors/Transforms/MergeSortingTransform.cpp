@@ -1,20 +1,15 @@
-#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/IAccumulatingTransform.h>
-#include <Processors/ISink.h>
-#include <Processors/Merges/MergingSortedTransform.h>
+
+#include <algorithm>
+#include <iterator>
+
 #include <Processors/Transforms/BufferingFileTransforms.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents
@@ -68,7 +63,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
 
     auto & source = processors.front();
 
-    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
+    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput(header_without_constants);
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (processors.size() > 1)

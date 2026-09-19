@@ -50,6 +50,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -971,6 +972,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
 
+        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
+        /// target that describing the target requires.
+        if (const auto * alias = as_storage->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                            StorageID{as_database_name, create.as_table}.getNameForLogs());
+
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
@@ -1243,9 +1251,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// If it's not attach and not materialized view to existing table,
-    /// we need to validate data types (check for experimental or suspicious types).
-    if (!create.attach && !create.is_materialized_view)
+    /// A view stores no data of its own, so the gates on types chosen for storage do not apply to it;
+    /// a materialized view's inner table is created by its own statement and validated there.
+    if (!create.attach && !create.isView())
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
@@ -1288,7 +1296,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         check_columns = true;
     }
 
-    if (create.refresh_strategy && !create.refresh_strategy->append)
+    if (create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -2887,7 +2895,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
     /// built while the view being replaced still owns it, so reject only when a different view owns it.
     /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
-    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
         auto target_table_id = create.getTargetTableID(ViewTarget::To);
         if (!target_table_id.empty())
@@ -3787,6 +3795,13 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+
+    /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
+    /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
+    /// taking it away from `user_files` needs `WRITE`, like renaming files after processing does. Without this,
+    /// `CREATE TABLE` on a table of their own would let a user read or consume any data staged in `user_files`.
+    if (create.has_attach_from_path)
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
 
     return required_access;
 }

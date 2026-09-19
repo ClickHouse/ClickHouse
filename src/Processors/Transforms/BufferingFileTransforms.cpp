@@ -1,8 +1,6 @@
 #include <Processors/Transforms/BufferingFileTransforms.h>
 
-#include <Core/Block.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -18,14 +16,14 @@ BufferingToFileSink::BufferingToFileSink(SharedHeader header, TemporaryBlockStre
     , log(log_)
 {
     outputs.emplace_back(Block(), this);
-    LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getHolder()->describeFilePath());
+    LOG_INFO(log, "Writing part of data into temporary file {}", tmp_stream.getHolder()->describeFilePath());
 }
 
 IProcessor::Status BufferingToFileSink::prepare()
 {
     auto status = ISink::prepare();
     if (status == Status::Finished)
-        outputs.front().finish();
+        getCompletionPort().finish();
     return status;
 }
 
@@ -38,7 +36,7 @@ void BufferingToFileSink::consume(Chunk chunk)
 void BufferingToFileSink::onFinish()
 {
     auto stat = tmp_stream.finishWriting();
-    LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
+    LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {}",
         tmp_stream.getHolder()->describeFilePath(),
         ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
 }
@@ -53,16 +51,26 @@ BufferingFromFileSource::BufferingFromFileSource(SharedHeader header, TemporaryB
 
 IProcessor::Status BufferingFromFileSource::prepare()
 {
-    if (!inputs.front().isFinished())
+    auto & completion = getCompletionPort();
+    if (!completion.isFinished())
     {
-        if (inputs.front().hasData())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read the data from BufferingToFileSource input");
+        if (completion.hasData())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The completion input of BufferingFromFileSource must not carry data");
 
-        inputs.front().setNeeded();
+        completion.setNeeded();
         return Status::NeedData;
     }
 
     return ISource::prepare();
+}
+
+void BufferingFromFileSource::cancel(CancelReason reason) noexcept
+{
+    /// A partial result must finish processing data already read into temporary files.
+    if (reason == CancelReason::PartialResult)
+        return;
+
+    ISource::cancel(reason);
 }
 
 Chunk BufferingFromFileSource::generate()
