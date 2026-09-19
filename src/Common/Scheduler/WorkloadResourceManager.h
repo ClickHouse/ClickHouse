@@ -41,7 +41,12 @@ namespace DB
  * Let's consider how a single resource is implemented. Every workload is represented by corresponding WorkloadNode.
  * Every WorkloadNode manages its own subtree of ISchedulerNode objects (see details in WorkloadNode.h)
  * WorkloadNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
- * Parent of the root workload for a resource is the scheduler with its own thread.
+ * A resource may have several root workloads (workloads created without a parent). They are not
+ * attached to the scheduler directly; instead each resource has one implicit anonymous root workload
+ * that is the scheduler's single child, and every parentless workload is attached as a child of it.
+ * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
+ * fairness/priorities via the normal workload policy machinery. The implicit root has default
+ * (unlimited) settings, so a single-root hierarchy behaves exactly as before.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -52,7 +57,9 @@ namespace DB
  *
  *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *              all                - WorkloadNode
+ *           (implicit)            - anonymous root WorkloadNode with an empty name (the scheduler's single child)
+ *               |
+ *              all                - WorkloadNode (has no explicit parent, so a child of the implicit root)
  *               |
  *            p0_fair              - FairPolicy (part of parent WorkloadNode internal structure)
  *            /     \
@@ -231,6 +238,24 @@ private:
                     std::static_pointer_cast<typename Node::Base>(result)
                 };
             };
+
+            // Create the implicit anonymous root workload as the scheduler's single child. Every
+            // workload without an explicit parent becomes a child of it (see createNode()), so the
+            // scheduler always has exactly one child and the otherwise-root workloads are scheduled
+            // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
+            // settings make the implicit root transparent when there is a single root workload.
+            auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
+            // Anonymous: an empty basename cannot collide with any user workload (workload names are
+            // never empty), so no workload name is reserved. getPath() skips the empty segment, so a
+            // workload directly under the implicit root renders as "/all", not "//all".
+            implicit->basename = {};
+            implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
+            auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
+            executeInSchedulerThread([&, this]
+            {
+                scheduler->attachChild(implicit_scheduler_node);
+                updateCurrentVersion();
+            });
         }
 
         // Type-erasure for time-shared vs. space-shared resources
@@ -245,7 +270,11 @@ private:
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        WorkloadNodePtr root_node;
+        /// Implicit anonymous root workload (empty basename): the scheduler's single child. Every workload without an
+        /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
+        /// workloads form one hierarchy under it, scheduled with fairness/priorities by the normal
+        /// policy machinery. Default (unlimited) settings make it transparent for a single root.
+        WorkloadNodePtr implicit_root;
         VersionPtr current_version;
     };
 
