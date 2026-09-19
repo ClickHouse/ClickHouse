@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 
 #include <filesystem>
@@ -52,6 +53,8 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+    extern const char database_replicated_fail_active_node_removal_on_shutdown[];
+    extern const char database_replicated_fail_active_node_removal_nonretryable[];
 }
 
 
@@ -152,18 +155,36 @@ void DatabaseReplicatedDDLWorker::shutdown()
     /// and the ephemeral node persists until the shared ZK session expires.
     /// This can cause SYSTEM DROP DATABASE REPLICA to spuriously fail with "is active".
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
+
+    /// tryRemove below throws on a hardware Keeper error, and the exception must keep propagating
+    /// (DatabaseReplicated::shutdown records and rethrows it). Release the holders on that path too,
+    /// so that a repeated shutdown() does not retry the same failing removal.
+    SCOPE_EXIT({
+        /// Order matters: the holder keeps a reference to the ZooKeeper object.
+        active_node_holder.reset();
+        active_node_holder_zookeeper.reset();
+        wait_current_task_change.notify_all();
+    });
+
     if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
     {
         String active_path = fs::path(database->replica_path) / "active";
+        fiu_do_on(FailPoints::database_replicated_fail_active_node_removal_on_shutdown,
+        {
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS,
+                "Injected Keeper error while removing the active node, path {}", active_path);
+        });
+        fiu_do_on(FailPoints::database_replicated_fail_active_node_removal_nonretryable,
+        {
+            throw Coordination::Exception(Coordination::Error::ZBADVERSION,
+                "Injected non-retryable Keeper error while removing the active node, path {}", active_path);
+        });
         active_node_holder_zookeeper->tryRemove(active_path);
     }
 
+    /// Only after a successful removal, so that on failure ~EphemeralNodeHolder still retries it.
     if (active_node_holder)
         active_node_holder->setAlreadyRemoved();
-    active_node_holder.reset();
-    active_node_holder_zookeeper.reset();
-
-    wait_current_task_change.notify_all();
 }
 
 void DatabaseReplicatedDDLWorker::initializeReplication()
