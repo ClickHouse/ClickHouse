@@ -19,7 +19,7 @@ derived table aliases
 2
 name then position
 1	one
-\N	two
+2	two
 3	three
 position then name
 1	one
