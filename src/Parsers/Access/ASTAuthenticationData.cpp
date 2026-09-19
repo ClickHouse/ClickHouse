@@ -4,6 +4,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -116,6 +117,26 @@ void ASTAuthenticationData::updateTreeHashImpl(SipHash & hash_state, bool ignore
     /// covers the deadline expression; fold the flag that distinguishes `VALID UNTIL <timestamp>`
     /// from `VALID FOR <interval>` - the expression child alone cannot.
     hash_state.update(valid_until_is_interval);
+
+    /// `grants` is an `AccessRightsElements`, not an AST, so the base hash cannot see it, yet
+    /// `formatImpl` emits it as a `GRANTS (...)` clause. Without folding it,
+    /// `IDENTIFIED WITH no_password` and `IDENTIFIED WITH no_password GRANTS (SELECT ON db.t)`
+    /// - or two different limits - share a tree hash, and the rewrite-rule matcher fires a rule
+    /// written for one of them on the other. Fold a presence bit first: an element list that
+    /// grants nothing is still formatted, as the canonical `GRANTS (USAGE ON *.*)`, so the text
+    /// alone cannot tell the clause from its absence. Then fold exactly the text the formatter
+    /// writes, which keeps the hash stable across the debug-build format -> parse -> format
+    /// consistency check.
+    const bool has_grants = !grants.structurallyEmpty();
+    hash_state.update(has_grants);
+    if (has_grants)
+    {
+        WriteBufferFromOwnString buf;
+        formatAuthenticationGrants(grants, buf);
+        const auto grants_string = buf.str();
+        hash_state.update(grants_string.size());
+        hash_state.update(grants_string);
+    }
 }
 
 void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
