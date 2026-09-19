@@ -1,0 +1,38 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and
+                 rewrites the plan. The settings randomizer only ever picks 0 or 2, and mode 2 collects
+                 statistics without ever switching, so without this profile the plan-rewriting half of
+                 the optimization has no coverage outside its own handful of tests. -->
+            <automatic_parallel_replicas_mode>1</automatic_parallel_replicas_mode>
+            <!-- Stateless test tables read far less than the 1 MiB per replica the setting defaults to,
+                 so keeping the default would make the cheap pre-check reject every plan before the
+                 probe is built and the job would pass without ever exercising the switch. -->
+            <automatic_parallel_replicas_min_bytes_per_replica>0</automatic_parallel_replicas_min_bytes_per_replica>
+            <enable_parallel_replicas>1</enable_parallel_replicas>
+            <cluster_for_parallel_replicas>parallel_replicas</cluster_for_parallel_replicas>
+            <!-- Every replica of the `parallel_replicas` cluster is a loopback address of this same
+                 server. Left unpinned the setting defaults to 1000 and is clamped to the cluster's
+                 node count, so the cost model would divide the read by 11 and judge parallel replicas
+                 about 11x better than they are on a real cluster. Pin a realistic replica count. -->
+            <max_parallel_replicas>3</max_parallel_replicas>
+            <!-- Two thresholds otherwise decide a query before the cost model is consulted: the
+                 `automatic_parallel_replicas_min_bytes_per_replica` gate above, and the cap on how many
+                 threads a read can usefully occupy, which makes a small read compare equal on both
+                 sides and so never switch. Both exist for good reasons in production - there is a test,
+                 04035_autopr_no_parallel_replicas_for_small_reads, asserting the second one - but they
+                 leave these jobs exercising the probe rather than the rewrite: at the defaults only 86
+                 of 7366 cost model evaluations got past them, and 76 switched.
+
+                 This setting ignores both, so the cost model decides every query. It deliberately does
+                 NOT touch read task sizing; an earlier attempt forced the same effect by setting
+                 `merge_tree_min_bytes_per_task_for_remote_reading` to 0, which also shrank real read
+                 tasks and broke four tests that assert on S3 request counts and query-condition-cache
+                 profile events. -->
+            <automatic_parallel_replicas_ignore_thresholds>1</automatic_parallel_replicas_ignore_thresholds>
+            <parallel_replicas_local_plan>1</parallel_replicas_local_plan>
+            <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>
+        </default>
+    </profiles>
+</clickhouse>
