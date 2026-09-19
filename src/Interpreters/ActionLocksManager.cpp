@@ -3,6 +3,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageTableProxy.h>
 
 
 namespace DB
@@ -43,8 +44,16 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
     if (!action_lock.expired())
     {
+        /// The locks are keyed by the storage object, and the same table can be handed to us either as
+        /// the lazy-load stand-in the catalog holds (`SYSTEM STOP MERGES db.table`) or as the storage
+        /// behind it (`SYSTEM STOP MERGES db`, which goes through the database iterator). Key by the
+        /// storage that owns the lock, so that both spellings address the same entry - otherwise
+        /// `SYSTEM START` under the other spelling leaves the lock in place and the action stays
+        /// blocked. Taking the action lock above has already materialized the stand-in.
+        StoragePtr locked_table = unwrapMaterializedLazyTable(table);
+
         std::lock_guard lock(mutex);
-        storage_locks[table.get()][action_type] = std::move(action_lock);
+        storage_locks[locked_table.get()][action_type] = std::move(action_lock);
     }
 }
 
@@ -56,10 +65,13 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
+    /// See the comment in `add`: the lock is keyed by the storage that owns it, not by the stand-in.
+    StoragePtr locked_table = unwrapMaterializedLazyTable(table);
+
     std::lock_guard lock(mutex);
 
-    if (storage_locks.contains(table.get()))
-        storage_locks[table.get()].erase(action_type);
+    if (storage_locks.contains(locked_table.get()))
+        storage_locks[locked_table.get()].erase(action_type);
 }
 
 void ActionLocksManager::cleanExpired()
