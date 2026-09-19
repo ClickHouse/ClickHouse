@@ -89,7 +89,7 @@ namespace Setting
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
-    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
     extern const QueryPlanSerializationSettingsOverflowMode join_overflow_mode;

@@ -1,0 +1,5 @@
+both sites, client log reader: 1
+query_log reader, both sites: 2
+no reader, error still reported: 1
+no reader, no trace in output: 0
+console logger reader: 1
