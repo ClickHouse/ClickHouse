@@ -35,8 +35,16 @@ void require(bool condition, const std::string & what)
 {
     require(DB::SymbolIndex::instanceIfInitialized() == nullptr, "the index is not built at startup");
     /// The fallback for the bare dump must report that nothing can be resolved instead of building the
-    /// index to find out.
+    /// index to find out. Where the index is not used for resolution at all, the answer is the same
+    /// `Unsupported` one as from `resolveAddress`, and the point of the check is only that asking did
+    /// not build anything.
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     require(!StackTrace::tryResolveAddress(testAddress()).has_value(), "nothing is resolved before the index is built");
+#else
+    const auto resolved = StackTrace::tryResolveAddress(testAddress());
+    require(resolved.has_value() && resolved->kind == StackTrace::AddressKind::Unsupported,
+        "resolution is unsupported on this platform");
+#endif
     require(DB::SymbolIndex::instanceIfInitialized() == nullptr, "asking did not build the index as a side effect");
     std::_Exit(0);
 }
