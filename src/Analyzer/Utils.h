@@ -98,6 +98,9 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 /// Try extract boolean constant from condition node
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
 
+/// The single-row column of a resolved `__getScalar` call whose scalar the query context still holds, else nullptr.
+ColumnPtr tryGetScalarSubqueryColumn(const QueryTreeNodePtr & node, const ContextPtr & context);
+
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */

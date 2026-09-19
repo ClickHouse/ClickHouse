@@ -300,7 +300,7 @@ public:
                 {
                     const auto & in_first_argument_node = function_node.getArguments().getNodes().at(0);
                     const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
-                    in_function_second_argument_node_name = PlannerContext::createSetKey(in_first_argument_node->getResultType(), in_second_argument_node);
+                    in_function_second_argument_node_name = planner_context.createSetKey(in_first_argument_node->getResultType(), in_second_argument_node);
                 }
 
                 WriteBufferFromOwnString buffer;
@@ -1146,7 +1146,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
 
-    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    auto name = planner_context->createSetKey(in_first_argument->getResultType(), in_second_argument);
     auto type = std::make_shared<DataTypeSet>();
     ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 

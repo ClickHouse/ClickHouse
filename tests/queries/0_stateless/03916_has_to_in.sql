@@ -172,10 +172,10 @@ SELECT COUNT(*) FROM (
     ) t WHERE explain like '%FUNCTION in%';
 
 -- Regression test for LowCardinality(non-nullable) needle: has() returns UInt8 but
--- `lc_col IN (...)` returns LowCardinality(UInt8). Rewriting would leave parent nodes
--- (e.g. NOT, AND, equals) with a stale UInt8 expectation and trip a logical error.
--- Found by fuzzer: `SELECT count() FROM t WHERE NOT has(['abc', 'x9999'], p)` where
--- p is LowCardinality(String).
+-- `lc_col IN (...)` returns LowCardinality(UInt8), so a rewrite that kept the needle
+-- LowCardinality would leave parent nodes (e.g. NOT, AND, equals) with a stale UInt8
+-- expectation and trip a logical error. Found by fuzzer: `SELECT count() FROM t WHERE
+-- NOT has(['abc', 'x9999'], p)` where p is LowCardinality(String).
 DROP TABLE IF EXISTS tab_lc;
 
 CREATE TABLE tab_lc
@@ -193,10 +193,12 @@ SET optimize_rewrite_has_to_in = 1;
 SELECT COUNT(*) FROM tab_lc WHERE NOT has(['abc', 'x9999'], p);
 SELECT COUNT(*) FROM tab_lc WHERE has(['abc', 'x9999'], p);
 
--- The rewrite must not happen for LowCardinality(non-nullable) needles either.
+-- The rewrite happens, with the needle cast to its dictionary type: the two results above
+-- are what proves the cast keeps the node UInt8 for the NOT parent.
 SELECT COUNT(*) FROM (
     EXPLAIN actions=1,header=1 SELECT COUNT(*) FROM tab_lc WHERE NOT has(['abc', 'x9999'], p)
     ) t WHERE explain like '%FUNCTION in%';
+SELECT toTypeName(has(['abc', 'x9999'], p)) FROM tab_lc LIMIT 1;
 
 DROP TABLE tab_lc;
 
