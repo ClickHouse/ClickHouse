@@ -1208,12 +1208,12 @@ bool resolveCredentialSource(
                 ErrorCodes::BAD_ARGUMENTS, "The credentials of the named collection cannot be dropped by an empty `nats_credentials`");
     }
 
-    /// Through `setByEngine`, so that the dropped setting is no longer reported as the named collection's: the
+    /// Through the typed `set`, so that the dropped setting is no longer reported as the named collection's: the
     /// collection supplied it, but it no longer explains anything the table holds.
     if (credential_file_from_query && credentials_from_collection)
-        nats_settings.setByEngine(NATSSetting::nats_credentials, String{});
+        nats_settings.set(NATSSetting::nats_credentials, String{});
     else if (credentials_from_query && credential_file_from_collection)
-        nats_settings.setByEngine(NATSSetting::nats_credential_file, String{});
+        nats_settings.set(NATSSetting::nats_credential_file, String{});
 
     /// Whatever path is left is the one the collection defines, and it is accepted only when the
     /// collection itself comes from the server configuration file.

@@ -42,8 +42,8 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
         /// the default is still changed, and keeps its source.
         if constexpr (requires { impl.recordedOrigin(described.name); })
             if (described.origin == SettingOrigin::Other)
-                if (const auto recorded = impl.recordedOrigin(described.name))
-                    described.origin = *recorded;
+                if (const auto recorded = impl.recordedOrigin(described.name); recorded != SettingOrigin::Default)
+                    described.origin = recorded;
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));

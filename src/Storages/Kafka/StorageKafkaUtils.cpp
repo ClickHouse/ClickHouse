@@ -1188,9 +1188,9 @@ SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr qu
     /// Three things set a `Kafka` table's settings, in this order: a named collection given in the engine
     /// arguments, which `loadSettingsFromNamedCollection` records in the settings object (a
     /// `SettingsWithRecordedOrigin`); the table's own `SETTINGS` clause; and the storage's constructor, which pins
-    /// a few format settings through `setByEngine`, forgetting the collection. Anything left as `Other` was set by the engine itself.
-    /// Saying so is the point of that value - guessing `named_collection` for it would be wrong, and there is
-    /// no source to name.
+    /// a few format settings through the typed `set`, forgetting the collection. Anything left as `Other` was set
+    /// by the engine itself. Saying so is the point of that value - guessing `named_collection` for it would be
+    /// wrong, and there is no source to name.
     auto settings = storage.kafka_settings->enumerateSettings();
 
     /// The `SETTINGS` clause is applied after the collection and so wins over it.

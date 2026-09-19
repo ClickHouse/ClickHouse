@@ -18,11 +18,8 @@ void loadSettingsFromNamedCollection(SettingsWithRecordedOrigin<TTraits> & impl,
         if (!collection.has(name))
             continue;
 
-        const auto value = collection.get<String>(name);
-        if (collection.isQueryOverridden(name))
-            impl.set(name, value);
-        else
-            impl.template setWithOrigin<SettingOrigin::NamedCollection>(name, value);
+        impl.setWithOrigin(name, collection.get<String>(name),
+            collection.isQueryOverridden(name) ? SettingOrigin::Default : SettingOrigin::NamedCollection);
     }
 }
 

@@ -2,9 +2,9 @@
 
 #include <Core/BaseSettings.h>
 #include <Storages/SettingDescription.h>
+#include <Common/CompactArray.h>
+#include <base/EnumReflection.h>
 
-#include <array>
-#include <optional>
 #include <string_view>
 
 namespace DB
@@ -15,88 +15,93 @@ namespace DB
 /// set the changed bit even where the value equals the default, and a named collection, whose values look
 /// like any other. Enumeration reports the recorded source for a setting that is still changed.
 ///
-/// The marks live in the settings object, so they travel with every copy of it - from the server's baseline
-/// into each table, from a database into each table it makes. A later `set` clears them, so a setting
-/// belongs to whoever assigned it last: the table's own `SETTINGS` clause included, and a reset to the
-/// default. An assignment through `operator[]` bypasses `set` and keeps the mark, which suits an engine that
-/// adjusts a value in place, such as by expanding macros; one that replaces a value calls the settings'
-/// `setByEngine`, which forgets it through `forgetOriginAtOffset`.
+/// The origin lives in the settings object, so it travels with every copy of it - from the server's baseline
+/// into each table, from a database into each table it makes. Every assignment records one - `setWithOrigin` the
+/// source it names, `set` `Default`, meaning none - so a setting belongs to whoever assigned it last: the table's
+/// own `SETTINGS` clause included, and a reset to the default. An assignment through `operator[]` bypasses both
+/// and keeps the origin, which suits an engine that adjusts a value in place, such as by expanding macros; one
+/// that replaces a value uses `setAtOffset`, through the typed `set` of its public settings class.
 ///
-/// One bit per setting and source, as `SettingsImpl` in `Core/Settings.cpp` records its own `compatibility`
-/// marks: the number of settings is known at compile time, so this allocates nothing.
+/// One 4-bit origin per setting in a `CompactArray`: the number of settings is known at compile time, so this
+/// allocates nothing.
 template <typename TTraits>
 struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
 {
+    /// Assigns `value` and records `origin` as its source; `Default` records none.
+    void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin)
+    {
+        BaseSettings<TTraits>::set(name, value);
+        setOrigin(settingIndex(name), origin);
+    }
+
+    /// What `applyChanges` and `loadFromQuery` reach through `BaseSettings`, so the table's own clause records
+    /// no source.
     void set(std::string_view name, const Field & value) override
     {
-        forget(settingIndex(name));
-        BaseSettings<TTraits>::set(name, value);
+        setWithOrigin(name, value, SettingOrigin::Default);
+    }
+
+    /// The same for the setting whose field is at `offset` in the settings data, as a `SettingIndex` stores it.
+    /// For the typed `set` of a public settings class, which holds this behind an incomplete type and so can
+    /// pass on only the offset - for an engine that assigns a value itself, over whatever a loader assigned.
+    void setAtOffset(size_t offset, const Field & value, SettingOrigin origin = SettingOrigin::Default)
+    {
+        const auto & accessor = TTraits::Accessor::instance();
+        const size_t index = accessor.findByOffset(offset);
+        chassert(index != npos);
+        accessor.setValue(*this, index, value);
+        setOrigin(index, origin);
     }
 
     /// Hide the base versions, which are not virtual, so that a reset forgets the source as well.
     void resetToDefault(std::string_view name)
     {
-        forget(settingIndex(name));
         BaseSettings<TTraits>::resetToDefault(name);
+        setOrigin(settingIndex(name), SettingOrigin::Default);
     }
     void resetToDefault()
     {
-        recorded = {};
         BaseSettings<TTraits>::resetToDefault();
+        recorded = {};
     }
 
-    /// For an assignment through `operator[]`, which bypasses `set`: forgets the source of the setting whose
-    /// field is at `offset` in the settings data, as a `SettingIndex` stores it.
-    void forgetOriginAtOffset(size_t offset) { forget(TTraits::Accessor::instance().findByOffset(offset)); }
-
-    /// `set`, then records `origin` for the setting. Only the sources in `recordable_origins`.
-    template <SettingOrigin origin>
-    void setWithOrigin(std::string_view name, const Field & value)
+    /// The source recorded for the setting, or `Default` when none is, or the name is not a setting.
+    SettingOrigin recordedOrigin(std::string_view name) const
     {
-        constexpr size_t slot = slotOf(origin);
-        static_assert(slot < recordable_origins.size(), "this origin is not recorded by `SettingsWithRecordedOrigin`");
-
-        set(name, value);
-        if (const size_t index = settingIndex(name); index != npos)
-            recorded[slot][index / 64] |= 1ULL << (index % 64);
-    }
-
-    std::optional<SettingOrigin> recordedOrigin(std::string_view name) const
-    {
-        const size_t index = settingIndex(name);
-        if (index == npos)
-            return {};
-        for (size_t i = 0; i < recordable_origins.size(); ++i)
-            if (recorded[i][index / 64] & (1ULL << (index % 64)))
-                return recordable_origins[i];
-        return {};
+        return getOrigin(settingIndex(name));
     }
 
 private:
-    static constexpr std::array recordable_origins{SettingOrigin::Config, SettingOrigin::Compatibility, SettingOrigin::NamedCollection};
+    static_assert(static_cast<size_t>(magic_enum::enum_values<SettingOrigin>().back()) < 16,
+                  "a recorded origin is stored in 4 bits");
+    static_assert(static_cast<UInt8>(SettingOrigin::Default) == 0,
+                  "a zeroed `CompactArray` must mean nothing recorded");
+
     static constexpr size_t npos = static_cast<size_t>(-1);
-    static constexpr size_t num_words = (static_cast<size_t>(TTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
 
-    std::array<std::array<UInt64, num_words>, recordable_origins.size()> recorded = {};
+    static constexpr size_t num_settings = static_cast<size_t>(TTraits::SettingID_::NUM_SETTINGS);
 
-    void forget(size_t index)
+    CompactArray<size_t, 4, num_settings> recorded;
+
+    /// An index out of range is a name `BaseSettings` does not know: `resetToDefault` ignores it, and `set`
+    /// throws `UNKNOWN_SETTING` before recording, or stores a custom setting, which has no origin to record,
+    /// where the traits allow those. So it is skipped here as the base skips it.
+    void setOrigin(size_t index, SettingOrigin origin)
     {
-        if (index != npos)
-            for (auto & bitmap : recorded)
-                bitmap[index / 64] &= ~(1ULL << (index % 64));
+        if (index < num_settings)
+            recorded.set(index, static_cast<UInt8>(origin));
+    }
+
+    /// The source recorded for the setting, or `Default` when none is. For an unknown name, too, as
+    /// `BaseSettings::isChanged` answers `false` for one rather than throwing.
+    SettingOrigin getOrigin(size_t index) const
+    {
+        return index >= num_settings ? SettingOrigin::Default : static_cast<SettingOrigin>(recorded.get(index));
     }
 
     static size_t settingIndex(std::string_view name)
     {
         return TTraits::Accessor::instance().find(TTraits::resolveName(name));
-    }
-
-    static consteval size_t slotOf(SettingOrigin origin)
-    {
-        size_t i = 0;
-        while (i < recordable_origins.size() && recordable_origins[i] != origin)
-            ++i;
-        return i;
     }
 };
 

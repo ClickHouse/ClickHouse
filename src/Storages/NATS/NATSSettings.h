@@ -60,13 +60,13 @@ struct NATSSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    /// Assigns a value the engine chose itself, over whatever a loader assigned: unlike `operator[]` alone,
-    /// the setting no longer counts as supplied by a named collection.
+    /// Assigns a value the engine chose itself, over whatever a loader assigned: unlike `operator[]`, the
+    /// setting no longer counts as supplied by a named collection. By the setting's typed index, so that a
+    /// misspelled name does not compile. See `SettingsWithRecordedOrigin::setAtOffset`.
     template <typename FieldType>
-    void setByEngine(SettingIndex<NATSSettings, FieldType> setting, typename FieldType::ValueType value)
+    void set(SettingIndex<NATSSettings, FieldType> setting, const Field & value)
     {
-        (*this)[setting] = value;
-        forgetOriginAtOffset(setting.offset);
+        setAtOffset(setting.offset, value);
     }
 
     SettingsChanges getFormatSettings() const;
@@ -75,7 +75,7 @@ struct NATSSettings
     DECLARE_SETTINGS_ENUMERATION(NATSSettings)
 
 private:
-    void forgetOriginAtOffset(size_t offset);
+    void setAtOffset(size_t offset, const Field & value);
 
     std::unique_ptr<NATSSettingsImpl> impl;
 };

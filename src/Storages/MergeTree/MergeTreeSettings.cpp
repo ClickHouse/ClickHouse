@@ -3062,7 +3062,7 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
 
             if (get(final_name) != previous_value)
             {
-                impl->setWithOrigin<SettingOrigin::Compatibility>(final_name, previous_value);
+                impl->setWithOrigin(final_name, previous_value, SettingOrigin::Compatibility);
             }
         }
     }
@@ -3124,7 +3124,7 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     {
         for (const String & key : config_keys)
         {
-            impl->setWithOrigin<SettingOrigin::Config>(key, config.getString(config_elem + "." + key));
+            impl->setWithOrigin(key, config.getString(config_elem + "." + key), SettingOrigin::Config);
         }
     }
     catch (Exception & e)
