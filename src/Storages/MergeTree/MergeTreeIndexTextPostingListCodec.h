@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
-#include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -58,8 +58,8 @@ class SegmentedPostingListCodec
         {
             UInt64 v = 0;
             readVarUInt(v, in);
-            if (v != static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking))
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected codec type Bitpacking, got {}", v);
+            if (!isValidPostingListBlockCodecType(v))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: unknown posting list block codec type {}", v);
             codec_type = static_cast<IPostingListCodec::Type>(v);
 
             readVarUInt(v, in);
@@ -135,20 +135,6 @@ public:
     /// Total number of row ids added so far.
     size_t cardinality() const { return total_row_ids; }
 
-    /// Heap memory held by the in-memory encoded representation.
-    size_t memoryUsageBytes() const
-    {
-        size_t block_metas_bytes = 0;
-        for (const auto & segment : segment_block_metas)
-            block_metas_bytes += segment.metas.capacity() * sizeof(PackedBlockMeta);
-
-        return compressed_data.capacity()
-            + block_values.capacity() * sizeof(UInt32)
-            + segment_descriptors.capacity() * sizeof(SegmentDescriptor)
-            + segment_block_metas.capacity() * sizeof(SegmentBlockMetas)
-            + block_metas_bytes;
-    }
-
     /// Deserialize a postings list from input `in` into `out`.
     ///
     /// Format per segment:
@@ -188,7 +174,7 @@ private:
     SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer);
 
     /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
-    std::string compressed_data;
+    PODArray<char> compressed_data;
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
     /// Number of row ids in the open segment.
@@ -218,36 +204,54 @@ public:
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return impl.cardinality(); }
-    size_t memoryUsageBytes() const override { return impl.memoryUsageBytes(); }
 
 private:
     SegmentedPostingListCodec impl;
 };
 
-/// Codec for serializing/deserializing a postings list to/from a binary stream.
-/// A codec for a postings list stored in a compact block-compressed format.
+/// Codec for serializing a postings list to/from a binary stream in a compact block-compressed format.
 ///
-/// Values are first delta-compressed then bigpacked, each within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE).
-/// Each compressed block is stored as: [1 byte: bits-width][payload].
+/// Values are delta-compressed within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE),
+/// and each block payload is produced by an IPostingListBlockCodec chosen by `getType`.
 ///
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
+/// The framing is codec-independent, so `decode` is driven by the codec type in each segment header.
+///
 /// Assumes that input row ids are strictly increasing.
-class PostingListCodecBitpacking : public IPostingListCodec
+class SegmentedPostingListCodecBase : public IPostingListCodec
 {
 public:
-    static const char * getName() { return "bitpacking"; }
-
-    PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
+    explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
     /// Normalizes the requested segment size to a multiple of BLOCK_SIZE, because the SIMD
     /// bit-packing implementation expects block-aligned sizes for efficient processing.
     size_t getSegmentSize(size_t posting_list_block_size) const override;
+
+    /// Creates a SegmentedPostingListEncoder whose block payloads are produced by this codec's block codec (see `getType`).
     std::unique_ptr<IPostingListEncoder> createEncoder() const override;
 
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
+};
+
+/// Each block is stored as [1 byte: bits-width][bit-packed payload], at the block's maximum delta width.
+class PostingListCodecBitpacking : public SegmentedPostingListCodecBase
+{
+public:
+    static const char * getName() { return "bitpacking"; }
+
+    PostingListCodecBitpacking() : SegmentedPostingListCodecBase(Type::Bitpacking) {}
+};
+
+/// Bit-packed at a size-minimising base width; outliers become patched exceptions, all-equal deltas a constant.
+class PostingListCodecPFor : public SegmentedPostingListCodecBase
+{
+public:
+    static const char * getName() { return "pfor"; }
+
+    PostingListCodecPFor() : SegmentedPostingListCodecBase(Type::PFor) {}
 };
 
 /// Accumulator for the None codec.
@@ -260,7 +264,6 @@ public:
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return total_row_ids; }
-    size_t memoryUsageBytes() const override;
 
 private:
     void finishSegment();

@@ -41,9 +41,6 @@ public:
 
     /// Total number of row ids accumulated so far.
     virtual size_t cardinality() const = 0;
-
-    /// Heap memory held by the accumulator (for memory accounting during the build).
-    virtual size_t memoryUsageBytes() const = 0;
 };
 
 /// IPostingListCodec is an interface for serializing/deserializing text index posting lists.
@@ -54,6 +51,7 @@ public:
     {
         None,
         Bitpacking,
+        PFor,
     };
 
     IPostingListCodec() = default;
@@ -84,6 +82,18 @@ public:
 private:
     Type type{};
 };
+
+inline constexpr bool isValidPostingListCodecType(UInt64 value)
+{
+    return value <= static_cast<UInt64>(IPostingListCodec::Type::PFor);
+}
+
+/// `None` is excluded: an uncompressed posting list has no segments.
+inline constexpr bool isValidPostingListBlockCodecType(UInt64 value)
+{
+    return value == static_cast<UInt64>(IPostingListCodec::Type::Bitpacking)
+        || value == static_cast<UInt64>(IPostingListCodec::Type::PFor);
+}
 
 class PostingListCodecFactory : public boost::noncopyable
 {

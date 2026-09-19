@@ -235,26 +235,26 @@ void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo 
         info.header |= SingleBlock;
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
+void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     SegmentedPostingListCodec impl;
     impl.decode(in, max_cardinality, postings, buffer);
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
 {
     SegmentedPostingListCodec impl;
     impl.decode(in, max_cardinality, row_ids, buffer);
 }
 
-size_t PostingListCodecBitpacking::getSegmentSize(size_t posting_list_block_size) const
+size_t SegmentedPostingListCodecBase::getSegmentSize(size_t posting_list_block_size) const
 {
     return (posting_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
 }
 
-std::unique_ptr<IPostingListEncoder> PostingListCodecBitpacking::createEncoder() const
+std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder() const
 {
-    return std::make_unique<SegmentedPostingListEncoder>(IPostingListCodec::Type::Bitpacking);
+    return std::make_unique<SegmentedPostingListEncoder>(getType());
 }
 
 void PostingListEncoderNone::append(std::span<const UInt32> row_ids, size_t segment_size)
@@ -310,14 +310,6 @@ void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & inf
 
     if (info.offsets.size() == 1)
         info.header |= SingleBlock;
-}
-
-size_t PostingListEncoderNone::memoryUsageBytes() const
-{
-    size_t result = current_segment.getSizeInBytes();
-    for (const auto & segment : segments)
-        result += segment.getSizeInBytes();
-    return result;
 }
 
 std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder() const

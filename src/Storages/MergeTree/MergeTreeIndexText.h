@@ -171,9 +171,6 @@ public:
     Inline & getInline() { return std::get<Inline>(state); }
     PositionListBuilder * getPositions();
 
-    /// Heap memory held by the builder (the builder itself is accounted in the map buffer).
-    size_t memoryUsageBytes() const;
-
 private:
     std::variant<Inline, Large, Filtered> state;
 };
@@ -300,6 +297,7 @@ public:
 
     bool empty() const { return size() == 0; }
     size_t size() const;
+    size_t lowerBound(std::string_view token) const;
     size_t upperBound(std::string_view token) const;
 
     std::string_view getToken(size_t idx) const;
@@ -430,7 +428,6 @@ private:
     void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
-    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     /// Analyzer for the text index. Tracks regular tokens, pattern tokens, and per-query state.
     std::unique_ptr<TextIndexAnalyzer> analyzer;
@@ -467,7 +464,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     bool empty() const override { return sorted_tokens.empty(); }
     size_t memoryUsageBytes() const override;
 
-    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
     TokenToPostingsBuilderMap tokens_map;
@@ -551,6 +547,9 @@ private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
     template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
+
+    /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
+    void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     String index_column_name;
     MergeTreeIndexTextParams params;
