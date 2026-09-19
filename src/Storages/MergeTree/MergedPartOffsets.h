@@ -124,6 +124,14 @@ private:
     PODArray<UInt64> current_page_values;
     Arena arena;
 
+    /// A merge that does not interleave this part's rows with rows of other parts - parts covering
+    /// disjoint ranges of the sorting key, or a table without one - leaves the inserted values consecutive.
+    UInt64 first_value = 0;
+    UInt64 last_value = 0;
+    bool consecutive = false;
+
+    bool noValues() const { return pages.empty() && current_page_values.empty(); }
+
 public:
     /// @param val The _part_offset value to insert (must be greater than all previously inserted values)
     void insert(UInt64 val)
@@ -131,7 +139,19 @@ public:
         if (current_page_values.size() >= PACKED_PAGE_SIZE)
             flush();
 
-        chassert(current_page_values.empty() || current_page_values.back() < val);
+        chassert(noValues() || last_value < val);
+
+        if (noValues())
+        {
+            first_value = val;
+            consecutive = true;
+        }
+        else if (val != last_value + 1)
+        {
+            consecutive = false;
+        }
+
+        last_value = val;
         current_page_values.push_back(val);
     }
 
@@ -164,6 +184,12 @@ public:
     /// Decompresses the _part_offset value at the specified index
     UInt64 operator[](size_t i) const
     {
+        if (consecutive)
+        {
+            chassert(first_value + i <= last_value);
+            return first_value + i;
+        }
+
         size_t page_pos = i >> PACKED_PAGE_SIZE_DEGREE;
         chassert(page_pos < pages.size());
         size_t page_idx = i & PACKED_PAGE_MASK;
