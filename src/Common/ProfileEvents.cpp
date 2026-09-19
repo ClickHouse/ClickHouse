@@ -1702,6 +1702,7 @@ The server successfully detected this situation and will download merged part fr
     M(SetsBuiltFromSubquery, "Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(LoadedStatisticsParts, "Number of data parts whose statistics were loaded to build a selectivity estimator. Reuse of a cached estimator loads none.", ValueType::Number) \
     M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
     M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \

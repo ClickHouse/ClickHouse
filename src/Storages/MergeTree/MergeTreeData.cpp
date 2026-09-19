@@ -230,6 +230,7 @@ namespace ProfileEvents
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event LoadedStatisticsParts;
 }
 
 namespace CurrentMetrics
@@ -1019,6 +1020,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         LOG_DEBUG(log, "Loading statistics");
         ConditionSelectivityEstimatorBuilder estimator_builder;
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
+        ProfileEvents::increment(ProfileEvents::LoadedStatisticsParts, parts.size());
 
         /// `<col>.null` may appear in the required columns when `optimize_functions_to_subcolumns = 1`;
         /// statistics of the parent column serve it, so fold the parent names into the lookup set.
