@@ -21,8 +21,9 @@ FILE_FRAC_EPOCH="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac_epoch.pb"
 FILE_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac.pb"
 FILE_LEGACY_SECONDS="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_seconds.pb"
 FILE_LEGACY_OUT="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_out.pb"
+FILE_COMPAT_OUT="${CLICKHOUSE_TEST_UNIQUE_NAME}_compat_out.pb"
 FILE_LEGACY_DOUBLE="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_double.pb"
-trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_LEGACY_DOUBLE}"' EXIT
+trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_COMPAT_OUT}" "${FILE_LEGACY_DOUBLE}"' EXIT
 
 echo '-- pre-epoch'
 ${CLICKHOUSE_LOCAL} --query "
@@ -107,6 +108,22 @@ echo '-- legacy output and legacy input restores the truncated Unix-second insta
 ${CLICKHOUSE_LOCAL} --query "
 SELECT *
 FROM file('${FILE_LEGACY_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
+SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
+
+echo '-- compatibility 26.9 restores legacy whole-seconds encoding'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${FILE_COMPAT_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
+SETTINGS date_time_input_format = 'best_effort', engine_file_truncate_on_insert = 1, compatibility = '26.9'
+FORMAT TSV
+2020-01-01 00:00:00.123+00"
+
+echo '-- compatibility writer without input setting misinterprets seconds as ticks'
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FILE_COMPAT_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')"
+
+echo '-- compatibility writer and legacy input restores the truncated Unix-second instant'
+${CLICKHOUSE_LOCAL} --query "
+SELECT *
+FROM file('${FILE_COMPAT_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
 
 DOUBLE_SCHEMA='syntax = "proto3"; message Row { double t = 1; }'

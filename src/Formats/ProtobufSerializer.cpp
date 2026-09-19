@@ -1735,7 +1735,6 @@ namespace
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
             , scale(datetime64_type_.getScale())
             , scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
-            , date_lut(datetime64_type_.getTimeZone())
             , input_datetime64_legacy_seconds(input_datetime64_legacy_seconds_)
             , output_datetime64_legacy_seconds(output_datetime64_legacy_seconds_)
         {
@@ -1939,20 +1938,19 @@ namespace
         void dateTime64ToString(DateTime64 value, String & str) const
         {
             WriteBufferFromString buf{str};
-            writeDateTimeText(value, scale, buf, date_lut);
+            writeDateTimeText(value, scale, buf);
         }
 
         DateTime64 stringToDateTime64(const absl::string_view & str) const
         {
             ReadBufferFromString buf(str);
             DateTime64 value{0};
-            readDateTime64Text(value, scale, buf, date_lut);
+            readDateTime64Text(value, scale, buf);
             return value;
         }
 
         const UInt32 scale;
         const DateTime64::NativeType scale_multiplier;
-        const DateLUTImpl & date_lut;
         const bool input_datetime64_legacy_seconds;
         const bool output_datetime64_legacy_seconds;
         std::function<void(DateTime64)> write_function;
