@@ -1455,6 +1455,11 @@ Print a readable number tip on the right side of the table if the block consists
     DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_display_control_characters, true, R"(
+If enabled, non-printable control characters (NUL, SOH, tab, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␉, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines, which is how it is meant to be read and copy-pasted.
+)", 0) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
