@@ -112,50 +112,61 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                         continue;
 
                     auto applicable_edge = getApplicableExpressions(query_graph, left->relations, right->relations);
-                    /// Keep the edges that connect left and right, plus non-connecting single-table filters
-                    /// and constants, which DPsize attaches at the join that introduces their relation
-                    /// (unlike DPhyp, which handles them separately via the hyperedge graph).
+                    /// Only leave the edges that connect left and right.
+                    /// DPsize also includes non-connecting predicates (single-relation filters merged into the
+                    /// join graph), unlike DPhyp which bails out on them and falls back to another algorithm.
+                    bool has_direct_connection = false;
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
+                        /// Placement is driven by the relations that must all be present before the predicate
+                        /// is applicable: its source relations plus the null-supplying relation it is pinned
+                        /// to when it is an ON-clause conjunct of an outer join - the same rule as
+                        /// `collectJoinEdgesMask` (see the comment there). Placing a pinned conjunct by its
+                        /// sources alone would drop it from the outer join when the preserved side has
+                        /// already been joined with another relation.
+                        BitSet needed_rels = edge_it->getSourceRelations();
+                        if (auto pin_it = query_graph.outer_join_conditions.find(*edge_it); pin_it != query_graph.outer_join_conditions.end())
+                            needed_rels.set(pin_it->second);
+
                         if (connects(edge_it, left->relations, right->relations))
                         {
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            has_direct_connection = true;
+                            edge.push_back(edge_it);
+                        }
+                        else if (needed_rels.count() == 1 && (needed_rels == left->relations || needed_rels == right->relations))
+                        {
+                            /// A single-relation predicate is attached at the join step where its relation forms
+                            /// a whole side, i.e. at the leaf join of that relation. Every join tree contains
+                            /// exactly one such step per relation, so the predicate is applied exactly once
+                            /// regardless of the chosen join order.
+                            LOG_TEST(log, "Adding single-relation predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else if (needed_rels.none() && component_size == 2)
+                        {
+                            LOG_TEST(log, "Adding constant predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else if (areIntersecting(needed_rels, left->relations) && areIntersecting(needed_rels, right->relations))
+                        {
+                            /// A pinned conjunct spanning the split (its sources on one side, its pin on the
+                            /// other): this join is the lowest one that makes it applicable, so it belongs
+                            /// to this join's ON condition.
+                            LOG_TEST(log, "Adding pinned predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
                         else
                         {
-                            /// Non-connecting predicate. A single-table filter (references exactly one
-                            /// relation) or a constant (references none) must still be applied; a predicate
-                            /// spanning two or more relations was already applied in a sub-join and is skipped.
-                            ///
-                            /// Attach a single-table filter at the join that introduces its relation (the
-                            /// side equal to that relation) so it filters as low as possible, and a constant
-                            /// at the earliest (component_size == 2) join. Two earlier conditions each
-                            /// silently dropped the predicate, changing the query result:
-                            ///   - `component_size == 2` drops the filter whenever its relation is introduced
-                            ///     against an already-multi-relation component (that step has size > 2).
-                            ///   - `fromLeft() || fromRight() || fromNone()` drops it for any single-table
-                            ///     filter on a relation whose id is >= 2, because `fromLeft`/`fromRight` test
-                            ///     relation ids 0 and 1 specifically (they describe the two inputs of a binary
-                            ///     join step, not "references a single relation").
-                            auto filter_rel = edge_it->getSourceRelations().getSingleBit();
-                            bool relation_introduced = filter_rel.has_value()
-                                && (left->relations.getSingleBit() == filter_rel || right->relations.getSingleBit() == filter_rel);
-                            bool constant_at_earliest_join = edge_it->fromNone() && component_size == 2;
-                            if (relation_introduced || constant_at_earliest_join)
-                            {
-                                LOG_TEST(log, "Adding non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
-                                edge.push_back(edge_it);
-                            }
-                            else
-                            {
-                                LOG_TEST(log, "Skipping non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
-                            }
+                            LOG_TEST(log, "Skipping non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                         }
                     }
 
-                    bool connected = !edge.empty()
+                    /// Any predicate referencing both sides makes the pair joinable, including non-equi ones
+                    /// (ranges, OR, ...): they are costed as a full cross product (see `computeSelectivity`),
+                    /// but must still produce a valid plan when they are the only link between the two sides.
+                    bool connected = has_direct_connection
                         || query_graph.areTransitivelyConnected(left->relations, right->relations);
 
                     LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
