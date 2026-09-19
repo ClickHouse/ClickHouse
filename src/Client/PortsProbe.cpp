@@ -2,6 +2,7 @@
 
 #include <Common/DNSResolver.h>
 #include <Common/Stopwatch.h>
+#include <Common/makeSocketAddress.h>
 #include <base/errnoToString.h>
 
 #include <Poco/Net/NetException.h>
@@ -67,6 +68,11 @@ PortsProbeResult probePlainAndSecurePorts(
         Port{plain_port, /*secure=*/ false, DNSResolver::instance().resolveAddressList(host, plain_port), 0, 0},
         Port{secure_port, /*secure=*/ true, DNSResolver::instance().resolveAddressList(host, secure_port), 0, 0}};
 
+    /// The local address to bind to is the same for every probe, so it is resolved once.
+    std::optional<Poco::Net::SocketAddress> bind_address;
+    if (!bind_host.empty())
+        bind_address = makeBindAddress(bind_host, 0);
+
     /// Pointers into this container are taken below, so it must not reallocate.
     std::deque<Probe> probes;
 
@@ -83,8 +89,8 @@ PortsProbeResult probePlainAndSecurePorts(
         port.attempt_started_at_us = watch.elapsedMicroseconds();
         try
         {
-            if (!bind_host.empty())
-                probe.socket.bind(Poco::Net::SocketAddress(bind_host, 0), /*reuseAddress=*/ true);
+            if (bind_address)
+                probe.socket.bind(*bind_address, /*reuseAddress=*/ true);
 
             probe.socket.connectNB(probe.address);
             probe.pending = true;
