@@ -154,7 +154,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
         patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
         patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
-        patch_join_cache->init(ranges_in_patch_parts);
+        patch_join_cache->init(ranges_in_patch_parts.getRanges());
     }
 
     const auto & context = storage.getContext();
