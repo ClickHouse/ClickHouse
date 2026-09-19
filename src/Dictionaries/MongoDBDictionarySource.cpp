@@ -9,6 +9,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -288,7 +289,13 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const Vec
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}", configuration->uri->to_string());
+    /// This is used only for logging and display, so mask the whole userinfo embedded in the URI.
+    /// Mask the userinfo, not just the password: a MongoDB URI can carry a password that itself
+    /// contains '@' or a bare credential token with no ':' separator, both of which a password-only
+    /// masker leaves partly visible. This matches `findMongoDBSecretArguments` used for query text.
+    std::string uri = configuration->uri->to_string();
+    maskURIUserinfo(uri);
+    return fmt::format("MongoDB: {}", uri);
 }
 #endif
 
