@@ -1,0 +1,26 @@
+--- A0 a filter on the column returns every row that matches it ---
+2
+1
+1
+1
+1
+--- A1 a probe outside one file min/max-prunes it, and only it ---
+0
+0
+0
+0
+1
+1
+1
+1
+--- A2 a value inside both shifted bounds prunes nothing ---
+0
+0
+--- B0 a bound the writer rounded past the precision of the type still prunes ---
+2
+1
+1
+--- B1 the saturated bounds prune the file that cannot hold the probe ---
+1
+1
+0

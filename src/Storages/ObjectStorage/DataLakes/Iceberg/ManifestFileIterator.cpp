@@ -549,9 +549,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but a bound narrower than the column is what a promotion
-                    /// (`int` -> `long`) leaves stored, and at scale 38 a bound that only loses its widened form
-                    /// can still be a value the column holds, so this is not on its own a malformed manifest.
+                    /// A bound that does not decode is either wider than the storage of its type,
+                    /// or narrower than the column is now, which is what Iceberg leaves behind for a
+                    /// promoted column. The second is well formed, so this stays out of the warning
+                    /// log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "

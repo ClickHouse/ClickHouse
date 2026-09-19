@@ -6,6 +6,7 @@
 
 #include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -143,14 +144,34 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
 
     if (compensate_rounding && scale)
     {
+        /// Every value in the file fits the precision of the type it is read as, so the largest
+        /// magnitude that precision allows is on the outer side of all of them: it stands in for a
+        /// widened bound that leaves the type, and it is the tightest bound that does. Dropping the
+        /// bound instead would cost min/max pruning for the whole column.
+        const NativeType limit
+            = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>) - NativeType(1);
+
         NativeType scaler = lower_bound ? -10 : 10;
         for (UInt32 i = 1; i < scale; ++i)
             scaler *= 10;
 
-        /// The bound is stored as raw bytes and is never checked against the declared precision, so
-        /// widening it can leave the type. A value that has no widened form is not a usable bound.
-        if (common::addOverflow(unscaled_value, scaler, unscaled_value))
-            return std::nullopt;
+        /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly 0.7
+        /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
+        NativeType widened_value;
+        if (common::addOverflow(unscaled_value, scaler, widened_value))
+            widened_value = lower_bound ? -limit : limit;
+
+        /// A bound is stored as raw bytes that are never checked against a precision, so the
+        /// rounding the Iceberg writers apply can put it one unit outside the type: a file whose
+        /// extreme value is `0.99` carries `1.0` (`10^38` unscaled) at scale 38. Saturating such a
+        /// bound keeps it outside every value in the file, where rejecting it loses the column's
+        /// pruning. Saturation is monotonic, so it cannot invert a pair that was not inverted.
+        if (widened_value > limit)
+            widened_value = limit;
+        else if (widened_value < -limit)
+            widened_value = -limit;
+
+        unscaled_value = widened_value;
     }
 
     return DecimalField<DecimalType>(unscaled_value, scale);
