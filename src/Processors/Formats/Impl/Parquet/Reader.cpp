@@ -917,6 +917,13 @@ void Reader::prepareBloomFilterCondition()
             continue;
 
         parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+
+        if (!parquetHashFilterOutputTypeIsExact(
+                column_info.decoded_type,
+                extended_sample_block_data_types.at(column_info.idx_in_output_block),
+                desc.physical_type()))
+            continue;
+
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
