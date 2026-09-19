@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 O nome de uma função de agregação pode receber um sufixo. Isso altera a forma como a função de agregação opera.
 
-<div id="-if">
-  ## -If
-</div>
+## -If {#-if}
 
 O sufixo -If pode ser acrescentado ao nome de qualquer função de agregação. Nesse caso, a função de agregação aceita um argumento extra — uma condição (tipo Uint8). A função de agregação processa apenas as linhas que atendem à condição. Se a condição não for atendida nenhuma vez, ela retorna um valor padrão (geralmente zeros ou strings vazias).
 
@@ -18,9 +16,7 @@ Exemplos: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTi
 
 Com funções de agregação condicionais, você pode calcular agregados para várias condições ao mesmo tempo, sem usar subconsultas nem `JOIN`s. Por exemplo, funções de agregação condicionais podem ser usadas para implementar a funcionalidade de comparação de segmentos.
 
-<div id="-array">
-  ## -Array
-</div>
+## -Array {#-array}
 
 O sufixo -Array pode ser anexado a qualquer função de agregação. Nesse caso, a função de agregação recebe argumentos do tipo &#39;Array(T)&#39; (arrays) em vez de argumentos do tipo &#39;T&#39;. Se a função de agregação aceitar vários argumentos, eles deverão ser arrays de comprimentos iguais. Ao processar arrays, a função de agregação funciona como a função de agregação original sobre todos os elementos do array.
 
@@ -30,9 +26,7 @@ Exemplo 2: `uniqArray(arr)` – Conta o número de elementos únicos em todos os
 
 -If e -Array podem ser combinados. No entanto, &#39;Array&#39; deve vir primeiro e, depois, &#39;If&#39;. Exemplos: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Devido a essa ordem, o argumento &#39;cond&#39; não será um array.
 
-<div id="-map">
-  ## -Map
-</div>
+## -Map {#-map}
 
 O sufixo -Map pode ser anexado a qualquer função de agregação. Isso cria uma função de agregação que recebe o tipo Map como argumento e agrega separadamente os valores de cada chave do map usando a função de agregação especificada. O resultado também é do tipo Map.
 
@@ -66,9 +60,7 @@ GROUP BY timeslot;
 └─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-<div id="-simplestate">
-  ## -SimpleState
-</div>
+## -SimpleState {#-simplestate}
 
 Ao aplicar este combinador, a função de agregação retorna o mesmo valor, mas com um tipo diferente. Trata-se de uma [SimpleAggregateFunction(...)](/pt-BR/reference/data-types/simpleaggregatefunction) que pode ser armazenada em uma tabela para funcionar com tabelas [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
 
@@ -98,9 +90,7 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 └──────────────────────────────────────┴───┘
 ```
 
-<div id="-state">
-  ## -State
-</div>
+## -State {#-state}
 
 Se você aplicar este combinador, a função de agregação não retorna o valor resultante (como o número de valores únicos da função [uniq](/pt-BR/reference/functions/aggregate-functions/uniq)), mas um estado intermediário da agregação (para `uniq`, isso é a tabela hash usada para calcular o número de valores únicos). Trata-se de um `AggregateFunction(...)` que pode ser usado em processamento adicional ou armazenado em uma tabela para concluir a agregação depois.
 
@@ -116,27 +106,19 @@ Para trabalhar com esses estados, use:
 * O combinador [-Merge](#-merge).
 * O combinador [-MergeState](#-mergestate).
 
-<div id="-merge">
-  ## -Merge
-</div>
+## -Merge {#-merge}
 
 Se você aplicar este combinador, a função de agregação usa o estado intermediário de agregação como argumento, combina os estados para finalizar a agregação e retorna o valor resultante.
 
-<div id="-mergestate">
-  ## -MergeState
-</div>
+## -MergeState {#-mergestate}
 
 Mescla os estados intermediários de agregação da mesma forma que o combinador -Merge. No entanto, não retorna o valor resultante, mas sim um estado intermediário de agregação, semelhante ao combinador -State.
 
-<div id="-foreach">
-  ## -ForEach
-</div>
+## -ForEach {#-foreach}
 
 Converte uma função de agregação para tabelas em uma função de agregação para arrays, que agrega os elementos correspondentes dos arrays e retorna um array de resultados. Por exemplo, `sumForEach` para os arrays `[1, 2]`, `[3, 4, 5]` e `[6, 7]` retorna o resultado `[10, 13, 5]` após somar os elementos correspondentes dos arrays.
 
-<div id="-tuple">
-  ## -Tuple
-</div>
+## -Tuple {#-tuple}
 
 O sufixo `-Tuple` pode ser acrescentado a qualquer função de agregação. A função combinada recebe um argumento do tipo `Tuple` para cada argumento da função de agregação subjacente; todas as tuplas devem ter o mesmo número de elementos. A agregação é aplicada independentemente em cada posição do elemento, recebendo o elemento correspondente de cada `Tuple`, e retorna uma `Tuple` com os resultados.
 
@@ -236,16 +218,12 @@ FROM
 
 `-Tuple` pode ser combinado com outros combinadores, como `-If`. Por exemplo: `sumTupleIf(tuple_column, cond)`.
 
-<div id="-distinct">
-  ## -Distinct
-</div>
+## -Distinct {#-distinct}
 
 Cada combinação exclusiva de argumentos será agregada apenas uma vez. Valores repetidos são ignorados.
 Exemplos: `sum(DISTINCT x)` (ou `sumDistinct(x)`), `groupArray(DISTINCT x)` (ou `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (ou `corrStableDistinct(x, y)`) e assim por diante.
 
-<div id="-ordefault">
-  ## -OrDefault
-</div>
+## -OrDefault {#-ordefault}
 
 Altera o comportamento de uma função de agregação.
 
@@ -297,9 +275,7 @@ FROM
 └───────────────────────────────────┘
 ```
 
-<div id="-ornull">
-  ## -OrNull
-</div>
+## -OrNull {#-ornull}
 
 Altera o comportamento de uma função agregada.
 
@@ -354,9 +330,7 @@ FROM
 └────────────────────────────────┘
 ```
 
-<div id="-resample">
-  ## -Resample
-</div>
+## -Resample {#-resample}
 
 Permite dividir os dados em grupos e, em seguida, agregá-los separadamente em cada grupo. Os grupos são criados ao dividir os valores de uma coluna em intervalos.
 
@@ -367,7 +341,7 @@ Permite dividir os dados em grupos e, em seguida, agregá-los separadamente em c
 **Argumentos**
 
 * `start` — Valor inicial de todo o intervalo necessário para os valores de `resampling_key`.
-* `stop` — Valor final de todo o intervalo necessário para os valores de `resampling_key`. O intervalo completo não inclui o valor `stop` `[start, stop)`.
+* `stop` — Valor final de todo o intervalo necessário para os valores de `resampling_key`. O intervalo completo não inclui o valor `stop` `[start, stop)`. Ele deve ser maior que `start`: um intervalo que não abrange nenhum subintervalo lança uma exceção.
 * `step` — Passo para separar todo o intervalo em subintervalos. A `aggFunction` é executada em cada um desses subintervalos de forma independente.
 * `resampling_key` — Coluna cujos valores são usados para separar os dados em intervalos.
 * `aggFunction_params` — Parâmetros de `aggFunction`.
@@ -424,22 +398,16 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-<div id="-argmin">
-  ## -ArgMin
-</div>
+## -ArgMin {#-argmin}
 
 O sufixo -ArgMin pode ser anexado ao nome de qualquer função de agregação. Nesse caso, a função de agregação aceita um argumento adicional, que deve ser qualquer expressão comparável. A função de agregação processa apenas as linhas que têm o valor mínimo da expressão extra especificada.
 
 Exemplos: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` e assim por diante.
 
-<div id="-argmax">
-  ## -ArgMax
-</div>
+## -ArgMax {#-argmax}
 
 Semelhante ao sufixo -ArgMin, mas processa apenas as linhas com o valor máximo da expressão extra especificada.
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Uso de combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
