@@ -416,6 +416,8 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
+    /// NDJSON lakes commonly name their files `.json`, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONEachRow", /*used_for_format_inference=*/ false);
 
     register_format("JSONStringsEachRow", true);
 

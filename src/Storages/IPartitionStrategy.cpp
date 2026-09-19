@@ -1,4 +1,5 @@
 #include <Storages/IPartitionStrategy.h>
+#include <Formats/FormatFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/TreeRewriter.h>
@@ -8,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/KeyDescription.h>
 #include <Poco/String.h>
+#include <boost/algorithm/string/join.hpp>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -352,7 +354,18 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
 
 std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
 {
-    return prefix + "**." + Poco::toLower(file_format);
+    /// Match every file extension registered for the format, not only the lowercased format
+    /// name: for most formats the name is not the extension real files carry (`JSONEachRow`
+    /// files are named `.jsonl` / `.ndjson`, `CSVWithNames` files are named `.csv`), and a
+    /// glob built from the format name alone silently matches nothing over such a lake.
+    /// The lowercased format name is always one of the registered extensions, so the files
+    /// ClickHouse itself writes (see getPathForWrite) keep matching.
+    const auto extensions = FormatFactory::instance().getFileExtensionsForFormat(file_format);
+
+    if (extensions.size() == 1)
+        return prefix + "**." + extensions.front();
+
+    return prefix + "**.{" + boost::algorithm::join(extensions, ",") + "}";
 }
 
 std::string HiveStylePartitionStrategy::getPathForWrite(

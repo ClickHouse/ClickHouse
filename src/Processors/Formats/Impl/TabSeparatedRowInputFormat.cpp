@@ -426,6 +426,10 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             registerWithNamesAndTypes("Raw", register_func);
     }
 
+    /// `TabSeparated` and `TSV` are registered as independent formats, and the `tsv` extension
+    /// infers as `TSV`.
+    factory.registerFileExtension("tsv", "TabSeparated", /*used_for_format_inference=*/ false);
+
     factory.setDocumentation("Raw", Documentation{
         .description = "An alias for the `TabSeparatedRaw` format. See the `TabSeparatedRaw` entry for the full documentation.",
         .related = {"TabSeparatedRaw"}});
