@@ -126,6 +126,12 @@ namespace ProfileEvents
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
 
+        /// Walk the parent chain from this node to the outermost Process-level counters and call
+        /// `increment` once there. Used for query-scoped events such as `MemoryCredits` that must not
+        /// land in Thread, ProfileEventsScope, or nested Process counters (materialized views,
+        /// nested async-insert flushes). If this chain has no Process node, does nothing.
+        void incrementAtOutermostProcess(Event event, Count amount = 1);
+
         struct Snapshot
         {
             Snapshot();
@@ -135,6 +141,11 @@ namespace ProfileEvents
             Count operator[] (Event event) const noexcept
             {
                 return counters_holder[event];
+            }
+
+            void set(Event event, Count value) noexcept
+            {
+                counters_holder[event] = value;
             }
 
             Snapshot & operator=(Snapshot &&) = default;

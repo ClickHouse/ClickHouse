@@ -1,0 +1,61 @@
+-- Regression test for the MemoryCredits accounting of idle-held memory (the "tail" at query finish).
+-- MemoryCredits is the time integral of memory usage (byte-microseconds). It is advanced only on
+-- allocation/free transitions of the query's memory tracker, so the interval between the last
+-- allocation/free and the moment the query finishes was previously lost: a query that allocates
+-- memory and then holds it idle (without allocating or freeing) must still account that held interval.
+--
+-- Both queries below build the identical large IN-set and hold it alive for their whole lifetime
+-- (the set of an `IN (subquery)` lives until the query finishes). They differ only in how long they
+-- then hold it idle: one sleeps for a short interval, the other for a much longer one. Because their
+-- structure and their set-building phase are identical, the only systematic difference between their
+-- MemoryCredits values is the extra idle interval of the longer query, which is charged only if the
+-- held (idle) time is accounted. The longer-holding query must therefore strictly exceed the shorter
+-- one. Without the fix the idle interval is not charged at all, so the two values are about equal and
+-- the strict inequality fails.
+--
+-- We compare two queries that differ only in the idle-hold duration (rather than a fixed multiple or
+-- a sleep-vs-no-sleep pair) so the result is robust to the noisy set-building time: under sanitizers
+-- or on a loaded runner the build can take a variable amount of time, but that noise is common to
+-- both queries and is dominated by the five-second difference in the idle-hold interval.
+--
+-- The server caps every sleep call at 3 seconds per block (for sleepEachRow the cap applies to the
+-- per-block total), so a single sleep(6) is rejected with TOO_SLOW. To hold for longer, each query
+-- reads 2 rows with max_block_size = 1, so sleepEachRow runs once per single-row block and each call
+-- stays within the cap: 2 x 0.5 s = 1 s for the short hold, 2 x 3 s = 6 s for the long one. The set
+-- is made large by the width of its rows (a few thousand long strings, about 32 MiB in total) rather
+-- than by their number, so that building it stays cheap even with max_block_size = 1, which applies
+-- to the subquery as well.
+
+SET log_queries = 1;
+
+-- Build the set and hold it idle for a short interval before finishing.
+SELECT count()
+FROM numbers(2)
+WHERE sleepEachRow(0.5) = 0
+  AND concat(repeat('x', 16384), toString(number)) IN (SELECT concat(repeat('x', 16384), toString(number)) FROM numbers(2000))
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_short';
+
+-- Build the identical set and hold it idle for a much longer interval before finishing.
+SELECT count()
+FROM numbers(2)
+WHERE sleepEachRow(3) = 0
+  AND concat(repeat('x', 16384), toString(number)) IN (SELECT concat(repeat('x', 16384), toString(number)) FROM numbers(2000))
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_long';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    held_short > 0,
+    held_long > held_short
+FROM
+(
+    SELECT
+        maxIf(ProfileEvents['MemoryCredits'], log_comment = '04506_memory_credits_hold_short') AS held_short,
+        maxIf(ProfileEvents['MemoryCredits'], log_comment = '04506_memory_credits_hold_long') AS held_long
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND log_comment IN ('04506_memory_credits_hold_short', '04506_memory_credits_hold_long')
+      AND type = 'QueryFinish'
+);

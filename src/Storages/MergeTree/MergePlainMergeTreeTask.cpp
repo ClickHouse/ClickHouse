@@ -99,6 +99,12 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+    /// Remember the group of the thread that runs this task (for `OPTIMIZE` it is the query thread) before
+    /// the switcher below borrows the thread for the merge group, so that the profile counters accumulated by
+    /// the merge are transferred to the initial query and not back into the merge group itself.
+    auto query_thread_group = CurrentThread::getGroup();
+
+    ThreadGroupSwitcher switcher((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
@@ -121,7 +127,7 @@ void MergePlainMergeTreeTask::prepare()
             projections_duration_ms);
     };
 
-    transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()
+    transfer_profile_counters_to_initial_query = [this, query_thread_group] ()
     {
         if (query_thread_group)
         {
