@@ -1,0 +1,7 @@
+nondeterministic	1
+5
+deterministic	2
+5
+executable	1
+10
+executable in subquery	2
