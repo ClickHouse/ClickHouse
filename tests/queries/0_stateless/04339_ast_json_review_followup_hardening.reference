@@ -16,3 +16,4 @@ BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/b
 SELECT lambda(tuple(), 1)
 SELECT arrayMap(() -> 1, [1])
 SELECT * APPLY lambda(1)(tuple(x), x + 1)
+SELECT * FROM db.tbl.extra

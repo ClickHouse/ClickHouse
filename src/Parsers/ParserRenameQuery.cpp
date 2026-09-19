@@ -31,13 +31,13 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr from_db;
         ASTPtr to_db;
-        ParserIdentifier db_name_p(true);
         bool if_exists = s_if_exists.ignore(pos, expected);
-        if (!db_name_p.parse(pos, from_db, expected))
+        /// Both names can be hierarchical (`RENAME DATABASE a.b TO c.d`), the same as in `CREATE DATABASE`.
+        if (!parseDatabaseAsAST(pos, expected, from_db))
             return false;
         if (!s_to.ignore(pos, expected))
             return false;
-        if (!db_name_p.parse(pos, to_db, expected))
+        if (!parseDatabaseAsAST(pos, expected, to_db))
             return false;
 
         String cluster_str;

@@ -353,7 +353,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()});
+        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -364,7 +364,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()});
+        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -382,23 +382,12 @@ BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
-    if (!query.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
-
     using Type = ASTSystemQuery::Type;
 
-    /// Use global context with fresh system profile settings
-    auto system_context = Context::createCopy(getContext()->getGlobalContext());
-    /// Don't check for constraints when changing profile. It was accepted before (for example it might include
-    /// some experimental settings)
-    bool check_constraints = false;
-    system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
-
-    /// Make canonical query for simpler processing
+    /// Make canonical query for simpler processing. This is done before the `ON CLUSTER` dispatch and before any
+    /// access check: a hierarchical name (`a.b.c`, or `b.c` inside `USE a`, see `DatabaseCatalog`) is bound to the
+    /// table it denotes, and both parts of the name in the query are rewritten to it, so that the access that is
+    /// checked (here, or on every host of the cluster) and the table that is acted upon are the same.
     if (query.type != Type::RELOAD_DICTIONARY && query.type != Type::UNLOAD_DICTIONARY && query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
@@ -407,12 +396,32 @@ BlockIO InterpreterSystemQuery::execute()
         /// throws on a missing database before the per-handler `if_exists` check is
         /// reached, so use `tryResolveStorageID` here when `if_exists` is set.
         /// The handler still validates table existence via the catalog.
-        if (query.if_exists)
+        /// `ON CLUSTER`, the table may exist on the other hosts only: the name keeps its placement then.
+        if (query.if_exists || !query.cluster.empty())
             table_id = getContext()->tryResolveStorageID(id_in_query, Context::ResolveOrdinary);
         else
             table_id = getContext()->resolveStorageID(id_in_query, Context::ResolveOrdinary);
+
+        if (table_id)
+        {
+            query.setDatabase(table_id.database_name);
+            query.setTable(table_id.table_name);
+        }
     }
 
+    if (!query.cluster.empty())
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccessForDDLOnCluster();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
+
+    /// Use global context with fresh system profile settings
+    auto system_context = Context::createCopy(getContext()->getGlobalContext());
+    /// Don't check for constraints when changing profile. It was accepted before (for example it might include
+    /// some experimental settings)
+    bool check_constraints = false;
+    system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     BlockIO result;
 

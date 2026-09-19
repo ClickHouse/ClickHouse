@@ -7,6 +7,8 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
+
 namespace Poco::JSON { class Object; }
 
 namespace DB
@@ -87,6 +89,23 @@ public:
     }
 
     const Elements & getElements() const { return elements; }
+    Elements & getElements() { return elements; }
+
+    /// Replaces the names of a table (the `from` or the `to` of an element) with the given ones.
+    void setTableNames(Table & table, const String & database_name, const String & table_name)
+    {
+        auto set_identifier = [this](ASTPtr & identifier, const String & name)
+        {
+            ASTPtr new_identifier = make_intrusive<ASTIdentifier>(name);
+            if (identifier)
+                std::replace(children.begin(), children.end(), identifier, new_identifier);
+            else
+                children.push_back(new_identifier);
+            identifier = new_identifier;
+        };
+        set_identifier(table.database, database_name);
+        set_identifier(table.table, table_name);
+    }
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }

@@ -33,7 +33,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserKeyword s_if_empty(Keyword::IF_EMPTY);
-    ParserIdentifier name_p(true);
+    /// `DROP DATABASE a.b` accepts the hierarchical database name `a.b`, the same as `CREATE DATABASE`.
+    ParserCompoundIdentifier name_p(/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true);
     ParserStringLiteral like_p(Highlight::string_like);
     ParserKeyword s_permanently(Keyword::PERMANENTLY);
     ParserKeyword s_no_delay(Keyword::NO_DELAY);

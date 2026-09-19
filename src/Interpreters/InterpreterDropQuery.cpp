@@ -174,6 +174,19 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
+    /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is resolved to the database and the table of the existing
+    /// table before the DDL guard is taken, so that the guard protects that table; see `DatabaseCatalog`.
+    {
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(table_id.database_name, table_id.table_name), context_);
+        if (resolved.database_name != table_id.database_name || resolved.table_name != table_id.table_name)
+        {
+            table_id.database_name = resolved.database_name;
+            table_id.table_name = resolved.table_name;
+            query.setDatabase(table_id.database_name);
+            query.setTable(table_id.table_name);
+        }
+    }
+
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
 
     /// If table was already dropped by anyone, an exception will be thrown

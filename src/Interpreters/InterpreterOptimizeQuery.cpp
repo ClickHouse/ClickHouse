@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -30,12 +31,24 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_DATABASE;
 }
 
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+    auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+
+    /// A hierarchical name (`OPTIMIZE TABLE a.b.c`, or `b.c` inside `USE a`) is bound to the table it denotes before the
+    /// access is checked and before the query is dispatched `ON CLUSTER`, so that the check and the optimization
+    /// agree on the table (see `DatabaseCatalog::resolveHierarchicalName`). A table that does not exist here keeps
+    /// its placement: `ON CLUSTER`, it may exist on the other hosts only.
+    auto table_id = getContext()->tryResolveStorageID(ast);
+    if (table_id)
+    {
+        ast.setDatabase(table_id.database_name);
+        ast.setTable(table_id.table_name);
+    }
 
     if (!ast.cluster.empty())
     {
@@ -46,7 +59,9 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     getContext()->checkAccess(getRequiredAccess());
 
-    auto table_id = getContext()->resolveStorageID(ast);
+    if (!table_id)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(ast.getDatabase()));
+
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
