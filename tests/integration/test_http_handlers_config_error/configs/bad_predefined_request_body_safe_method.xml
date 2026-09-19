@@ -1,0 +1,13 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/bad_predefined_request_body_safe_method</url>
+            <methods>GET,POST</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT {_request_body:String}</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>
