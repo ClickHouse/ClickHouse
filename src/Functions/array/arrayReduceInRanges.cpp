@@ -268,15 +268,19 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 else if (index < 0)
                 {
                     const UInt64 offset_from_end = -static_cast<UInt64>(index);
-                    if (offset_from_end < end - begin)
-                        local_begin = end - begin - offset_from_end;
-                    else
-                        local_begin = 0;
+                    const size_t size = end - begin;
 
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    /// An index pointing before the array start selects an empty range, the same as
+                    /// `arraySlice` does: `arraySlice([1, 2, 3], -5, 2)` is `[]`.  Both bounds stay
+                    /// at zero in that case.
+                    if (offset_from_end <= size)
+                    {
+                        local_begin = size - offset_from_end;
+                        if (local_begin + length < size)
+                            local_end = local_begin + length;
+                        else
+                            local_end = size;
+                    }
                 }
             }
 
