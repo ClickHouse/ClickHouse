@@ -214,7 +214,7 @@ private:
         validateExponentialTimeDecayingFloat64Column(
             *probe.column, probe.type, "IN set probe");
 
-        const auto set_types = set.getDataTypes();
+        const auto & set_types = set.getDataTypes();
         if (set_types.empty())
             return;
 
