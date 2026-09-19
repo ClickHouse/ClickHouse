@@ -65,16 +65,25 @@ SETTINGS log_comment = '05047_cascades_spill_probe';
 
 -- Spill evidence from `system.text_log` rather than `ProfileEvents` in `system.query_log`: the
 -- `Aggregator` log line records the write itself, independently of which entry a fragment's
--- counters are attributed to. The `query_log` subquery collects the whole fragment family:
--- `log_comment` propagates to the fragment queries. The evidence query must be planned
+-- counters are attributed to. `query_log` rows outlive the database that wrote them and a run with
+-- a fixed `--database` repeats it, so the fragment family is taken from the latest initiator row
+-- (`log_comment` propagates to the fragments, which are rooted at the initiator through
+-- `initial_query_id`) rather than from `log_comment` alone. The evidence query must be planned
 -- classically: a distributed plan pins
 -- concrete log-table part names at planning time, and background merges of the log tables
 -- invalidate them between planning and fragment execution.
 SYSTEM FLUSH LOGS query_log, text_log;
 SELECT '-- merge spilled to disk';
-SELECT count() > 0 AS merge_spilled
+WITH (
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND log_comment = '05047_cascades_spill_probe' AND is_initial_query AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1
+) AS probe
+SELECT probe != '' AND count() > 0 AS merge_spilled
 FROM system.text_log
-WHERE query_id IN (SELECT query_id FROM system.query_log WHERE log_comment = '05047_cascades_spill_probe' AND current_database = currentDatabase())
+WHERE query_id IN (SELECT query_id FROM system.query_log
+                   WHERE event_date >= yesterday() AND initial_query_id = probe)
   AND logger_name = 'Aggregator' AND message LIKE 'Writing part of aggregation data%'
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
