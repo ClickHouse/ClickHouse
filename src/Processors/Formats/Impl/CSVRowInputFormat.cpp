@@ -175,9 +175,9 @@ void CSVFormatReader::skipRow()
                 ++istr.position();
                 if (format_settings.csv.allow_cr_end_of_line)
                     return;
-                if (!istr.eof() && *pos == '\n')
+                if (!istr.eof() && *istr.position() == '\n')
                 {
-                    ++pos;
+                    ++istr.position();
                     return;
                 }
             }
