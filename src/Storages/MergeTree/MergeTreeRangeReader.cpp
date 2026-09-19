@@ -78,6 +78,36 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
     return can_inplace;
 }
 
+static bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
+{
+    const size_t size = filter.size();
+    if (size == 0)
+        return true;
+
+    constexpr size_t max_probe_points = 1024;
+    const size_t probe_stride = (size - 1) / max_probe_points + 1;
+
+    /// Probe a bounded number of evenly spaced bytes from both directions. This keeps mixed
+    /// filters with an interior or near-tail outlier on the regular path in the common case
+    /// while keeping the probe much cheaper than the later filter-counting pass.
+    if ((filter.back() != 0) != value)
+        return false;
+
+    for (size_t i = 0; i < size; i += probe_stride)
+    {
+        if ((filter[i] != 0) != value)
+            return false;
+    }
+
+    for (size_t i = size - 1; i >= probe_stride; i -= probe_stride)
+    {
+        if ((filter[i] != 0) != value)
+            return false;
+    }
+
+    return true;
+}
+
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
 {
@@ -106,6 +136,67 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
+}
+
+std::optional<bool> FilterWithCachedCount::tryGetUniformValue() const
+{
+    if (!present())
+        return {};
+
+    if (size() == 0)
+        return {};
+
+    if (alwaysTrue())
+    {
+        cached_count_bytes = size();
+        return true;
+    }
+
+    if (alwaysFalse())
+    {
+        cached_count_bytes = 0;
+        return false;
+    }
+
+    if (cached_count_bytes != size_t(-1))
+    {
+        if (cached_count_bytes == 0)
+            return false;
+        if (cached_count_bytes == size())
+            return true;
+        return {};
+    }
+
+    if (isSparse())
+    {
+        const size_t num_set_rows = sparse_indices->size();
+        if (num_set_rows == 0)
+        {
+            cached_count_bytes = 0;
+            return false;
+        }
+        if (num_set_rows == size())
+        {
+            cached_count_bytes = size();
+            return true;
+        }
+        return {};
+    }
+
+    const auto & filter = getData();
+    const bool value = filter[0] != 0;
+    if (!filterSampleHasValue(filter, value))
+        return {};
+
+    /// Cache the count from the confirmation scan. optimize() needs it later for its filtering
+    /// heuristics, so a uniform probe must not make mixed filters scan the mask twice.
+    const size_t num_set_rows = countBytesInFilter();
+    if (num_set_rows == 0)
+        return false;
+    if (num_set_rows == size())
+        return true;
+
+    return {};
 }
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
@@ -627,6 +718,7 @@ static ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
 }
 
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second);
+static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size);
 
 void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount & filter)
 {
@@ -650,6 +742,18 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
 {
     checkInternalConsistency();
 
+    const auto current_filter_uniform = current_filter.tryGetUniformValue();
+
+    if (total_rows_per_granule != 0 && current_filter_uniform && !*current_filter_uniform)
+    {
+        if (final_filter.present() && current_filter.size() != final_filter.size())
+            checkCombinedFiltersSize(final_filter.countBytesInFilter(), current_filter.size());
+
+        LOG_TEST(log, "ReadResult::optimize() current filter is const False");
+        clear();
+        return;
+    }
+
     /// Combine new filter with the previous one if it is present.
     /// This filter has the size of total_rows_per granule. It is applied after reading contiguous chunks from
     /// the start of each granule.
@@ -660,13 +764,35 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         /// In this case we AND current filter with the existing final filter.
         /// In other case, when the final filter has been applied, the size of current step filter will be equal to number of ones
         /// in the final filter. In this case we combine current filter with the final filter.
-        ColumnPtr combined_filter;
-        if (current_filter.size() == final_filter.size())
-            combined_filter = andFilters(final_filter.getColumn(), current_filter.getColumn());
-        else
-            combined_filter = combineFilters(final_filter.getColumn(), current_filter.getColumn());
+        if (current_filter_uniform && *current_filter_uniform)
+        {
+            if (current_filter.size() != final_filter.size())
+            {
+                checkCombinedFiltersSize(final_filter.countBytesInFilter(), current_filter.size());
+                /// The previous filter has already been applied and the current filter is a no-op.
+                return;
+            }
 
-        filter = FilterWithCachedCount(combined_filter);
+            filter = final_filter;
+        }
+        else
+        {
+            ColumnPtr combined_filter;
+            if (current_filter.size() == final_filter.size())
+                combined_filter = andFilters(final_filter.getColumn(), current_filter.getColumn());
+            else
+                combined_filter = combineFilters(final_filter.getColumn(), current_filter.getColumn());
+
+            filter = FilterWithCachedCount(combined_filter);
+        }
+    }
+
+    if (total_rows_per_granule != 0 && current_filter_uniform && *current_filter_uniform && !final_filter.present()
+        && current_filter.size() == total_rows_per_granule)
+    {
+        LOG_TEST(log, "ReadResult::optimize() current filter is const True");
+        setFilterConstTrue();
+        return;
     }
 
     if (total_rows_per_granule == 0 || !filter.present())
