@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- The default, spelled out explicitly, so that the test keeps checking the correction
+         even if the default of the setting changes again. -->
+    <memory_worker_correct_memory_tracker>1</memory_worker_correct_memory_tracker>
+</clickhouse>
