@@ -627,7 +627,14 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                 }
             }
 
-            need_marks -= marks_to_get_from_part;
+            /// The loop above may take more than the remaining budget: it deliberately adds the
+            /// tail of a range shorter than one prefetch step after `num_marks_to_get` reaches
+            /// zero. `need_marks` counts what is left to hand to this thread rather than marks that
+            /// exist, so it saturates here; letting it wrap to a near-`SIZE_MAX` value made the
+            /// thread keep taking work and skewed the distribution. `sum_marks` and
+            /// `part_stat.sum_marks` do count marks that exist, and the ranges were really taken
+            /// from them, so those subtractions stand.
+            need_marks -= std::min(need_marks, marks_to_get_from_part);
             sum_marks -= marks_to_get_from_part;
             part_stat.sum_marks -= marks_to_get_from_part;
 
