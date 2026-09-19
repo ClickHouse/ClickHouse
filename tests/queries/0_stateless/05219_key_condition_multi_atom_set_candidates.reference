@@ -1,0 +1,68 @@
+components, multiple_atoms=0
+Condition: ((s, x) in 2-element set)
+Granules: 6/64
+16
+Condition: ((s, x) in 2-element set)
+Granules: 6/64
+16
+components, multiple_atoms=1
+Condition: ((s, x) in 2-element set)
+Granules: 6/64
+16
+Condition: ((s, x) in 2-element set)
+Granules: 6/64
+16
+packed, multiple_atoms=0
+Condition: (tuple(s, x) in 2-element set)
+Granules: 6/64
+16
+Condition: (tuple(s, x) in 2-element set)
+Granules: 6/64
+16
+packed, multiple_atoms=1
+Condition: (tuple(s, x) in 2-element set)
+Granules: 6/64
+16
+Condition: (tuple(s, x) in 2-element set)
+Granules: 6/64
+16
+combined, multiple_atoms=0
+Condition: ((s, x) in 2-element set)
+Granules: 34/64
+16
+Condition: ((s, x) in 2-element set)
+Granules: 34/64
+16
+Condition: ((s, x) notIn 2-element set)
+Granules: 62/64
+240
+Condition: ((s, x) notIn 2-element set)
+Granules: 62/64
+240
+combined, multiple_atoms=1
+Condition: and((plus(x, 1) in 2-element set), and((cityHash64(s) in 2-element set), and((tuple(s, x) in 2-element set), ((s, x) in 2-element set))))
+Granules: 6/64
+16
+Condition: and((plus(x, 1) in 2-element set), and((cityHash64(s) in 2-element set), and((tuple(s, x) in 2-element set), ((s, x) in 2-element set))))
+Granules: 6/64
+16
+Condition: and((tuple(s, x) notIn 2-element set), ((s, x) notIn 2-element set))
+Granules: 62/64
+240
+Condition: and((tuple(s, x) notIn 2-element set), ((s, x) notIn 2-element set))
+Granules: 62/64
+240
+derived, multiple_atoms=0
+Condition: ((s, x) in 2-element set)
+Granules: 34/64
+16
+Condition: ((s, x) in 2-element set)
+Granules: 34/64
+16
+derived, multiple_atoms=1
+Condition: and((plus(x, 1) in 2-element set), and((cityHash64(s) in 2-element set), ((s, x) in 2-element set)))
+Granules: 10/64
+16
+Condition: and((plus(x, 1) in 2-element set), and((cityHash64(s) in 2-element set), ((s, x) in 2-element set)))
+Granules: 10/64
+16

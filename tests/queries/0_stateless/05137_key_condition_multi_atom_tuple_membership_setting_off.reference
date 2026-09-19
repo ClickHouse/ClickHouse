@@ -1,0 +1,10 @@
+1
+2
+1
+Condition: ((s, x) in 1-element set)
+Granules: 2/3
+1
+2
+1
+Condition: (tuple(s, x) in 1-element set)
+Granules: 2/3

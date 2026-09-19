@@ -1,0 +1,80 @@
+direct, multiple_atoms=0, Enum8, Dynamic
+Condition: true
+Granules: 100/100
+37
+direct, multiple_atoms=1, Enum8, Dynamic
+Condition: (v in [\'37\', \'37\'])
+Granules: 2/100
+37
+direct, multiple_atoms=1, Enum8, Dynamic(max_types = 0)
+Condition: (v in [\'37\', \'37\'])
+Granules: 2/100
+37
+direct, multiple_atoms=1, Enum8, Variant
+Condition: (v in [\'37\', \'37\'])
+Granules: 2/100
+37
+direct, multiple_atoms=1, Enum16, Dynamic
+Condition: (v in [\'37\', \'37\'])
+Granules: 2/100
+37
+direct, multiple_atoms=1, Enum16, Dynamic(max_types = 0)
+Condition: (v in [\'37\', \'37\'])
+Granules: 2/100
+37
+direct, multiple_atoms=1, Enum16, Variant
+Condition: (v in [\'37\', \'37\'])
+Granules: 2/100
+37
+derived, multiple_atoms=0, Enum8, Dynamic
+Condition: true
+Granules: 100/100
+37
+derived, multiple_atoms=1, Enum8, Dynamic
+Condition: and((reverse(v) in [\'73\', \'73\']), (v in [\'37\', \'37\']))
+Granules: 2/100
+37
+derived, multiple_atoms=1, Enum8, Dynamic(max_types = 0)
+Condition: and((reverse(v) in [\'73\', \'73\']), (v in [\'37\', \'37\']))
+Granules: 2/100
+37
+derived, multiple_atoms=1, Enum8, Variant
+Condition: and((reverse(v) in [\'73\', \'73\']), (v in [\'37\', \'37\']))
+Granules: 2/100
+37
+derived, multiple_atoms=1, Enum16, Dynamic
+Condition: and((reverse(v) in [\'73\', \'73\']), (v in [\'37\', \'37\']))
+Granules: 2/100
+37
+derived, multiple_atoms=1, Enum16, Dynamic(max_types = 0)
+Condition: and((reverse(v) in [\'73\', \'73\']), (v in [\'37\', \'37\']))
+Granules: 2/100
+37
+derived, multiple_atoms=1, Enum16, Variant
+Condition: and((reverse(v) in [\'73\', \'73\']), (v in [\'37\', \'37\']))
+Granules: 2/100
+37
+monotonic, Enum8, Dynamic
+Condition: (toString(v) in (-Inf, \'37\'])
+Granules: 32/100
+31
+monotonic, Enum8, Dynamic(max_types = 0)
+Condition: (toString(v) in (-Inf, \'37\'])
+Granules: 32/100
+31
+monotonic, Enum8, Variant
+Condition: (toString(v) in (-Inf, \'37\'])
+Granules: 32/100
+31
+monotonic, Enum16, Dynamic
+Condition: (toString(v) in (-Inf, \'37\'])
+Granules: 32/100
+31
+monotonic, Enum16, Dynamic(max_types = 0)
+Condition: (toString(v) in (-Inf, \'37\'])
+Granules: 32/100
+31
+monotonic, Enum16, Variant
+Condition: (toString(v) in (-Inf, \'37\'])
+Granules: 32/100
+31
