@@ -246,6 +246,8 @@ A value of `0` (default) means unlimited.
     DECLARE(UInt64, max_local_read_bandwidth_for_server, 0, R"(
 The maximum speed of local reads in bytes per second.
 
+The limit applies to the data read from the block devices: reads that are served from the OS page cache are not accounted for, as long as the read method can detect them (which is the case for the default `local_filesystem_read_method = 'pread_threadpool'`).
+
 <Note>
 A value of `0` means unlimited.
 </Note>

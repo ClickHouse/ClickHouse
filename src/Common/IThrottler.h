@@ -25,6 +25,20 @@ public:
 
     /// Returns the maximum burst size in tokens.
     virtual UInt64 getMaxBurst() const = 0;
+
+    /// Charge `amount` tokens for the data that was copied from the OS page cache,
+    /// i.e. without performing any block device I/O.
+    /// Throttlers that exist to limit the bandwidth of a block device ignore such reads,
+    /// all the others account them as usual.
+    virtual bool throttleOSPageCacheRead(size_t amount, size_t max_block_ns)
+    {
+        return throttle(amount, max_block_ns);
+    }
+
+    bool throttleOSPageCacheRead(size_t amount)
+    {
+        return throttleOSPageCacheRead(amount, unlimited_block_ns);
+    }
 };
 
 using ThrottlerPtr = std::shared_ptr<IThrottler>;

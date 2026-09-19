@@ -36,6 +36,18 @@ public:
         return result;
     }
 
+    /// Use `amount` tokens on all throttlers, telling them that the data came from the OS page cache
+    bool throttleOSPageCacheRead(size_t amount, size_t max_block_ns) override
+    {
+        bool result = false;
+        for (const auto & throttler : throttlers)
+        {
+            bool blocked = throttler->throttleOSPageCacheRead(amount, max_block_ns);
+            result = result || blocked;
+        }
+        return result;
+    }
+
     /// Check if any throttler is currently throttling
     bool isThrottling() const override
     {
