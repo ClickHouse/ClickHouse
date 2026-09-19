@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/parseGlobs.h>
+#include <Disks/DiskType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -77,7 +78,22 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     /// hive partition columns. Avoid probing object metadata, because all explicit keys may
     /// be absent or later filtered out.
     if (containsOnlyEnumGlobs(path.path))
-        return expandSelectionGlobFirst(path.path) + archive_suffix;
+    {
+        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
+        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
+        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
+        /// and, for a table definition, persist it - from a path that the reader always refuses to
+        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
+        /// never built, so taking each group's first alternative is enough and is always possible.
+        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
+        {
+            auto expanded = expandSelectionGlob(path.path);
+            if (!expanded.empty())
+                return expanded.front() + archive_suffix;
+        }
+        else
+            return expandSelectionGlobFirst(path.path) + archive_suffix;
+    }
 
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
