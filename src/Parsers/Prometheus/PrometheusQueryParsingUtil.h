@@ -34,10 +34,13 @@ struct PrometheusQueryParsingUtil
     /// Parses a scalar which can be either an integer number or a floating-point number (e.g. 237e6), or Inf, or Nan,
     /// or a hexadecimal number (e.g. 0xA7CD), or a duration with time units, for example 1m30s.
     /// Also underscores (_) can be used in between decimal or hexadecimal digits and they don't mean anything.
+    /// `res_is_duration` reports whether the literal was written with time units, which the
+    /// serialization needs to print it the way it was written rather than as a number of seconds.
     static bool tryParseScalar(std::string_view input,
                                ScalarType & res_scalar,
                                String * error_message = nullptr,
-                               size_t * error_pos = nullptr);
+                               size_t * error_pos = nullptr,
+                               bool * res_is_duration = nullptr);
 
     /// Parses a timestamp which can be either an integer or floating-point number of seconds since epoch (1 January 1970),
     /// or a hexadecimal number of seconds since epoch, or a duration with time units since epoch.

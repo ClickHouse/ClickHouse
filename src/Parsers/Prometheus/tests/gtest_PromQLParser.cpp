@@ -1493,7 +1493,7 @@ PrometheusQueryTree(SCALAR):
 )");
 
     EXPECT_EQ(parse("3h20m10s5ms"), R"(
-12010.005
+3h20m10s5ms
 
 PrometheusQueryTree(SCALAR):
     Scalar(12010.005)

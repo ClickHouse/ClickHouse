@@ -689,8 +689,11 @@ namespace
 
     template <typename T>
     bool tryParseNumber(
-        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool allow_octal_literals)
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool allow_octal_literals,
+        bool * is_duration = nullptr)
     {
+        if (is_duration)
+            *is_duration = false;
         size_t pos = 0;
 
         /// Parse a sign.
@@ -725,6 +728,8 @@ namespace
         else if (isDurationFormat(unsigned_input))
         {
             ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos);
+            if (ok && is_duration)
+                *is_duration = true;
         }
         else
         {
@@ -746,10 +751,12 @@ namespace
 }
 
 
-bool PrometheusQueryParsingUtil::tryParseScalar(std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseScalar(
+    std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos, bool * res_is_duration)
 {
     /// Here `scale` is set to `0` because it's unused when parsing a floating-point number.
-    return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true);
+    return tryParseNumber(
+        input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true, res_is_duration);
 }
 
 bool PrometheusQueryParsingUtil::tryParseTimestamp(

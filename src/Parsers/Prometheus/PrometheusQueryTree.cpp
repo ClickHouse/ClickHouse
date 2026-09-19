@@ -11,6 +11,8 @@
 #include <base/hex.h>
 #include <fmt/ranges.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -465,6 +467,10 @@ String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
     {
+        /// A literal written with time units is printed back with them, as Prometheus prints one. The
+        /// grammar spells whole milliseconds, which a double holds exactly for any duration it accepts.
+        if (is_duration)
+            return formatDuration(DurationType{std::llround(scalar * 1000)}, 3);
         return ::DB::toString(scalar);
     }
     else if (std::isinf(scalar))
