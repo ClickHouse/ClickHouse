@@ -303,7 +303,6 @@ the label `comp-parallel-replicas`.
 | `cluster_for_parallel_replicas`                    | The cluster name to use for parallel replication; if you're using ClickHouse Cloud, use `default`.                                                                                                                                                                 |
 | `max_parallel_replicas`                            | Maximum number of replicas to use for the query execution on multiple replicas, if a number lower than the number of replicas in the cluster is specified, nodes will be selected randomly. This value can also be overcommitted to account for horizontal scaling. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Help limiting the number of replicas used based on the number of rows that need to be processed the number of replicas used is defined by: <br/> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                       |
-| `enable_analyzer`                                  | Query execution with parallel replicas is supported only with enabled analyzer                                                                                                                                                                                      |
 
 ## Investigating issues with parallel replicas {#investigating-issues-with-parallel-replicas}
 You can check what settings are being used for each query in the 

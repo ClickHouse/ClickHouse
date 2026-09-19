@@ -1,0 +1,118 @@
+-- right side is a table function
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- right side is system.one
+0
+-- RIGHT ANY JOIN
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- RIGHT SEMI JOIN
+0
+1
+2
+3
+4
+-- RIGHT ANTI JOIN
+5
+6
+7
+8
+9
+-- left is a table function, right eligible: JOIN is offloaded
+1
+-- left is a table function, right eligible: JOIN is offloaded with a local join
+1
+-- left is system.one, right eligible: JOIN is offloaded
+1
+-- left is a table function, right eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- left is a table function, right eligible: results are correct with a local join
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- left joins a table function to a table, right eligible: JOIN is offloaded
+1
+-- left joins a table function to a table, right eligible: JOIN is offloaded with a local join
+1
+-- left joins a table to a table function, right eligible: JOIN is offloaded
+1
+-- left joins a table function to a table, right eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- left joins a table to a table function, right eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- both sides eligible: JOIN is offloaded
+1
+-- both sides eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- left joins two tables, right eligible: JOIN is offloaded
+1
+-- left joins two tables, right eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
