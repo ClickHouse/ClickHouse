@@ -441,6 +441,9 @@
 [submodule "contrib/cuCollections"]
 	path = contrib/cuCollections
 	url = https://github.com/NVIDIA/cuCollections.git
+[submodule "contrib/cucascade"]
+	path = contrib/cucascade
+	url = https://github.com/NVIDIA/cuCascade.git
 [submodule "contrib/nvtx"]
 	path = contrib/nvtx
 	url = https://github.com/NVIDIA/NVTX.git
