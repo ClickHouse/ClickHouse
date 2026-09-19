@@ -44,7 +44,7 @@ ALTER TABLE t_rename (RENAME COLUMN c2 TO c13), (MODIFY SETTING fsync_part_direc
 SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;
 DROP TABLE t_rename;
 
-CREATE TABLE t_rename (c0 Int32, s String, d Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_string_columns = 1, add_minmax_index_for_temporal_columns = 1;
+CREATE TABLE t_rename (c0 Int32, s String, d Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 1, add_minmax_index_for_temporal_columns = 1;
 ALTER TABLE t_rename (RENAME COLUMN s TO s2), (MODIFY SETTING fsync_part_directory = 1);
 ALTER TABLE t_rename (RENAME COLUMN d TO d2), (MODIFY SETTING fsync_part_directory = 0);
 SELECT name, expr FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_rename' ORDER BY name;

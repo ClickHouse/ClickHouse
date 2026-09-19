@@ -17,17 +17,18 @@ CREATE TABLE test_simple_projection
     PROJECTION region_proj
     (
         SELECT _part_offset ORDER BY region
-    ),
+    ) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0),
     PROJECTION user_id_proj
     (
         SELECT _part_offset ORDER BY user_id
-    )
+    ) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree
 ORDER BY (event_date, id)
 SETTINGS
     index_granularity = 1, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_simple_projection VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe');
 INSERT INTO test_simple_projection VALUES (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west');
 INSERT INTO test_simple_projection VALUES (3, '2023-01-02', 106, 'https://example.com/page3', 'us_west');
@@ -126,13 +127,14 @@ CREATE TABLE test_projection_granule_edge_cases
     PROJECTION region_proj
     (
         SELECT _part_offset ORDER BY region
-    )
+    ) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 16, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_projection_granule_edge_cases VALUES (0, 'top_region', 100);
 INSERT INTO test_projection_granule_edge_cases SELECT number + 1, 'other_region', 101 FROM numbers(6);
 INSERT INTO test_projection_granule_edge_cases VALUES (7, 'mid_region', 102);
@@ -202,9 +204,10 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 1, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_partial_projection VALUES (1, 'us'), (2, 'eu'), (3, 'cn');
-ALTER TABLE test_partial_projection ADD PROJECTION region_proj (SELECT _part_offset ORDER BY region);
+ALTER TABLE test_partial_projection ADD PROJECTION region_proj (SELECT _part_offset ORDER BY region) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0);
 INSERT INTO test_partial_projection VALUES (4, 'cn'), (5, 'ru'), (6, 'br');
 SET min_table_rows_to_use_projection_index = 0;
 SELECT trimLeft(explain)

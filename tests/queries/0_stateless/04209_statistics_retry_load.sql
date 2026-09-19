@@ -12,19 +12,23 @@ SYSTEM DISABLE FAILPOINT merge_tree_load_statistics_throw;
 DROP TABLE IF EXISTS t_full;
 DROP TABLE IF EXISTS t_packed;
 
+-- Implicit minmax indices change which part the `EXPLAIN WHATIF` statistics probe touches first,
+-- and the test pins the exact part name in the exception context. Opt out to keep it deterministic.
 CREATE TABLE t_full (a UInt64 STATISTICS(basic), b UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1,
-         refresh_statistics_interval = 0;
+         refresh_statistics_interval = 0,
+         add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE t_packed (a UInt64 STATISTICS(basic), b UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = '1G',
          max_bytes_to_merge_at_max_space_in_pool = 1,
-         refresh_statistics_interval = 0;
+         refresh_statistics_interval = 0,
+         add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_full SELECT number, number FROM numbers(1000);
 INSERT INTO t_full SELECT number + 1000000, number FROM numbers(1000);

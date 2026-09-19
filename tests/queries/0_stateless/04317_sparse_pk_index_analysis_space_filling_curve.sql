@@ -12,7 +12,7 @@ CREATE TABLE t_sparse_pk_sfc
 )
 ENGINE = MergeTree
 ORDER BY mortonEncode(x, y)
-SETTINGS index_granularity = 4;
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_sparse_pk_sfc SELECT number % 16, intDiv(number, 16) % 16 FROM numbers(256);
 
