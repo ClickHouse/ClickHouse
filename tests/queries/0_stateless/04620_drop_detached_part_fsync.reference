@@ -1,0 +1,6 @@
+fsync_part_directory = 1: DirectorySync>=1, part removed
+1
+0
+fsync_part_directory = 0: DirectorySync=0 (setting honored), part removed
+0
+0
