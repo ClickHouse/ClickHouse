@@ -1,3 +1,5 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -23,7 +25,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_bytes_to_keep, 0, "Maximum block size (in bytes) to retain in Memory table buffer.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MEMORY_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MemorySettings, MemorySetting)
+struct MemorySettingsImpl : public SettingsWithRecordedOrigin<MemorySettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MemorySettingsTraits, MEMORY_SETTINGS, MemorySettings, MemorySetting)
 
 MemorySettings::MemorySettings() : impl(std::make_unique<MemorySettingsImpl>())
 {
@@ -47,7 +52,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -58,7 +63,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-ASTPtr MemorySettings::getSettingsChangesQuery()
+ASTPtr MemorySettings::getSettingsChangesQuery() const
 {
     auto settings_ast = make_intrusive<ASTSetQuery>();
     settings_ast->is_standalone = false;
@@ -86,14 +91,17 @@ void MemorySettings::sanityCheck() const
             (*impl)[MemorySetting::max_rows_to_keep].value);
 }
 
-void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
+void MemorySettings::applyDefinition(const DB::SettingsChanges & changes)
 {
-    impl->applyChanges(changes);
+    impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
 }
 
 bool MemorySettings::hasBuiltin(std::string_view name)
 {
     return MemorySettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MemorySettings)
+
 }
 

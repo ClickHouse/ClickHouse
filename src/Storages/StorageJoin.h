@@ -38,9 +38,17 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         bool overwrite,
+        bool any_join_distinct_right_table_keys_,
         bool persistent_);
 
     String getName() const override { return "Join"; }
+
+    /// Reports the values this table holds for all eight of its settings, not only the ones its `SETTINGS`
+    /// clause states - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
+
+    /// For `system.engine_settings`: the eight settings with the values a table created now would get.
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -111,6 +119,9 @@ private:
     JoinKind kind;                    /// LEFT | INNER ...
     JoinStrictness strictness;        /// ANY | ALL
     bool overwrite;
+    /// Kept only to be reported: it decides `strictness` for an `ANY` join and has no effect on any other, so
+    /// `strictness` alone cannot say what it was.
+    bool any_join_distinct_right_table_keys;
 
     std::shared_ptr<TableJoin> table_join;
     HashJoinPtr join;

@@ -1,0 +1,22 @@
+-- a MergeTree setting the config sets
+merge_max_block_size	1234	8192	config
+-- a config section assigning the value a setting already has still counts
+max_suspicious_broken_parts	1	config
+-- for MergeTree too, the definition wins over the config
+merge_max_block_size	4321	definition
+-- a Distributed setting the config sets
+bytes_to_throw_insert	1000000	0	config
+-- the definition wins over the config, and is recognised through an alias
+background_insert_batch	1	definition
+bytes_to_throw_insert	7	definition
+-- the config section wins where it and the compatibility setting touch one setting
+compute_exact_num_defaults_for_sparse_columns	0	config
+merge_max_block_size	1234	config
+-- an engine argument is not the config, even for a setting the config also sets
+index_granularity	16384	other
+-- settings compatibility rolled back, against the current defaults
+1	0
+-- a session's compatibility does not decide what the server's defaults are reported to be
+0
+-- and none of them when nothing sets anything
+0

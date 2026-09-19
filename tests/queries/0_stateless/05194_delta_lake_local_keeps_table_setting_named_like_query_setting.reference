@@ -1,0 +1,3 @@
+-- the table keeps the setting
+iceberg_max_number_datafiles_to_compact = 7
+iceberg_max_number_datafiles_to_compact	7	definition

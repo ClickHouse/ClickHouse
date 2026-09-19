@@ -2,9 +2,12 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -36,7 +39,10 @@ namespace ErrorCodes
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
+struct DistributedSettingsImpl : public SettingsWithRecordedOrigin<DistributedSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
 
 DistributedSettings::DistributedSettings() : impl(std::make_unique<DistributedSettingsImpl>())
 {
@@ -64,7 +70,7 @@ void DistributedSettings::loadFromConfig(const String & config_elem, const Poco:
     try
     {
         for (const String & key : config_keys)
-            impl->set(key, config.getString(config_elem + "." + key));
+            impl->setWithOrigin(key, config.getString(config_elem + "." + key), SettingOrigin::Config);
     }
     catch (Exception & e)
     {
@@ -80,7 +86,7 @@ void DistributedSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -106,5 +112,15 @@ bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
 }
+
+SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr context)
+{
+    /// The `distributed` config section is applied to these, so they can differ from the compiled
+    /// defaults, and this is the instance a new table starts from.
+    return context->getDistributedSettings().enumerateSettings();
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)
+
 }
 

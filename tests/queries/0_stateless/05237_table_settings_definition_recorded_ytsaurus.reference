@@ -1,0 +1,8 @@
+-- CREATE
+encode_utf8	0	definition
+max_streams	2	definition
+use_lock	1	default
+-- loaded again from what it stored
+encode_utf8	0	definition
+max_streams	2	definition
+use_lock	1	default

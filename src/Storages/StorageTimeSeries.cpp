@@ -216,6 +216,12 @@ StorageTimeSeries::StorageTimeSeries(
             storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
     }
 
+    /// What the table's own `CREATE` query states is its definition's: the query as stored for an `ATTACH`, and the
+    /// normalised one, which is what gets stored, for a `CREATE`. Not what normalisation added for an older definition,
+    /// nor, for an unsupported version, anything but `version`, the only setting assigned then.
+    if (query.storage && query.storage->settings)
+        settings->recordDefinition(query.storage->settings->changes);
+
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
     storage_settings.set(std::move(settings));
 
@@ -595,7 +601,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         /// Round-trip through `TimeSeriesSettings` to validate the names/values and
         /// to write them back in a canonical form.
         new_settings = std::make_unique<TimeSeriesSettings>();
-        new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        new_settings->applyDefinition(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
@@ -808,6 +814,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = TimeSeriesSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -1372,6 +1379,12 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
 - [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies)
 )DOCS_MD",
         .syntax = "ENGINE = TimeSeries()"});
+}
+
+SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// The settings object records what the table's definition states - see the constructor and `alter`.
+    return storage_settings.get()->enumerateSettings();
 }
 
 }

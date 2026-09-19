@@ -1,3 +1,5 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 #include <Core/BaseSettings.h>
@@ -38,7 +40,10 @@ namespace ErrorCodes
     DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
+struct TimeSeriesSettingsImpl : public SettingsWithRecordedOrigin<TimeSeriesSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
 
 TimeSeriesSettings::TimeSeriesSettings() : impl(std::make_unique<TimeSeriesSettingsImpl>())
 {
@@ -101,10 +106,23 @@ void TimeSeriesSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void TimeSeriesSettings::applyDefinition(const SettingsChanges & changes)
+{
+    impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
+}
+
+void TimeSeriesSettings::recordDefinition(const SettingsChanges & stated)
+{
+    for (const auto & change : stated)
+        impl->recordOrigin(change.name, SettingOrigin::Definition);
+}
+
 bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 {
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {

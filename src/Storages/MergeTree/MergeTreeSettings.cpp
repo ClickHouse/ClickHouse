@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
@@ -16,7 +18,8 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
@@ -2578,10 +2581,11 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
+struct MergeTreeSettingsImpl : public SettingsWithRecordedOrigin<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+    void loadFromQuery(
+        ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -2619,7 +2623,8 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition)
 {
     if (storage_def.settings)
     {
@@ -2661,7 +2666,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             if (table_disk)
                 validateTableDisk(disk);
 
-            applyChanges(changes);
+            applyChangesWithOrigin(changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -2679,11 +2684,19 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
     SettingsChanges & changes = storage_def.settings->changes;
 
+    /// Written into the definition. Where that definition is stored, the setting is the definition's from now on, as
+    /// it is when the table is loaded again - so recorded, and assigned again to count as changed as it will then.
+    /// Where the table is loaded from what is already stored, the addition stays in memory and records nothing.
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
                   [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
-        changes.push_back(SettingChange{#NAME, (*this)[MergeTreeSetting::NAME].value});
+    {                                                                                                         \
+        const Field value = (*this)[MergeTreeSetting::NAME].value;                                            \
+        changes.push_back(SettingChange{#NAME, value});                                                       \
+        if (stores_definition)                                                                                \
+            setWithOrigin(#NAME, value, SettingOrigin::Definition);                                           \
+    }
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
@@ -2975,6 +2988,13 @@ void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr
     impl->applyChanges(resolved_changes);
 }
 
+void MergeTreeSettings::applyDefinition(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    auto resolved_changes = changes;
+    resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    impl->applyChangesWithOrigin(resolved_changes, SettingOrigin::Definition);
+}
+
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_change = change;
@@ -3058,7 +3078,9 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)
-                set(final_name, previous_value);
+            {
+                impl->setWithOrigin(final_name, previous_value, SettingOrigin::Compatibility);
+            }
         }
     }
 }
@@ -3102,9 +3124,10 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stores_definition);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
@@ -3118,7 +3141,9 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     try
     {
         for (const String & key : config_keys)
-            impl->set(key, config.getString(config_elem + "." + key));
+        {
+            impl->setWithOrigin(key, config.getString(config_elem + "." + key), SettingOrigin::Config);
+        }
     }
     catch (Exception & e)
     {
@@ -3138,50 +3163,6 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
-}
-
-void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
-{
-    const auto & constraints = params.constraints;
-    MutableColumns & res_columns = params.res_columns;
-
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        size_t col = 0;
-        res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
-        res_columns[col++]->insert(setting.isValueChanged());
-        res_columns[col++]->insert(setting.getDescription());
-        Field min;
-        Field max;
-        std::vector<Field> disallowed_values;
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
-
-        /// Certain merge tree settings are unconditionally read-only
-        if (isReadonlySetting(setting_name))
-            writability = SettingConstraintWritability::CONST;
-
-        /// These two columns can accept strings only.
-        if (!min.isNull())
-            min = MergeTreeSettings::valueToStringUtil(setting_name, min);
-        if (!max.isNull())
-            max = MergeTreeSettings::valueToStringUtil(setting_name, max);
-
-        Array disallowed_array;
-        for (const auto & value : disallowed_values)
-                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
-
-        res_columns[col++]->insert(min);
-        res_columns[col++]->insert(max);
-        res_columns[col++]->insert(disallowed_array);
-        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[col++]->insert(setting.getTypeName());
-        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[col++]->insert(setting.getTier());
-    }
 }
 
 void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
@@ -3313,4 +3294,58 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
 {
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
+
+namespace
+{
+
+SettingDescriptions enumerateServerEffective(const MergeTreeSettings & settings, ContextPtr context)
+{
+    /// What the engine actually uses on this server: the `merge_tree` config section and the
+    /// `compatibility` setting are already applied to these, and it is the instance
+    /// `registerStorageMergeTree` starts a new table from.
+    auto enumerated = settings.enumerateSettings();
+    settings.applyConstraints(enumerated, context->getSettingsConstraintsAndCurrentProfiles()->constraints);
+    return enumerated;
+}
+
+}
+
+SettingDescriptions MergeTreeSettings::enumerateEngineSettings(ContextPtr context)
+{
+    return enumerateServerEffective(context->getMergeTreeSettings(), context);
+}
+
+SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
+{
+    /// The replicated family reads an additional `replicated_merge_tree` config section, so its
+    /// settings differ from the rest of the family and it registers its own function.
+    return enumerateServerEffective(context->getReplicatedMergeTreeSettings(), context);
+}
+
+void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const
+{
+    for (auto & setting : settings)
+    {
+        Field min;
+        Field max;
+        std::vector<Field> disallowed;
+        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
+        constraints.get(*this, setting.name, min, max, disallowed, writability);
+
+        /// Some settings cannot be changed whatever a profile says.
+        if (isReadonlySetting(setting.name))
+            writability = SettingConstraintWritability::CONST;
+
+        if (!min.isNull())
+            setting.min_value = valueToStringUtil(setting.name, min);
+        if (!max.isNull())
+            setting.max_value = valueToStringUtil(setting.name, max);
+        for (const auto & value : disallowed)
+            setting.disallowed_values.push_back(valueToStringUtil(setting.name, value));
+        setting.readonly = writability == SettingConstraintWritability::CONST;
+    }
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)
+
 }

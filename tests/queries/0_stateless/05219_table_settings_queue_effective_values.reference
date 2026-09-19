@@ -1,0 +1,9 @@
+-- a format setting the definition states reports the value the table uses, not its default
+input_format_allow_errors_num	5	0	definition
+input_format_tsv_skip_first_lines	2	0	definition
+-- and so does one the definition spells the way this engine used to accept it
+input_format_tsv_skip_first_lines	3	definition
+-- a setting the storage keeps as a member of its own is not taken from the definition instead
+polling_min_timeout_ms	1234	definition
+-- and the shared metadata still outranks a definition that states otherwise
+loading_retries	42	shared_metadata

@@ -6,6 +6,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -72,7 +75,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KAFKA_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
+struct KafkaSettingsImpl : public SettingsWithRecordedOrigin<KafkaSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
 
 KafkaSettings::KafkaSettings() : impl(std::make_unique<KafkaSettingsImpl>())
 {
@@ -94,7 +100,7 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -113,12 +119,12 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 
 void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection->has(setting_name))
-            impl->set(setting_name, named_collection->get<String>(setting_name));
-    }
+    loadSettingsFromNamedCollection(*impl, *named_collection);
+}
+
+void KafkaSettings::setAtOffset(size_t offset, const Field & value)
+{
+    impl->setAtOffset(offset, value);
 }
 
 void KafkaSettings::sanityCheck(ContextPtr global_context) const
@@ -176,4 +182,6 @@ bool KafkaSettings::hasBuiltin(std::string_view name)
 {
     return KafkaSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(KafkaSettings)
 }

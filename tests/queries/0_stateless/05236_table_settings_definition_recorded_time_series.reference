@@ -1,0 +1,25 @@
+-- CREATE
+filter_by_min_time_and_max_time	definition
+recent_samples_ttl_seconds	definition
+samples_index_granularity	definition
+store_min_time_and_max_time	definition
+version	definition
+-- MODIFY SETTING
+filter_by_min_time_and_max_time	definition
+id_generator	definition
+recent_samples_ttl_seconds	definition
+samples_index_granularity	definition
+store_min_time_and_max_time	definition
+version	definition
+-- RESET SETTING
+filter_by_min_time_and_max_time	definition
+recent_samples_ttl_seconds	definition
+samples_index_granularity	definition
+store_min_time_and_max_time	definition
+version	definition
+-- loaded again from what it stored
+filter_by_min_time_and_max_time	definition
+recent_samples_ttl_seconds	definition
+samples_index_granularity	definition
+store_min_time_and_max_time	definition
+version	definition

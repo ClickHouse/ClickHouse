@@ -1,0 +1,5 @@
+-- the collection, the clause, an engine-argument override and the default are told apart
+connect_timeout	99	definition
+connection_pool_size	42	other
+connection_wait_timeout	5	named_collection
+read_write_timeout	1234	definition

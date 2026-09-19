@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
@@ -30,13 +32,13 @@ class AbstractConfiguration;
 
 namespace DB
 {
+class SettingsConstraints;
 class ASTStorage;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 struct MergeTreeSettingsImpl;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
-struct MutableColumnsAndConstraints;
 
 /// List of available types supported in MergeTreeSettings object
 #define MERGETREE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -93,6 +95,9 @@ struct MergeTreeSettings
     /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
     SettingsChanges changesFrom(const MergeTreeSettings & base) const;
     void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
+    /// The table's whole `SETTINGS` clause as an `ALTER` leaves it, recorded as the definition, as `loadFromQuery`
+    /// records it. `applyChanges` records nothing, for the copies built only to check what a change would do.
+    void applyDefinition(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     static std::vector<std::string_view> getAllAliasNames();
@@ -103,14 +108,24 @@ struct MergeTreeSettings
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    /// `stores_definition`: whether `storage_def` is the definition that will be stored - true for `CREATE`, a
+    /// full `ATTACH`, a replay or `RESTORE`; false where the table is loaded from what is already stored and the
+    /// settings this writes into `storage_def` stay in memory.
+    void loadFromQuery(
+        ASTStorage & storage_def,
+        ContextPtr context,
+        bool is_loading_from_existing_metadata,
+        bool for_system_database = false,
+        bool stores_definition = true);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
-    void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
+    /// The engine's own settings, for `system.engine_settings`.
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context);
+    static SettingDescriptions enumerateReplicatedEngineSettings(ContextPtr context);
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 
@@ -118,6 +133,12 @@ struct MergeTreeSettings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
+    SettingDescriptions enumerateSettings() const;
+    /// Fills in what the user's settings constraints say about each of `settings`. `MergeTreeSettings`
+    /// is the only engine settings type `SettingsConstraints` can describe - a profile reaches it
+    /// through the `merge_tree_` name prefix - so no other struct has an equivalent.
+    void applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const;
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);

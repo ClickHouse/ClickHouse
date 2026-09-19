@@ -1506,7 +1506,7 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
     {
         const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
         auto new_settings = std::make_unique<RocksDBSettings>();
-        new_settings->applyChanges(settings_changes.changes);
+        new_settings->applyDefinition(settings_changes.changes);
         setSettings(std::move(new_settings));
     }
 }
@@ -1520,6 +1520,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_ttl = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = RocksDBSettings::enumerateEngineSettings,
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
@@ -1764,6 +1765,13 @@ void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands
                 RocksDBSettings::checkCanSet(change.name, change.value);
         }
     }
+}
+
+SettingDescriptions StorageEmbeddedRocksDB::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// `RocksDBSettings` records the table's own `SETTINGS` clause as `loadFromQuery` applies it, and again as
+    /// `alter` rebuilds the settings from the whole clause after `MODIFY` or `RESET SETTING`.
+    return storage_settings.get()->enumerateSettings();
 }
 
 }

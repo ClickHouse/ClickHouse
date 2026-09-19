@@ -39,6 +39,13 @@ template <typename TStorageKafka>
 struct KafkaInterceptors;
 class ThreadStatus;
 
+namespace StorageKafkaUtils
+{
+/// `system.table_settings` for a table of either `Kafka` storage - see the definition.
+template <typename KafkaStorage>
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
+}
+
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.
 ///
@@ -61,6 +68,8 @@ class StorageKafka2 final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
+    template <typename KafkaStorage>
+    friend SettingDescriptions StorageKafkaUtils::getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
     friend class Kafka2Source;
     friend class ReadFromStorageKafka2;
 
@@ -84,6 +93,8 @@ public:
     ~StorageKafka2() override;
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
+
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     bool isMessageQueue() const override { return true; }
 

@@ -96,6 +96,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     const String & dbname_,
     const StoragePostgreSQL::Configuration & configuration_,
     postgres::PoolWithFailoverPtr pool_,
+    PostgreSQLSettings storage_settings_,
     bool cache_tables_,
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(dbname_)
@@ -104,6 +105,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , database_engine_define(database_engine_define_->clone())
     , configuration(configuration_)
     , pool(std::move(pool_))
+    , storage_settings(std::move(storage_settings_))
     , cache_tables(cache_tables_)
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
     , db_uuid(uuid)
@@ -152,7 +154,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -164,8 +166,9 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         auto connection_holder = pool->get();
         auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
+        /// Filter before fetching: fetching a table queries its structure from the server.
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name))
+            if (!detached_or_dropped.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
                 tables[table_name] = fetchTable(table_name, local_context, true);
     }
     catch (...)
@@ -277,7 +280,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, configuration.schema, configuration.on_conflict);
+                context_, storage_settings, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
         {
@@ -737,6 +740,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             args.database_name,
             configuration,
             pool,
+            std::move(postgresql_settings),
             use_table_cache,
             args.uuid);
     };

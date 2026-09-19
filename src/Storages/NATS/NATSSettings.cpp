@@ -5,6 +5,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/NATS/NATSSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -57,7 +60,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
+struct NATSSettingsImpl : public SettingsWithRecordedOrigin<NATSSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
 
 NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {
@@ -79,7 +85,7 @@ void NATSSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -98,12 +104,12 @@ void NATSSettings::loadFromQuery(ASTStorage & storage_def)
 
 void NATSSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection->has(setting_name))
-            impl->set(setting_name, named_collection->get<String>(setting_name));
-    }
+    loadSettingsFromNamedCollection(*impl, *named_collection);
+}
+
+void NATSSettings::setAtOffset(size_t offset, const Field & value)
+{
+    impl->setAtOffset(offset, value);
 }
 
 SettingsChanges NATSSettings::getFormatSettings() const
@@ -126,4 +132,7 @@ bool NATSSettings::hasBuiltin(std::string_view name)
 {
     return NATSSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(NATSSettings)
+
 }

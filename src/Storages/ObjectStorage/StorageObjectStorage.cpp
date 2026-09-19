@@ -1181,4 +1181,63 @@ bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & as
     return configuration->scheduleDataProcessingJob(assignee, *this);
 }
 
+namespace
+{
+
+/// The settings plain object storage accepts, by name, for their metadata alone - the type, default,
+/// description and tier are compiled in, so one enumeration serves every table. Built on first use
+/// because it is only ever needed to answer `system.table_settings`.
+const std::unordered_map<String, SettingDescription> & objectStorageSettingsByName()
+{
+    static const std::unordered_map<String, SettingDescription> known = []
+    {
+        std::unordered_map<String, SettingDescription> result;
+        for (auto & setting : StorageObjectStorageSettings{}.enumerateSettings())
+            result.emplace(setting.name, std::move(setting));
+        return result;
+    }();
+    return known;
+}
+
+}
+
+SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_context) const
+{
+    /// The settings belong to the configuration rather than to this storage. A data lake configuration keeps
+    /// them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` - never builds a
+    /// `StorageObjectStorageSettings` at all, since `createStorageObjectStorage` applies the `SETTINGS` clause to
+    /// a copy of `Settings` and converts the result to `FormatSettings`, which carries no setting names.
+    auto settings = configuration->enumerateSettings();
+    if (settings.empty())
+    {
+        /// What the clause states is still in the stored `CREATE` query, so report that, as `File`, `URL` and the
+        /// `Log` family do. What it does not state cannot be recovered: the creator applied the clause to a copy of
+        /// the creating session's settings, and only the resulting `FormatSettings` survives.
+        ///
+        /// Unlike `File` and the others, this engine does have a settings struct - it just never builds one per
+        /// table - so the type, default, description and tier of each stated setting are known, and are the same
+        /// ones `system.engine_settings` reports for the engine. Take them from there rather than leave the row
+        /// claiming a `Production` tier and an empty type for a setting that may well be obsolete.
+        auto stated = IStorage::getTableSettings(query_context);
+        const auto & known = objectStorageSettingsByName();
+        for (auto & setting : stated)
+        {
+            const auto it = known.find(setting.name);
+            if (it == known.end())
+                continue;
+
+            setting.default_value = it->second.default_value;
+            setting.type = it->second.type;
+            setting.comment = it->second.comment;
+            setting.tier = it->second.tier;
+            setting.aliases = it->second.aliases;
+        }
+        return stated;
+    }
+
+    /// A data lake configuration keeps a `DataLakeStorageSettings`, which records the table's own `SETTINGS`
+    /// clause as `loadFromQuery` applies it.
+    return settings;
+}
+
 }

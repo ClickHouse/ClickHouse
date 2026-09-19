@@ -1,3 +1,5 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Interpreters/Context.h>
@@ -28,7 +30,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
+struct YTsaurusSettingsImpl : public SettingsWithRecordedOrigin<YTsaurusSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
 
 YTsaurusSettings::YTsaurusSettings() : impl(std::make_unique<YTsaurusSettingsImpl>())
 {
@@ -61,7 +66,9 @@ void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            /// A table's own `SETTINGS` clause, recorded as the definition. The `ASTSetQuery` overload, which
+            /// dictionaries use, records nothing.
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -106,5 +113,6 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
 
+IMPLEMENT_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 }

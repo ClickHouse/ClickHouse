@@ -445,6 +445,11 @@ public:
         return true;
     }
 
+    SettingDescriptions enumerateSettings() const override
+    {
+        return settings->enumerateSettings();
+    }
+
 private:
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;

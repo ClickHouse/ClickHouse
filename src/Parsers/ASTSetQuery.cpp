@@ -2,6 +2,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/engineSettingsToHide.h>
 
 #include <Core/SettingsSecrets.h>
 #include <Databases/DataLake/DataLakeConstants.h>
@@ -28,10 +29,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Each engine namespace declares its own identical `ValueMaskingFunc` alias, hence the spelled-out
-/// type. Unrelated to `CoreSettings::ValueMaskingFunc`, which rewrites a value string in place.
-using EngineSettingsToHide = std::unordered_map<String, std::function<std::optional<std::string>(const Field &)>>;
-
 /// The table and database engine settings whose value is a secret, and how each one is masked.
 ///
 /// Every engine's map is consulted whatever the engine of the statement being formatted, because
@@ -40,8 +37,9 @@ using EngineSettingsToHide = std::unordered_map<String, std::function<std::optio
 /// `ALTER TABLE t MODIFY SETTING kafka_sasl_password = '...'` in cleartext. The setting names are
 /// engine-prefixed, so there is nothing for a different engine to collide with.
 ///
-/// `formatImpl` and `hasSecretParts` both read this list, so they cannot disagree on what is secret.
-static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
+/// `formatImpl`, `hasSecretParts` and `maskEngineSettingValue` all read this list, so they cannot
+/// disagree on what is secret.
+std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
 {
     return {
         &DataLake::SETTINGS_TO_HIDE,

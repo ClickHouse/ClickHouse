@@ -958,9 +958,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
         /// still be subject to these checks.
+        /// A restart and a short `ATTACH` load the definition already stored and do not write it again, so what
+        /// `loadFromQuery` adds to it stays in memory rather than becoming the definition's.
+        const bool stores_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, stores_definition);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -1166,7 +1169,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
-            (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
+            /// Through `set` rather than the field, so that this counts as an assignment: it is what clears
+            /// the marks the server's baseline left, and this value is the engine argument's, not the config's.
+            storage_settings->set("index_granularity", ast->value.safeGet<UInt64>());
             /// The old syntax states `index_granularity` as an engine argument instead of a setting
             if (is_fresh_definition)
             {
@@ -1272,6 +1277,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = MergeTreeSettings::enumerateEngineSettings,
     };
 
     factory.registerStorage("MergeTree", create, features, Documentation{
@@ -4390,6 +4396,9 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
+    /// The replicated family is configured by an additional `replicated_merge_tree` config section,
+    /// so it reports a different set of effective settings than the rest of the family.
+    features.enumerate_engine_settings_fn = MergeTreeSettings::enumerateReplicatedEngineSettings;
 
     factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(

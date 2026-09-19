@@ -1,0 +1,16 @@
+-- nothing stated: both settings at their defaults
+disk	default	default	default
+persistent	1	1	default
+-- stated: reported as the definition, and nothing else is
+disk	default	definition
+persistent	0	definition
+-- the unused format setting still stays in the definition
+1
+-- the two rows it reports agree with what `system.engine_settings` says of the engine
+0
+-- but the engine advertises far more than any table of it reports, which is the remaining gap
+2	1
+-- `persistent` is the value the engine acts on
+0
+-- a temporary table reports its definition too
+persistent	0	definition

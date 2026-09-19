@@ -1,0 +1,16 @@
+-- CREATE
+dist_definition	background_insert_batch	1	definition
+dist_definition	bytes_to_delay_insert	123456	definition
+dist_definition	max_delay_to_insert	60	default
+mysql_definition	connection_max_tries	3	default
+mysql_definition	connection_pool_size	7	definition
+postgresql_definition	postgresql_connection_attempt_timeout	2	default
+postgresql_definition	postgresql_connection_pool_retries	5	definition
+-- loaded again from what they stored
+dist_definition	background_insert_batch	1	definition
+dist_definition	bytes_to_delay_insert	123456	definition
+dist_definition	max_delay_to_insert	60	default
+mysql_definition	connection_max_tries	3	default
+mysql_definition	connection_pool_size	7	definition
+postgresql_definition	postgresql_connection_attempt_timeout	2	default
+postgresql_definition	postgresql_connection_pool_retries	5	definition

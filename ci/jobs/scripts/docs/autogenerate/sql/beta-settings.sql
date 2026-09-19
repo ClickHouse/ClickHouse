@@ -21,6 +21,7 @@ SELECT
     format('`{}`', default) AS Default
 FROM system.merge_tree_settings
 WHERE tier = 'Beta'
+AND alias_for=''
     ),
     combined AS
     (

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/unit.h>
 
 #include <limits>
@@ -13,7 +16,6 @@ namespace DB
 {
 class ASTSetQuery;
 struct DataLakeStorageSettingsImpl;
-struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
 class SettingsChanges;
 
@@ -187,6 +189,7 @@ struct DataLakeStorageSettings
     bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(DataLakeStorageSettings)
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);

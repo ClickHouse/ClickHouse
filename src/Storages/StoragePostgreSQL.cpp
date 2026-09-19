@@ -8,6 +8,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
@@ -51,6 +52,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
@@ -98,6 +100,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
+    PostgreSQLSettings settings_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -105,6 +108,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
+    , settings(std::move(settings_))
     , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -121,6 +125,22 @@ StoragePostgreSQL::StoragePostgreSQL(
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// A setting the definition does not state carries the value the creating session had for it: `default`
+    /// where that is the compiled-in default and `other` where it is not - the rule `Join` and `Distributed`
+    /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
+    /// nothing here and the source has to come from the value.
+    ///
+    /// Except for what a named collection or the table's own `SETTINGS` clause supplied, which
+    /// `loadSettingsFromNamedCollection` and `PostgreSQLSettings::loadFromQuery` record in the settings object
+    /// (a `SettingsWithRecordedOrigin`) and `setOriginByValue` leaves alone: neither the session's nor a
+    /// default, and the value cannot reveal them, since either may well state the default.
+    SettingDescriptions descriptions = settings.enumerateSettings();
+    setOriginByValue(descriptions);
+    return descriptions;
 }
 
 VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
@@ -905,6 +925,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.getContext(),
+            std::move(postgresql_settings),
             configuration.schema,
             configuration.on_conflict);
     },
@@ -913,6 +934,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
         .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = PostgreSQLSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(

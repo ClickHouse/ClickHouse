@@ -11,6 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SettingDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -259,6 +260,17 @@ public:
     {
         return metadata.get();
     }
+
+    /// Report this table's settings as they are actually in effect, for `system.table_settings`.
+    ///
+    /// The base implementation answers from the table's own `SETTINGS` clause. That is all a storage can say when
+    /// it has no settings of its own to list: `File` and `URL` take core settings, and the `Log` family's two have
+    /// fixed defaults. An engine with settings of its own overrides this to report every one of them with its
+    /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
+    /// It is a method on the storage rather than a static enumeration of the settings type because some values
+    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. An override with a settings
+    /// object enumerates it, and reaches for `Storages/TableSettingsHelpers.h` only for what that object cannot hold.
+    virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

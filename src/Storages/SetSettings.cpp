@@ -1,3 +1,5 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
@@ -17,15 +19,18 @@ namespace ErrorCodes
 }
 
 #define SET_RELATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageSet", 0) \
-    DECLARE(String, disk, "default", "Name of the disk used to persist set data", 0)
+    DECLARE(Bool, persistent, true, "Whether the table's data is also written to disk, so that it is restored after a restart. Disable it to avoid the overhead of writing to disk.", 0) \
+    DECLARE(String, disk, "default", "Name of the disk the table's data is written to.", 0)
 
 #define LIST_OF_SET_SETTINGS(M, ALIAS) \
     SET_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SET_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SetSettings, SetSetting)
+struct SetSettingsImpl : public SettingsWithRecordedOrigin<SetSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SetSettingsTraits, LIST_OF_SET_SETTINGS, SetSettings, SetSetting)
 
 SetSettings::SetSettings() : impl(std::make_unique<SetSettingsImpl>())
 {
@@ -68,4 +73,7 @@ bool SetSettings::hasBuiltin(std::string_view name)
 {
     return SetSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(SetSettings)
+
 }

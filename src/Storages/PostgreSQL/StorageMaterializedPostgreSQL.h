@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -83,6 +84,9 @@ public:
         std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
+
+    /// Reports the replication settings this table works with - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     void shutdown(bool is_drop) override;
 
@@ -180,6 +184,10 @@ private:
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
+    /// What the handler was built from, kept so the table can report it. Null for a table of a
+    /// `MaterializedPostgreSQL` database, which is built by a constructor that receives no settings -
+    /// see `getTableSettings`.
+    std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings;
 
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,
     /// because table with engine MaterilizePostgreSQL acts differently in each case.

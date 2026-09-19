@@ -1,3 +1,5 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -11,7 +13,10 @@ namespace DB
 {
 
 DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, DataLakeStorageSettings, DataLakeStorageSetting)
+struct DataLakeStorageSettingsImpl : public SettingsWithRecordedOrigin<DataLakeStorageSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, DataLakeStorageSettings, DataLakeStorageSetting)
 
 DataLakeStorageSettings::DataLakeStorageSettings() : impl(std::make_unique<DataLakeStorageSettingsImpl>())
 {
@@ -32,7 +37,10 @@ STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, IMPL
 
 void DataLakeStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    impl->applyChanges(settings_ast.changes);
+    /// The table's own `SETTINGS` clause, recorded as the definition. The table function applies its clause here
+    /// too, but its storages are not listed. A data lake catalog's table takes its settings from the database
+    /// instead, through `loadFromSettingsChanges`, which records nothing.
+    impl->applyChangesWithOrigin(settings_ast.changes, SettingOrigin::Definition);
 }
 
 Field DataLakeStorageSettings::get(const std::string & name)
@@ -72,5 +80,7 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
 
     return result;
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(DataLakeStorageSettings)
 
 }

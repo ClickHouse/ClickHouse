@@ -1,0 +1,6 @@
+with_disk	disk	default	1	definition
+with_disk	parts_to_throw_insert	1234	1	config
+with_disk	storage_policy	default	0	default
+without_disk	disk		0	default
+without_disk	parts_to_throw_insert	1234	1	config
+without_disk	storage_policy	default	1	config

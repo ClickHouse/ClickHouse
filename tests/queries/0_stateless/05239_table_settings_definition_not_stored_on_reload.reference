@@ -1,0 +1,6 @@
+-- MergeTree loaded from a definition that does not state index_granularity
+0
+index_granularity	0	1
+merge_max_block_size	1	0
+-- MySQL after a short ATTACH in a session with another mysql_datatypes_support_level
+mysql_datatypes_support_level	1	default

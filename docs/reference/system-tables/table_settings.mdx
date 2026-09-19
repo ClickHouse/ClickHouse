@@ -1,0 +1,36 @@
+---
+description: 'System table containing the settings of every table as they are actually in effect.'
+keywords: ['system table', 'table_settings']
+sidebarTitle: 'system.table_settings'
+slug: /operations/system-tables/table_settings
+title: 'system.table_settings'
+doc_type: 'reference'
+---
+
+## Description {#description}
+
+Settings of every table as they are actually in effect, which need not be the values its `CREATE` query states.
+The `source` column tells where each value came from.
+For the settings an engine supports, see [`system.engine_settings`](/reference/system-tables/engine_settings).
+
+An engine that keeps no settings of its own reports only what the table's `SETTINGS` clause states - plain object storage (`S3`, `GCS`, `AzureBlobStorage`, `HDFS`), `File`, `URL` and the `Log` family among them.
+A setting known only from that clause has an empty `default`, `type` and `description`.
+
+A table is shown to a user who has the `SHOW TABLES` privilege on it.
+The [`SHOW TABLE SETTINGS`](/reference/statements/show) statement reads this table for one table.
+
+## Columns {#columns}
+
+`DESCRIBE TABLE system.table_settings` lists the columns with their descriptions.
+
+## Example {#example}
+
+```sql
+CREATE TABLE tbl (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4096;
+SELECT name, value, source FROM system.table_settings WHERE database = currentDatabase() AND table = 'tbl' AND changed;
+```
+
+## See also {#see-also}
+
+- [`system.engine_settings`](/reference/system-tables/engine_settings)
+- [`SHOW TABLE SETTINGS`](/reference/statements/show)

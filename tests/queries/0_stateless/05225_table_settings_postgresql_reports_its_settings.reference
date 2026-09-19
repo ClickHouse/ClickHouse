@@ -1,0 +1,6 @@
+-- the clause, the session and the default are told apart
+postgresql_connection_attempt_timeout	2	default
+postgresql_connection_pool_auto_close_connection	0	default
+postgresql_connection_pool_retries	7	other
+postgresql_connection_pool_size	8	definition
+postgresql_connection_pool_wait_timeout	5000	default

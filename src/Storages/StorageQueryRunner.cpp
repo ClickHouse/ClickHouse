@@ -762,10 +762,11 @@ StorageQueryRunner::StorageQueryRunner(
     ConstraintsDescription constraints_,
     const String & comment,
     const ASTPtr & sql_security_,
-    const QueryRunnerSettings & settings,
+    QueryRunnerSettings settings_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , settings(std::move(settings_))
     , mode(settings[QueryRunnerSetting::mode])
     , log(getLogger("StorageQueryRunner (" + table_id_.getFullTableName() + ")"))
 {
@@ -803,6 +804,13 @@ StorageQueryRunner::StorageQueryRunner(
 }
 
 StorageQueryRunner::~StorageQueryRunner() = default;
+
+SettingDescriptions StorageQueryRunner::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// The engine reads its settings from the definition alone, which `QueryRunnerSettings::loadFromQuery`
+    /// records in the settings object, so what the definition does not state is at the compiled-in default.
+    return settings.enumerateSettings();
+}
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
 {
@@ -981,7 +989,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.query.sql_security,
-            settings,
+            std::move(settings),
             args.getContext());
     },
     {
@@ -989,6 +997,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_sql_security = true,
         .has_builtin_setting_fn = QueryRunnerSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = QueryRunnerSettings::enumerateEngineSettings,
     },
     Documentation{.description = R"DOC(A table engine whose write path runs queries instead of storing data. Rows inserted into a `QueryRunner` table are dispatched as queries to be executed (synchronously or asynchronously); it is used to orchestrate and run queries through an `INSERT` interface.)DOC"});
 }

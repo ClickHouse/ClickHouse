@@ -1637,3 +1637,86 @@ def test_hiding_credentials(nats_cluster):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "nats_password = \\'[HIDDEN]\\'" in  message
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
+
+
+def test_nats_table_settings_report_effective_values(nats_cluster):
+    """`system.table_settings` reports the values the table works with: macros from the server config expanded,
+    and the authentication taken from the `nats` server config section when the table defines none."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{nats_subjects}_effective',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+
+    rows = instance.query(
+        "SELECT name, value, is_masked, source FROM system.table_settings "
+        "WHERE database = 'test' AND table = 'nats' "
+        "AND name IN ('nats_subjects', 'nats_username', 'nats_password') ORDER BY name"
+    )
+    assert TSV(rows) == TSV(
+        "nats_password\t[HIDDEN]\t1\tconfig\n"
+        "nats_subjects\ttest_subject_effective\t0\tdefinition\n"
+        "nats_username\tclickhouse\t0\tconfig\n"
+    )
+
+    instance.query("DROP TABLE test.nats")
+
+
+def test_nats_table_settings_report_the_named_collection(nats_cluster):
+    """A table built from a named collection says so: a value the collection supplied is neither a default nor
+    something the table states, and the source has to tell them apart - including where the collection happens
+    to state the compiled-in default, which no comparison of values could reveal."""
+    instance.query(
+        """
+        CREATE TABLE test.nats_collection (key UInt64, value UInt64)
+            ENGINE = NATS(nats1)
+            SETTINGS nats_max_rows_per_message = 7;
+        """
+    )
+
+    # Stated by the clause, supplied by the collection, and left at the engine's default. The collection
+    # holds `nats_max_rows_per_message` too, so this also pins that the clause wins over the collection -
+    # and it holds it at the compiled-in default, which no comparison of values could have attributed.
+    rows = instance.query(
+        "SELECT name, value, source FROM system.table_settings "
+        "WHERE database = 'test' AND table = 'nats_collection' "
+        "AND name IN ('nats_subjects', 'nats_skip_broken_messages', 'nats_max_rows_per_message') ORDER BY name"
+    )
+    assert TSV(rows) == TSV(
+        "nats_max_rows_per_message\t7\tdefinition\n"
+        "nats_skip_broken_messages\t111\tnamed_collection\n"
+        "nats_subjects\tnamed\tnamed_collection\n"
+    )
+
+    # An engine argument overriding a collection key is not the collection either: the engine took the
+    # value from the argument list, and cannot say more than `other` about it.
+    instance.query(
+        """
+        CREATE TABLE test.nats_override (key UInt64, value UInt64)
+            ENGINE = NATS(nats1, nats_skip_broken_messages = 222);
+        """
+    )
+    assert (
+        instance.query(
+            "SELECT value, source FROM system.table_settings WHERE database = 'test' "
+            "AND table = 'nats_override' AND name = 'nats_skip_broken_messages'"
+        ).strip()
+        == "222\tother"
+    )
+    instance.query("DROP TABLE test.nats_override")
+
+    # Everything the collection does not mention and the clause does not state keeps its own default.
+    assert (
+        instance.query(
+            "SELECT countIf(source = 'named_collection'), countIf(source = 'default') > 0 "
+            "FROM system.table_settings WHERE database = 'test' AND table = 'nats_collection'"
+        ).strip()
+        == "7\t1"
+    )
+
+    instance.query("DROP TABLE test.nats_collection")
+

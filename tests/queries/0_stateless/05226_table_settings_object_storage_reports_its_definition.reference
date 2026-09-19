@@ -1,0 +1,8 @@
+-- what the definition states is reported
+format_csv_delimiter	;	definition
+-- and the row carries the metadata the engine knows, not an empty type and an assumed tier
+format_csv_delimiter	1	1	1	1
+-- a stated name the engine does not know is reported as the definition states it, with no metadata
+not_a_setting_of_this_engine	1	definition	1	1
+-- including for an obsolete setting, which must not claim to be a production one
+input_format_parquet_import_nested	Obsolete	1

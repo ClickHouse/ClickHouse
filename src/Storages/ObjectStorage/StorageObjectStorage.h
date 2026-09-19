@@ -123,6 +123,8 @@ public:
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
+
     bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
 
     bool isObjectStorage() const override { return true; }

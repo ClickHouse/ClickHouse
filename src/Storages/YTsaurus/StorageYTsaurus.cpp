@@ -169,7 +169,8 @@ void registerStorageYTsaurus(StorageFactory & factory)
     {
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
-        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
+        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = YTsaurusSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -294,6 +295,14 @@ SELECT * FROM yt_saurus;
 )DOCS_MD",
         .syntax = "ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')",
     });
+}
+
+SettingDescriptions StorageYTsaurus::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// The settings object records the table's own `SETTINGS` clause, as `YTsaurusSettings::loadFromQuery`
+    /// applies it. A named collection supplies none of a table's settings: `processNamedCollectionResult`
+    /// accepts only connection keys for a table, so there is no `named_collection` source to record.
+    return settings.enumerateSettings();
 }
 
 }

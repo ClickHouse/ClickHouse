@@ -33,6 +33,13 @@ struct KafkaInterceptors;
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
+namespace StorageKafkaUtils
+{
+/// `system.table_settings` for a table of either `Kafka` storage - see the definition.
+template <typename KafkaStorage>
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
+}
+
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
@@ -40,6 +47,8 @@ class StorageKafka final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
     friend KafkaInterceptors;
+    template <typename KafkaStorage>
+    friend SettingDescriptions StorageKafkaUtils::getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
 
 public:
     StorageKafka(
@@ -102,6 +111,8 @@ public:
     bool supportsSubcolumns() const override { return true; }
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
     std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>

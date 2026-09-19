@@ -6,6 +6,7 @@
 #include <Core/PostgreSQL/ConnectionSSLParams.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TableNameOrQuery.h>
 
@@ -37,10 +38,14 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        PostgreSQLSettings settings_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
     String getName() const override { return "PostgreSQL"; }
+
+    /// Reports the connection settings this table works with - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     bool isExternalDatabase() const override { return true; }
 
@@ -108,6 +113,9 @@ private:
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
+    /// The creator resolves these - the session's values overlaid with the `SETTINGS` clause - into the
+    /// connection pool above. Kept so the table can say what it was built with.
+    PostgreSQLSettings settings;
 
     LoggerPtr log;
 };

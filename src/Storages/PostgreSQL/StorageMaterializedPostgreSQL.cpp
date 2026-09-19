@@ -38,6 +38,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/TableSettingsHelpers.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -75,7 +76,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const postgres::ConnectionInfo & connection_info,
     const StorageInMemoryMetadata & storage_metadata,
     ContextPtr context_,
-    std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
+    std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name_) + ")"))
@@ -91,6 +92,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
     setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 
+    replication_settings = std::move(replication_settings_);
     (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
@@ -146,6 +148,28 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 {
     auto nested_metadata = nested_storage_->getInMemoryMetadataPtr(context_, false);
     setInMemoryMetadata(*nested_metadata);
+}
+
+SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// The constructors a `MaterializedPostgreSQL` database uses receive no settings - there they belong to
+    /// the database - so there is nothing for such a table to report here. It is not what the user sees for
+    /// one either: a table of such a database is listed as the nested table the data is materialized into,
+    /// and reports that table's settings (verified in `test_postgresql_replica_database_engine/test_3.py`).
+    if (!replication_settings)
+        return {};
+
+    /// What the definition states, `MaterializedPostgreSQLSettings::loadFromQuery` records in the settings object.
+    /// A setting it does not state carries the compiled-in default, except `materialized_postgresql_tables_list`,
+    /// which the constructor sets to this table's remote name - the value the replication handler works with.
+    SettingDescriptions settings = replication_settings->enumerateSettings();
+
+    /// The constructor replaced this one with the table's own remote name, so the value reported is the
+    /// handler's rather than the clause's even where the clause states it - and `definition` promises the
+    /// value came from the clause. Say `other` instead, as for anything else the engine assigned itself.
+    setOrigin(settings, {"materialized_postgresql_tables_list"}, SettingOrigin::Other);
+
+    return settings;
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
@@ -789,6 +813,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = MaterializedPostgreSQLSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

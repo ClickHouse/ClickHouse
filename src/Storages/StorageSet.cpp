@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <Core/SettingsFields.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -192,6 +194,37 @@ StorageSet::StorageSet(
 }
 
 
+SettingDescriptions StorageSetOrJoinBase::persistenceSettingDefaults()
+{
+    static const SettingDescriptions defaults = []
+    {
+        SettingDescriptions result;
+        for (auto & setting : SetSettings{}.enumerateSettings())
+            if (setting.name == "disk" || setting.name == "persistent")
+                result.push_back(std::move(setting));
+        return result;
+    }();
+    return defaults;
+}
+
+SettingDescriptions StorageSetOrJoinBase::persistenceSettings() const
+{
+    auto settings = persistenceSettingDefaults();
+    for (auto & setting : settings)
+        setting.value = setting.name == "disk" ? disk->getName() : SettingFieldBool{persistent}.toString();
+    return settings;
+}
+
+SettingDescriptions StorageSet::getTableSettings(ContextPtr query_context) const
+{
+    /// The creator applies the table's `SETTINGS` clause to a `SetSettings`, takes `disk` and `persistent` from it and
+    /// discards the rest. Those two are the only settings this engine acts on, and the table keeps both, so report
+    /// them with the values it holds. Unstated, they are the struct's fixed defaults - not server settings, unlike
+    /// `StorageJoin`'s. The format settings `SetSettings` also declares are accepted and never read, so a row for one
+    /// would describe nothing the table does.
+    return withOriginFromDefinition(persistenceSettings(), getStorageID(), query_context);
+}
+
 SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
@@ -363,7 +396,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, .enumerate_engine_settings_fn = SetSettings::enumerateEngineSettings, },
     Documentation{
         .description = R"DOCS_MD(
 <Note>

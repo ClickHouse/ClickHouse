@@ -5,6 +5,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -54,7 +57,10 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)   \
 
 DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RABBITMQ_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
+struct RabbitMQSettingsImpl : public SettingsWithRecordedOrigin<RabbitMQSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
 
 RabbitMQSettings::RabbitMQSettings() : impl(std::make_unique<RabbitMQSettingsImpl>())
 {
@@ -77,7 +83,7 @@ void RabbitMQSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -96,12 +102,7 @@ void RabbitMQSettings::loadFromQuery(ASTStorage & storage_def)
 
 void RabbitMQSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection->has(setting_name))
-            impl->set(setting_name, named_collection->get<String>(setting_name));
-    }
+    loadSettingsFromNamedCollection(*impl, *named_collection);
 }
 
 SettingsChanges RabbitMQSettings::getFormatSettings() const
@@ -124,4 +125,7 @@ bool RabbitMQSettings::hasBuiltin(std::string_view name)
 {
     return RabbitMQSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(RabbitMQSettings)
+
 }

@@ -1,0 +1,9 @@
+-- a setting no one stated is not attributed to the definition
+min_bytes_for_wide_part	1
+-- MODIFY SETTING reports the value it wrote, as definition
+min_bytes_for_wide_part	12345	definition
+-- which is the query the table now stores
+1
+-- RESET SETTING takes it back out of the definition
+min_bytes_for_wide_part	1
+0

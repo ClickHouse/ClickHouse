@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace Poco::Util
@@ -42,12 +45,16 @@ struct MySQLSettings
 
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
+    /// A table's own `SETTINGS` clause, recorded as the definition.
     void loadFromQuery(ASTStorage & storage_def);
+    /// A clause that is not a table's definition - a `MySQL` database's, the `mysql` table function's - recorded as
+    /// nothing, so a database's tables report its values as `other`.
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(MySQLSettings)
 
 private:
     std::unique_ptr<MySQLSettingsImpl> impl;

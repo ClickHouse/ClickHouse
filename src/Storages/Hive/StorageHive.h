@@ -71,6 +71,8 @@ public:
 protected:
     friend class ReadFromHive;
 
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
+
 private:
     using FileFormat = IHiveFile::FileFormat;
     using FileInfo = HiveMetastoreClient::FileInfo;

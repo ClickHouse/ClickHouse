@@ -1,0 +1,28 @@
+---
+description: 'System table containing the settings of every table engine that has settings of its own.'
+keywords: ['system table', 'engine_settings']
+sidebarTitle: 'system.engine_settings'
+slug: /operations/system-tables/engine_settings
+title: 'system.engine_settings'
+doc_type: 'reference'
+---
+
+## Description {#description}
+
+Settings of every table engine that has settings of its own, with the value the engine uses on this server and its default.
+Describes engines rather than tables: for the settings in effect for one table, see [`system.table_settings`](/reference/system-tables/table_settings).
+
+## Columns {#columns}
+
+`DESCRIBE TABLE system.engine_settings` lists the columns with their descriptions.
+
+## Example {#example}
+
+```sql
+SELECT engine, name, value, default FROM system.engine_settings WHERE engine = 'Memory';
+```
+
+## See also {#see-also}
+
+- [`system.table_settings`](/reference/system-tables/table_settings)
+- [`system.merge_tree_settings`](/reference/system-tables/merge_tree_settings)

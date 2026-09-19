@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -32,6 +33,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -40,6 +42,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -1205,10 +1208,12 @@ bool resolveCredentialSource(
                 ErrorCodes::BAD_ARGUMENTS, "The credentials of the named collection cannot be dropped by an empty `nats_credentials`");
     }
 
+    /// Through the typed `set`, so that the dropped setting is no longer reported as the named collection's: the
+    /// collection supplied it, but it no longer explains anything the table holds.
     if (credential_file_from_query && credentials_from_collection)
-        nats_settings[NATSSetting::nats_credentials] = String{};
+        nats_settings.set(NATSSetting::nats_credentials, String{});
     else if (credentials_from_query && credential_file_from_collection)
-        nats_settings[NATSSetting::nats_credential_file] = String{};
+        nats_settings.set(NATSSetting::nats_credential_file, String{});
 
     /// Whatever path is left is the one the collection defines, and it is accepted only when the
     /// collection itself comes from the server configuration file.
@@ -1361,6 +1366,7 @@ void registerStorageNATS(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = NATSSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1684,6 +1690,33 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 )DOCS_MD",
             .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
             .related = {"Kafka", "RabbitMQ", "FileLog"}});
+}
+
+SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// The settings object (a `SettingsWithRecordedOrigin`) records what a named collection supplied, as
+    /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
+    /// applies it over the collection.
+    auto settings = nats_settings->enumerateSettings();
+
+    /// What the table works with. The constructor expands macros in these and, when the table defines no
+    /// authentication of its own, takes it from the `nats` server config section.
+    setEffectiveValue(settings, "nats_subjects", boost::algorithm::join(subjects, ","));
+    setEffectiveValue(settings, "nats_format", format_name);
+    setEffectiveValue(settings, "nats_schema", schema_name);
+    setEffectiveValue(settings, "nats_url", configuration.url);
+    setEffectiveValue(settings, "nats_server_list", boost::algorithm::join(configuration.servers, ","));
+    setEffectiveValue(settings, "nats_credentials", configuration.credentials);
+    setEffectiveValue(settings, "nats_ca_file", configuration.ca_file);
+    setEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
+    setEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
+
+    setEffectiveValueWithConfigFallback(settings, "nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
+    setEffectiveValueWithConfigFallback(settings, "nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
+    setEffectiveValueWithConfigFallback(settings, "nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
+    setEffectiveValueWithConfigFallback(
+        settings, "nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+    return settings;
 }
 
 }

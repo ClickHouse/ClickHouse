@@ -2339,6 +2339,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = DistributedSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -2786,6 +2787,7 @@ void registerStorageRemote(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = DistributedSettings::enumerateEngineSettings,
     };
 
     const String common_description = R"DOCS_MD(
@@ -2857,4 +2859,25 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
+
+SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
+    /// applied over the compiled defaults, which `DistributedSettings::loadFromConfig` records in the settings
+    /// object (a `SettingsWithRecordedOrigin`) and the table's copy keeps - and then applies its own `SETTINGS`
+    /// clause, which `DistributedSettings::loadFromQuery` records as the definition. The engine supports no
+    /// settings `ALTER`, so nothing applies the clause again.
+    auto settings = distributed_settings->enumerateSettings();
+
+    /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the
+    /// ones the definition does not state. Copying a field of the same type copies its changed bit as well,
+    /// so a `Milliseconds` one keeps a value that is not its default while still reading as unchanged.
+    /// Whatever set that value, it was not the default.
+    for (auto & setting : settings)
+        if (setting.origin == SettingOrigin::Default && setting.value != setting.default_value)
+            setting.origin = SettingOrigin::Other;
+
+    return settings;
+}
+
 }

@@ -79,6 +79,166 @@ class MySQLNodeInstance:
             self.mysql_connection.close()
 
 
+def test_table_settings_for_mysql_database(started_cluster):
+    """`system.table_settings` reaches tables inside a MySQL database.
+
+    It selects databases the same way `system.tables` and `system.columns` do, rather than
+    excluding every external database the way `system.constraints` and `system.projections` do.
+    Those exclude one because a table in it has no ClickHouse constraints or projections to report;
+    a `StorageMySQL` table does have settings, so the same exclusion would hide real rows.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_settings_database")
+        mysql_node.query("CREATE DATABASE test_settings_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_settings_database`.`t` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_settings_database ENGINE = MySQL("
+            f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}') "
+            "SETTINGS connection_pool_size = 5"
+        )
+
+        settings = clickhouse_node.query(
+            "SELECT name FROM system.table_settings "
+            "WHERE database = 'test_settings_database' AND table = 't' ORDER BY name"
+        )
+        assert "connection_pool_size" in settings
+
+        # The database resolves its settings into the connection pool its tables share, and hands them to
+        # every table it makes, so the tables report what they work with rather than the compiled-in
+        # defaults. The source is `other`, not `definition`: the value came from the database's clause, and
+        # no table of it states anything itself.
+        assert (
+            clickhouse_node.query(
+                "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
+                "AND table = 't' AND name = 'connection_pool_size'"
+            ).strip()
+            == "5\tother"
+        )
+        # And a setting the clause leaves out is at its own default, not at something the pool invented.
+        assert (
+            clickhouse_node.query(
+                "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
+                "AND table = 't' AND name = 'connection_max_tries'"
+            ).strip()
+            == "3\tdefault"
+        )
+
+        # The statement reaches them even when the caller has remote databases hidden: naming one turns
+        # `show_remote_databases_in_system_tables` on for that statement. The setting is on by default, so
+        # it is turned off for every `SHOW TABLE SETTINGS` below - otherwise they pass without that path.
+        shown = clickhouse_node.query(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t",
+            settings={"show_remote_databases_in_system_tables": 0},
+        )
+        assert "connection_pool_size" in shown
+
+        # And the setting still governs it: turning it off hides the database again.
+        hidden = clickhouse_node.query(
+            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database' "
+            "SETTINGS show_remote_databases_in_system_tables = 0"
+        )
+        assert hidden.strip() == "0"
+
+        # `SHOW TABLE SETTINGS` turns the visibility setting on for a database named explicitly.
+        # That must not also hand out rows the user has no `SHOW TABLES` for: the statement refuses
+        # the table, as `SHOW CREATE TABLE` does. Proven here rather than in a stateless test because
+        # only a reachable remote database has rows for the enabling path to reveal.
+        clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
+        clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
+        clickhouse_node.query(
+            "GRANT SELECT ON system.table_settings TO mysql_settings_denied"
+        )
+
+        denied = clickhouse_node.query(
+            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database'",
+            user="mysql_settings_denied",
+        )
+        assert denied.strip() == "0"
+
+        denied_show = clickhouse_node.query_and_get_error(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t",
+            user="mysql_settings_denied",
+            settings={"show_remote_databases_in_system_tables": 0},
+        )
+        assert "ACCESS_DENIED" in denied_show
+
+        clickhouse_node.query(
+            "GRANT SHOW TABLES ON test_settings_database.t TO mysql_settings_denied"
+        )
+        granted_show = clickhouse_node.query(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t",
+            user="mysql_settings_denied",
+            settings={"show_remote_databases_in_system_tables": 0},
+        )
+        assert "connection_pool_size" in granted_show
+
+        clickhouse_node.query("DROP USER mysql_settings_denied")
+
+        mysql_node.query("DROP DATABASE test_settings_database")
+        clickhouse_node.query("DROP DATABASE test_settings_database")
+
+
+def test_table_settings_for_mysql_database_from_named_collection(started_cluster):
+    """A `MySQL` database built from a named collection hands the collection's settings to every table it
+    makes, and the tables report them as the collection's.
+
+    The settings object records what the collection supplied as it loads it, and the database copies that
+    object into each table - so the source reaches a table the database made long after it was created,
+    including for a key whose value is the compiled-in default, which no comparison of values could attribute.
+    A setting the engine arguments override is the arguments', not the collection's.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+        mysql_node.query("CREATE DATABASE test_settings_nc_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_settings_nc_database`.`t` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+        clickhouse_node.query("DROP NAMED COLLECTION IF EXISTS mysql_settings_nc")
+        try:
+            clickhouse_node.query(
+                "CREATE NAMED COLLECTION mysql_settings_nc AS "
+                f"host = 'mysql80', port = 3306, user = 'root', password = '{mysql_pass}', "
+                "database = 'test_settings_nc_database', "
+                "connection_pool_size = 7, connection_max_tries = 3, connection_wait_timeout = 9"
+            )
+            clickhouse_node.query(
+                "CREATE DATABASE test_settings_nc_database ENGINE = MySQL(mysql_settings_nc, connection_wait_timeout = 11)"
+            )
+
+            assert clickhouse_node.query(
+                "SELECT name, value, source FROM system.table_settings "
+                "WHERE database = 'test_settings_nc_database' AND table = 't' "
+                "AND name IN ('connection_pool_size', 'connection_max_tries', 'connection_wait_timeout') ORDER BY name"
+            ) == (
+                # `3` is the compiled-in default of `connection_max_tries`: the collection still supplied it.
+                "connection_max_tries\t3\tnamed_collection\n"
+                "connection_pool_size\t7\tnamed_collection\n"
+                "connection_wait_timeout\t11\tother\n"
+            )
+        finally:
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+            clickhouse_node.query("DROP NAMED COLLECTION IF EXISTS mysql_settings_nc")
+            mysql_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+
+
 def test_mysql_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(

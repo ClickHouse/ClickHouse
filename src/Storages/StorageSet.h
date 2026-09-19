@@ -44,6 +44,13 @@ protected:
     String path;
     bool persistent;
 
+    /// `disk` and `persistent`, the two settings `Set` and `Join` share, as a table created now would get them. Their
+    /// metadata comes from `SetSettings`, the only place either is declared, so both engines describe them alike.
+    static SettingDescriptions persistenceSettingDefaults();
+
+    /// The same two settings with the values this table holds.
+    SettingDescriptions persistenceSettings() const;
+
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
     /// Restore from backup.
@@ -78,6 +85,9 @@ public:
         bool persistent_);
 
     String getName() const override { return "Set"; }
+
+    /// Reports `disk` and `persistent`, the two settings this engine acts on - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     /// Access the insides.
     SetPtr getSet() const;

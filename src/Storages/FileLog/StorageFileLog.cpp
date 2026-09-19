@@ -907,6 +907,7 @@ void registerStorageFileLog(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = FileLogSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1202,6 +1203,13 @@ bool StorageFileLog::updateFileInfos()
     chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
+}
+
+SettingDescriptions StorageFileLog::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// `FileLogSettings::loadFromQuery` records the table's own `SETTINGS` clause in the settings object. An
+    /// `auto` `max_threads` is resolved in place afterwards, and keeps whatever source it had.
+    return filelog_settings->enumerateSettings();
 }
 
 }

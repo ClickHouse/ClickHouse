@@ -32,6 +32,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowTableSettingsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowSettingQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -189,6 +190,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowTablesQuery>())
     {
         interpreter_name = "InterpreterShowTablesQuery";
+    }
+    else if (query->as<ASTShowTableSettingsQuery>())
+    {
+        interpreter_name = "InterpreterShowTableSettingsQuery";
     }
     else if (query->as<ASTShowColumnsQuery>())
     {

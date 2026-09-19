@@ -220,7 +220,10 @@ then
       old_merge_tree_settings.value AS old_value
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
-  WHERE (old_value IS NULL OR new_value != old_value)
+  -- Alias rows are not settings of their own, so a release that starts reporting one is not adding a
+  -- setting. Only the new side is filtered: the old release has no such column, and no such rows.
+  WHERE new_merge_tree_settings.alias_for = ''
+      AND (old_value IS NULL OR new_value != old_value)
       AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
@@ -252,7 +255,8 @@ then
 
   SELECT name
   FROM new_merge_tree_settings
-  WHERE (name NOT IN (
+  WHERE alias_for = ''
+  AND (name NOT IN (
       SELECT name
       FROM old_merge_tree_settings
   )) AND (name NOT IN (

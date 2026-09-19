@@ -6,6 +6,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -37,7 +40,10 @@ namespace ErrorCodes
     DECLARE(UInt64, postgresql_connection_attempt_timeout, 2, "Connection timeout in seconds of a single attempt to connect PostgreSQL end-point. The value is passed as a `connect_timeout` parameter of the connection URL.", 0) \
 
 DECLARE_SETTINGS_TRAITS(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, PostgreSQLSettings, PostgreSQLSetting)
+struct PostgreSQLSettingsImpl : public SettingsWithRecordedOrigin<PostgreSQLSettingsTraits>
+{
+};
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(PostgreSQLSettingsTraits, LIST_OF_POSTGRESQL_SETTINGS, PostgreSQLSettings, PostgreSQLSetting)
 
 PostgreSQLSettings::PostgreSQLSettings() : impl(std::make_unique<PostgreSQLSettingsImpl>())
 {
@@ -65,7 +71,7 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -89,12 +95,7 @@ void PostgreSQLSettings::loadFromQueryContext(const Context & context)
 
 void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection.has(setting_name))
-            impl->set(setting_name, named_collection.get<String>(setting_name));
-    }
+    loadSettingsFromNamedCollection(*impl, named_collection);
 }
 
 VectorWithMemoryTracking<std::string_view> PostgreSQLSettings::getAllRegisteredNames() const
@@ -109,5 +110,7 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 }

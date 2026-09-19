@@ -25,6 +25,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
@@ -36,6 +37,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -362,6 +364,7 @@ void registerStorageKafka(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = KafkaSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1170,4 +1173,40 @@ PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_
     return split;
 }
 }
+}
+
+namespace DB::StorageKafkaUtils
+{
+
+/// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values.
+/// Both befriend this: the helpers it composes are free functions, but the state it reports - the collection
+/// name, the expanded topics, the brokers, the group, the format, the schema and the generated client id - is
+/// private to each storage, and neither exposes all of it.
+template <typename KafkaStorage>
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr /* query_context */)
+{
+    /// Three things set a `Kafka` table's settings, in this order, and the settings object (a
+    /// `SettingsWithRecordedOrigin`) records each: a named collection given in the engine arguments, as
+    /// `loadSettingsFromNamedCollection` loads it; the table's own `SETTINGS` clause, as `loadFromQuery` applies
+    /// it over the collection; and the storage's constructor, which pins a few format settings through the typed
+    /// `set`, forgetting whichever of the two supplied them. Anything left as `Other` was set by the engine
+    /// itself. Saying so is the point of that value - guessing a source for it would be wrong.
+    auto settings = storage.kafka_settings->enumerateSettings();
+
+    /// What the table works with: the constructor expands macros in these, and generates a client id when none is
+    /// given - a value nothing but the engine set.
+    setEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(storage.topics, ","));
+    setEffectiveValue(settings, "kafka_broker_list", storage.brokers);
+    setEffectiveValue(settings, "kafka_group_name", storage.group);
+    setEffectiveValue(settings, "kafka_format", storage.format_name);
+    setEffectiveValue(settings, "kafka_schema", storage.schema_name);
+    setEffectiveValue(
+        settings, "kafka_client_id", storage.client_id,
+        (*storage.kafka_settings)[KafkaSetting::kafka_client_id].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
+    return settings;
+}
+
+template SettingDescriptions getTableSettings<StorageKafka>(const StorageKafka & storage, ContextPtr query_context);
+template SettingDescriptions getTableSettings<StorageKafka2>(const StorageKafka2 & storage, ContextPtr query_context);
+
 }

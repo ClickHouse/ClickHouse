@@ -1,0 +1,6 @@
+-- no row reports the default source for a value that is not the default
+-- the settings a Distributed table copies from the server are attributed
+background_insert_max_sleep_time_ms	1	other
+background_insert_sleep_time_ms	1	other
+-- an unset secret is not masked
+kafka_sasl_password		0	default
