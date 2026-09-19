@@ -3319,6 +3319,18 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             return internal_context;
         };
 
+        /// Re-check the kill state right before the `DETACH`: the per-table preflight above (catalog
+        /// lookups, storage checks, action locks) runs after the check at the top of the loop, and a
+        /// `KILL QUERY` or an expired `max_execution_time` can land in between. The internal queries
+        /// inherit the outer process list element, so `executeQueryImpl`'s own pending-kill gate does
+        /// not apply to them, and the gate cannot be used for them either: it would also abort the
+        /// recovery `ATTACH` in the `catch` block below and leave the table detached. Some window
+        /// remains — the kill can always land after the last check — but then the pair is completed
+        /// or repaired by the recovery `ATTACH`, so the table is not left in a mutated state.
+        if (const auto process_list_element = context->getProcessListElementSafe();
+            process_list_element && process_list_element->isKilled())
+            return;
+
         bool detached = false;
         try
         {
