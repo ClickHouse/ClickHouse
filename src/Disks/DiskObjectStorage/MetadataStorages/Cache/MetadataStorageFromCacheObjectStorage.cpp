@@ -24,6 +24,25 @@ const std::string & MetadataStorageFromCacheObjectStorage::getPath() const
     return underlying->getPath();
 }
 
+bool MetadataStorageFromCacheObjectStorage::isPathOnLocalFilesystem() const
+{
+    /// `getPath` is forwarded to the underlying metadata storage, so whether it names a real
+    /// local directory is the underlying storage's call (e.g. `false` for a cached `web` disk).
+    return underlying->isPathOnLocalFilesystem();
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasLocalFilesystemDirectoryNamespace() const
+{
+    /// The directory structure is the underlying metadata storage's; caching does not change it.
+    return underlying->hasLocalFilesystemDirectoryNamespace();
+}
+
+bool MetadataStorageFromCacheObjectStorage::keepsMetadataAcrossRestarts() const
+{
+    /// The metadata is the underlying storage's; caching the data does not make it persistent.
+    return underlying->keepsMetadataAcrossRestarts();
+}
+
 MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
 {
     return underlying->getType();
