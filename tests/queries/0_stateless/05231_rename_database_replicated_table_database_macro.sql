@@ -22,6 +22,8 @@ RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Ide
 SELECT name = {CLICKHOUSE_DATABASE_1:String} FROM system.databases
     WHERE name IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String});
 DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bound;
+-- A detached table is answered from its stored definition: attaching under the new name would rebind it.
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bound;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.bound VALUES (2);
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.bound;
@@ -43,8 +45,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound (x UInt64)
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
--- A proxy nothing has touched is answered from its stored definition, and again once loaded.
+-- A proxy nothing has touched is answered from its stored definition, for a database rename and a table rename alike.
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
+RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound TO {CLICKHOUSE_DATABASE_1:Identifier}.lazy_moved; -- { serverError NOT_IMPLEMENTED }
+SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
+-- Loaded, the table answers for itself.
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
