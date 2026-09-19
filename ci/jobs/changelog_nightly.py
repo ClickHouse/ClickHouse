@@ -501,6 +501,90 @@ def _bind_revert(pr, title, body, candidates):
     return matched if len(matched) == 1 else set()
 
 
+# How many search hits to weigh when looking a revert up by its title. The
+# nested title of a revert of a revert is a long phrase, so the search returns
+# a handful of candidates at most; the cap only bounds a pathological query.
+TITLE_SEARCH_LIMIT = 50
+
+
+def search_pull_requests_by_title(title, before):
+    """The merged pull requests of this repository titled exactly `title` and
+    numbered below `before`, as {number: (title, body)}.
+
+    The chain of a revert of a revert is followed through `targets`, which
+    requires knowing the intermediate revert. When it arrived before the
+    ledger existed and is outside the current raw blocks, nothing names its
+    number: a `Revert "Revert "X""` made with the web UI carries no
+    `Reverts owner/repo#N` marker in its body, and a hand-made one quotes only
+    the commit. Its title, though, is written out in full inside the title of
+    the outer revert, so it can be searched for.
+
+    Issue search has no exact-title operator and no way to quote the `"` a
+    nested revert title is full of, so the quotes are dropped and the words are
+    searched as a phrase in the title; the exact match is made here, by the
+    caller comparing titles. A transport failure raises, like
+    `fetch_pull_requests`: a lookup that quietly came back empty would leave a
+    revert chain half-followed."""
+    owner, _, name = Info().repo_name.partition("/")
+    phrase = " ".join(title.replace('"', " ").split())
+    search = f"repo:{owner}/{name} is:pr is:merged in:title {json.dumps(phrase)}"
+    query = (
+        f"{{ search(query: {json.dumps(search)}, type: ISSUE, "
+        f"first: {TITLE_SEARCH_LIMIT}) {{ nodes {{ ... on PullRequest "
+        f"{{ number title body }} }} }} }}"
+    )
+    out = Shell.get_output(f"gh api graphql -f query={shlex.quote(query)}", retries=3)
+    try:
+        nodes = json.loads(out)["data"]["search"]["nodes"]
+    except (KeyError, TypeError, ValueError) as e:
+        raise RuntimeError(
+            f"Cannot search for pull requests titled {title!r}: the GraphQL "
+            f"query returned no search data. Refusing to classify reverts "
+            f"without it."
+        ) from e
+    if len(nodes) >= TITLE_SEARCH_LIMIT:
+        # The hits were cut off, so a second pull request with this very title
+        # may be sitting beyond the cap and the one hit that matches exactly
+        # would look unique while it is not. Nothing is returned: a title this
+        # common identifies nothing, and a wrong binding would license the
+        # deletion of an entry that ships.
+        print(f"WARNING: too many pull requests match the title {title!r}")
+        return {}
+    found = {}
+    for node in nodes:
+        number = str(node.get("number") or "")
+        if not number or int(number) >= int(before):
+            continue
+        found[number] = (
+            " ".join((node.get("title") or "").split()),
+            node.get("body") or "",
+        )
+    return found
+
+
+def _lookup_nested_revert(pr, title):
+    """The reverts that the nested title of `pr` may name, as
+    {number: (title, body)}, for a revert whose target none of the raw blocks,
+    the ledger or its own metadata identify.
+
+    Both links of a chain need it. The intermediate revert of a
+    `Revert "Revert "X""` is the one the outer revert has to bind to, and that
+    intermediate revert, reached this way, has no metadata naming `X` either -
+    it quotes only a commit - so its own target is looked up the same way.
+    Leaving the second lookup out would stop the chain one step short: the
+    intermediate revert would not be a revert as far as `revert_net_effect` is
+    concerned, and the outer one would be read as cancelling nothing.
+
+    The hits are handed to `_bind_revert` as candidates rather than bound
+    here, so the exact-title and unambiguity rules that govern every other
+    nested match govern these too: a title several merged pull requests share
+    identifies none of them."""
+    nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', title)
+    if not nested:
+        return {}
+    return search_pull_requests_by_title(nested.group(1), before=pr)
+
+
 def resolve_revert_targets(
     raw_prs, text_reverts=(), known_titles=None, known_targets=None
 ):
@@ -526,7 +610,11 @@ def resolve_revert_targets(
     request without an entry and demand that no trace of it remain - while
     the editing rules put its link on the entry it brought back. That
     contradiction wedged the 26.9 changelog for a week in September 2026, for
-    a chain whose first revert predated the ledger.
+    a chain whose first revert predated the ledger. When the intermediate
+    revert is not even named - the outer revert carries no marker and quotes
+    only its title - it is searched for by that title
+    (`search_pull_requests_by_title`), so the chain is followed from either
+    end.
 
     `known_titles` supplies the titles of the reverts earlier runs already
     resolved, for the nested-title form. Returns (targets, titles, unresolved):
@@ -550,14 +638,32 @@ def resolve_revert_targets(
     targets = {}
     unresolved = []
     # The reverts to bind, in waves: the ones from the raw blocks first, then
-    # the targets of what was bound so far that are reverts themselves and
-    # that nobody has bound yet.
+    # the reverts discovered while binding them - the targets that are reverts
+    # themselves, and the intermediate reverts a nested title named - as long
+    # as nobody has bound them yet.
     pending = revert_prs
+    seen = set()
     while pending:
         candidates = {**(known_titles or {}), **titles}
+        discovered = {}
         for pr in pending:
+            seen.add(pr)
             title, body = metadata[pr]
             bound = _bind_revert(pr, title, body, candidates)
+            if not bound:
+                # Nothing the run already knows names the target. A nested
+                # title still spells it out, so look the intermediate revert
+                # up by it and bind against that.
+                found = {
+                    p: v for p, v in _lookup_nested_revert(pr, title).items()
+                    if p not in metadata
+                }
+                if found:
+                    metadata.update(found)
+                    titles.update({p: t for p, (t, _) in found.items()})
+                    discovered.update(found)
+                    candidates = {**candidates, **titles}
+                    bound = _bind_revert(pr, title, body, candidates)
             if bound:
                 targets[pr] = bound
             else:
@@ -571,13 +677,15 @@ def resolve_revert_targets(
             },
             key=int,
         )
-        if not unknown:
-            break
-        fetched = fetch_pull_requests(unknown)
+        fetched = fetch_pull_requests(unknown) if unknown else {}
         metadata.update(fetched)
         titles.update({pr: title for pr, (title, _) in fetched.items()})
         pending = sorted(
-            (pr for pr, (title, body) in fetched.items() if _is_revert(title, body)),
+            (
+                pr
+                for pr, (title, body) in {**fetched, **discovered}.items()
+                if pr not in seen and _is_revert(title, body)
+            ),
             key=int,
         )
     return targets, titles, sorted(set(unresolved), key=int)
