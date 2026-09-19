@@ -181,13 +181,11 @@ BuildTextIndexTransform::BuildTextIndexTransform(
 {
     if (build_threads > 1)
     {
-        /// The pool is global to avoid oversubscription: several merges can build text indexes at the
-        /// same time, and one pipeline can hold one transform per source part.
+        /// The pool is global: one pipeline can hold one transform per source part, and merges overlap.
         build_pool = &Context::getGlobalContextInstance()->getBuildTextIndexThreadPool();
         build_threads = std::min(build_threads, build_pool->getMaxThreads());
 
-        /// Each builder holds its share of the vocabulary, so it gets its share of the budget. A
-        /// budget of 0 would flush a segment per block.
+        /// A per-builder budget of 0 would flush a segment per block.
         max_processed_tokens = std::max<size_t>(1, max_processed_tokens / build_threads);
         max_allocated_bytes = std::max<size_t>(1, max_allocated_bytes / build_threads);
     }
@@ -305,8 +303,7 @@ void BuildTextIndexTransform::flushPendingBlocks()
         {
             auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*builders[b].aggregators[i]);
 
-            /// A builder whose shard of the vocabulary is empty holds no granule data, even though the
-            /// rows it walked over are charged to its memory estimate.
+            /// A builder whose token shard stayed empty holds no granule data, though walked rows charge its estimate.
             if (aggregator_text.getNumProcessedTokens() == 0)
                 continue;
 
@@ -329,9 +326,8 @@ void BuildTextIndexTransform::finalize()
             if (builders[b].aggregators[i]->empty())
                 continue;
 
-            /// empty() only reports whether rows were walked, and every builder walks every row, so a
-            /// builder whose shard stayed empty still reports non-empty. Skipping before the segment
-            /// number is taken keeps the numbering getSegments() enumerates dense.
+            /// empty() reports whether rows were walked, not whether tokens were kept, so a builder
+            /// whose shard stayed empty still reports non-empty. Skipping before the number is taken keeps it dense.
             auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*builders[b].aggregators[i]);
             if (build_threads > 1 && aggregator_text.getNumProcessedTokens() == 0)
                 continue;

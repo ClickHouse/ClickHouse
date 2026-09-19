@@ -536,8 +536,7 @@ struct MergeTreeIndexTextGranuleBuilder
     size_t token_shard = 0;
     size_t num_token_shards = 1;
 
-    /// FNV-1a, not PackedStringRefHash: a shard picked by the map's own hash holds only keys
-    /// congruent modulo num_token_shards, which biases that map's bucket selection.
+    /// FNV-1a, not PackedStringRefHash: sharding on the map's own hash biases its bucket selection.
     bool keepsToken(std::string_view token) const
     {
         if (num_token_shards == 1)
@@ -575,8 +574,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
-    /// Must be called before the first update(): it discards the builder's state to re-seed the
-    /// drop filter, which holds only the tokens of this shard.
+    /// Must be called before the first update(): it resets the builder to re-seed the drop filter.
     void initTokenShard(size_t shard, size_t num_shards)
     {
         granule_builder.token_shard = shard;

@@ -54,12 +54,10 @@ private:
     /// of the text index to the temporary storage.
     void writeTemporarySegment(size_t builder_idx, size_t i);
 
-    /// Builds the buffered blocks with all builders in parallel, then flushes the builders that are
-    /// over their share of the thresholds. Only the calling thread writes files or decides flushes.
+    /// Only the calling thread writes files or decides flushes; the builders run on the pool.
     void flushPendingBlocks();
 
-    /// One set of index builders, one per index. There is a single builder set unless
-    /// text_index_build_threads is above 1.
+    /// One set of index builders, one per index; one set per build thread.
     struct Builders
     {
         MergeTreeIndexAggregators aggregators;
@@ -94,8 +92,7 @@ private:
     size_t build_threads = 1;
     /// The global build pool, null unless build_threads is above 1.
     ThreadPool * build_pool = nullptr;
-    /// Blocks buffered until there is one per builder. Postings are keyed by absolute row number, so
-    /// a builder may take non-contiguous blocks as long as it takes them in row order.
+    /// Postings are keyed by absolute row number, so a builder may take non-contiguous blocks in row order.
     std::vector<PendingBlock> pending_blocks;
 };
 
