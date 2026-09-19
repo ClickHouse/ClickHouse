@@ -1690,7 +1690,10 @@ protected:
 
     void resetColumnSizes()
     {
+        std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
         column_sizes.clear();
+        secondary_index_sizes.clear();
+        primary_index_size = {};
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
