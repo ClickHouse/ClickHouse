@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Nothing here is about parallel replicas, and the runner randomizes them into every query, including
-# the system.query_log read that reports the verdicts. Turning them off for the whole test removes that
-# axis; shell_config.sh appends this after the runner's own options, so it wins without dropping them.
-CLICKHOUSE_CLIENT_OPT="--enable_parallel_replicas 0"
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
@@ -24,10 +20,14 @@ USER="u_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${USER} IDENTIFIED WITH no_password"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER}"
+# INSERT is for arm C, whose write leg runs on the remote side as this user.
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.* TO ${USER}"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t SELECT number FROM numbers(10)"
+
+# Written by arm C only.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE dst (x UInt64) ENGINE = MergeTree ORDER BY x"
 
 # Read by the holder only. Thirty one second rows outlive every arm's own bound, so the connection
 # stays out of the pool until the holder is killed rather than until it runs out of rows.
@@ -127,6 +127,51 @@ function arm_b() {
     echo "failover still serves the shard: ${out}"
 }
 
+function insert_select() {
+    timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${1}" --query "
+        INSERT INTO FUNCTION remote('${ADDR},${ALT}', '${CLICKHOUSE_DATABASE}', 'dst', '${USER}', '')
+        SELECT * FROM remote('${ADDR},${ALT}', '${CLICKHOUSE_DATABASE}', 't', '${USER}', '')
+        SETTINGS ${COMMON}, parallel_distributed_insert_select = 2, connection_pool_max_wait_ms = 300,
+                 skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable',
+                 use_hedged_requests = 0
+    " > /dev/null 2>&1
+}
+
+# dst is the one MergeTree table this test reads directly, so it is where the runner's randomized
+# parallel replicas would otherwise engage: this count is answered from part metadata only on the runs
+# where optimize_trivial_count_query, itself randomized, lands on.
+function landed_rows() {
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM dst SETTINGS enable_parallel_replicas = 0"
+}
+
+# Arm C: the same missing shard on the write path. parallel_distributed_insert_select sends the whole
+# INSERT SELECT to each shard of the destination, and a shard the initiator had no connection slot for
+# was dropped from the write while the INSERT still reported success. Complete is 20 rows, the defect
+# is 10 with exit code 0, and the fix reports 279 and stores none. The uncontended control runs first,
+# so the contended count is read against a measured complete value rather than an assumed one: an arm
+# whose insert wrote nothing either way would otherwise look like a pass.
+# use_hedged_requests is not an axis here, unlike in arms A and B: this path takes its connections from
+# ConnectionPoolWithFailover::getMany and passes them to RemoteQueryExecutor, so the hedged factory is
+# never the allocator.
+function arm_c() {
+    local rc=0 control landed
+
+    ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE dst"
+    insert_select "${PREFIX}_c0_control"
+    control=$(landed_rows)
+
+    ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE dst"
+    hold_pool "c0"
+    insert_select "${PREFIX}_c0_victim" || rc=$?
+    release_pool "c0"
+    landed=$(landed_rows)
+
+    echo "arm C, parallel_distributed_insert_select = 2"
+    echo "every shard is written when no pool is full: ${control}"
+    [[ ${rc} != 0 ]] || echo "FAIL: the insert succeeded and landed ${landed} rows"
+    echo "rows landed: ${landed}"
+}
+
 # Arm D: a shard that really is unavailable is still skipped silently. This is the feature working as
 # documented, and it is what a fix that just raised the minimum entry count would break.
 function arm_d() {
@@ -145,6 +190,7 @@ arm_a 0
 arm_a 1
 arm_b 0
 arm_b 1
+arm_c
 arm_d
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
@@ -154,6 +200,8 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 # system.processes it is still readable after the query is over. DistributedShardsSkipped separates
 # the two verdicts that both end in missing rows: arm A must report the failure rather than record a
 # skipped shard, and arm D must still record one.
+# system.query_log is a MergeTree family table, so this read is the other place the runner's randomized
+# parallel replicas would engage.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         splitByChar('_', query_id)[-2] AS arm,
@@ -166,6 +214,7 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE event_date >= yesterday() AND current_database = currentDatabase()
       AND query_id LIKE '${PREFIX}\_%\_victim' AND type != 'QueryStart' AND is_initial_query
     ORDER BY arm
+    SETTINGS enable_parallel_replicas = 0
     FORMAT TSVWithNames
 "
 
