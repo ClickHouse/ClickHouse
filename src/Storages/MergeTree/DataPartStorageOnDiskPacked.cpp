@@ -895,6 +895,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             need_commit = true;
         }
 
+        /// This branch rewrites `data.packed`, so its contents need an fsync too. `sync` only sets a
+        /// deferred `need_sync` flag, so unlike the directory walk this gate has no
+        /// `external_transaction` exclusion: it must also cover a projection archive.
+        const bool fsync_content = params.fsync_part_directory && !disk->isRemote();
+
         auto files = reader->getFileNames();
         bool metadata_version_emitted = false;
         for (const auto & file : files)
@@ -924,6 +929,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
             copyData(*read_buf, *write_buf);
             write_buf->finalize();
+            if (fsync_content)
+                write_buf->sync();
         }
 
         /// A caller that relies on freeze to persist the destination metadata version passes
@@ -972,8 +979,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
              auto projection_storage = getProjection(file);
              auto params_copy = params;
              params_copy.external_transaction = dest_storage->transaction;
-             /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
-             params_copy.fsync_part_directory = false;
+             /// Only clear the flag when nothing else suppresses the nested directory walk: under an
+             /// external transaction that walk is already skipped, and there the flag still fsyncs a
+             /// rewritten projection archive's contents.
+             if (!params_copy.external_transaction)
+                 params_copy.fsync_part_directory = false;
              projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy);
          }
     }
