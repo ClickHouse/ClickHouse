@@ -47,6 +47,9 @@ public:
     explicit ParserTableExpression(bool allow_alias_without_as_keyword_ = true)
         : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
+    /// Try the PIVOT table-expression extension first, then fall back to the ordinary parser.
+    bool parse(Pos & pos, ASTPtr & node, Expected & expected) override;
+
 protected:
     const char * getName() const override { return "table or subquery or table function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

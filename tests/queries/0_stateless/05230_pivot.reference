@@ -1,0 +1,20 @@
+east	10	20	0
+west	5	0	7
+east	10	1	20	1
+west	5	1	0	0
+east	20
+west	10
+east	1	1	0
+west	1	0	1
+east	1	2
+1	2
+1	1
+2
+6
+1	1
+1
+east	3
+g	1
+group	1
+2
+0
