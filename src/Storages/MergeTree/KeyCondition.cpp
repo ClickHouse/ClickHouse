@@ -1260,9 +1260,14 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
-            else if (name == "materialize")
+            else if (name == "materialize" && !isNothing(removeNullable(node.result_type)))
             {
                 /// Remove "materialize" from index analysis.
+                ///
+                /// Except over a `Nothing`, where removing it turns a non-constant argument into a
+                /// constant one and a function above it - `assumeNotNull(materialize(NULL))` - then
+                /// folds and throws while trying to build a non-empty `Nothing` column. Index analysis
+                /// learns nothing from such an argument anyway.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
@@ -1929,6 +1934,34 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
     return true;
 }
 
+/// Converts a text constant into the type a key transform reads, when that type is a `DateTime`/`DateTime64`
+/// with no time zone in its name: such a type holds the zone it was built with, while the comparison this atom
+/// stands for parses text through the type's serialization, which resolves the session's zone.
+static bool tryNormalizeTextConstantForZonelessDateTimeInput(
+    const DataTypePtr & transform_input_type, Field & value, DataTypePtr & value_type)
+{
+    if (!transform_input_type || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
+        return true;
+
+    const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
+    bool input_time_zone_is_implicit = false;
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(input_type.get()))
+        input_time_zone_is_implicit = !date_time->hasExplicitTimeZone();
+    else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
+        input_time_zone_is_implicit = !date_time64->hasExplicitTimeZone();
+
+    if (!input_time_zone_is_implicit)
+        return true;
+
+    Field converted = tryConvertFieldToType(value, *input_type);
+    if (converted.isNull())
+        return false;
+
+    value = std::move(converted);
+    value_type = input_type;
+    return true;
+}
+
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2033,13 +2066,23 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!can_transform_constant)
         return false;
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    /// Convert a text constant here, the way the comparison does, so no cast below parses it in another zone.
+    DataTypePtr transform_input_type;
+    if (!transform_functions.empty() && !transform_functions.front()->getArgumentTypes().empty())
+        transform_input_type = getArgumentTypeOfMonotonicFunction(*transform_functions.front());
+
+    Field const_value = out_value;
+    DataTypePtr const_value_type = out_type;
+    if (!tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, const_value, const_value_type))
+        return false;
+
+    ColumnPtr const_column = const_value_type->createColumnConst(1, const_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
     bool constant_transformed = applyFunctionChainToColumn(
         const_column,
-        out_type,
+        const_value_type,
         transform_functions,
         transformed_const_column,
         transformed_const_type);
@@ -2181,6 +2224,19 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
+/// Whether applying the `CAST` of the key DAG straight to a constant of another type gives the same
+/// value as normalizing the constant to the key column's type first and then applying it. A
+/// `Dynamic` value keeps the type it was inserted with, so `CAST(CAST(x, 'Dynamic'), 'String')`
+/// renders `x` the way its own type does and the round trip can be skipped. Every other key type
+/// puts the value into its own value space first - `DateTime64(3)` keeps three fractional digits of a
+/// `DateTime64(6)` constant, and so does `Array(DateTime64(3))` for each element - so the direct
+/// `CAST` would render a value the key space does not hold.
+static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input_type)
+{
+    return isDynamic(removeLowCardinality(key_input_type));
+}
+
+
 /// Cast column to target_type and fail if the cast introduces NULLs.
 static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
 {
@@ -2306,14 +2362,30 @@ static bool convertColumnForDeterministicDag(
             return finalizeTransformedColumn(out_column, out_type);
         };
 
-        if (try_apply_direct_cast_fast_path())
-        {
-            out_transform_applied = true;
-            return true;
-        }
-
+        /// The constant is normalized through the key column's type first: applying the `CAST` of the
+        /// DAG straight to the constant's own type renders it from a different type space. A
+        /// `DateTime64(6)` constant casts to a `String` with six fractional digits, while the key space
+        /// of `ORDER BY d::String` over a `DateTime64(3)` column holds three of them, and the range
+        /// check then misses the value and prunes the part that holds it.
         if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
+        {
+            /// The round trip is not always possible - `String` -> `Dynamic` -> `String` - and the cast
+            /// above refuses such a target outright. Apply the `CAST` of the DAG directly then, but only
+            /// for a key type where that is known to give the value the normalized round trip would.
+            ///
+            /// For every other key type the constant is either not representable in the key column's
+            /// type or the cast cannot be probed at all (`Array`, `Tuple`). Rendering it from its own
+            /// type instead would put it in a different value space - and this helper also transforms
+            /// whole set columns, where one such element would drag the representable ones along - so
+            /// decline: the caller then reads more instead of pruning by a value the key space does not hold.
+            if (isDirectCastEquivalentToNormalizedCast(dag.input_type) && try_apply_direct_cast_fast_path())
+            {
+                out_transform_applied = true;
+                return true;
+            }
+
             return false;
+        }
     }
 
     out_column = input_column;
@@ -2536,7 +2608,13 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    /// Convert a text constant here, the way the comparison does, so no cast below parses it in another zone.
+    Field const_value = out_value;
+    DataTypePtr const_value_type = out_type;
+    if (!tryNormalizeTextConstantForZonelessDateTimeInput(dag.input_type, const_value, const_value_type))
+        return false;
+
+    ColumnPtr const_column = const_value_type->createColumnConst(1, const_value);
 
     /// Convert before transforming, so the value the transform consumes is observable here: normalizing
     /// the constant to the type the key expression reads is where a `String` can become a NaN.
@@ -2544,7 +2622,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr transform_input_type;
     bool transform_applied = false;
     if (!convertColumnForDeterministicDag(
-            const_column, out_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
+            const_column, const_value_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
         return false;
 
     /// The direct-CAST fast path converts and transforms in one step, so it produces no intermediate value

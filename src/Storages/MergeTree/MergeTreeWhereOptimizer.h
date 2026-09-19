@@ -166,7 +166,7 @@ private:
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
-    bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
+    bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
 
     /// Whether the condition is a substring search on a String column that can be used as
     /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
