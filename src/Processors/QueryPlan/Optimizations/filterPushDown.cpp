@@ -1099,6 +1099,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
             false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
 
+        /// An empty column set does not mean "nothing is pushable": a column-free conjunct such as a folded
+        /// `WHERE 0` still passes `tryToExtractPartialPredicate`, because it depends on no column at all.
+        /// A side whose push-down is disabled must not receive it either: for a prepared lookup on the
+        /// right (`JoinStepLogicalLookup`) the inserted `Filter` would hide the storage from the direct-join
+        /// detection, and a forced `join_algorithm = 'direct'` would fail with `NOT_IMPLEMENTED` instead
+        /// of returning an empty result. The estimator still sees the empty read from the other side.
+        if (left_stream_filter_push_down_input_columns_available)
         {
             auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
@@ -1114,6 +1121,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             }
         }
 
+        if (right_stream_filter_push_down_input_columns_available)
         {
             auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
