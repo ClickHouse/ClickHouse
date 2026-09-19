@@ -120,7 +120,7 @@ public:
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1));
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetUnbounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
+                        source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(start_value)));
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -138,7 +138,7 @@ public:
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1), length_value);
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetBounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
+                        source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(start_value)), length_value);
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -355,7 +355,7 @@ public:
             if (start && length)
             {
                 bool left_offset = start > 0;
-                size_t offset = left_offset ? static_cast<size_t>(start - 1) : -static_cast<size_t>(start);
+                size_t offset = left_offset ? static_cast<size_t>(start - 1) : common::negateIgnoreOverflow(static_cast<size_t>(start));
                 size_t size = src.getElementSize();
 
                 size_t offset_byte = 0;

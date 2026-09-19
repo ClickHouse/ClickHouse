@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Common/UTF8Helpers.h>
@@ -212,9 +213,12 @@ private:
             return offset - 1;
         }
 
-        if (input_size < -static_cast<size_t>(offset))
+        /// Both the comparison and the sum below used to be computed on the wrapped-around
+        /// magnitude of a negative offset; taking the magnitude once keeps them ordinary.
+        const size_t magnitude = common::negateIgnoreOverflow(static_cast<size_t>(offset));
+        if (input_size < magnitude)
             return 0;
-        return input_size + offset;
+        return input_size - magnitude;
     }
 
     /// get character count of a slice [data, data+bytes)

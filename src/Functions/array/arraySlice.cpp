@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -163,7 +164,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, static_cast<size_t>(offset - 1));
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, -static_cast<size_t>(offset));
+                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, common::negateIgnoreOverflow(static_cast<size_t>(offset)));
             }
             else if (isColumnConst(*length_column))
             {
@@ -171,7 +172,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, static_cast<size_t>(offset - 1), length);
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, -static_cast<size_t>(offset), length);
+                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, common::negateIgnoreOverflow(static_cast<size_t>(offset)), length);
             }
             else
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
