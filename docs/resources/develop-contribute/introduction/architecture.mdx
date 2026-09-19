@@ -120,7 +120,7 @@ For example, the result of interpreting the `SELECT` query is a "pulling" `Query
 The result of the `INSERT` query is a "pushing" `QueryPipeline` with an input port to write data for insertion.
 And the result of interpreting the `INSERT SELECT` query is a "completed" `QueryPipeline` that has no inputs or outputs but copies data from `SELECT` to `INSERT` simultaneously.
 
-`InterpreterSelectQueryAnalyzer` interprets a `SELECT` query. It introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree`, and it is the only way a query is analyzed since version `26.9`. Before that, `InterpreterSelectQuery` did the same job with the `ExpressionAnalyzer` and `ExpressionActions` machinery, and the `enable_analyzer` setting chose between the two; that setting is obsolete now and cannot be disabled anymore.
+`InterpreterSelectQueryAnalyzer` interprets a `SELECT` query. It introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree`. It has been the default since version `24.3`, the only analysis a query can ask for since `26.9`, when the `enable_analyzer` setting became obsolete and frozen at `1`, and the only query analysis there is since `26.10`, when the other one was removed. Until then, `InterpreterSelectQuery` did the same job with the `ExpressionAnalyzer` and `ExpressionActions` machinery, and `enable_analyzer` chose between the two.
 
 `ExpressionAnalyzer` and `ExpressionActions` remain in use for standalone expressions - a `TTL` expression, a sharding key, a column default, a projection - which are compiled without a surrounding query.
 
