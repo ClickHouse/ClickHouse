@@ -191,6 +191,35 @@ public:
         }
     }
 
+    /// Preserve nested aggregate sparse semantics, including input order for order-sensitive aggregates.
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        nested_function->addBatchSparse(row_begin, row_end, places, place_offset, columns, arena);
+        for (size_t i = row_begin; i < row_end; ++i)
+            if (places[i])
+                (places[i] + place_offset)[size_of_data] = 1;
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (row_end == row_begin)
+            return;
+
+        nested_function->addBatchSparseSinglePlace(row_begin, row_end, place, columns, arena);
+        place[size_of_data] = 1;
+    }
+
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,

@@ -895,6 +895,7 @@ protected:
 public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
     static constexpr bool DateTime64Supported = true;
+    static constexpr bool can_use_lookup_table8 = true;
 
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_, result_type_)
@@ -946,6 +947,12 @@ public:
         const Derived & func = *static_cast<const Derived *>(this);
 
         /// If the function is complex or too large, use more generic algorithm.
+
+        if constexpr (!Derived::can_use_lookup_table8)
+        {
+            IAggregateFunctionHelper<Derived>::addBatchLookupTable8(row_begin, row_end, map, place_offset, init, key, columns, arena);
+            return;
+        }
 
         if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
         {
