@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 
 #include <filesystem>
+#include <vector>
 #include <memory>
 #include <string>
 #include <sys/statvfs.h>
@@ -65,6 +66,11 @@ bool pathStartsWith(const String & path, const String & prefix_path);
 /// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
 /// (Path is made absolute and normalized.)
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
+
+/// Returns true if the resolved path is inside the resolved prefix path.
+/// Unlike `fileOrSymlinkPathStartsWith`, this rejects symlinks that point outside
+/// the prefix. Returns false when either path cannot be resolved.
+bool weaklyCanonicalPathStartsWith(const String & path, const String & prefix_path);
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
