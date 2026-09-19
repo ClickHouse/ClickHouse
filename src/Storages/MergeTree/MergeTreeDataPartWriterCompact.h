@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <functional>
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
@@ -68,7 +69,10 @@ private:
     class ColumnsBuffer
     {
     public:
-        void add(MutableColumns && columns);
+        /// `check_cancellation` is polled every `IColumn::CANCELLATION_CHECK_PERIOD_ROWS`
+        /// appended rows, so that buffering a huge block behind a partial granule stays
+        /// interruptible by `KILL QUERY` / `max_execution_time` (see `checkWriteCancellation`).
+        void add(MutableColumns && columns, const std::function<void()> & check_cancellation);
         size_t size() const;
         Columns releaseColumns();
     private:

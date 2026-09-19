@@ -155,7 +155,7 @@ public:
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
     bool hasStatistics() const override;
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation) override;
 
     /// Empty tuple needs a public method to manage its size.
     void addSize(size_t delta) { column_length += delta; }

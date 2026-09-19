@@ -1,0 +1,3 @@
+wide: killed promptly
+compact: killed promptly
+timeout wide: reported as timeout
