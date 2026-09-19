@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -171,6 +172,7 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
     return type == MutationCommand::RENAME_COLUMN
+        || type == MutationCommand::RENAME_INDEX
         || type == MutationCommand::DROP_COLUMN;
 }
 
@@ -194,6 +196,21 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         }
         if (!chained)
             rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
+    }
+    else if (command.type == RENAME_INDEX)
+    {
+        bool chained = false;
+        for (auto & entry : index_rename_map)
+        {
+            if (entry.rename_to == command.index_name)
+            {
+                entry.rename_to = command.rename_to;
+                chained = true;
+                break;
+            }
+        }
+        if (!chained)
+            index_rename_map.emplace_back(RenamePair{command.rename_to, command.index_name});
     }
     else if (command.type == DROP_COLUMN)
     {
@@ -310,6 +327,21 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
             return name_from;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
+}
+
+bool AlterConversions::isIndexRenamed(const std::string & new_name) const
+{
+    return std::ranges::any_of(index_rename_map, [&new_name](const RenamePair & pair) { return pair.rename_to == new_name; });
+}
+
+std::string AlterConversions::getIndexOldFileName(const std::string & new_name, bool escape_filenames) const
+{
+    for (const auto & [name_to, name_from] : index_rename_map)
+    {
+        if (name_to == new_name)
+            return getIndexFileName(name_from, escape_filenames);
+    }
+    return getIndexFileName(new_name, escape_filenames);
 }
 
 bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const

@@ -43,6 +43,7 @@ struct AlterCommand
         MODIFY_SAMPLE_BY,
         ADD_INDEX,
         DROP_INDEX,
+        RENAME_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
         MODIFY_CONSTRAINT,
@@ -120,7 +121,7 @@ struct AlterCommand
     ASTPtr index_decl = nullptr;
     String after_index_name;
 
-    /// For ADD/DROP INDEX
+    /// For ADD/DROP/RENAME INDEX
     String index_name;
 
     // For ADD/MODIFY CONSTRAINT
@@ -172,7 +173,7 @@ struct AlterCommand
 
     ASTPtr add_enum_values = nullptr;
 
-    /// Target column name
+    /// Target column or index name
     String rename_to;
 
     /// What to remove from column (or TTL)
@@ -210,7 +211,7 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    /// Checks that command will drop something or rename column.
+    /// Checks that command will drop something or rename a column or index.
     bool isDropOrRename() const;
 
     /// If possible, convert alter command to mutation command. In other case
