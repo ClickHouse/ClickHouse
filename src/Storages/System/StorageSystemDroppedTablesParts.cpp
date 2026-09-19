@@ -1,4 +1,6 @@
 #include <Access/ContextAccess.h>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
@@ -6,12 +8,25 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <thread>
+
+
+namespace ProfileEvents
+{
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
+}
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char slowdown_system_parts_enumeration[];
+}
 
 
 StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> filter, ContextPtr context)
@@ -34,6 +49,13 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
     auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();
     for (const auto & dropped_table : tables_mark_dropped)
     {
+        /// Enumerating the dropped tables can take a long time if there are many of them,
+        /// and it is done eagerly before returning the first row, so check for query cancellation
+        /// and time limits here. If the time limit is exceeded in the 'break' mode,
+        /// stop the enumeration instead of discovering the remaining storages.
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
         StoragePtr storage = dropped_table.table;
         if (!storage)
             continue;
@@ -42,6 +64,16 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         String database_name = storage->getStorageID().getDatabaseName();
         String table_name = storage->getStorageID().getTableName();
         String engine_name = storage->getName();
+
+        fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+        {
+            if (table_name.starts_with("t_slowdown_system_parts_dropped_discovery"))
+            {
+                ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+        });
+
         if (!dynamic_cast<MergeTreeData *>(storage.get()))
             continue;
 
