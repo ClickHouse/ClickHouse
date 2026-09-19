@@ -3069,15 +3069,13 @@ void ReadFromMergeTree::buildIndexes(
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
-#if USE_USEARCH
-            const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get());
-            chassert(vector_similarity_index);
-
-            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
+            /// All vector similarity index types implement the virtual overload of createIndexCondition
+            /// that accepts VectorSearchParameters. Call it via polymorphism so that new backends
+            /// (e.g. vector_similarity('scann', ...)) work without modifying this file.
+            factory = [index_helper, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
-                return vector_similarity_index->createIndexCondition(predicate, query_context, vector_search_parameters);
+                return index_helper->createIndexCondition(predicate, query_context, vector_search_parameters);
             };
-#endif
         }
         else
         {
@@ -3138,7 +3136,6 @@ void ReadFromMergeTree::buildIndexes(
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
                                                         && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes);
-
     indexes->skip_indexes = std::move(skip_indexes);
 }
 

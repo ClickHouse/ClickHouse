@@ -61,7 +61,6 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 
 
@@ -1081,15 +1080,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 auto l_index_priority = l_is_minmax ? 1 : 2;
                 auto r_index_priority = r_is_minmax ? 1 : 2;
 
-#if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
-                if (l_is_vectorsimilarity)
+                // Vector similarity indexes require all_match (no prior mark filtering),
+                // so move them to the front regardless of which backend is used.
+                if (l_index->isVectorSimilarityIndex())
                     l_index_priority = 0;
-                if (r_is_vectorsimilarity)
+                if (r_index->isVectorSimilarityIndex())
                     r_index_priority = 0;
-#endif
                 // negated since we want to prioritize coarser indexes
                 const auto neg_l_granularity = -l_index->getGranularity();
                 const auto neg_r_granularity = -r_index->getGranularity();
