@@ -15,6 +15,9 @@ SET query_plan_optimize_count_from_text_index = 1;
 SET max_rows_to_group_by = 0;
 SET make_distributed_plan = 0;
 SET serialize_query_plan = 0;
+-- Parallel replicas disarm both plans: the count rewrite bails on canUseParallelReplicasOnInitiator,
+-- and with parallel_replicas_local_plan = 0 the read plan holds no local part read to inspect.
+SET enable_parallel_replicas = 0;
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET text_index_hint_max_selectivity = 1.;
@@ -76,7 +79,8 @@ SETTINGS allow_experimental_text_index_phrase_search = 1,
          remove_empty_parts = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
--- Control with a short index name, so a failure localises to name hashing.
+-- Control with a short index name, so a failure localises to name hashing. The runner randomizes
+-- max_file_name_length down to 0, which hashes names of any length, so the flag is pinned not implied.
 CREATE TABLE t_plain_control
 (
     id UInt64,
@@ -85,7 +89,8 @@ CREATE TABLE t_plain_control
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0,
+SETTINGS replace_long_file_name_to_hash = 0,
+         min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
