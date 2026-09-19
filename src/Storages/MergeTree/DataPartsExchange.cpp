@@ -261,7 +261,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
     for (const auto & [name, _] : part->checksums.files)
     {
-        if (endsWith(name, ".proj"))
+        if (IDataPartStorage::Projection::dirNameType(name) == IDataPartStorage::Projection::Status::Live)
             continue;
 
         files_to_replicate.insert(name);
@@ -309,13 +309,13 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         {
             writeStringBinary(name, out);
             MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(projection, out, client_protocol_version, from_remote_disk, false);
-            data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
+            data_checksums.addFile(IDataPartStorage::Projection::dirName(name, false), projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
-        else if (part->checksums.has(name + ".proj"))
+        else if (part->checksums.has(IDataPartStorage::Projection::dirName(name, false)))
         {
             // We don't send this projection, just add out checksum to bypass the following check
-            const auto & our_checksum = part->checksums.files.find(name + ".proj")->second;
-            data_checksums.addFile(name + ".proj", our_checksum.file_size, our_checksum.file_hash);
+            const auto & our_checksum = part->checksums.files.find(IDataPartStorage::Projection::dirName(name, false))->second;
+            data_checksums.addFile(IDataPartStorage::Projection::dirName(name, false), our_checksum.file_size, our_checksum.file_hash);
         }
     }
 
@@ -325,7 +325,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     /// data_checksums so that checkEqual below does not fail.
     for (const auto & [name, checksum] : part->checksums.files)
     {
-        if (name.ends_with(".proj") && !data_checksums.has(name))
+        if (IDataPartStorage::Projection::dirNameType(name) == IDataPartStorage::Projection::Status::Live && !data_checksums.has(name))
             data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
     }
 
@@ -877,6 +877,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
         auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
+        s->setZeroCopyReplicationEnabled((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+        /// Seed from the table's ever-used flag, not the current setting: see MergeTreeDataPartBuilder.
+        s->setFlatProjectionStorageInUse(data.flatProjectionStorageEverUsed());
+        s->setProjections({});
         return std::pair{std::move(v), std::move(s)};
     }();
 
@@ -914,7 +918,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             String projection_name;
             readStringBinary(projection_name, in);
 
-            /// Validate before getProjection()/createDirectories() so no attacker-named
+            /// Validate before getProjectionStorage()/createDirectories() so no attacker-named
             /// directory is ever created from an untrusted replica's projection name.
             if (!isProjectionNameSafe(projection_name))
                 throw Exception(ErrorCodes::INSECURE_PATH,
@@ -924,14 +928,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
             MergeTreeData::DataPart::Checksums projection_checksum;
 
-            auto projection_part_storage = part_storage_for_loading->getProjection(projection_name + ".proj");
-            projection_part_storage->createDirectories();
+            /// Fetched projection dirs don't exist yet; create them in this replica's configured layout.
+            part_storage_for_loading->createProjection(IDataPartStorage::Projection::dirName(projection_name, false), data.getProjectionStorageFormat());
+            auto projection_part_storage = part_storage_for_loading->getProjectionStorage(IDataPartStorage::Projection::dirName(projection_name, false), true);
 
             downloadBaseOrProjectionPartToDisk(
                 replica_path, projection_part_storage, in, output_buffer_getter, projection_checksum, throttler, sync);
 
             data_checksums.addFile(
-                projection_name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
+                IDataPartStorage::Projection::dirName(projection_name, false), projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
 
         downloadBaseOrProjectionPartToDisk(
@@ -999,7 +1004,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             /// not fail.
             for (const auto & [name, checksum] : new_data_part->checksums.files)
             {
-                if (name.ends_with(".proj") && !data_checksums.has(name))
+                if (IDataPartStorage::Projection::dirNameType(name) == IDataPartStorage::Projection::Status::Live && !data_checksums.has(name))
                     data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
             }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
@@ -1017,7 +1022,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             /// entries from the expected checksums when throw_on_broken_projection is false. Genuine
             /// base-file corruption still fails checkEqual, so it is left to propagate.
             bool is_broken_projection = false;
-            auto computed_checksums = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
+            auto check_result = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
 
             /// checkDataPart returns an empty result (instead of throwing) when it hits a retryable error
             /// such as a transient read or memory-limit exception, expecting the check to be retried
@@ -1025,7 +1030,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             /// result means the archive contents were never verified. Fail the fetch so it is retried
             /// rather than accepting a possibly-corrupted packed part. (A real part always has files, so a
             /// genuine part never yields empty checksums here.)
-            if (computed_checksums.empty())
+            if (check_result.computed_checksums.empty())
                 throw Exception(
                     ErrorCodes::ABORTED,
                     "Could not verify packed part {} on fetch (checksum computation was skipped because of a "

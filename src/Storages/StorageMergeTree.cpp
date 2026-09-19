@@ -253,6 +253,7 @@ void StorageMergeTree::startup()
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+    clearOrphanProjectionSiblings(/*max_age_seconds=*/ 0);
 
     /// NOTE background task will also clean runtime temporary directories periodically.
 
@@ -3805,11 +3806,35 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
-                calculated_checksums.checkEqual(part->checksums, true, part->name);
+                auto result = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
+
+                /// The in-memory manifest was loaded from the manifest that is now gone and may still list a projection
+                /// `checkDataPart` has normalized away (dropped while the part was detached, then re-attached). Such an
+                /// entry is not a data mismatch: compare against the manifest without it, exactly as the checksums-present
+                /// path does when it strips the stale `.proj` entry from the on-disk `checksums.txt` before `checkEqual`.
+                auto expected_checksums = part->checksums;
+                for (const auto & [file_name, _] : part->checksums.files)
+                    if (file_name.ends_with(".proj") && !result.computed_checksums.files.contains(file_name))
+                        expected_checksums.remove(file_name);
+                result.computed_checksums.checkEqual(expected_checksums, true, part->name);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
-                part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
+                const auto & write_settings = local_context->getWriteSettings();
+
+                /// Mirror `IMergeTreeDataPart::loadChecksums`: child projections whose own `checksums.txt` was missing were
+                /// recomputed by `checkDataPart` as well, so persist their manifests too, before the parent that covers them.
+                if (!result.computed_projections_checksums.empty())
+                {
+                    auto metadata_snapshot = part->getMetadataSnapshot();
+                    for (const auto & [projection_name, projection_checksums] : result.computed_projections_checksums)
+                    {
+                        const auto & projection = metadata_snapshot->projections.get(projection_name);
+                        auto projection_part = part_mutable.getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+                        projection_part->writeChecksums(projection_checksums, write_settings);
+                    }
+                }
+
+                part_mutable.writeChecksums(result.computed_checksums, write_settings);
 
                 return CheckResult(part->name, true, "Checksums recounted and written to disk.");
             }

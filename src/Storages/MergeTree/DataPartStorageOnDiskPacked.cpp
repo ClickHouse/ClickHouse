@@ -61,19 +61,39 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
     return std::make_shared<DataPartStorageOnDiskPacked>(std::move(volume_), std::move(root_path_), std::move(part_dir_), getReadSettings(), initialize_);
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
+MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    /// Not owned: resolve where the dir would live (e.g. a broken-projection placeholder) without registering anything; directories come
+    /// into existence only through createProjection.
+    const auto projection = resolveProjectionForRead(dir_name);
+
+    auto [proj_root, proj_dir] = getProjectionRootAndDir(projection.dirName(), projection.format);
+    auto projection_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(
+        volume,
+        std::move(proj_root),
+        std::move(proj_dir),
+        use_parent_transaction ? transaction : nullptr,
+        getReadSettings()));
+    projection_storage->zero_copy_replication_enabled = zero_copy_replication_enabled;
+    /// A projection sub-part owns no projections of its own.
+    projection_storage->setProjections({});
+    return projection_storage;
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
+DataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionStorage(const std::string & dir_name) const
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
-}
+    /// See the mutable overload.
+    const auto projection = resolveProjectionForRead(dir_name);
 
-DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
-{
-    return std::make_shared<DataPartStorageOnDiskPacked>(volume, std::string(fs::path(root_path) / part_dir), name, getReadSettings());
+    auto [proj_root, proj_dir] = getProjectionRootAndDir(projection.dirName(), projection.format);
+    auto projection_storage = std::make_shared<DataPartStorageOnDiskPacked>(
+        volume,
+        std::move(proj_root),
+        std::move(proj_dir),
+        getReadSettings());
+    projection_storage->zero_copy_replication_enabled = zero_copy_replication_enabled;
+    projection_storage->setProjections({});
+    return projection_storage;
 }
 
 bool DataPartStorageOnDiskPacked::exists() const
@@ -509,9 +529,16 @@ void DataPartStorageOnDiskPacked::copyFileFrom(const IDataPartStorage &, const s
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DataPartStorageOnDiskPacked does not support copying files");
 }
 
-void DataPartStorageOnDiskPacked::createProjection(const std::string & name)
+IDataPartStorage::Projection DataPartStorageOnDiskPacked::createProjection(const std::string & dir_name, ProjectionStorageFormat format)
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
+    auto projection = projectionPlacement(dir_name, format);
+
+    /// A leftover directory is residue of a failed operation on a same-named part (tmp part names repeat).
+    removeProjectionResidue(projection);
+
+    executeWriteOperation([&](auto & disk) { disk.createDirectory(projection.relativePath()); });
+    addProjection(projection);
+    return projection;
 }
 
 void DataPartStorageOnDiskPacked::beginTransaction()
@@ -861,152 +888,16 @@ String DataPartStorageOnDiskPacked::getActualFileNameOnDisk(const String & file_
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     const std::string & to,
     const std::string & dir_path,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
-{
-    auto disk = volume->getDisk();
-    auto src_disk = volume->getDisk();
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-
-    std::shared_ptr<DataPartStorageOnDiskPacked> dest_storage;
-
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
-    if (params.external_transaction)
-    {
-        dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings));
-        params.external_transaction->createDirectories(dest_storage->getRelativePath());
-    }
-    else
-    {
-        dest_storage = std::make_shared<DataPartStorageOnDiskPacked>(single_disk_volume, to, dir_path, read_settings, !to_detached);
-        disk->createDirectories(dest_storage->getRelativePath());
-    }
-
-
-    bool need_commit = false;
-    if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
-    {
-        if (!dest_storage->transaction)
-        {
-            dest_storage->beginTransaction();
-            need_commit = true;
-        }
-
-        auto files = reader->getFileNames();
-        bool metadata_version_emitted = false;
-        for (const auto & file : files)
-        {
-            if (file == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
-            {
-                /// An explicit version override takes precedence over both keeping and dropping the
-                /// original, and must be honored regardless of keep_metadata_version (a caller that
-                /// relies on freeze to persist the destination version passes it with
-                /// keep_metadata_version = false).
-                if (params.metadata_version_to_write.has_value())
-                {
-                    auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-                    writeIntText(*params.metadata_version_to_write, *write_buf);
-                    write_buf->finalize();
-                    metadata_version_emitted = true;
-                    continue;
-                }
-
-                /// No override: drop the version only when the caller does not want to keep it;
-                /// otherwise copy the original through the generic path below.
-                if (!params.keep_metadata_version)
-                    continue;
-            }
-
-            auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {});
-            auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-            copyData(*read_buf, *write_buf);
-            write_buf->finalize();
-        }
-
-        /// A caller that relies on freeze to persist the destination metadata version passes
-        /// metadata_version_to_write with keep_metadata_version = false. An old source part may have no
-        /// metadata_version.txt in its archive at all (loadPartAndFixMetadataImpl treats that as the
-        /// "very old part" case), so the loop above never reached the override branch. Create the file
-        /// here so the requested version is persisted regardless of whether the source archive had one.
-        if (params.metadata_version_to_write.has_value() && !metadata_version_emitted)
-        {
-            auto write_buf = dest_storage->writeFile(
-                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-            writeIntText(*params.metadata_version_to_write, *write_buf);
-            write_buf->finalize();
-        }
-    }
-    else if (disk->existsFile(getRelativeDataPath()))
-    {
-        /// Decide copy-vs-hardlink before transaction-vs-direct (mirrors the generic Backup path). A
-        /// detached clone of a zero-copy part sets copy_instead_of_hardlink so the detached part gets an
-        /// independent blob; the zero-copy bookkeeping then does not record hardlinks. Hardlinking
-        /// data.packed here (detached clones always arrive with an external transaction) would leave the
-        /// detached clone sharing an untracked blob that removing the source can delete. Honor the copy
-        /// request even inside an external transaction. anyArchivedFileRequestedForCopy covers a caller
-        /// that lists an archived file in files_to_copy_instead_of_hardlinks to get a fresh blob.
-        if (params.copy_instead_of_hardlink || anyArchivedFileRequestedForCopy(params.files_to_copy_instead_of_hardlinks))
-        {
-            if (params.external_transaction)
-                params.external_transaction->copyFile(getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings);
-            else
-                disk->copyFile(getRelativeDataPath(), *disk, dest_storage->getRelativeDataPath(), read_settings);
-        }
-        else if (params.external_transaction)
-            params.external_transaction->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
-        else
-            disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
-    }
-
-    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
-
-    std::vector<std::string> all_files;
-    src_disk->listFiles(getRelativePath(), all_files);
-    for (const auto & file : all_files)
-    {
-         if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
-         {
-             auto projection_storage = getProjection(file);
-             auto params_copy = params;
-             params_copy.external_transaction = dest_storage->transaction;
-             /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
-             params_copy.fsync_part_directory = false;
-             projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy);
-         }
-    }
-
-    if (need_commit)
-        dest_storage->commitTransaction();
-    else if (dest_storage->writer)
-        dest_storage->finalizeWriter();
-
-    if (!params.external_transaction && !to_detached)
-        dest_storage->resetReader(getReadSettings());
-
-    if (save_metadata_callback)
-        save_metadata_callback(disk);
-
-    /// Make the clone durable before the caller commits the covering part, same as the Full-storage
-    /// override (the hardlink/copy above fsyncs nothing). Runs once for the whole subtree here.
-    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
-        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
-
-    return dest_storage;
-}
-
-MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
+    const DiskPtr & dst_disk_,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
     const ClonePartParams & params) const
 {
     auto src_disk = volume->getDisk();
+    /// dst_disk == nullptr means the part's own disk; a different disk cannot hardlink, so it always copies.
+    auto dst_disk = dst_disk_ ? dst_disk_ : src_disk;
+    const bool same_disk = dst_disk == src_disk;
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
@@ -1024,6 +915,25 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
         dst_disk->createDirectories(dest_storage->getRelativePath());
     }
 
+    /// FLAT siblings copy separately, before the main archive (commit-last); the owned set excludes
+    /// residue of an unrelated same-named part.
+    for (const auto & [projection_dir, projection] : getProjections())
+    {
+        if (projection.format != ProjectionStorageFormat::FLAT || projection.is_temp)
+            continue;
+
+        String proj_dst_dir = dir_path + "." + projection_dir;
+        removeStaleProjectionSiblingAtDestination(dst_disk, fs::path(to) / proj_dst_dir, params.external_transaction);
+
+        auto projection_storage = getProjectionStorage(projection_dir);
+        auto child_params = params.forProjection(
+            params.external_transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        child_params.fsync_part_directory = false;  /// the single top-level fsync below covers the whole subtree
+        projection_storage->freeze(
+            to, proj_dst_dir, dst_disk_, read_settings, write_settings,
+            /*save_metadata_callback=*/ {}, child_params);
+    }
+
     bool need_commit = false;
     if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
     {
@@ -1034,8 +944,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
         }
 
         auto files = reader->getFileNames();
-        std::vector<std::string> all_files;
-        src_disk->listFiles(getRelativePath(), all_files);
         bool metadata_version_emitted = false;
         for (const auto & file : files)
         {
@@ -1081,40 +989,64 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     }
     else if (src_disk->existsFile(getRelativeDataPath()))
     {
-        if (params.external_transaction)
+        /// Decide copy-vs-hardlink before transaction-vs-direct (mirrors the generic Backup path). Same
+        /// disk can hardlink the whole archive; a different disk (dst_disk != src_disk) can never hardlink
+        /// and must copy. A detached clone of a zero-copy part sets copy_instead_of_hardlink so the
+        /// detached part gets an independent blob; the zero-copy bookkeeping then does not record
+        /// hardlinks. Hardlinking data.packed here (detached clones always arrive with an external
+        /// transaction) would leave the detached clone sharing an untracked blob that removing the source
+        /// can delete. Honor the copy request even inside an external transaction.
+        /// anyArchivedFileRequestedForCopy covers a caller that lists an archived file in
+        /// files_to_copy_instead_of_hardlinks to get a fresh blob.
+        const bool must_copy = !same_disk
+            || params.copy_instead_of_hardlink
+            || anyArchivedFileRequestedForCopy(params.files_to_copy_instead_of_hardlinks);
+        if (must_copy)
         {
-            if (dst_disk->getDataSourceDescription() == src_disk->getDataSourceDescription() && dst_disk->getMetadataStorage().get() == src_disk->getMetadataStorage().get())
+            if (params.external_transaction)
             {
-                params.external_transaction->copyFile(getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings);
+                if (dst_disk->getDataSourceDescription() == src_disk->getDataSourceDescription()
+                    && dst_disk->getMetadataStorage().get() == src_disk->getMetadataStorage().get())
+                {
+                    params.external_transaction->copyFile(getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings);
+                }
+                else
+                {
+                    /// Transactions don't support copy between different metadata storages, so do it manually.
+                    auto write_buf = dest_storage->transaction->writeFile(dest_storage->getRelativeDataPath(), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+                    auto read_buf = src_disk->readFile(getRelativeDataPath(), read_settings);
+                    copyData(*read_buf, *write_buf);
+                    write_buf->finalize();
+                }
             }
             else
             {
-                /// Transactions doesn't support copy between different metadata storages, so doing it manually
-                auto write_buf = dest_storage->transaction->writeFile(dest_storage->getRelativeDataPath(), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-                auto read_buf = src_disk->readFile(getRelativeDataPath(), read_settings);
-                copyData(*read_buf, *write_buf);
-                write_buf->finalize();
+                src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
             }
         }
+        else if (params.external_transaction)
+            params.external_transaction->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
         else
-        {
-            src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
-        }
+            dst_disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
     }
 
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
-    std::vector<std::string> all_files;
-    src_disk->listFiles(getRelativePath(), all_files);
-    for (const auto & file : all_files)
+    /// Nested projections recurse from the owned set, not from a disk walk of the part dir: residue
+    /// and temp dirs of an unrelated same-named part must not be carried into the copy.
+    for (const auto & [projection_dir, projection] : getProjections())
     {
-         if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
-         {
-             auto projection_storage = getProjection(file);
-             auto params_copy = params;
-             params_copy.external_transaction = dest_storage->transaction;
-             projection_storage->freezeRemote(dest_storage->getRelativePath(), file, dst_disk, read_settings, write_settings, save_metadata_callback, params_copy);
-         }
+        if (projection.format == ProjectionStorageFormat::FLAT || projection.is_temp)
+            continue;
+
+        auto projection_storage = getProjectionStorage(projection_dir);
+        /// The child keeps the parent's archive copy-vs-hardlink decision: blob tracking in cloneAndLoadDataPart keys on it.
+        auto child_params = params.forProjection(
+            dest_storage->transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        child_params.fsync_part_directory = false;  /// the single top-level fsync below covers the whole subtree
+        projection_storage->freeze(
+            dest_storage->getRelativePath(), projection_dir, dst_disk_, read_settings, write_settings,
+            /*save_metadata_callback=*/ {}, child_params);
     }
 
     if (need_commit)
@@ -1122,11 +1054,18 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     else if (dest_storage->writer)
         dest_storage->finalizeWriter();
 
-    if (!params.external_transaction)
+    if (!params.external_transaction && (!same_disk || !to_detached))
         dest_storage->resetReader(getReadSettings());
 
     if (save_metadata_callback)
         save_metadata_callback(dst_disk);
+
+    /// Durability graft from master #111426: one fsync for the whole subtree (children set false above).
+    /// The FLAT projection siblings frozen above live beside the part dir, so they are synced explicitly.
+    if (params.fsync_part_directory && !params.external_transaction && !dst_disk->isRemote())
+        fsyncFrozenCloneTree(*dst_disk, fs::path(to) / dir_path, frozenFlatSiblingClonePaths(to, dir_path));
+
+    seedFrozenCopy(*dest_storage);
 
     return dest_storage;
 }

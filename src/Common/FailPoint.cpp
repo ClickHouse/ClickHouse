@@ -223,6 +223,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    PAUSEABLE(pause_before_flat_projection_sibling_moves) \
+    ONCE(throw_after_flat_projection_sibling_move) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
