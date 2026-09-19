@@ -118,7 +118,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
     columns[i++]->insert(msg.getSource());
     columns[i++]->insert(msg.getText());
 
-    [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
+    logs_queue->pushOrDrop(std::move(columns));
 }
 
 void logToSystemTextLogQueue(
