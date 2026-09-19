@@ -43,7 +43,11 @@ RENAME TABLE test_01155_ordinary.mv2 TO test_01155_atomic.mv2;
 RENAME TABLE test_01155_ordinary.dst TO test_01155_atomic.dst;
 RENAME TABLE test_01155_ordinary.src TO test_01155_atomic.src;
 SET check_table_dependencies=0; -- Otherwise we'll get error "test_01155_ordinary.dict depends on test_01155_ordinary.dist" in the next line.
-RENAME TABLE test_01155_ordinary.dist TO test_01155_atomic.dist;
+-- A Distributed table cannot be moved out of an Ordinary database by hand, because its
+-- async-insert queue directory would have to move under concurrent inserts and sends. It holds no
+-- data of its own once flushed, so recreate it in the destination instead.
+DROP TABLE test_01155_ordinary.dist;
+CREATE TABLE test_01155_atomic.dist (s String, x String DEFAULT 'asdf') ENGINE=Distributed(test_shard_localhost, test_01155_ordinary, src);
 SET check_table_dependencies=1;
 RENAME DICTIONARY test_01155_ordinary.dict TO test_01155_atomic.dict;
 SELECT 'ordinary after rename:';
@@ -83,7 +87,9 @@ RENAME TABLE test_01155_atomic.mv1 TO test_01155_ordinary.mv1;
 RENAME TABLE test_01155_atomic.mv2 TO test_01155_ordinary.mv2;
 RENAME TABLE test_01155_atomic.dst TO test_01155_ordinary.dst;
 RENAME TABLE test_01155_atomic.src TO test_01155_ordinary.src;
-RENAME TABLE test_01155_atomic.dist TO test_01155_ordinary.dist;
+-- Recreated rather than renamed, for the same reason as above.
+DROP TABLE test_01155_atomic.dist;
+CREATE TABLE test_01155_ordinary.dist (s String, x String DEFAULT 'asdf') ENGINE=Distributed(test_shard_localhost, test_01155_ordinary, src);
 RENAME DICTIONARY test_01155_atomic.dict TO test_01155_ordinary.dict;
 
 INSERT INTO dist(s) VALUES ('after renaming tables');
