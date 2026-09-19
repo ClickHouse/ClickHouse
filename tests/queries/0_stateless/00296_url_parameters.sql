@@ -198,3 +198,13 @@ SELECT
     cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), 'test'),
     cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), 'e'),
     cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), 'g');
+
+-- A final parameter without a value is still a parameter name.
+SELECT
+    extractURLParameterNames('path?a&b&c'),
+    extractURLParameterNames('path?a&b&c=');
+
+-- The same behavior applies when the URL is not a constant.
+SELECT
+    extractURLParameterNames(materialize('path?a&b&c')),
+    extractURLParameterNames(materialize('path?a&b&c='));
