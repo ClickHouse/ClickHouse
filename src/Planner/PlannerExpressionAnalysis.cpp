@@ -642,7 +642,7 @@ SortAnalysisResult analyzeSort(
     auto in_to_join = analyzeInToJoin(InToJoinScope::OrderBy, input_columns, planner_context, correlated_columns_set, actions_chain);
 
     /// The join of an `IN` of `LIMIT BY` is built here, below the sorting step, rather than under the step
-    /// that computes `LIMIT BY` because a join could reorder its inputs. `analyzeLimitBy` then finds the 
+    /// that computes `LIMIT BY` because a join could reorder its inputs. `analyzeLimitBy` then finds the
     /// result of the `IN` in its input columns.
     const auto & columns_for_limit_by = !in_to_join.empty() ? actions_chain.getLastStepAvailableOutputColumns() : input_columns;
     auto limit_by_in_to_join = analyzeInToJoin(InToJoinScope::LimitBy, columns_for_limit_by, planner_context, correlated_columns_set, actions_chain);
