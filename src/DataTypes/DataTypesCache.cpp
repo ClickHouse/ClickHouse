@@ -1,16 +1,8 @@
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Common/CurrentThread.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsTimezone session_timezone;
-}
 
 namespace ErrorCodes
 {
@@ -120,7 +112,7 @@ DataTypePtr DataTypesCache::getType(const String & type_name)
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->type;
 
-    return getCacheElement(type_name).type;
+    return getElement(type_name).type;
 }
 
 SerializationPtr DataTypesCache::getSerialization(const String & type_name)
@@ -129,62 +121,42 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
-    return getCacheElement(type_name).serialization;
+    auto element = getElement(type_name);
+    return element.serialization ? element.serialization : element.type->getDefaultSerialization();
 }
 
-SerializationPtr DataTypesCache::getSerialization(const String & type_name, const DataTypePtr & type)
+SerializationPtr DataTypesCache::getSerialization(const DataTypePtr & type)
 {
+    auto type_name = type->getName();
+
     /// Check the thread-local cache of simple types first.
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
-    return getCacheElement(type_name, &type).serialization;
+    auto element = getElement(type_name, type);
+    return element.serialization ? element.serialization : element.type->getDefaultSerialization();
 }
 
-void DataTypesCache::clearIfQueryContextChanged()
+DataTypesCache::Element DataTypesCache::getElement(const String & type_name, const DataTypePtr & known_type)
 {
-    ContextPtr current_query_context = CurrentThread::tryGetQueryContext();
-
-    /// Owner-based identity comparison. It does not lock the weak_ptr, and since we hold
-    /// the weak_ptr (keeping the control block alive), an expired context cannot be
-    /// confused with a new one allocated at the same address.
-    bool same_query_context = !query_context.owner_before(current_query_context) && !current_query_context.owner_before(query_context);
-
-    /// Context identity is not enough: clickhouse-client keeps one long-lived client context
-    /// (attached to the client thread by a single query scope) for the whole session and
-    /// mutates `session_timezone` in place between queries (see `ClientBase::onTimezoneUpdate`),
-    /// so also track the value of the setting the cached types may have captured.
-    const String * current_session_timezone
-        = current_query_context ? &current_query_context->getSettingsRef()[Setting::session_timezone].value : nullptr;
-    bool same_session_timezone
-        = current_session_timezone ? *current_session_timezone == session_timezone : session_timezone.empty();
-
-    if (same_query_context && same_session_timezone)
-        return;
-
-    /// The thread is now serving a different query, or `session_timezone` changed in place
-    /// on the same context. Cached types/serializations may depend on the previous query's
-    /// context (e.g. `session_timezone` captured by DateTime types), so they must not be reused.
-    cache.clear();
-    query_context = current_query_context;
-    session_timezone = current_session_timezone ? *current_session_timezone : String();
-}
-
-const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name, const DataTypePtr * known_type)
-{
-    clearIfQueryContextChanged();
-
     auto it = cache.find(type_name);
     if (it != cache.end())
         return it->second;
+
+    auto type = known_type ? known_type : DataTypeFactory::instance().get(type_name);
+
+    /// Elements outlive the query that created them, and a type that resolves the query context hands
+    /// it on to whoever reads the type, so such a type is built again per request rather than shared.
+    if (type->serializationDependsOnQueryContext())
+        return Element{type, nullptr};
 
     /// If cache is full, just clear it.
     if (cache.size() >= MAX_ELEMENTS)
         cache.clear();
 
-    auto type = known_type ? *known_type : DataTypeFactory::instance().get(type_name);
-    it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
-    return it->second;
+    /// Serializations that report `supportsPooling() == false` are stored too: they are unpoolable
+    /// because of mutable state, and this cache is thread-local.
+    return cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first->second;
 }
 
 DataTypesCache & getDataTypesCache()

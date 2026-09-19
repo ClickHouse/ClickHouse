@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <array>
 #include <unordered_map>
@@ -59,51 +58,16 @@ private:
 /// Return a thread-local instance of the simple data type cache.
 const SimpleDataTypesCache & getSimpleDataTypesCache();
 
-/// Thread-local cache for data type lookups by name.
-/// Checks the thread-local SimpleDataTypesCache first; only caches
-/// non-simple types (e.g. DateTime64(9), Variant types) in its own map.
-///
-/// The cache is scoped to a single query: a type name does not uniquely identify
-/// a type/serialization across queries, because construction depends on the current
-/// query context. For example, `DateTime` without an explicit timezone captures
-/// the query's `session_timezone` setting at construction (see TimezoneMixin and
-/// `DateLUT::instance`). Since the cache lives in a long-lived thread, it must be
-/// cleared whenever the thread starts serving a different query, and also when
-/// `session_timezone` is mutated in place on the same context (clickhouse-client
-/// does this between queries of one session); otherwise a stale entry produces
-/// wrong results (e.g. DateTime values rendered in another query's timezone).
-///
-/// This scoping is also what makes it safe to pool serializations with
-/// `supportsPooling() == false` here, e.g. SerializationJSON: its own contract
-/// (see the comment in SerializationJSON::create) forbids sharing *across queries*,
-/// because its extraction tree accumulates mutable, context-dependent state (its
-/// documented example is exactly the timezone case this cache already invalidates
-/// on). Reuse *within* one query is already an established, trusted pattern for the
-/// very same object (see ColumnDynamic's per-column `serialization_cache`, used
-/// throughout its binary insert/deserialize paths).
-///
-/// IMPORTANT: this safety only holds for the ways SerializationJSON is currently used
-/// through this cache (type resolution, binary serialization, and text *output*) - none
-/// of which touch the mutable extraction-tree caches or the parser choice. A cached
-/// serialization from here must never be used for *text deserialization*: that path is
-/// exactly what SerializationJSON::create's "do NOT pool" comment is about, and two
-/// gaps this cache does not track would then matter. First, `DataTypeObject::doGetSerialization`
-/// reads `allow_simdjson` at construction; a client session that flips it in place would
-/// keep the previously-built parser, and rapidjson (`RAPIDJSON_PARSE_DEFAULT_FLAGS` lacks
-/// `kParseFullPrecisionFlag`) is not a drop-in replacement for simdjson's parsing the way
-/// it is for output - it can round Float64 differently and has no nesting-depth cap. Second,
-/// the extraction tree's caches would then legitimately accumulate per-query state and need
-/// the same cross-query invalidation this cache does not extend to their internals.
+/// Thread-local, name-keyed cache of data types and their default serializations; simple types are
+/// served by SimpleDataTypesCache instead.
 class DataTypesCache
 {
 public:
     DataTypePtr getType(const String & type_name);
     SerializationPtr getSerialization(const String & type_name);
 
-    /// Same as getSerialization(type_name), but on a cache miss reuses the already
-    /// constructed `type` instead of parsing `type_name` through DataTypeFactory.
-    /// `type_name` must be equal to `type->getName()`.
-    SerializationPtr getSerialization(const String & type_name, const DataTypePtr & type);
+    /// Keys by `type->getName()` and, on a miss, takes the type as given rather than parsing that name.
+    SerializationPtr getSerialization(const DataTypePtr & type);
 
 private:
     /// Sized to cover a full set of Dynamic variants (up to 255) plus types from the
@@ -115,29 +79,15 @@ private:
     struct Element
     {
         DataTypePtr type;
+        /// Null for an element that was not stored; callers then build it from `type`.
         SerializationPtr serialization;
     };
 
-    /// If `known_type` is provided, it is used on a cache miss instead of a DataTypeFactory lookup.
-    const Element & getCacheElement(const String & type_name, const DataTypePtr * known_type = nullptr);
-
-    /// Clear the cache if the thread is now attached to a different query context
-    /// than the one the cache was populated under, or if `session_timezone` was
-    /// changed in place on the same context.
-    void clearIfQueryContextChanged();
+    /// The stored element for `type_name`, or a fresh one that is deliberately not stored.
+    /// `known_type`, when set, is the type whose `getName` produced `type_name`, so a miss uses it as is.
+    Element getElement(const String & type_name, const DataTypePtr & known_type = {});
 
     std::unordered_map<String, Element> cache;
-
-    /// The query context the cached entries were created under (null for threads
-    /// not attached to any query). Holding a weak_ptr keeps the control block alive,
-    /// which makes the owner-based identity comparison immune to address reuse.
-    ContextWeakPtr query_context;
-
-    /// The value of `session_timezone` the cached entries were created under. Tracked
-    /// in addition to the context identity because clickhouse-client keeps one
-    /// long-lived client context for the whole session and mutates the setting
-    /// in place between queries (see `ClientBase::onTimezoneUpdate`).
-    String session_timezone;
 };
 
 /// Return instance of a thread local cache.

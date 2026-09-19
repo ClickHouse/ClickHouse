@@ -305,6 +305,11 @@ bool DataTypeTuple::hasDynamicStructure() const
     return std::ranges::any_of(elems, [](auto && elem) { return elem->hasDynamicStructure(); });
 }
 
+bool DataTypeTuple::serializationDependsOnQueryContext() const
+{
+    return std::ranges::any_of(elems, [](auto && elem) { return elem->serializationDependsOnQueryContext(); });
+}
+
 bool DataTypeTuple::haveMaximumSizeOfValue() const
 {
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
