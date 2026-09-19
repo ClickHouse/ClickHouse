@@ -149,7 +149,7 @@ You can use the [log_formatted_queries](/reference/settings/session-settings/log
 - `used_row_policies` ([Array(LowCardinality(String))](/reference/data-types/array)) — The list of row policies names that were used during query execution.
 - `used_privileges` ([Array(LowCardinality(String))](/reference/data-types/array)) — Privileges which were successfully checked during query execution.
 - `missing_privileges` ([Array(LowCardinality(String))](/reference/data-types/array)) — Privileges that are missing during query execution.
-- `transaction_id` ([Tuple(UInt64, UInt64, UUID)](/reference/data-types/tuple)) — The identifier of the transaction in scope of which this query was executed.
+- `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/reference/data-types/tuple)) — The identifier of the transaction in scope of which this query was executed.
 - `query_cache_usage` ([Enum8('Unknown' = 0, 'None' = 1, 'Write' = 2, 'Read' = 3)](/reference/data-types/enum)) — Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache.
 - `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/reference/data-types/map)) — Metrics for asynchronous reading.
 - `is_internal` ([UInt8](/reference/data-types/int-uint)) — Indicates whether it is an auxiliary query executed internally.
