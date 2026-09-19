@@ -25,6 +25,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
@@ -2199,6 +2200,47 @@ static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input
 }
 
 
+/// Whether two `Field`s stand for the same value. `Field::operator==` answers only for values carried
+/// the same way, which is what the round trip below needs everywhere except inside a `Dynamic`: a
+/// `Dynamic` keeps the type each value was inserted with, so a value that went to the key column's
+/// type and back comes back under another carrier - `UInt64(2)` returns as `Int64(2)` - and the strict
+/// comparison would call an exact cast lossy. Two numbers are therefore compared the way the
+/// comparison functions compare them, across carriers. Any other pair of carriers is left to the
+/// strict answer: `accurateEquals` cannot compare them at all and would throw.
+static bool fieldsHoldTheSameValue(const Field & left, const Field & right)
+{
+    if (left == right)
+        return true;
+
+    auto is_number = [](Field::Types::Which which)
+    {
+        switch (which)
+        {
+            case Field::Types::UInt64:
+            case Field::Types::Int64:
+            case Field::Types::Float64:
+            case Field::Types::UInt128:
+            case Field::Types::Int128:
+            case Field::Types::UInt256:
+            case Field::Types::Int256:
+            case Field::Types::Decimal32:
+            case Field::Types::Decimal64:
+            case Field::Types::Decimal128:
+            case Field::Types::Decimal256:
+            case Field::Types::Bool:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    if (!is_number(left.getType()) || !is_number(right.getType()))
+        return false;
+
+    return accurateEquals(left, right);
+}
+
+
 /// Reports whether a cast into `cast_type` kept every value of `column`. A value that fits the target
 /// can still lose information on the way - `DateTime64(6)` truncated to `DateTime64(3)` - and no NULL
 /// marks that, so the only way to see it is to cast back and compare. `cast_column` is the result of
@@ -2232,7 +2274,7 @@ static bool castKeptEveryValue(
         if (kept && !(*kept)[i])
             continue;
 
-        if ((*back_column)[i] != (*column)[i])
+        if (!fieldsHoldTheSameValue((*back_column)[i], (*column)[i]))
             return false;
     }
 
