@@ -1,0 +1,34 @@
+local	5
+count sqp=0	5
+count sqp=1	5
+count sqp=1 no trivial	5
+sum(x) sqp=1	10
+sum(y) sqp=1	10
+subquery sqp=1	5
+prewhere sqp=1	3
+distinct sqp=1	0
+distinct sqp=1	1
+distinct sqp=1	2
+distinct sqp=1	3
+distinct sqp=1	4
+subq policy local	[0,3,6,9]
+subq policy sqp=1	[0,3,6,9]
+subq policy sqp=0	[0,3,6,9]
+final after=1 sqp=1	1	2
+final after=1 sqp=1	3	3
+final after=1 sqp=0	1	2
+final after=1 sqp=0	3	3
+final after=0 sqp=1	1	2
+final after=0 sqp=1	2	2
+final after=0 sqp=1	3	3
+final after=0 sqp=0	1	2
+final after=0 sqp=0	2	2
+final after=0 sqp=0	3	3
+memory sqp=1	5
+memory sqp=0	5
+memory nd sqp=1	ONCE
+memory nd sqp=0	ONCE
+maxcols sqp=1	5
+maxcols sqp=0	5
+no policy sqp=1	10
+no policy sqp=0	10
