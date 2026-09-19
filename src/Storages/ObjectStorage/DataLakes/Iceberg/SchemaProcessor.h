@@ -28,6 +28,11 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
+/// Fold away the ASCII whitespace that is only formatting around '(', ')', '[', ']', ',' and at the
+/// string edges, so the two spellings of one Iceberg primitive type ("decimal(20,0)" and
+/// "decimal(20, 0)") compare equal. Whitespace inside a token is kept: "decimal(2 0,0)" stays malformed.
+String canonicalizeTypeSpacing(const String & type_name);
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:

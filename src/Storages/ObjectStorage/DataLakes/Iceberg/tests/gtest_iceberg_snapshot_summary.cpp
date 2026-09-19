@@ -601,6 +601,59 @@ TEST(IcebergCompactionOverwriteClassification, HistoryGuardConsultsThePredicate)
     ASSERT_TRUE(append.has_value());
     EXPECT_EQ(append->added_files, 2);
 }
+
+namespace
+{
+Poco::JSON::Object::Ptr parseTableMetadata(const std::string & json)
+{
+    Poco::JSON::Parser parser;
+    return parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+}
+
+/// Table metadata with two snapshot-reachable schema-ids, field id 1 in both, renamed a -> b.
+/// `old_type` / `new_type` are the raw JSON for the `type` member.
+Poco::JSON::Object::Ptr twoSchemaMetadata(const std::string & old_type, const std::string & new_type)
+{
+    return parseTableMetadata(
+        std::string(R"J({"current-schema-id":1,"schemas":[)J")
+        + R"J({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":)J" + old_type + "}]},"
+        + R"J({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":)J" + new_type + "}]}],"
+        + R"J("snapshots":[{"snapshot-id":11,"schema-id":0},{"snapshot-id":22,"schema-id":1}]})J");
+}
+}
+
+/// One Iceberg type has several spellings across writers, so the guard compares types with the
+/// optional delimiter spacing folded away. A rename whose type differs only by that spacing is
+/// still a rename, and the rest of the schema-evolution pipeline already accepts it as one.
+TEST(IcebergCompactionSchemaEvolutionGuard, WhitespaceOnlyTypeSpellingIsTheSameType)
+{
+    EXPECT_NO_THROW(DB::Iceberg::checkCompactionSupportsSchemaEvolution(
+        twoSchemaMetadata(R"J("decimal(20,0)")J", R"J("decimal(20, 0)")J")));
+
+    /// Nested primitives are reached through the list/map wrappers, not the top-level field.
+    EXPECT_NO_THROW(DB::Iceberg::checkCompactionSupportsSchemaEvolution(twoSchemaMetadata(
+        R"J({"type":"list","element-id":2,"element-required":false,"element":"decimal(20,0)"})J",
+        R"J({"type":"list","element-id":2,"element-required":false,"element":"decimal(20, 0)"})J")));
+}
+
+/// Folding spacing away must not fold anything else away: a different scale is a different type,
+/// and a field the current schema no longer has cannot be rewritten at all.
+TEST(IcebergCompactionSchemaEvolutionGuard, RealSchemaChangeStillRefused)
+{
+    EXPECT_THROW(
+        DB::Iceberg::checkCompactionSupportsSchemaEvolution(
+            twoSchemaMetadata(R"J("decimal(20,0)")J", R"J("decimal(20, 2)")J")),
+        DB::Exception);
+
+    EXPECT_THROW(
+        DB::Iceberg::checkCompactionSupportsSchemaEvolution(parseTableMetadata(
+            std::string(R"J({"current-schema-id":1,"schemas":[)J")
+            + R"J({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"decimal(20, 0)"},)J"
+            + R"J({"id":2,"name":"z","required":false,"type":"long"}]},)J"
+            + R"J({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"decimal(20,0)"}]}],)J"
+            + R"J("snapshots":[{"snapshot-id":11,"schema-id":0},{"snapshot-id":22,"schema-id":1}]})J")),
+        DB::Exception);
+}
 #endif
 
 #endif
