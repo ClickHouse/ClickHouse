@@ -58,7 +58,9 @@ SET
     )
 WHERE (id, region) IN (SELECT id, region FROM t_correlated_update_source);
 
-SELECT id, region, company_name, score FROM t_correlated_update_target ORDER BY id, region;
+SELECT id, region, company_name, score
+FROM t_correlated_update_target
+ORDER BY isNull(company_name), company_name;
 
 -- A scalar subquery with no matching source row produces a nullable result.
 UPDATE t_correlated_update_target
@@ -79,7 +81,9 @@ SET
     )
 WHERE 1;
 
-SELECT id, region, company_name, score FROM t_correlated_update_target ORDER BY id, region;
+SELECT id, region, company_name, score
+FROM t_correlated_update_target
+ORDER BY isNull(company_name), company_name;
 
 DROP TABLE t_correlated_update_source;
 DROP TABLE t_correlated_update_target;
