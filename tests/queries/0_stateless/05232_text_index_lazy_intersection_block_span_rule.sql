@@ -6,6 +6,9 @@
 
 SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
+-- The `_default` queries below assert what the `auto` rule picks, so pin the algorithm against
+-- the settings randomizer instead of relying on the default value.
+SET text_index_postings_cursor_intersection_algorithm = 'auto';
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET use_query_condition_cache = 0;
 SET query_plan_direct_read_from_text_index = 1;
