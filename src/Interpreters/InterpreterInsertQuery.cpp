@@ -973,9 +973,19 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota(), context->getNormalizedQueryHash());
-        counting->setProcessListElement(context->getProcessListElement());
-        counting->setProgressCallback(context->getProgressCallback());
+        /// Built even when accounting is skipped: this is the pipeline's head, and `pipeline_input`
+        /// is left unset if no head transform is added at all.
+        auto counting = std::make_shared<CountingTransform>(
+            insert_header,
+            skip_write_accounting ? nullptr : context->getQuota(),
+            context->getNormalizedQueryHash());
+        if (skip_write_accounting)
+            counting->disableProfileEventsCounting();
+        else
+        {
+            counting->setProcessListElement(context->getProcessListElement());
+            counting->setProgressCallback(context->getProgressCallback());
+        }
         add_head_transform(std::move(counting));
     }
 

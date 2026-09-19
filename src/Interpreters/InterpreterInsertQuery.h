@@ -62,6 +62,11 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
+    /// Suppress this insert's own write accounting: quota `WRITTEN_BYTES`, the `InsertedRows` and
+    /// `InsertedBytes` profile events, and the query's write progress. Set it on the nested insert of
+    /// a transparent forwarder, whose rows an outer pipeline has already counted for the same query.
+    void setSkipWriteAccounting(bool skip) { skip_write_accounting = skip; }
+
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
@@ -82,6 +87,7 @@ private:
     const bool async_insert;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
+    bool skip_write_accounting = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;

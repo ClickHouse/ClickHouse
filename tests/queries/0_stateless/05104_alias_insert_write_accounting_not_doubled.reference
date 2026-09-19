@@ -1,0 +1,8 @@
+direct	1000	8000	1000	8000
+alias	1000	8000	1000	8000
+physical	1000	1000
+mv_direct	2000	16000	2000	16000
+mv_alias	2000	16000	2000	16000
+quota_charged	8000
+quota_rows	1000
+quota_too_low QUOTA_EXCEEDED
