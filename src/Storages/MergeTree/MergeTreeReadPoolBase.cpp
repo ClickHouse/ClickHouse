@@ -223,6 +223,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 #endif
     );
     read_task_info.read_hints = part_with_ranges.read_hints;
+    read_task_info.bernoulli_filter = part_with_ranges.bernoulli_filter;
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
