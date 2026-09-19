@@ -1,0 +1,5 @@
+-- row groups with a small folded filter for 'few', without a filter for 'many', total
+2	2	2
+-- probes for a value of 'few' present in exactly one row group, then for an absent value: rows found, rows read
+present values found and read from their single row group: 2 of 2
+absent value pruned everywhere
