@@ -1,0 +1,63 @@
+sumSparkbar with range:
+▁▂▃▃▄▅▅▆▇█
+countSparkbar with range:
+██████████
+avgSparkbar with range:
+ ▂▄▆█
+minSparkbar with range:
+█▇▆▅▅
+maxSparkbar with range:
+ ▂▄▆█
+sumSparkbar all-negative nested results (blank):
+
+sumSparkbar mixed-sign nested results:
+  █
+sumSparkbar multiple rows per bucket:
+█████
+sumSparkbar with Date:
+▂▃▅▆█
+result type:
+String
+empty result set:
+
+all values out of range:
+
+with GROUP BY:
+0	 ▂▄▆█
+1	▁▃▄▆█
+uniqSparkbar with range:
+█████
+countSparkbar with DateTime64 scale=0:
+█████
+countSparkbar with DateTime64 scale=3:
+█████
+countSparkbar with DateTime64 cross-epoch:
+█████
+countSparkbar with DateTime64 scale mismatch (col=6, params=3):
+█████
+countSparkbar with DateTime64 coarser column (col=0, params=3):
+████
+countSparkbar with DateTime64 single representable tick (col=0, params=3):
+ █
+countSparkbar with DateTime64 sub-tick empty range (col=0, params=3):
+
+quantileSparkbar with range:
+▆▆▇▇█
+avgOrNullSparkbar result type (String):
+String
+avgOrNullSparkbar with a NULL-only bucket (blank):
+▁ █
+countSparkbar with an all-NULL forwarded argument:
+String
+avgSparkbar with a Nullable x-axis argument (String, NULLs skipped):
+String
+  █
+avgSparkbar with an all-NULL Nullable x-axis (empty sparkbar, not NULL):
+String
+[]
+sumSparkbar with a Nullable forwarded argument (String, NULLs skipped):
+String
+  █
+countSparkbar with a Nullable x-axis only (unary null adapter):
+String
+█ █
