@@ -758,9 +758,9 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
         auto child = r.readChild(key);
         if (!child)
             return;
-        if (expr != Expression::SELECT && child->as<ASTExpressionList>())
+        if (expr != Expression::SELECT && !JSONObjectReader::isExpressionNode(*child))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'{}' of `SelectQuery` must be a single expression, not an expression list, during AST JSON deserialization", key);
+                "'{}' of `SelectQuery` must be a single expression during AST JSON deserialization", key);
         this->setExpression(expr, std::move(child));
     };
 
@@ -779,8 +779,8 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     if (!select() || select()->children.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SelectQuery` must have a non-empty 'select' list during AST JSON deserialization");
     for (const auto & element : select()->children)
-        if (element->as<ASTExpressionList>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SelectQuery` 'select' list elements must not be expression lists during AST JSON deserialization");
+        if (!element || !JSONObjectReader::isExpressionNode(*element))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SelectQuery` 'select' list elements must be expressions during AST JSON deserialization");
 
     /// `tables` is a parser-owned `ASTTablesInSelectQuery`. SELECT analysis and helpers
     /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast

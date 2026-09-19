@@ -1,4 +1,12 @@
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -340,6 +348,14 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Field 'value' dump of type '{}' does not match declared field_type '{}' during AST JSON deserialization",
             result.getTypeName(), field_type);
     return result;
+}
+
+bool JSONObjectReader::isExpressionNode(const IAST & node)
+{
+    return node.as<ASTFunction>() || node.as<ASTIdentifier>() || node.as<ASTLiteral>() || node.as<ASTAsterisk>()
+        || node.as<ASTQualifiedAsterisk>() || node.as<ASTColumnsRegexpMatcher>() || node.as<ASTColumnsListMatcher>()
+        || node.as<ASTQualifiedColumnsRegexpMatcher>() || node.as<ASTQualifiedColumnsListMatcher>() || node.as<ASTSubquery>()
+        || node.as<ASTQueryParameter>();
 }
 
 }

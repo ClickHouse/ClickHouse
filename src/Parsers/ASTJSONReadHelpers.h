@@ -321,6 +321,13 @@ public:
 
     static Field readFieldFromObject(const Poco::JSON::Object & field_obj);
 
+    /// True for the node types the SQL parser produces in an expression position (a `SELECT` list
+    /// element, `WHERE`, `HAVING`, function arguments): functions (including lambdas and operators),
+    /// identifiers, literals, asterisks and column matchers, subqueries and query parameters. Anything
+    /// else (a `SelectQuery`, a `ViewTargets`, a `TablesInSelectQuery`, ...) formats as empty or foreign
+    /// text in such a slot and must be rejected at the `clickhouse_json` boundary.
+    static bool isExpressionNode(const IAST & node);
+
 private:
     /// Recursive worker for `readFieldFromObject`. `depth` tracks the nesting level of
     /// structured `Field` values (Array/Tuple/Map). A hostile `Literal` node can embed

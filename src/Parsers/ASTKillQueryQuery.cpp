@@ -78,7 +78,7 @@ void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
     if (!where_expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'where_expression' in `KillQueryQuery` during AST JSON deserialization");
     /// A list in the scalar slot formats as `KILL QUERY WHERE  SYNC`, which re-parses differently.
-    if (where_expression->as<ASTExpressionList>())
+    if (!JSONObjectReader::isExpressionNode(*where_expression))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'where_expression' of `KillQueryQuery` must be a single expression during AST JSON deserialization");
     children.push_back(where_expression);
     sync = r.getBool("sync");
