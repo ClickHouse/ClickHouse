@@ -34,6 +34,13 @@ public:
         return "TableProxy";
     }
 
+    /// Whether the table behind the proxy has been created in this process.
+    bool isLoaded() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested != nullptr;
+    }
+
     /// Forward the metadata query to the nested storage once it has been materialized.
     /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
     /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*
@@ -155,6 +162,14 @@ public:
         IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
         if (nested)
             nested->renameInMemory(new_table_id);
+    }
+
+    /// A table nothing has touched is not loaded, so there is nothing to ask.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override

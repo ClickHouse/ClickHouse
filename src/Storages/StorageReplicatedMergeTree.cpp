@@ -7772,6 +7772,20 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
                         "and restart server or reattach the table.");
 }
 
+void StorageReplicatedMergeTree::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
+{
+    /// Compared with the name the path was expanded with, so the Ordinary-to-Atomic conversion's rename back stays allowed.
+    if (!zookeeper_info.expanded_database_name || *zookeeper_info.expanded_database_name == new_database_name)
+        return;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename database {} to {}, because zookeeper_path or replica_name of Replicated table {} "
+                    "contains implicit 'database' macro. We cannot rename path in ZooKeeper, so the table would be "
+                    "bound to a different path on the next load. If you really want to rename the database, "
+                    "you should edit metadata file of the table first and restart server or reattach the table.",
+                    getStorageID().database_name, new_database_name, getStorageID().getNameForLogs());
+}
+
 void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::rename");

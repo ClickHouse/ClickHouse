@@ -33,12 +33,10 @@ ${CLIENT} -q "ATTACH TABLE \`c3/unsafe\` AS NOT REPLICATED"
 ${CLIENT} -q "SELECT 'as_not_replicated_allows_unsafe_name', engine FROM system.tables WHERE database = currentDatabase() AND name = 'c3/unsafe'"
 ${CLIENT} -q "DROP TABLE \`c3/unsafe\`"
 
-# A table whose STORED path re-expands to a path-unsafe value keeps loading, both through a
-# short ATTACH and through SYSTEM RESTART REPLICA. Two arming details:
-#  * only a CONFIGURED macro survives into metadata unexpanded; a direct {database} is unfolded at
-#    CREATE, leaving nothing to re-substitute.
-#  * the DATABASE is renamed rather than the table, because RenamingRestrictions refuses to rename
-#    a table whose path carries an implicit macro.
+# A table whose STORED path re-expands {database} keeps loading through a short ATTACH and through
+# SYSTEM RESTART REPLICA, and cannot be moved to another database: RENAME DATABASE is refused for it,
+# attached or detached. Only a CONFIGURED macro survives into metadata unexpanded; a direct {database}
+# is unfolded at CREATE, leaving nothing to re-substitute.
 # Report the exemption from the client's exit status, not from a grep for one error code: the table
 # is registered in the catalog before `startup()` runs on both routes, so a failure there leaves the
 # table present and the count assertions below cannot see it.
@@ -54,21 +52,14 @@ run_exempt() {
 }
 
 LEGACY_DB="${CLICKHOUSE_DATABASE}_legacy"
-${CLIENT} -q "DROP DATABASE IF EXISTS \`${LEGACY_DB}/d\` SYNC"
 ${CLIENT} -q "DROP DATABASE IF EXISTS \`${LEGACY_DB}\` SYNC"
 ${CLIENT} -q "CREATE DATABASE \`${LEGACY_DB}\`"
 ${CLIENT} -q "CREATE TABLE \`${LEGACY_DB}\`.t (c0 Int) ENGINE = ReplicatedMergeTree('{default_path_test}04853legacy', 'r2') ORDER BY c0"
 ${CLIENT} -q "SELECT 'stored_macro_armed', create_table_query LIKE '%{default_path_test}%' FROM system.tables WHERE database = '${LEGACY_DB}' AND name = 't'"
-${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}\` TO \`${LEGACY_DB}/d\`"
-${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}/d\`.t"
-run_exempt short_attach "ATTACH TABLE \`${LEGACY_DB}/d\`.t"
-${CLIENT} -q "SELECT 'short_attach_count', count() FROM system.tables WHERE database = '${LEGACY_DB}/d' AND name = 't'"
-run_exempt restart_replica "SYSTEM RESTART REPLICA \`${LEGACY_DB}/d\`.t"
-${CLIENT} -q "SELECT 'restart_replica_count', count() FROM system.tables WHERE database = '${LEGACY_DB}/d' AND name = 't'"
-# Re-resolve the path under the original name before dropping: the stored path re-expands {database},
-# so under the new name the table points at a different znode tree than the CREATE made, and dropping
-# it there would leave the original tree behind.
-${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}/d\` TO \`${LEGACY_DB}\`"
 ${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}\`.t"
-${CLIENT} -q "ATTACH TABLE \`${LEGACY_DB}\`.t"
+${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}\` TO \`${LEGACY_DB}/d\`" 2>&1 | grep -q -F 'NOT_IMPLEMENTED' && echo "rename_database REFUSED" || echo "rename_database RENAMED"
+run_exempt short_attach "ATTACH TABLE \`${LEGACY_DB}\`.t"
+${CLIENT} -q "SELECT 'short_attach_count', count() FROM system.tables WHERE database = '${LEGACY_DB}' AND name = 't'"
+run_exempt restart_replica "SYSTEM RESTART REPLICA \`${LEGACY_DB}\`.t"
+${CLIENT} -q "SELECT 'restart_replica_count', count() FROM system.tables WHERE database = '${LEGACY_DB}' AND name = 't'"
 ${CLIENT} -q "DROP DATABASE \`${LEGACY_DB}\` SYNC"

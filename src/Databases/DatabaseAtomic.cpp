@@ -13,7 +13,14 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Core/ServerSettings.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Common/Macros.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -33,6 +40,15 @@ namespace Setting
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
 }
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
+static void checkStoredDefinitionCanBeRenamed(
+    const ASTPtr & create_ast, const StorageID & table_id, const StorageID & new_table_id, bool whole_database, ContextPtr context);
 
 namespace ErrorCodes
 {
@@ -353,9 +369,21 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
+    /// A table nothing has loaded yet is asked through its stored definition rather than loaded under the lock.
+    auto check_can_be_renamed = [this](const DatabaseAtomic & db, const String & name, const StoragePtr & storage, const StorageID & new_id)
+    {
+        const auto * proxy = typeid_cast<const StorageTableProxy *>(storage.get());
+        if (proxy && !proxy->isLoaded())
+            checkStoredDefinitionCanBeRenamed(
+                parseQueryFromMetadata(log, getContext(), db.getDisk(), db.getObjectMetadataPath(name)),
+                storage->getStorageID(), new_id, /*whole_database=*/ false, getContext());
+        else
+            storage->checkTableCanBeRenamed(new_id);
+    };
+
     StorageID old_table_id = table->getStorageID();
     StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
-    table->checkTableCanBeRenamed({new_table_id});
+    check_can_be_renamed(*this, table_name, table, new_table_id);
     assert_can_move_mat_view(table);
     StoragePtr other_table;
     StorageID other_table_new_id = StorageID::createEmpty();
@@ -365,7 +393,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (dictionary && !other_table->isDictionary())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
         other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
-        other_table->checkTableCanBeRenamed(other_table_new_id);
+        check_can_be_renamed(other_db, to_table_name, other_table, other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
 
@@ -739,6 +767,69 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     }
 }
 
+/// A table nothing has loaded and a detached table have no storage object to ask, so the stored definition
+/// answers, as `StorageReplicatedMergeTree::checkTableCanBeRenamed` would for a loaded one: a `ReplicatedMergeTree`
+/// whose path or replica name, explicit or the server default, expands `{database}` cannot follow a database
+/// rename, and one that expands `{database}` or `{table}` cannot be renamed at all.
+static void checkStoredDefinitionCanBeRenamed(
+    const ASTPtr & create_ast, const StorageID & table_id, const StorageID & new_table_id, bool whole_database, ContextPtr context)
+{
+    const auto * create = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
+    if (!create || !create->storage || !create->storage->engine)
+        return;
+
+    const auto & engine = *create->storage->engine;
+    if (!engine.name.starts_with("Replicated") || !engine.name.ends_with("MergeTree"))
+        return;
+
+    String zookeeper_path;
+    String replica_name;
+    const auto * path_literal = engine.arguments && engine.arguments->children.size() >= 2 ? engine.arguments->children[0]->as<ASTLiteral>() : nullptr;
+    const auto * replica_literal = path_literal ? engine.arguments->children[1]->as<ASTLiteral>() : nullptr;
+    if (path_literal && replica_literal && path_literal->value.getType() == Field::Types::String
+        && replica_literal->value.getType() == Field::Types::String)
+    {
+        zookeeper_path = path_literal->value.safeGet<String>();
+        replica_name = replica_literal->value.safeGet<String>();
+    }
+    else
+    {
+        const auto & server_settings = context->getServerSettings();
+        zookeeper_path = server_settings[ServerSetting::default_replica_path];
+        replica_name = server_settings[ServerSetting::default_replica_name];
+    }
+
+    /// Only whether `{database}` takes part matters, at any level of a configured macro; other macros may be absent here.
+    Macros::MacroExpansionInfo info;
+    info.table_id = table_id;
+    info.ignore_unknown = true;
+    Macros::MacroExpansionInfo replica_info = info;
+    context->getMacros()->expand(zookeeper_path, info);
+    context->getMacros()->expand(replica_name, replica_info);
+    const bool binds_database = info.expanded_database || replica_info.expanded_database;
+    const bool binds_table = info.expanded_table || replica_info.expanded_table;
+
+    if (whole_database)
+    {
+        if (!binds_database)
+            return;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot rename database {} to {}, because zookeeper_path or replica_name of Replicated table {} "
+                        "contains implicit 'database' macro. We cannot rename path in ZooKeeper, so the table would be "
+                        "bound to a different path on the next load. If you really want to rename the database, "
+                        "you should edit metadata file of the table first and restart server or reattach the table.",
+                        table_id.database_name, new_table_id.database_name, table_id.getNameForLogs());
+    }
+
+    if (!binds_database && !binds_table)
+        return;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename Replicated table {}, because zookeeper_path or replica_name contains implicit "
+                    "'database' or 'table' macro. We cannot rename path in ZooKeeper, so path may become inconsistent "
+                    "with table name. If you really want to rename table, you should edit metadata file first.",
+                    table_id.getNameForLogs());
+}
+
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameDatabase");
@@ -754,6 +845,34 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         checkTableNameLengthUnlocked(new_name, table.first, getContext());
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
+
+    /// Refused before anything is moved. A table nothing has loaded and a detached one are answered from their
+    /// stored definitions; editing the metadata of a detached table is the way to move one whose path binds the
+    /// database name, and the check reads the edited file. While the server starts, the Ordinary-to-Atomic
+    /// conversion renames its temporary database back to the name the definitions were written under, so a stored
+    /// definition is not asked then, as `StorageReplicatedMergeTree::checkTableCanBeRenamed` does not ask either.
+    const bool server_starting = getContext()->getApplicationType() == Context::ApplicationType::SERVER
+        && !getContext()->isServerCompletelyStarted();
+    for (const auto & table : tables)
+    {
+        const auto * proxy = typeid_cast<const StorageTableProxy *>(table.second.get());
+        if (proxy && !proxy->isLoaded())
+        {
+            if (!server_starting)
+                checkStoredDefinitionCanBeRenamed(
+                    parseQueryFromMetadata(log, getContext(), getDisk(), getObjectMetadataPath(table.first)),
+                    table.second->getStorageID(), StorageID(new_name, table.first, table.second->getStorageID().uuid),
+                    /*whole_database=*/ true, getContext());
+        }
+        else
+            table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+    }
+    if (!server_starting)
+        for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
+            checkStoredDefinitionCanBeRenamed(
+                parseQueryFromMetadata(log, getContext(), getDisk(), snapshot.metadata_path),
+                StorageID(database_name, detached_table_name, snapshot.uuid), StorageID(new_name, detached_table_name, snapshot.uuid),
+                /*whole_database=*/ true, getContext());
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
