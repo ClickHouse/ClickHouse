@@ -22,6 +22,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesActiveSeriesCache.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
@@ -31,6 +32,7 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
+#include <chrono>
 #include <ranges>
 
 
@@ -719,10 +721,47 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
     /// Step 4. Push the tags block.
+    /// Deduplicate against the active series cache to skip redundant tag inserts for known active series.
+    auto active_series_cache = time_series_storage.getActiveSeriesCache();
+    if (active_series_cache)
+    {
+        UInt32 now = static_cast<UInt32>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
 
-    /// Tags are pushed first so that if the samples insert fails,
-    /// we don't end up with sample rows referencing IDs that were never written to the tags table.
-    tags_pipeline->push(std::move(tags_block));
+        IColumn::Filter tags_filter;
+        size_t tags_to_write = 0;
+        std::vector<UInt128> touched_ids;
+
+        active_series_cache->checkAndTouchBulk(id_column, now, tags_filter, tags_to_write, touched_ids);
+
+        if (tags_to_write > 0)
+        {
+            if (tags_to_write < num_time_series)
+            {
+                for (size_t col_idx = 0; col_idx < tags_block.columns(); ++col_idx)
+                {
+                    auto & col = tags_block.getByPosition(col_idx);
+                    col.column = col.column->filter(tags_filter, tags_to_write);
+                }
+            }
+
+            try
+            {
+                tags_pipeline->push(std::move(tags_block));
+            }
+            catch (...)
+            {
+                active_series_cache->rollbackBulk(touched_ids);
+                throw;
+            }
+        }
+    }
+    else
+    {
+        /// Tags are pushed first so that if the samples insert fails,
+        /// we don't end up with sample rows referencing IDs that were never written to the tags table.
+        tags_pipeline->push(std::move(tags_block));
+    }
 
     /// Step 5. Assemble and push the samples block.
     if (total_samples)

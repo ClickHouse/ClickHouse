@@ -1,0 +1,194 @@
+#include <Storages/TimeSeries/TimeSeriesActiveSeriesCache.h>
+
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <Core/UUID.h>
+
+#include <algorithm>
+#include <cstring>
+
+
+namespace DB
+{
+
+TimeSeriesActiveSeriesCache::TimeSeriesActiveSeriesCache(size_t max_entries, UInt32 ttl_seconds_)
+    : shards(NUM_SHARDS)
+    , ttl_seconds(ttl_seconds_)
+{
+    size_t per_shard = max_entries ? std::max<size_t>(1, max_entries / NUM_SHARDS) : 0;
+    for (auto & shard : shards)
+        shard.max_shard_entries = per_shard;
+}
+
+void TimeSeriesActiveSeriesCache::updateSettings(size_t max_entries, UInt32 ttl_seconds_)
+{
+    ttl_seconds.store(ttl_seconds_, std::memory_order_relaxed);
+    size_t per_shard = max_entries ? std::max<size_t>(1, max_entries / NUM_SHARDS) : 0;
+    for (auto & shard : shards)
+    {
+        std::lock_guard lock(shard.mutex);
+        shard.max_shard_entries = per_shard;
+        while (shard.max_shard_entries > 0 && shard.map.size() > shard.max_shard_entries)
+        {
+            auto it = shard.map.begin();
+            if (it != shard.map.end())
+                shard.map.erase(it->getKey());
+            else
+                break;
+        }
+    }
+}
+
+void TimeSeriesActiveSeriesCache::clear()
+{
+    for (auto & shard : shards)
+    {
+        std::lock_guard lock(shard.mutex);
+        shard.map.clear();
+    }
+}
+
+size_t TimeSeriesActiveSeriesCache::size() const
+{
+    size_t total = 0;
+    for (const auto & shard : shards)
+    {
+        std::lock_guard lock(shard.mutex);
+        total += shard.map.size();
+    }
+    return total;
+}
+
+UInt128 TimeSeriesActiveSeriesCache::extractId(const IColumn & id_column, size_t row)
+{
+    if (const auto * col_uuid = typeid_cast<const ColumnUUID *>(&id_column))
+        return col_uuid->getElement(row).toUnderType();
+
+    if (const auto * col_u128 = typeid_cast<const ColumnVector<UInt128> *>(&id_column))
+        return col_u128->getElement(row);
+
+    if (const auto * col_fixed = typeid_cast<const ColumnFixedString *>(&id_column))
+    {
+        if (col_fixed->getN() == 16)
+        {
+            UInt128 val;
+            std::memcpy(&val, col_fixed->getChars().data() + row * 16, 16);
+            return val;
+        }
+    }
+
+    if (const auto * col_u64 = typeid_cast<const ColumnVector<UInt64> *>(&id_column))
+        return UInt128(0, col_u64->getElement(row));
+
+    if (const auto * col_lc = typeid_cast<const ColumnLowCardinality *>(&id_column))
+    {
+        size_t dict_idx = col_lc->getIndexes().getUInt(row);
+        return extractId(*col_lc->getDictionary().getNestedColumn(), dict_idx);
+    }
+
+    SipHash sip_hash;
+    id_column.updateHashWithValue(row, sip_hash);
+    return sip_hash.get128();
+}
+
+void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
+    const ColumnPtr & id_column,
+    UInt32 current_time,
+    IColumn::Filter & out_filter,
+    size_t & out_written_count,
+    std::vector<UInt128> & out_touched_ids)
+{
+    size_t num_rows = id_column->size();
+    out_filter.resize_fill(num_rows, 0);
+    out_written_count = 0;
+    out_touched_ids.clear();
+
+    if (num_rows == 0)
+        return;
+
+    UInt32 ttl = ttl_seconds.load(std::memory_order_relaxed);
+
+    std::vector<std::vector<size_t>> shard_rows(NUM_SHARDS);
+    std::vector<UInt128> ids(num_rows);
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        UInt128 id = extractId(*id_column, i);
+        ids[i] = id;
+        size_t shard_idx = getShardIndex(id);
+        shard_rows[shard_idx].push_back(i);
+    }
+
+    for (size_t shard_idx = 0; shard_idx < NUM_SHARDS; ++shard_idx)
+    {
+        const auto & rows = shard_rows[shard_idx];
+        if (rows.empty())
+            continue;
+
+        auto & shard = shards[shard_idx];
+        std::lock_guard lock(shard.mutex);
+
+        for (size_t row_idx : rows)
+        {
+            const auto & id = ids[row_idx];
+            auto * it = shard.map.find(id);
+
+            bool needs_write = false;
+            if (!it)
+            {
+                needs_write = true;
+                if (shard.max_shard_entries > 0 && shard.map.size() >= shard.max_shard_entries)
+                {
+                    auto first = shard.map.begin();
+                    if (first != shard.map.end())
+                        shard.map.erase(first->getKey());
+                }
+                shard.map[id] = current_time;
+                out_touched_ids.push_back(id);
+            }
+            else if (ttl > 0 && current_time > it->getMapped() && (current_time - it->getMapped() >= ttl))
+            {
+                needs_write = true;
+                it->getMapped() = current_time;
+                out_touched_ids.push_back(id);
+            }
+
+            if (needs_write)
+            {
+                out_filter[row_idx] = 1;
+                ++out_written_count;
+            }
+        }
+    }
+}
+
+void TimeSeriesActiveSeriesCache::rollbackBulk(const std::vector<UInt128> & ids)
+{
+    if (ids.empty())
+        return;
+
+    std::vector<std::vector<UInt128>> shard_ids(NUM_SHARDS);
+    for (const auto & id : ids)
+    {
+        size_t shard_idx = getShardIndex(id);
+        shard_ids[shard_idx].push_back(id);
+    }
+
+    for (size_t shard_idx = 0; shard_idx < NUM_SHARDS; ++shard_idx)
+    {
+        const auto & ids_in_shard = shard_ids[shard_idx];
+        if (ids_in_shard.empty())
+            continue;
+
+        auto & shard = shards[shard_idx];
+        std::lock_guard lock(shard.mutex);
+        for (const auto & id : ids_in_shard)
+            shard.map.erase(id);
+    }
+}
+
+}

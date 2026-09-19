@@ -1,0 +1,18 @@
+after first insert (cached):
+1
+1
+after second insert (skipped tags):
+1
+2
+after mixed insert (one cached, one new):
+2
+4
+cache disabled: both inserts write tags:
+2
+2
+after truncate and insert:
+1
+1
+after alter to disable cache:
+2
+2
