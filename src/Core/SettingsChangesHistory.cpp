@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"read_in_order_virtual_row_prefetch_window", -1, -1, "New setting to control the read-ahead window for sources deferred behind virtual rows in read-in-order merges."},
+            {"read_in_order_virtual_row_block_interval", 1, 8, "New setting to emit a virtual row after every N-th block read instead of after every block when `read_in_order_use_virtual_row_per_block` is enabled. Every virtual row passes through the merge, so the previous per-block emission slowed down scan-heavy read-in-order queries with selective filters."},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."},
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
