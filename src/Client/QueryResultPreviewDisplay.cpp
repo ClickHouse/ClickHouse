@@ -29,6 +29,11 @@ namespace
     {
         return fmt::format("\033[{}A", n);
     }
+
+    std::string moveDownNLines(size_t n)
+    {
+        return fmt::format("\033[{}B", n);
+    }
 }
 
 bool QueryResultPreviewDisplay::setPreview(const Block & block, ContextPtr context)
@@ -95,8 +100,12 @@ void QueryResultPreviewDisplay::clearPreviewOutput(WriteBufferFromFileDescriptor
     if (painted_lines == 0)
         return;
 
-    /// The cursor sits on the anchor (progress bar) line; erase everything below it.
-    message << "\r" << CLEAR_TO_END_OF_SCREEN << SHOW_CURSOR;
+    /// The cursor sits on the anchor (progress bar) line, and the preview occupies the
+    /// `painted_lines` lines below it. Erase from the first of those lines, so that the anchor line
+    /// itself - the progress bar - survives: erasing it as well would blank the progress bar until
+    /// the next `Progress` or `ProfileEvents` update repaints it, which for an empty or
+    /// unrenderable preview in the middle of a running query can take a while.
+    message << moveDownNLines(1) << "\r" << CLEAR_TO_END_OF_SCREEN << moveUpNLines(1) << SHOW_CURSOR;
     message.next();
 
     painted_lines = 0;
