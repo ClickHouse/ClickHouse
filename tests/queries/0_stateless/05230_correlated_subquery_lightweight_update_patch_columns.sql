@@ -44,7 +44,8 @@ SET value =
     SELECT s.value
     FROM t_correlated_update_patch_source AS s
     WHERE s.lookup_key = t_correlated_update_patch_target.lookup_key
-);
+)
+WHERE 1;
 
 SELECT id, lookup_key, value FROM t_correlated_update_patch_target ORDER BY id;
 
