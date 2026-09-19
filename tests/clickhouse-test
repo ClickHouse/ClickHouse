@@ -1134,7 +1134,11 @@ def lldb_backtraces_only(dump: str) -> str:
 def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # The budget bounds a wedged lldb (e.g. signal-handler deadlock on the
     # inferior); it is not an estimate of the work, which scales with the
-    # binary's unwind/symbol cost. Killing lldb leaves the server untouched.
+    # binary's unwind/symbol cost. Killing lldb leaves the server untouched
+    # only without lldb's JIT-loader breakpoint: the linker folds the empty
+    # `__jit_debug_register_code` with other functions, so the `int3` a killed
+    # lldb leaves there traps server threads with SIGTRAP, a fatal signal to
+    # the server, and it wedges (state S, no logs, ignores SIGTERM).
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1148,7 +1152,8 @@ def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # print_c_stacktraces save the full dump to c_stacktraces.log and preview
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -O 'settings set plugin.jit-loader.gdb.enable off' "
+        f"-p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=timeout,
         keep_output_on_error=True,
     )
