@@ -161,7 +161,7 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ORDER BY 'fill_*' fields require 'with_fill' to be true during AST JSON deserialization");
 
-    auto expression = r.readChild("expression");
+    auto expression = r.readExpressionChild("expression");
     if (!expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'expression' is missing in JSON AST for OrderByElement");
     children.push_back(std::move(expression));
@@ -171,16 +171,16 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     if (auto child = r.readStringLiteralChild("collation"))
         setCollation(child);
 
-    if (auto child = r.readChild("fill_from"))
+    if (auto child = r.readExpressionChild("fill_from"))
         setFillFrom(child);
 
-    if (auto child = r.readChild("fill_to"))
+    if (auto child = r.readExpressionChild("fill_to"))
         setFillTo(child);
 
-    if (auto child = r.readChild("fill_step"))
+    if (auto child = r.readExpressionChild("fill_step"))
         setFillStep(child);
 
-    if (auto child = r.readChild("fill_staleness"))
+    if (auto child = r.readExpressionChild("fill_staleness"))
         setFillStaleness(child);
 }
 

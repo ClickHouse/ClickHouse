@@ -179,6 +179,16 @@ public:
     /// Returns nullptr when the key is absent.
     ASTPtr readPartitionListChild(const char * key) const;
 
+    /// Read a child that must be an expression node (see `isExpressionNode`). Returns nullptr when absent.
+    ASTPtr readExpressionChild(const char * key) const
+    {
+        ASTPtr child = readChild(key);
+        if (child && !isExpressionNode(*child))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected an expression for key '{}' during AST JSON deserialization", key);
+        return child;
+    }
+
     /// Read the "children" array.
     ASTs readChildren() const
     {
