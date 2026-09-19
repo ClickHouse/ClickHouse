@@ -158,7 +158,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
     }
 
     auto status = ISource::prepare();
-    if (status == Status::Finished && !stop_requested.load())
+    if (status == Status::Finished && !stop_requested.exchange(true))
     {
         /// Only a finish that was not cancelled commits here and claims the teardown. After a
         /// cancel it is left to the destructor: the cancelling thread may still be in
@@ -169,7 +169,6 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
         if (tx && auto_commit)
             tx->commit();
 
-        stop_requested.store(true);
         finalized.store(true);
     }
 
@@ -249,7 +248,12 @@ void PostgreSQLSource<T>::onCancel() noexcept
 {
     /// A signal, not a claim on the teardown: this runs while onStart() may still be creating `tx`
     /// and `stream`, so it cannot finish the job, and taking the claim here would leave nobody to.
-    stop_requested.store(true);
+    /// If the flag is already set, there is nothing left to interrupt: either prepare() finished
+    /// the read cleanly (the executor still cancels every processor on teardown, and a cancel
+    /// request after a clean finish would pointlessly open an extra connection for `PQcancel` and
+    /// mark a healthy pooled connection broken), or an earlier onCancel() has already sent one.
+    if (stop_requested.exchange(true))
+        return;
 
     /// Outer try/catch: this function is noexcept, and locking tx_mutex may throw.
     try
@@ -261,12 +265,14 @@ void PostgreSQLSource<T>::onCancel() noexcept
             tx_snapshot = tx;
         }
 
-        /// Interrupt the connection only while onStart() is blocked on it (typically in
-        /// pqxx::from_query). Once streaming, the pipeline thread owns it, so the flag has to be
-        /// enough: generate() drops out between rows and the destructor then cancels the COPY.
-        if (!started.load() && tx_snapshot && tx_snapshot->conn().is_open())
+        /// Interrupt the server-side query regardless of how far the source has progressed: onStart()
+        /// may be blocked in the pqxx::stream_from constructor, and once streaming the pipeline thread
+        /// may be blocked in `read_row` waiting for a row the upstream query is still computing. The
+        /// flag alone is not enough there, because generate() only looks at it between rows.
+        if (tx_snapshot && tx_snapshot->conn().is_open())
         {
-            /// `stream` belongs to onStart(), which is still running, so it is not touched here.
+            /// `stream` belongs to the pipeline thread, so it is not touched here - the destructor,
+            /// which owns the teardown, closes it. `cancel_mutex` serializes the two cancels.
             finalize(tx_snapshot, nullptr);
         }
     }
