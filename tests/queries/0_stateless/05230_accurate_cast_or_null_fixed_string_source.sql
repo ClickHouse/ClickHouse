@@ -89,3 +89,15 @@ SELECT toDecimal64OrNull(materialize(toFixedString('', 12)), 2);
 SELECT toDecimal64OrNull(CAST(concat(toFixedString('3.14', 6), 'x') AS FixedString(12)), 2);
 SELECT toDecimal64OrNull(materialize('3.14abc'), 2);
 SELECT toDecimal64OrNull(materialize('3.14'), 2);
+
+-- L: KeyCondition prepares an IN set with accurateCastOrNull, so an element the key type cannot
+-- represent is filtered out of the set instead of failing the query, as it already was for a String.
+DROP TABLE IF EXISTS t_05230_key;
+-- add_minmax_index_for_numeric_columns=0: an implicit index repeats the condition in the plan below.
+CREATE TABLE t_05230_key (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_05230_key SELECT number FROM numbers(10);
+SELECT count() FROM t_05230_key WHERE k IN (SELECT toFixedString('not a number', 12));
+SELECT count() FROM t_05230_key WHERE k IN (SELECT materialize('not a number'));
+-- The set is built from one row, so a primary-key set of zero elements is that element being dropped.
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05230_key WHERE k IN (SELECT toFixedString('not a number', 12))) WHERE explain ILIKE '%k in 0-element set%';
+DROP TABLE t_05230_key;
