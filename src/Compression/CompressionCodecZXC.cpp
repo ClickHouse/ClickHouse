@@ -26,7 +26,7 @@ uint8_t CompressionCodecZXC::getMethodByte() const
 
 void CompressionCodecZXC::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecZXC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -72,7 +72,7 @@ CompressionCodecZXC::CompressionCodecZXC(int level_)
 {
 }
 
-ASTPtr CompressionCodecZXC::getCodecDesc() const
+ASTPtr CompressionCodecZXC::getCodecDescription() const
 {
     return makeCodecDescription("ZXC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(level))});
 }
