@@ -185,6 +185,13 @@ _EXTRA_STRESS_AND_FUZZER_PATHS = (
     # This rule, and the pre-hook computing the line count it reads.
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     "ci/jobs/scripts/workflow_hooks/store_data.py",
+    # What defines these jobs and puts them into the workflow: their commands,
+    # parameters, runners, timeouts and digests. A PR that rewrites the job
+    # definition and touches a few lines of `src/` on top would otherwise skip the
+    # very jobs it redefined. Same reasoning as `_COVERAGE_PIPELINE_PATHS` above.
+    "ci/defs/job_configs.py",
+    "ci/defs/defs.py",
+    "ci/workflows/pull_request.py",
 )
 
 
