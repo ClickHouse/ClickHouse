@@ -1,5 +1,9 @@
 Same index for any number of builders
 5	1
+b1	1
+b2	2
+b4	4
+b8	8
 Token search matches the same rows without an index
 0	259	259	1
 399	250	250	1

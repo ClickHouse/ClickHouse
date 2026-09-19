@@ -30,10 +30,14 @@ INSERT INTO ref SELECT number,
     arrayStringConcat(arrayMap(x -> toString(cityHash64(number, x) % 400), range(8)), ' ') || ' marker'
 FROM numbers(12000);
 
+-- The flush budgets are pinned to their defaults, inherited by b2/b4/b8 through CREATE TABLE AS, so
+-- that the segment count below stays one flush per builder if a default ever changes.
 CREATE TABLE b1 (id UInt64, message String,
     INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha))
 ENGINE = ReplacingMergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, text_index_build_threads = 1;
+SETTINGS min_bytes_for_wide_part = 0, text_index_build_threads = 1,
+         text_index_max_processed_tokens_before_flush = 100000000,
+         text_index_max_memory_usage_before_flush = '1Gi';
 
 CREATE TABLE b2 AS b1 SETTINGS text_index_build_threads = 2;
 CREATE TABLE b4 AS b1 SETTINGS text_index_build_threads = 4;
@@ -69,6 +73,18 @@ OPTIMIZE TABLE b_clamped FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT count(), uniqExact(hash_of_all_files) FROM system.parts
 WHERE database = currentDatabase() AND active
   AND table IN ('b1', 'b2', 'b4', 'b8', 'b_clamped');
+
+SYSTEM FLUSH LOGS part_log;
+
+-- One temporary segment per builder that holds tokens: the byte-identity assertion above cannot tell
+-- a parallel rebuild from a serial one, this can. b_clamped is excluded because its builder count
+-- depends on max_build_text_index_thread_pool_size and the core count.
+SELECT table, max(ProfileEvents['TextIndexTemporarySegmentsWritten']) AS segments
+FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND database = currentDatabase() AND table IN ('b1', 'b2', 'b4', 'b8')
+  AND event_type = 'MergeParts'
+GROUP BY table ORDER BY table;
 
 SELECT 'Token search matches the same rows without an index';
 

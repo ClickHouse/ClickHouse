@@ -1647,19 +1647,23 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     if (!postprocessor_drop_filter || postprocessor_drop_filter->drop_on_match)
         return;
 
-    const auto & filter_tokens = postprocessor_drop_filter->tokens;
+    std::vector<std::string_view> kept_tokens;
+    kept_tokens.reserve(postprocessor_drop_filter->tokens.size());
+    for (const auto & filter_token : postprocessor_drop_filter->tokens)
+        if (keepsToken(filter_token))
+            kept_tokens.push_back(filter_token);
 
     /// StringHashTable::dispatch reads whole 8-byte words around short keys.
     static constexpr size_t pad_left = 8;
     const size_t total_size = std::accumulate(
-        filter_tokens.begin(), filter_tokens.end(), pad_left,
+        kept_tokens.begin(), kept_tokens.end(), pad_left,
         [](size_t sum, const auto & filter_token) { return sum + filter_token.size(); });
 
     char * data = arena->alloc(total_size) + pad_left;
 
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it{};
-    for (const auto & filter_token : filter_tokens)
+    for (const auto & filter_token : kept_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
         auto key = PackedStringRef::build(data, filter_token.size(), PackedStringRefHash{});

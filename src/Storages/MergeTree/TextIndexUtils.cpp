@@ -193,11 +193,19 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     }
 
     builders.resize(build_threads);
-    for (auto & builder_set : builders)
+    for (size_t b = 0; b < builders.size(); ++b)
     {
+        auto & builder_set = builders[b];
         builder_set.estimated_allocated_bytes.assign(indexes.size(), 0);
+
         for (const auto & index : indexes)
+        {
             builder_set.aggregators.push_back(index->createIndexAggregator());
+
+            if (build_threads > 1)
+                typeid_cast<MergeTreeIndexAggregatorText &>(*builder_set.aggregators.back())
+                    .initTokenShard(b, build_threads);
+        }
     }
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -260,6 +268,7 @@ void BuildTextIndexTransform::flushPendingBlocks()
 
     chassert(build_pool != nullptr);
     ThreadPoolCallbackRunnerLocal<void> runner(*build_pool, ThreadName::MERGETREE_TEXT_INDEX);
+    runner.reserve(builders.size());
 
     for (size_t b = 0; b < builders.size(); ++b)
     {
@@ -273,7 +282,6 @@ void BuildTextIndexTransform::flushPendingBlocks()
                 {
                     size_t pos = 0;
                     auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*builder_set.aggregators[i]);
-                    aggregator_text.setTokenShard(b, build_threads);
                     aggregator_text.setCurrentRow(pending.start_row);
 
                     const auto memory_usage_before_update = getCurrentThreadMemoryUsage();

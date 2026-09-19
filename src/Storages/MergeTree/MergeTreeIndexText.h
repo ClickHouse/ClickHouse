@@ -575,10 +575,13 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
-    void setTokenShard(size_t shard, size_t num_shards)
+    /// Must be called before the first update(): it discards the builder's state to re-seed the
+    /// drop filter, which holds only the tokens of this shard.
+    void initTokenShard(size_t shard, size_t num_shards)
     {
         granule_builder.token_shard = shard;
         granule_builder.num_token_shards = num_shards;
+        granule_builder.reset();
     }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
