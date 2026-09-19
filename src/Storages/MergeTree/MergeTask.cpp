@@ -851,7 +851,31 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
-    prepareProjectionsToMergeAndRebuild();
+    /// For TTLDrop merges, all source parts are fully expired.
+    /// Skip creating the read pipeline to avoid opening source parts
+    /// and allocating read/prefetch buffers.
+    ///
+    /// We restrict this to tables that have only an unconditional rows TTL
+    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
+    /// When other TTL families are present, TTLTransform::finalize rebuilds
+    /// their maps from scratch, and replicating that logic here would be
+    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
+    ///
+    /// A merge cancelled after selection has `need_remove_expired_values` cleared above and must
+    /// not drop rows, so it falls through to the normal pipeline, which builds no TTLTransform.
+    const bool can_short_circuit_ttl_drop =
+        global_ctx->future_part->merge_type == MergeType::TTLDrop
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
+        && ctx->need_remove_expired_values;
+
+    /// The short-circuit below commits a 0-row part without ever running a pipeline, so nothing
+    /// would retire these projections. Decide before the bookkeeping rather than undoing it
+    /// after: `prepareProjectionsToMergeAndRebuild` increments `MergedProjections` and
+    /// `RebuiltProjections` and pushes the names into `MergeListElement::projections_pending`,
+    /// which only the rebuild and merge paths erase from. Clearing the worklists afterwards left
+    /// those names in `system.merges.projections_remaining` for the lifetime of the merge entry.
+    if (!can_short_circuit_ttl_drop)
+        prepareProjectionsToMergeAndRebuild();
 
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
@@ -1167,23 +1191,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
-    /// For TTLDrop merges, all source parts are fully expired.
-    /// Skip creating the read pipeline to avoid opening source parts
-    /// and allocating read/prefetch buffers.
-    ///
-    /// We restrict this to tables that have only an unconditional rows TTL
-    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
-    /// When other TTL families are present, TTLTransform::finalize rebuilds
-    /// their maps from scratch, and replicating that logic here would be
-    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
-    ///
-    /// A merge cancelled after selection has `need_remove_expired_values` cleared above and must
-    /// not drop rows, so it falls through to the normal pipeline, which builds no TTLTransform.
-    const bool can_short_circuit_ttl_drop =
-        global_ctx->future_part->merge_type == MergeType::TTLDrop
-        && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
-        && ctx->need_remove_expired_values;
-
     if (can_short_circuit_ttl_drop)
     {
         LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
@@ -1198,10 +1205,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->ttl_infos = {};
         global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
 
-        /// Clear projections — no rows means no projection data to merge or rebuild.
-        global_ctx->projections_to_rebuild.clear();
-        global_ctx->projections_to_merge.clear();
-        global_ctx->projections_to_merge_parts.clear();
+        /// No rows means no projection data to merge or rebuild, and the bookkeeping that would
+        /// have announced some was skipped above, so there is nothing to undo here.
+        chassert(global_ctx->projections_to_rebuild.empty());
+        chassert(global_ctx->projections_to_merge.empty());
+        chassert(global_ctx->projections_to_merge_parts.empty());
 
         /// Force Horizontal algorithm. This prevents the Vertical stage from trying
         /// to finalize an empty rows_sources file, and ensures finalizePart takes
