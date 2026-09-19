@@ -471,7 +471,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         /// Granule may be not set in the distributed index analysis.
         /// TODO: implement distributed index analysis for text index.
-        /// A granule can also come from a step that analyzed a different filter, not this reader's search queries.
+        /// A set granule may have been analyzed for another step's filter.
         if (!granule || !granuleAnalyzedSearchQueries(*granule))
             readGranule();
 
@@ -1179,8 +1179,6 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
     if (it == granules.end() || !it->second)
         return;
 
-    /// A granule analyzed for another step's filter must not replace one this reader can use,
-    /// including on a reader the read pool moved to the next task of the same part.
     const auto * text_granule = typeid_cast<const MergeTreeIndexGranuleText *>(it->second.get());
     if (!text_granule || !granuleAnalyzedSearchQueries(*text_granule))
         return;
