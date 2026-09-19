@@ -1,0 +1,3 @@
+after rollback: 1,2,3
+OPTIMIZE: refused
+after OPTIMIZE: 1,2,3
