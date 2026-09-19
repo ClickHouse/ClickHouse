@@ -1,0 +1,70 @@
+ground truth: a single such comparison is refused
+a conjunction chain long enough to be merged into NOT IN
+a disjunction chain long enough to be merged into IN
+a redundant comparison pruned away by a stronger one on the same expression
+a conjunction collapsed to false by a conflict
+an equality inferred through a transitive chain
+shapes that keep one such comparison whatever the optimizations do
+a tuple with one such position, compared element by element
+a constant whose common type with the string is not itself a string
+a constant that only carries its value, against an expression outside the string family
+a Variant expression with an alternative the constant cannot be compared with
+--- comparisons that ARE executable must keep being merged ---
+string_vs_string	1
+string_vs_enum	1
+string_vs_fixed_string	0
+array_vs_array	0
+uuid_vs_string_constants	0
+tuple_array_vs_array	0
+tuple_uuid_vs_string_constants	0
+dynamic_string_constant	1
+variant_string_constant	1
+variant_no_string_alternative	3
+variant_string_constant_expression	3
+variant_single_alternative	3
+array_merged	1
+array_not_merged_above_threshold	0
+tuple_array_merged	1
+tuple_array_not_merged_above_threshold	0
+uuid_merged	1
+uuid_not_merged_above_threshold	0
+string_vs_string_merged	1
+string_vs_string_not_merged_above_threshold	0
+string_vs_enum_merged	1
+string_vs_enum_not_merged_above_threshold	0
+numeric_merged	1
+numeric_not_merged_above_threshold	0
+variant_no_string_alternative_not_merged	0
+variant_no_string_alternative_not_merged_above_threshold	0
+variant_string_constant_expression_merged	1
+variant_string_constant_expression_not_merged_above_threshold	0
+variant_single_alternative_merged	1
+variant_single_alternative_not_merged_above_threshold	0
+carrier_permissive_one_term	0
+carrier_permissive_three_terms	0
+carrier_dynamic_not_merged	0
+carrier_variant_not_merged	0
+array_tuple_variant_not_merged	0
+array_tuple_variant_not_merged_above_threshold	0
+array2_tuple_variant_not_merged	0
+tuple_carrier_not_merged	0
+variant_cross_numeric	3
+variant_cross_numeric_not_merged	0
+plain_cross_numeric_merged	1
+fixed_string_16_vs_ipv6_one_term	0
+fixed_string_16_vs_ipv6_three_terms	0
+fixed_string_16_vs_ipv6_disjunction	1
+an interval carrier, where the executability probe itself used to throw
+interval_variant_one_term	1
+interval_variant_three_terms	3
+interval_variant_above_threshold	3
+interval_variant_not_merged	0
+interval_default_settings_not_merged	0
+interval_nested_not_merged	0
+interval_single_alternative_one_term	1
+interval_single_alternative_three_terms	3
+interval_single_alternative_above_threshold	3
+interval_single_alternative_not_merged	0
+projection_three_terms_accepted	1
+--- the reported query ---
+uuid_column_not_in	7
