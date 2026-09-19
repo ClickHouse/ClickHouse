@@ -2867,18 +2867,19 @@ Returns the setting's current value. [`Any`](/reference/data-types/index)
 **Usage example**
 
 ```sql title=Query
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
 ```
 
 ```response title=Response
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
 ```
 
 ## getSettingOrDefault {#getSettingOrDefault}
@@ -5920,11 +5921,12 @@ transactionID()
 
 **Returned value**
 
-Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`.
+Returns a tuple consisting of `start_csn`, `local_tid`, `host_id` and `session_node_version`.
 - `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began.
 - `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn.
 - `host_id`: UUID of the host that has started this transaction.
-     [`Tuple(UInt64, UInt64, UUID)`](/reference/data-types/tuple)
+- `session_node_version`: Version of the host's session znode at transaction start; lets peers detect a dead-session TID across replicas.
+     [`Tuple(UInt64, UInt64, UUID, Int64)`](/reference/data-types/tuple)
 
 **Examples**
 
@@ -5937,9 +5939,9 @@ ROLLBACK;
 ```
 
 ```response title=Response
-┌─transactionID()────────────────────────────────┐
-│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b') │
-└────────────────────────────────────────────────┘
+┌─transactionID()──────────────────────────────────┐
+│ (32,34,'0ee8b069-f2bb-4748-9eae-069c85b5252b',1) │
+└──────────────────────────────────────────────────┘
 ```
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}

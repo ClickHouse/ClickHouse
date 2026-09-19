@@ -138,23 +138,7 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileDD", "quantilesDD",
     "quantileTiming", "quantileTimingWeighted",
     "quantilesTiming", "quantilesTimingWeighted",
-    /// `quantileDeterministic` / `quantilesDeterministic` are deliberately NOT listed:
-    /// `ReservoirSamplerDeterministic` retains a sample purely by `hash & skip_mask == 0`,
-    /// `merge` raises `skip_degree` to the maximum of the two states and re-thins everything
-    /// (`setSkipDegree` calls `thinOut`), and the final degree is the smallest one whose
-    /// retained count fits `max_sample_size` - a function of the hash multiset alone. So the
-    /// merged sample equals the directly accumulated one no matter how the rows were
-    /// partitioned, which is exactly the property the oracle needs. Verified over 1M rows
-    /// (and over a duplicate-heavy set containing `nan` / `inf`) that direct evaluation,
-    /// `max_threads` fan-out, and a `State`/`Merge` over 3, 7, 31, 997 and 9991 partitions
-    /// all agree, including through the version-0 state serialization that drops
-    /// `skip_degree`: the samples are filtered again at the final degree, so nothing that
-    /// should survive is lost.
-    /// The exact families below stay listed: `QuantileExact` selects with `::nth_element`
-    /// over the concatenated array, and that selection is order-dependent for values that
-    /// compare equal but format differently. Concretely, over 100000 rows alternating
-    /// `-0.` and `0.`, `quantileExact(0.5)` (and `*Low` / `*High`) print `-0` when computed
-    /// directly and `0` when merged from three partial states.
+    "quantileDeterministic", "quantilesDeterministic",
     "quantileExact", "quantileExactWeighted",
     "quantilesExact", "quantilesExactWeighted",
     "quantileExactLow", "quantileExactHigh",
