@@ -386,8 +386,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         throw DB::Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
                 "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}", up_to_date_count, max_entries);
 
-    /// A shard's rows live only on its own replicas, so returning none of them is acceptable only when
-    /// every replica was probed. A replica the initiator had no free connection slot for was not.
+    /// A shard's rows live only on its own replicas, so returning none is acceptable only when every replica was probed.
     if (fail_if_replica_unprobed && try_results.empty() && unprobed_replica)
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "All connection tries failed. Log: \n\n{}\n", fail_messages);
