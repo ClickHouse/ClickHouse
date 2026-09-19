@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <base/defines.h>
+
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 
@@ -682,12 +684,21 @@ auto SameValueGenerator = [](auto value)
     };
 };
 
+/// A negative stride is the documented way of asking for `0xFF, 0xFE, 0xFD, ...` from an unsigned
+/// type, so the product is expected to wrap. The attribute cannot be put on the lambda below - it
+/// does not reach a lambda body - hence a named helper.
+template <typename ValueType, typename StrideType>
+NO_SANITIZE_UNSIGNED_OVERFLOW ValueType wrappedStride(StrideType stride, ValueType i)
+{
+    return static_cast<ValueType>(static_cast<ValueType>(stride) * i);
+}
+
 auto SequentialGenerator = [](auto stride = 1)
 {
     return [=](auto i)
     {
         using ValueType = decltype(i);
-        return static_cast<ValueType>(static_cast<ValueType>(stride) * i);
+        return wrappedStride<ValueType>(stride, i);
     };
 };
 
