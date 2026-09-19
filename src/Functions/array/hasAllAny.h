@@ -81,8 +81,6 @@ public:
         if (first_array_type && second_array_type
             && zeroPaddedStringComparison(first_array_type->getNestedType(), second_array_type->getNestedType()))
         {
-            /// Both element types are passed so the rule is decided per leaf: inside a `Tuple`
-            /// element only the fields whose own pair of types is zero-padded are canonicalised.
             for (auto & preprocessed_column : preprocessed_columns)
                 preprocessed_column = stripTrailingZerosInArrayElements(
                     preprocessed_column, first_array_type->getNestedType(), second_array_type->getNestedType());
