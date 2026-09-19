@@ -26,10 +26,11 @@
 namespace DB
 {
 
-/// Node count Cascades should plan for, matching the executor's worker source:
-/// `distributed_plan_workers_num` for local/Cloud-discovery execution, else the static worker
-/// cluster size. Returns 0 when no source is available, so the caller can reject distributed planning.
-size_t getCascadesPlanningNodeCount(ContextPtr context);
+/// Node count Cascades should plan for, matching the executor's worker source: `requested_workers`
+/// for local/Cloud-discovery execution, else the static worker cluster size. Returns 0 when no source
+/// is available, so the caller can reject distributed planning. Both settings are per-plan and so are
+/// parameters; `context` is read only for server-level worker configuration, shared by every subquery.
+size_t getCascadesPlanningNodeCount(ContextPtr context, bool execute_locally, size_t requested_workers);
 
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
 /// server-level defaults). Both ports may differ per node so several workers can share a host.
@@ -51,7 +52,8 @@ struct StreamSourceAddress
 class TaskToHostMap : public boost::noncopyable
 {
 public:
-    TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
+    /// `requested_workers` comes from the plan, so the workers leased here are the ones it was costed for.
+    TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, size_t requested_workers_);
     /// Out-of-line so the `worker_allocation` deleter is instantiated where `StatelessWorkerAllocation` is complete.
     ~TaskToHostMap();
 
@@ -60,7 +62,7 @@ public:
     const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
 private:
-    void fillWorkerAddresses(ContextPtr context);
+    void fillWorkerAddresses(ContextPtr context, size_t requested_workers);
     void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
 
     VectorWithMemoryTracking<WorkerAddress> worker_addresses;
