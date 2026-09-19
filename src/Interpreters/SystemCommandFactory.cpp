@@ -1,4 +1,5 @@
 #include <Interpreters/SystemCommandFactory.h>
+#include <magic_enum_utility.hpp>
 
 namespace DB
 {
@@ -38,5 +39,23 @@ void SystemCommandFactory::registerCommand(ASTSystemQuery::Type type, CreatorFn 
     }
 
     commands[*magic_enum::enum_index(type)] = creator_fn;
+}
+
+void SystemCommandFactory::validateRegistrations()
+{
+    magic_enum::enum_for_each<ASTSystemQuery::Type>(
+        [this](ASTSystemQuery::Type type)
+        {
+            if (!(type == ASTSystemQuery::Type::UNKNOWN || type == ASTSystemQuery::Type::END))
+            {
+                if (!commands[*magic_enum::enum_index(type)])
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "SystemCommandFactory: the system command '{}' is not registered",
+                        ASTSystemQuery::typeToString(type));
+                }
+            }
+        });
 }
 }

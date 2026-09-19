@@ -39,6 +39,8 @@ public:
         registerCommand(T::type, creator);
     }
 
+    void validateRegistrations();
+
 private:
     std::array<CreatorFn, magic_enum::enum_count<ASTSystemQuery::Type>()> commands;
 };

@@ -3503,6 +3503,7 @@ void registerInterpreterSystemQuery(InterpreterFactory & factory)
 {
     registerSystemCommands();
     registerSystemCommandLambdas();
+    SystemCommandFactory::instance().validateRegistrations();
 
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
     {
