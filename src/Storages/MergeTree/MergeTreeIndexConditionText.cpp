@@ -244,6 +244,47 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
     }
 }
 
+/// Predicates whose needle is a substring or a LIKE pattern of the value, not the whole value.
+/// `ilike` is absent on purpose: its own branch already refuses an unsuitable preprocessor.
+static bool needleIsSubstringOfValue(const String & function_name)
+{
+    return function_name == "like"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "match"
+        || function_name == "multiSearchAny"
+        || function_name == "multiSearchAnyUTF8"
+        || function_name == "multiMatchAny"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike";
+}
+
+static bool needleIsAllASCII(const Field & needle)
+{
+    if (needle.getType() == Field::Types::String)
+    {
+        const auto & string_needle = needle.safeGet<String>();
+        return std::ranges::all_of(string_needle, [](char c) { return isASCII(c); });
+    }
+    /// multiSearchAny and multiMatchAny pass their whole needle array.
+    if (needle.getType() == Field::Types::Array)
+    {
+        const auto & array_needle = needle.safeGet<Array>();
+        return std::ranges::all_of(array_needle, [](const Field & element) { return needleIsAllASCII(element); });
+    }
+    return false;
+}
+
+/// ICU maps a few code points depending on their neighbours: a Greek capital sigma lowercases to `ς` at the
+/// end of a word and to `σ` elsewhere, so preprocessor(needle) can hold a token that preprocessor(value) does
+/// not. An all-ASCII needle contains no such code point, and ASCII lower/upper never applies one.
+static bool preprocessorPreservesNeedle(const MergeTreeIndexTextPreprocessor & preprocessor, const Field & needle)
+{
+    if (preprocessor.isASCIILowerOrUpper())
+        return true;
+    return preprocessor.isUTF8LowerOrUpper() && needleIsAllASCII(needle);
+}
+
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
     return function_name == "hasToken"
@@ -1099,6 +1140,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
+
+    /// Index analysis takes the required tokens from preprocessor(needle), which bounds the tokens of
+    /// preprocessor(value) only for a preprocessor that maps the needle's characters in place: one that
+    /// deletes, reorders or folds them prunes granules holding rows the predicate matches.
+    if (needleIsSubstringOfValue(function_name) && has_preprocessor && !preprocessorPreservesNeedle(*preprocessor, value_field))
+        return false;
+
     auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
