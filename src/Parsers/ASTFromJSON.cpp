@@ -163,6 +163,8 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"ColumnsExceptTransformer", [] { return make_intrusive<ASTColumnsExceptTransformer>(); }},
         {"ColumnsReplaceTransformer", [] { return make_intrusive<ASTColumnsReplaceTransformer>(); }},
         {"ColumnsReplaceTransformerReplacement", [] { return make_intrusive<ASTColumnsReplaceTransformer::Replacement>(); }},
+        {"ColumnsRenameTransformer", [] { return make_intrusive<ASTColumnsRenameTransformer>(); }},
+        {"ColumnsRenameTransformerRename", [] { return make_intrusive<ASTColumnsRenameTransformer::Rename>(); }},
 
         /// DDL types
         {"ColumnDeclaration", [] { return make_intrusive<ASTColumnDeclaration>(); }},

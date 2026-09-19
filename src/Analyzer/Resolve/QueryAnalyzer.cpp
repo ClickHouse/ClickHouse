@@ -127,6 +127,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int TYPE_MISMATCH;
     extern const int INVALID_WITH_FILL_EXPRESSION;
@@ -2798,15 +2799,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     }
 
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
+    std::unordered_map<const RenameColumnTransformerNode *, std::unordered_set<std::string>> rename_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
         auto * except_transformer = transformer->as<ExceptColumnTransformerNode>();
         auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>();
+        auto * rename_transformer = transformer->as<RenameColumnTransformerNode>();
 
         if (except_transformer && except_transformer->isStrict())
             strict_transformer_to_used_column_names.emplace(except_transformer, std::unordered_set<std::string>());
         else if (replace_transformer && replace_transformer->isStrict())
             strict_transformer_to_used_column_names.emplace(replace_transformer, std::unordered_set<std::string>());
+
+        if (rename_transformer)
+            rename_transformer_to_used_column_names.emplace(rename_transformer, std::unordered_set<std::string>());
     }
 
     ListNodePtr list = std::make_shared<ListNode>();
@@ -2819,6 +2825,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool replace_transformer_was_used = false;
         bool execute_apply_transformer = false;
         bool execute_replace_transformer = false;
+        std::optional<String> rename_target;
 
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
@@ -2828,6 +2835,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
+            execute_apply_transformer = false;
+            execute_replace_transformer = false;
+
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
@@ -2915,6 +2925,21 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 execute_replace_transformer = true;
             }
+            else if (auto * rename_transformer = transformer->as<RenameColumnTransformerNode>())
+            {
+                if (const auto * target_name = rename_transformer->findRenameTarget(column_name))
+                {
+                    auto [_, inserted] = rename_transformer_to_used_column_names[rename_transformer].insert(column_name);
+                    if (!inserted)
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "RENAME source column '{}' matches more than one column in the matcher. Qualify the matcher to disambiguate. In scope {}",
+                            column_name,
+                            scope.scope_node->formatASTForErrorMessage());
+
+                    result_projection_names.back() = *target_name;
+                    rename_target = *target_name;
+                }
+            }
 
             if (execute_apply_transformer || execute_replace_transformer)
             {
@@ -2944,9 +2969,35 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
+            if (rename_target)
+            {
+                /// RENAME creates a query alias in the same way as a regular SELECT alias.
+                /// Keep the alias on the projection clone so that shared matcher nodes are not modified
+                /// and the name survives a later projection re-resolution.
+                auto alias_node = node->clone();
+                alias_node->setAlias(*rename_target);
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(alias_node);
+                node = std::move(alias_node);
+            }
+
             list->getNodes().push_back(node);
+        }
         else
             result_projection_names.pop_back();
+    }
+
+    for (const auto & [rename_transformer, used_column_names] : rename_transformer_to_used_column_names)
+    {
+        for (const auto & rename : rename_transformer->getRenames())
+        {
+            if (!used_column_names.contains(rename.source_name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "RENAME source column '{}' was not found in the matched columns. In scope {}",
+                    rename.source_name,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
     }
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
@@ -4454,6 +4505,42 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
     auto & window_node_list_typed = window_node_list->as<ListNode &>();
     for (auto & node : window_node_list_typed.getNodes())
         resolveWindow(node, scope);
+}
+
+void QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+{
+    /// RENAME target names behave like regular SELECT aliases. Matchers are expanded while resolving
+    /// the projection, so resolve top-level matchers with RENAME first and register their aliases
+    /// before resolving the other projection expressions. This keeps alias visibility independent
+    /// of the order of SELECT items without changing the resolution order of other matchers.
+    for (auto & projection_node : projection_node_list->as<ListNode &>().getNodes())
+    {
+        const auto * matcher_node = projection_node->as<MatcherNode>();
+        bool has_rename_transformer = false;
+        if (matcher_node)
+        {
+            for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
+            {
+                if (transformer->as<RenameColumnTransformerNode>())
+                {
+                    has_rename_transformer = true;
+                    break;
+                }
+            }
+        }
+
+        if (has_rename_transformer)
+        {
+            resolveExpressionNode(
+                projection_node,
+                scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/,
+                false /*ignore_alias*/,
+                true /*allow_niladic_functions*/,
+                true /*is_top_level_projection*/);
+        }
+    }
 }
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
@@ -6854,6 +6941,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
+
+    /// RENAME aliases must be visible to clauses resolved before the delayed projection when
+    /// group_by_use_nulls is enabled. Full projection resolution stays in its original place so
+    /// GROUP BY keys can still be converted to Nullable only where required.
+    resolveProjectionRenameAliases(query_node_typed.getProjectionNode(), scope);
 
     if (!scope.group_by_use_nulls)
     {

@@ -31,6 +31,7 @@ const char * toString(ColumnTransfomerType type)
         case ColumnTransfomerType::APPLY: return "APPLY";
         case ColumnTransfomerType::EXCEPT: return "EXCEPT";
         case ColumnTransfomerType::REPLACE: return "REPLACE";
+        case ColumnTransfomerType::RENAME: return "RENAME";
     }
 }
 
@@ -351,6 +352,98 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
     }
 
     return ast_replace_transformer;
+}
+
+/// RenameColumnTransformerNode implementation
+
+RenameColumnTransformerNode::RenameColumnTransformerNode(const std::vector<Rename> & renames_)
+    : IColumnTransformerNode(children_size)
+    , renames(renames_)
+{
+    std::unordered_set<std::string> source_names;
+    std::unordered_set<std::string> target_names;
+    for (const auto & rename : renames)
+    {
+        if (!source_names.emplace(rename.source_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Columns in column transformer rename should not contain same source {} more than once",
+                rename.source_name);
+
+        if (!target_names.emplace(rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Columns in column transformer rename should not contain same target {} more than once",
+                rename.target_name);
+
+        rename_source_to_index.emplace(rename.source_name, rename_source_to_index.size());
+    }
+}
+
+const std::string * RenameColumnTransformerNode::findRenameTarget(const std::string & source_name) const
+{
+    auto it = rename_source_to_index.find(source_name);
+    if (it != rename_source_to_index.end())
+        return &renames[it->second].target_name;
+
+    return nullptr;
+}
+
+void RenameColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
+{
+    buffer << std::string(indent, ' ') << "RENAME COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
+
+    for (const auto & rename : renames)
+        buffer << '\n' << std::string(indent + 2, ' ') << rename.source_name << " AS " << rename.target_name;
+}
+
+bool RenameColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+{
+    const auto & rhs_typed = assert_cast<const RenameColumnTransformerNode &>(rhs);
+    if (renames.size() != rhs_typed.renames.size())
+        return false;
+
+    for (size_t i = 0; i < renames.size(); ++i)
+    {
+        if (renames[i].source_name != rhs_typed.renames[i].source_name
+            || renames[i].target_name != rhs_typed.renames[i].target_name)
+            return false;
+    }
+
+    return true;
+}
+
+void RenameColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
+{
+    hash_state.update(static_cast<size_t>(getTransformerType()));
+    hash_state.update(renames.size());
+
+    for (const auto & rename : renames)
+    {
+        hash_state.update(rename.source_name.size());
+        hash_state.update(rename.source_name);
+        hash_state.update(rename.target_name.size());
+        hash_state.update(rename.target_name);
+    }
+}
+
+QueryTreeNodePtr RenameColumnTransformerNode::cloneImpl() const
+{
+    return std::make_shared<RenameColumnTransformerNode>(renames);
+}
+
+ASTPtr RenameColumnTransformerNode::toASTImpl(const ConvertToASTOptions &) const
+{
+    auto ast_rename_transformer = make_intrusive<ASTColumnsRenameTransformer>();
+    ast_rename_transformer->children.reserve(renames.size());
+
+    for (const auto & rename : renames)
+    {
+        auto rename_ast = make_intrusive<ASTColumnsRenameTransformer::Rename>();
+        rename_ast->source_name = rename.source_name;
+        rename_ast->target_name = rename.target_name;
+        ast_rename_transformer->children.push_back(std::move(rename_ast));
+    }
+
+    return ast_rename_transformer;
 }
 
 }

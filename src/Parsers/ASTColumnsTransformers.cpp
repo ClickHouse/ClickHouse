@@ -9,6 +9,8 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 void ASTColumnsTransformerList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -234,6 +237,71 @@ void ASTColumnsReplaceTransformer::updateTreeHashImpl(SipHash & hash_state, bool
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+void ASTColumnsRenameTransformer::Rename::formatImpl(
+    WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+{
+    ostr << backQuoteIfNeed(source_name) << " AS " << backQuoteIfNeed(target_name);
+}
+
+void ASTColumnsRenameTransformer::Rename::appendColumnName(WriteBuffer & ostr) const
+{
+    writeProbablyBackQuotedString(source_name, ostr);
+    writeCString(" AS ", ostr);
+    writeProbablyBackQuotedString(target_name, ostr);
+}
+
+void ASTColumnsRenameTransformer::Rename::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(source_name.size());
+    hash_state.update(source_name);
+    hash_state.update(target_name.size());
+    hash_state.update(target_name);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTColumnsRenameTransformer::formatImpl(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    ostr << "RENAME ";
+
+    if (children.size() > 1)
+        ostr << "(";
+
+    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    {
+        if (it != children.begin())
+            ostr << ", ";
+
+        (*it)->format(ostr, settings, state, frame);
+    }
+
+    if (children.size() > 1)
+        ostr << ")";
+}
+
+void ASTColumnsRenameTransformer::appendColumnName(WriteBuffer & ostr) const
+{
+    writeCString("RENAME ", ostr);
+
+    if (children.size() > 1)
+        writeChar('(', ostr);
+
+    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    {
+        if (it != children.begin())
+            writeCString(", ", ostr);
+        (*it)->appendColumnName(ostr);
+    }
+
+    if (children.size() > 1)
+        writeChar(')', ostr);
+}
+
+void ASTColumnsRenameTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 void ASTColumnsTransformerList::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "ColumnsTransformerList");
@@ -278,22 +346,43 @@ void ASTColumnsReplaceTransformer::writeJSON(WriteBuffer & out) const
     w.writeChildren(children);
 }
 
+void ASTColumnsRenameTransformer::Rename::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsRenameTransformerRename");
+    w.writeString("source_name", source_name);
+    w.writeString("target_name", target_name);
+}
+
+void ASTColumnsRenameTransformer::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsRenameTransformer");
+    w.writeChildren(children);
+}
+
 void ASTColumnsTransformerList::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     children = r.readChildren();
 
-    /// `applyColumnsTransformer` only dispatches `ColumnsApplyTransformer`,
-    /// `ColumnsExceptTransformer`, and `ColumnsReplaceTransformer`, silently ignoring any
-    /// other child type. Reject foreign children from malformed `clickhouse_json` here so
-    /// they cannot be formatted in the AST while being skipped during semantic transformation.
+    bool rename_seen = false;
+
     for (const auto & child : children)
+    {
         if (!child
             || !(child->as<ASTColumnsApplyTransformer>()
                  || child->as<ASTColumnsExceptTransformer>()
-                 || child->as<ASTColumnsReplaceTransformer>()))
+                 || child->as<ASTColumnsReplaceTransformer>()
+                 || child->as<ASTColumnsRenameTransformer>()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected child node type in ColumnsTransformerList during AST JSON deserialization");
+
+        if (rename_seen)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer must be the last transformer in a ColumnsTransformerList");
+
+        if (child->as<ASTColumnsRenameTransformer>())
+            rename_seen = true;
+    }
 }
 
 void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
@@ -406,6 +495,44 @@ void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
     /// reads `replacement.children[0]`, so a foreign child type from malformed `clickhouse_json`
     /// must be rejected here instead of reaching that downcast during execution.
     children = r.readChildrenOfType<ASTColumnsReplaceTransformer::Replacement>("ColumnsReplaceTransformer");
+}
+
+void ASTColumnsRenameTransformer::Rename::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    source_name = r.getString("source_name");
+    target_name = r.getString("target_name");
+
+    if (source_name.empty() || target_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTColumnsRenameTransformer::Rename JSON requires non-empty source_name and target_name");
+
+    if (!r.readChildren().empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTColumnsRenameTransformer::Rename JSON must not have children");
+}
+
+void ASTColumnsRenameTransformer::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    children = r.readChildrenOfType<ASTColumnsRenameTransformer::Rename>("ColumnsRenameTransformer");
+
+    if (children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTColumnsRenameTransformer JSON requires at least one rename");
+
+    std::unordered_set<String> source_names;
+    std::unordered_set<String> target_names;
+    for (const auto & child : children)
+    {
+        const auto & rename = child->as<const ASTColumnsRenameTransformer::Rename &>();
+        if (!source_names.emplace(rename.source_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Duplicate source column '{}' in ASTColumnsRenameTransformer JSON", rename.source_name);
+        if (!target_names.emplace(rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Duplicate target column '{}' in ASTColumnsRenameTransformer JSON", rename.target_name);
+    }
 }
 
 }

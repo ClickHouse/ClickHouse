@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/Names.h>
@@ -16,7 +17,7 @@ namespace DB
   * Check MatcherQueryTreeNode.h before reading this documentation.
   *
   * They main purpose is to apply some logic for expressions after matcher is resolved.
-  * There are 3 types of transformers:
+  * There are 4 types of transformers:
   *
   * 1. APPLY transformer:
   * APPLY transformer transform matched expression using lambda or function into another expression.
@@ -54,6 +55,14 @@ namespace DB
   * Example:
   * SELECT * REPLACE (1 AS id, 2 AS value).
   *
+  * 4. RENAME transformer:
+  * RENAME transformer changes only the projection name of matched columns. It resolves source names
+  * against the original matcher columns, so it can follow APPLY or REPLACE without changing their
+  * expression semantics.
+  *
+  * Example:
+  * SELECT * APPLY(toString) RENAME id AS value FROM test_table.
+  *
   * Matchers can be combined together and chained.
   * Example:
   * SELECT * EXCEPT (id) APPLY (x -> toString(x)) APPLY (x -> length(x)) FROM test_table.
@@ -64,7 +73,8 @@ enum class ColumnTransfomerType : uint8_t
 {
     APPLY,
     EXCEPT,
-    REPLACE
+    REPLACE,
+    RENAME
 };
 
 /// Get column transformer type name
@@ -308,6 +318,47 @@ private:
 
     static constexpr size_t replacements_child_index = 0;
     static constexpr size_t children_size = replacements_child_index + 1;
+};
+
+/// Rename column transformer. It changes only the projection name of matched columns.
+class RenameColumnTransformerNode final : public IColumnTransformerNode
+{
+public:
+    struct Rename
+    {
+        std::string source_name;
+        std::string target_name;
+    };
+
+    explicit RenameColumnTransformerNode(const std::vector<Rename> & renames_);
+
+    ColumnTransfomerType getTransformerType() const override
+    {
+        return ColumnTransfomerType::RENAME;
+    }
+
+    const std::vector<Rename> & getRenames() const
+    {
+        return renames;
+    }
+
+    const std::string * findRenameTarget(const std::string & source_name) const;
+
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
+
+    QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+private:
+    std::vector<Rename> renames;
+    std::unordered_map<std::string, size_t> rename_source_to_index;
+    static constexpr size_t children_size = 0;
 };
 
 }

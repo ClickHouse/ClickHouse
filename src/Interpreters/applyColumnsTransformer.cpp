@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
@@ -35,6 +36,24 @@ std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransfor
 
 namespace
 {
+
+struct ColumnsTransformerState
+{
+    ASTs nodes;
+    std::vector<String> root_names;
+};
+
+String getColumnRootName(const ASTPtr & column)
+{
+    auto alias = column->tryGetAlias();
+    if (!alias.empty())
+        return alias;
+
+    if (const auto * id = column->as<ASTIdentifier>())
+        return id->shortName();
+
+    return column->getColumnName();
+}
 
 void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer, ASTs & nodes)
 {
@@ -84,8 +103,9 @@ void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer
 }
 
 
-void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transformer, ASTs & nodes)
+void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transformer, ColumnsTransformerState & state)
 {
+    auto & nodes = state.nodes;
     std::set<String> expected_columns;
     if (!transformer.getPattern())
     {
@@ -105,7 +125,9 @@ void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transform
                 if (expected_column != expected_columns.end())
                 {
                     expected_columns.erase(expected_column);
+                    auto index = static_cast<size_t>(it - nodes.begin());
                     it = nodes.erase(it);
+                    state.root_names.erase(state.root_names.begin() + index);
                     continue;
                 }
             }
@@ -122,7 +144,9 @@ void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transform
             {
                 if (RE2::PartialMatch(id->shortName(), *regexp))
                 {
+                    auto index = static_cast<size_t>(it - nodes.begin());
                     it = nodes.erase(it);
+                    state.root_names.erase(state.root_names.begin() + index);
                     continue;
                 }
             }
@@ -212,16 +236,99 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
 }
 
 
+void applyColumnsRenameTransformer(const ASTColumnsRenameTransformer & transformer, ColumnsTransformerState & state)
+{
+    std::map<String, String> rename_map;
+    std::set<String> target_names;
+    for (const auto & rename_child : transformer.children)
+    {
+        const auto & rename = rename_child->as<const ASTColumnsRenameTransformer::Rename &>();
+        if (!rename_map.emplace(rename.source_name, rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Columns transformer RENAME should not contain the same source column more than once");
+        if (!target_names.emplace(rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Columns transformer RENAME should not contain the same target column more than once");
+    }
+
+    std::set<String> matched_columns;
+    for (size_t i = 0; i < state.nodes.size(); ++i)
+    {
+        auto rename_it = rename_map.find(state.root_names[i]);
+        if (rename_it != rename_map.end())
+        {
+            if (!matched_columns.emplace(rename_it->first).second)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Columns transformer RENAME source column '{}' matches more than one column. Qualify the matcher to disambiguate",
+                    rename_it->first);
+
+            state.nodes[i]->setAlias(rename_it->second);
+        }
+    }
+
+    if (matched_columns.size() != rename_map.size())
+    {
+        String expected_columns_str;
+        for (const auto & [column_name, _] : rename_map)
+        {
+            if (matched_columns.contains(column_name))
+                continue;
+            if (!expected_columns_str.empty())
+                expected_columns_str += ", ";
+            expected_columns_str += column_name;
+        }
+
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Columns transformer RENAME expects following column(s): {}", expected_columns_str);
+    }
+}
+
+void applyColumnsTransformerImpl(const ASTPtr & transformer, ColumnsTransformerState & state)
+{
+    if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
+        applyColumnsApplyTransformer(*apply, state.nodes);
+    else if (const auto * except = transformer->as<ASTColumnsExceptTransformer>())
+        applyColumnsExceptTransformer(*except, state);
+    else if (const auto * replace = transformer->as<ASTColumnsReplaceTransformer>())
+        applyColumnsReplaceTransformer(*replace, state.nodes);
+    else if (const auto * rename = transformer->as<ASTColumnsRenameTransformer>())
+        applyColumnsRenameTransformer(*rename, state);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported columns transformer");
+}
+
+
 }
 
 void applyColumnsTransformer(const ASTPtr & transformer, ASTs & nodes)
 {
-    if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
-        applyColumnsApplyTransformer(*apply, nodes);
-    else if (const auto * except = transformer->as<ASTColumnsExceptTransformer>())
-        applyColumnsExceptTransformer(*except, nodes);
-    else if (const auto * replace = transformer->as<ASTColumnsReplaceTransformer>())
-        applyColumnsReplaceTransformer(*replace, nodes);
+    ColumnsTransformerState state{nodes, {}};
+    state.root_names.reserve(nodes.size());
+    for (const auto & node : nodes)
+        state.root_names.push_back(getColumnRootName(node));
+
+    applyColumnsTransformerImpl(transformer, state);
+    nodes = std::move(state.nodes);
+}
+
+void applyColumnsTransformers(const ASTs & transformers, ASTs & nodes)
+{
+    ColumnsTransformerState state{nodes, {}};
+    state.root_names.reserve(nodes.size());
+    for (const auto & node : nodes)
+        state.root_names.push_back(getColumnRootName(node));
+
+    bool rename_seen = false;
+    for (const auto & transformer : transformers)
+    {
+        if (rename_seen)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RENAME must be the last column transformer");
+
+        applyColumnsTransformerImpl(transformer, state);
+        rename_seen = transformer->as<ASTColumnsRenameTransformer>() != nullptr;
+    }
+
+    nodes = std::move(state.nodes);
 }
 
 }

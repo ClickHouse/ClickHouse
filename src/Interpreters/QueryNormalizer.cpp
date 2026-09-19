@@ -190,7 +190,7 @@ static bool needVisitChild(const ASTPtr & child)
     if (child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>())
         return false;
 
-    /// Column transformer children (EXCEPT, REPLACE, APPLY) contain column name references
+    /// Column transformer children (EXCEPT, REPLACE, APPLY, RENAME) contain column name references
     /// that must not be substituted with alias expressions. For example, in
     /// `SELECT * EXCEPT (Budget), toFloat64(Budget) AS Budget FROM t`, the `Budget` inside
     /// EXCEPT refers to a column name to exclude, not to the alias `Budget`.

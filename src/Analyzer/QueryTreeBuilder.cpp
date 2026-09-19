@@ -1203,8 +1203,12 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
     if (!matcher_expression)
         return column_transformers;
 
+    bool rename_seen = false;
     for (const auto & child : matcher_expression->children)
     {
+        if (rename_seen)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RENAME must be the last column transformer");
+
         if (auto * apply_transformer = child->as<ASTColumnsApplyTransformer>())
         {
             if (apply_transformer->lambda)
@@ -1251,6 +1255,20 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             }
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));
+        }
+        else if (auto * rename_transformer = child->as<ASTColumnsRenameTransformer>())
+        {
+            std::vector<RenameColumnTransformerNode::Rename> renames;
+            renames.reserve(rename_transformer->children.size());
+
+            for (const auto & rename_transformer_child : rename_transformer->children)
+            {
+                const auto & rename = rename_transformer_child->as<const ASTColumnsRenameTransformer::Rename &>();
+                renames.push_back({rename.source_name, rename.target_name});
+            }
+
+            column_transformers.emplace_back(std::make_shared<RenameColumnTransformerNode>(renames));
+            rename_seen = true;
         }
         else
         {

@@ -887,8 +887,8 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
 
 ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
 {
-    /// Build `APPLY` / `EXCEPT` / `REPLACE` transformers to attach to an asterisk or matcher,
-    /// exercising forms like `* EXCEPT (...) REPLACE (...)` and `* LIKE 'pat' ...`
+    /// Build `APPLY` / `EXCEPT` / `REPLACE` / `RENAME` transformers to attach to an asterisk or matcher,
+    /// exercising forms like `* EXCEPT (...) REPLACE (...) RENAME (...)` and `* LIKE 'pat' ...`
     /// The fuzz() cases for these transformer nodes mutate them further (toggle strictness, recurse
     /// into the inner expressions).
     auto random_column_name = [&]() -> String
@@ -949,6 +949,18 @@ ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
         auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
         replace->children.push_back(replacement);
         list->children.push_back(replace);
+    }
+    /// RENAME must be terminal and resolves against the original column name.
+    /// Keep it occasional so that strict missing-source errors do not stop most generated chains early.
+    if (fuzz_rand() % 5 == 0)
+    {
+        auto rename = make_intrusive<ASTColumnsRenameTransformer::Rename>();
+        rename->source_name = random_column_name();
+        rename->target_name = rename->source_name + "_renamed";
+
+        auto transformer = make_intrusive<ASTColumnsRenameTransformer>();
+        transformer->children.push_back(rename);
+        list->children.push_back(transformer);
     }
 
     return list;
@@ -7734,6 +7746,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             replace_transformer->is_strict = !replace_transformer->is_strict;
         fuzz(replace_transformer->children);
     }
+    else if (auto * rename_transformer = typeid_cast<ASTColumnsRenameTransformer *>(ast.get()))
+    {
+        fuzz(rename_transformer->children);
+    }
     else if (auto * regexp_matcher = typeid_cast<ASTColumnsRegexpMatcher *>(ast.get()))
     {
         /// Flip `COLUMNS('re')` <-> `* LIKE/ILIKE 'pattern'` to exercise the matcher parser path
@@ -7756,9 +7772,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         /// Every matcher below keeps its transformers in `children`, so this one case covers
         /// them all. `APPLY` transformers compose in order and an `EXCEPT` ahead of one changes
-        /// the columns it sees, so the permutation is not a no-op.
+        /// the columns it sees, so the permutation is not a no-op. RENAME is terminal and stays
+        /// at the end of the chain.
         if (transformer_list->children.size() > 1 && fuzz_rand() % 10 == 0)
-            std::shuffle(transformer_list->children.begin(), transformer_list->children.end(), fuzz_rand);
+        {
+            auto rename_it = std::find_if(transformer_list->children.begin(), transformer_list->children.end(),
+                [](const ASTPtr & child) { return child->as<ASTColumnsRenameTransformer>() != nullptr; });
+            std::shuffle(transformer_list->children.begin(), rename_it, fuzz_rand);
+        }
         fuzz(transformer_list->children);
     }
     else if (auto * asterisk = typeid_cast<ASTAsterisk *>(ast.get()))

@@ -175,10 +175,7 @@ private:
                 [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
 
         if (columns_regexp_matcher.transformers)
-        {
-            for (const auto & transformer : columns_regexp_matcher.transformers->children)
-                applyColumnsTransformer(transformer, columns);
-        }
+            applyColumnsTransformers(columns_regexp_matcher.transformers->children, columns);
     }
 
     static void extractQualifiedColumnsRegexpMatcher(
@@ -203,17 +200,7 @@ private:
             [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
 
         if (qualified_columns_regexp_matcher.transformers)
-        {
-            for (const auto & transformer : qualified_columns_regexp_matcher.transformers->children)
-            {
-                if (transformer->as<ASTColumnsApplyTransformer>() ||
-                    transformer->as<ASTColumnsExceptTransformer>() ||
-                    transformer->as<ASTColumnsReplaceTransformer>())
-                    applyColumnsTransformer(transformer, columns);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must only have children of IASTColumnsTransformer type");
-            }
-        }
+            applyColumnsTransformers(qualified_columns_regexp_matcher.transformers->children, columns);
     }
 
     static void visit(const ASTExpressionList & node, const ASTPtr &, Data & data)
@@ -233,10 +220,7 @@ private:
                     data.addTableColumns(table_name, columns);
 
                 if (asterisk->transformers)
-                {
-                    for (const auto & transformer : asterisk->transformers->children)
-                        applyColumnsTransformer(transformer, columns);
-                }
+                    applyColumnsTransformers(asterisk->transformers->children, columns);
             }
             else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
             {
@@ -250,17 +234,7 @@ private:
                 data.addTableColumns(identifier.name(), columns);
 
                 if (qualified_asterisk->transformers)
-                {
-                    for (const auto & transformer : qualified_asterisk->transformers->children)
-                    {
-                        if (transformer->as<ASTColumnsApplyTransformer>() ||
-                            transformer->as<ASTColumnsExceptTransformer>() ||
-                            transformer->as<ASTColumnsReplaceTransformer>())
-                            applyColumnsTransformer(transformer, columns);
-                        else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
-                    }
-                }
+                    applyColumnsTransformers(qualified_asterisk->transformers->children, columns);
             }
             else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
             {
@@ -270,10 +244,7 @@ private:
                     columns.emplace_back(ident->clone());
 
                 if (columns_list_matcher->transformers)
-                {
-                    for (const auto & transformer : columns_list_matcher->transformers->children)
-                        applyColumnsTransformer(transformer, columns);
-                }
+                    applyColumnsTransformers(columns_list_matcher->transformers->children, columns);
             }
             else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {

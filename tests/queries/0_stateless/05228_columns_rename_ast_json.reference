@@ -1,0 +1,2 @@
+ColumnsRenameTransformer	a b	x y	a	b
+SELECT * RENAME (`a b` AS `x y`, a AS b) FROM t
