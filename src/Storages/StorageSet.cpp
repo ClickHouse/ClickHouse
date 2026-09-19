@@ -15,6 +15,9 @@
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -36,8 +39,15 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int DEADLOCK_AVOIDED;
+    extern const int FAULT_INJECTED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace FailPoints
+{
+    extern const char storage_join_mutate_interrupt_before_replacing_file[];
 }
 
 class SetOrJoinSink final : public SinkToStorage, WithContext
@@ -85,12 +95,20 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_file_name(backup_file_name_)
     , persistent(persistent_)
 {
+    std::lock_guard lock(table.outstanding_sinks_mutex);
+    ++table.outstanding_sinks;
 }
 
 SetOrJoinSink::~SetOrJoinSink()
 {
     if (isCancelled())
         cancelBuffers();
+
+    {
+        std::lock_guard lock(table.outstanding_sinks_mutex);
+        --table.outstanding_sinks;
+    }
+    table.outstanding_sinks_changed.notify_all();
 }
 
 void SetOrJoinSink::cancelBuffers() noexcept
@@ -272,6 +290,79 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 }
 
 
+void StorageSetOrJoinBase::waitForOutstandingSinks(std::chrono::milliseconds timeout)
+{
+    std::unique_lock lock(outstanding_sinks_mutex);
+    if (!outstanding_sinks_changed.wait_for(lock, timeout, [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; }))
+    {
+        /// The lock is held here; the analysis does not see through `wait_for`.
+        size_t remaining = TSA_SUPPRESS_WARNING_FOR_READ(outstanding_sinks);
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+            "Cannot mutate table {}: {} insert(s) started before the mutation did not finish in {} ms",
+            getStorageID().getNameForLogs(), remaining, timeout.count());
+    }
+}
+
+
+void StorageSetOrJoinBase::commitMutation(UInt64 mutation_id)
+{
+    {
+        auto commit_buf = disk->writeFile(path + mutation_commit_tmp_file_name);
+        writeIntText(mutation_id, *commit_buf);
+        commit_buf->finalize();
+    }
+    disk->replaceFile(path + mutation_commit_tmp_file_name, path + mutation_commit_file_name);
+}
+
+
+void StorageSetOrJoinBase::completeMutation(UInt64 mutation_id)
+{
+    static constexpr auto file_suffix = ".bin";
+    static constexpr auto file_suffix_size = std::string_view(file_suffix).size();
+
+    std::vector<std::string> files;
+    disk->listFiles(path, files);
+    for (const auto & file_name : files)
+    {
+        if (!file_name.ends_with(file_suffix))
+            continue;
+
+        UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
+        if (file_num < mutation_id)
+            disk->removeFileIfExists(path + file_name);
+    }
+
+    fiu_do_on(FailPoints::storage_join_mutate_interrupt_before_replacing_file,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the replacement file of the mutation is put in place");
+    });
+
+    if (disk->existsFile(path + mutation_data_file_name))
+        disk->replaceFile(path + mutation_data_file_name, path + toString(mutation_id) + file_suffix);
+
+    disk->removeFileIfExists(path + mutation_commit_file_name);
+}
+
+
+void StorageSetOrJoinBase::finishInterruptedMutation()
+{
+    /// The marker is only ever renamed into place, so a leftover of creating it is not a commitment.
+    disk->removeFileIfExists(path + mutation_commit_tmp_file_name);
+
+    if (!disk->existsFile(path + mutation_commit_file_name))
+        return;
+
+    UInt64 mutation_id = 0;
+    {
+        auto commit_buf = disk->readFile(path + mutation_commit_file_name, getReadSettings());
+        readIntText(mutation_id, *commit_buf);
+    }
+
+    LOG_INFO(getLogger("StorageSetOrJoinBase"), "Finishing the mutation of {} that was interrupted, the replacement is file {}", path, mutation_id);
+    completeMutation(mutation_id);
+}
+
+
 void StorageSetOrJoinBase::restore()
 {
     if (!disk->existsDirectory(fs::path(path) / "tmp"))
@@ -279,6 +370,8 @@ void StorageSetOrJoinBase::restore()
         disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
+
+    finishInterruptedMutation();
 
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
