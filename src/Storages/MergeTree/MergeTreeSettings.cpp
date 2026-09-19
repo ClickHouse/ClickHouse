@@ -2975,6 +2975,16 @@ void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr
     impl->applyChanges(resolved_changes);
 }
 
+void MergeTreeSettings::applyChangesLeavingDiskUnresolved(const SettingsChanges & changes)
+{
+    SettingsChanges changes_without_disk;
+    changes_without_disk.reserve(changes.size());
+    for (const auto & change : changes)
+        if (change.name != "disk")
+            changes_without_disk.push_back(change);
+    impl->applyChanges(changes_without_disk);
+}
+
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_change = change;
