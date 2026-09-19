@@ -164,10 +164,11 @@ protected:
     /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
     void pinOutboundDialectForJSONDialect(const String & outbound_query);
 
-    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
-    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
-    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
-    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
+    /// Settings to pass to `Connection::sendQuery`: a copy of the client settings with `compatibility`-derived
+    /// values kept but marked unchanged. They still select the client-side network codec, but they are not
+    /// serialized to the server, which re-derives them from `compatibility` itself and honors its own constraints
+    /// (a profile may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when
+    /// nothing was derived from `compatibility`, so the caller can send the client settings without copying them.
     std::optional<Settings> settingsWithoutCompatibilityDerived() const;
     void processParsedSingleQuery(
         std::string_view query_,

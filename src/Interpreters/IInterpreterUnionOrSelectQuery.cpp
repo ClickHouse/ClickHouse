@@ -16,6 +16,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/Logger.h>
 

@@ -388,9 +388,9 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 ```
 
 ```response title=Response
-┌─greatest(toD⋯0.000', 3))─┐
-│  2025-01-02 12:00:00.000 │
-└──────────────────────────┘
+┌─greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                   2025-01-02 12:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="if">
@@ -455,12 +455,12 @@ Devuelve el valor más pequeño entre los argumentos.
 Los argumentos `NULL` se ignoran.
 
 * Para arrays, devuelve el array menor en orden lexicográfico.
-* Para los tipos DateTime, el tipo de resultado se promueve al tipo más grande (p. ej., DateTime64 si se mezcla con DateTime32).
+* Para los tipos DateTime, el tipo de resultado es promovido al tipo más grande (p. ej., DateTime64 si se mezcla con DateTime32).
 
 <Info>
   **Use la configuración `least_greatest_legacy_null_behavior` para cambiar el comportamiento de `NULL`**
 
-  La versión [24.12](/es/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introdujo un cambio no retrocompatible por el que los valores `NULL` se ignoran, mientras que antes devolvía `NULL` si uno de los argumentos era `NULL`.
+  La versión [24.12](/es/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introdujo un cambio incompatible con versiones anteriores por el que los valores `NULL` se ignoran, mientras que antes devolvía `NULL` si uno de los argumentos era `NULL`.
   Para conservar el comportamiento anterior, establezca la configuración `least_greatest_legacy_null_behavior` (valor predeterminado: `false`) en `true`.
 </Info>
 
@@ -476,7 +476,7 @@ least(x1[, x2, ...])
 
 **Valor devuelto**
 
-Devuelve el menor valor de entre los argumentos, convertido al tipo compatible de mayor tamaño. [`Any`](/es/reference/data-types/index)
+Devuelve el menor valor de entre los argumentos, promovido al tipo compatible de mayor tamaño. [`Any`](/es/reference/data-types/index)
 
 **Ejemplos**
 
@@ -500,9 +500,9 @@ SELECT least(['hello'], ['there'], ['world']);
 ```
 
 ```response title=Response
-┌─least(['hell⋯ ['world'])─┐
-│ ['hello']                │
-└──────────────────────────┘
+┌─least(['hello'], ['there'], ['world'])─┐
+│ ['hello']                              │
+└────────────────────────────────────────┘
 ```
 
 **Tipos de DateTime**
@@ -513,9 +513,9 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 ```
 
 ```response title=Response
-┌─least(toDate⋯0.000', 3))─┐
-│  2025-01-01 12:00:00.000 │
-└──────────────────────────┘
+┌─least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                2025-01-01 12:00:00.000 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiIf">

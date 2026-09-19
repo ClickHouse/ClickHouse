@@ -50,7 +50,10 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
+/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
+/// check the result.
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).

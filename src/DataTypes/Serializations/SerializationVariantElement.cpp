@@ -14,9 +14,10 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
-UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_)
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_)
 {
     SipHash hash;
     hash.update("VariantElement");
@@ -25,6 +26,7 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     hash.update(variant_element_name_);
     hash.update(variant_discriminator_);
     hash.update(num_variants_);
+    hash.update(nullable_added_by_extraction_);
     return hash.get128();
 }
 
@@ -32,11 +34,12 @@ SerializationPtr SerializationVariantElement::create(
     const SerializationPtr & nested_,
     const String & variant_element_name_,
     ColumnVariant::Discriminator variant_discriminator_,
-    size_t num_variants_)
+    size_t num_variants_,
+    bool nullable_added_by_extraction_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_));
-    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_); });
+        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_));
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_); });
 }
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -73,9 +76,18 @@ void SerializationVariantElement::enumerateStreams(
 
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
     addVariantToPath(settings.path);
+    /// Remove the nullability only when the extraction added it. If the requested type is
+    /// intrinsically nullable, nested_serialization is a Nullable serialization and requires it.
+    auto nested_type = data.type;
+    auto nested_column = data.column;
+    if (nullable_added_by_extraction)
+    {
+        nested_type = nested_type ? removeNullableOrLowCardinalityNullable(nested_type) : nullptr;
+        nested_column = nested_column ? removeNullableOrLowCardinalityNullable(nested_column) : nullptr;
+    }
     auto nested_data = SubstreamData(nested_serialization)
-                       .withType(data.type ? removeNullableOrLowCardinalityNullable(data.type) : nullptr)
-                       .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
+                       .withType(nested_type)
+                       .withColumn(nested_column)
                        .withSerializationInfo(data.serialization_info)
                        .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
     settings.path.back().data = nested_data;
@@ -190,9 +202,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     /// Now we know the limit for our variant and can deserialize it.
 
-    /// If result column is Nullable, fill null map and extract nested column.
+    /// A Nullable wrapper added by the extraction is unknown to nested_serialization, so its null map
+    /// is filled here from the discriminators. An intrinsic Nullable belongs to nested_serialization,
+    /// which reads the element's own null map; other variants' rows become NULL via insertDefault().
     IColumn * inner_column = &result_column;
-    if (isColumnNullable(result_column))
+    if (nullable_added_by_extraction && isColumnNullable(result_column))
     {
         auto & nullable_column = assert_cast<ColumnNullable &>(result_column);
         NullMap & null_map = nullable_column.getNullMapData();
@@ -220,9 +234,9 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     /// Deserialize this variant's values for the current range into a fresh column.
     auto variant = inner_column->cloneEmpty();
 
-    /// When result column is LowCardinality(Nullable(T)) we should
-    /// remove Nullable from variant column before deserialization.
-    if (isColumnLowCardinalityNullable(*inner_column))
+    /// When result column is LowCardinality(Nullable(T)) and the Nullable was added by the
+    /// extraction, we should remove it from variant column before deserialization.
+    if (nullable_added_by_extraction && isColumnLowCardinalityNullable(*inner_column))
         assert_cast<ColumnLowCardinality &>(*variant).nestedRemoveNullable();
 
     addVariantToPath(settings.path);
@@ -277,8 +291,7 @@ size_t SerializationVariantElement::deserializeCompactDiscriminators(
     const ISerialization * serialization)
 {
     auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(discriminators_state_, serialization);
-    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column);
-    auto & discriminators_data = discriminators.getData();
+    auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column).getData();
 
     /// Reset state if we are reading from the start of the granule and not from the previous position in the file.
     if (!continuous_reading)
@@ -302,16 +315,19 @@ size_t SerializationVariantElement::deserializeCompactDiscriminators(
         size_t limit_in_granule = std::min(limit, discriminators_state->remaining_rows_in_granule);
         if (discriminators_state->granule_format == SerializationVariant::CompactDiscriminatorsGranuleFormat::COMPACT)
         {
-            auto & data = discriminators.getData();
-            data.resize_fill(data.size() + limit_in_granule, discriminators_state->compact_discr);
+            discriminators_data.resize_fill(discriminators_data.size() + limit_in_granule, discriminators_state->compact_discr);
 
             if (discriminators_state->compact_discr == variant_discriminator)
                 variant_limit += limit_in_granule;
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
-            size_t start = discriminators_data.size() - limit_in_granule;
+            size_t start = discriminators_data.size();
+            SerializationNumber<ColumnVariant::Discriminator>::deserializeBinaryBulk(discriminators_data, *stream, limit_in_granule);
+            size_t num_read = discriminators_data.size() - start;
+            if (num_read != limit_in_granule)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all discriminators in Variant granule. Expected: {}, got: {}", limit_in_granule, num_read);
 
             for (size_t i = start; i != discriminators_data.size(); ++i)
                 variant_limit += (discriminators_data[i] == variant_discriminator);
@@ -361,9 +377,12 @@ DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const D
     return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 }
 
-SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr & prev_type) const
 {
-    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator, num_variants);
+    /// prev_type is the type prev serializes, i.e. the requested subcolumn before create(prev_type)
+    /// wraps it. The wrap only adds nullability when the type does not have it already.
+    const bool nullable_added = make_nullable && prev_type && !isNullableOrLowCardinalityNullable(prev_type);
+    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added);
 }
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const
@@ -425,6 +444,22 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
 size_t SerializationVariantElement::allocatedBytes() const
 {
     return sizeof(*this) + variant_element_name.capacity();
+}
+
+MutableColumnPtr SerializationVariantElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// The Nullable level is either one the extraction added, which deserializeBinaryBulkWithMultipleStreams
+    /// fills from the discriminators and peels off before recursing, or nested_serialization's own, which this
+    /// rebuild reproduces unchanged. A LowCardinality(Nullable) result is deserialized whole and keeps it.
+    if (isColumnNullable(*column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        return ColumnNullable::create(
+            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
+            nullable.getNullMapColumnPtr()->cloneEmpty());
+    }
+
+    return nested_serialization->wrapColumnForDeserialization(std::move(column));
 }
 
 }

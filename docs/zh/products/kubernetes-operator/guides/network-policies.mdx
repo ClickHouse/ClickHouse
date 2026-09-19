@@ -2,18 +2,19 @@
 position: 7
 slug: /clickhouse-operator/guides/network-policies
 title: 网络策略
-keywords: ['kubernetes', 'network policy', 'security', 'metrics', 'webhook']
-description: '介绍 operator 如何通过 Kubernetes NetworkPolicies 限制进入 controller manager pod 的流量（面向指标和 webhook 端点）、如何启用这些策略，以及必须为哪些客户端命名空间添加标签。'
+keywords: ['kubernetes', 'network policy', 'security', 'metrics', 'webhook', 'ingress']
+description: '介绍 operator 如何管理 ClickHouse 和 Keeper 集群的 Kubernetes NetworkPolicies、如何允许客户端和监控流量，以及如何限制 controller manager pod（容器组） 的入口流量。'
 doc_type: 'guide'
 ---
 
-operator 提供可选的 Kubernetes `NetworkPolicy` 资源，用于
-限制哪些流量可以到达 **controller manager pod (容器组)&#x20;**——也就是 operator
-进程本身，而不是 ClickHouse server 或 Keeper pod (容器组) 。这些策略默认关闭，
-因此只有在你希望隔离 operator 的入口流量时才需要启用。
+operator 在两个层级管理 Kubernetes `NetworkPolicy` 资源，二者
+默认均处于关闭状态：
 
-这些策略覆盖 operator 向其他客户端公开的两个端口：指标
-端点和 admission webhook。
+* **集群策略** — 针对各个集群的策略，涵盖
+  `ClickHouseCluster` 和 `KeeperCluster` 资源的内部流量，可通过每个自定义资源中的
+  `spec.networkPolicy` 启用。
+* **Operator pod (容器组)  策略** — 图表 随附的策略，用于限制进入
+  controller manager pod (容器组)  本身的流量，适用于指标和 webhook 端点。
 
 <Note>
   只有当 cluster 的 CNI plugin 实现了 `NetworkPolicy` 时，`NetworkPolicy` 才会生效
@@ -21,6 +22,108 @@ operator 提供可选的 Kubernetes `NetworkPolicy` 资源，用于
   这些资源虽然会被创建，但实际上不会产生任何效果，而且 Kubernetes 也不会返回
   error。在依赖这些策略之前，请先确认你的 CNI 会强制执行这些策略。
 </Note>
+
+<div id="cluster-network-policies">
+  ## 集群网络策略
+</div>
+
+为每个集群启用托管策略：
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+```
+
+托管策略仅涵盖**集群内部流量**。选中这些 pod (容器组) 后，
+其入口流量将默认拒绝，operator 仅允许集群正常运行所需的流量：
+
+| 集群         | 允许的来源                                                             | 允许的端口                                  |
+| ---------- | ----------------------------------------------------------------- | -------------------------------------- |
+| ClickHouse | 集群自身的 Pod (容器组)                                                   | `9009` (服务器间通信) 、`9001` (管理)           |
+| ClickHouse | Operator pod (容器组)  (标签为 `clickhouse.com/role: operator`，任意命名空间)  | `9001`、`9002` (管理)                     |
+| Keeper     | 集群自身的 Pod (容器组)                                                   | `9234` (Raft)                          |
+| Keeper     | Operator pod (容器组) 以及引用此 keeper 的所有 `ClickHouseCluster`           | `2181`、`2281` (客户端) 、`9123` (HTTP 控制)  |
+
+keeper 根据其 `keeperClusterRef` 允许 ClickHouse 集群接入——添加
+或移除引用会自动更新 keeper 的策略，包括来自其他命名空间的
+引用。
+
+<div id="allowing-clients">
+  ### 允许客户端连接和监控
+</div>
+
+客户端连接和指标抓取**不**在涵盖范围内：启用托管
+策略后，除非您明确允许，否则无法访问客户端端口 (`9000`/`8123` 或 TLS
+变体) 或指标端口。NetworkPolicy 具有叠加性，
+因此请在托管策略之外，通过您自己的策略授予访问权限：
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: <cluster-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <name>-clickhouse
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: my-app
+    ports:
+    - protocol: TCP
+      port: 9000
+```
+
+同样适用于 Prometheus 抓取 (ClickHouse 使用端口 `9363`，
+Keeper 使用端口 `9090`) — 请明确允许监控命名空间访问。
+
+设置 `networkPolicy.policy: Disabled` (默认值) 会移除受管理的
+策略；operator 不会修改用户定义的策略，除非这些策略带有集群的 `app` 标签。
+
+<div id="np-cluster-wide-disable">
+  ### 集群级禁用
+</div>
+
+还可通过 operator 的 `ENABLE_NETWORK_POLICY` 环境变量在整个集群范围内禁用 NetworkPolicy 管理。设置 `ENABLE_NETWORK_POLICY=false` 后，无论各个 ClickHouseCluster 和 KeeperCluster 的 `spec.networkPolicy.policy` 配置如何，operator 都会跳过每个集群的 NetworkPolicy reconcile 步骤，且完全不 watch `NetworkPolicy` 资源。因此，operator 的 ServiceAccount 无需拥有 `networkpolicies.networking.k8s.io` 的 RBAC 权限。这在使用受限 ServiceAccount 运行 operator 时非常有用，因为此类 ServiceAccount 会有意不授予这些权限。
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_NETWORK_POLICY
+  value: "false"
+```
+
+使用 Helm 时，可通过图表 值设置同一开关：
+
+```yaml
+# values.yaml
+controller:
+  networkPolicyManagement:
+    enabled: false
+```
+
+<div id="operator-pod-policies">
+  ## Operator pod (容器组)  策略
+</div>
+
+该图表还附带可选策略，用于限制哪些流量可以到达
+**controller manager pod (容器组)&#x20;**——也就是 operator 进程本身。
+
+这些策略覆盖 operator 向其他客户端公开的两个端口：指标
+端点和 admission webhook。
 
 <div id="what-the-helm-chart-creates">
   ## Helm 图表会创建什么

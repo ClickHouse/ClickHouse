@@ -300,7 +300,7 @@ public:
                 {
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
                         "Actual type {}.",
                         getName(),
                         key_column_type->getName());
@@ -596,7 +596,7 @@ public:
                 {
                     throw Exception(
                          ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
+                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
                          "Actual type {}.",
                          getName(),
                          key_col_with_type.type->getName());
@@ -1177,7 +1177,9 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
+    /// Not injective: every key that is absent from the dictionary maps to the same empty array,
+    /// so two distinct absent keys collide. The claim would only hold for keys the dictionary has.
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }

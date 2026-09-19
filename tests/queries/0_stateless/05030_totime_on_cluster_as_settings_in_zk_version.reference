@@ -1,6 +1,5 @@
 source	toTime(c0)
 oldest_as NOT_IMPLEMENTED
 oldest_clone NOT_IMPLEMENTED
-settings_in_zk_as	toTimeWithFixedDate(c0)
 settings_in_zk_clone NOT_IMPLEMENTED
 local_as	toTimeWithFixedDate(c0)
