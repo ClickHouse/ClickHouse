@@ -15,7 +15,7 @@ ch1 = cluster.add_instance(
     stay_alive=True,
 )
 
-database_name = "modify_engine_table_readonly"
+database_name = "modify_engine_ro_setting"
 
 
 @pytest.fixture(scope="module")
@@ -97,6 +97,9 @@ def test_replicated_table_carrying_the_setting_loads(started_cluster):
     metadata_path = q(
         f"SELECT metadata_path FROM system.tables WHERE database = '{database_name}' AND name = 'legacy'"
     ).strip()
+    # `metadata_path` is reported relative to the server's data directory.
+    if not metadata_path.startswith("/"):
+        metadata_path = "/var/lib/clickhouse/" + metadata_path
 
     # The setting can no longer be introduced through SQL, so the definition of an older server is
     # planted directly, which is the only way a table can carry it now.
