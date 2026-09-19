@@ -412,16 +412,15 @@ Configuration:
 A new disk type `s3_plain_rewritable` was introduced in `24.4`.
 Similar to the `s3_plain` disk type, it does not require additional storage for 
 metadata files. Instead, metadata is stored in S3.
-Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges
+Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges 
 and supports `INSERT` operations.
-Replication of tables is not supported.
-[Mutations](/reference/statements/alter/index#mutations) and `ALTER` operations
-are supported only if the disk is configured with `enable_hard_links`, see below.
+[Mutations](/reference/statements/alter/index#mutations) and replication of tables are not supported.
 
 A use case for this disk type is for non-replicated `MergeTree` tables. Although 
 the `s3` disk type is suitable for non-replicated `MergeTree` tables, you may opt
 for the `s3_plain_rewritable` disk type if you do not require local metadata 
-for the table. This could be useful, for example, for system tables.
+for the table and are willing to accept a limited set of operations. This could
+be useful, for example, for system tables.
 
 Configuration:
 
@@ -448,39 +447,6 @@ is equal to
 Starting from `24.5` it is possible to configure any object storage disk 
 (`s3`, `azure`, `local`) using the `plain_rewritable` metadata type.
 
-#### Hard links on plain rewritable disks {#plain-rewritable-hard-links}
-
-`ALTER` operations and mutations of a `MergeTree` table share the unchanged files
-between a part and its mutated successor with hard links, instead of copying
-them. The `enable_hard_links` setting (`0` by default) allows a disk with the
-`plain_rewritable` metadata to create real hard links, which unlocks these
-operations:
-
-```xml
-<s3_plain_rewritable>
-    <type>s3_plain_rewritable</type>
-    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
-</s3_plain_rewritable>
-```
-
-A hard link makes the metadata of a directory list its files explicitly, together
-with the keys of the objects storing them, so that a file can refer to an object
-stored under the prefix of another directory. Consider the following before
-enabling it:
-
-- Servers older than `26.9` cannot read a directory in this form. A disk that has
-  such directories is not readable after a downgrade, and cannot be shared with
-  older servers. Directories that never had hard links keep the previous layout,
-  so a disk stays readable by older servers until the first operation that
-  creates a hard link - a mutation, an `ALTER`, a `FREEZE` or a backup. Turning
-  the setting off again does not convert the existing directories back.
-- An object whose last link is removed is deleted in two steps: the metadata of
-  the directory is rewritten first, and the object is deleted after that. If the
-  server is killed in between, the object is left in the bucket and is not
-  referenced by anything, so it has to be deleted manually.
-
 ### Using Azure Blob Storage {#azure-blob-storage}
 
 `MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) 
@@ -499,7 +465,6 @@ Configuration markup:
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -527,12 +492,12 @@ Authentication parameters (the disk will try all available methods **and** Manag
 
 | Parameter                            | Description                                                                 |
 |--------------------------------------|-----------------------------------------------------------------------------|
-| `s3_max_single_part_upload_size`     | Maximum size of a single block upload to Blob Storage.                      |
+| `max_single_part_upload_size`        | Maximum size of a single block upload to Blob Storage.                      |
 | `min_bytes_for_seek`                 | Minimum size of a seekable region.                                          |
 | `max_single_read_retries`            | Maximum number of attempts to read a chunk of data from Blob Storage.       |
 | `max_single_download_retries`        | Maximum number of attempts to download a readable buffer from Blob Storage. |
 | `thread_pool_size`                   | Maximum number of threads for `IDiskRemote` instantiation.                  |
-| `s3_max_inflight_parts_for_one_file` | Maximum number of concurrent put requests for a single object.              |
+| `max_inflight_parts_for_one_file`    | Maximum number of concurrent put requests for a single object.              |
 
 #### Other parameters {#azure-blob-storage-other-parameters}
 
@@ -639,7 +604,7 @@ Example of disk configuration:
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...
+                <endpoint>...</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -687,8 +652,9 @@ Example of configuration for versions later or equal to 22.8:
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 Example of configuration for versions earlier than 22.8:
@@ -713,8 +679,9 @@ Example of configuration for versions earlier than 22.8:
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 File Cache **disk configuration settings**:
@@ -727,8 +694,7 @@ These settings should be defined in the disk configuration section.
 | `max_size`                            | Size    | -          | **Required**. Maximum cache size in bytes or readable format (e.g., `10Gi`). Files are evicted using LRU policy when the limit is reached. Supports `ki`, `Mi`, `Gi` formats (since v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`    | Enables write-through cache for `INSERT` queries and background merges. Can be overridden per query with `enable_filesystem_cache_on_write_operations`.                                      |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | Enables per-query cache size limits based on `max_query_cache_size`.                                                                                                                         |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | When enabled, data is cached only after being read multiple times.                                                                                                                           |
-| `cache_hits_threshold`                | Integer | `0`        | Number of reads required before data is cached (requires `enable_cache_hits_threshold`).                                                                                                     |
+| `cache_hits_threshold`                | Integer | `0`        | Deprecated; has no effect.                                                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Skips cache for large read ranges.                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Read range size that triggers cache bypass (requires `enable_bypass_cache_with_threshold`).                                                                                                  |
 | `max_file_segment_size`               | Size    | `8Mi`      | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
@@ -1080,11 +1046,7 @@ SETTINGS storage_policy='web';
 
 #### Optional parameters {#optional-parameters-web}
 
-| Parameter                           | Description                                                                  | Default Value   |
-|-------------------------------------|------------------------------------------------------------------------------|-----------------|
-| `min_bytes_for_seek`                | The minimal number of bytes to use seek operation instead of sequential read | `1` MB          |
-| `remote_fs_read_backoff_threashold` | The maximum wait time when trying to read data for remote disk               | `10000` seconds |
-| `remote_fs_read_backoff_max_tries`  | The maximum number of attempts to read with backoff                          | `5`             |
+The `web` object storage backend reads only the `endpoint` parameter. There are no additional web-specific optional parameters; generic disk options still apply.
 
 If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/reference/settings/session-settings/http#http_connection_timeout), [http_receive_timeout](/reference/settings/session-settings/http#http_receive_timeout), [keep_alive_timeout](/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1095,7 +1057,7 @@ When loading files by `endpoint`, they must be loaded into `<endpoint>/store/` p
 
 If URL is not reachable on disk load when the server is starting up tables, then all errors are caught. If in this case there were errors, tables can be reloaded (become visible) via `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. If metadata was successfully loaded at server startup, then tables are available straight away.
 
-Use [http_max_single_read_retries](/concepts/features/configuration/server-config/storing-data#web-storage) setting to limit the maximum number of retries during a single HTTP read.
+Use [`http_max_tries`](/reference/settings/session-settings/http-max#http_max_tries) to limit the number of HTTP read attempts, including the initial attempt. Use [`http_retry_initial_backoff_ms`](/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) and [`http_retry_max_backoff_ms`](/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) to configure the initial and maximum delays between retries.
 
 ### Zero-copy Replication (not ready for production) {#zero-copy}
 
