@@ -511,6 +511,11 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
     the `Insert` key, then drop the TCP connection with a RST so that the
     server's side of the pty is gone by the time the line reader is destroyed.
     """
+    # The daemon watchdog restarts the server after `std::terminate`, so "the
+    # server answers queries again" is not evidence of anything. Remember the
+    # uptime and require that it never goes backwards: a restart resets it.
+    uptime_before = float(instance.query("SELECT uptime()").strip())
+
     pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -528,9 +533,22 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
         assert ":) " in output, f"no prompt from the embedded client: {output!r}"
 
         # `Insert` toggles overwrite mode, which is what makes the destructor
-        # print the "reset cursor blinking" sequence in the first place.
+        # print the "reset cursor blinking" sequence in the first place. Wait
+        # for the raw `\033[5 q` ("blinking cursor") escape the key handler
+        # prints: it is the only observable proof that the server really
+        # consumed the key and that `overwrite_mode` became true. Without it
+        # the destructor writes nothing and the test would pass even unfixed.
         channel.sendall("\x1b[2~")
-        _read_channel_until(channel, timeout=2)
+        raw = b""
+        deadline = time.time() + 10
+        while time.time() < deadline and b"\x1b[5 q" not in raw:
+            if channel.recv_ready():
+                raw += channel.recv(65536)
+            else:
+                time.sleep(0.05)
+        assert (
+            b"\x1b[5 q" in raw
+        ), f"overwrite mode was not enabled, the destructor would write nothing: {raw!r}"
 
         # Abort the connection with a RST instead of a graceful shutdown, so
         # writes on the server side fail rather than being silently discarded.
@@ -540,21 +558,19 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
     finally:
         client.close()
 
-    # The server must survive the teardown: before the fix it died with
-    # `std::terminate` and this query could not be answered at all.
+    # The session teardown is asynchronous, so keep sampling for a while.
     deadline = time.time() + 30
-    last_error = None
     while time.time() < deadline:
         try:
-            assert instance.query("SELECT 1").strip() == "1"
-            last_error = None
-            break
-        except Exception as e:  # the SSH session teardown is asynchronous
-            last_error = e
+            uptime = float(instance.query("SELECT uptime()").strip())
+        except Exception:  # the server is down or restarting — the next sample decides
             time.sleep(0.5)
-    assert (
-        last_error is None
-    ), f"server is not responding after the disconnect: {last_error}"
+            continue
+        assert uptime >= uptime_before, (
+            "the server restarted after the SSH disconnect, i.e. it died while "
+            f"tearing the session down (uptime {uptime} < {uptime_before})"
+        )
+        time.sleep(0.5)
 
     assert not instance.contains_in_log(
         "std::terminate"
