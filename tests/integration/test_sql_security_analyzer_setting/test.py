@@ -58,9 +58,20 @@ def test_definer_profile_cannot_disable_the_analyzer(start_cluster):
     # in a passing run would say which of the two happened. So prove it with a value from the same
     # profile that is not normalized. `min_free_disk_space_for_temporary_data` is set there to
     # `1234`, and the invoker reports the default `0`.
+    #
+    # `toUInt64` is load-bearing. `getSetting` types its result from the value, so it is `UInt8` for
+    # the `0` the invoker sees and `UInt16` for the `1234` the definer sees, and a view stores the
+    # columns it was created with - here the invoker's `UInt8`. Without the cast the body's `1234`
+    # is converted to that stored `UInt8` on the way out and the probe reads `210`, which looks
+    # exactly like a body that saw neither value.
     node.query(
         "CREATE VIEW v_probe DEFINER = definer_user SQL SECURITY DEFINER "
-        "AS SELECT getSetting('min_free_disk_space_for_temporary_data') AS a"
+        "AS SELECT toUInt64(getSetting('min_free_disk_space_for_temporary_data')) AS a"
     )
     assert node.query("SELECT * FROM v_probe") == "1234\n"
-    assert node.query("SELECT getSetting('min_free_disk_space_for_temporary_data')") == "0\n"
+    assert (
+        node.query(
+            "SELECT toUInt64(getSetting('min_free_disk_space_for_temporary_data'))"
+        )
+        == "0\n"
+    )
