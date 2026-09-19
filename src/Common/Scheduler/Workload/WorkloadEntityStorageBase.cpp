@@ -429,13 +429,13 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
             if (resource && !old_resource)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
-            // Adding or removing a PARENT via CREATE OR REPLACE (turning a root into a child or a
+            // Adding or removing a workload's parent (its `IN` clause) via CREATE OR REPLACE (turning a root into a child or a
             // child into a root) is not supported: the resource manager rejects such a parent
             // transition, and that failure would only be logged, leaving storage and scheduler
             // inconsistent. Reject both directions up front so the DDL fails cleanly.
             if (workload && old_workload->hasParent() != workload->hasParent())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "It is not allowed to add or remove the PARENT of workload '{}' with CREATE OR REPLACE "
+                    "It is not allowed to add or remove the parent of workload '{}' with CREATE OR REPLACE "
                     "(a root workload cannot become a child, nor a child become a root)", entity_name);
             if (other_entities.contains(entity_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
