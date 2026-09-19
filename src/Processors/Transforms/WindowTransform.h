@@ -89,6 +89,7 @@ public:
     void advancePartitionEnd();
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    bool haveEqualOrderByValues(const RowNumber & x, const RowNumber & y) const;
 
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();
@@ -285,8 +286,14 @@ public:
 
     // Row and group numbers in partition for calculating rank() and friends.
     UInt64 current_row_number = 1;
+    // The frame-relative peer group: for ROWS frames it is the current row alone.
     UInt64 peer_group_start_row_number = 1;
     UInt64 peer_group_number = 1;
+    // The ORDER BY peer group used by rank() and dense_rank(): rows comparing equal w/ORDER BY,
+    // independent of the frame type. Tracked only when some function reads it.
+    bool needs_order_by_peer_group = false;
+    UInt64 order_by_peer_group_start_row_number = 1;
+    UInt64 order_by_peer_group_number = 1;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
     // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
