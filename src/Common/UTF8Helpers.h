@@ -5,7 +5,9 @@
 #include <base/simd.h>
 #include <Common/BitHelpers.h>
 
-#ifdef __SSE2__
+#ifdef __AVX2__
+#include <immintrin.h>
+#elif defined(__SSE2__)
 #include <emmintrin.h>
 #endif
 
@@ -56,6 +58,37 @@ inline size_t seqLength(const UInt8 first_octet)
 
     return bits - 1 - first_zero;
 }
+
+#if defined(__AVX2__)
+inline constexpr size_t ascii_chunk_size = 32;
+
+inline bool isAllASCIIChunk(const UInt8 * data)
+{
+    return _mm256_movemask_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(data))) == 0;
+}
+#elif defined(__SSE2__)
+inline constexpr size_t ascii_chunk_size = 16;
+
+inline bool isAllASCIIChunk(const UInt8 * data)
+{
+    return _mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data))) == 0;
+}
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+inline constexpr size_t ascii_chunk_size = 16;
+
+inline bool isAllASCIIChunk(const UInt8 * data)
+{
+    const auto bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(data));
+    return vmaxvq_u8(vandq_u8(bytes, vdupq_n_u8(0x80))) == 0;
+}
+#else
+inline constexpr size_t ascii_chunk_size = 0;
+
+inline bool isAllASCIIChunk(const UInt8 *)
+{
+    return false;
+}
+#endif
 
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
