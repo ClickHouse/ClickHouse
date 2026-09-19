@@ -66,10 +66,17 @@ struct ClusterConnectionParameters
 class Cluster
 {
 public:
+    /// 'treat_local_port_as_remote' - never treat a configured replica as local, even when its address
+    /// points to this host. Set for clickhouse-local, which listens on no port of its own: a replica of a
+    /// configured cluster always carries a port (explicit or inherited from `tcp_port`), so it is the
+    /// analogue of the `host:port` form of an address list, which is remote in the tool as well. This
+    /// differs from the constructor below, where a bare `localhost` (no port) of an address list keeps
+    /// resolving in the tool itself (see 01949_clickhouse_local_with_remote_localhost).
     Cluster(const Poco::Util::AbstractConfiguration & config,
             const Settings & settings,
             const String & config_prefix_,
-            const String & cluster_name);
+            const String & cluster_name,
+            bool treat_local_port_as_remote = false);
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -162,7 +169,8 @@ public:
             const String & cluster_,
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0);
+            UInt32 replica_index_ = 0,
+            bool treat_local_port_as_remote = false);
 
         Address(
             const DatabaseReplicaInfo & info,
@@ -287,6 +295,15 @@ public:
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
     std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
+    /// Get a new Cluster with the replicas that point to this server stripped from their shards, while
+    /// every other replica keeps its per-replica settings (credentials, secure connections, compression,
+    /// the inter-server secret, ...). Used by the `Remote` and `Cluster` database engines as the
+    /// metadata-lookup fallback when the local replica does not have the database or a table. Returns
+    /// nullptr when the cluster has no local replicas (there is nothing to strip, so the fallback is
+    /// never needed) or when some shard consists of local replicas only (there is nothing to fall back
+    /// to for that shard, and dropping it would silently serve only a subset of the shards).
+    std::unique_ptr<Cluster> tryGetClusterWithoutLocalReplicas(const Settings & settings) const;
+
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
@@ -312,6 +329,10 @@ private:
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+
+    /// For tryGetClusterWithoutLocalReplicas implementation
+    struct RemoteReplicasTag {};
+    Cluster(RemoteReplicasTag, const Cluster & from, const Settings & settings);
 
     void addShard(
         const Settings & settings,
