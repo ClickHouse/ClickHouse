@@ -556,7 +556,7 @@ private:
 
             /// Sort the last necessary bucket with limit
             {
-                ssize_t i = static_cast<ssize_t>(buckets_for_recursion) - 1;
+                ssize_t i = buckets_for_recursion - 1;
 
                 Element * start = buckets[i - 1];
                 ssize_t subsize = count[i];

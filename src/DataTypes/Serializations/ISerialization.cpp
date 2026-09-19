@@ -823,7 +823,7 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
     if (!res.column && res.lazy_column_creator)
         res.column = res.lazy_column_creator();
 
-    for (ssize_t i = static_cast<ssize_t>(last_elem) - 1; i >= 0; --i)
+    for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
         const auto & creator = path[i].creator;
         if (creator)

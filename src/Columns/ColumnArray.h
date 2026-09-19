@@ -236,8 +236,8 @@ private:
     WrappedPtr data;
     WrappedPtr offsets;
 
-    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[static_cast<ssize_t>(i) - 1]; }
-    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[static_cast<ssize_t>(i) - 1]; }
+    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
+    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
 
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>

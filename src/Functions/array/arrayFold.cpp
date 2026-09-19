@@ -169,10 +169,10 @@ public:
 
         /// A malformed array whose data column size disagrees with its offsets would desync the
         /// selector loop below and blow up max_array_size (observed as a multi-GB ~uncancellable hang).
-        if (offsets[static_cast<ssize_t>(num_rows) - 1] != static_cast<ColumnArray::Offset>(num_elements_in_array_col))
+        if (offsets[num_rows - 1] != static_cast<ColumnArray::Offset>(num_elements_in_array_col))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Malformed array argument of function {}: nested data column has {} elements but offsets describe {}",
-                getName(), num_elements_in_array_col, offsets[static_cast<ssize_t>(num_rows) - 1]);
+                getName(), num_elements_in_array_col, offsets[num_rows - 1]);
 
         /// Find the first row which contains a non-empty array
         ssize_t first_row_with_non_empty_array = 0;
@@ -199,7 +199,7 @@ public:
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
             max_array_size = std::max(cur_element_in_cur_array, max_array_size);
-            while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[static_cast<ssize_t>(first_row_with_non_empty_array) - 1])
+            while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[first_row_with_non_empty_array - 1])
             {
                 ++first_row_with_non_empty_array;
                 cur_element_in_cur_array = 0;
@@ -252,7 +252,7 @@ public:
             size_t prev_index = 0;
             for (ssize_t row = 0; row < num_rows; ++row)
             {
-                size_t num_elements = offsets[row] - offsets[static_cast<ssize_t>(row) - 1]; /// cardinality of array on the row
+                size_t num_elements = offsets[row] - offsets[row - 1]; /// cardinality of array on the row
                 if (num_elements > slice)
                 {
                     prev_selector[prev_index] = 1;
@@ -304,7 +304,7 @@ public:
 
         for (ssize_t row = 0; row < num_rows; ++row)
         {
-            size_t num_elements = offsets[row] - offsets[static_cast<ssize_t>(row) - 1]; /// cardinality of array on the row
+            size_t num_elements = offsets[row] - offsets[row - 1]; /// cardinality of array on the row
             if (num_elements == max_array_size)
             {
                 inverse_permutation[num_inverse_permutations] = row;

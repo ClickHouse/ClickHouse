@@ -245,7 +245,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        std::string_view key(reinterpret_cast<const char *>(chars) + offsets[static_cast<ssize_t>(row) - 1], offsets[row] - offsets[static_cast<ssize_t>(row) - 1]);
+        std::string_view key(reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]);
 
         if constexpr (place_string_to_arena)
         {
@@ -355,8 +355,8 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
     {
-        const char * data = reinterpret_cast<const char *>(chars + offsets[static_cast<ssize_t>(row) - 1]);
-        const size_t size = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
+        const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
+        const size_t size = offsets[row] - offsets[row - 1];
         return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
     }
 

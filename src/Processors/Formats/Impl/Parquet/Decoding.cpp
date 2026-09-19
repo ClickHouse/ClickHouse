@@ -2153,8 +2153,8 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
     chassert(chars.size() >= offsets[static_cast<ssize_t>(num_values) - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
-        char * ptr = const_cast<char*>(chars.data() + offsets[static_cast<ssize_t>(i) - 1]);
-        size_t length = offsets[i] - offsets[static_cast<ssize_t>(i) - 1] - separator_bytes;
+        char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);
+        size_t length = offsets[i] - offsets[i - 1] - separator_bytes;
         ReadBuffer in_buffer(ptr, length, 0);
 
         GeometricObject result_object;
