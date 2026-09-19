@@ -132,6 +132,14 @@ bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
         if (hours < 0 || minutes < 0 || seconds < 0)
             return false;
 
+        /// Every component has to be in range on its own, and not only the total offset: `cctz`
+        /// normalizes the components, so `Fixed/UTC+00:75:00` and `Fixed/UTC+01:14:60` load the very
+        /// same `+01:15` zone as `Fixed/UTC+01:15:00` does. Accepting them would give one offset up to
+        /// four names, and with it four entries of the `DateLUT` cache, which is exactly the aliasing
+        /// this predicate exists to prevent. Only the canonical spelling of an offset is a name here.
+        if (hours > 14 || minutes > 59 || seconds > 59)
+            return false;
+
         const int offset = (hours * 60 + minutes) * 60 + seconds;
         return offset % (15 * 60) == 0 && offset <= 14 * 3600;
     }

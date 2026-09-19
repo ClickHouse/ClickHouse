@@ -50,3 +50,15 @@ SELECT CAST(0 AS DateTime('Fixed/UTC+05:30:00\0suffix')); -- { serverError BAD_A
 SET session_timezone = 'Europe/./Amsterdam'; -- { serverError BAD_ARGUMENTS }
 SET session_timezone = 'file:/usr/share/zoneinfo/UTC'; -- { serverError BAD_ARGUMENTS }
 SET session_timezone = 'UTC\0suffix'; -- { serverError BAD_ARGUMENTS }
+
+-- A fixed offset has exactly one spelling. `cctz` normalizes the components, so an out-of-range
+-- minute or second names a zone that a canonical spelling already names - `Fixed/UTC+00:75:00` and
+-- `Fixed/UTC+01:14:60` both load the `+01:15` zone - which would give one offset several names, and
+-- with them several entries of the cache.
+SELECT toDateTime(0, 'Fixed/UTC+01:15:00');
+SELECT toDateTime(0, 'Fixed/UTC+00:75:00'); -- { serverError BAD_ARGUMENTS }
+SELECT toDateTime(0, 'Fixed/UTC+01:14:60'); -- { serverError BAD_ARGUMENTS }
+SELECT toDateTime(0, 'Fixed/UTC-00:75:00'); -- { serverError BAD_ARGUMENTS }
+SELECT toDateTime64(0, 3, 'Fixed/UTC+00:00:900'); -- { serverError BAD_ARGUMENTS }
+SELECT CAST(0 AS DateTime('Fixed/UTC+13:74:60')); -- { serverError BAD_ARGUMENTS }
+SET session_timezone = 'Fixed/UTC+00:75:00'; -- { serverError BAD_ARGUMENTS }
