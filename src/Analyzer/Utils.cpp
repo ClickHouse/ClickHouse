@@ -1082,19 +1082,23 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
     return out;
 }
 
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
+{
+    auto function_node = std::make_shared<FunctionNode>(name);
+    function_node->getArguments().getNodes() = std::move(arguments);
+    resolveOrdinaryFunctionNodeByName(*function_node, name, context);
+    return function_node;
+}
+
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+{
+    return createResolvedFunction(context, "tupleElement", {std::move(argument), std::make_shared<ConstantNode>(index)});
+}
+
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
-
-    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
-    QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
-
-    auto function_node = std::make_shared<FunctionNode>("_CAST");
-    function_node->getArguments().getNodes() = std::move(arguments);
-
-    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
-
-    return function_node;
+    auto type_name_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
+    return createResolvedFunction(context, "_CAST", {std::move(node), std::move(type_name_node)});
 }
 
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)

@@ -161,6 +161,12 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
+/// Create and resolve an ordinary function node from already-resolved argument expressions.
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments);
+
+/// Create a resolved `tupleElement` expression using a one-based element index.
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index);
+
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 

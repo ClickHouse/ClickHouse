@@ -1,0 +1,30 @@
+declared type, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(accurateCast(__table1.id, \'UInt64\'), _CAST(1, \'UInt64\'))
+narrower signed type, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE in(accurateCast(__table1.narrow, \'UInt64\'), _CAST([2, 3], \'Array(UInt64)\'))
+declared type, like - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE like(dictGet(\'default.simple_signed\', \'attr\', __table1.id), \'be%\')
+declared type, no match - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(accurateCast(__table1.id, \'UInt64\'), 18446744073709551615)
+unsigned probe, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(__table1.wide, _CAST(1, \'UInt64\'))
+string probe, equals - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(dictGet(\'default.simple_signed\', \'attr\', __table1.s), \'alpha\')
+results
+1	1	0	0	0	1	1
+2	0	1	1	0	0	0
+4	0	0	0	0	0	0
+results, opt off
+1	1	0	0	0	1	1
+2	0	1	1	0	0	0
+4	0	0	0	0	0	0
+nullable probe - plan
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(accurateCast(if(equals(__table1.id, 1), __table1.id, _CAST(NULL, \'Nullable(Nothing)\')), \'Nullable(UInt64)\'), _CAST(1, \'UInt64\'))
+nullable probe
+1	1
+2	\N
+4	\N
+nullable probe, opt off
+1	1
+2	\N
+4	\N

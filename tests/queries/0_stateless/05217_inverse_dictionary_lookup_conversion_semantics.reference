@@ -1,0 +1,90 @@
+date conversion
+1	1	0	0
+2	0	1	1
+3	0	0	0
+1	1	0	0
+2	0	1	1
+3	0	0	0
+IP conversion settings
+date parsing settings
+nullable conversion results
+1	1	0	1	1	1	1	1
+2	0	0	0	0	0	0	0
+3	0	1	0	0	0	0	0
+1	1	0	1	1	1	1	1
+2	0	0	0	0	0	0	0
+3	0	1	0	0	0	0	0
+composite null key, transform_null_in=0
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+2	1
+2	1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+2	1
+2	1
+composite null key, transform_null_in=1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+2	1
+2	1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+1	0	1	0
+2	0	1	0
+3	\N	\N	1
+2	1
+2	1
+non-null composite probe
+1	0
+2	0
+3	0
+1	0
+2	0
+3	0
+empty input
+0
+0
+0
+0
+0
+0
+unselected lookup branches
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+evaluated unsupported conversion
