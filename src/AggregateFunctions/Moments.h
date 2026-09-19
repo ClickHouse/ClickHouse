@@ -20,6 +20,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -906,9 +907,40 @@ struct AnalysisOfVarianceMoments
 
     void read(ReadBuffer & buf)
     {
-        readVectorBinary(xs1, buf);
-        readVectorBinary(xs2, buf);
-        readVectorBinary(ns, buf);
+        /// Aggregate function states can be constructed from untrusted data, e.g. by `CAST` from
+        /// `String`, so deserialization has to enforce the invariants that `merge` and finalization
+        /// rely on (a genuine state produced by `add` and `merge` satisfies them by construction):
+        ///  - the number of groups does not exceed `MAX_GROUPS_NUMBER`;
+        ///  - `xs1`, `xs2` and `ns` have the same size, since they are indexed together.
+        /// Each length prefix is validated against `MAX_GROUPS_NUMBER` before the vector is resized,
+        /// so a forged prefix cannot force a large allocation ahead of the check.
+        readGroupVector(xs1, buf);
+        readGroupVector(xs2, buf);
+        readGroupVector(ns, buf);
+
+        if (xs1.size() != xs2.size() || xs1.size() != ns.size())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted aggregate function state: the sizes of the group sums ({}), squared sums ({}) and counts ({}) differ",
+                xs1.size(), xs2.size(), ns.size());
+    }
+
+    template <typename Vec>
+    static void readGroupVector(Vec & vec, ReadBuffer & buf)
+    {
+        using V = typename Vec::value_type;
+
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (size > MAX_GROUPS_NUMBER)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted aggregate function state: too many groups for analysis of variance (should be no more than {}, got {})",
+                MAX_GROUPS_NUMBER, size);
+
+        vec.resize(size);
+        readNBytes(reinterpret_cast<char *>(vec.data()), size * sizeof(V), buf);
     }
 
     Float64 getMeanAll() const
