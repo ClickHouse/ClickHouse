@@ -280,7 +280,11 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(
+    ReadBuffer & buf,
+    size_t & complexity,
+    size_t max_complexity,
+    bool is_simple_aggregate_function = false)
 {
     String function_name;
     readStringBinary(function_name, buf);
@@ -304,7 +308,13 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
         arguments_types.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    auto function = AggregateFunctionFactory::instance().get(function_name, action, arguments_types, parameters, properties);
+    /// A declared state type, decoded from its binary encoding: resolve it independently of the current query
+    /// settings. A SimpleAggregateFunction keeps its historical Variant NULL handling because its raw values are
+    /// re-aggregated by merges.
+    auto function = AggregateFunctionFactory::instance().get(
+        function_name, action, arguments_types, parameters, properties,
+        AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true,
+        /*from_declared_simple_aggregate_function=*/ is_simple_aggregate_function);
     return {function, parameters, arguments_types};
 }
 
@@ -779,7 +789,8 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(
+                buf, complexity, max_complexity, /*is_simple_aggregate_function=*/ true);
             return createSimpleAggregateFunctionType(function, arguments_types, parameters);
         }
         case BinaryTypeIndex::Nested:

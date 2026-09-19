@@ -584,7 +584,8 @@ Block MergeTreeDataWriter::mergeBlock(
     const StorageMetadataPtr & metadata_snapshot,
     SortDescription sort_description,
     IColumn::Permutation *& permutation,
-    const MergeTreeData::MergingParams & merging_params)
+    const MergeTreeData::MergingParams & merging_params,
+    const Settings * settings)
 {
     SharedHeader header = std::make_shared<const Block>(std::move(block));
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
@@ -647,7 +648,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "last_value", "last_value", false, true, merging_params.allow_tuple_element_aggregation);
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "last_value", "last_value", false, true, merging_params.allow_tuple_element_aggregation, settings);
             }
         }
     };
@@ -899,7 +900,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (optimize_on_insert)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
-        block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+        block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params, &context->getSettingsRef());
     }
 
     ColumnsStatistics statistics;

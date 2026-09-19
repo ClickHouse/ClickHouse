@@ -531,7 +531,7 @@ SELECT groupUniqArray(2)(x) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true };
 
     factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, documentation, properties });
 }

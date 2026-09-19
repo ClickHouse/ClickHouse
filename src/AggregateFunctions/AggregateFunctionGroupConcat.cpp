@@ -273,7 +273,7 @@ static AggregateFunctionPtr createAggregateFunctionGroupConcat(
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true };
 
     /// groupConcat documentation
     FunctionDocumentation::Description description_groupConcat = R"(

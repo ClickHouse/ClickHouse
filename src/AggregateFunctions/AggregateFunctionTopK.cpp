@@ -627,7 +627,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true };
 
     FunctionDocumentation::Description description_topK = R"(
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
