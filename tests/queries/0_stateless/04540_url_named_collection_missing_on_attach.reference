@@ -21,6 +21,8 @@ fmt attached
 1
 deferred url comment
 NOT_IMPLEMENTED
+BAD_ARGUMENTS
+NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 ddl ok
 --- partition DDL, CHECK and catalog sweeps while the named collection is still missing ---

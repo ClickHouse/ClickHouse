@@ -2733,6 +2733,22 @@ public:
             IStorage::alter(params, context, alter_lock_holder, ddl_guard); // NOLINT(bugprone-parent-virtual-call)
     }
 
+    /// `AlterCommands::validate` reads these before `checkAlterIsPossible`, so they must answer without
+    /// materializing; no engine a `URL` dispatches to supports either, so `false` is the delegate's answer.
+    bool supportsTTL() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->supportsTTL();
+        return IStorage::supportsTTL(); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    bool supportsStatistics() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->supportsStatistics();
+        return IStorage::supportsStatistics(); // NOLINT(bugprone-parent-virtual-call)
+    }
+
     /// `StorageProxy` forwards `supportsPrewhere` but not these two, so without the overrides the
     /// wrapper would report the unrestricted `IStorage` defaults instead of `IStorageURLBase`'s
     /// narrower contract. Materializing is fine here: these are only read during query planning.
@@ -2863,18 +2879,10 @@ static StoragePtr createStorageURLImpl(const StorageFactory::Arguments & args)
     if (args.mode <= LoadingStrictnessLevel::CREATE)
         checkExperimentalURLWildcardFromIndexPages(context);
 
-    /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
-    /// still holds the raw user-provided URL. Without this override, e.g.
-    /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
-    /// would build the object storage from an unresolved relative URL.
-    ///
-    /// `args.engine_args` is a reference to the arguments of the `CREATE` AST, so materialize
-    /// the resolved URL there with the same `skip_userinfo=true` policy as the other
-    /// `url_base` materialization paths: a resolved URL may carry `user:pass@` coming from
-    /// `url_base`, and persisting it would expose the credentials through `SHOW CREATE TABLE`
-    /// and the table metadata. The object storage itself has to be built from the fully
-    /// resolved URL including userinfo, so it is initialized from a scratch copy of the
-    /// arguments that never reaches the AST.
+    /// `engine_args` is a reference into the `CREATE` AST and still holds the raw URL, which
+    /// `getConfiguration` resolved through `url_base`. The AST copy skips userinfo: a resolved URL may
+    /// carry `user:pass@` from `url_base`, and persisting it would expose the credentials through
+    /// `SHOW CREATE TABLE`. The object storage needs the full URL, so it is built from a scratch copy.
     StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
 
     ASTs object_storage_args;

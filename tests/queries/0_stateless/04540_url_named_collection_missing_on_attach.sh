@@ -164,6 +164,11 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE ${U}_ddl2 MODIFY COMMENT 'deferred url commen
 $CLICKHOUSE_CLIENT -q "SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = '${U}_ddl2'"
 # A non-metadata alter is rejected with NOT_IMPLEMENTED (the URL contract), not the missing collection.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE ${U}_ddl2 ADD COLUMN y UInt32" 2>&1 | grep -oE "NOT_IMPLEMENTED|NAMED_COLLECTION_DOESNT_EXIST" | head -1
+# TTL and statistics are screened by AlterCommands::validate, which reads supportsTTL/supportsStatistics
+# before checkAlterIsPossible, so they need the URL contract from the proxy itself: BAD_ARGUMENTS for
+# TTL and NOT_IMPLEMENTED for statistics, never the missing collection.
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${U}_ddl2 MODIFY TTL toDateTime(x) + INTERVAL 1 DAY" 2>&1 | grep -oE "BAD_ARGUMENTS|NAMED_COLLECTION_DOESNT_EXIST" | head -1
+$CLICKHOUSE_CLIENT -q "SET allow_statistics = 1; ALTER TABLE ${U}_ddl2 ADD COLUMN st UInt64 STATISTICS(uniq)" 2>&1 | grep -oE "NOT_IMPLEMENTED|NAMED_COLLECTION_DOESNT_EXIST" | head -1
 # TRUNCATE surfaces NOT_IMPLEMENTED (URL contract), not NAMED_COLLECTION_DOESNT_EXIST.
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ${U}_ddl2" 2>&1 | grep -oE "NOT_IMPLEMENTED|NAMED_COLLECTION_DOESNT_EXIST" | head -1
 echo "ddl ok"
