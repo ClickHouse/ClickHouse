@@ -420,6 +420,12 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     ClusterPtr cluster,
     StorageMetadataPtr storage_metadata_snapshot) const
 {
+    if (isDeltaLakeChangeDataFeedRead(*configuration, local_context->getSettingsRef()))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading a Delta Lake change data feed is not supported with distributed processing. "
+            "Read it without a cluster table function and with parallel replicas disabled");
+
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),

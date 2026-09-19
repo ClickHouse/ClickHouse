@@ -199,8 +199,7 @@ StorageObjectStorage::StorageObjectStorage(
         lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function,
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
-    bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
-            || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
+    const bool is_delta_lake_cdf = deltaLakeChangeDataFeedSettingsSet(context->getSettingsRef());
 
     if (!is_table_function && is_delta_lake_cdf)
     {
@@ -730,6 +729,11 @@ void StorageObjectStorage::read(
             if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
                 delta_kernel_metadata != nullptr)
             {
+                if (distributed_processing)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Delta lake change data feed cannot be read with distributed processing");
+
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
                 auto version_range = DeltaLake::TableChanges::getVersionRange(
                     start_version,

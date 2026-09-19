@@ -415,5 +415,18 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+extern const SettingsInt64 delta_lake_snapshot_start_version;
+extern const SettingsInt64 delta_lake_snapshot_end_version;
+}
+
+bool deltaLakeChangeDataFeedSettingsSet(const Settings & settings)
+{
+    return settings[Setting::delta_lake_snapshot_start_version] != -1
+        || settings[Setting::delta_lake_snapshot_end_version] != -1;
+}
+
+bool isDeltaLakeChangeDataFeedRead(const StorageObjectStorageConfiguration & configuration, const Settings & settings)
+{
+    return configuration.isDeltaLakeConfiguration() && deltaLakeChangeDataFeedSettingsSet(settings);
 }
 }
