@@ -7,6 +7,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_integration_tests,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.store_data import PRODUCT_CODE_PATHS
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
@@ -209,9 +210,30 @@ def _stress_and_fuzzer_paths():
 
 _STRESS_AND_FUZZER_PATHS = _stress_and_fuzzer_paths()
 
-# A submodule bump is two lines in the diff and an arbitrary amount of new
-# third-party code in the binary, so a line count says nothing about its size.
-_SUBMODULE_PATHS = ("contrib/", ".gitmodules")
+
+def _uncounted_build_paths():
+    """Build-digest inputs whose changed lines `store_data.py` does not count - it
+    counts `PRODUCT_CODE_PATHS` only. Their diff size says nothing about the size
+    of the change to the binary: a bumped gitlink under `contrib/` is two lines and
+    an arbitrary amount of new third-party code, and a one-line compiler flag in
+    `ci/jobs/build_clickhouse.py` rebuilds everything. A PR touching one of them is
+    therefore never small, which keeps the invariant that every input of the build
+    digest either counts towards the threshold or takes the PR out of the rule.
+    """
+    counted = {path.rstrip("/") for path in PRODUCT_CODE_PATHS}
+    return tuple(
+        sorted(
+            path
+            for path in (p.removeprefix("./") for p in build_digest_config.include_paths)
+            if path.rstrip("/") not in counted
+        )
+    )
+
+
+_UNCOUNTED_BUILD_PATHS = _uncounted_build_paths()
+_BUILD_DIGEST_EXCLUDES = tuple(
+    p.removeprefix("./") for p in build_digest_config.exclude_paths
+)
 
 
 def _is_stress_or_fuzzer_job(job_name):
@@ -226,14 +248,17 @@ def _has_stress_or_fuzzer_changes(changed_files):
     return False
 
 
-def _has_submodule_changes(changed_files):
-    """True if the PR bumps a submodule, i.e. pulls in third-party code whose size
-    the diff does not show - see `_SUBMODULE_PATHS`.
+def _has_uncounted_build_changes(changed_files):
+    """True if the PR changes the built binary in a way the line count does not see
+    - see `_uncounted_build_paths`.
 
     Strips `./` as a whole, unlike the `.`-then-`/` of the helpers above: one of
     the paths matched here is itself a dotfile (`.gitmodules`)."""
     for f in changed_files:
-        if f.removeprefix("./").startswith(_SUBMODULE_PATHS):
+        p = f.removeprefix("./")
+        if p.startswith(_UNCOUNTED_BUILD_PATHS) and not p.startswith(
+            _BUILD_DIGEST_EXCLUDES
+        ):
             return True
     return False
 
@@ -386,7 +411,7 @@ def should_skip_job(job_name):
     if (
         _is_stress_or_fuzzer_job(job_name)
         and _is_small_pr(_info_cache)
-        and not _has_submodule_changes(changed_files)
+        and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
     ):
         return (
