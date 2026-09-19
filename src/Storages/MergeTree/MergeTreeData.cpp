@@ -13804,6 +13804,8 @@ void MergeTreeData::setPropertiesAndResetSerializationHints(
 
     /// Cloned outside `parts_lock`: the copy deep-clones projections, keys and settings changes.
     auto owned_metadata = std::make_unique<const StorageInMemoryMetadata>(new_metadata);
+    /// Materialised up front: nothing between the publish and the hints swap may allocate.
+    const String pause_after_publish = FailPoints::mt_alter_pause_after_metadata_publish;
 
     {
         auto parts_lock = lockParts();
@@ -13816,7 +13818,7 @@ void MergeTreeData::setPropertiesAndResetSerializationHints(
             setInMemoryMetadata(std::move(owned_metadata));
             patch_parts_sorting_keys_cache.clear();
         }
-        FailPointInjection::pauseFailPoint(FailPoints::mt_alter_pause_after_metadata_publish);
+        FailPointInjection::pauseFailPoint(pause_after_publish);
         serialization_hints = std::move(new_hints);
     }
 
