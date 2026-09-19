@@ -100,3 +100,46 @@ FROM
     )
     GROUP BY ALL WITH ROLLUP
 );
+
+-- Tuple grouping keys stay intact for CUBE/ROLLUP. OrderByTupleEliminationPass must not
+-- rewrite ORDER BY tuple(a, b) into ORDER BY a, b because only the tuple key survives aggregation.
+SELECT tuple(a, b), count()
+FROM
+(
+    SELECT number AS a, toString(number) AS b
+    FROM numbers(3)
+)
+GROUP BY tuple(a, b) WITH CUBE
+ORDER BY tuple(a, b)
+FORMAT Null;
+
+SELECT tuple(a, b), count()
+FROM
+(
+    SELECT number AS a, toString(number) AS b
+    FROM numbers(3)
+)
+GROUP BY tuple(a, b) WITH ROLLUP
+ORDER BY tuple(a, b)
+FORMAT Null;
+
+-- GROUP BY ALL reaches the same preserved-tuple representation for these modifiers.
+SELECT (a, b), count()
+FROM
+(
+    SELECT number AS a, toString(number) AS b
+    FROM numbers(3)
+)
+GROUP BY ALL WITH CUBE
+ORDER BY ALL
+FORMAT Null;
+
+SELECT (a, b), count()
+FROM
+(
+    SELECT number AS a, toString(number) AS b
+    FROM numbers(3)
+)
+GROUP BY ALL WITH ROLLUP
+ORDER BY ALL
+FORMAT Null;
