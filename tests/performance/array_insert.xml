@@ -1,0 +1,51 @@
+<test>
+    <!-- Keep array construction out of the timed queries. Each size processes exactly 10 Mi elements. -->
+    <substitutions>
+        <substitution>
+            <name>array_size</name>
+            <values>
+                <value>4</value>
+                <value>16</value>
+                <value>128</value>
+                <value>1024</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE array_insert_perf_{array_size}
+        (
+            a Array(UInt64),
+            pos_signed Int64,
+            pos_unsigned UInt64,
+            value UInt64
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO array_insert_perf_{array_size}
+        SELECT
+            arrayMap(i -&gt; number + i, range({array_size})),
+            toInt64(number % ({array_size} + 1) + 1),
+            number % ({array_size} + 1) + 1,
+            number
+        FROM numbers(10485760 / {array_size})
+    </fill_query>
+
+    <!-- Constant middle position. -->
+    <query>SELECT arrayInsert(a, {array_size} / 2 + 1, value) FROM array_insert_perf_{array_size} FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, {array_size} / 2), [value], arraySlice(a, {array_size} / 2 + 1)) FROM array_insert_perf_{array_size} FORMAT Null</query>
+
+    <!-- Dynamic positions, compared with the equivalent arraySlice/arrayConcat expression. -->
+    <query>SELECT arrayInsert(a, pos_signed, value) FROM array_insert_perf_{array_size} FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, pos_signed - 1), [value], arraySlice(a, pos_signed)) FROM array_insert_perf_{array_size} FORMAT Null</query>
+    <query>SELECT arrayInsert(a, pos_unsigned, value) FROM array_insert_perf_{array_size} FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, pos_unsigned - 1), [value], arraySlice(a, pos_unsigned)) FROM array_insert_perf_{array_size} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_insert_perf_{array_size}</drop_query>
+</test>
