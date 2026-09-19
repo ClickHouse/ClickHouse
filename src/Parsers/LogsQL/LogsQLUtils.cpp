@@ -357,6 +357,107 @@ std::optional<Int128> tryParseExactSuffixedTerms(std::string_view rest, bool dur
     return total;
 }
 
+/// Computes the exact integer value of a decimal spelling that becomes integral only after
+/// the fraction and the exponent are applied ("1e0", "1.0", "9.007199254740993e15").
+/// The computation is done on the digits of the text, so it is exact above 2^53, where the
+/// `Float64` value of the same spelling has already rounded. Returns nullopt when the text is
+/// not such a decimal (a base prefix, a duration, a byte size, "inf", "nan"), when its value
+/// is not an integer, or when the magnitude does not fit the 64-bit range.
+std::optional<Field> tryParseExactDecimalInteger(const String & text)
+{
+    String stripped = removeUnderscores(text);
+    std::string_view rest = stripped;
+    bool negative = false;
+    if (!rest.empty() && (rest[0] == '-' || rest[0] == '+'))
+    {
+        negative = rest[0] == '-';
+        rest.remove_prefix(1);
+    }
+
+    String digits;
+    size_t fractional_digits = 0;
+    bool seen_dot = false;
+    size_t pos = 0;
+    for (; pos < rest.size(); ++pos)
+    {
+        const char c = rest[pos];
+        if (isDigit(c))
+        {
+            digits += c;
+            if (seen_dot)
+                ++fractional_digits;
+        }
+        else if (c == '.' && !seen_dot)
+        {
+            seen_dot = true;
+        }
+        else
+        {
+            break;
+        }
+    }
+    if (digits.empty())
+        return {};
+
+    /// The optional decimal exponent. Everything else (a suffix, a base prefix) is not a decimal.
+    Int64 exponent = 0;
+    if (pos < rest.size())
+    {
+        if (rest[pos] != 'e' && rest[pos] != 'E')
+            return {};
+        std::string_view exponent_text = rest.substr(pos + 1);
+        bool exponent_negative = false;
+        if (!exponent_text.empty() && (exponent_text[0] == '-' || exponent_text[0] == '+'))
+        {
+            exponent_negative = exponent_text[0] == '-';
+            exponent_text.remove_prefix(1);
+        }
+        if (exponent_text.empty() || !std::all_of(exponent_text.begin(), exponent_text.end(), isDigit))
+            return {};
+        while (exponent_text.size() > 1 && exponent_text.front() == '0')
+            exponent_text.remove_prefix(1);
+        /// A five-digit exponent is far outside of the 64-bit range in either direction.
+        if (exponent_text.size() > 4)
+            return {};
+        for (char c : exponent_text)
+            exponent = exponent * 10 + (c - '0');
+        if (exponent_negative)
+            exponent = -exponent;
+    }
+
+    std::string_view significant = digits;
+    while (significant.size() > 1 && significant.front() == '0')
+        significant.remove_prefix(1);
+    if (significant.find_first_not_of('0') == std::string_view::npos)
+        return integerFieldFromMagnitude(0, negative);
+
+    /// The value is `significant` scaled by `10^shift`. A negative shift is integral only when
+    /// it drops trailing zeros.
+    Int64 shift = exponent - static_cast<Int64>(fractional_digits);
+    if (shift < 0)
+    {
+        const size_t dropped = static_cast<size_t>(-shift);
+        if (dropped >= significant.size())
+            return {};
+        if (significant.substr(significant.size() - dropped).find_first_not_of('0') != std::string_view::npos)
+            return {};
+        significant.remove_suffix(dropped);
+        shift = 0;
+    }
+
+    /// The largest 64-bit value has 20 digits, so anything longer is out of range.
+    if (significant.size() + static_cast<size_t>(shift) > 20)
+        return {};
+
+    Int128 magnitude = 0;
+    for (char c : significant)
+        magnitude = magnitude * 10 + (c - '0');
+    for (Int64 i = 0; i < shift; ++i)
+        magnitude *= 10;
+
+    return integerFieldFromMagnitude(magnitude, negative);
+}
+
 }
 
 std::optional<Field> tryParseNumberField(const String & text)
@@ -443,7 +544,26 @@ std::optional<UInt64> tryParseNonNegativeInteger(const String & text)
         return {};
     if (value >= 18446744073709551616.0)
         return {};
-    return static_cast<UInt64>(value);
+    /// Below 2^53 every integral `Float64` is exact, so the cast reproduces the written value.
+    if (value < 9007199254740992.0)
+        return static_cast<UInt64>(value);
+    /// Above 2^53 the `Float64` has possibly already rounded: `9007199254740993.0` and
+    /// `9.007199254740993e15` both arrive here as `9007199254740992`. Recover the exact value
+    /// from the digits of the text, and reject the spellings for which this is not possible
+    /// (a fractional byte size such as `10.5E`) instead of silently using a rounded bound.
+    if (auto exact = tryParseExactDecimalInteger(text); exact && exact->getType() == Field::Types::UInt64)
+        return exact->safeGet<UInt64>();
+    return {};
+}
+
+std::optional<Field> tryParseExactNumberField(const String & text)
+{
+    auto field = tryParseNumberField(text);
+    if (!field || field->getType() != Field::Types::Float64)
+        return field;
+    if (auto exact = tryParseExactDecimalInteger(text))
+        return exact;
+    return field;
 }
 
 bool isNumberPrefix(const String & text)

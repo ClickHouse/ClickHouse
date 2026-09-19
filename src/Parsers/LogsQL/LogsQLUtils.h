@@ -22,6 +22,13 @@ std::optional<Float64> tryParseNumber(const String & text);
 /// comparisons stay exact across the full 64-bit range instead of rounding through `Float64`.
 std::optional<Field> tryParseNumberField(const String & text);
 
+/// Same as tryParseNumberField, but also preserves the exact value of decimal spellings that
+/// are integral only after the fraction and the exponent are applied ("1e0", "1.0",
+/// "9.007199254740993e15"): `tryParseNumberField` keeps them as `Float64`, which rounds above
+/// 2^53. Use it wherever the exact value of the literal matters - comparison filters,
+/// `range()`, and `stats by` buckets.
+std::optional<Field> tryParseExactNumberField(const String & text);
+
 /// Parses a LogsQL numeric value that has to be a non-negative integer fitting `UInt64`
 /// (`limit`, `offset`, bucket counts, `len_range` bounds, ...). Returns nullopt for
 /// anything that is not such an integer, including a value that is out of the `UInt64`

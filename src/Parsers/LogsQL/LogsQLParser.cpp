@@ -674,7 +674,7 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
     lex.nextToken();
 
     String min_text = lex.nextCompoundToken();
-    auto min_value = tryParseNumberField(min_text);
+    auto min_value = tryParseExactNumberField(min_text);
     if (!min_value)
         throwSyntaxError(fmt::format("cannot parse {} as a number in range()", min_text));
 
@@ -683,7 +683,7 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
     lex.nextToken();
 
     String max_text = lex.nextCompoundToken();
-    auto max_value = tryParseNumberField(max_text);
+    auto max_value = tryParseExactNumberField(max_text);
     if (!max_value)
         throwSyntaxError(fmt::format("cannot parse {} as a number in range()", max_text));
 
@@ -902,11 +902,22 @@ ASTPtr LogsQLParser::parseFilterContains(const String & field_name, bool need_al
         values_layer.has_projection = true;
         auto values_subquery = make_intrusive<ASTSubquery>(buildSelectWithUnion(values_layer));
 
-        /// arrayExists(v -> position(col, v) > 0, <values>) / arrayAll(...) for contains_all.
+        /// arrayExists(v -> <phrase filter on v>, <values>) / arrayAll(...) for contains_all.
+        /// The phrase filter is the same one the literal form builds in `makePhraseFilter`,
+        /// with the pattern assembled at run time: the value is quoted with `regexpQuoteMeta`
+        /// and surrounded by the LogsQL word boundaries, and it is matched against the
+        /// normalized string value of the field. `match` accepts a non-constant pattern, so
+        /// both forms of the filter mean exactly the same thing on every column type.
+        /// An empty value matches everything, as an empty literal phrase does.
         auto lambda_argument = make_intrusive<ASTIdentifier>("__logsql_value");
-        auto lambda_body = makeASTFunction("greater",
-            makeASTFunction("position", columnExpr(field_name), lambda_argument),
-            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0))));
+        auto pattern = makeASTFunction("concat",
+            make_intrusive<ASTLiteral>(Field(String(boundary_before))),
+            makeASTFunction("regexpQuoteMeta", lambda_argument),
+            make_intrusive<ASTLiteral>(Field(String(boundary_after))));
+        auto lambda_body = makeASTFunction("if",
+            makeASTFunction("equals", lambda_argument->clone(), make_intrusive<ASTLiteral>(Field(String()))),
+            make_intrusive<ASTLiteral>(Field(static_cast<UInt8>(1))),
+            makeASTFunction("match", stringValueExpr(field_name), std::move(pattern)));
         auto lambda = makeASTFunction("lambda", makeASTFunction("tuple", lambda_argument->clone()), lambda_body);
         return makeASTFunction(need_all ? "arrayAll" : "arrayExists", lambda, values_subquery);
     }
@@ -1620,7 +1631,7 @@ ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const Strin
     bool is_numeric = literal->as<ASTLiteral>()->value.getType() != Field::Types::String;
     if (!is_numeric && !quoted && isNumberPrefix(value))
     {
-        if (auto number = tryParseNumberField(value))
+        if (auto number = tryParseExactNumberField(value))
         {
             literal = make_intrusive<ASTLiteral>(*number);
             is_numeric = true;
@@ -1632,7 +1643,15 @@ ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const Strin
     }
 
     if (is_numeric)
+    {
+        /// An integral value written with a fraction or an exponent ("1.0", "9.007199254740993e15")
+        /// becomes a `Float64` literal, which rounds above 2^53. Recover the exact integer from
+        /// the text, so that it is compared through the exact `Int128` branch like "1" is.
+        if (!quoted && literal->as<ASTLiteral>()->value.getType() == Field::Types::Float64)
+            if (auto exact = tryParseExactNumberField(value); exact && exact->getType() != Field::Types::Float64)
+                literal = make_intrusive<ASTLiteral>(*exact);
         return makeNumericComparison(field_name, function_name, std::move(literal), value);
+    }
     return makeASTFunction(function_name, columnExpr(field_name), std::move(literal));
 }
 

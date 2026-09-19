@@ -1312,8 +1312,10 @@ void LogsQLParser::parsePipeCoalesce(Layer & layer)
     if (lex.isKeyword("default"))
     {
         lex.nextToken();
-        bool quoted = lex.isQuoted();
-        default_value = makeValueLiteral(lex.nextCompoundToken(), quoted);
+        /// The value is a LogsQL string, exactly like the field values the pipe returns:
+        /// an unquoted numeric default (`coalesce(note, size) default 0`) must not turn the
+        /// expression into a mix of a `String` and a number, which has no common type.
+        default_value = makeStringLiteral(lex.nextCompoundToken());
     }
 
     String result_name = "_msg";
@@ -1821,7 +1823,7 @@ void LogsQLParser::parsePipePack(Layer & layer, bool is_logfmt)
         auto concat = makeASTFunction("concat");
         for (size_t i = 0; i < fields.size(); ++i)
         {
-            ASTPtr value = makeASTFunction("toString", columnExpr(fields[i]));
+            ASTPtr value = stringValueExpr(fields[i]);
             ASTPtr needs_quoting = makeASTFunction("match", value->clone(), makeStringLiteral(R"re([ ="\\[:cntrl:]])re"));
             value = makeASTFunction("if", needs_quoting, makeASTFunction("toJSONString", value->clone()), value);
             concat->arguments->children.push_back(makeStringLiteral((i == 0 ? "" : " ") + fields[i] + "="));
@@ -1836,7 +1838,7 @@ void LogsQLParser::parsePipePack(Layer & layer, bool is_logfmt)
         for (const auto & field : fields)
         {
             entries->arguments->children.push_back(makeStringLiteral(field));
-            entries->arguments->children.push_back(makeASTFunction("toString", columnExpr(field)));
+            entries->arguments->children.push_back(stringValueExpr(field));
         }
         auto key_argument = make_intrusive<ASTIdentifier>("__logsql_key");
         auto value_argument = make_intrusive<ASTIdentifier>("__logsql_value");
@@ -1970,7 +1972,10 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                 }
                 else
                 {
-                    auto step = tryParseNumberField(bucket);
+                    /// The exact variant keeps integral steps written with a fraction or an
+                    /// exponent ("1.0", "1e0") on the exact integer bucket path below, so that
+                    /// they behave like "1" instead of collapsing wide integers through `Float64`.
+                    auto step = tryParseExactNumberField(bucket);
                     auto to_float = [](const Field & field)
                     {
                         if (field.getType() == Field::Types::UInt64)
@@ -1985,7 +1990,7 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                     std::optional<Field> offset_value;
                     if (bucket_offset)
                     {
-                        offset_value = tryParseNumberField(*bucket_offset);
+                        offset_value = tryParseExactNumberField(*bucket_offset);
                         if (!offset_value)
                             throwSyntaxError(fmt::format("cannot parse the bucket offset {} for the field {}", *bucket_offset, name));
                     }
@@ -2422,7 +2427,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         for (const auto & field : row_fields)
         {
             entries->arguments->children.push_back(makeStringLiteral(field));
-            entries->arguments->children.push_back(makeASTFunction("toString", columnExpr(field)));
+            entries->arguments->children.push_back(stringValueExpr(field));
         }
         auto key_argument = make_intrusive<ASTIdentifier>("__logsql_key");
         auto value_argument = make_intrusive<ASTIdentifier>("__logsql_value");
