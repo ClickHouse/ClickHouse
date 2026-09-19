@@ -1586,12 +1586,32 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'http_requests_total'
 )");
 
+    EXPECT_EQ(parse("http_requests_total @ -100"), R"(
+http_requests_total @ -100
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: -100
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
     EXPECT_EQ(parse("http_requests_total @ start()"), R"(
 http_requests_total @ start()
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
         at: start()
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse("http_requests_total @ +3.3e1"), R"(
+http_requests_total @ 33
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: 33
         InstantSelector:
             __name__ EQ 'http_requests_total'
 )");

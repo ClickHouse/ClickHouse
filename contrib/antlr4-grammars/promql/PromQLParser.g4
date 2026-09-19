@@ -111,7 +111,7 @@ parens
 // Timestamps and durations
 
 timestamp
-    : NUMBER
+    : (ADD | SUB)? NUMBER
     | START LEFT_PAREN RIGHT_PAREN
     | END LEFT_PAREN RIGHT_PAREN
     ;
