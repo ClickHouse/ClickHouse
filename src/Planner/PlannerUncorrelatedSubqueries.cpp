@@ -102,7 +102,7 @@ void addStepForMarker(QueryPlan & subquery_plan, const String & marker_name)
 
 /// `NULL` is not a value the join can match, so a row with a `NULL` key comes out unmatched, with a `false` marker.
 /// This would let `NOT IN` keep the row whereas three valued logic in `IN` would drop. This is fixed by wrapping
-/// the marker in `if(isNull(key), NULL, marker)`. This is only required for a single-column `IN`.
+/// the marker in `if(key is null, NULL, marker)`. This is only required for a single-column `IN`.
 const ActionsDAG::Node & addNodesForNullKeyMask(
     ActionsDAG & result_dag,
     const ActionsDAG::Node & marker,
@@ -129,7 +129,6 @@ const ActionsDAG::Node & addNodesForNullKeyMask(
 void addStepForMarkerResult(
     QueryPlan & query_plan,
     const UncorrelatedInSubquery & in_subquery,
-    const Names & key_column_names,
     const PlannerContextPtr & planner_context)
 {
     auto & function_factory = FunctionFactory::instance();
@@ -146,12 +145,12 @@ void addStepForMarkerResult(
     const auto * result = marker;
     if (isNullableOrLowCardinalityNullable(in_subquery.result_type))
     {
-        if (key_column_names.size() != 1)
+        if (in_subquery.key_column_names_before_cast.size() != 1)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "`IN` with a nullable result has {} key columns, expected one",
-                key_column_names.size());
-        result = &addNodesForNullKeyMask(result_dag, *result, key_column_names.front(), query_context);
+                in_subquery.key_column_names_before_cast.size());
+        result = &addNodesForNullKeyMask(result_dag, *result, in_subquery.key_column_names_before_cast.front(), query_context);
     }
 
     if (in_subquery.is_negated)
@@ -318,7 +317,7 @@ void buildQueryPlanForUncorrelatedInSubquery(
     result_plan.unitePlans(std::move(join_step), std::move(plans));
 
     if (in_subquery.is_negated || !in_subquery.result_type->equals(DataTypeUInt8{}))
-        addStepForMarkerResult(result_plan, in_subquery, key_column_names, planner_context);
+        addStepForMarkerResult(result_plan, in_subquery, planner_context);
 
     query_plan = std::move(result_plan);
 }

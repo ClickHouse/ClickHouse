@@ -43,6 +43,8 @@ struct UncorrelatedInSubquery
     bool is_negated = false;
     /// The columns the join keys on, one per element of the key. Filled by`analyzeInToJoin`.
     Names key_column_names;
+    /// The same columns before the cast to the set type.
+    Names key_column_names_before_cast;
 };
 
 using UncorrelatedInSubqueries = std::vector<UncorrelatedInSubquery>;

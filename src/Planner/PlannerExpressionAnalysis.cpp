@@ -119,16 +119,20 @@ InToJoinAnalysisResults analyzeInToJoin(
             /// A set casts the key to its own type before probing it, so the join keys on that same cast.
             auto subquery_column_type = removeNullable(removeLowCardinality(subquery_columns[i].type));
             auto key_type = removeNullable(removeLowCardinality(key_output->result_type));
+            const auto * key_before_cast = key_output;
             if (key_type->getName() != subquery_column_type->getName() && subquery_column_type->canBeInsideNullable())
                 key_output = &key_dag.addAccurateCastOrNull(
                     *key_output, subquery_column_type, {}, planner_context->getQueryContext());
 
             has_computed_key |= key_output->type != ActionsDAG::ActionType::INPUT;
+            in_subquery.key_column_names_before_cast.push_back(key_before_cast->result_name);
             in_subquery.key_column_names.push_back(key_output->result_name);
 
             /// One `IN` can key on the same expression twice, and a block cannot carry one column twice.
             if (distinct_key_names.insert(key_output->result_name).second)
                 distinct_key_outputs.push_back(key_output);
+            if (distinct_key_names.insert(key_before_cast->result_name).second)
+                distinct_key_outputs.push_back(key_before_cast);
         }
 
         key_dag.getOutputs() = std::move(distinct_key_outputs);
