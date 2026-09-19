@@ -192,7 +192,6 @@ public:
         UInt16 year;
         UInt8 month;
         UInt8 day_of_month;
-        UInt8 day_of_week;
 
         /// Total number of days in current month. Actually we can use separate table that is independent of time zone.
         /// But due to alignment, this field is totally zero cost.
@@ -333,6 +332,77 @@ private:
     /// The Values of the day an out-of-range value belongs to.
     Values outOfRangeValues(Time t) const { return valuesForOutOfRangeDayIndex(findDayIndexOutOfRange(t)); }
     Values outOfRangeValues(ExtendedDayNum d) const { return valuesForOutOfRangeDayIndex(outOfRangeDayIndex(d)); }
+
+    /// Splitting a time of day into hours, minutes and seconds without three divisions in sequence.
+    /// See https://www.benjoffe.com/fast-time-of-day
+    static constexpr UInt64 seconds_per_minute_reciprocal = 4581298450; /// (1 << 38) / 60 + 1
+    static constexpr UInt64 seconds_per_hour_reciprocal = 76354975;     /// (1 << 38) / 3600 + 1
+    static constexpr UInt32 time_of_day_reciprocal_shift = 38;
+    /// The largest argument both reciprocals are exact for; the hour one binds. Exactness over the whole range
+    /// is checked out of band, since a compile-time loop over it is past the constexpr step limit.
+    static constexpr UInt32 time_of_day_reciprocal_max = 89949598;
+    static constexpr UInt32 time_of_day_first_inexact = time_of_day_reciprocal_max + 1;
+    static_assert(seconds_per_minute_reciprocal == (1ULL << time_of_day_reciprocal_shift) / 60 + 1);
+    static_assert(seconds_per_hour_reciprocal == (1ULL << time_of_day_reciprocal_shift) / 3600 + 1);
+    static_assert(
+        ((time_of_day_reciprocal_max * seconds_per_minute_reciprocal) >> time_of_day_reciprocal_shift) == time_of_day_reciprocal_max / 60);
+    static_assert(
+        ((time_of_day_reciprocal_max * seconds_per_hour_reciprocal) >> time_of_day_reciprocal_shift) == time_of_day_reciprocal_max / 3600);
+    static_assert(
+        ((time_of_day_first_inexact * seconds_per_minute_reciprocal) >> time_of_day_reciprocal_shift) == time_of_day_first_inexact / 60);
+    static_assert(
+        ((time_of_day_first_inexact * seconds_per_hour_reciprocal) >> time_of_day_reciprocal_shift) != time_of_day_first_inexact / 3600,
+        "the bound must be maximal");
+
+    struct HoursMinutesSeconds
+    {
+        UInt32 hour;
+        UInt8 minute;
+        UInt8 second;
+    };
+
+    /// `time_of_day` is a clock reading in seconds, so it never approaches the bound above: the callers cap it
+    /// at a day plus a daylight saving shift, or at 999:59:59 for the `Time` data type, which is why the hour
+    /// does not fit in a `UInt8`.
+    static HoursMinutesSeconds toHoursMinutesSeconds(UInt32 time_of_day)
+    {
+        chassert(time_of_day <= time_of_day_reciprocal_max);
+        const UInt32 total_minutes = static_cast<UInt32>((time_of_day * seconds_per_minute_reciprocal) >> time_of_day_reciprocal_shift);
+        const UInt32 hour = static_cast<UInt32>((time_of_day * seconds_per_hour_reciprocal) >> time_of_day_reciprocal_shift);
+        return {.hour = hour,
+                .minute = static_cast<UInt8>(total_minutes - hour * 60),
+                .second = static_cast<UInt8>(time_of_day - total_minutes * 60)};
+    }
+
+    /// ISO day of week (Monday = 1 ... Sunday = 7) of a day index (a day count from DATE_LUT_MIN_YEAR-01-01,
+    /// whose day zero, 1900-01-01, is a Monday), computed without reading the lookup table.
+    /// See https://www.benjoffe.com/fast-day-of-week
+    /// The low 32 bits of the product are the fraction of `n / 7` scaled by 2^32, so their top three bits are
+    /// `floor(8 * r / 7)`, which is `r` itself for every `r <= 6`; the addend carries the 1 of the 1-based result.
+    /// The bias is a multiple of 7, so it leaves the residue alone, and it makes every representable day index
+    /// non-negative, which the identity requires.
+    static constexpr UInt32 day_of_week_reciprocal = 613566757; /// (1 << 32) / 7 + 1
+    static constexpr UInt32 day_of_week_addend = 1u << 29;
+    static constexpr Int64 day_of_week_bias = 693966; /// A multiple of 7, at least -min_representable_day_index.
+    static constexpr UInt32 day_of_week_biased_max = 178956966; /// Above this the error term carries into the residue.
+    static_assert(7 * static_cast<UInt64>(day_of_week_reciprocal) == (1ULL << 32) + 3);
+    static_assert(day_of_week_bias % 7 == 0, "the bias must not disturb the residue");
+    static_assert(min_representable_day_index + day_of_week_bias >= 0, "the bias must make every day non-negative");
+    static_assert(max_representable_day_index + day_of_week_bias <= day_of_week_biased_max);
+
+    static UInt8 dayOfWeekFromDayIndex(Int64 day_index)
+    {
+        const UInt32 biased = static_cast<UInt32>(day_index + day_of_week_bias);
+        chassert(biased <= day_of_week_biased_max);
+        return static_cast<UInt8>((biased * day_of_week_reciprocal + day_of_week_addend) >> 29);
+    }
+
+    /// Same, for the escape paths: a day index beyond the representable calendar is reported as its boundary
+    /// day, as in `valuesForOutOfRangeDayIndex`.
+    static UInt8 dayOfWeekOfOutOfRangeDayIndex(Int64 day_index)
+    {
+        return dayOfWeekFromDayIndex(std::clamp(day_index, min_representable_day_index, max_representable_day_index));
+    }
 
     /// Day number (ExtendedDayNum, counted from the Unix epoch) corresponding to a day index (counted from DATE_LUT_MIN_YEAR).
     static ExtendedDayNum dayNumOfDayIndex(Int64 day_index)
@@ -610,13 +680,16 @@ public:
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dateOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week - 1));
+            {
+                const Int64 day_index = outOfRangeDayIndex(v);
+                return dateOfDayIndex(day_index - (dayOfWeekOfOutOfRangeDayIndex(day_index) - 1));
+            }
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i - (lut[i].day_of_week - 1)].date;
+            return lut_saturated[i - (dayOfWeekFromDayIndex(i.toUnderType()) - 1)].date;
         else
-            return lut[i - (lut[i].day_of_week - 1)].date;
+            return lut[i - (dayOfWeekFromDayIndex(i.toUnderType()) - 1)].date;
     }
 
     template <typename DateOrTime>
@@ -624,13 +697,16 @@ public:
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week - 1));
+            {
+                const Int64 day_index = outOfRangeDayIndex(v);
+                return dayNumOfDayIndex(day_index - (dayOfWeekOfOutOfRangeDayIndex(day_index) - 1));
+            }
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return toDayNum(LUTIndexWithSaturation(i - (lut[i].day_of_week - 1)));
+            return toDayNum(LUTIndexWithSaturation(i - (dayOfWeekFromDayIndex(i.toUnderType()) - 1)));
         else
-            return toDayNum(LUTIndex(i - (lut[i].day_of_week - 1)));
+            return toDayNum(LUTIndex(i - (dayOfWeekFromDayIndex(i.toUnderType()) - 1)));
     }
 
     /// Round up to the last day of week.
@@ -639,13 +715,16 @@ public:
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dateOfDayIndex(outOfRangeDayIndex(v) + (7 - outOfRangeValues(v).day_of_week));
+            {
+                const Int64 day_index = outOfRangeDayIndex(v);
+                return dateOfDayIndex(day_index + (7 - dayOfWeekOfOutOfRangeDayIndex(day_index)));
+            }
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i + (7 - lut[i].day_of_week)].date;
+            return lut_saturated[i + (7 - dayOfWeekFromDayIndex(i.toUnderType()))].date;
         else
-            return lut[i + (7 - lut[i].day_of_week)].date;
+            return lut[i + (7 - dayOfWeekFromDayIndex(i.toUnderType()))].date;
     }
 
     template <typename DateOrTime>
@@ -653,13 +732,16 @@ public:
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) + (7 - outOfRangeValues(v).day_of_week));
+            {
+                const Int64 day_index = outOfRangeDayIndex(v);
+                return dayNumOfDayIndex(day_index + (7 - dayOfWeekOfOutOfRangeDayIndex(day_index)));
+            }
 
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return toDayNum(LUTIndexWithSaturation(i + (7 - lut[i].day_of_week)));
+            return toDayNum(LUTIndexWithSaturation(i + (7 - dayOfWeekFromDayIndex(i.toUnderType()))));
         else
-            return toDayNum(LUTIndex(i + (7 - lut[i].day_of_week)));
+            return toDayNum(LUTIndex(i + (7 - dayOfWeekFromDayIndex(i.toUnderType()))));
     }
 
     /// Round down to start of month.
@@ -929,10 +1011,21 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.second);
 
-        /// Only from the epoch onward: before it the offset may have a sub-minute component (see the
-        /// flag), and `t % 60` would then answer the second of the UTC minute, not of the local one.
-        if (t >= 0 && offset_is_whole_number_of_minutes_during_epoch) [[likely]]
-            return static_cast<unsigned>(t % 60);
+        /// Each side of the epoch needs its own flag: below it the offset may have a sub-minute component,
+        /// and the modular result would then answer the second of the UTC minute, not of the local one.
+        if (t >= 0) [[likely]]
+        {
+            /// `x % 60 == (x + 4 * (x / 60)) % 64` for non-negative x, since the remainder stays below 64. That
+            /// trades the multiply-and-subtract which normally follows the division for a shifted add and a mask.
+            /// See https://www.benjoffe.com/fast-time-of-day
+            if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+                return static_cast<unsigned>((t + 4 * (t / 60)) & 63);
+        }
+        else if (offset_is_whole_number_of_minutes_in_lut_range)
+        {
+            const Time res = t % 60;
+            return static_cast<unsigned>(res >= 0 ? res : res + 60);
+        }
 
         LUTIndex index = findIndexInRange(t);
         Time time = t - lut[index].date;
@@ -1029,7 +1122,18 @@ public:
 
     /// 1-based, starts on Monday
     template <typename DateOrTime>
-    UInt8 toDayOfWeek(DateOrTime v) const { return getValues(v).day_of_week; }
+    UInt8 toDayOfWeek(DateOrTime v) const
+    {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+        {
+            if (unlikely(isOutOfLUTRange(v)))
+                return dayOfWeekOfOutOfRangeDayIndex(outOfRangeDayIndex(v));
+            /// Already gated: skip the redundant bound clamp that `findIndex` would repeat.
+            if constexpr (std::is_same_v<DateOrTime, Time>)
+                return dayOfWeekFromDayIndex(findIndexInRange(v).toUnderType());
+        }
+        return dayOfWeekFromDayIndex(toLUTIndex(v).toUnderType());
+    }
 
     template <typename DateOrTime>
     UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
@@ -1081,7 +1185,7 @@ public:
                 /// Mirror the in-range formula in day-number space (toDayNum(i + (8 - dow)) / 7), using floor
                 /// division so a pre-epoch week number rounds towards -inf; otherwise dateDiff('week', ...) undercounts.
                 const Int64 day_index = outOfRangeDayIndex(v);
-                const UInt8 day_of_week = outOfRangeValues(v).day_of_week;
+                const UInt8 day_of_week = dayOfWeekOfOutOfRangeDayIndex(day_index);
                 const Int64 shifted = day_index + (8 - day_of_week) - daynum_offset_epoch;
                 return static_cast<Int32>(shifted >= 0 ? shifted / 7 : -((-shifted + 6) / 7));
             }
@@ -1125,7 +1229,7 @@ public:
         auto iso_year = toISOYear(i);
 
         const auto first_day_of_year = years_lut[iso_year - DATE_LUT_MIN_YEAR];
-        auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
+        auto first_day_of_week_of_year = dayOfWeekFromDayIndex(first_day_of_year.toUnderType());
 
         return LUTIndex{first_day_of_week_of_year <= 4
             ? first_day_of_year + (1 - first_day_of_week_of_year)
@@ -1333,10 +1437,13 @@ public:
         }
 
         /// Out of LUT range the day number must be clamped before any arithmetic, otherwise the subtraction below
-        /// overflows a signed day number. day_of_week % 7 maps Sunday (7) to 0, since the week starts on Sunday here.
+        /// overflows a signed day number. `dayOfWeekOfOutOfRangeDayIndex` maps Sunday to 0, since the week starts on Sunday here.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week % 7));
+            {
+                const Int64 day_index = outOfRangeDayIndex(v);
+                return dayNumOfDayIndex(day_index - (dayOfWeekOfOutOfRangeDayIndex(day_index) % 7));
+            }
 
         const auto day_of_week = toDayOfWeek(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
@@ -1356,10 +1463,13 @@ public:
         }
 
         /// Out of LUT range the day number must be clamped before any arithmetic, otherwise `v += 6` below
-        /// overflows a signed day number. day_of_week % 7 maps Sunday (7) to 0, since the week starts on Sunday here.
+        /// overflows a signed day number. `dayOfWeekOfOutOfRangeDayIndex` maps Sunday to 0, since the week starts on Sunday here.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
-                return dayNumOfDayIndex(outOfRangeDayIndex(v) + 6 - (outOfRangeValues(v).day_of_week % 7));
+            {
+                const Int64 day_index = outOfRangeDayIndex(v);
+                return dayNumOfDayIndex(day_index + 6 - (dayOfWeekOfOutOfRangeDayIndex(day_index) % 7));
+            }
 
         const auto day_of_week = toDayOfWeek(v);
         v += 6;
@@ -2007,9 +2117,10 @@ public:
         }
         else
         {
-            res.time.second = time % 60;
-            res.time.minute = time / 60 % 60;
-            res.time.hour = time / 3600;
+            const HoursMinutesSeconds hms = toHoursMinutesSeconds(static_cast<UInt32>(time));
+            res.time.second = hms.second;
+            res.time.minute = hms.minute;
+            res.time.hour = hms.hour;
         }
 
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
@@ -2035,9 +2146,10 @@ public:
         if (unlikely(t > 3599999))
             t = 3599999;
 
-        res.second = t % 60;
-        res.minute = t / 60 % 60;
-        res.hour = t / 3600;
+        const HoursMinutesSeconds hms = toHoursMinutesSeconds(static_cast<UInt32>(t));
+        res.second = hms.second;
+        res.minute = hms.minute;
+        res.hour = hms.hour;
 
         res.is_negative = is_negative;
 

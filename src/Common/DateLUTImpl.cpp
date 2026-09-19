@@ -31,7 +31,8 @@ std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-l
 namespace
 {
 
-UInt8 getDayOfWeek(const cctz::civil_day & date)
+// Only used for assertion - hence maybe_unused
+[[maybe_unused]] UInt8 getDayOfWeek(const cctz::civil_day & date)
 {
     cctz::weekday day_of_week = cctz::get_weekday(date);
     switch (day_of_week)
@@ -215,13 +216,14 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         values.year = static_cast<UInt16>(date.year());
         values.month = static_cast<UInt8>(date.month());
         values.day_of_month = static_cast<UInt8>(date.day());
-        values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
 
         chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
         chassert(values.month >= 1 && values.month <= 12);
         chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
-        chassert(values.day_of_week >= 1 && values.day_of_week <= 7);
+        /// The day of week is derived arithmetically rather than stored, so check it against cctz for every
+        /// day the table can represent.
+        chassert(getDayOfWeek(date) == dayOfWeekFromDayIndex(i));
 
         if (values.day_of_month == 1)
         {
@@ -365,7 +367,6 @@ DateLUTImpl::Values DateLUTImpl::valuesForOutOfRangeDayIndex(Int64 day_index) co
     values.year = static_cast<UInt16>(date.year());
     values.month = static_cast<UInt8>(date.month());
     values.day_of_month = static_cast<UInt8>(date.day());
-    values.day_of_week = getDayOfWeek(date);
     values.date = std::chrono::system_clock::to_time_t(lookupTz(*cctz_time_zone, date));
 
     const cctz::civil_month month(date);
