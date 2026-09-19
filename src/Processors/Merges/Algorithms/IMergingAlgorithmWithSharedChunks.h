@@ -13,7 +13,8 @@ class IMergingAlgorithmWithSharedChunks : public IMergingAlgorithm
 {
 public:
     IMergingAlgorithmWithSharedChunks(
-        SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_);
+        SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_,
+        const std::optional<String> & filter_column_name_ = std::nullopt);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -76,7 +77,16 @@ protected:
 
     std::unique_ptr<MergedData> merged_data;
 
+    const ssize_t filter_column_position;
+
+    bool hasFilter() const { return filter_column_position != -1; }
+
     using RowRef = detail::RowRefWithOwnedChunk;
+
+    /// A rejected row still writes its row source entry, left skipped, so the gather stage stays
+    /// in step with the rows that were read.
+    bool isRowFiltered(const RowRef & row) const;
+
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
     bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
     bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)

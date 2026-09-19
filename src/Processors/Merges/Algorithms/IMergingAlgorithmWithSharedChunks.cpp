@@ -1,11 +1,15 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+
 namespace DB
 {
 
 IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
-    SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_)
+    SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_,
+    const std::optional<String> & filter_column_name_)
     : header(std::move(header_))
     , description(std::move(description_))
     , chunk_allocator(num_inputs + max_row_refs)
@@ -14,7 +18,15 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
     , sources_origin_merge_tree_part_level(num_inputs)
     , out_row_sources_buf(out_row_sources_buf_)
     , merged_data(std::move(merged_data_))
+    /// `header_` has been moved from by now; the member holds it.
+    , filter_column_position(resolveFilterColumnPosition(*header, filter_column_name_))
 {
+}
+
+bool IMergingAlgorithmWithSharedChunks::isRowFiltered(const RowRef & row) const
+{
+    return hasFilter()
+        && !assert_cast<const ColumnUInt8 &>(*(*row.all_columns)[filter_column_position]).getData()[row.row_num];
 }
 
 void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)

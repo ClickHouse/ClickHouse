@@ -32,10 +32,24 @@ static TTLExpressions buildTTLExpressions(
     return {expr.expression, where_expr.expression};
 }
 
-SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & header)
+String TTLDeleteFilterTransform::chooseFilterColumnName(const Block & header)
+{
+    static const String base = "_ttl_filter";
+    if (!header.has(base))
+        return base;
+
+    for (size_t suffix = 1;; ++suffix)
+    {
+        auto candidate = base + "_" + std::to_string(suffix);
+        if (!header.has(candidate))
+            return candidate;
+    }
+}
+
+SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & header, const String & filter_column_name)
 {
     auto result = *header;
-    result.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), TTL_FILTER_COLUMN_NAME});
+    result.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), filter_column_name});
     return std::make_shared<const Block>(std::move(result));
 }
 
@@ -89,8 +103,9 @@ TTLDeleteFilterTransform::build(
 
 TTLDeleteFilterTransform::TTLDeleteFilterTransform(
     const SharedHeader & header_,
-    std::shared_ptr<const SharedState> shared_state_)
-    : ISimpleTransform(header_, transformHeader(header_), /*skip_empty_chunks=*/ false)
+    std::shared_ptr<const SharedState> shared_state_,
+    const String & filter_column_name_)
+    : ISimpleTransform(header_, transformHeader(header_, filter_column_name_), /*skip_empty_chunks=*/ false)
     , shared_state(std::move(shared_state_))
     , date_lut(DateLUT::instance())
 {
@@ -120,6 +135,8 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
     auto filter_data = ColumnUInt8::create(num_rows, UInt8(1));
     auto & filter_vec = filter_data->getData();
 
+    auto chunk_infos = std::move(chunk.getChunkInfos());
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & entry : shared_state->entries)
@@ -148,6 +165,7 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 
     chunk = Chunk(block.getColumns(), num_rows);
     chunk.addColumn(std::move(filter_data));
+    chunk.setChunkInfos(std::move(chunk_infos));
 }
 
 }

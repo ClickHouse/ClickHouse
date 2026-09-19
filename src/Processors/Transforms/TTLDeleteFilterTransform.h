@@ -16,7 +16,9 @@ namespace DB
 class TTLDeleteFilterTransform final : public ISimpleTransform
 {
 public:
-    static inline const String TTL_FILTER_COLUMN_NAME = "_ttl_filter";
+    /// Nothing reserves this name, so a table may already have a column called `_ttl_filter`.
+    /// Pick the first free variant of it against `header`, and pass that name everywhere.
+    static String chooseFilterColumnName(const Block & header);
 
     /// Immutable state shared across all per-stream transform instances.
     /// Built once so that every instance references the same `FutureSet`
@@ -42,11 +44,12 @@ public:
         time_t current_time,
         bool force);
 
-    TTLDeleteFilterTransform(const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_);
+    TTLDeleteFilterTransform(
+        const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_, const String & filter_column_name_);
 
     String getName() const override { return "TTLDeleteFilter"; }
 
-    static SharedHeader transformHeader(const SharedHeader & header);
+    static SharedHeader transformHeader(const SharedHeader & header, const String & filter_column_name);
 
 protected:
     void transform(Chunk & chunk) override;

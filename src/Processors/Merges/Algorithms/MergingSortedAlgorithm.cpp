@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -119,20 +118,13 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
-    , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
+    , filter_column_position(resolveFilterColumnPosition(*header, filter_column_name_))
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , virtual_row_prefetch_window(virtual_row_prefetch_window_)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
 {
-    if (filter_column_position != -1)
-    {
-        const auto & filter_type = header->getByPosition(filter_column_position).type;
-        if (!WhichDataType(filter_type).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
-    }
-
     DataTypes sort_description_types;
     sort_description_types.reserve(description.size());
 
