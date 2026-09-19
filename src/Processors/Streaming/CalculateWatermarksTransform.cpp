@@ -31,7 +31,7 @@ CalculateWatermarksTransform::CalculateWatermarksTransform(
     ContextPtr context_)
     : IInflatingTransform(std::move(input_header_), std::move(output_header_))
     , event_time_column(std::move(event_time_column_))
-    , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
+    , watermark_expression(ExpressionActions::create(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
 {
 }
 

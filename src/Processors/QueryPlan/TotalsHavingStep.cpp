@@ -77,7 +77,7 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
     /// ArrayJoin is not supported in Having and we have to disable lazy columns
     /// replication to avoid block structure mismatch during query analisys.
     actions_settings.enable_lazy_columns_replication = false;
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), actions_settings) : nullptr;
+    auto expression_actions = actions_dag ? ExpressionActions::create(std::move(*actions_dag), actions_settings) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),

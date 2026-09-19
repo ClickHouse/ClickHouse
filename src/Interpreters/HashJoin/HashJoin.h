@@ -31,6 +31,8 @@ namespace DB
 
 class TableJoin;
 class ExpressionActions;
+class ExpressionActionsPool;
+using ExpressionActionsPoolPtr = std::shared_ptr<ExpressionActionsPool>;
 using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
@@ -672,6 +674,11 @@ private:
     std::vector<String> required_right_keys_sources;
 
     std::vector<std::pair<size_t, size_t>> additional_filter_required_rhs_pos;
+
+    /// The residual `JOIN ON` expression of a mixed join, executed once per probe block. An adaptive
+    /// instance is stateful and has to be reused across probe blocks to be of any use, while probe blocks
+    /// are processed concurrently, so the instances are leased from a pool for the duration of one probe.
+    ExpressionActionsPoolPtr mixed_join_expression_pool;
 
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
