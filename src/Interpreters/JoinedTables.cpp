@@ -89,13 +89,16 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (table_expr.database_and_table_name)
     {
         const auto & table_id = table_expr.database_and_table_name->as<ASTTableIdentifier &>();
-        String table_name = table_id.name();
         String table_short_name = table_id.shortName();
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
         // FIXME: long table names include database name, which we can't save within alias.
         if (table_id.alias.empty() && table_id.isShort())
         {
+            /// Clone before the reset below releases the original: rebuilding the inner reference from
+            /// its name alone would drop state the name does not carry, such as a `UUID '...'` clause.
+            ASTPtr inner_identifier = table_expr.database_and_table_name->clone();
+
             /// Build query of form '(SELECT * FROM table_name) AS table_short_name'
             table_expr = ASTTableExpression();
 
@@ -112,7 +115,8 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
 
             auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
             auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
-            addASTChildrenTo<ASTTableIdentifier>(*sub_table_expr, sub_table_expr->database_and_table_name, table_name);
+            sub_table_expr->database_and_table_name = inner_identifier;
+            sub_table_expr->children.push_back(inner_identifier);
         }
     }
 }

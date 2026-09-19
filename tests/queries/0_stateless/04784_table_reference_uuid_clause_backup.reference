@@ -1,0 +1,13 @@
+-- the live definitions keep the pin
+mv	1
+v	1
+-- backing up does not touch them either
+mv	1
+v	1
+111
+-- the restored definitions carry no pin
+mv	0
+v	0
+-- so the restored view reads the restored table under either analyzer
+111
+111
