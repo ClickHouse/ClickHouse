@@ -1842,6 +1842,32 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
 
+        /// `LOCAL` before a join clause is the join-locality qualifier, not an alias: the join grammar
+        /// admits only these keywords between the qualifier and `JOIN`, so one of them following proves
+        /// the token belongs to the join. `GLOBAL` needs no check, it is a restricted keyword above.
+        if (0 == strcasecmp(name.data(), "LOCAL"))
+        {
+            static constexpr Keyword join_continuations[]
+                = {Keyword::NATURAL, Keyword::ANY,   Keyword::ALL,   Keyword::ASOF,  Keyword::SEMI,
+                   Keyword::ANTI,    Keyword::ONLY,  Keyword::INNER, Keyword::LEFT,  Keyword::RIGHT,
+                   Keyword::FULL,    Keyword::CROSS, Keyword::PASTE, Keyword::JOIN};
+
+            Expected peek_expected;
+
+            /// `LEFT` and `INNER` also introduce `ARRAY JOIN`, which is a sibling of the join clause
+            /// and carries no locality, so the alias stands in front of it.
+            Pos after_inner = pos;
+            ParserKeyword(Keyword::INNER).ignore(after_inner, peek_expected);
+            const bool array_join_follows
+                = ParserKeyword(Keyword::LEFT_ARRAY_JOIN).checkWithoutMoving(pos, peek_expected)
+                || ParserKeyword(Keyword::ARRAY_JOIN).checkWithoutMoving(after_inner, peek_expected);
+
+            if (!array_join_follows)
+                for (Keyword keyword : join_continuations)
+                    if (ParserKeyword(keyword).checkWithoutMoving(pos, peek_expected))
+                        return false;
+        }
+
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
         /// when it is immediately followed by a string literal at the very end of the
         /// query (e.g. "... FROM t COMMENT 'x'"), which is the trailing view/table
