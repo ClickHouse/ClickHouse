@@ -296,8 +296,11 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     return lazy_step;
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder() const
+bool ReadFromObjectStorageStep::requestReadingInOrder(int direction) const
 {
+    if (direction != 1)
+        return false;
+
     return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 

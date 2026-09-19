@@ -1298,6 +1298,11 @@ InputOrderInfoPtr buildInputOrderInfo(
             if (!can_read)
                 return nullptr;
 
+            /// `ReadFromMergeTree::requestReadingInOrder` records whether the query has an
+            /// outer LIMIT that was zeroed for in-order reading (so per-part prefetching is
+            /// disabled). The `Merge` table branch below relies on the same logic for its
+            /// child readers.
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
@@ -1334,7 +1339,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order->direction);
             if (!can_read)
                 return nullptr;
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1388,6 +1393,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 order_info.input_order->limit);
             if (!can_read)
                 return {};
+
+            /// Aggregation-in-order benefits from multiple input streams
+            /// for parallel aggregation and memory-bound merging.
+            reading->setPreferMultipleStreams();
         }
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1411,6 +1420,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = merge->requestReadingInOrder(order_info.input_order);
             if (!can_read)
                 return {};
+
+            /// Same as the direct `ReadFromMergeTree` branch above: aggregation-in-order
+            /// benefits from multiple input streams, so keep them instead of collapsing
+            /// per-part with `PrefetchingConcat`.
+            merge->setPreferMultipleStreams();
         }
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1427,7 +1441,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order->direction);
             if (!can_read)
                 return {};
         }
@@ -1508,13 +1522,27 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             dag, keys);
 
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
+        {
+            /// The existing in-order read (e.g. set earlier by `SortingStep` optimization)
+            /// already covers the distinct keys, so `DistinctSortedStreamTransform` can
+            /// operate per stream in `pre_distinct` mode. Still call
+            /// `setPreferMultipleStreams` so per-part `PrefetchingConcat` doesn't collapse
+            /// the parallel streams into one per part, which would defeat the parallelism.
+            if (order_info.input_order && reading->getInputOrder())
+                reading->setPreferMultipleStreams();
             return {};
+        }
 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
             order_info.input_order->limit))
             return {};
+
+        /// Distinct-in-order's pre-distinct stage runs `DistinctSortedStreamTransform`
+        /// per stream, so it benefits from multiple parallel input streams.
+        /// Disable per-part `PrefetchingConcat`, which would collapse them into one per part.
+        reading->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1528,10 +1556,21 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             dag, keys);
 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
+        {
+            /// Mirror the direct `ReadFromMergeTree` branch: the existing in-order read
+            /// already covers the distinct keys, so still prefer multiple streams to keep
+            /// `DistinctSortedStreamTransform` running per stream.
+            if (order_info.input_order && merge->getInputOrder())
+                merge->setPreferMultipleStreams();
             return {};
+        }
 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
+
+        /// Distinct-in-order's pre-distinct stage runs per stream, so keep multiple
+        /// parallel input streams instead of collapsing them with `PrefetchingConcat`.
+        merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1548,7 +1587,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder())
+        if (!object_storage_step->requestReadingInOrder(order_info.input_order->direction))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1606,6 +1645,14 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
                 order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
             return {};
 
+        /// This overload only fires without an upstream ORDER BY (otherwise the SortingStep
+        /// branch handles the in-order read). In that case `LimitByStep` runs
+        /// `LimitBySortedStreamTransform` per stream as a prefilter and merges the streams
+        /// with a final `resize(1)` + `LimitByTransform`, so it benefits from multiple
+        /// parallel input streams. Disable per-part `PrefetchingConcat`, which would collapse
+        /// them into one stream per part and serialize the per-key limiting.
+        reading->setPreferMultipleStreams();
+
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
@@ -1624,6 +1671,11 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
+
+        /// Same as the direct `ReadFromMergeTree` branch: LIMIT BY in streaming mode runs
+        /// per stream, so keep multiple parallel input streams instead of collapsing them
+        /// with `PrefetchingConcat`.
+        merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1677,6 +1729,69 @@ bool wouldReadInOrderBeUseful(
     return order_info.input_order != nullptr;
 }
 
+/// `pushLimitByIntoSort` runs on the parent `LimitByStep`, which the pre-order traversal in
+/// `optimizeTree` visits before this `SortingStep`, so the `LIMIT BY` hint is attached by the time
+/// read-in-order is applied by the pass that shares that traversal with it. When the read-in-order
+/// prefix covers the whole `ORDER BY`, `SortingStep::transformPipeline` runs
+/// `LimitBySortedStreamTransform` on every input stream before merging them, exactly like the bare
+/// `LIMIT BY` (no `ORDER BY`) shape handled in `optimizeLimitByInOrder`. That prefilter scales with
+/// the number of streams, so ask the reader to keep them: per-part `PrefetchingConcat` would
+/// otherwise collapse a multi-stream part read into a single stream per part and serialize the
+/// prefilter.
+static void preferMultipleStreamsForPushedDownLimitBy(
+    const SortingStep & sorting,
+    QueryPlan::Node & node,
+    const SortDescription & sort_description_for_merging,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!sorting.hasLimitByHint())
+        return;
+
+    /// This is `need_finish_sorting` in `SortingStep::transformPipeline`: while a suffix sort still
+    /// has to run, the prefilter is not applied per stream at all, because the suffix keys can
+    /// change which rows come first inside a `LIMIT BY` group.
+    if (sort_description_for_merging.size() < sorting.getSortDescription().size())
+        return;
+
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = true,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
+    if (!reading_node)
+        return;
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    {
+        if (reading->getInputOrder())
+            reading->setPreferMultipleStreams();
+    }
+    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    {
+        if (merge->getInputOrder())
+            merge->setPreferMultipleStreams();
+    }
+}
+
+/// `findReadingStep` stops at a `UnionStep`, so fan out over its branches, matching the union branch
+/// of `optimizeReadInOrder` which builds an input order for every branch separately.
+static void preferMultipleStreamsForPushedDownLimitByBelowSorting(
+    const SortingStep & sorting,
+    QueryPlan::Node & node,
+    const SortDescription & sort_description_for_merging,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (typeid_cast<UnionStep *>(node.step.get()))
+    {
+        for (auto * child : node.children)
+            preferMultipleStreamsForPushedDownLimitBy(sorting, *child, sort_description_for_merging, optimization_settings);
+        return;
+    }
+
+    preferMultipleStreamsForPushedDownLimitBy(sorting, node, sort_description_for_merging, optimization_settings);
+}
+
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
@@ -1689,7 +1804,17 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
     if (sorting->getType() != SortingStep::Type::Full)
+    {
+        /// `optimizeTree` runs this pass on two traversals: an early one that does not contain
+        /// `pushLimitByIntoSort`, and a later one that does. Only one of them converts the sorting, and
+        /// it is the other one that sees both the applied input order and the `LIMIT BY` hint, so the
+        /// pushed-down `LIMIT BY` request has to be reachable through an already converted sorting too.
+        /// Its `prefix_description` is exactly the read-in-order prefix it was converted with.
+        if (sorting->getType() == SortingStep::Type::FinishSorting)
+            preferMultipleStreamsForPushedDownLimitByBelowSorting(
+                *sorting, *node.children.front(), sorting->getPrefixDescription(), optimization_settings);
         return;
+    }
 
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
@@ -1787,12 +1912,17 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
+
+        preferMultipleStreamsForPushedDownLimitByBelowSorting(*sorting, *union_node, *max_sort_descr, optimization_settings);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
+
+        preferMultipleStreamsForPushedDownLimitByBelowSorting(
+            *sorting, *node.children.front(), order_info->sort_description_for_merging, optimization_settings);
     }
 }
 

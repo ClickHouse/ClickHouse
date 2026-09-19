@@ -1,0 +1,4 @@
+buffering_on 8192 rows / 1048576 bytes
+buffering_on_small_blocks 4096 rows / 1048576 bytes
+buffering_off 0 rows / 0 bytes
+15000	112492500	1
