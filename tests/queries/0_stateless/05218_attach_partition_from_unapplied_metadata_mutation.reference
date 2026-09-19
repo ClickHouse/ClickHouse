@@ -1,0 +1,12 @@
+src reads the renamed column	10	10045
+after refused ATTACH FROM: dst parts	0
+after refused REPLACE FROM: dst2 keeps its rows	3	21
+after refused ATTACH FROM into MergeTree: dst parts	0
+after refused MOVE TO TABLE: src intact	10	10045
+MergeTree src reads the renamed column	10	10045
+after refused MergeTree MOVE: src intact	10	10045
+src reads the dropped-and-readded column	10	0
+after refused ATTACH FROM: drop dst parts	0
+clean source is cloned	10	10045
+a part behind only ALTER MODIFY COLUMN is cloned	10	10045
+after OPTIMIZE FINAL the clone carries the renamed data	10	10045

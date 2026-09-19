@@ -11063,6 +11063,51 @@ bool MergeTreeData::assertNoPatchesForParts(const DataPartsVector & parts, const
     return true;
 }
 
+void MergeTreeData::assertNoUnappliedMetadataMutationsForParts(
+    const DataPartsVector & parts, const StorageMetadataPtr & metadata_snapshot, std::string_view command) const
+{
+    if (parts.empty())
+        return;
+
+    auto parts_info = getPartsSnapshotInfo(parts);
+
+    IMutationsSnapshot::Params params
+    {
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = std::move(parts_info.min_data_versions),
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = false,
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+
+    auto mutations_snapshot = getMutationsSnapshot(params);
+    if (!mutations_snapshot->hasMetadataMutations())
+        return;
+
+    for (const auto & part : parts)
+    {
+        auto commands = mutations_snapshot->getOnFlyMutationCommandsForPart(part);
+        if (commands.empty())
+            continue;
+
+        const auto & partition_id = part->info.getPartitionId();
+        auto table_name = getStorageID().getFullTableName();
+
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot execute command \"{}\" because part {} of table {} has {} unapplied metadata mutation command(s). "
+            "They are applied while reading from {}, but a part cloned into another table records that table's "
+            "metadata version, whose mutation history does not contain them, so the affected columns would read "
+            "as default (or as stale pre-drop data) with no error.\n"
+            "To execute it you need to:\n"
+            "1. Run query \"OPTIMIZE TABLE {} PARTITION ID '{}' FINAL\" to materialize them into the parts.\n"
+            "2. Retry command \"{}\"",
+            command, part->name, table_name, commands.size(), table_name, table_name, partition_id, command);
+    }
+}
+
 namespace
 {
 
