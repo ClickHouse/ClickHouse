@@ -3390,7 +3390,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     for (const DataPartPtr & src_part : src_parts)
     {
         if (is_all)
-            partition_id = src_part->partition.getID(src_data);
+            partition_id = source_metadata_snapshot->hasPartitionKey()
+                ? src_part->partition.getID(src_data)
+                : src_part->info.getPartitionId();
 
         if (!canReplacePartition(src_part))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
