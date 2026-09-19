@@ -2649,8 +2649,23 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
-    auto columns_file = readFileIfExists("columns.txt");
-    if (columns_file && !columns_file->eof())
+    /** A power loss can leave a file that was never `fsync`ed at length zero while the rest of the part
+      * survives - the file's inode is persisted, its data block is not - and neither `columns.txt` nor
+      * `metadata_version.txt` is covered by the part checksums, so nothing else notices that one of them
+      * is gone. Both have a safe path for being absent: the column list is regenerated from the table
+      * metadata, the version falls back to the table's. An empty file carries exactly as much as an
+      * absent one, so take the same path for it instead of failing to parse it and detaching the whole
+      * part - with all of its rows - as broken.
+      */
+    auto read_non_empty_file_if_exists = [this](const String & file_name)
+    {
+        auto in = readFileIfExists(file_name);
+        if (in && in->eof())
+            return std::unique_ptr<ReadBuffer>{};
+        return in;
+    };
+
+    if (auto columns_file = read_non_empty_file_if_exists("columns.txt"))
     {
         loaded_columns.readText(*columns_file);
 
@@ -2664,7 +2679,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     else
     {
         /// We can get list of columns only from columns.txt in compact parts.
-        if (require || part_type == Type::Compact || info.isPatch())
+        if (part_type == Type::Compact || info.isPatch())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
                 name, path, getDataPartStorage().getDiskName());
 
@@ -2682,6 +2697,19 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                 "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
                 name, COLUMNS_SUBSTREAMS_FILE_NAME);
+
+        /** `require` (`require_part_metadata`, set by `StorageReplicatedMergeTree`) means a part with
+          * missing metadata must not be guessed at: it is detached and re-fetched from a healthy replica.
+          * A rebuilt list is accepted there only when `columns_substreams.txt` recorded the part's own
+          * column list, which verifies the rebuilt list exactly - the check below rejects it unless the
+          * two agree, so nothing is guessed. Without that record there is nothing to verify against -
+          * a column whose files were lost along with `columns.txt` would silently drop out of the list -
+          * so keep failing and let the replica re-fetch the part.
+          */
+        if (require && getColumnsSubstreams().empty())
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                "No columns.txt in part {}, expected path {} on disk {}, and no {} to rebuild it from",
+                name, path, getDataPartStorage().getDiskName(), COLUMNS_SUBSTREAMS_FILE_NAME);
 
         NameSet loaded_column_names;
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
@@ -2724,7 +2752,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {
-        if (auto metadata_version_file = readFileIfExists(METADATA_VERSION_FILE_NAME))
+        if (auto metadata_version_file = read_non_empty_file_if_exists(METADATA_VERSION_FILE_NAME))
             readIntText(loaded_metadata_version.emplace(), *metadata_version_file);
     }
 
