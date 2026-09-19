@@ -19,7 +19,9 @@ import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx
 
 <PartnerBadge/>
 
-Metabase is an easy-to-use, open source UI tool for asking questions about your data. Metabase is a Java application that can be run by simply <a href="https://www.metabase.com/start/oss/jar" target="_blank">downloading the JAR file</a> and running it with `java -jar metabase.jar`. Metabase connects to ClickHouse using a JDBC driver that you download and put in the `plugins` folder:
+Metabase is an easy-to-use, open source UI tool for asking questions about your data. Metabase is a Java application that can be run by simply <a href="https://www.metabase.com/start/oss/jar" target="_blank">downloading the JAR file</a> and running it with `java -jar metabase.jar`.
+
+Starting with Metabase 0.54.1 the ClickHouse driver is bundled with Metabase, so no separate plugin download is required. For older Metabase releases, the driver must be installed manually as a JDBC plugin.
 
 ## Goal {#goal}
 
@@ -39,11 +41,15 @@ If you don't have a dataset to work with you can add one of the examples.  This 
 <ConnectionDetails />
 
 </Step>
-<Step title="Download the ClickHouse plugin for Metabase" id="2--download-the-clickhouse-plugin-for-metabase">
+<Step title="Install the ClickHouse driver (only for Metabase before 0.54.1)" id="2--download-the-clickhouse-plugin-for-metabase">
+
+Metabase 0.54.1 and later ship with the ClickHouse driver built in. Skip this step and go directly to starting Metabase.
+
+If you are running Metabase 0.53 or earlier, install the driver manually:
 
 1. If you don't have a `plugins` folder, create one as a subfolder of where you have `metabase.jar` saved.
 
-2. The plugin is a JAR file named `clickhouse.metabase-driver.jar`. Download the latest version of the JAR file at <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
+2. The plugin is a JAR file named `clickhouse.metabase-driver.jar`. Download the latest version of the JAR file at <a href="https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>. Development of that repository has moved into the main Metabase repository as of April 2025.
 
 3. Save `clickhouse.metabase-driver.jar` in your `plugins` folder.
 
