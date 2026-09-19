@@ -81,6 +81,8 @@
 #include <Core/SettingsEnums.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/S3/Credentials.h>
@@ -162,7 +164,6 @@
 #    include <cstdlib>
 #    include <sys/un.h>
 #    include <sys/mman.h>
-#    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
 #endif
 
@@ -639,6 +640,44 @@ Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_s
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
 }
+
+#if defined(OS_LINUX)
+/// Whether a debugger is attached to this process, according to the `TracerPid` field of
+/// `/proc/self/status`, which the kernel sets to the pid of the tracer and to zero when there is
+/// none. This is a plain read, so unlike the `ptrace(PTRACE_TRACEME)` probe it used to be, it
+/// answers the same way whatever the `seccomp` server setting denies.
+bool isRunUnderDebugger()
+{
+    try
+    {
+        ReadBufferFromFile status("/proc/self/status");
+        while (!status.eof())
+        {
+            String line;
+            readStringUntilNewlineInto(line, status);
+            if (!status.eof())
+                ++status.position();
+
+            static constexpr std::string_view prefix = "TracerPid:";
+            if (!line.starts_with(prefix))
+                continue;
+
+            UInt64 tracer_pid = 0;
+            ReadBufferFromString value(line);
+            value.ignore(prefix.size());
+            skipWhitespaceIfAny(value);
+            readIntText(tracer_pid, value);
+            return tracer_pid != 0;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return false;
+}
+#endif
 
 }
 
@@ -1855,8 +1894,9 @@ try
             }
             else
             {
-                /// If program is run under debugger, ptrace will fail.
-                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                /// Note: this must not rely on a system call the `seccomp` policy denies, such as
+                /// `ptrace`, because the filter is already installed by this point.
+                if (isRunUnderDebugger())
                 {
                     /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
                     global_context->addOrUpdateWarningMessage(
