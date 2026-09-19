@@ -58,7 +58,7 @@ FROM t
 GROUP BY k
 FORMAT Null SETTINGS log_comment='04502_autopr_aggregated_window';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

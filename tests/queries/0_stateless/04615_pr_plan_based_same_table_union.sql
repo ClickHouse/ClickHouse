@@ -19,7 +19,6 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 1;
-SET automatic_parallel_replicas_mode = 0;
 
 -- Correctness: same-table UNION ALL counts rows twice; must match non-parallel and not throw an exception. Both the
 -- top-level union and a view expanding to the same union.

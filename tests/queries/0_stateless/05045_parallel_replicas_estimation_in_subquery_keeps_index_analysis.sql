@@ -19,6 +19,6 @@ FROM
              parallel_replicas_local_plan = 1,
              parallel_replicas_min_number_of_rows_per_replica = 1000)
 )
-SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE t_05045;

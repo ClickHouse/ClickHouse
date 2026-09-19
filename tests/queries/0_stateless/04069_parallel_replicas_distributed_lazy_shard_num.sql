@@ -15,7 +15,6 @@ SET allow_experimental_parallel_reading_from_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
-SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_04069_local;
 DROP TABLE IF EXISTS t_04069_dist;

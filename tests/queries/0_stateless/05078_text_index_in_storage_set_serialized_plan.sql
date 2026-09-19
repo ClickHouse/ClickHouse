@@ -29,12 +29,12 @@ INSERT INTO t_map_text_index VALUES (0, {'hello world':'val0'}), (1, {'foo bar':
 SELECT id FROM remote('127.0.0.1', currentDatabase(), t_map_text_index)
 WHERE m['hello world'] IN values_set AND 'text_index_mutable_set' != ''
 ORDER BY id
-SETTINGS serialize_query_plan = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SETTINGS serialize_query_plan = 1, enable_parallel_replicas = 0;
 
 SELECT id FROM remote('127.0.0.1', currentDatabase(), t_map_text_index)
 WHERE m['hello world'] IN (SELECT arrayJoin(['val0', 'val1', 'val2'])) AND 'text_index_owned_set' != ''
 ORDER BY id
-SETTINGS serialize_query_plan = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SETTINGS serialize_query_plan = 1, enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

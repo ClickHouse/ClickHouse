@@ -29,7 +29,7 @@ INSERT INTO aj_small SELECT number * 2 FROM numbers(6.25e4);
 -- enable_parallel_replicas / automatic_parallel_replicas_mode on; if the baseline joins ran in
 -- mode 2 they would collect stats for these join keys and the later `collect` run would then find
 -- them and apply, breaking the collect=0 / apply=1 assertion below.
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 -- Non-parallel-replicas baselines. `sum` is order-independent, so robust to row-order differences.
 CREATE TABLE aj_baseline (kind String, c UInt64) ENGINE = Memory;
@@ -73,7 +73,7 @@ SELECT sum(cityHash64(t2.payload)) FROM aj_small AS t1 RIGHT JOIN aj_big AS t2 U
 SELECT 'right' AS kind, sum(cityHash64(t2.payload)) = (SELECT c FROM aj_baseline WHERE kind='right') AS result_ok
     FROM aj_small AS t1 RIGHT JOIN aj_big AS t2 USING (key) SETTINGS log_comment='04341_join_right_apply';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 
