@@ -34,9 +34,8 @@ void UnavailableShardTracker::throwIfAllUnitsSkipped(size_t observed_no_data) co
 
 void UnavailableShardTracker::onShardSkipped(bool produced_data)
 {
-    /// One transition advances both counts, so the pair below is a state the tracker really held and
-    /// no sibling's skip can be counted inside it. Every throw here decides from that one pair, which
-    /// is what keeps the reported error independent of how the units interleave.
+    /// One fetch_add advances both counts, so the pair read back is a state the tracker really held:
+    /// no sibling's skip lands inside it, and which error is thrown cannot depend on interleaving.
     const UInt64 delta = (1ULL << 32) | (produced_data ? 0ULL : 1ULL);
     const auto [count, no_data] = unpack(skip_counts.fetch_add(delta) + delta);
 

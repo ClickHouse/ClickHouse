@@ -70,8 +70,7 @@ private:
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    /// `tracker` is null for the EXPLAIN paths: they run their own extra executors over the same
-    /// shards, and a skip those report is not a skip the query suffered.
+    /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(
         const ClusterProxy::SelectStreamFactory::Shards & used_shards,
         const SharedHeader & out_header,

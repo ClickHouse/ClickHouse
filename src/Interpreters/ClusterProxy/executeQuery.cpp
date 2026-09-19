@@ -578,8 +578,7 @@ void executeQuery(
     /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
     /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
     /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
-    /// It exists whenever shards may be skipped, not only when a limit is set, because it is also
-    /// what notices that every shard was skipped and the result would silently be empty.
+    /// Needed even with no limit set: it is also what notices that every shard was skipped.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & new_settings_ref = new_context->getSettingsRef();

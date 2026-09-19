@@ -17,19 +17,14 @@ struct UnavailableShardTracker
     size_t max_unavailable_num;
     Float64 max_unavailable_ratio;
 
-    /// Both skip counts live in one word so a single unit's skip advances them indivisibly: the
-    /// number of skipped units in the high half, and in the low half how many of those never
-    /// produced data. A unit that streamed rows before being skipped is excluded from the low half,
-    /// since it did contribute to the result. Shard counts never approach 2^32.
+    /// Skipped units in the high half; in the low half how many of those returned no data (a unit that
+    /// streamed rows first is excluded). One word, so one skip advances both. Counts stay under 2^32.
     std::atomic<UInt64> skip_counts{0};
 
-    /// Execution units are the things that can independently report a skip: one per logical shard,
-    /// plus one extra for every additional RemoteQueryExecutor a shard fans out to (parallel replicas
-    /// with a custom key). Kept apart from `total_shards`, which remains the logical shard count the
-    /// two limits above are documented against.
+    /// One unit per logical shard, plus one per additional RemoteQueryExecutor a shard fans out to
+    /// (custom-key parallel replicas). Distinct from `total_shards`, which the two limits above use.
     std::atomic<size_t> total_units;
-    /// While false, the all-units check is not evaluated: units are registered as the pipeline is
-    /// built, so a skip can be reported before the remaining units exist.
+    /// Until set, the all-units check is not evaluated: units are still being registered.
     std::atomic<bool> sealed{false};
 
     UnavailableShardTracker(size_t total_shards_, size_t max_num_, Float64 max_ratio_)
@@ -40,7 +35,6 @@ struct UnavailableShardTracker
     {
     }
 
-    /// One skip's view of both counts.
     struct SkipCounts
     {
         size_t skipped;
@@ -57,12 +51,10 @@ struct UnavailableShardTracker
     /// Adds execution units beyond the one-per-logical-shard baseline.
     void registerExtraUnits(size_t extra);
 
-    /// Declares the topology complete and re-checks the all-units condition, which may have become
-    /// true while units were still being registered. Idempotent.
+    /// Declares the topology complete and re-checks the all-units condition. Idempotent.
     void seal();
 
 private:
-    /// Takes the skipped-unit count so the caller decides from the value it observed.
     void throwIfAllUnitsSkipped(size_t observed_no_data) const;
 };
 

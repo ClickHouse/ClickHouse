@@ -962,8 +962,7 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 {
     Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
 
-    /// One pipe per executor, so the built pipes are the unit count. Every unit of this query exists
-    /// by this point, and the query is about to run: that is what a sealed tracker asserts.
+    /// One pipe per executor, so the built pipes are this query's complete unit count.
     if (unavailable_shard_tracker)
     {
         if (pipes.size() > shards.size())
