@@ -889,6 +889,20 @@ public:
     /// would run once per parallel sink stream instead of once per query.
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
+    /// Whether an INSERT has to fsync the parts it committed when it finishes, instead of syncing
+    /// each part as it is written ('fsync_after_insert_each_part') or not syncing at all.
+    bool shouldFsyncPartsAfterInsert() const;
+
+    /// Makes the data written by one INSERT query durable. A sink calls this once, when it
+    /// finishes, passing the parts it has committed - fsyncing the whole batch at the end of the
+    /// query is much cheaper than fsyncing each part as it is written (see the description of
+    /// 'fsync_after_insert_each_part'). The sink decides once, when it is created, whether it
+    /// collects the parts (shouldFsyncPartsAfterInsert); this function syncs whatever it is given
+    /// without consulting the table settings again, so that a concurrent ALTER of
+    /// 'fsync_after_insert' or 'fsync_after_insert_each_part' cannot leave a running INSERT
+    /// with parts that were synced neither when written nor when the query finished.
+    void fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const;
+
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.

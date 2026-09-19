@@ -1528,6 +1528,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"fsync_after_insert_each_part", true, false, "New setting. With fsync_after_insert enabled, the fsync is now done once when the INSERT finishes, over the active parts covering the inserted data, instead of once per part as it is written. previous_value=true so that `compatibility` with earlier versions restores the per-part fsync."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

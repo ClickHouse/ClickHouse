@@ -190,6 +190,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"finished_mutations_to_keep", rowsRangeSetting},
     {"force_read_through_cache_for_merges", trueOrFalseSetting},
     {"fsync_after_insert", trueOrFalseSetting},
+    {"fsync_after_insert_each_part", trueOrFalseSetting},
     {"fsync_part_directory", trueOrFalseSetting},
     {"inactive_parts_to_delay_insert", highRangeSetting},
     {"inactive_parts_to_throw_insert", highRangeSetting},
