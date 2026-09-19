@@ -1934,6 +1934,34 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
     return true;
 }
 
+/// Converts a text constant into the type a key transform reads, when that type is a `DateTime`/`DateTime64`
+/// with no time zone in its name: such a type holds the zone it was built with, while the comparison this atom
+/// stands for parses text through the type's serialization, which resolves the session's zone.
+static bool tryNormalizeTextConstantForZonelessDateTimeInput(
+    const DataTypePtr & transform_input_type, Field & value, DataTypePtr & value_type)
+{
+    if (!transform_input_type || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
+        return true;
+
+    const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
+    bool input_time_zone_is_implicit = false;
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(input_type.get()))
+        input_time_zone_is_implicit = !date_time->hasExplicitTimeZone();
+    else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
+        input_time_zone_is_implicit = !date_time64->hasExplicitTimeZone();
+
+    if (!input_time_zone_is_implicit)
+        return true;
+
+    Field converted = tryConvertFieldToType(value, *input_type);
+    if (converted.isNull())
+        return false;
+
+    value = std::move(converted);
+    value_type = input_type;
+    return true;
+}
+
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2038,13 +2066,23 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!can_transform_constant)
         return false;
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    /// Convert a text constant here, the way the comparison does, so no cast below parses it in another zone.
+    DataTypePtr transform_input_type;
+    if (!transform_functions.empty() && !transform_functions.front()->getArgumentTypes().empty())
+        transform_input_type = getArgumentTypeOfMonotonicFunction(*transform_functions.front());
+
+    Field const_value = out_value;
+    DataTypePtr const_value_type = out_type;
+    if (!tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, const_value, const_value_type))
+        return false;
+
+    ColumnPtr const_column = const_value_type->createColumnConst(1, const_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
     bool constant_transformed = applyFunctionChainToColumn(
         const_column,
-        out_type,
+        const_value_type,
         transform_functions,
         transformed_const_column,
         transformed_const_type);
@@ -2570,7 +2608,13 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    /// Convert a text constant here, the way the comparison does, so no cast below parses it in another zone.
+    Field const_value = out_value;
+    DataTypePtr const_value_type = out_type;
+    if (!tryNormalizeTextConstantForZonelessDateTimeInput(dag.input_type, const_value, const_value_type))
+        return false;
+
+    ColumnPtr const_column = const_value_type->createColumnConst(1, const_value);
 
     /// Convert before transforming, so the value the transform consumes is observable here: normalizing
     /// the constant to the type the key expression reads is where a `String` can become a NaN.
@@ -2578,7 +2622,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr transform_input_type;
     bool transform_applied = false;
     if (!convertColumnForDeterministicDag(
-            const_column, out_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
+            const_column, const_value_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
         return false;
 
     /// The direct-CAST fast path converts and transforms in one step, so it produces no intermediate value
