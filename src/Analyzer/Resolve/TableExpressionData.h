@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/Operators.h>
+#include <Core/Names.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
 #include <DataTypes/NestedUtils.h>
@@ -52,6 +53,18 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
+
+    /// Internal (generated) names of subquery/union output columns that were renamed to be unique
+    /// for the planner (see `QueryAnalyzer::disambiguateDuplicateProjectionColumnNames`). They are
+    /// present in `column_names_and_types` / the column-node map so the planner addresses each
+    /// duplicate distinctly, but they are NOT user-addressable: a direct identifier reference to a
+    /// generated name like `7_1` must not bind to the hidden column. Empty for ordinary tables.
+    NameSet hidden_column_names;
+
+    bool isHiddenColumnName(std::string_view name) const
+    {
+        return !hidden_column_names.empty() && hidden_column_names.contains(std::string(name));
+    }
 
     void ensureColumnMembershipSetsArePopulated() const;
 
