@@ -85,16 +85,10 @@ namespace QueryPlanFormat
     /// The same input column lists rendered as text for EXPLAIN PLAN, in the format of the report groups.
     void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix);
 
-    String formatNodePretty(
-        const ActionsDAG::Node * node,
-        const PrettyColumnNameMap & pretty_names,
-        const PrettyRuntimeFilterNameMap & runtime_filter_names,
-        PrettySetNameMap & subquery_set_names,
-        int parent_precedence = 0);
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool show_secrets);
 }
 
 }

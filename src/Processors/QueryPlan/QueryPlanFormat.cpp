@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/PreparedSets.h>
 #include <Functions/FunctionHelpers.h>
@@ -142,12 +143,31 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
+    /// How constant values render inside an expression. `ShowAll` prints every value; `HideSecrets`
+    /// hides the values in secret argument positions (keys, passwords); `InSecretSlot` is the state
+    /// within such a position, where every value is hidden.
+    enum class SecretRendering
+    {
+        ShowAll,
+        HideSecrets,
+        InSecretSlot,
+    };
+
+    static String formatNodePretty(
+        const ActionsDAG::Node * node,
+        const PrettyColumnNameMap & pretty_names,
+        const PrettyRuntimeFilterNameMap & runtime_filter_names,
+        PrettySetNameMap & subquery_set_names,
+        SecretRendering secrets,
+        int parent_precedence = 0);
+
     static PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
         const String & column_name,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
         const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        SecretRendering secrets)
     {
         const auto * root = dag.tryFindInOutputs(column_name);
         if (!root)
@@ -162,9 +182,9 @@ namespace QueryPlanFormat
             if (atom->type == ActionsDAG::ActionType::FUNCTION
                 && atom->function_base
                 && atom->function_base->getName() == "__applyFilter")
-                rf_parts.push_back(formatNodePretty(atom, pretty_names, runtime_filter_names, subquery_set_names, 4));
+                rf_parts.push_back(formatNodePretty(atom, pretty_names, runtime_filter_names, subquery_set_names, secrets, 4));
             else
-                user_parts.push_back(formatNodePretty(atom, pretty_names, runtime_filter_names, subquery_set_names, 4));
+                user_parts.push_back(formatNodePretty(atom, pretty_names, runtime_filter_names, subquery_set_names, secrets, 4));
         }
 
         String expression;
@@ -309,11 +329,35 @@ namespace QueryPlanFormat
         }
     }
 
-    String formatNodePretty(
+    /// Argument positions the secret-argument finder hides for this function. Nested secret maps
+    /// (`headers(...)`) belong to table functions, which never become DAG nodes.
+    static std::vector<bool> getSecretArgumentSlots(const ActionsDAG::Node & function)
+    {
+        std::vector<bool> slots(function.children.size(), false);
+        auto secret_arguments = FunctionSecretArgumentsFinderActionsDAG(function).getResult();
+        if (!secret_arguments.hasSecrets())
+            return slots;
+
+        for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count && i < slots.size(); ++i)
+            slots[i] = true;
+        for (const auto & [index, _] : secret_arguments.masked_arguments)
+            if (index < slots.size())
+                slots[index] = true;
+        for (const auto & [index, _] : secret_arguments.replaced_arguments)
+            if (index < slots.size())
+                slots[index] = true;
+        return slots;
+    }
+
+    /// `InSecretSlot` is kept for the whole subtree of a secret argument: the secret may sit below a
+    /// wrapping expression (`HMAC(mode, msg, concat(k, 'salt'))`), so the whole argument inherits it,
+    /// and a nested function adds its own secret slots on top.
+    static String formatNodePretty(
         const ActionsDAG::Node * node,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
         const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
         std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        SecretRendering secrets,
         int parent_precedence)
     {
         using ActionType = ActionsDAG::ActionType;
@@ -323,6 +367,19 @@ namespace QueryPlanFormat
         /// before we dispatch into formatting its value or its child expression.
         if (node->is_masked_secret)
             return "[HIDDEN]";
+
+        /// Inside a secret argument, `is_masked_secret` cannot be relied upon: the planner flags only
+        /// the constants it sees, while a secret coming from another plan step (a subquery or the
+        /// other side of a JOIN) is bound to its constant by later rewrites that build fresh nodes.
+        /// So every value in there is hidden, and a column reference shows its name only, never the
+        /// expression a child step computes it from.
+        if (secrets == SecretRendering::InSecretSlot)
+        {
+            if (node->column)
+                return "[HIDDEN]";
+            if (node->type == ActionType::INPUT)
+                return trimColumnIdentifier(node->result_name);
+        }
 
         switch (node->type)
         {
@@ -336,10 +393,10 @@ namespace QueryPlanFormat
             case ActionType::COLUMN:
                 return formatConstant(node);
             case ActionType::ALIAS:
-                return formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, parent_precedence);
+                return formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, secrets, parent_precedence);
 
             case ActionType::ARRAY_JOIN:
-                return "arrayJoin(" + formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names) + ")";
+                return "arrayJoin(" + formatNodePretty(node->children.front(), pretty_names, runtime_filter_names, subquery_set_names, secrets, 0) + ")";
 
             case ActionType::FUNCTION:
             {
@@ -369,7 +426,7 @@ namespace QueryPlanFormat
 
                 if ((func_name == "_CAST" || func_name == "CAST") && node->children.size() == 2)
                 {
-                    auto inner = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names);
+                    auto inner = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, 0);
                     Field type_field;
                     node->children[1]->column->get(0, type_field);
                     return "CAST(" + inner + " AS " + type_field.safeGet<String>() + ")";
@@ -379,7 +436,7 @@ namespace QueryPlanFormat
 
                 if (func_name == "not" && node->children.size() == 1)
                 {
-                    String result = "NOT " + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
+                    String result = "NOT " + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
@@ -387,17 +444,17 @@ namespace QueryPlanFormat
 
                 if (func_name == "negate" && node->children.size() == 1)
                 {
-                    String result = "-" + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
+                    String result = "-" + formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence);
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
                 }
 
                 if (func_name == "isNull" && node->children.size() == 1)
-                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence) + " IS NULL";
+                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence) + " IS NULL";
 
                 if (func_name == "isNotNull" && node->children.size() == 1)
-                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence) + " IS NOT NULL";
+                    return formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence) + " IS NOT NULL";
 
                 if ((func_name == "and" || func_name == "or") && node->children.size() >= 2)
                 {
@@ -405,7 +462,7 @@ namespace QueryPlanFormat
                     std::vector<String> parts;
                     parts.reserve(node->children.size());
                     for (const auto * child : node->children)
-                        parts.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence));
+                        parts.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence));
 
                     String result = fmt::format("{}", fmt::join(parts, separator));
                     if (op_info->precedence < parent_precedence)
@@ -415,22 +472,22 @@ namespace QueryPlanFormat
 
                 if (func_name == "arrayElement" && node->children.size() == 2)
                 {
-                    auto arr = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
-                    auto idx = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names);
+                    auto arr = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence);
+                    auto idx = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, secrets, 0);
                     return arr + "[" + idx + "]";
                 }
 
                 if (func_name == "tupleElement" && node->children.size() == 2)
                 {
-                    auto tup = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
-                    auto elem = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names);
+                    auto tup = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence);
+                    auto elem = formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, secrets, 0);
                     return tup + "." + elem;
                 }
 
                 if (op_info && (op_info->symbol == "IN" || op_info->symbol == "NOT IN")
                     && node->children.size() == 2)
                 {
-                    auto lhs = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence);
+                    auto lhs = formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence);
                     auto rhs = formatSetPretty(node->children[1], subquery_set_names);
                     String result = fmt::format("{} {} {}", lhs, op_info->symbol, rhs);
                     if (op_info->precedence < parent_precedence)
@@ -441,18 +498,24 @@ namespace QueryPlanFormat
                 if (op_info && !op_info->symbol.empty() && node->children.size() == 2)
                 {
                     String result = fmt::format("{} {} {}",
-                        formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence),
+                        formatNodePretty(node->children[0], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence),
                         op_info->symbol,
-                        formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, op_info->precedence));
+                        formatNodePretty(node->children[1], pretty_names, runtime_filter_names, subquery_set_names, secrets, op_info->precedence));
                     if (op_info->precedence < parent_precedence)
                         result = "(" + std::move(result) + ")";
                     return result;
                 }
 
+                const auto secret_slots = secrets == SecretRendering::HideSecrets
+                    ? getSecretArgumentSlots(*node)
+                    : std::vector<bool>(node->children.size(), false);
                 std::vector<String> args;
                 args.reserve(node->children.size());
-                for (const auto * child : node->children)
-                    args.push_back(formatNodePretty(child, pretty_names, runtime_filter_names, subquery_set_names));
+                for (size_t i = 0; i < node->children.size(); ++i)
+                {
+                    auto child_secrets = secret_slots[i] ? SecretRendering::InSecretSlot : secrets;
+                    args.push_back(formatNodePretty(node->children[i], pretty_names, runtime_filter_names, subquery_set_names, child_secrets, 0));
+                }
 
                 return func_name + "(" + fmt::format("{}", fmt::join(args, ", ")) + ")";
             }
@@ -605,10 +668,11 @@ namespace QueryPlanFormat
         PrettyColumnNameMap & pretty_names,
         PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
-        PerPlanColumnMaps & per_plan_columns)
+        PerPlanColumnMaps & per_plan_columns,
+        SecretRendering secrets)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
+            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, secrets);
 
         for (auto * child_plan : node->step->getChildPlans())
         {
@@ -620,7 +684,7 @@ namespace QueryPlanFormat
                 /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
                 /// so they stay shared across the whole tree.
                 auto & child_columns = per_plan_columns[child_plan];
-                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns, secrets);
             }
         }
 
@@ -632,14 +696,14 @@ namespace QueryPlanFormat
             const auto & dag = static_cast<const ExpressionStep *>(step.get())->getExpression();
             for (const auto * output : dag.getOutputs())
                 if (output->type != ActionsDAG::ActionType::INPUT)
-                    pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
+                    pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names, secrets));
         }
         else if (step_name == "Filter")
         {
             const auto & dag = static_cast<const FilterStep *>(step.get())->getExpression();
             for (const auto * output : dag.getOutputs())
                 if (output->type != ActionsDAG::ActionType::INPUT)
-                    pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
+                    pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names, secrets));
         }
         else if (step_name == "Aggregating")
         {
@@ -660,7 +724,7 @@ namespace QueryPlanFormat
             {
                 for (const auto * output : dag->getOutputs())
                     if (output->type != ActionsDAG::ActionType::INPUT)
-                        pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
+                        pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names, secrets));
             }
         }
         else if (step_name == "Window")
@@ -694,7 +758,8 @@ namespace QueryPlanFormat
                     prewhere->prewhere_column_name,
                     pretty_names,
                     runtime_filter_names,
-                    subquery_set_names);
+                    subquery_set_names,
+                    secrets);
             }
             if (auto row_level = source->getRowLevelFilter())
             {
@@ -703,7 +768,8 @@ namespace QueryPlanFormat
                     row_level->column_name,
                     pretty_names,
                     runtime_filter_names,
-                    subquery_set_names);
+                    subquery_set_names,
+                    secrets);
             }
 
             if (step_name == "ReadFromMergeTree")
@@ -716,7 +782,8 @@ namespace QueryPlanFormat
                         deferred_row_level_filter->column_name,
                         pretty_names,
                         runtime_filter_names,
-                        subquery_set_names);
+                        subquery_set_names,
+                        secrets);
                 }
                 if (auto deferred_prewhere = read_from_merge_tree_step->getDeferredPrewhereInfo())
                 {
@@ -725,14 +792,17 @@ namespace QueryPlanFormat
                         deferred_prewhere->prewhere_column_name,
                         pretty_names,
                         runtime_filter_names,
-                        subquery_set_names);
+                        subquery_set_names,
+                        secrets);
                 }
             }
         }
     }
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool show_secrets)
     {
+        const auto secrets = show_secrets ? SecretRendering::ShowAll : SecretRendering::HideSecrets;
+
         /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
         /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
         PrettyRuntimeFilterNameMap runtime_filter_names;
@@ -743,7 +813,7 @@ namespace QueryPlanFormat
         auto & top_columns = per_plan_columns[&plan];
         auto * root = plan.getRootNode();
         if (root)
-            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns, secrets);
 
         PrettyNamesPerPlan result;
         for (auto & [plan_ptr, columns] : per_plan_columns)
