@@ -52,3 +52,15 @@ def test_definer_profile_cannot_disable_the_analyzer(start_cluster):
     )
     node.query("INSERT INTO src VALUES (1)")
     assert node.query("SELECT * FROM dst") == "1\n"
+
+    # Those two assertions are only worth something if the body really does read the definer's
+    # profile: a body that read the invoker's context instead would report `1` as well, and nothing
+    # in a passing run would say which of the two happened. So prove it with a value from the same
+    # profile that is not normalized. `min_free_disk_space_for_temporary_data` is set there to
+    # `1234`, and the invoker reports the default `0`.
+    node.query(
+        "CREATE VIEW v_probe DEFINER = definer_user SQL SECURITY DEFINER "
+        "AS SELECT getSetting('min_free_disk_space_for_temporary_data') AS a"
+    )
+    assert node.query("SELECT * FROM v_probe") == "1234\n"
+    assert node.query("SELECT getSetting('min_free_disk_space_for_temporary_data')") == "0\n"
