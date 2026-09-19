@@ -1,0 +1,35 @@
+-- First process: computes the result and writes it to disk
+0	249500	996	['x',NULL]
+1	250000	999	['x',NULL]
+
+0	499500	999	['x',NULL]
+
+0	249500	996	['x',NULL]
+1	250000	999	['x',NULL]
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes
+-- Second process: serves the result from disk (the in-memory query cache of a new process is empty)
+0	249500	996	['x',NULL]
+1	250000	999	['x',NULL]
+
+0	499500	999	['x',NULL]
+
+0	249500	996	['x',NULL]
+1	250000	999	['x',NULL]
+QueryCacheOnDiskHits
+QueryCacheOnDiskReadBytes
+-- Non-deterministic results also survive the restart when served from the cache
+same value in both processes
+-- With reads from the query cache on disk disabled, the entry is ignored (0 hits expected)
+0	249500	996	['x',NULL]
+1	250000	999	['x',NULL]
+
+0	499500	999	['x',NULL]
+
+0	249500	996	['x',NULL]
+1	250000	999	['x',NULL]
+0
+-- A stale entry (expired TTL) is a cache miss
+ttl test
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes

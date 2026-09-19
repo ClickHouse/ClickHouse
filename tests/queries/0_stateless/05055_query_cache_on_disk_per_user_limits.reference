@@ -1,0 +1,9 @@
+-- Two distinct results are written to disk although only one tiny entry would be allowed in memory
+499500
+1999000
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes
+-- Both results are served from disk
+499500
+1999000
+2

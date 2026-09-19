@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"query_cache_on_disk_cache_name", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."},
+            {"query_cache_on_disk_codec", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."},
+            {"enable_writes_to_query_cache_on_disk", true, true, "New setting to control whether query results are written to the query cache on disk."},
+            {"enable_reads_from_query_cache_on_disk", true, true, "New setting to control whether query results are read from the query cache on disk."},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."},
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},

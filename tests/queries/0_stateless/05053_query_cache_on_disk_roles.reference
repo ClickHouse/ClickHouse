@@ -1,0 +1,13 @@
+-- Under role A, the second run of the query is a hit
+role A, first run, rows: 50
+role A, second run, rows: 50
+-- Under role B, the same query misses on the entry of role A and stores its own entry
+role B, first run, rows: 30
+role B, second run, rows: 30
+-- The entry of role A was not overwritten
+role A, third run, rows: 50
+role A, first run, hits: 0
+role A, second run, hits: 1
+role B, first run, hits: 0
+role B, second run, hits: 1
+role A, third run, hits: 1
