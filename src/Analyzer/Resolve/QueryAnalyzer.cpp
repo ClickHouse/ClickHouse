@@ -5314,7 +5314,10 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
 }
 
 static bool getColumnsFromTableExpression(
-    const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, VirtualsKind virtuals_kind = VirtualsKind::None)
+    const QueryTreeNodePtr & root_table_expression,
+    NameSet & existing_columns,
+    GetColumnsOptions::Kind kind,
+    VirtualsKind virtuals_kind = VirtualsKind::None)
 {
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
@@ -5331,7 +5334,7 @@ static bool getColumnsFromTableExpression(
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+                auto get_column_options = GetColumnsOptions(kind)
                                               .withSubcolumns()
                                               .withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
@@ -5344,7 +5347,7 @@ static bool getColumnsFromTableExpression(
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+                auto get_column_options = GetColumnsOptions(kind)
                                               .withSubcolumns()
                                               .withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
@@ -5397,9 +5400,24 @@ static bool getColumnsFromTableExpression(
     return true;
 }
 
+/// `ColumnsDescription::get` returns `ALIAS` columns after all physical ones, so censusing `kind`
+/// directly is not in schema order. `All` is in schema order: census it and keep what `kind` admits.
+static void appendColumnNamesInSchemaOrder(
+    const StorageSnapshotPtr & storage_snapshot, GetColumnsOptions::Kind kind, Names & result_columns)
+{
+    NameSet admitted;
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions(kind).withSubcolumns()))
+        admitted.insert(column.name);
+
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns()))
+        if (admitted.contains(column.name))
+            result_columns.push_back(column.name);
+}
+
 /// Get ordered column names from a table expression, preserving left-to-right order.
 /// Returns false if the table expression type is not supported.
-static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, Names & result_columns)
+static bool getOrderedColumnsFromTableExpression(
+    const QueryTreeNodePtr & root_table_expression, Names & result_columns, GetColumnsOptions::Kind kind)
 {
     std::vector<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(root_table_expression.get());
@@ -5415,18 +5433,14 @@ static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_t
             {
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-                    result_columns.push_back(column.name);
+                appendColumnNamesInSchemaOrder(table_node->getStorageSnapshot(), kind, result_columns);
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                    result_columns.push_back(column.name);
+                appendColumnNamesInSchemaOrder(table_function_node->getStorageSnapshot(), kind, result_columns);
                 break;
             }
             case QueryTreeNodeType::QUERY:
@@ -5503,12 +5517,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         Names left_cols;
         NameSet right_cols;
 
-        if (!getOrderedColumnsFromTableExpression(join_node_typed.getLeftTableExpressionNode(), left_cols))
+        /// A join key must be readable, so `EPHEMERAL` columns are not `NATURAL JOIN` keys.
+        if (!getOrderedColumnsFromTableExpression(
+                join_node_typed.getLeftTableExpressionNode(), left_cols, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of left table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
 
-        if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpressionNode(), right_cols))
+        if (!getColumnsFromTableExpression(
+                join_node_typed.getRightTableExpressionNode(), right_cols, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of right table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
@@ -5638,7 +5655,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 /// Added column should not conflict with existing column names
                 /// Virtual columns are resolvable names for this source too, so the new name must avoid them as well
                 NameSet existing_columns;
-                if (!getColumnsFromTableExpression(left_table_expression, existing_columns, VirtualsKind::All))
+                /// `initializeTableExpressionData` registers `EPHEMERAL` names as column
+                /// identifiers, so a synthesized name can collide with one.
+                if (!getColumnsFromTableExpression(
+                        left_table_expression, existing_columns, GetColumnsOptions::All, VirtualsKind::All))
                     return nullptr;
 
                 NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
