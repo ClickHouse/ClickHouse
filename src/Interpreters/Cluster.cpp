@@ -66,14 +66,6 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
 }
 
-void concatInsertPath(std::string & insert_path, const std::string & dir_name)
-{
-    if (insert_path.empty())
-        insert_path = dir_name;
-    else
-        insert_path += "," + dir_name;
-}
-
 }
 
 /// Implementation of Cluster::Address class
@@ -237,94 +229,46 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 }
 
 
-String Cluster::Address::toFullString(bool use_compact_format) const
+String Cluster::Address::toFullString() const
 {
-    if (use_compact_format)
-    {
-        if (shard_index == 0 || replica_index == 0)
-            // shard_num/replica_num like in system.clusters table
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_num/replica_num cannot be zero");
+    if (shard_index == 0 || replica_index == 0)
+        // shard_num/replica_num like in system.clusters table
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_num/replica_num cannot be zero");
 
-        return fmt::format("shard{}_replica{}", shard_index, replica_index);
-    }
-
-    return escapeForFileName(user) + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' + escapeForFileName(host_name)
-        + ':' + std::to_string(port) + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
-        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    return fmt::format("shard{}_replica{}", shard_index, replica_index);
 }
 
-Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
+std::optional<Cluster::Address> Cluster::Address::tryParseFullString(std::string_view full_string)
 {
-    std::string_view user_password;
-    if (auto pos = full_string.find('@'); pos != std::string_view::npos)
-        user_password = full_string.substr(pos + 1);
+    /// The only directory name format is the one produced by toFullString() and by Cluster::addShard():
+    /// shard{shard_index}_replica{replica_index} or shard{shard_index}_all_replicas
+    if (!full_string.starts_with("shard"))
+        return {};
 
-    /// parsing with the new shard{shard_index}[_replica{replica_index}] format
-    if (user_password.empty() && full_string.starts_with("shard"))
+    std::string_view rest = full_string.substr(strlen("shard"));
+
+    auto underscore_pos = rest.find('_');
+    if (underscore_pos == std::string_view::npos)
+        return {};
+
+    Address address;
+    if (!tryParse<UInt32>(address.shard_index, rest.substr(0, underscore_pos)) || address.shard_index == 0)
+        return {};
+
+    /// "_all_replicas" is a marker for all the replicas of the shard, see Cluster::addShard().
+    std::string_view replica = rest.substr(underscore_pos + 1);
+    if (replica == "all_replicas")
     {
-        Address address;
-
-        if (auto underscore_pos = full_string.find('_'); underscore_pos != std::string_view::npos)
-        {
-            address.shard_index = parse<UInt32>(full_string.substr(0, underscore_pos).substr(strlen("shard")));
-
-            if (full_string.substr(underscore_pos + 1).starts_with("replica"))
-            {
-                address.replica_index = parse<UInt32>(full_string.substr(underscore_pos + 1 + strlen("replica")));
-            }
-            else if (full_string.substr(underscore_pos + 1).starts_with("all_replicas"))
-            {
-                address.replica_index = 0;
-            }
-            else
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', should be in a form of `shardN_all_replicas` or `shardN_replicaM`", full_string);
-        }
-        else
-        {
-            address.shard_index = parse<UInt32>(full_string.substr(strlen("shard")));
-            address.replica_index = 0;
-        }
-
+        address.replica_index = 0;
         return address;
     }
 
-    /// parsing with the old user[:password]@host:port#default_database format
-    /// This format is appeared to be inconvenient for the following reasons:
-    /// - credentials are exposed in file name;
-    /// - the file name can be too long.
+    if (!replica.starts_with("replica"))
+        return {};
 
-    const char * address_begin = full_string.data();
-    const char * address_end = address_begin + full_string.size();
-    const char * user_pw_end = strchr(address_begin, '@');
+    if (!tryParse<UInt32>(address.replica_index, replica.substr(strlen("replica"))) || address.replica_index == 0)
+        return {};
 
-    Protocol::Secure secure = Protocol::Secure::Disable;
-    const char * secure_tag = "+secure";
-    if (full_string.ends_with(secure_tag))
-    {
-        address_end -= strlen(secure_tag);
-        secure = Protocol::Secure::Enable;
-    }
-
-    const char * colon = strchr(full_string.data(), ':'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    if (!user_pw_end || !colon)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
-
-    const bool has_pw = colon < user_pw_end;
-    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-    if (!host_end)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
-
-    const char * has_db = strchr(full_string.data(), '#'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    const char * port_end = has_db ? has_db : address_end;
-
-    Address address;
-    address.secure = secure;
-    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
-    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
-    // address.priority ignored
     return address;
 }
 
@@ -652,11 +596,11 @@ void Cluster::addShard(
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
 
-    ShardInfoInsertPathForInternalReplication insert_paths;
+    std::string insert_path_for_internal_replication;
     if (internal_replication)
         /// "_all_replicas" is a marker that will be replaced with all replicas
         /// (for creating connections in the Distributed engine)
-        insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
+        insert_path_for_internal_replication = fmt::format("shard{}_all_replicas", current_shard_num);
 
     for (const auto & replica : addresses)
     {
@@ -681,14 +625,6 @@ void Cluster::addShard(
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
-
-        if (internal_replication)
-        {
-            auto dir_name = replica.toFullString(/* use_compact_format= */ false);
-            if (!replica.is_local)
-                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
-            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
-        }
     }
 
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -701,7 +637,7 @@ void Cluster::addShard(
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
     shards_info.emplace_back(
-        std::move(insert_paths),
+        std::move(insert_path_for_internal_replication),
         current_shard_num,
         std::move(current_shard_name),
         weight,
@@ -947,16 +883,12 @@ std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(s
     return res;
 }
 
-const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
+const std::string & Cluster::ShardInfo::insertPathForInternalReplication() const
 {
     if (!has_internal_replication)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "internal_replication is not set");
 
-    const auto & paths = insert_path_for_internal_replication;
-    if (!use_compact_format)
-        return prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
-
-    return paths.compact;
+    return insert_path_for_internal_replication;
 }
 
 bool Cluster::maybeCrossReplication() const

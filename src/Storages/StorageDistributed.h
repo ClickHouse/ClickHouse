@@ -10,6 +10,8 @@
 
 #include <pcg_random.hpp>
 
+#include <filesystem>
+
 namespace DB
 {
 
@@ -159,6 +161,10 @@ private:
 
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
+
+    /// Rename a subdirectory whose name is not one `DistributedSink` writes, so that it is not
+    /// taken for a directory queue. The files in it are left untouched.
+    void renameUnrecognizedDirectoryQueue(const std::filesystem::path & dir_path) const;
 
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
