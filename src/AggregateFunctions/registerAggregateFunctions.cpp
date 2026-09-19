@@ -19,6 +19,7 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
+void registerAggregateFunctionMode(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory &);
@@ -136,6 +137,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupArraySorted(factory);
         registerAggregateFunctionGroupUniqArray(factory);
+        registerAggregateFunctionMode(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionGroupArrayIntersect(factory);
         registerAggregateFunctionGroupConcat(factory);

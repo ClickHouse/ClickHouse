@@ -182,11 +182,11 @@ const std::unordered_set<String> non_deterministic_functions = {
     "groupArrayIntersect",
     "groupArrayMovingSum", "groupArrayMovingAvg",
     "groupArraySorted", "groupArrayLast",
-    /// `argMin`/`argMax`/`groupConcat` are order-dependent on ties: the
+    /// `argMin`/`argMax`/`groupConcat`/`mode` are order-dependent on ties: the
     /// `State`/`Merge`, DQP and subquery-rewrite paths can legitimately
-    /// pick a different "arg" value or concatenation order than direct
+    /// pick a different value or concatenation order than direct
     /// evaluation, so exact row equality is wrong here.
-    "argMin", "argMax", "groupConcat",
+    "argMin", "argMax", "groupConcat", "mode",
     /// Approximate/formatting-dependent aggregates.
     "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
     "simpleLinearRegression", "sparkBar", "histogram",
