@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 
 # Verify that predicate pushdown on system.users by the name column works correctly.
 # The fast path (direct AccessControl lookups) is used for name = 'literal' and name IN (...)
