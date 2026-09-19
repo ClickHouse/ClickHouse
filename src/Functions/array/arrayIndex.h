@@ -81,8 +81,7 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
-/// Set when one array is searched for every row of the needle instead of one array per row: the row count
-/// then comes from the needle, and each row charges the comparisons it performs.
+/// One constant array searched for every row of the needle, so `rows` is the needle's row count.
 struct ConstHaystack
 {
     size_t rows;
@@ -216,8 +215,6 @@ public:
             if constexpr (!ConcreteAction::resume_execution)
                 break;
         }
-        /// `chargeUnits` checks the deadline as soon as one call exceeds its whole budget, so charge the
-        /// comparisons performed rather than `array_size`.
         if (budget)
             budget->chargeUnits(j + 1);
         return current;
@@ -343,7 +340,6 @@ struct Null
         [[maybe_unused]] const NullMap * null_map_data,
         const ConstHaystack * const_haystack = nullptr)
     {
-        /// One row per needle row when broadcasting, and the haystack then has a single offset.
         const size_t size = const_haystack ? const_haystack->rows : offsets.size();
 
         if (!null_map_data)
