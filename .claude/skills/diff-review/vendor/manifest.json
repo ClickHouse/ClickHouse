@@ -1,0 +1,43 @@
+{
+  "$comment": "Pinned UI dependencies; see README.md for what each one is and how it was audited. Every sha256 is of the uncompressed module — the artifact that was audited — and is checked before the bytes are served, whether they come from vendor/, from the cache, or from the network. Assets without `urls` must be present in vendor/.",
+  "assets": [
+    {
+      "servePath": "/vendor/pierre-diffs.mjs",
+      "name": "pierre-diffs-1.3.5",
+      "sha256": "6862e024d634d38b0608ba6cb869b215f6eeb31248c2d72274d6e483b571fb71",
+      "bytes": 10820958,
+      "gzip": true,
+      "urls": ["https://esm.sh/@pierre/diffs@1.3.5/es2022/diffs.bundle.mjs"]
+    },
+    {
+      "servePath": "/node/process.mjs",
+      "name": "node_process",
+      "sha256": "79e7646e87709989f575ea4ce02e0877bc9303081567b1c0d412527917ae9e91",
+      "bytes": 7861
+    },
+    {
+      "servePath": "/node/buffer.mjs",
+      "name": "node_buffer",
+      "sha256": "64fb61aa5f48644d685f9ceabedba60ea6b5d6ce03dac1943e863d00d9e574f3",
+      "bytes": 28845
+    },
+    {
+      "servePath": "/node/events.mjs",
+      "name": "node_events",
+      "sha256": "4c6150b88c1444aa1fe9331013e3f37eda9836206f629f7f3ae8f3743dd90fa8",
+      "bytes": 12122
+    },
+    {
+      "servePath": "/node/tty.mjs",
+      "name": "node_tty",
+      "sha256": "c66ff4b406bad449bfb2ced355f15badf16f4d9e035d2d300e33b5aeee64e3be",
+      "bytes": 685
+    },
+    {
+      "servePath": "/node/async_hooks.mjs",
+      "name": "node_async_hooks",
+      "sha256": "b7862dbfba8bbbca956f19e4e08280b529e4b27468779775a9093aef8c92dc1d",
+      "bytes": 2938
+    }
+  ]
+}
