@@ -82,3 +82,14 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT countIf(tupleElement(t, 1) = 1)
     FROM file('${POSITIONAL_FILE}', Parquet, 't Tuple(UInt64, String)')
     SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1"
+
+# The same positional hint through a subquery: the subcolumn pushdown pass must keep reading
+# the whole tuple as well instead of pushing the ordinal element name into the file read.
+echo '-- a positional tuple hint through a subquery reads element values, not defaults'
+${CLICKHOUSE_CLIENT} --query "
+    SELECT tupleElement(t, 1), tupleElement(t, 2)
+    FROM (SELECT t FROM file('${POSITIONAL_FILE}', Parquet, 't Tuple(UInt64, String)')) ORDER BY 1
+    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, optimize_push_subcolumns_into_subqueries = 1;
+    SELECT countIf(tupleElement(t, 1) = 1)
+    FROM (SELECT t FROM file('${POSITIONAL_FILE}', Parquet, 't Tuple(UInt64, String)'))
+    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, optimize_push_subcolumns_into_subqueries = 1"

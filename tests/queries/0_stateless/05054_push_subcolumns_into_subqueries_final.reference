@@ -1,0 +1,36 @@
+length is not pushed under FINAL
+ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: arr Array(UInt32)
+0
+1
+tupleElement is not pushed under FINAL
+ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: tup Tuple(a UInt32, b String)
+11
+20
+isNotNull is not pushed under FINAL
+ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: n Nullable(UInt32)
+0
+0
+count of a Nullable is not pushed under FINAL
+│  Header: count(__table1.x) UInt64
+└──ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: n Nullable(UInt32)
+0
+a carrier is not pushed to the table through two levels under FINAL
+ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: arr Array(UInt32)
+0
+1
+a plain subcolumn read is pushed under FINAL
+ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: tup.a UInt32
+11
+20
+without FINAL the carrier is pushed
+ReadFromMergeTree (default.t_push_subcolumns_final)
+Header: arr.size0 UInt64
+0
+1
+3

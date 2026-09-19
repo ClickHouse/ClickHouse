@@ -1,0 +1,22 @@
+reused CTE in UNION ALL branches, both subcolumns are pushed to the table
+COLUMN id: 6, column_name: tup.a, result_type: UInt32, source_id: 7
+COLUMN id: 10, column_name: tup.a, result_type: UInt32, source_id: 11
+COLUMN id: 13, column_name: tup.a, result_type: UInt32, source_id: 14
+COLUMN id: 17, column_name: tup.b, result_type: String, source_id: 18
+COLUMN id: 20, column_name: tup.b, result_type: String, source_id: 21
+COLUMN id: 23, column_name: tup.b, result_type: String, source_id: 24
+1
+2
+one
+two
+reused CTE on both sides of a JOIN, both subcolumns are pushed to the table
+COLUMN id: 2, column_name: tup.a, result_type: UInt32, source_id: 3
+COLUMN id: 4, column_name: tup.b, result_type: String, source_id: 5
+COLUMN id: 10, column_name: tup.a, result_type: UInt32, source_id: 9
+COLUMN id: 14, column_name: tup.a, result_type: UInt32, source_id: 13
+COLUMN id: 18, column_name: tup.b, result_type: String, source_id: 17
+COLUMN id: 22, column_name: tup.b, result_type: String, source_id: 21
+1	one
+2	two
+reused CTE in sibling scalar subqueries
+1	one

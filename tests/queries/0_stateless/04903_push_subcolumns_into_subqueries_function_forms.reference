@@ -1,0 +1,35 @@
+length
+Output: arr.size0
+Output: arr.size0
+2
+1
+tupleElement
+Output: tup.a
+Output: tup.a
+1
+2
+mapKeys
+Output: m.keys
+Output: m.keys
+['a','b']
+['c']
+map element
+Output: m.key_a
+Output: m.key_a
+10
+0
+composed tupleElement
+Output: nested.a.b
+Output: nested.a.b
+isNull
+Output: n.null
+Output: n.null
+0
+1
+variantElement
+Output: variantElement(v, \'UInt32\')
+Output: v
+1
+\N
+tupleElement dotted name stays unoptimized
+Output: t.\'a.b\'

@@ -1,0 +1,20 @@
+setting disabled inside the subquery
+Output: getSubcolumn(json, \'a\')
+Output: json
+1
+2
+setting disabled inside the CTE
+Output: getSubcolumn(json, \'a\')
+Output: json
+1
+2
+setting disabled in the middle of nested subqueries
+Output: getSubcolumn(json, \'a\')
+Output: json
+1
+2
+storage that does not support the optimization to subcolumns
+Output: getSubcolumn(n, \'null\')
+Output: n
+0
+1
