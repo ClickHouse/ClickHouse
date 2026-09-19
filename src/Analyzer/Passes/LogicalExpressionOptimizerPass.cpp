@@ -6,6 +6,8 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
@@ -17,6 +19,7 @@
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
@@ -443,6 +446,12 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
 static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
 {
     const auto & from_type = constant_node->getResultType();
+
+    /// Everything downstream of this function reasons about the constant through a `Field`: the
+    /// conversion below, its reversibility check, and the callers that use the result as a set element or
+    /// as a pruning map key. None of that can express which `Variant` alternative a value occupies.
+    if (fieldCanLoseVariantAlternative(from_type, expr_type))
+        return std::nullopt;
 
     if (from_type->equals(*expr_type))
         return constant_node->getValue();
@@ -1079,8 +1088,8 @@ static void convertNotEqualsChainToNotIn(
         const auto expr_type = removeLowCardinality(expression.node->getResultType());
 
         size_t min_index = not_equals_entries.front().first;
-        Tuple args;
-        args.reserve(not_equals_entries.size());
+        Columns element_columns;
+        element_columns.reserve(not_equals_entries.size());
         DataTypes tuple_element_types;
         tuple_element_types.reserve(not_equals_entries.size());
         bool all_constants_convert_losslessly = true;
@@ -1098,7 +1107,7 @@ static void convertNotEqualsChainToNotIn(
                 chassert(literal);
             }
 
-            args.push_back(literal->getValue());
+            element_columns.push_back(literal->getColumn()->convertToFullColumnIfConst());
             tuple_element_types.push_back(literal->getResultType());
 
             /// The set converts each element to the expression's type, while the comparison it
@@ -1113,10 +1122,12 @@ static void convertNotEqualsChainToNotIn(
             continue;
         }
 
-        /// Carry the resolved constant types over: deriving them from the `Field` values instead
-        /// would collapse `DateTime` to `UInt32`, an Enum to its underlying integer and so on, and
-        /// the resulting `notIn` would compare different values than the notEquals it replaces.
-        auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+        /// Carry each constant over as its own column: a `Field` records neither which `Variant`
+        /// alternative a value occupies nor its exact type (`DateTime` collapses to `UInt32`, an `Enum` to
+        /// its underlying integer), so `notIn` would compare different values than the `notEquals` it replaces.
+        auto rhs_node = std::make_shared<ConstantNode>(
+            ColumnConst::create(ColumnTuple::create(std::move(element_columns)), 1),
+            std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
         auto not_in_function = std::make_shared<FunctionNode>(*not_in_function_name);
         not_in_function->markAsOperator();
@@ -2586,9 +2597,10 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
-            Tuple args;
-            args.reserve(equals_functions.size());
+            Columns element_columns;
+            element_columns.reserve(equals_functions.size());
             DataTypes tuple_element_types;
+            tuple_element_types.reserve(equals_functions.size());
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
@@ -2605,7 +2617,7 @@ private:
                     chassert(literal);
                 }
 
-                args.push_back(literal->getValue());
+                element_columns.push_back(literal->getColumn()->convertToFullColumnIfConst());
                 tuple_element_types.push_back(literal->getResultType());
 
                 /// The set converts each element to the expression's type, while the comparison it
@@ -2621,7 +2633,11 @@ private:
                 continue;
             }
 
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+            /// Carry each constant over as its own column: a `Field` cannot record which `Variant`
+            /// alternative a value occupies, so rebuilding the value from one re-selects an alternative.
+            auto rhs_node = std::make_shared<ConstantNode>(
+                ColumnConst::create(ColumnTuple::create(std::move(element_columns)), 1),
+                std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
             auto in_function = std::make_shared<FunctionNode>(*in_function_name);
             in_function->markAsOperator();
