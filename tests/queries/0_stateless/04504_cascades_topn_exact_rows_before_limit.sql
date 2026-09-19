@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: distributed planning requires the analyzer.
+
 -- With `exact_rows_before_limit` the per-shard sorts of a two-stage top-N must feed the full
 -- row count into `rows_before_limit_at_least`, but the internal per-shard cap cuts the pipeline
 -- walk that collects those counters. The optimizer must not build the two-stage top-N then.
@@ -14,6 +17,7 @@ SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_topn_exact": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"k": 1000}}}';

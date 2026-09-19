@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <unordered_set>
 
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
@@ -145,29 +144,10 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
-    /** Names from `expression_argument_name_to_node` that are temporarily invisible.
-      * Set while an expression bound to an alias of an outer scope is resolved through this
-      * lambda scope, so that a lambda argument does not capture an identifier of an expression
-      * that is written outside of the lambda. See `tryResolveIdentifierFromAliases`.
-      */
-    std::unordered_set<std::string> hidden_expression_arguments;
-
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
     ScopeAliases global_with_aliases;
-
-    /// Alias names of this scope through which some identifier was actually resolved.
-    /// Multiple expressions with the same alias are an error only if the alias is actually used:
-    /// unused conflicting aliases are allowed, because aliases also give names to expressions
-    /// without being referenced, e.g. to tuple elements in SELECT tuple(1 AS x), tuple(2 AS x)
-    /// (see the setting enable_named_columns_in_function_tuple).
-    /// The names are recorded only when alias resolution wins, not on tentative probes that
-    /// fall back to another resolution path (e.g. SELECT tuple(a AS a) FROM t resolves a to
-    /// the source column). This state is deliberately per scope and not inside ScopeAliases:
-    /// the alias table is copied between scopes (see global_with_aliases), and a lookup in one
-    /// scope must not make an alias of another scope look referenced.
-    std::unordered_set<std::string> used_alias_names;
 
     /// Valid only during table ALIAS columns resolve.
     AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;

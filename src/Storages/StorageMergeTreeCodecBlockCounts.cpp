@@ -212,7 +212,7 @@ private:
             UInt32 size_compressed = 0;
             UInt32 size_decompressed = 0;
             auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
-            ++counts[codec->getCodecDescription()->formatForLogging()];
+            ++counts[codec->getCodecDesc()->formatForLogging()];
         }
         return codecCountsToField(counts);
     }

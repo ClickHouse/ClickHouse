@@ -19,7 +19,6 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/SilkFiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -1108,7 +1107,7 @@ static void readPressureFile(
 
                 uint64_t delta = counter - prev;
             new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement. "
+                "Microseconds of stall time since last measurement."
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
 
@@ -1242,12 +1241,11 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
 {
     const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    const auto * io_wait_ptr = getAsynchronousMetricValue(new_values, "OSIOWaitTimeNormalized");
-    if (!idle_ptr || !io_wait_ptr)
+    if (!idle_ptr)
         return;
 
     /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value - io_wait_ptr->value, 0.0, 1.0);
+    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
 
     const auto & cfg = context->getConfigRef();
     const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
@@ -1303,7 +1301,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1498,7 +1496,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1524,20 +1522,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
-#if !defined(OS_SUNOS)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
-#endif
 
         if (update_rss)
             MemoryTracker::updateRSS(data.resident);
@@ -2876,13 +2872,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 = {"channel", std::move(async_logging_queue_sizes),
                    "Number of async messages queued pending for logging, keyed by the logging channel name."};
     }
-
-#if USE_SILK
-    for (const auto & [counter_name, counter_value] : Silk::getRuntimeCounters())
-        new_values[fmt::format("Silk{}", counter_name)] = { counter_value,
-            "Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. "
-            "Counters with Time in the name are in nanoseconds." };
-#endif
 
     /// Add more metrics as you wish.
 
