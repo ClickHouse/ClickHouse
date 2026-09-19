@@ -177,7 +177,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         {
             /// Reopen the download at the offset the read has reached, and if the endpoint keeps
             /// ending its responses before the bound, fail instead of returning truncated data.
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
                 offset, read_until_position, path, i + 1, max_single_read_retries);
 
@@ -186,10 +185,23 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
                     "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
                     offset, read_until_position, path);
 
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-            sleep_time_with_backoff_milliseconds *= 2;
+            /// An endpoint that caps its responses ends every one of them before the bound, so a
+            /// read of more than the cap is a correct read assembled from several responses: the
+            /// reopen that follows the first premature end of a call continues it, and is a request
+            /// of its own rather than a retry of a failed one - it is neither an error nor worth a
+            /// backoff, both of which would be paid on every response of such a read. A reopened
+            /// download that hands out nothing at all is the error case, and it is what the further
+            /// attempts of this loop back off for.
+            const bool reopen_continues_the_read = (i == 0);
+            if (!reopen_continues_the_read)
+            {
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
+                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+                sleep_time_with_backoff_milliseconds *= 2;
+            }
+
             initialized = false;
-            initialize(i + 1);
+            initialize(reopen_continues_the_read ? 0 : i + 1);
         }
     }
 

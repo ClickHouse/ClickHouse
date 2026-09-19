@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/ReadHelpers.h>
+#include <Common/ProfileEvents.h>
 
 #include <azure/core/http/raw_response.hpp>
 #include <azure/core/http/transport.hpp>
@@ -25,6 +26,11 @@ namespace DB::ErrorCodes
     extern const int HTTP_RANGE_NOT_SATISFIABLE;
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int LOGICAL_ERROR;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ReadBufferFromAzureRequestsErrors;
 }
 
 namespace
@@ -140,6 +146,13 @@ std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeBuffer(
         /* max_single_download_retries */ 1);
 }
 
+/// Every increment of a profile event reaches `global_counters` through the chain of parents,
+/// whichever counters the thread running the test has attached.
+size_t requestErrors()
+{
+    return ProfileEvents::global_counters[ProfileEvents::ReadBufferFromAzureRequestsErrors];
+}
+
 void assertCountsFrom(const std::string & data, size_t first)
 {
     for (size_t i = 0; i < data.size(); ++i)
@@ -171,12 +184,17 @@ TEST(AzureBoundedRead, CappedResponsesAreReassembled)
 {
     auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 100, /* advertised_size */ 100, /* max_response_size */ 40);
 
+    const size_t errors_before = requestErrors();
+
     std::string data;
     ASSERT_NO_THROW(data = readWithRightBound(endpoint, /* read_until_position */ 100, /* buffer_size */ 64, /* max_read_retries */ 4));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsFrom(data, 0);
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 40, 80}));
+    /// The read is correct, only assembled from three responses: the reopens that continue it are
+    /// not request errors, and they are not delayed by the backoff of the error path either.
+    ASSERT_EQ(requestErrors(), errors_before);
 }
 
 /// The blob ends at 40 bytes no matter how often the download is reopened, while the caller asked
@@ -185,6 +203,8 @@ TEST(AzureBoundedRead, CappedResponsesAreReassembled)
 TEST(AzureBoundedRead, TruncatedBlobIsAnError)
 {
     auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 40, /* advertised_size */ 1000, /* max_response_size */ 40);
+
+    const size_t errors_before = requestErrors();
 
     try
     {
@@ -197,6 +217,8 @@ TEST(AzureBoundedRead, TruncatedBlobIsAnError)
     }
     /// Every retry reopened the download at the offset the read had reached.
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 40, 40}));
+    /// A reopened download that hands out nothing is the error case, and it is counted as one.
+    ASSERT_GT(requestErrors(), errors_before);
 }
 
 /// A response that delivers the whole requested range is not reopened.
