@@ -1689,6 +1689,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments)
 {
     ASTs::iterator headers_it = url_function_args.end();
+    ASTs::iterator first_key_value_it = url_function_args.end();
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
@@ -1738,7 +1739,11 @@ size_t StorageURL::evalArgsAndCollectHeaders(
         }
 
         if (headers_ast_function && headers_ast_function->name == "equals")
+        {
+            if (first_key_value_it == url_function_args.end())
+                first_key_value_it = arg_it;
             continue;
+        }
 
         if (evaluate_arguments)
             (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
@@ -1747,7 +1752,14 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     if (headers_it == url_function_args.end())
         return url_function_args.size();
 
-    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
+    /// Callers index the positional arguments and require the key-value arguments to stay the tail of the list, so the
+    /// headers node belongs at the end of the positional block. It may sit on either side of the first key-value
+    /// argument, so both rotation directions are needed.
+    if (first_key_value_it < headers_it)
+        std::rotate(first_key_value_it, headers_it, std::next(headers_it));
+    else
+        std::rotate(headers_it, std::next(headers_it), first_key_value_it);
+
     return url_function_args.size() - 1;
 }
 
