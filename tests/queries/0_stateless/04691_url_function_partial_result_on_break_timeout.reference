@@ -1,0 +1,8 @@
+the timed out query succeeded
+1
+2
+3
+4
+5
+returned the partial result soon after the timeout
+the error of the server is reported when the query is not interrupted
