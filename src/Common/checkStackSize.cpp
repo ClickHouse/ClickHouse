@@ -2,6 +2,7 @@
 #include <base/defines.h> /// THREAD_SANITIZER
 #include <base/scope_guard.h>
 #include <Common/checkStackSize.h>
+#include <Common/CoroutineStack.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/StackfulCoroutine.h>
@@ -45,6 +46,10 @@ struct StackBounds
 };
 
 constinit thread_local StackBounds stack_bounds;
+
+/// `STACK_SIZE_FREE_RATIO` below is calibrated against ~8 MiB thread stacks: its TSan value would
+/// allow a 320 KiB coroutine stack only 16384 B, which an ordinary secure handshake nearly exhausts.
+constexpr size_t COROUTINE_STACK_RESERVE = 64 * 1024;
 }
 
 /**
@@ -138,11 +143,33 @@ static NO_INLINE size_t getStackSize(void ** out_address)
 
 void checkStackSize()
 {
-    /// Not implemented for coroutines.
-    if (StackfulCoroutine::getCurrentCoroutine())
+    /// Taken here rather than in a callee, whose own frame would shift every bound below.
+    const void * frame_address = __builtin_frame_address(0);
+
+    if (const StackfulCoroutine * coroutine = StackfulCoroutine::getCurrentCoroutine())
+    {
+        const CoroutineStack::Bounds bounds = coroutine->getStackBounds();
+
+        /// No stack to reason about, or none with room for the reserve.
+        if (bounds.size <= COROUTINE_STACK_RESERVE)
+            return;
+
+        uintptr_t frame = reinterpret_cast<uintptr_t>(frame_address);
+        uintptr_t lowest = reinterpret_cast<uintptr_t>(bounds.lowest);
+
+        /// `resume` publishes the coroutine before switching to it, so frames of the parent stack
+        /// reach this point as well. Only the coroutine's own frames are measurable here.
+        if (frame < lowest || frame - lowest >= bounds.size)
+            return;
+
+        if (unlikely(frame - lowest < COROUTINE_STACK_RESERVE))
+            throwTooDeepRecursion(bounds.lowest, frame_address, lowest + bounds.size - frame, bounds.size);
+
         return;
+    }
 
 #if USE_SILK
+    /// Silk exposes no stack bounds: `silk::Fiber` is only forward-declared in its public header.
     if (silk::FiberScheduler::getCurrentFiberId().raw)
         return;
 #endif
@@ -154,7 +181,6 @@ void checkStackSize()
     if (unlikely(!stack_bounds.max_size))
         return;
 
-    const void * frame_address = __builtin_frame_address(0);
     uintptr_t int_frame_address = reinterpret_cast<uintptr_t>(frame_address);
     uintptr_t int_stack_address = reinterpret_cast<uintptr_t>(stack_bounds.address);
 

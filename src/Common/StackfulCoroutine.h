@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 
+#include <Common/CoroutineStack.h>
 #include <Common/Exception.h>
 #include <Common/FiberLocal.h>
 #include <Common/SilkFiberScheduler.h>
@@ -23,13 +24,18 @@ private:
     using CoroutinePtr = StackfulCoroutine *;
 
 public:
-    template <typename StackAlloc, typename Fn>
-    StackfulCoroutine(StackAlloc && salloc, Fn && fn)
-        : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl<Fn>(std::forward<Fn>(fn)))
+    /// An lvalue reference, not a forwarding reference: the bounds below are read back out of the caller's allocator.
+    template <typename Fn>
+    StackfulCoroutine(CoroutineStack & salloc, Fn && fn)
+        : impl(std::allocator_arg_t(), salloc, RoutineImpl<Fn>(std::forward<Fn>(fn)))
         , coroutine_locals(FiberLocalStorage::create())
     {
         if (Silk::isInsideFiber())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Stackful coroutines cannot be created inside silk fibers");
+
+        /// The mem-initializer above already ran the allocation through `salloc`, so what it
+        /// recorded is this coroutine's stack.
+        stack_bounds = salloc.lastAllocatedBounds();
     }
 
     StackfulCoroutine() = default;
@@ -48,6 +54,7 @@ public:
             unwind();
             impl = std::move(other.impl);
             coroutine_locals = std::move(other.coroutine_locals);
+            stack_bounds = other.stack_bounds;
         }
         return *this;
     }
@@ -76,6 +83,9 @@ public:
     /// Defined in `StackfulCoroutine.cpp`: a static local in a header-defined function gives every
     /// shared object its own copy.
     static CoroutinePtr & getCurrentCoroutine();
+
+    /// Empty while this coroutine is being torn down, so a frame check during unwinding cannot fire.
+    const CoroutineStack::Bounds & getStackBounds() const { return stack_bounds; }
 
 private:
     template <typename Fn>
@@ -113,6 +123,10 @@ private:
     /// Destroying a coroutine that is suspended unwinds its stack: Called from the destructor body, while coroutine_locals is still alive.
     void unwind() noexcept
     {
+        /// Teardown runs with this coroutine published as current, and a destructor near the
+        /// allowance must not turn a forced unwind into an exception.
+        stack_bounds = {};
+
         if (!impl)
             return;
 
@@ -129,4 +143,5 @@ private:
 
     Impl impl;
     FiberLocalStorage::Holder coroutine_locals;
+    CoroutineStack::Bounds stack_bounds;
 };
