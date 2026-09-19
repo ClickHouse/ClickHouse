@@ -60,13 +60,17 @@ struct IndexDescription
     /// (if using the `escape_index_filenames`).
     bool escape_filenames{};
 
-    /// Parse index from definition AST
+    /// Parse index from definition AST.
+    /// `validate_expressions` enables the checks that only fresh user input (`CREATE TABLE`,
+    /// `ALTER TABLE ... ADD INDEX`) has to pass. Metadata read back from disk is loaded without them,
+    /// so a table created before a check existed keeps loading - see `initExpressionInfo`.
     static IndexDescription getIndexFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         bool is_implicitly_created,
         bool escape_filenames,
-        ContextPtr context);
+        ContextPtr context,
+        bool validate_expressions);
 
     IndexDescription() = default;
 
@@ -81,7 +85,7 @@ struct IndexDescription
 
     bool isImplicitlyCreated() const { return is_implicitly_created; }
 
-    void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
+    void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context, bool validate_expressions);
 
     bool isSimpleSingleColumnIndex() const;
 };

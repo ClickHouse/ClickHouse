@@ -226,7 +226,8 @@ WhatIfCandidateResult evaluateIndex(
             metadata->getColumns(),
             /* is_implicitly_created = */ false,
             /* escape_filenames = */ true,
-            context);
+            context,
+            /* validate_expressions = */ false); /// Rebuilt from already accepted metadata.
     }
     catch (const Exception &)
     {
