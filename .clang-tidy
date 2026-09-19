@@ -22,6 +22,7 @@ Checks: [
   '-boost-use-ranges',
 
   '-bugprone-assignment-in-if-condition',
+  '-bugprone-assignment-in-selection-statement', # generalization of `bugprone-assignment-in-if-condition` in clang-tidy 23, same rationale
   '-bugprone-branch-clone',
   '-bugprone-derived-method-shadowing-base-method',
   '-bugprone-easily-swappable-parameters',
@@ -35,12 +36,15 @@ Checks: [
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-signed-bitwise', # canonical name of `hicpp-signed-bitwise` since clang-tidy 23; too noisy
   '-bugprone-sizeof-expression', # too aggressive
   '-bugprone-throwing-static-initialization',
+  '-bugprone-unhandled-code-paths', # new in clang-tidy 23; duplicates `bugprone-switch-missing-default-case` (enabled; `NOLINT`s in the code use that name)
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
   '-cert-err58-cpp',
+  '-cert-exp45-c', # alias of `bugprone-assignment-in-selection-statement`
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
@@ -93,6 +97,7 @@ Checks: [
   '-cppcoreguidelines-avoid-c-arrays',                          # alias of `modernize-avoid-c-arrays`
   '-cppcoreguidelines-avoid-magic-numbers',                     # alias of `readability-magic-numbers`
   '-cppcoreguidelines-c-copy-assignment-signature',             # alias of `misc-unconventional-assign-operator`
+  '-cppcoreguidelines-explicit-constructor',                    # alias of `google-explicit-constructor` (enabled; `NOLINT`s in the code use the google name)
   '-cppcoreguidelines-explicit-virtual-functions',              # alias of `modernize-use-override`
   '-cppcoreguidelines-macro-to-enum',                           # alias of `modernize-macro-to-enum`
   '-cppcoreguidelines-narrowing-conversions',                   # alias of `bugprone-narrowing-conversions`
@@ -139,10 +144,12 @@ Checks: [
   '-llvmlibc-*',
 
   '-misc-const-correctness',
+  '-misc-explicit-constructor', # alias of `google-explicit-constructor` (enabled; `NOLINT`s in the code use the google name)
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
   '-misc-multiple-inheritance',
   '-misc-non-private-member-variables-in-classes',
+  '-misc-static-initialization-cycle', # flags the recursive function-local-static factory pattern (e.g. `QuotaKeyTypeInfo::get`), which is safe by construction
   '-misc-override-with-different-visibility',
   '-misc-use-anonymous-namespace',
   '-misc-use-internal-linkage',
@@ -161,14 +168,22 @@ Checks: [
   '-modernize-use-designated-initializers',
   '-modernize-use-scoped-lock',
   '-modernize-use-integer-sign-comparison',
+  '-modernize-use-std-bit', # new in clang-tidy 23
+  '-modernize-use-string-view', # new in clang-tidy 23, too noisy
+  '-modernize-use-structured-binding', # new in clang-tidy 23
 
   '-performance-avoid-endl',
   '-performance-enum-size',
+  '-performance-faster-string-find', # extended in clang-tidy 23 (as `performance-prefer-single-char-overloads`) with too many new hits
+  '-performance-prefer-single-char-overloads', # same underlying check as `performance-faster-string-find`, both names must be disabled
   '-performance-inefficient-string-concatenation',
   '-performance-inefficient-vector-operation',
   '-performance-no-int-to-ptr',
+  '-performance-string-view-conversions', # new in clang-tidy 23
   '-performance-unnecessary-value-param',
+  '-performance-use-std-move', # new in clang-tidy 23, too noisy
 
+  '-portability-no-assembler', # canonical name of `hicpp-no-assembler` since clang-tidy 23; inline assembler is used deliberately
   '-portability-simd-intrinsics',
   '-portability-avoid-pragma-once',
   '-portability-template-virtual-member-function',
@@ -196,9 +211,15 @@ Checks: [
         # initialized (example: s1 in struct S { String s1; String s2{};}; is not in-struct initialized, therefore it must be specified at instantiation time). As explicitly
         # specifying all members is tedious for large structs, `missing-field-initializers` makes programmers initialize as many members as possible in-struct. Clang-tidy
         # warning `readability-redundant-member-init` does the opposite thing, both are not compatible with each other.
+  '-readability-redundant-lambda-parameter-list', # new in clang-tidy 23; we prefer explicit `()` in lambdas
+  '-readability-redundant-nested-if', # new in clang-tidy 23, too noisy
+  '-readability-redundant-parentheses', # new in clang-tidy 23, too noisy
+  '-readability-redundant-qualified-alias', # new in clang-tidy 23; flags deliberate re-exports like `using DB::Decimal`
   '-readability-simplify-boolean-expr',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
+  '-readability-trailing-comma', # new in clang-tidy 23, too noisy
+  '-readability-trivial-switch', # new in clang-tidy 23
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
   '-readability-use-concise-preprocessor-directives',

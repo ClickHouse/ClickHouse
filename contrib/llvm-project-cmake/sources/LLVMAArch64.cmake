@@ -2,6 +2,11 @@
 
 # AArch64 Utils sources (needed by both Desc and CodeGen)
 set(LLVMAARCH64UTILS_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64CodeLayoutOpt.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64PerfectShuffle.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64SRLTDefineSuperRegs.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/MCTargetDesc/AArch64MCLFIRewriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/SVEShuffleOpts.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/Utils/AArch64BaseInfo.cpp
 )
 
@@ -87,7 +92,6 @@ set(LLVMAARCH64CODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64TargetMachine.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64TargetObjectFile.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64TargetTransformInfo.cpp
-    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/SMEABIPass.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/MachineSMEABIPass.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/SMEPeepholeOpt.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/SVEIntrinsicOpts.cpp

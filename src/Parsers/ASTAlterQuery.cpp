@@ -667,7 +667,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << "(";
-    auto closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
+    auto closing_bracket_guard = make_scope_guard(std::function<void()>([&ostr]() { ostr << ")"; }));
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {

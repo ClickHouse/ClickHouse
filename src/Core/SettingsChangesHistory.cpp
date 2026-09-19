@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 
 #include <limits>
+#include <mutex>
 
 namespace DB
 {
