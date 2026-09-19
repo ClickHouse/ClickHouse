@@ -35,6 +35,10 @@ public:
     Status prepare() override;
     void work() override;
 
+    /// The statistics written after the data (e.g. `rows_read`) are complete only when the whole pipeline has finished,
+    /// so the format is finalized by the executor rather than when its inputs are exhausted.
+    void onPipelineFinished() override;
+
     void flush();
     void setAutoFlush() { auto_flush = true; }
 
@@ -233,7 +237,6 @@ protected:
     Chunk current_chunk;
     PortKind current_block_kind = PortKind::Main;
     bool has_input = false;
-    bool finished = false;
     bool finalized = false;
     bool framing_finalize_deferred = false;
     /// The framing was attached only to serialize an exception packet (see `setFraming`'s

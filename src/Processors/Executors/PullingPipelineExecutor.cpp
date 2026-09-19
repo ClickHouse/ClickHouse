@@ -53,8 +53,11 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     }
 
-    if (!executor->checkTimeLimitSoft())
-        return false;
+    /// Throws when the time limit is exceeded with `timeout_overflow_mode = 'throw'`. With 'break' the partial result
+    /// is returned as a success: the check has cancelled the execution with `CancelledByTimeout`, and `executeStep`
+    /// below finalizes it - the pending read progress is reported and the format is finalized - before the end of
+    /// the data is reported.
+    executor->checkTimeLimit();
 
     if (!executor->executeStep(&has_data_flag))
         return false;
