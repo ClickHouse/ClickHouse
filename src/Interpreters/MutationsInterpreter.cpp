@@ -2192,9 +2192,15 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// 9. Propagate required columns to previous stage.
             if (i > 0)
             {
+                NameSet correlated_subquery_names;
+                for (const auto & correlated_subtrees : stage.new_correlated_subtrees)
+                    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+                        correlated_subquery_names.insert(correlated_subquery.action_node_name);
+
                 const auto & first_step = actions_chain.getSteps().front();
                 for (const auto & col_name : first_step->getInputColumnNames())
-                    prepared_stages[i - 1].output_columns.insert(col_name);
+                    if (!correlated_subquery_names.contains(col_name))
+                        prepared_stages[i - 1].output_columns.insert(col_name);
             }
 
         }
