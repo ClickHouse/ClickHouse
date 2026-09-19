@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Common/getRandomASCIIString.h>
 
 
@@ -37,10 +38,17 @@ namespace ProfileEvents
 namespace DB
 {
 
+bool isAzureDestinationAlreadyExistsError(const Azure::Core::RequestFailedException & exception)
+{
+    return exception.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed
+        || (exception.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict && exception.ErrorCode == "BlobAlreadyExists");
+}
+
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int FILE_CHANGED_DURING_READ;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,7 +67,9 @@ namespace
             std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            LoggerPtr log_)
+            LoggerPtr log_,
+            const String & dest_if_none_match_ = {},
+            const std::optional<ObjectAttributes> & object_to_attributes_ = {})
             : create_read_buffer(create_read_buffer_)
             , client(client_)
             , offset (offset_)
@@ -70,6 +80,8 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(std::move(blob_storage_log_))
             , log(log_)
+            , dest_if_none_match(dest_if_none_match_)
+            , object_to_attributes(object_to_attributes_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
             , normal_part_size(0)
         {
@@ -88,6 +100,10 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
+        /// Precondition for the request that makes the destination visible.
+        const String dest_if_none_match;
+        /// Metadata committed atomically with the destination.
+        const std::optional<ObjectAttributes> object_to_attributes;
         size_t max_single_part_upload_size;
 
         size_t normal_part_size;
@@ -182,7 +198,15 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.Upload(stream);
+                Azure::Storage::Blobs::UploadBlockBlobOptions options;
+                if (!dest_if_none_match.empty())
+                    options.AccessConditions.IfNoneMatch = Azure::ETag(dest_if_none_match);
+                if (object_to_attributes.has_value())
+                {
+                    for (const auto & [key, value] : *object_to_attributes)
+                        options.Metadata[key] = value;
+                }
+                block_blob_client.Upload(stream, options);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -214,7 +238,15 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.CommitBlockList(block_ids);
+                Azure::Storage::Blobs::CommitBlockListOptions options;
+                if (!dest_if_none_match.empty())
+                    options.AccessConditions.IfNoneMatch = Azure::ETag(dest_if_none_match);
+                if (object_to_attributes.has_value())
+                {
+                    for (const auto & [key, value] : *object_to_attributes)
+                        options.Metadata[key] = value;
+                }
+                block_blob_client.CommitBlockList(block_ids, options);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -370,7 +402,7 @@ void copyDataToAzureBlobStorageFile(
     BlobStorageLogWriterPtr blob_storage_log)
 {
     auto log = getLogger("copyDataToAzureBlobStorageFile");
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log, /* dest_if_none_match= */ {}};
     helper.performCopy();
 }
 
@@ -387,10 +419,19 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    BlobStorageLogWriterPtr blob_storage_log)
+    BlobStorageLogWriterPtr blob_storage_log,
+    const String & dest_if_none_match,
+    const String & src_etag)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
+
+    /// The native copy carries no bytes through this process, so the only way to pin it to the
+    /// generation the caller selected is the source-side precondition: the endpoint transfers exactly
+    /// that generation or refuses with `412`, mapped to `FILE_CHANGED_DURING_READ` below. `ETag`
+    /// conditions want the quoted form, while a tag from a listing is bare.
+    const Azure::ETag source_etag_condition
+        = src_etag.empty() ? Azure::ETag{} : Azure::ETag(AzureBlobStorage::toQuotedETag(src_etag));
 
     if (settings->use_native_copy)
     {
@@ -410,6 +451,9 @@ void copyAzureBlobStorageFile(
             if (size < settings->max_single_part_copy_size)
             {
                 Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+                if (!dest_if_none_match.empty())
+                    copy_options.AccessConditions.IfNoneMatch = Azure::ETag(dest_if_none_match);
+                copy_options.SourceAccessConditions.IfMatch = source_etag_condition;
                 if (object_to_attributes.has_value())
                 {
                     for (const auto & [key, value] : *object_to_attributes)
@@ -422,6 +466,9 @@ void copyAzureBlobStorageFile(
             else
             {
                 Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+                if (!dest_if_none_match.empty())
+                    copy_options.AccessConditions.IfNoneMatch = Azure::ETag(dest_if_none_match);
+                copy_options.SourceAccessConditions.IfMatch = source_etag_condition;
                 if (object_to_attributes.has_value())
                 {
                     for (const auto & [key, value] : *object_to_attributes)
@@ -464,6 +511,11 @@ void copyAzureBlobStorageFile(
         }
         catch (const Azure::Storage::StorageException & e)
         {
+            if (!src_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+                throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                    "Azure Blob Storage object {} was replaced before it could be copied to {} (If-Match on etag {} failed)",
+                    src_blob, dest_blob, src_etag);
+
             if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Unauthorized)
             {
                 LOG_TRACE(log, "Copy operation has thrown unauthorized access error, which indicates that the storage account of the source & destination are not the same. "
@@ -490,7 +542,9 @@ void copyAzureBlobStorageFile(
                 src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
+        UploadHelper helper{
+            create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob,
+            settings, schedule, blob_storage_log, log, dest_if_none_match, object_to_attributes};
         helper.performCopy();
     }
 }
