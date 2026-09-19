@@ -83,6 +83,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_STATISTICS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -1243,6 +1245,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
+          * is refused. Only a fresh definition is: a table that already exists has to keep loading,
+          * however its metadata came to carry the setting - which the `convert_to_replicated` flag
+          * produced before it learned to refuse such a table. That covers a short `ATTACH TABLE t`,
+          * `SECONDARY_CREATE` (`RESTORE` from a backup) and the startup levels, as well as the replays
+          * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
+          * is the way out of that state.
+          */
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+            && (*storage_settings)[MergeTreeSetting::table_readonly])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
+
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();

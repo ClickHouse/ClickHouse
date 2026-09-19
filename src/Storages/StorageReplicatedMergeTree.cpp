@@ -213,7 +213,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool always_fetch_mutated_part;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
-    extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool detach_old_local_parts_when_cloning_replica;
     extern const MergeTreeSettingsBool disable_detach_partition_for_zero_copy_replication;
@@ -464,16 +463,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
-    /** Reject a `CREATE` that asks for `table_readonly = 1`, which is not supported for
-      * `ReplicatedMergeTree`. Everything that loads a table which already exists has to keep
-      * working, however its metadata came to carry the setting: `ATTACH` (otherwise a detached
-      * table can never come back), `SECONDARY_CREATE` (a `RESTORE` from a backup, and the internal
-      * queries of a `Replicated` database) and the startup levels. Turning the setting off is
-      * allowed by the `ALTER` path, which is the way out of such a state.
-      */
-    if (mode == LoadingStrictnessLevel::CREATE && (*getSettings())[MergeTreeSetting::table_readonly])
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
-
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
     {
