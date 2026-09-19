@@ -3186,6 +3186,8 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
   そのため、短い数値文字列 (4 桁以下) のパースは、曖昧さを避けるため明示的に無効化されています。たとえば、文字列 `'1999'` は年 (Date / DateTime の不完全な文字列表現) を表す場合も、unix timestamp を表す場合もあります。より長い数値文字列は使用できます。
 </Note>
 
+`expr` が [Time](/ja/reference/data-types/time) または [Time64](/ja/reference/data-types/time64) の値の場合、Unix Epoch の開始からの経過秒数として解釈されます。`Time64` の小数部分は負の無限大方向に切り捨てられ、`DateTime` の範囲外の値は `date_time_overflow_behavior` 設定に従います。
+
 **構文**
 
 ```sql
@@ -3194,7 +3196,7 @@ toDateTime(expr[, time_zone])
 
 **引数**
 
-* `expr` — 値。[`String`](/ja/reference/data-types/string) または [`Int`](/ja/reference/data-types/int-uint) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — 値。[`String`](/ja/reference/data-types/string) または [`Int`](/ja/reference/data-types/int-uint) または [`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`Time`](/ja/reference/data-types/time) または [`Time64`](/ja/reference/data-types/time64) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `time_zone` — タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -3222,10 +3224,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 導入バージョン: v20.9.0
 
 入力値を `DateTime` 型に変換します。
-`String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`(U)Int128`、`(U)Int256`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` および `Time64` の値はサポートされておらず、例外が発生します。`Time` 型の値では、飽和ではなくラップアラウンドが発生します。
+`String`、`FixedString`、`Date`、`Date32`、`Time`、`Time64`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`(U)Int128`、`(U)Int256`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` の値はサポートされておらず、例外が発生します。
 `DateTime32` は `DateTime` の alias であり、`1970-01-01 00:00:00` から `2106-02-07 06:28:15` までの日付をサポートします。
 文字列、または上記の飽和する数値型から変換する場合、この範囲外の値は範囲の境界値に飽和されます。非有限の浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
-`Date32` や `DateTime64` など、他の日付と時刻型からの変換は、`date_time_overflow_behavior` 設定に従います。デフォルトの `ignore` モードではラップアラウンドした値が生成される場合があり、`saturate` では値が範囲の境界値に制限され、`throw` では例外が発生します。
+`Date32`、`DateTime64`、`Time`、`Time64` など、他の日付と時刻型からの変換は、`date_time_overflow_behavior` 設定に従います。デフォルトの `ignore` モードではラップアラウンドした値が生成される場合があり、`saturate` では値が範囲の境界値に制限され、`throw` では例外が発生します。`Time64` の値は、まず負の無限大方向に切り捨てられて整数秒になります。
 
 **構文**
 
@@ -3235,7 +3237,7 @@ toDateTime32(x[, timezone])
 
 **引数**
 
-* `x` — 変換する入力値。[`String`](/ja/reference/data-types/string)、[`FixedString`](/ja/reference/data-types/fixedstring)、[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`BFloat16`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`Time`](/ja/reference/data-types/time)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `x` — 変換する入力値。[`String`](/ja/reference/data-types/string)、[`FixedString`](/ja/reference/data-types/fixedstring)、[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`BFloat16`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`Time`](/ja/reference/data-types/time)、[`Time64`](/ja/reference/data-types/time64)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `timezone` — 任意。返される `DateTime` 値のタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -6919,8 +6921,9 @@ SELECT
 導入バージョン: v25.5.0
 
 入力値を [Time](/ja/reference/data-types/time) 型に変換します。
-String、FixedString、DateTime、DateTime64、または深夜からの経過秒数を表す数値型からの変換をサポートします。
+String、FixedString、DateTime、DateTime64、Time64、または深夜からの経過秒数を表す数値型からの変換をサポートします。
 型の範囲外の数値 (`-999:59:59` ～ `999:59:59`、すなわち `-3599999` ～ `3599999` 秒) は範囲の境界値に飽和され、有限でない浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
+`Time64` 値は負の無限大方向に整数秒へ切り捨てられ、同じ範囲に飽和されます。
 
 <Note title="レガシー `toTime`">
   v25.5 より前の `toTime` は別の関数であり、時刻の
@@ -6940,7 +6943,7 @@ toTime(x)
 
 **引数**
 
-* `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`BFloat16`](/ja/reference/data-types/float) または [`Float*`](/ja/reference/data-types/float)
+* `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Time64`](/ja/reference/data-types/time64) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`BFloat16`](/ja/reference/data-types/float) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 

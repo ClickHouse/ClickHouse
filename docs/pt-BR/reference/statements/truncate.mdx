@@ -30,7 +30,7 @@ Você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/sess
 Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem consultas `TRUNCATE` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Se `alter_sync` estiver definido como `2`, ou como `3` em `ReplicatedMergeTree`, e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, será lançada uma exceção `UNFINISHED`.
+  Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, será lançada uma exceção `UNFINISHED`. Com `alter_sync = 3`, não se aguarda pelas réplicas inativas, portanto nenhuma exceção é lançada.
 </Note>
 
 A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de tabela:

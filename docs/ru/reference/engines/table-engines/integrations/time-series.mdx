@@ -114,7 +114,7 @@ CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Если обе формы используются в одном операторе `CREATE TABLE`, объявленные типы должны совпадать.
@@ -148,8 +148,9 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `value`     | [x]          | `Float64`                             | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
 
 Столбцы, которые движок создаёт самостоятельно, используют кодеки сжатия временных рядов:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` и `value CODEC(ZSTD(3))`. Почти монотонные временные метки плохо
+`timestamp CODEC(Delta, T64, ZSTD(3))` и `value CODEC(ALP, ZSTD(3))`. Почти монотонные временные метки плохо
 сжимаются универсальными кодеками и в противном случае могут составлять основную часть размера таблицы samples на диске.
+Движок включает `ALP` для своих внутренних таблиц samples и recent samples, не требуя установки `enable_alp_codec`.
 См. также [Настройка типов столбцов](#adjusting-column-types).
 
 ### Таблица recent samples {#recent-samples-table}
@@ -157,6 +158,8 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 Таблица *recent samples* необязательна и включена по умолчанию (см. настройку [recent&#95;samples&#95;ttl&#95;seconds](#settings);
 при установке значения `0` таблица отключается). Она содержит копию образцов, возраст которых меньше TTL, заданного этой настройкой,
 и должна иметь те же столбцы, что и таблица [samples](#samples-table).
+Генерируемый столбец `timestamp` использует `CODEC(Delta, T64, ZSTD(3))`,
+а генерируемый столбец `value` — `CODEC(ALP, ZSTD(3))`.
 
 Каждый добавленный образец записывается как в таблицу samples, так и в таблицу recent samples.
 Запросы, временной диапазон которых входит в окно TTL, читают данные из таблицы recent samples, а не из основной таблицы samples,
@@ -228,15 +231,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -259,9 +262,9 @@ METRIC FAMILIES INNER COLUMNS
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-Столбцы были созданы автоматически. Кроме того, имеются четыре внутренние целевые таблицы с собственными определениями столбцов,
-сохранёнными в предложениях `INNER COLUMNS`. Настройка `recent_samples_ttl_seconds` была записана в предложение `SETTINGS`
-со значением по умолчанию: она определяет TTL таблицы recent samples, поэтому её фактическое значение фиксируется при создании.
+Столбцы были созданы автоматически, а также имеются четыре внутренних целевых таблицы с собственными определениями столбцов,
+хранящимися в конструкциях `INNER COLUMNS`. Настройка `recent_samples_ttl_seconds` была записана в конструкцию `SETTINGS`
+со значением по умолчанию: эта настройка определяет TTL таблицы recent samples, поэтому её фактическое значение фиксируется при создании.
 Также последняя версия схемы была зафиксирована в настройке `version` (см. [Версионирование схемы](#schema-versioning)).
 
 Внутренние целевые таблицы имеют имена вида `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
@@ -273,8 +276,8 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -285,8 +288,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -353,7 +356,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Указание внутренних столбцов без кодеков означает использование для них кодека по умолчанию:

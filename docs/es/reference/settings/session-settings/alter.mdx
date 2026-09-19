@@ -67,7 +67,7 @@ Valores posibles:
 * `0` — No esperar.
 * `1` — Esperar a la ejecución propia.
 * `2` — Esperar a todas.
-* `3` - Esperar solo a las réplicas activas. Solo se admite para `SharedMergeTree`. Para `ReplicatedMergeTree` se comporta igual que `alter_sync = 2`.
+* `3` - Esperar solo a las réplicas activas. Las réplicas inactivas aplican el cambio cuando pasan a estar activas.
 
 Valor predeterminado en Cloud: `0`.
 

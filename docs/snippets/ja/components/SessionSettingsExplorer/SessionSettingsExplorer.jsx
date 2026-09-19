@@ -2959,7 +2959,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "use_text_index_header_cache", path: "/use-text#use_text_index_header_cache", default: "1" },
         { name: "use_text_index_like_evaluation_by_dictionary_scan", path: "/use-text#use_text_index_like_evaluation_by_dictionary_scan", default: "1" },
         { name: "use_text_index_negative_tokens_cache", path: "/use-text#use_text_index_negative_tokens_cache", default: "1" },
-        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "0" },
+        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "1" },
         { name: "use_text_index_tokens_cache", path: "/use-text#use_text_index_tokens_cache", default: "1" }
       ],
       children: []
@@ -3409,7 +3409,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} 件の一致する {matchingCount === 1 ? "設定" : "設定"}
+            {matchingCount} 件の一致 {matchingCount === 1 ? "設定" : "設定"}
           </span>
         </div>
       )}

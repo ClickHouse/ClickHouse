@@ -142,7 +142,7 @@ Permite extraer expresiones comunes de las disyunciones en las expresiones WHERE
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1"},{"label": "Configuración habilitada de forma predeterminada"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1"},{"label": "SETTING habilitada de forma predeterminada"}]}]} />
 
 Habilita o deshabilita la optimización mediante la transformación de algunas funciones para que lean subcolumnas. Esto reduce la cantidad de datos que se deben leer.
 
@@ -157,6 +157,8 @@ Estas funciones pueden transformarse:
 * [mapKeys](/es/reference/functions/regular-functions/tuple-map-functions#mapKeys) para leer la subcolumna [keys](/es/reference/data-types/map#reading-subcolumns-of-map).
 * [mapValues](/es/reference/functions/regular-functions/tuple-map-functions#mapValues) para leer la subcolumna [values](/es/reference/data-types/map#reading-subcolumns-of-map).
 * [has](/es/reference/functions/regular-functions/array-functions#has) y [notHas](/es/reference/functions/regular-functions/array-functions#notHas) para `Map`, para leer la subcolumna [keys](/es/reference/data-types/map#reading-subcolumns-of-map).
+* [mapContainsKeyLike](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) para leer la subcolumna [keys](/es/reference/data-types/map#reading-subcolumns-of-map).
+* [mapContainsValueLike](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) para leer la subcolumna [values](/es/reference/data-types/map#reading-subcolumns-of-map).
 
 Valores posibles:
 

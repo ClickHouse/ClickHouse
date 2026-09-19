@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 `OPTIMIZE` クエリは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー ([materialized view](/ja/reference/statements/create/view#materialized-view) を含む) および [Buffer](/ja/reference/engines/table-engines/special/buffer) エンジンでサポートされています。その他のテーブルエンジンではサポートされていません。
 
-`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `2` の場合、または `ReplicatedMergeTree` では `3` の場合) 。または、現在のレプリカでの実行を待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `1` の場合) 。
+`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `2` の場合) 。または、アクティブなレプリカでの実行を待機します (`3` の場合) 。あるいは、現在のレプリカでの実行を待機します (`1` の場合) 。
 
 * 何らかの理由で `OPTIMIZE` がマージを実行しなかった場合、クライアントには通知されません。通知を有効にするには、[optimize&#95;throw&#95;if&#95;noop](/ja/reference/settings/session-settings/optimize#optimize_throw_if_noop) 設定を使用します。
 * `PARTITION` を指定すると、指定したパーティションだけが最適化されます。[パーティション式の設定方法](/ja/reference/statements/alter/partition#how-to-set-partition-expression)。
@@ -36,7 +36,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 非アクティブなレプリカが `OPTIMIZE` クエリを実行するのを待機する時間 (秒単位) は、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
 
 <Note>
-  `alter_sync` が `2` に設定されている場合、または `ReplicatedMergeTree` で `3` に設定されていて、一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブなままの場合は、例外 `UNFINISHED` がスローされます。
+  `alter_sync` が `2` に設定されていて、一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブなままの場合は、例外 `UNFINISHED` がスローされます。`alter_sync = 3` の場合、非アクティブなレプリカは待機されないため、例外はスローされません。
 </Note>
 
 ## DRY RUN {#dry-run}

@@ -1050,7 +1050,7 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />OpenSSL の組み込み CA 証明書を使用するかどうかを指定します。ClickHouse は、組み込みの CA 証明書がファイル `</etc/ssl/cert.pem>` (またはディレクトリ `</etc/ssl/certs>`) 、あるいは環境変数 `<SSL_CERT_FILE>` (または `<SSL_CERT_DIR>`) で指定されたファイル (またはディレクトリ) にあることを前提としています。
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />デフォルトの CA 証明書を使用するかどうかを決定します。ClickHouse は、ファイル `</etc/ssl/cert.pem>` (またはディレクトリ `</etc/ssl/certs>`) 、環境変数 `<SSL_CERT_FILE>` (または `<SSL_CERT_DIR>`) で指定されたファイル (またはディレクトリ) 、および各種ディストリビューションのその他の既知の場所からこれらを探します。ファイルシステム上に CA 証明書が見つからず、明示的に `caConfig` が設定されておらず、かつバイナリが埋め込み CA 証明書を含むようにビルドされている場合 (これはデフォルトで、`ENABLE_EMBEDDED_CA_CERTIFICATES` ビルドオプションで制御されます) 、代わりに埋め込み証明書が使用されます。これにより、たとえば「from scratch」からビルドされたコンテナーのようにファイルが一切ない最小限の環境でも TLS が機能します。埋め込み CA 証明書を含まないビルドでは、この場合にエラーをスローします。
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1106,7 +1106,7 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />OpenSSL の組み込み CA 証明書を使用するかどうかを決定します。ClickHouse は、組み込みの CA 証明書がファイル `</etc/ssl/cert.pem>` (またはディレクトリ `</etc/ssl/certs>`) 、あるいは環境変数 `<SSL_CERT_FILE>` (または `<SSL_CERT_DIR>`) で指定されたファイル (またはディレクトリ) にあることを前提としています。
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />デフォルトの CA 証明書を使用するかどうかを決定します。ClickHouse は、ファイル `</etc/ssl/cert.pem>` (またはディレクトリ `</etc/ssl/certs>`) 、環境変数 `<SSL_CERT_FILE>` (または `<SSL_CERT_DIR>`) で指定されたファイル (またはディレクトリ) 、および各種ディストリビューションで一般的に使用されるその他の場所から証明書を検索します。ファイルシステム上に CA 証明書がなく、明示的な `caConfig` が設定されておらず、かつバイナリが埋め込み CA 証明書付きでビルドされている場合 (デフォルトであり、`ENABLE_EMBEDDED_CA_CERTIFICATES` ビルドオプションで制御されます) 、代わりに埋め込み証明書が使用されます。これにより、たとえば「from scratch」からビルドされたコンテナーのようにファイルが一切ない最小限の環境でも、TLS を利用できます。埋め込み CA 証明書を含まないビルドでは、この場合にエラーがスローされます。
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 

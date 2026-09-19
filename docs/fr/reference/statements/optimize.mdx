@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 La requête `OPTIMIZE` est prise en charge pour la famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les [vues matérialisées](/fr/reference/statements/create/view#materialized-view)) ainsi que pour les moteurs [Buffer](/fr/reference/engines/table-engines/special/buffer). Les autres moteurs de table ne sont pas pris en charge.
 
-Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication), ClickHouse crée une tâche de fusion et attend son exécution sur toutes les répliques (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `2`, ou sur `3` pour `ReplicatedMergeTree`) ou sur la réplique actuelle (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `1`).
+Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication), ClickHouse crée une tâche de fusion et attend son exécution sur toutes les répliques (si le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) est défini sur `2`), sur les répliques actives (s’il est défini sur `3`) ou sur la réplique actuelle (s’il est défini sur `1`).
 
 * Si `OPTIMIZE` n’effectue pas de fusion pour quelque raison que ce soit, il n’en informe pas le client. Pour activer les notifications, utilisez le paramètre [optimize&#95;throw&#95;if&#95;noop](/fr/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * Si vous spécifiez un `PARTITION`, seule la partition indiquée est optimisée. [Comment définir l’expression de partition](/fr/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,7 +36,7 @@ Lorsque `OPTIMIZE` est utilisé avec la famille de moteurs de table [ReplicatedM
 Vous pouvez définir combien de temps (en secondes) attendre que les répliques inactives exécutent les requêtes `OPTIMIZE` à l’aide du paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Si `alter_sync` est défini sur `2`, ou sur `3` pour `ReplicatedMergeTree`, et que certaines répliques restent inactives au-delà du délai spécifié par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
+  Si `alter_sync` est défini sur `2` et que certaines répliques restent inactives au-delà du délai spécifié par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée. Avec `alter_sync = 3`, les répliques inactives ne sont pas attendues, donc aucune exception n’est levée.
 </Note>
 
 ## DRY RUN {#dry-run}

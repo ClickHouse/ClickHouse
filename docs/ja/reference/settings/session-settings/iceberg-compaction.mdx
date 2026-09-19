@@ -43,7 +43,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "コンパクションによって生成される iceberg データファイルの最大バイト数を指定する新しい設定。挿入時の上限とは別に扱われます。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "536870912"},{"label": "コンパクションによって生成される iceberg データファイルの最大バイト数を指定する新しい設定。挿入時の上限とは別に扱われます。デフォルト値は Iceberg table property `write.target-file-size-bytes` のドキュメント記載のデフォルト値 (512 MiB) に合わせています。https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/ を参照してください。従来のコンパクションは、パーティション内の対象となるすべてのファイルを単一の出力ファイルにマージしていました。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "コンパクションによって生成される iceberg データファイルの最大バイト数を指定する新しい設定。挿入時の上限とは別に扱われます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "コンパクションによって生成される iceberg データファイルの最大バイト数を指定する新しい設定。挿入時の上限とは別に扱われます。デフォルト値は Iceberg table property `write.target-file-size-bytes` のドキュメント記載のデフォルト値 (512 MiB) に合わせています。https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/ を参照してください。従来のコンパクションは、パーティション内の対象となるすべてのファイルを単一の出力ファイルにマージしていました。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "コンパクションによって生成される iceberg データファイルの最大バイト数を指定する新しい設定。挿入時の上限とは別に扱われます。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "コンパクションによって生成される iceberg データファイルの最大バイト数を指定する新しい設定。挿入時の上限とは別に扱われます。"}]}]} />
 
 コンパクションによって生成される iceberg parquet データファイルの最大バイト数。
 

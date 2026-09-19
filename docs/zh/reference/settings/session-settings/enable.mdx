@@ -64,6 +64,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 如果启用此设置，当分区键表达式是确定性的，且分区键表达式中使用的所有列都包含在主键中时，ClickHouse 会自动启用此优化。
 这种自动推导可确保具有相同主键值的行始终属于同一分区，因此可以安全地避免跨分区合并。
 
+浮点类型的键列被排除在此推导之外。对于 `Float32`、`Float64` 和 `BFloat16`，`FINAL` 比较器比值的等同性更为粗糙：`-0.0` 与 `0.0` 比较相等，且任意 `NaN` 位模式之间比较也都相等。而分区表达式却能精确区分这些值，因此比较器视为同一个键的行可能落入不同分区，此时跳过跨分区合并会把它们全部返回。
+当浮点类型嵌套在键列内部时，该排除同样适用，例如 `Tuple(Float64, UInt8)` 或 `Array(Float64)`。
+
 ## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />

@@ -78,7 +78,7 @@ Para otras consultas `ALTER` que solo modifican los metadatos, puede usar la con
 Puede especificar cuánto tiempo (en segundos) esperar a que las réplicas inactivas ejecuten todas las consultas `ALTER` con la configuración [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/es/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Para todas las consultas `ALTER`, si `alter_sync = 2`, o `alter_sync = 3` en `ReplicatedMergeTree`, y algunas réplicas permanecen inactivas durante más tiempo del especificado en la configuración `replication_wait_for_inactive_replica_timeout`, se lanza una excepción `UNFINISHED`.
+  Para todas las consultas `ALTER`, si `alter_sync = 2` y algunas réplicas permanecen inactivas durante más tiempo del especificado en la configuración `replication_wait_for_inactive_replica_timeout`, se lanza una excepción `UNFINISHED`. Con `alter_sync = 3` no se espera a las réplicas inactivas, por lo que no se lanza ninguna excepción.
 </Note>
 
 ### Asignación concurrente de `ALTER` en una misma tabla {#concurrent-alter-assignment-on-one-table}

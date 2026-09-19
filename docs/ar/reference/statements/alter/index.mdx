@@ -78,7 +78,7 @@ doc_type: 'reference'
 يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  بالنسبة إلى جميع استعلامات `ALTER`، إذا كانت قيمة `alter_sync = 2`، أو `alter_sync = 3` على `ReplicatedMergeTree`، وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
+  بالنسبة إلى جميع استعلامات `ALTER`، إذا كانت قيمة `alter_sync = 2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`. مع `alter_sync = 3`، لا يتم انتظار النسخ المتماثلة غير النشطة، لذا لا يُطرح أي استثناء.
 </Note>
 
 ### إسناد `ALTER` متزامن لجدول واحد {#concurrent-alter-assignment-on-one-table}

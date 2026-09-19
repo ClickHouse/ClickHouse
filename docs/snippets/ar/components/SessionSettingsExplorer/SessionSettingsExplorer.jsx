@@ -2959,7 +2959,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "use_text_index_header_cache", path: "/use-text#use_text_index_header_cache", default: "1" },
         { name: "use_text_index_like_evaluation_by_dictionary_scan", path: "/use-text#use_text_index_like_evaluation_by_dictionary_scan", default: "1" },
         { name: "use_text_index_negative_tokens_cache", path: "/use-text#use_text_index_negative_tokens_cache", default: "1" },
-        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "0" },
+        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "1" },
         { name: "use_text_index_tokens_cache", path: "/use-text#use_text_index_tokens_cache", default: "1" }
       ],
       children: []
@@ -3415,7 +3415,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/session-إعدادات</div>
+          <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "طي الكل" : "توسيع الكل"}

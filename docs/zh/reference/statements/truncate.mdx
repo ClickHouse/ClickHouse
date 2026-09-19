@@ -30,7 +30,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 你可以使用 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/zh/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 设置来指定等待非活动副本执行 `TRUNCATE` 查询的时长 (以秒为单位) 。
 
 <Note>
-  如果 `alter_sync` 设置为 `2`，或在 `ReplicatedMergeTree` 上设置为 `3`，且某些副本的非活动状态持续时间超过 `replication_wait_for_inactive_replica_timeout` 设置指定的时间，则会抛出 `UNFINISHED` 异常。
+  如果 `alter_sync` 设置为 `2`，且某些副本的非活动状态持续时间超过 `replication_wait_for_inactive_replica_timeout` 设置指定的时间，则会抛出 `UNFINISHED` 异常。当 `alter_sync = 3` 时，不会等待非活动副本，因此不会抛出异常。
 </Note>
 
 以下表引擎**不支持** `TRUNCATE TABLE` 查询：

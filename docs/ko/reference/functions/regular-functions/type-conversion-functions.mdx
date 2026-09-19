@@ -3181,6 +3181,8 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
   따라서 짧은 숫자 문자열 표현(최대 4자리)은 모호성 때문에 명시적으로 파싱하지 않도록 되어 있습니다. 예를 들어 문자열 `'1999'`는 연도(Date / DateTime의 불완전한 문자열 표현)일 수도 있고 Unix timestamp일 수도 있습니다. 더 긴 숫자 문자열은 허용됩니다.
 </Note>
 
+`expr`이 [Time](/ko/reference/data-types/time) 또는 [Time64](/ko/reference/data-types/time64) 값이면 Unix epoch 시작 시점부터 경과한 초 수로 해석됩니다. `Time64`의 소수부는 음의 무한대 방향으로 내림 처리되며, `DateTime` 범위를 벗어나는 값은 `date_time_overflow_behavior` 설정을 따릅니다.
+
 **구문**
 
 ```sql
@@ -3189,7 +3191,7 @@ toDateTime(expr[, time_zone])
 
 **인수**
 
-* `expr` — 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`Int`](/ko/reference/data-types/int-uint) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+* `expr` — 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`Int`](/ko/reference/data-types/int-uint) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`Time`](/ko/reference/data-types/time) 또는 [`Time64`](/ko/reference/data-types/time64) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `time_zone` — 시간대입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -3217,10 +3219,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 도입 버전: v20.9.0
 
 입력 값을 `DateTime` 유형으로 변환합니다.
-`String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` 또는 숫자 유형(`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`)에서 변환을 지원합니다. `Decimal` 및 `Time64` 값은 지원되지 않으며 예외가 발생합니다. `Time` 유형의 값은 포화 처리되는 대신 값이 래핑됩니다.
+`String`, `FixedString`, `Date`, `Date32`, `Time`, `Time64`, `DateTime`, `DateTime64` 또는 숫자 유형(`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`)에서 변환을 지원합니다. `Decimal` 값은 지원되지 않으며 예외가 발생합니다.
 `DateTime32`는 `DateTime`의 별칭이며, `1970-01-01 00:00:00`부터 `2106-02-07 06:28:15`까지의 날짜를 지원합니다.
 문자열 또는 위에 나열된 포화 처리되는 숫자 유형에서 변환할 때 이 범위를 벗어나는 값은 범위 경계값으로 포화 처리됩니다. 유한하지 않은 부동 소수점 값(`NaN`, `inf`, `-inf`)은 변환할 수 없으며 예외가 발생합니다.
-`Date32` 또는 `DateTime64` 같은 다른 날짜 및 시간 유형에서 변환할 때는 `date_time_overflow_behavior` 설정을 따릅니다. 기본 `ignore` 모드에서는 값이 래핑될 수 있으며, `saturate`는 값을 범위 경계값으로 제한하고, `throw`는 예외를 발생시킵니다.
+`Date32`, `DateTime64`, `Time` 또는 `Time64` 같은 다른 날짜 및 시간 유형에서 변환할 때는 `date_time_overflow_behavior` 설정을 따릅니다. 기본 `ignore` 모드에서는 값이 래핑될 수 있으며, `saturate`는 값을 범위 경계값으로 제한하고, `throw`는 예외를 발생시킵니다. `Time64` 값은 먼저 음의 무한대 방향으로 내림되어 초 단위로 처리됩니다.
 
 **구문**
 
@@ -3230,7 +3232,7 @@ toDateTime32(x[, timezone])
 
 **인수**
 
-* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string), [`FixedString`](/ko/reference/data-types/fixedstring), [`(U)Int*`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float), [`Date`](/ko/reference/data-types/date), [`Date32`](/ko/reference/data-types/date32), [`Time`](/ko/reference/data-types/time), [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string), [`FixedString`](/ko/reference/data-types/fixedstring), [`(U)Int*`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float), [`Date`](/ko/reference/data-types/date), [`Date32`](/ko/reference/data-types/date32), [`Time`](/ko/reference/data-types/time), [`Time64`](/ko/reference/data-types/time64), [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `timezone` — 선택 사항입니다. 반환되는 `DateTime` 값의 시간대입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -6915,8 +6917,9 @@ SELECT
 도입 버전: v25.5.0
 
 입력 값을 [Time](/ko/reference/data-types/time) 타입으로 변환합니다.
-String, FixedString, DateTime, DateTime64 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
+String, FixedString, DateTime, DateTime64, Time64 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
 타입 범위(`-999:59:59`~~`999:59:59`, 즉 `-3599999`~~`3599999`초)를 벗어나는 숫자 값은 범위 경계값으로 포화되며, 유한하지 않은 부동 소수점 값(`NaN`, `inf`, `-inf`)은 변환할 수 없어 예외가 발생합니다.
+`Time64` 값은 음의 무한대 방향으로 정수 초 단위로 내림되며 동일한 범위로 포화됩니다.
 
 <Note title="레거시 `toTime`">
   v25.5 이전의 `toTime`은 시간 구성 요소를 유지하면서 시간 정보를 포함한 날짜를 고정 날짜(`1970-01-02`)로 변환하는 다른 함수였습니다.
@@ -6936,7 +6939,7 @@ toTime(x)
 
 **인수**
 
-* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`BFloat16`](/ko/reference/data-types/float) 또는 [`Float*`](/ko/reference/data-types/float)
+* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`Time64`](/ko/reference/data-types/time64) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`BFloat16`](/ko/reference/data-types/float) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 

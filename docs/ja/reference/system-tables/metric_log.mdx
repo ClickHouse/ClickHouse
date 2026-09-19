@@ -642,7 +642,13 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_RWLockAcquiredWriteLocks` ([UInt64](/ja/reference/data-types/int-uint)) — 書き込みロックを取得した回数 (heavy RWLock 内) 。
 * `ProfileEvent_RWLockReadersWaitMilliseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 読み取りロックの取得待機に費やした合計時間 (heavy RWLock 内) 。
 * `ProfileEvent_RWLockWritersWaitMilliseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 書き込みロックの取得待機に費やした合計時間 (heavy RWLock 内) 。
-* `ProfileEvent_DNSError` ([UInt64](/ja/reference/data-types/int-uint)) — DNS 名前解決におけるエラーの総数
+* `ProfileEvent_DNSError` ([UInt64](/ja/reference/data-types/int-uint)) — DNS 名前解決におけるエラーの総数。DNSRequests および DNSReverseRequests でカウントされるリクエストのうち失敗したものと、`dns_allow_resolve_names_to_ipv4`/`dns_allow_resolve_names_to_ipv6` フィルタによって拒否されるアドレスのみにホスト名が解決される場合など、リクエストなしで発生する失敗の両方をカウントします。対応するリクエストカウンターに対応する分子を取得するには、DNSRequestError および DNSReverseError を使用してください。
+* `ProfileEvent_DNSRequests` ([UInt64](/ja/reference/data-types/int-uint)) — サーバーが実行した順方向名前解決の試行 (ホスト名からアドレスへ) の総数。名前がシステムリゾルバに渡された時点で試行としてカウントされるため、たとえば `/etc/hosts` や別の NSS ソースからローカルで応答された名前、およびクエリを送信せずにリゾルバがローカルで拒否した名前もカウントされます。内部DNSキャッシュから提供された名前、およびすでに IP アドレスリテラルであるホスト名はカウントされません。
+* `ProfileEvent_DNSRequestMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — DNSRequests でカウントされる順方向名前解決の試行に費やされた合計時間。DNSRequestError でカウントされる失敗した試行も含みます。
+* `ProfileEvent_DNSRequestError` ([UInt64](/ja/reference/data-types/int-uint)) — DNSRequests でカウントされる試行のうち、失敗した順方向名前解決の試行の総数。エラーで終了したリクエストと、アドレスを返さなかったリクエストの両方をカウントします。DNSError とは異なり、このイベントは DNSRequests と同じ範囲を持つため、この 2 つから失敗率を算出できます。
+* `ProfileEvent_DNSReverseRequests` ([UInt64](/ja/reference/data-types/int-uint)) — リゾルバに送信された逆引き DNS リクエスト (アドレスからホスト名へ、PTR) の総数。たとえば、ユーザー設定内の `host_regexp` に対してクライアントアドレスを照合する場合に使用されます。DNS キャッシュから提供されたリクエストはカウントされません。
+* `ProfileEvent_DNSReverseRequestMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — DNSReverseRequests でカウントされる逆引き DNS リクエストに費やされた合計時間。DNSReverseError でカウントされる失敗したリクエストも含みます。
+* `ProfileEvent_DNSReverseError` ([UInt64](/ja/reference/data-types/int-uint)) — DNSReverseRequests でカウントされるリクエストのうち、失敗した逆引き DNS リクエストの総数。エラーで終了したリクエストと、PTR レコードを返さなかったリクエストの両方をカウントします。これは、リゾルバが NXDOMAIN やその他の非成功ステータスを空の回答を返すことで報告するためです。
 * `ProfileEvent_PartsLockHoldMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — MergeTree テーブルでデータパーツロックを保持していた合計時間
 * `ProfileEvent_PartsLockWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — MergeTree テーブルでデータパーツロックの取得待機に費やした合計時間
 * `ProfileEvent_PartsLocks` ([UInt64](/ja/reference/data-types/int-uint)) — MergeTree テーブルでデータパーツロックを取得した回数
@@ -910,6 +916,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_SleepFunctionCalls` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) が呼び出された回数。
 * `ProfileEvent_SleepFunctionMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) で設定された sleep 時間。
 * `ProfileEvent_SleepFunctionElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — sleep 関数 (`sleep`、`sleepEachRow`) で実際に sleep していた時間。
+* `ProfileEvent_SystemPartsEnumerationSlowdownSleeps` ([UInt64](/ja/reference/data-types/int-uint)) — system.parts ファミリーのテーブルを充填する際に、テスト専用 failpoint &#39;slowdown&#95;system&#95;parts&#95;enumeration&#39; が sleep した回数。テスト以外では常にゼロです。
 * `ProfileEvent_ThreadPoolReaderPageCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — ThreadPoolReader 内の読み取りがページキャッシュから行われた回数。
 * `ProfileEvent_ThreadPoolReaderPageCacheHitBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ThreadPoolReader 内でページキャッシュから読み取られたバイト数。
 * `ProfileEvent_ThreadPoolReaderPageCacheHitElapsedMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ThreadPoolReader でページキャッシュからデータを読み取るのに費やした時間。
@@ -1278,6 +1285,9 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリの実行時にリモートワーカーへ送出されたタスク数。値がゼロ以外の場合、クエリが実際に分散実行されたことを意味します。
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan クエリがリモートワーカーへ送出される代わりに、ローカル executor (distributed&#95;plan&#95;execute&#95;locally) を介してプロセス内で実行された場合に 1 が設定されます。
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ja/reference/data-types/int-uint)) — make&#95;distributed&#95;plan を使用したクエリの実行時に、少なくとも 1 つのタスクが割り当てられた異なるホスト数。
+* `ProfileEvent_DistributedPlanWorkerPartsReceived` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのワーカーにコーディネーターが割り当てたデータパーツ数。そのワーカー上でクエリが実行するバケット単位の読み取りにわたって合計されます。複数のバケットに割り当てられたパーツは、読み取りごとに 1 回カウントされます。
+* `ProfileEvent_DistributedPlanWorkerPartsScanned` ([UInt64](/ja/reference/data-types/int-uint)) — 割り当てられたデータパーツのうち、ワーカーが読み取り対象として保持する数。
+* `ProfileEvent_DistributedPlanWorkerPartsPruned` ([UInt64](/ja/reference/data-types/int-uint)) — 割り当てられたデータパーツのうち、ワーカー自身の索引解析によってプルーニングされ、ワーカーが読み取らない数。コーディネーターはこの解析を行わずにパーツを選択するため、クエリのどの行も一致しないパーツを割り当てる場合があります。`DistributedPlanWorkerPartsReceived` は、この値と `DistributedPlanWorkerPartsScanned` の合計です。
 * `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのストリーミング exchange のソケットに書き込まれたバイト数。`NetworkSendBytes` には含まれません。
 * `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 分散クエリプランのストリーミング exchange のソケットから読み取られたバイト数。`NetworkReceiveBytes` には含まれません。
 * `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ja/reference/data-types/int-uint)) — ストリーミング exchange のソケットに完全に書き込まれた Data パケット数。chunk ごとに 1 つ、ストリームごとに終端パケットが 1 つです。パケットは完全に書き込まれた時点でカウントされます。receiver がそれ以上のデータを必要としないため途中で切り詰められたパケットはカウントされません。
@@ -1445,6 +1455,13 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_HTTPServerConnectionsExpired` ([UInt64](/ja/reference/data-types/int-uint)) — 期限切れとなったサーバー HTTP 接続の数。
 * `ProfileEvent_HTTPServerConnectionsClosed` ([UInt64](/ja/reference/data-types/int-uint)) — クローズされたサーバー HTTP 接続の数。Keep alive がネゴシエートされなかった回数
 * `ProfileEvent_HTTPServerConnectionsReset` ([UInt64](/ja/reference/data-types/int-uint)) — リセットされたサーバー HTTP 接続の数。サーバーが接続を閉じた回数
+* `ProfileEvent_HTTPServerConnectionsErrors` ([UInt64](/ja/reference/data-types/int-uint)) — エラーによって終了したサーバー HTTP 接続の数: ネットワークエラー、不正なリクエスト、またはリクエストハンドラーから送出された例外。keep-alive 接続を保持したクライアントが、次のリクエストを送信せずに接続を閉じた場合はエラーではなく、ここではカウントされません。
+* `ProfileEvent_TLSHandshakes` ([UInt64](/ja/reference/data-types/int-uint)) — 送信 (クライアント) 接続について完了した TLS ハンドシェイクの数。たとえば、オブジェクトストレージへの接続、`url` テーブル関数のターゲットへの接続、別の ClickHouse サーバーへの接続などです。カウントされるのは Poco の TLS 実装を使用する接続のみで、gRPC や MySQL、PostgreSQL、Kafka のクライアントライブラリのように独自の TLS スタックを持つプロトコルは含まれません。セッション再開でもハンドシェイクは実行されるため、ここでカウントされます。
+* `ProfileEvent_TLSHandshakeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 送信 (クライアント) 接続の TLS ハンドシェイクの実行に費やされた合計時間。TLSHandshakeErrors でカウントされる失敗分も含みます。ノンブロッキングソケットではハンドシェイクは完了するまで再試行され、そのすべての試行の時間がここで合計されます。
+* `ProfileEvent_TLSHandshakeErrors` ([UInt64](/ja/reference/data-types/int-uint)) — 送信 (クライアント) 接続で失敗した TLS ハンドシェイクの数。たとえば、信頼されていない、または期限切れのピア証明書、プロトコルや暗号方式の不一致、ハンドシェイク中にピアが接続を閉じた場合などです。
+* `ProfileEvent_TLSServerHandshakes` ([UInt64](/ja/reference/data-types/int-uint)) — Poco の TLS 実装を使用するサーバープロトコル (native TCP、HTTPS、MySQL、PostgreSQL) 全体で、受信 (サーバー) 接続について完了した TLS ハンドシェイクの数。gRPC は独自の TLS スタックを持つためカウントされません。セッション再開でもハンドシェイクは実行されるため、ここでカウントされます。
+* `ProfileEvent_TLSServerHandshakeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 受信 (サーバー) 接続の TLS ハンドシェイクの実行に費やされた合計時間。TLSServerHandshakeErrors でカウントされる失敗分も含みます。ノンブロッキングソケットではハンドシェイクは完了するまで再試行され、そのすべての試行の時間がここで合計されます。
+* `ProfileEvent_TLSServerHandshakeErrors` ([UInt64](/ja/reference/data-types/int-uint)) — 受信 (サーバー) 接続で失敗した TLS ハンドシェイクの数。たとえば、クライアント証明書の拒否、プロトコルや暗号方式の不一致、ハンドシェイク中にクライアントが接続を閉じた場合などです。セキュアポートへ TCP 接続を開いてすぐ閉じるポートスキャナーやヘルスチェックも、ここでカウントされます。
 * `ProfileEvent_AddressesDiscovered` ([UInt64](/ja/reference/data-types/int-uint)) — HTTP 接続の DNS resolve results に含まれる新規アドレスの総数
 * `ProfileEvent_AddressesExpired` ([UInt64](/ja/reference/data-types/int-uint)) — HTTP 接続の DNS resolve results に存在しなくなったアドレスの総数
 * `ProfileEvent_AddressesMarkedAsFailed` ([UInt64](/ja/reference/data-types/int-uint)) — HTTP 接続で接続エラーにより障害ありとしてマークされたアドレスの総数

@@ -3186,6 +3186,8 @@ Converte um valor de entrada para o tipo [DateTime](/pt-BR/reference/data-types/
   Assim, o parsing de representações em string de números curtos (até 4 dígitos) é explicitamente desabilitado devido à ambiguidade; por exemplo, uma string `'1999'` pode ser tanto um ano (uma representação em string incompleta de Date / DateTime) quanto um timestamp Unix. Strings numéricas mais longas são permitidas.
 </Note>
 
+Se `expr` for um valor [Time](/pt-BR/reference/data-types/time) ou [Time64](/pt-BR/reference/data-types/time64), ele será interpretado como o número de segundos desde o início da epoch Unix: a parte fracionária de um `Time64` é arredondada em direção ao infinito negativo, e valores fora do intervalo de `DateTime` seguem a configuração `date_time_overflow_behavior`.
+
 **Sintaxe**
 
 ```sql
@@ -3194,7 +3196,7 @@ toDateTime(expr[, time_zone])
 
 **Argumentos**
 
-* `expr` — O valor. [`String`](/pt-BR/reference/data-types/string) ou [`Int`](/pt-BR/reference/data-types/int-uint) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
+* `expr` — O valor. [`String`](/pt-BR/reference/data-types/string) ou [`Int`](/pt-BR/reference/data-types/int-uint) ou [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`Time`](/pt-BR/reference/data-types/time) ou [`Time64`](/pt-BR/reference/data-types/time64) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 * `time_zone` — Fuso horário. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
@@ -3222,10 +3224,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introduzido em: v20.9.0
 
 Converte um valor de entrada para o tipo `DateTime`.
-Oferece suporte à conversão de `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` ou tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). Não há suporte para valores `Decimal` e `Time64`, que resultam em uma exceção; um valor do tipo `Time` sofre wraparound em vez de saturação.
+Oferece suporte à conversão de `String`, `FixedString`, `Date`, `Date32`, `Time`, `Time64`, `DateTime`, `DateTime64` ou tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). Não há suporte para valores `Decimal`, que resultam em uma exceção.
 `DateTime32` é um alias de `DateTime` e oferece suporte a datas de `1970-01-01 00:00:00` a `2106-02-07 06:28:15`.
 Ao converter uma string ou um dos tipos numéricos saturáveis listados acima, valores fora desse intervalo são saturados nos limites do intervalo. Valores de ponto flutuante não finitos (`NaN`, `inf`, `-inf`) não podem ser convertidos e resultam em uma exceção.
-Conversões de outros tipos de data e hora, como `Date32` ou `DateTime64`, seguem a configuração `date_time_overflow_behavior`: o modo padrão `ignore` pode gerar valores com wraparound, `saturate` os limita aos limites do intervalo e `throw` lança uma exceção.
+Conversões de outros tipos de data e hora, como `Date32`, `DateTime64`, `Time` ou `Time64`, seguem a configuração `date_time_overflow_behavior`: o modo padrão `ignore` pode gerar valores com wraparound, `saturate` os limita aos limites do intervalo e `throw` lança uma exceção. Valores `Time64` são primeiro arredondados para baixo, em direção ao infinito negativo, para segundos inteiros.
 
 **Sintaxe**
 
@@ -3235,7 +3237,7 @@ toDateTime32(x[, timezone])
 
 **Argumentos**
 
-* `x` — Valor de entrada a converter. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`Time`](/pt-BR/reference/data-types/time) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `x` — Valor de entrada a converter. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`Time`](/pt-BR/reference/data-types/time) ou [`Time64`](/pt-BR/reference/data-types/time64) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 * `timezone` — Opcional. Fuso horário do valor `DateTime` retornado. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
@@ -6920,8 +6922,9 @@ SELECT
 Introduzido em: v25.5.0
 
 Converte um valor de entrada para o tipo [Time](/pt-BR/reference/data-types/time).
-Suporta conversão de String, FixedString, DateTime, DateTime64 ou tipos numéricos que representam segundos desde a meia-noite.
+Suporta conversão de String, FixedString, DateTime, DateTime64, Time64 ou tipos numéricos que representam segundos desde a meia-noite.
 Valores numéricos fora do intervalo do tipo (`-999:59:59` a `999:59:59`, ou seja, de `-3599999` a `3599999` segundos) são limitados aos limites do intervalo, e valores de ponto flutuante não finitos (`NaN`, `inf`, `-inf`) não podem ser convertidos e resultam em uma exceção.
+Valores `Time64` são arredondados em direção ao infinito negativo para segundos inteiros e limitados ao mesmo intervalo.
 
 <Note title="`toTime` legado">
   Antes da v25.5, `toTime` era uma função diferente, que convertia uma data com hora em uma data fixa (`1970-01-02`) enquanto preservava o
@@ -6941,7 +6944,7 @@ toTime(x)
 
 **Argumentos**
 
-* `x` — Valor de entrada a converter. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `x` — Valor de entrada a converter. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Time64`](/pt-BR/reference/data-types/time64) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 

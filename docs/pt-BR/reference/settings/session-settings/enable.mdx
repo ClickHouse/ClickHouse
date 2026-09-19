@@ -64,6 +64,13 @@ Habilita o codec de compressão `ALP`.
 Se definido, o ClickHouse habilitará automaticamente essa otimização quando a expressão da chave de partição for determinística e todas as colunas usadas nela estiverem incluídas na chave primária.
 Essa derivação automática garante que linhas com os mesmos valores de chave primária sempre pertençam à mesma partição, tornando seguro evitar mesclagens entre partições.
 
+Colunas-chave de ponto flutuante são excluídas dessa derivação. O comparador `FINAL` é menos preciso do que a
+identidade de valor para `Float32`, `Float64` e `BFloat16`: `-0.0` é comparado como igual a `0.0`, e cada padrão de bits `NaN`
+é comparado como igual a todos os outros. Uma expressão de partição consegue distinguir exatamente esses valores, portanto linhas que o comparador trata como
+uma chave podem ficar em partições diferentes, e ignorar a mesclagem entre partições retornaria todas elas.
+A exclusão também se aplica quando um float está aninhado em uma coluna-chave, por exemplo, `Tuple(Float64, UInt8)`
+ou `Array(Float64)`.
+
 ## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />

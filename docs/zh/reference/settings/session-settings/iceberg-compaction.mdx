@@ -43,7 +43,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "新增设置，用于控制合并整理产生的 iceberg 数据文件的最大字节数，与写入时限制相互独立。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "536870912"},{"label": "新增设置，用于控制合并整理产生的 iceberg 数据文件的最大字节数，与写入时限制相互独立。其默认值与 Iceberg 表属性 `write.target-file-size-bytes` 的文档默认值（512 MiB）保持一致，参见 https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/。此前，合并整理会将一个分区中所有符合条件的文件合并为单个输出文件。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "新增设置，用于控制合并整理产生的 iceberg 数据文件的最大字节数，与写入时限制相互独立。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "新增设置，用于控制合并整理产生的 iceberg 数据文件的最大字节数，与写入时限制相互独立。其默认值与 Iceberg 表属性 `write.target-file-size-bytes` 的文档默认值（512 MiB）保持一致，参见 https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/。此前，合并整理会将一个分区中所有符合条件的文件合并为单个输出文件。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "新增设置，用于控制合并整理产生的 iceberg 数据文件的最大字节数，与写入时限制相互独立。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "新增设置，用于控制合并整理产生的 iceberg 数据文件的最大字节数，与写入时限制相互独立。"}]}]} />
 
 合并整理产生的 iceberg parquet 数据文件的最大字节数。
 

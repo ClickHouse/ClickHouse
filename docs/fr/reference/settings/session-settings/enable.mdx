@@ -64,6 +64,13 @@ Active le codec de compression `ALP`.
 Si ce paramètre est activé, ClickHouse activera automatiquement cette optimisation lorsque l&#39;expression de la clé de partition est déterministe et que toutes les colonnes utilisées dans cette expression sont incluses dans la clé primaire.
 Cette déduction automatique garantit que les lignes ayant les mêmes valeurs de clé primaire appartiendront toujours à la même partition, ce qui permet d&#39;éviter en toute sécurité les fusions entre partitions.
 
+Les colonnes de clé à virgule flottante sont exclues de cette déduction. Le comparateur `FINAL` est moins fin que
+l&#39;identité de valeur pour `Float32`, `Float64` et `BFloat16` : `-0.0` est considéré comme égal à `0.0`, et tout motif binaire `NaN`
+est considéré comme égal à n&#39;importe quel autre. Une expression de partition, elle, distingue précisément ces valeurs : des lignes que le comparateur traite comme
+une seule et même clé peuvent donc se retrouver dans des partitions différentes, et ignorer la fusion entre partitions les renverrait toutes.
+Cette exclusion s&#39;applique également lorsqu&#39;un flottant est imbriqué dans une colonne de clé, par exemple `Tuple(Float64, UInt8)`
+ou `Array(Float64)`.
+
 ## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />

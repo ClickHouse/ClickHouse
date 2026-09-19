@@ -3180,12 +3180,14 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 يحوّل قيمة مُدخلة إلى النوع [DateTime](/ar/reference/data-types/datetime).
 
 <Note>
-  إذا كانت `expr` رقمًا، فسيُفسَّر على أنه عدد الثواني منذ بداية Unix Epoch (أي كـ Unix timestamp).
-  إذا كانت `expr` من النوع [String](/ar/reference/data-types/string)، فقد تُفسَّر على أنها Unix timestamp أو على أنها تمثيل نصي لتاريخ أو لتاريخ مع وقت.
-  لذلك، يُعطَّل صراحةً تحليل التمثيلات النصية للأرقام القصيرة (حتى 4 أرقام) بسبب الالتباس؛ فعلى سبيل المثال، قد تكون السلسلة `'1999'` سنةً (تمثيلًا نصيًا غير مكتمل لـ Date / DateTime) أو unix timestamp. ويُسمح بالسلاسل الرقمية الأطول.
+  إذا كانت `expr` رقمًا، فسيُفسَّر على أنه عدد الثواني منذ بداية حقبة Unix (أي كـ طابع زمني لـ Unix).
+  إذا كانت `expr` من النوع [String](/ar/reference/data-types/string)، فقد تُفسَّر على أنها طابع زمني لـ Unix أو على أنها تمثيل نصي لتاريخ أو لتاريخ مع وقت.
+  لذلك، يُعطَّل صراحةً تحليل التمثيلات النصية للأرقام القصيرة (حتى 4 أرقام) بسبب الالتباس؛ فعلى سبيل المثال، قد تكون السلسلة `'1999'` سنةً (تمثيلًا نصيًا غير مكتمل لـ Date / DateTime) أو طابع زمني لـ Unix. ويُسمح بالسلاسل الرقمية الأطول.
 </Note>
 
-**الصياغة**
+إذا كانت `expr` قيمة من النوع [Time](/ar/reference/data-types/time) أو [Time64](/ar/reference/data-types/time64)، فسيُفسَّر على أنه عدد الثواني منذ بداية حقبة Unix: ويُقرَّب الجزء الكسري من `Time64` نزولًا نحو سالب اللانهاية، أما القيم الواقعة خارج نطاق `DateTime` فتتبع الإعداد `date_time_overflow_behavior`.
+
+**الصيغة**
 
 ```sql
 toDateTime(expr[, time_zone])
@@ -3193,7 +3195,7 @@ toDateTime(expr[, time_zone])
 
 **الوسيطات**
 
-* `expr` — القيمة. [`String`](/ar/reference/data-types/string) أو [`Int`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `expr` — القيمة. [`String`](/ar/reference/data-types/string) أو [`Int`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`Time`](/ar/reference/data-types/time) أو [`Time64`](/ar/reference/data-types/time64) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `time_zone` — المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -3221,10 +3223,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 أُضيف: v20.9.0
 
 يحوّل قيمة الإدخال إلى النوع `DateTime`.
-يدعم التحويل من `String` أو `FixedString` أو `Date` أو `Date32` أو `Time` أو `DateTime` أو `DateTime64` أو الأنواع الرقمية (`(U)Int8` أو `(U)Int16` أو `(U)Int32` أو `(U)Int64` أو `(U)Int128` أو `(U)Int256` أو `BFloat16` أو `Float32` أو `Float64`). لا تُدعم قيم `Decimal` و`Time64` وتؤدي إلى استثناء؛ أما قيمة النوع `Time` فتلتف بدلاً من إشباعها.
+يدعم التحويل من `String` أو `FixedString` أو `Date` أو `Date32` أو `Time` أو `Time64` أو `DateTime` أو `DateTime64` أو الأنواع الرقمية (`(U)Int8` أو `(U)Int16` أو `(U)Int32` أو `(U)Int64` أو `(U)Int128` أو `(U)Int256` أو `BFloat16` أو `Float32` أو `Float64`). لا تُدعم قيم `Decimal` وتؤدي إلى استثناء.
 `DateTime32` اسم مستعار لـ `DateTime` ويدعم التواريخ من `1970-01-01 00:00:00` إلى `2106-02-07 06:28:15`.
 عند التحويل من سلسلة أو من أحد الأنواع الرقمية القابلة للإشباع المذكورة أعلاه، تُقيَّد القيم الواقعة خارج هذا النطاق بحدوده. لا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وتؤدي إلى استثناء.
-تتبع التحويلات من أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64`، الإعداد `date_time_overflow_behavior`: فقد ينتج عن وضع `ignore` الافتراضي قيم ملتفة، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً.
+تتبع التحويلات من أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64` أو `Time` أو `Time64`، الإعداد `date_time_overflow_behavior`: فقد ينتج عن وضع `ignore` الافتراضي قيم ملتفة، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً. تُقرَّب قيم `Time64` أولاً نزولاً نحو ما لا نهاية السالبة إلى ثوانٍ كاملة.
 
 **الصيغة**
 
@@ -3234,7 +3236,7 @@ toDateTime32(x[, timezone])
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`Time`](/ar/reference/data-types/time) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`Time`](/ar/reference/data-types/time) أو [`Time64`](/ar/reference/data-types/time64) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `timezone` — اختياري. المنطقة الزمنية لقيمة `DateTime` المُعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -3255,7 +3257,7 @@ SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 └─────────────────────┴───────────────────┘
 ```
 
-**من Unix timestamp**
+**من طابع زمني لـ Unix**
 
 ```sql title=Query
 SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
@@ -6919,20 +6921,21 @@ SELECT
 أُضيف في: v25.5.0
 
 يحوّل قيمة الإدخال إلى النوع [Time](/ar/reference/data-types/time).
-يدعم التحويل من String وFixedString وDateTime وDateTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
-تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
+يدعم التحويل من String وFixedString وDateTime وDateTime64 وTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
+تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
+تُقرَّب قيم `Time64` نزولًا نحو اللانهاية السالبة إلى ثوانٍ كاملة وتُقيَّد بالنطاق نفسه.
 
 <Note title="`toTime` القديم">
   قبل v25.5، كانت `toTime` دالة مختلفة تحوّل تاريخًا مع وقت إلى تاريخ ثابت (`1970-01-02`) مع الحفاظ على
   مكوّن الوقت. ولا تزال تلك الدالة متاحة بالاسم [`toTimeWithFixedDate`](/ar/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
   يؤدي أيضًا ضبط [`use_legacy_to_time`](/ar/reference/settings/session-settings#use_legacy_to_time) على `1` إلى إبقاء الاسم `toTime` مرتبطًا بالدالة القديمة،
-  أي إن استدعاءات `toTime` تُفسَّر على أنها `toTimeWithFixedDate` بدلًا من دالة التحويل الموضحة هنا.
+  أي إن استدعاءات `toTime` تُفسَّر على أنها `toTimeWithFixedDate` بدلًا من دالة التحويل الموضحة هنا.
   أثناء تمكين الإعداد، استخدم `CAST(x AS Time)` أو `x::Time` للتحويل إلى النوع `Time`.
   تكون القيمة الافتراضية للإعداد `0` منذ v26.7، لكنها كانت `1` من v25.6 إلى v26.6، ولهذا تضبطها الأمثلة أدناه صراحةً.
 </Note>
 
-**البنية**
+**الصيغة**
 
 ```sql
 toTime(x)
@@ -6940,7 +6943,7 @@ toTime(x)
 
 **وسيطات الدالة**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Float*`](/ar/reference/data-types/float)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Time64`](/ar/reference/data-types/time64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 

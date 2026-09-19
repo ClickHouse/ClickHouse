@@ -67,7 +67,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 * `0` — 대기하지 않습니다.
 * `1` — 자체 실행이 완료될 때까지 대기합니다.
 * `2` — 모두 완료될 때까지 대기합니다.
-* `3` - 활성 레플리카에 대해서만 대기합니다. `SharedMergeTree`에서만 지원됩니다. `ReplicatedMergeTree`에서는 `alter_sync = 2`와 동일하게 동작합니다.
+* `3` - 활성 레플리카에 대해서만 대기합니다. 비활성 레플리카는 활성 상태가 되면 변경 사항을 적용합니다.
 
 Cloud 기본값: `0`.
 

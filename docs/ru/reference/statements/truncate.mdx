@@ -30,7 +30,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 Вы можете указать, как долго (в секундах) ждать выполнения запросов `TRUNCATE` на неактивных репликах, с помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Если `alter_sync` установлена в `2` или в `3` для `ReplicatedMergeTree` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+  Если `alter_sync` установлена в `2` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`. При `alter_sync = 3` ожидание неактивных реплик не выполняется, поэтому исключение не генерируется.
 </Note>
 
 Запрос `TRUNCATE TABLE` **не поддерживается** для следующих движков таблиц:

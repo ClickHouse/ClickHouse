@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 استعلام `OPTIMIZE` مدعوم لعائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك [materialized views](/ar/reference/statements/create/view#materialized-view)) ومحركات [Buffer](/ar/reference/engines/table-engines/special/buffer). أما محركات الجداول الأخرى فلا يدعمها النظام.
 
-عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `2`، أو على `3` في `ReplicatedMergeTree`) أو على النسخة المتماثلة الحالية (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `1`).
+عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `2`)، أو على النسخ المتماثلة النشطة (إذا كان مضبوطًا على `3`) أو على النسخة المتماثلة الحالية (إذا كان مضبوطًا على `1`).
 
 * إذا لم يُجرِ `OPTIMIZE` عملية دمج لأي سبب، فلن يُخطر العميل بذلك. لتمكين الإشعارات، استخدم الإعداد [optimize&#95;throw&#95;if&#95;noop](/ar/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * إذا حددت `PARTITION`، فلن يُحسَّن إلا القسم المحدد. [كيفية تعيين تعبير القسم](/ar/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,7 +36,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 يمكنك تحديد مدة الانتظار (بالثواني) لكي تنفّذ النسخ المتماثلة غير النشطة استعلامات `OPTIMIZE` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  إذا كان `alter_sync` مضبوطًا على `2`، أو على `3` في `ReplicatedMergeTree`، وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
+  إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`. مع `alter_sync = 3` لا يُنتظر وصول النسخ المتماثلة غير النشطة، لذا لا يُطرح أي استثناء.
 </Note>
 
 ## DRY RUN {#dry-run}

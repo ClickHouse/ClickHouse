@@ -1048,7 +1048,7 @@ SSL 클라이언트/서버 구성.
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />OpenSSL의 내장 CA 인증서를 사용할지 여부를 결정합니다. ClickHouse는 내장 CA 인증서가 파일 `</etc/ssl/cert.pem>`(또는 디렉터리 `</etc/ssl/certs>`)에 있거나, 환경 변수 `<SSL_CERT_FILE>`(또는 `<SSL_CERT_DIR>`)로 지정된 파일(또는 디렉터리)에 있다고 간주합니다.
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />기본 CA 인증서를 사용할지 여부를 결정합니다. ClickHouse는 `</etc/ssl/cert.pem>` 파일(또는 `</etc/ssl/certs>` 디렉터리), 환경 변수 `<SSL_CERT_FILE>`(또는 `<SSL_CERT_DIR>`)로 지정된 파일(또는 디렉터리), 그리고 여러 배포판에서 널리 사용되는 위치에서 해당 인증서를 찾습니다. 파일 시스템에서 CA 인증서를 찾지 못하고, 명시적인 `caConfig`도 구성되어 있지 않으며, 바이너리가 내장 CA 인증서를 포함하도록 빌드되었다면(기본값이며 `ENABLE_EMBEDDED_CA_CERTIFICATES` 빌드 옵션으로 제어됨) 내장 인증서가 대신 사용됩니다. 따라서 &quot;from scratch&quot;로 빌드한 컨테이너처럼 파일이 전혀 없는 최소 환경에서도 TLS가 동작합니다. 내장 CA 인증서가 없는 빌드에서는 이 경우 오류가 발생합니다.
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1104,7 +1104,7 @@ SSL 클라이언트/서버 구성.
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />OpenSSL의 내장 CA 인증서를 사용할지 여부를 결정합니다. ClickHouse는 내장 CA 인증서가 파일 `</etc/ssl/cert.pem>`(또는 디렉터리 `</etc/ssl/certs>`) 또는 환경 변수 `<SSL_CERT_FILE>`(또는 `<SSL_CERT_DIR>`)로 지정된 파일(또는 디렉터리)에 있다고 가정합니다.
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />기본 CA 인증서를 사용할지 여부를 결정합니다. ClickHouse는 `</etc/ssl/cert.pem>` 파일(또는 `</etc/ssl/certs>` 디렉터리), 환경 변수 `<SSL_CERT_FILE>`(또는 `<SSL_CERT_DIR>`)로 지정된 파일(또는 디렉터리), 그리고 여러 배포판에서 널리 사용되는 위치에서 인증서를 찾습니다. 파일 시스템에서 CA 인증서를 찾지 못하고, 명시적인 `caConfig`도 구성되어 있지 않으며, 바이너리가 내장 CA 인증서를 포함하여 빌드된 경우(기본 동작이며 `ENABLE_EMBEDDED_CA_CERTIFICATES` 빌드 옵션으로 제어됨)에는 내장 인증서가 대신 사용됩니다. 따라서 &quot;from scratch&quot;로 빌드된 컨테이너처럼 파일이 전혀 없는 최소 환경에서도 TLS가 동작합니다. 내장 CA 인증서가 포함되지 않은 빌드에서는 이 경우 오류가 발생합니다.
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 

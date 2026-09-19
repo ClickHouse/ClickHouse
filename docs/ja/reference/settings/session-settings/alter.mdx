@@ -67,7 +67,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 * `0` — 待機しません。
 * `1` — 自身での実行完了を待機します。
 * `2` — すべてのレプリカでの実行完了を待機します。
-* `3` - アクティブなレプリカでの実行完了のみを待機します。`SharedMergeTree` でのみサポートされます。`ReplicatedMergeTree` では `alter_sync = 2` と同じ動作になります。
+* `3` - アクティブなレプリカでの実行完了のみを待機します。非アクティブなレプリカは、アクティブになった時点で変更を適用します。
 
 Cloud でのデフォルト値: `0`.
 

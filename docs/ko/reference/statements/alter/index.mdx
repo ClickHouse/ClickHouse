@@ -78,7 +78,7 @@ doc_type: 'reference'
 비활성 레플리카가 모든 `ALTER` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위)는 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
 
 <Note>
-  모든 `ALTER` 쿼리에서 `alter_sync = 2`이거나 `ReplicatedMergeTree`에서 `alter_sync = 3`이고, 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
+  모든 `ALTER` 쿼리에서 `alter_sync = 2`이고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다. `alter_sync = 3`에서는 비활성 레플리카를 기다리지 않으므로 예외가 발생하지 않습니다.
 </Note>
 
 ### 하나의 테이블에서 동시 `ALTER` 할당 {#concurrent-alter-assignment-on-one-table}

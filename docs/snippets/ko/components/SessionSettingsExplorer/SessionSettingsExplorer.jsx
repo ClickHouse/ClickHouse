@@ -2959,7 +2959,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "use_text_index_header_cache", path: "/use-text#use_text_index_header_cache", default: "1" },
         { name: "use_text_index_like_evaluation_by_dictionary_scan", path: "/use-text#use_text_index_like_evaluation_by_dictionary_scan", default: "1" },
         { name: "use_text_index_negative_tokens_cache", path: "/use-text#use_text_index_negative_tokens_cache", default: "1" },
-        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "0" },
+        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "1" },
         { name: "use_text_index_tokens_cache", path: "/use-text#use_text_index_tokens_cache", default: "1" }
       ],
       children: []
@@ -3369,7 +3369,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
                   </a>
                 </span>
                 {item.value.default !== undefined && (
-                  <span title="Default value" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                  <span title="기본값" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
                     (default: {item.value.default})
                   </span>
                 )}
@@ -3398,18 +3398,18 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           <path d="m21 21-4.3-4.3" />
         </svg>
         <input
-          aria-label="설정 검색"
+          aria-label="Search settings"
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="설정 검색 (예: parallel replicas 또는 %materialized%)"
+          placeholder="Search settings, e.g. parallel replicas or %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            일치하는 설정 {matchingCount}개
+            {matchingCount} 개의 일치하는 {matchingCount === 1 ? "setting" : "settings"}
           </span>
         </div>
       )}
@@ -3418,7 +3418,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "모두 접기" : "모두 펼치기"}
+            aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -3427,13 +3427,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "모두 접기" : "모두 펼치기"}</span>
+            <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">일치하는 설정이 없습니다</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No 개의 일치하는 settings</div>
         )}
       </div>
     </div>

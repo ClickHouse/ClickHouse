@@ -64,6 +64,13 @@ Habilita el códec de compresión `ALP`.
 Si está habilitada, ClickHouse activará automáticamente esta optimización cuando la expresión de la clave de partición sea determinista y todas las columnas utilizadas en ella estén incluidas en la clave primaria.
 Esta derivación automática garantiza que las filas con los mismos valores de clave primaria siempre pertenecerán a la misma partición, por lo que es seguro evitar las fusiones entre particiones.
 
+Las columnas de clave de coma flotante quedan excluidas de esta derivación. El comparador `FINAL` es menos preciso que la
+identidad de valores para `Float32`, `Float64` y `BFloat16`: `-0.0` se considera igual a `0.0`, y cualquier patrón de bits `NaN`
+se considera igual a cualquier otro. Una expresión de partición sí puede distinguir con exactitud esos valores, de modo que filas que el comparador trata como
+una misma clave pueden acabar en particiones distintas, y omitir la fusión entre particiones las devolvería todas.
+La exclusión también se aplica cuando un número de coma flotante está anidado dentro de una columna de clave, por ejemplo `Tuple(Float64, UInt8)`
+o `Array(Float64)`.
+
 ## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />

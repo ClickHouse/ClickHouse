@@ -112,7 +112,7 @@ CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 両方の形式を同じ `CREATE TABLE` ステートメント内で使用する場合、宣言する型は一致していなければなりません。
@@ -146,13 +146,16 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 | `value`     | [x] | `Float64`                             | `Float32` or `Float64` | `timestamp` に対応する値    |
 
 エンジンが自動作成するカラムには、時系列圧縮コーデックが設定されます。
-`timestamp CODEC(DoubleDelta, ZSTD(1))` および `value CODEC(ZSTD(3))`。ほぼ単調なタイムスタンプは汎用コーデックではほとんど
+`timestamp CODEC(Delta, T64, ZSTD(3))` および `value CODEC(ALP, ZSTD(3))`。ほぼ単調なタイムスタンプは汎用コーデックではほとんど
 圧縮されず、samples テーブルのディスク上のサイズの大部分を占める可能性があります。
+エンジンは、内部の samples テーブルおよび recent samples テーブルに対して、`enable_alp_codec` を設定しなくても `ALP` を有効にします。
 [カラムの型の調整](#adjusting-column-types)も参照してください。
 
 ### Recent samples テーブル {#recent-samples-table}
 
 *recent samples* テーブルは任意であり、デフォルトで有効になっています ([recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定を参照してください。この値をゼロに設定するとテーブルは無効になります) 。このテーブルには、当該設定で定義された有効期限 (TTL) より新しいサンプルのコピーが格納され、[samples](#samples-table) テーブルと同じカラムを持つ必要があります。
+生成された `timestamp` カラムには `CODEC(Delta, T64, ZSTD(3))` が使用され、
+生成された `value` カラムには `CODEC(ALP, ZSTD(3))` が使用されます。
 
 挿入されたサンプルはすべて、samples テーブルと recent samples テーブルの両方に書き込まれます。
 時間範囲が TTL の期間内に収まるクエリは、メインの samples テーブルではなく recent samples テーブルから読み取ります。recent samples テーブルの方がはるかに小さいためです (この動作はクエリレベルの設定 `time_series_prefer_recent_samples_table` で無効化できます) 。
@@ -223,15 +226,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -254,20 +257,19 @@ METRIC FAMILIES INNER COLUMNS
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-このように、カラムは自動的に生成され、さらに `INNER COLUMNS` 句に格納された独自のカラム定義を持つ 4 つの内部ターゲットテーブルも作成されます。`recent_samples_ttl_seconds` SETTING はデフォルト値のまま `SETTINGS` 句に書き込まれています。この SETTING は recent samples テーブルの有効期限 (TTL) を定義するもので、その実効値はテーブル作成時に固定されます。
-また、最新のスキーマバージョンが `version` SETTING に固定されます ([スキーマのバージョン管理](#schema-versioning) を参照)。
+このように、カラムは自動的に生成され、さらに `INNER COLUMNS` 句に格納された独自のカラム定義を持つ4つの内部ターゲットテーブルも存在します。`recent_samples_ttl_seconds` 設定はデフォルト値のまま `SETTINGS` 句に書き込まれています。この設定は recent samples テーブルの TTL を定義するため、その実効値は作成時に固定されます。また、最新のスキーマバージョンが `version` 設定に固定されています ([スキーマのバージョン管理](#schema-versioning) を参照) 。
 
 内部ターゲットテーブルには `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-のような名前が付けられ、各ターゲットテーブルはそれぞれ独自のカラムの集合を持ちます:
+のような名前が付けられており、各ターゲットテーブルはそれぞれ固有のカラム構成を持ちます:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -278,8 +280,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -346,7 +348,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 内部カラムをコーデックなしで指定すると、デフォルトのコーデックが使用されます。

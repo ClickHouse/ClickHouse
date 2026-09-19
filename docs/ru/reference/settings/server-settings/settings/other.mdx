@@ -1049,7 +1049,7 @@ Refreshable materialized views всегда получают значения п
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Определяет, использовать ли встроенные CA‑сертификаты OpenSSL. ClickHouse предполагает, что встроенные CA‑сертификаты находятся в файле `</etc/ssl/cert.pem>` (соответственно, в каталоге `</etc/ssl/certs>`) либо в файле (или каталоге), указанном в переменной окружения `<SSL_CERT_FILE>` (или `<SSL_CERT_DIR>` соответственно).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Определяет, будут ли использоваться CA‑сертификаты по умолчанию. ClickHouse ищет их в файле `</etc/ssl/cert.pem>` (соответственно, в каталоге `</etc/ssl/certs>`), в файле (соответственно, каталоге), указанном переменной окружения `<SSL_CERT_FILE>` (соответственно, `<SSL_CERT_DIR>`), а также в других общеизвестных расположениях, характерных для различных дистрибутивов. Если CA‑сертификаты не найдены в файловой системе, явный `caConfig` не задан, а бинарный файл был собран со встроенными CA‑сертификатами (поведение по умолчанию, управляется параметром сборки `ENABLE_EMBEDDED_CA_CERTIFICATES`), то используются встроенные сертификаты — благодаря этому TLS работает даже в минимальном окружении без каких‑либо файлов, например в контейнере, собранном «from scratch». В сборках без встроенных CA‑сертификатов в этом случае генерируется исключение.
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1105,7 +1105,7 @@ Refreshable materialized views всегда получают значения п
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Определяет, будут ли использоваться встроенные CA‑сертификаты OpenSSL. ClickHouse исходит из того, что встроенные CA‑сертификаты находятся в файле `</etc/ssl/cert.pem>` (соответственно, в каталоге `</etc/ssl/certs>`) либо в файле (соответственно, каталоге), указанном в переменной окружения `<SSL_CERT_FILE>` (соответственно, `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Определяет, будут ли использоваться CA‑сертификаты по умолчанию. ClickHouse ищет их в файле `</etc/ssl/cert.pem>` (или в каталоге `</etc/ssl/certs>`), в файле (или каталоге), заданном переменной окружения `<SSL_CERT_FILE>` (или `<SSL_CERT_DIR>`), а также в других стандартных расположениях, используемых в различных дистрибутивах. Если CA‑сертификаты не найдены в файловой системе, явный `caConfig` не настроен, а бинарный файл собран со встроенными CA‑сертификатами (по умолчанию; это определяется параметром сборки `ENABLE_EMBEDDED_CA_CERTIFICATES`), используются встроенные сертификаты. Благодаря этому TLS работает даже в минимальном окружении без каких-либо файлов, например в контейнере, собранном «с нуля». В сборках без встроенных CA‑сертификатов в этом случае генерируется исключение.
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 

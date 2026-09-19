@@ -64,6 +64,9 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 설정된 경우, 파티션 키 표현식이 deterministic이고 파티션 키 표현식에 사용된 모든 컬럼이 프라이머리 키에 포함되면 ClickHouse가 이 최적화를 자동으로 활성화합니다.
 이 자동 판별을 통해 동일한 기본 키 값을 가진 행은 항상 동일한 파티션에 속하게 되므로, 파티션 간 머지를 피해도 안전합니다.
 
+부동소수점 키 컬럼은 이 판별에서 제외됩니다. `FINAL` 비교자는 `Float32`, `Float64`, `BFloat16`에 대해 값의 아이덴티티보다 더 거칠게 동작합니다. 즉, `-0.0`은 `0.0`과 같은 것으로 비교되고, 모든 `NaN` 비트 패턴은 서로 같은 것으로 비교됩니다. 반면 파티션 표현식은 바로 그러한 값들을 정확히 구분할 수 있으므로, 비교자가 하나의 키로 취급하는 행들이 서로 다른 파티션에 위치할 수 있으며, 이때 파티션 간 머지를 건너뛰면 그 행들이 모두 반환됩니다.
+이 제외 규칙은 `Tuple(Float64, UInt8)`이나 `Array(Float64)`처럼 float가 키 컬럼 내부에 중첩된 경우에도 적용됩니다.
+
 ## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />

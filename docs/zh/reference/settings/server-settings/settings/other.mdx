@@ -1048,7 +1048,7 @@ SSL 客户端/服务器配置。
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />确定是否使用 OpenSSL 的内置 CA 证书。ClickHouse 假定内置 CA 证书位于文件 `</etc/ssl/cert.pem>` (相应地，也可能位于目录 `</etc/ssl/certs>`) 中，或者位于环境变量 `<SSL_CERT_FILE>` (相应地，`<SSL_CERT_DIR>`) 指定的文件 (或目录) 中。
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />确定是否使用默认 CA 证书。ClickHouse 会在文件 `</etc/ssl/cert.pem>` (或目录 `</etc/ssl/certs>`) 、环境变量 `<SSL_CERT_FILE>` (或 `<SSL_CERT_DIR>`) 指定的文件 (或目录) ，以及各发行版的其他常见位置中查找这些证书。如果文件系统中未找到 CA 证书、未显式配置 `caConfig`，且二进制文件构建时嵌入了 CA 证书 (默认如此，由 `ENABLE_EMBEDDED_CA_CERTIFICATES` 构建选项控制) ，则会改用嵌入式证书。因此，即使在没有任何文件的最小化环境中 (例如“从零开始”构建的容器) ，TLS 也能正常工作。如果构建中未嵌入 CA 证书，则在这种情况下会引发错误。
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1104,7 +1104,7 @@ SSL 客户端/服务器配置。
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />确定是否使用 OpenSSL 内置的 CA 证书。ClickHouse 假定内置 CA 证书位于文件 `</etc/ssl/cert.pem>` (或目录 `</etc/ssl/certs>`) 中，或者位于由环境变量 `<SSL_CERT_FILE>` (或 `<SSL_CERT_DIR>`) 指定的文件 (或目录) 中。
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />决定是否使用默认 CA 证书。ClickHouse 会在文件 `</etc/ssl/cert.pem>` (或目录 `</etc/ssl/certs>`) 中、环境变量 `<SSL_CERT_FILE>` (或 `<SSL_CERT_DIR>`) 所指定的文件 (或目录) 中，以及各发行版的其他常见位置中查找这些证书。如果在文件系统上未找到 CA 证书，也未显式配置 `caConfig`，且二进制文件构建时启用了嵌入式 CA 证书 (默认行为，由 `ENABLE_EMBEDDED_CA_CERTIFICATES` 构建选项控制) ，则会改用嵌入式证书，因此即使在没有任何文件的极简环境中 (例如以 &quot;从零开始&quot; 构建的容器中) ，TLS 仍可正常工作。而在未嵌入式 CA 证书的构建中，这种情况下会抛出错误。
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 

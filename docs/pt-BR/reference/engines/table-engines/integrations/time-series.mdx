@@ -114,7 +114,7 @@ Isso equivale a declarar diretamente, na cláusula `INNER COLUMNS` de samples, o
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Se ambas as formas forem usadas na mesma instrução `CREATE TABLE`, os tipos declarados deverão coincidir.
@@ -148,8 +148,9 @@ A tabela *samples* deve ter as seguintes colunas:
 | `value`     | [x]          | `Float64`                             | `Float32` ou `Float64` | Um valor associado ao `timestamp`                     |
 
 As colunas que o motor cria por conta própria recebem codecs de compressão de séries temporais:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` e `value CODEC(ZSTD(3))`. Timestamps quase monotônicos mal
+`timestamp CODEC(Delta, T64, ZSTD(3))` e `value CODEC(ALP, ZSTD(3))`. Timestamps quase monotônicos mal
 são comprimidos por codecs genéricos e podem, caso contrário, dominar o tamanho em disco da tabela samples.
+O motor habilita `ALP` para suas tabelas internas samples e amostras recentes sem exigir que `enable_alp_codec` seja definido.
 Consulte também [Ajustando os tipos das colunas](#adjusting-column-types).
 
 ### Tabela de amostras recentes {#recent-samples-table}
@@ -157,9 +158,11 @@ Consulte também [Ajustando os tipos das colunas](#adjusting-column-types).
 A tabela de *amostras recentes* é opcional e está habilitada por padrão (consulte a configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings);
 defini-la como zero desabilita a tabela). Ela contém uma cópia das amostras mais recentes que o TTL definido por essa configuração
 e deve ter as mesmas colunas que a tabela [samples](#samples-table).
+A coluna `timestamp` gerada usa `CODEC(Delta, T64, ZSTD(3))`,
+e a coluna `value` gerada usa `CODEC(ALP, ZSTD(3))`.
 
-Toda amostra inserida é gravada tanto na tabela de amostras quanto na tabela de amostras recentes.
-As consultas cujo intervalo de tempo se encaixa na janela do TTL leem da tabela de amostras recentes em vez da tabela de amostras principal,
+Toda amostra inserida é gravada tanto na tabela samples quanto na tabela de amostras recentes.
+As consultas cujo intervalo de tempo se encaixa na janela do TTL leem da tabela de amostras recentes em vez da tabela samples principal,
 já que ela é muito menor (esse comportamento pode ser desabilitado com a configuração de nível de consulta `time_series_prefer_recent_samples_table`).
 
 O TTL da tabela interna de amostras recentes é sempre derivado da configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings).
@@ -228,15 +231,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -273,8 +276,8 @@ e cada tabela de destino tem seu próprio conjunto de colunas:
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -285,8 +288,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -353,7 +356,7 @@ Você pode ajustar os tipos das colunas nas tabelas de destino internas usando a
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Especificar colunas internas sem codecs significa usar o codec padrão para elas:

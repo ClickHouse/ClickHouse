@@ -112,7 +112,7 @@ CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 如果在同一条 `CREATE TABLE` 语句中同时使用这两种形式，则声明的类型必须一致。
@@ -133,11 +133,11 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 目标端表如下：
 
-### Samples 表 {#samples-table}
+### 样本表 {#samples-table}
 
-*samples* 表包含与某个标识符关联的时间序列。
+*样本* 表包含与某个标识符关联的时间序列。
 
-*samples* 表必须包含以下列：
+*样本* 表必须包含以下列：
 
 | 名称          | 必填？ | 默认类型                                  | 可能的类型                 | 描述                 |
 | ----------- | --- | ------------------------------------- | --------------------- | ------------------ |
@@ -146,13 +146,16 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `value`     | [x] | `Float64`                             | `Float32` 或 `Float64` | 与 `timestamp` 关联的值 |
 
 引擎自行创建的列会使用时间序列压缩编解码器：
-`timestamp CODEC(DoubleDelta, ZSTD(1))` 和 `value CODEC(ZSTD(3))`。近乎单调的时间戳使用通用编解码器时几乎无法
-压缩，因而可能会占据 samples 表磁盘存储空间的大部分。
+`timestamp CODEC(Delta, T64, ZSTD(3))` 和 `value CODEC(ALP, ZSTD(3))`。近乎单调的时间戳使用通用编解码器时几乎无法
+压缩，因而可能会占据样本表磁盘存储空间的大部分。
+引擎会为其内部样本表和最近样本表启用 `ALP`，无需设置 `enable_alp_codec`。
 另请参阅[调整列的类型](#adjusting-column-types)。
 
 ### 最近样本表 {#recent-samples-table}
 
 &#95;最近样本&#95;表是可选的，默认启用 (请参阅 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置；将其设为零可禁用该表) 。该表包含 TTL 未超过该设置所定义时长的样本副本，并且必须与[样本](#samples-table)表具有相同的列。
+生成的 `timestamp` 列使用 `CODEC(Delta, T64, ZSTD(3))`，
+生成的 `value` 列使用 `CODEC(ALP, ZSTD(3))`。
 
 每个插入的样本都会同时写入样本表和最近样本表。
 时间范围落在 TTL 窗口内的查询会从最近样本表而非主样本表读取数据，
@@ -222,15 +225,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -253,21 +256,21 @@ METRIC FAMILIES INNER COLUMNS
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-因此，列会自动生成。此外，还有四个内部目标端表，各自的列定义存储在 `INNER COLUMNS` 子句中。
-`recent_samples_ttl_seconds` 设置以默认值写入 `SETTINGS` 子句：该设置定义最近样本表的生存时间 (TTL)，因此其实际值在创建时便已确定。
+因此，列会自动生成。此外，还有四个内部目标表，各自的列定义存储在 `INNER COLUMNS` 子句中。
+`recent_samples_ttl_seconds` 设置以其默认值写入 `SETTINGS` 子句：该设置定义最近样本表的 TTL，因此其有效值在创建时便已固定。
 此外，最新的 schema 版本已固定写入 `version` 设置中 (参见 [Schema 版本控制](#schema-versioning)) 。
 
-内部目标端表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+内部目标表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
-`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-每个目标端表都有各自的一组列：
+`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，
+并且每个目标表都有各自的一组列：
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -278,8 +281,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -346,7 +349,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 未指定内部列的编解码器时，将使用默认编解码器：

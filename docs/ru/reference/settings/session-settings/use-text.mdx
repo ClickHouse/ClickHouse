@@ -43,9 +43,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 ## use_text_index_postings_cache {#use_text_index_postings_cache}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Кэш списков вхождений текстового индекса включен глобально. Ранее каждый запрос использовал приватный кэш с ограничением в 100 MiB, из-за чего на больших таблицах списки вхождений и результаты фразового поиска пересчитывались в пределах одного запроса."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
 Следует ли кэшировать в памяти десериализованные списки вхождений текстового индекса.
 Использование кэша списков вхождений текстового индекса может значительно снизить задержку и повысить пропускную способность при работе с большим количеством запросов к текстовому индексу.

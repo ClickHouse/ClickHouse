@@ -113,7 +113,7 @@ CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 두 형식을 모두 같은 `CREATE TABLE` 문에서 사용하는 경우, 선언된 유형이 일치해야 합니다.
@@ -147,13 +147,16 @@ target table은 다음과 같습니다:
 | `value`     | [x] | `Float64`                             | `Float32` 또는 `Float64` | `timestamp`에 연결된 값   |
 
 엔진이 자체적으로 생성하는 컬럼에는 시계열 압축 코덱이 적용됩니다:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` 및 `value CODEC(ZSTD(3))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
+`timestamp CODEC(Delta, T64, ZSTD(3))` 및 `value CODEC(ALP, ZSTD(3))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
 압축되지 않으며, 그렇지 않으면 samples 테이블의 디스크상 크기에서 큰 비중을 차지할 수 있습니다.
+엔진은 내부 samples 테이블과 최근 샘플 테이블에 대해 `enable_alp_codec` 설정 없이도 `ALP`를 활성화합니다.
 [컬럼 타입 조정](#adjusting-column-types)도 참조하십시오.
 
 ### 최근 샘플 테이블 {#recent-samples-table}
 
 *최근 샘플* 테이블은 선택 사항이며 기본적으로 활성화되어 있습니다([recent&#95;samples&#95;ttl&#95;seconds](#settings) 설정 참조. 이 값을 0으로 설정하면 테이블이 비활성화됩니다). 이 테이블에는 해당 설정에서 정의한 TTL보다 최신인 샘플의 복사본이 포함되며, [samples](#samples-table) 테이블과 동일한 컬럼을 가져야 합니다.
+생성된 `timestamp` 컬럼은 `CODEC(Delta, T64, ZSTD(3))`을 사용하고,
+생성된 `value` 컬럼은 `CODEC(ALP, ZSTD(3))`을 사용합니다.
 
 삽입되는 모든 샘플은 samples 테이블과 최근 샘플 테이블 모두에 기록됩니다.
 시간 범위가 TTL 윈도우 내에 있는 쿼리는 최근 샘플 테이블이 훨씬 작으므로 기본 samples 테이블 대신 최근 샘플 테이블에서 읽습니다(쿼리 수준 설정 `time_series_prefer_recent_samples_table`으로 이 동작을 비활성화할 수 있습니다).
@@ -224,15 +227,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -255,22 +258,20 @@ METRIC FAMILIES INNER COLUMNS
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-따라서 컬럼은 자동으로 생성되며, 각 테이블의 컬럼 정의는 `INNER COLUMNS` 절에
-저장된 4개의 내부 target table도 생성됩니다. `recent_samples_ttl_seconds` 설정은 기본값과 함께 `SETTINGS` 절에
-기록됩니다. 이 설정은 최근 샘플 테이블의 TTL을 정의하므로, 실제 값은 생성 시점에 고정됩니다.
+따라서 컬럼은 자동으로 생성되며, `INNER COLUMNS` 절에 자체 컬럼 정의가 저장된 4개의 내부 대상 테이블도 생성됩니다. `recent_samples_ttl_seconds` 설정은 기본값과 함께 `SETTINGS` 절에 기록됩니다. 이 설정은 최근 샘플 테이블의 TTL을 정의하므로, 실제 값은 생성 시점에 고정됩니다.
 또한 최신 스키마 버전이 `version` 설정에 고정됩니다([스키마 버전 관리](#schema-versioning) 참조).
 
-내부 target table의 이름은 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+내부 대상 테이블의 이름은 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-와 같으며, 각 target table에는 자체 컬럼 집합이 있습니다:
+이며 각 대상 테이블에는 고유한 열 집합이 있습니다:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -281,8 +282,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -347,7 +348,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 내부 컬럼을 코덱 없이 지정하면 기본 코덱이 사용됩니다:

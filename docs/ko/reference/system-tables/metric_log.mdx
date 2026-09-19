@@ -642,7 +642,13 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_RWLockAcquiredWriteLocks` ([UInt64](/ko/reference/data-types/int-uint)) — 쓰기 잠금을 획득한 횟수입니다(heavy RWLock에서).
 * `ProfileEvent_RWLockReadersWaitMilliseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 읽기 잠금을 획득할 때까지 대기한 총 시간입니다(heavy RWLock에서).
 * `ProfileEvent_RWLockWritersWaitMilliseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 쓰기 잠금을 획득할 때까지 대기한 총 시간입니다(heavy RWLock에서).
-* `ProfileEvent_DNSError` ([UInt64](/ko/reference/data-types/int-uint)) — DNS 확인 과정에서 발생한 오류의 총 횟수
+* `ProfileEvent_DNSError` ([UInt64](/ko/reference/data-types/int-uint)) — DNS 해석 중 발생한 오류의 총 횟수입니다. DNSRequests 및 DNSReverseRequests에서 집계되는 요청 중 실패한 요청과, `dns_allow_resolve_names_to_ipv4`/`dns_allow_resolve_names_to_ipv6` 필터에 의해 거부되는 주소로만 호스트 이름이 해석되는 경우처럼 요청 없이 발생하는 실패를 모두 집계합니다. 해당 요청 카운터에 대응하는 분자를 확인하려면 DNSRequestError 및 DNSReverseError를 사용하십시오.
+* `ProfileEvent_DNSRequests` ([UInt64](/ko/reference/data-types/int-uint)) — 서버가 수행한 정방향 이름 해석 시도(호스트 이름에서 주소로)의 총 횟수입니다. 이름이 시스템 리졸버에 전달될 때 시도 횟수가 집계되므로, 예를 들어 `/etc/hosts` 또는 다른 NSS 소스에서 로컬로 응답된 이름과 리졸버가 쿼리를 전송하지 않고 로컬에서 거부한 이름도 집계됩니다. 내부 DNS 캐시에서 제공된 이름과 이미 IP 주소 리터럴인 호스트 이름은 집계되지 않습니다.
+* `ProfileEvent_DNSRequestMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — DNSRequests에서 집계한 정방향 이름 해석 시도에 소요된 총 시간이며, DNSRequestError에서 집계한 실패한 시도도 포함합니다.
+* `ProfileEvent_DNSRequestError` ([UInt64](/ko/reference/data-types/int-uint)) — DNSRequests에서 집계한 시도 중 실패한 정방향 이름 해석 시도의 총 횟수입니다. 오류로 종료된 요청과 주소를 반환하지 않은 요청을 모두 집계합니다. DNSError와 달리 이 이벤트는 DNSRequests와 동일한 범위를 가지므로, 두 값으로 실패율을 도출할 수 있습니다.
+* `ProfileEvent_DNSReverseRequests` ([UInt64](/ko/reference/data-types/int-uint)) — 리졸버로 전송된 역방향 DNS 요청(주소에서 호스트 이름으로, PTR)의 총 횟수입니다. 예를 들어 사용자 구성의 `host_regexp`와 클라이언트 주소를 일치시키는 경우입니다. DNS 캐시에서 제공된 요청은 집계되지 않습니다.
+* `ProfileEvent_DNSReverseRequestMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — DNSReverseRequests에서 집계한 역방향 DNS 요청에 소요된 총 시간이며, DNSReverseError에서 집계한 실패한 요청도 포함합니다.
+* `ProfileEvent_DNSReverseError` ([UInt64](/ko/reference/data-types/int-uint)) — DNSReverseRequests에서 집계한 요청 중 실패한 역방향 DNS 요청의 총 횟수입니다. 오류로 종료된 요청과 PTR 레코드를 반환하지 않은 요청을 모두 집계합니다. 리졸버가 NXDOMAIN 및 기타 비성공 상태를 빈 응답을 반환하는 방식으로 보고하기 때문입니다.
 * `ProfileEvent_PartsLockHoldMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — MergeTree 테이블에서 데이터 파트 잠금을 유지한 총 시간
 * `ProfileEvent_PartsLockWaitMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — MergeTree 테이블에서 데이터 파트 잠금을 기다린 총 시간
 * `ProfileEvent_PartsLocks` ([UInt64](/ko/reference/data-types/int-uint)) — MergeTree 테이블에서 데이터 파트 잠금을 획득한 횟수
@@ -910,6 +916,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_SleepFunctionCalls` ([UInt64](/ko/reference/data-types/int-uint)) — sleep 함수(`sleep`, `sleepEachRow`)가 호출된 횟수
 * `ProfileEvent_SleepFunctionMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — sleep 함수(`sleep`, `sleepEachRow`)에서 sleep으로 설정된 시간
 * `ProfileEvent_SleepFunctionElapsedMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — sleep 함수(`sleep`, `sleepEachRow`)에서 실제로 대기한 시간
+* `ProfileEvent_SystemPartsEnumerationSlowdownSleeps` ([UInt64](/ko/reference/data-types/int-uint)) — system.parts 패밀리의 테이블을 채우는 동안 테스트 전용 failpoint &#39;slowdown&#95;system&#95;parts&#95;enumeration&#39;에서 sleep한 횟수입니다. 테스트 외에는 항상 0입니다.
 * `ProfileEvent_ThreadPoolReaderPageCacheHit` ([UInt64](/ko/reference/data-types/int-uint)) — ThreadPoolReader 내부 읽기가 페이지 캐시에서 수행된 횟수
 * `ProfileEvent_ThreadPoolReaderPageCacheHitBytes` ([UInt64](/ko/reference/data-types/int-uint)) — ThreadPoolReader 내부 읽기가 페이지 캐시에서 수행되었을 때 읽은 바이트 수
 * `ProfileEvent_ThreadPoolReaderPageCacheHitElapsedMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — ThreadPoolReader에서 페이지 캐시로부터 데이터를 읽는 데 소요된 시간
@@ -1161,11 +1168,11 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. Distributed Cache에서 읽는 데 소요된 시간
 * `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. Distributed Cache 대신 폴백 버퍼에서 읽는 데 소요된 시간
 * `ProfileEvent_DistrCachePrecomputeRangesMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. 읽기 범위를 미리 계산하는 데 소요된 시간
-* `ProfileEvent_DistrCacheNextImplMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. `ReadBufferFromDistributedCache::nextImpl`에서 소요된 시간
+* `ProfileEvent_DistrCacheNextImplMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. ReadBufferFromDistributedCache::nextImpl에서 소요된 시간
 * `ProfileEvent_DistrCacheStartRangeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. Distributed Cache로 새 읽기 범위를 시작하는 데 소요된 시간
-* `ProfileEvent_DistrCacheRangeChange` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. `seek`/`last&#95;position` 변경으로 인해 읽기 범위를 변경한 횟수
-* `ProfileEvent_DistrCacheRangeResetBackward` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. `seek`/`last&#95;position` 변경으로 인해 읽기 범위를 재설정한 횟수
-* `ProfileEvent_DistrCacheRangeResetForward` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. `seek`/`last&#95;position` 변경으로 인해 읽기 범위를 재설정한 횟수
+* `ProfileEvent_DistrCacheRangeChange` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. seek/last&#95;position 변경으로 인해 읽기 범위를 변경한 횟수
+* `ProfileEvent_DistrCacheRangeResetBackward` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. seek/last&#95;position 변경으로 인해 읽기 범위를 재설정한 횟수
+* `ProfileEvent_DistrCacheRangeResetForward` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. seek/last&#95;position 변경으로 인해 읽기 범위를 재설정한 횟수
 * `ProfileEvent_DistrCacheReadRequestRetries` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 캐시 읽기 버퍼 이벤트. 재시도 가능한 오류 발생 후 읽기 요청을 재시도한 횟수입니다(초기 요청 생성 재시도 포함).
 * `ProfileEvent_DistrCacheServerUpdates` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 이벤트. hash로 선택된 서버가 변경되어(예: 서버 등록 해제) 읽기 또는 쓰기 중 서버 전환이 발생한 횟수
 * `ProfileEvent_DistrCacheReadErrors` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 읽기 요청 중 발생한 Distributed Cache 오류의 총수입니다(`DistrCacheReadErrorsRetriable` + `DistrCacheReadErrorsNonRetriable`과 같음).
@@ -1278,6 +1285,9 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 원격 워커에 디스패치된 작업 수입니다. 0이 아닌 값은 쿼리가 실제로 분산 실행되었음을 의미합니다.
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan 쿼리가 원격 워커로 디스패치되는 대신 로컬 실행기(distributed&#95;plan&#95;execute&#95;locally)를 통해 in-process로 실행된 경우 1로 설정됩니다.
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ko/reference/data-types/int-uint)) — make&#95;distributed&#95;plan으로 쿼리를 실행할 때 하나 이상의 작업이 할당된 고유 호스트 수입니다.
+* `ProfileEvent_DistributedPlanWorkerPartsReceived` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 워커에 코디네이터가 할당한 데이터 파트 수이며, 해당 워커에서 쿼리가 수행하는 버킷 단위 읽기 전체에 걸쳐 합산한 값입니다. 여러 버킷에 할당된 파트는 읽기당 한 번씩 집계됩니다.
+* `ProfileEvent_DistributedPlanWorkerPartsScanned` ([UInt64](/ko/reference/data-types/int-uint)) — 할당된 데이터 파트 중 워커가 실제로 읽기 위해 유지하는 파트 수입니다.
+* `ProfileEvent_DistributedPlanWorkerPartsPruned` ([UInt64](/ko/reference/data-types/int-uint)) — 워커 자체의 인덱스 분석으로 프루닝되어 워커가 읽지 않는, 할당된 데이터 파트 수입니다. 코디네이터는 그러한 분석 없이 파트를 선택하므로, 쿼리의 어떤 행과도 일치할 수 없는 파트를 할당할 수 있습니다. `DistributedPlanWorkerPartsReceived`는 이 값과 `DistributedPlanWorkerPartsScanned`의 합입니다.
 * `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에 기록된 바이트 수입니다. `NetworkSendBytes`에는 포함되지 않습니다.
 * `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 분산 쿼리 계획의 스트리밍 exchange 소켓에서 읽은 바이트 수입니다. `NetworkReceiveBytes`에는 포함되지 않습니다.
 * `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/ko/reference/data-types/int-uint)) — 스트리밍 exchange 소켓에 완전히 기록된 데이터 패킷 수입니다. 청크당 1개와 스트림당 스트림 종료 패킷 1개입니다. 패킷 전체가 기록될 때 집계됩니다. 수신기에 더 이상 데이터가 필요하지 않아 패킷 기록이 중간에 중단된 경우에는 집계하지 않습니다.
@@ -1445,6 +1455,13 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_HTTPServerConnectionsExpired` ([UInt64](/ko/reference/data-types/int-uint)) — 만료된 서버 HTTP 연결 수.
 * `ProfileEvent_HTTPServerConnectionsClosed` ([UInt64](/ko/reference/data-types/int-uint)) — 종료된 서버 HTTP 연결 수. Keep alive가 협상되지 않음
 * `ProfileEvent_HTTPServerConnectionsReset` ([UInt64](/ko/reference/data-types/int-uint)) — 재설정된 서버 HTTP 연결 수. 서버가 연결을 종료함
+* `ProfileEvent_HTTPServerConnectionsErrors` ([UInt64](/ko/reference/data-types/int-uint)) — 네트워크 오류, 잘못된 형식의 요청 또는 요청 핸들러에서 처리되지 않은 예외로 인해 종료된 서버 HTTP 연결 수입니다. keep-alive 연결에서 추가 요청을 보내지 않고 연결을 종료한 클라이언트는 오류로 간주하지 않으며 여기에 집계되지 않습니다.
+* `ProfileEvent_TLSHandshakes` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 스토리지, `url` 테이블 함수의 대상 또는 다른 ClickHouse 서버 등에 대한 송신(클라이언트) 연결에서 완료된 TLS 핸드셰이크 수입니다. Poco TLS 구현을 사용하는 연결만 집계하며, gRPC 또는 MySQL, PostgreSQL, Kafka 클라이언트 라이브러리처럼 자체 TLS 스택을 사용하는 프로토콜은 집계하지 않습니다. 세션 재개도 핸드셰이크를 수행하므로 여기에 집계됩니다.
+* `ProfileEvent_TLSHandshakeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — TLSHandshakeErrors에서 집계한 실패 사례를 포함하여 송신(클라이언트) 연결의 TLS 핸드셰이크를 수행하는 데 소요된 총 시간입니다. non-blocking 소켓의 경우 완료될 때까지 핸드셰이크를 재시도하며, 모든 시도의 시간을 여기에 합산합니다.
+* `ProfileEvent_TLSHandshakeErrors` ([UInt64](/ko/reference/data-types/int-uint)) — 신뢰할 수 없거나 만료된 피어 인증서, 프로토콜 또는 암호 모음 불일치, 핸드셰이크 중 피어의 연결 종료 등의 이유로 송신(클라이언트) 연결에서 실패한 TLS 핸드셰이크 수입니다.
+* `ProfileEvent_TLSServerHandshakes` ([UInt64](/ko/reference/data-types/int-uint)) — Poco TLS 구현을 사용하는 서버 프로토콜 전반에서 수신(서버) 연결에 대해 완료된 TLS 핸드셰이크 수입니다. 네이티브 TCP, HTTPS, MySQL 및 PostgreSQL이 해당합니다. gRPC는 자체 TLS 스택을 사용하므로 집계하지 않습니다. 세션 재개도 핸드셰이크를 수행하므로 여기에 집계됩니다.
+* `ProfileEvent_TLSServerHandshakeMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — TLSServerHandshakeErrors에서 집계한 실패 사례를 포함하여 수신(서버) 연결의 TLS 핸드셰이크를 수행하는 데 소요된 총 시간입니다. non-blocking 소켓의 경우 완료될 때까지 핸드셰이크를 재시도하며, 모든 시도의 시간을 여기에 합산합니다.
+* `ProfileEvent_TLSServerHandshakeErrors` ([UInt64](/ko/reference/data-types/int-uint)) — 거부된 클라이언트 인증서, 프로토콜 또는 암호 모음 불일치, 핸드셰이크 중 클라이언트의 연결 종료 등의 이유로 수신(서버) 연결에서 실패한 TLS 핸드셰이크 수입니다. 보안 포트에 TCP 연결을 열었다가 종료하는 포트 스캐너와 상태 검사도 여기에 집계됩니다.
 * `ProfileEvent_AddressesDiscovered` ([UInt64](/ko/reference/data-types/int-uint)) — HTTP 연결에 대한 DNS 조회 결과에서 새로 발견된 주소의 총수
 * `ProfileEvent_AddressesExpired` ([UInt64](/ko/reference/data-types/int-uint)) — HTTP 연결에 대한 DNS 조회 결과에 더 이상 나타나지 않는 만료된 주소의 총수
 * `ProfileEvent_AddressesMarkedAsFailed` ([UInt64](/ko/reference/data-types/int-uint)) — HTTP 연결 오류로 인해 실패로 표시된 주소의 총수

@@ -78,7 +78,7 @@ Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vo
 Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
 
 <Note>
-  Pour toutes les requêtes `ALTER`, si `alter_sync = 2`, ou `alter_sync = 3` sur `ReplicatedMergeTree`, et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
+  Pour toutes les requêtes `ALTER`, si `alter_sync = 2` et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée. Avec `alter_sync = 3`, les répliques inactives ne font pas l&#39;objet d&#39;une attente, et aucune exception n&#39;est donc levée.
 </Note>
 
 ### Attribution concurrente d’`ALTER` sur une même table {#concurrent-alter-assignment-on-one-table}

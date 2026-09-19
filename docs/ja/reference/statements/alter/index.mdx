@@ -78,7 +78,7 @@ doc_type: 'reference'
 非アクティブなレプリカがすべての `ALTER` クエリを実行するまで、どれだけ長く (秒単位で) 待機するかは、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
 
 <Note>
-  すべての `ALTER` クエリについて、`alter_sync = 2`、または `ReplicatedMergeTree` で `alter_sync = 3` であり、かつ一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブな場合は、`UNFINISHED` 例外がスローされます。
+  すべての `ALTER` クエリについて、`alter_sync = 2` であり、かつ一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブな場合は、`UNFINISHED` 例外がスローされます。`alter_sync = 3` の場合は非アクティブなレプリカを待機しないため、例外はスローされません。
 </Note>
 
 ### 1 つのテーブルに対する `ALTER` の同時割り当て {#concurrent-alter-assignment-on-one-table}

@@ -649,7 +649,13 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_RWLockAcquiredWriteLocks` ([UInt64](/zh/reference/data-types/int-uint)) — 获取写锁的次数 (在 heavy RWLock 中) 。
 * `ProfileEvent_RWLockReadersWaitMilliseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待读锁获取的总耗时 (在 heavy RWLock 中) 。
 * `ProfileEvent_RWLockWritersWaitMilliseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待写锁获取的总耗时 (在 heavy RWLock 中) 。
-* `ProfileEvent_DNSError` ([UInt64](/zh/reference/data-types/int-uint)) — DNS 解析错误总数
+* `ProfileEvent_DNSError` ([UInt64](/zh/reference/data-types/int-uint)) — DNS 解析错误总数。它既统计 DNSRequests 和 DNSReverseRequests 所计数请求中的失败，也统计未发出请求即发生的失败，例如主机名仅解析为随后被 `dns_allow_resolve_names_to_ipv4`/`dns_allow_resolve_names_to_ipv6` 过滤器拒绝的地址。使用 DNSRequestError 和 DNSReverseError 可获得与相应请求计数器对应的分子。
+* `ProfileEvent_DNSRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 服务器发起的正向名称解析尝试总数 (主机名到地址) 。名称交给系统解析器时即计为一次尝试，因此也包括本地解析的名称，例如来自 `/etc/hosts` 或其他 NSS 来源的名称，以及解析器在未发送查询的情况下于本地拒绝的名称。由内部 DNS 缓存提供的名称，以及本身已是 IP Address 字面量的主机名不计入其中。
+* `ProfileEvent_DNSRequestMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — DNSRequests 计数的正向名称解析尝试所花费的总时间，包括 DNSRequestError 计数的失败尝试。
+* `ProfileEvent_DNSRequestError` ([UInt64](/zh/reference/data-types/int-uint)) — DNSRequests 计数的尝试中失败的正向名称解析尝试总数。统计以错误结束的请求以及未返回任何地址的请求。与 DNSError 不同，该事件的统计范围与 DNSRequests 相同，因此可由两者得出失败率。
+* `ProfileEvent_DNSReverseRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 发送到解析器的反向 DNS 请求总数 (地址到主机名，PTR) ，例如用于将客户端地址与用户配置中的 `host_regexp` 匹配。由 DNS 缓存提供的请求不计入其中。
+* `ProfileEvent_DNSReverseRequestMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — DNSReverseRequests 计数的反向 DNS 请求所花费的总时间，包括 DNSReverseError 计数的失败请求。
+* `ProfileEvent_DNSReverseError` ([UInt64](/zh/reference/data-types/int-uint)) — DNSReverseRequests 计数的请求中失败的反向 DNS 请求总数。统计以错误结束的请求以及未返回 PTR 记录的请求，因为解析器会通过返回空答案来报告 NXDOMAIN 和其他非成功状态。
 * `ProfileEvent_PartsLockHoldMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 MergeTree 表中持有数据分区片段锁的总耗时
 * `ProfileEvent_PartsLockWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 MergeTree 表中等待数据分区片段锁的总耗时
 * `ProfileEvent_PartsLocks` ([UInt64](/zh/reference/data-types/int-uint)) — 在 MergeTree 表中获取数据分区片段锁的次数
@@ -917,6 +923,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SleepFunctionCalls` ([UInt64](/zh/reference/data-types/int-uint)) — sleep 函数 (sleep、sleepEachRow) 被调用的次数。
 * `ProfileEvent_SleepFunctionMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 sleep 函数 (sleep、sleepEachRow) 中设置的休眠时间。
 * `ProfileEvent_SleepFunctionElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 sleep 函数 (sleep、sleepEachRow) 中实际休眠所花费的时间。
+* `ProfileEvent_SystemPartsEnumerationSlowdownSleeps` ([UInt64](/zh/reference/data-types/int-uint)) — 填充 system.parts 家族的表时，仅供测试使用的 failpoint &#39;slowdown&#95;system&#95;parts&#95;enumeration&#39; 的休眠次数。在测试之外始终为零。
 * `ProfileEvent_ThreadPoolReaderPageCacheHit` ([UInt64](/zh/reference/data-types/int-uint)) — ThreadPoolReader 内部从页缓存读取的次数。
 * `ProfileEvent_ThreadPoolReaderPageCacheHitBytes` ([UInt64](/zh/reference/data-types/int-uint)) — ThreadPoolReader 内部从页缓存读取的字节数。
 * `ProfileEvent_ThreadPoolReaderPageCacheHitElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — ThreadPoolReader 中从页缓存读取数据所花费的时间。
@@ -1285,6 +1292,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时分派给远程工作线程的任务数。非零值表示该查询实际以分布式方式执行。
 * `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/zh/reference/data-types/int-uint)) — 当 make&#95;distributed&#95;plan 查询通过本地执行器 (distributed&#95;plan&#95;execute&#95;locally) 在进程内执行，而非分派给远程工作线程时，设置为 1。
 * `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 make&#95;distributed&#95;plan 执行查询时，至少被分配一个任务的不同主机数量。
+* `ProfileEvent_DistributedPlanWorkerPartsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式查询计划协调器分配给工作线程的数据分区片段数量，按该查询在该工作线程上执行的各个桶读取操作累计计算。分配给多个桶的数据分区片段在每次读取中计数一次。
+* `ProfileEvent_DistributedPlanWorkerPartsScanned` ([UInt64](/zh/reference/data-types/int-uint)) — 工作线程保留用于读取的已分配数据分区片段数量。
+* `ProfileEvent_DistributedPlanWorkerPartsPruned` ([UInt64](/zh/reference/data-types/int-uint)) — 工作线程通过自身索引分析剪枝的已分配数据分区片段数量，因此不会读取这些数据分区片段。协调器选择数据分区片段时不进行该分析，因此可能会分配没有任何行能匹配查询条件的数据分区片段。`DistributedPlanWorkerPartsReceived` 是此项与 `DistributedPlanWorkerPartsScanned` 的总和。
 * `ProfileEvent_StreamingExchangeSendBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入分布式查询计划中流式 exchange 套接字的字节数。`NetworkSendBytes` 不统计这些字节。
 * `ProfileEvent_StreamingExchangeReceiveBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从分布式查询计划中流式 exchange 套接字读取的字节数。`NetworkReceiveBytes` 不统计这些字节。
 * `ProfileEvent_StreamingExchangePacketsSent` ([UInt64](/zh/reference/data-types/int-uint)) — 完整写入流式 exchange 套接字的 Data 数据包，每个块对应一个数据包，另加每个 stream 一个流结束数据包。数据包仅在完整写入时计数；如果接收端不再需要数据而导致数据包未完全写入，则不计数。
@@ -1452,6 +1462,13 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_HTTPServerConnectionsExpired` ([UInt64](/zh/reference/data-types/int-uint)) — 已过期的服务器 HTTP 连接数量。
 * `ProfileEvent_HTTPServerConnectionsClosed` ([UInt64](/zh/reference/data-types/int-uint)) — 已关闭的服务器 HTTP 连接数量。未协商 Keep-Alive
 * `ProfileEvent_HTTPServerConnectionsReset` ([UInt64](/zh/reference/data-types/int-uint)) — 被重置的服务器 HTTP 连接数量。服务器关闭连接
+* `ProfileEvent_HTTPServerConnectionsErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 因错误而终止的服务器 HTTP 连接数量：网络错误、格式错误的请求，或从请求处理程序逸出的异常。客户端在不发送其他请求的情况下关闭保持活跃的连接不属于错误，不计入此处。
+* `ProfileEvent_TLSHandshakes` ([UInt64](/zh/reference/data-types/int-uint)) — 为出站 (客户端) 连接完成的 TLS 握手次数，例如连接到对象存储、`url` 表函数的目标，或另一台 ClickHouse 服务器。仅统计使用 Poco TLS 实现的连接；使用自身 TLS 技术栈的协议 (如 gRPC 或 MySQL、PostgreSQL 和 Kafka 客户端库) 不计入其中。会话恢复仍会执行握手，并计入此处。
+* `ProfileEvent_TLSHandshakeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为出站 (客户端) 连接执行 TLS 握手所花费的总时间，包括由 TLSHandshakeErrors 统计的失败握手。对于非阻塞套接字，握手会重试直至完成，此处累加其所有尝试的时间。
+* `ProfileEvent_TLSHandshakeErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 出站 (客户端) 连接的 TLS 握手失败次数，例如由于不受信任或已过期的对端证书、协议或密码套件不匹配，或对端在握手过程中关闭连接。
+* `ProfileEvent_TLSServerHandshakes` ([UInt64](/zh/reference/data-types/int-uint)) — 为入站 (服务器) 连接完成的 TLS 握手次数，涵盖使用 Poco TLS 实现的服务器协议：原生 TCP、HTTPS、MySQL 和 PostgreSQL。gRPC 使用自身的 TLS 技术栈，不计入其中。会话恢复仍会执行握手，并计入此处。
+* `ProfileEvent_TLSServerHandshakeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为入站 (服务器) 连接执行 TLS 握手所花费的总时间，包括由 TLSServerHandshakeErrors 统计的失败握手。对于非阻塞套接字，握手会重试直至完成，此处累加其所有尝试的时间。
+* `ProfileEvent_TLSServerHandshakeErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 入站 (服务器) 连接的 TLS 握手失败次数，例如由于客户端证书被拒绝、协议或密码套件不匹配，或客户端在握手过程中关闭连接。端口扫描器和健康检查建立到安全端口的 TCP 连接后将其关闭的情况也计入此处。
 * `ProfileEvent_AddressesDiscovered` ([UInt64](/zh/reference/data-types/int-uint)) — HTTP 连接的 DNS 解析结果中新发现的地址总数
 * `ProfileEvent_AddressesExpired` ([UInt64](/zh/reference/data-types/int-uint)) — HTTP 连接的 DNS 解析结果中已不再存在的过期地址总数
 * `ProfileEvent_AddressesMarkedAsFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 因 HTTP 连接错误而被标记为故障的地址总数

@@ -1048,7 +1048,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />يحدّد ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `</etc/ssl/cert.pem>` (أو في الدليل `</etc/ssl/certs>`) أو في الملف (أو الدليل) المحدد بواسطة متغير البيئة `<SSL_CERT_FILE>` (أو `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />يحدد ما إذا كانت شهادات CA الافتراضية ستُستخدم أم لا. يبحث ClickHouse عنها في الملف `</etc/ssl/cert.pem>` (أو الدليل `</etc/ssl/certs>`)، وفي الملف (أو الدليل) المحدد عبر متغير البيئة `<SSL_CERT_FILE>` (أو `<SSL_CERT_DIR>`)، وفي مواقع أخرى معروفة في مختلف التوزيعات. وإذا لم يُعثر على أي شهادات CA في نظام الملفات، ولم تُهيَّأ قيمة `caConfig` صراحةً، وكان الملف التنفيذي قد بُني مع شهادات CA مضمّنة (وهو الوضع الافتراضي، ويتحكم فيه خيار البناء `ENABLE_EMBEDDED_CA_CERTIFICATES`)، فستُستخدم الشهادات المضمّنة بدلاً منها، بحيث يعمل TLS حتى في بيئة بالحد الأدنى خالية من أي ملفات، كحاوية مبنية &quot;from scratch&quot; مثلاً. أما في البناءات التي لا تتضمن شهادات CA مضمّنة، فيُرفع استثناء في هذه الحالة.
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1104,7 +1104,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="لا" />يحدّد ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `</etc/ssl/cert.pem>` (أو في الدليل `</etc/ssl/certs>`، على التوالي)، أو في الملف (أو الدليل، على التوالي) المحدد بواسطة متغير البيئة `<SSL_CERT_FILE>` (أو `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />يحدّد ما إذا كانت شهادات CA الافتراضية ستُستخدم. يبحث عنها ClickHouse في الملف `</etc/ssl/cert.pem>` (أو الدليل `</etc/ssl/certs>`)، وفي الملف (أو الدليل) المحدّد عبر متغير البيئة `<SSL_CERT_FILE>` (أو `<SSL_CERT_DIR>`)، وفي مواقع أخرى معروفة لدى مختلف توزيعات لينكس. وإذا لم يُعثر على أي شهادات CA في نظام الملفات، ولم تُهيَّأ قيمة `caConfig` صراحةً، وكان الملف التنفيذي قد بُني مع شهادات CA مضمّنة (وهو السلوك الافتراضي، ويتحكّم فيه خيار البناء `ENABLE_EMBEDDED_CA_CERTIFICATES`)، فستُستخدم الشهادات المضمّنة بدلاً منها، بحيث يعمل TLS حتى في بيئة بالحد الأدنى خالية من أي ملفات، مثل حاوية مبنية &quot;from scratch&quot;. أمّا في البناءات التي لا تتضمّن شهادات CA مضمّنة، فيُرفع استثناء في هذه الحالة.
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 

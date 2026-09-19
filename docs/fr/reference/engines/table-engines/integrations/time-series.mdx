@@ -104,7 +104,7 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
 
 ### Spécification des colonnes externes {#specifying-outer-columns}
 
-La colonne externe `samples` peut être déclarée explicitement dans une instruction `CREATE TABLE` afin de remplacer son type par défaut `Array(Tuple(DateTime64(3), Float64))` (son ancien nom `time_series` est également accepté). ClickHouse extrait du tuple le type d’horodatage et le type scalaire, puis les propage à la table d’échantillons interne :
+La colonne externe `samples` peut être déclarée explicitement dans une instruction `CREATE TABLE` afin de remplacer son type par défaut `Array(Tuple(DateTime64(3), Float64))` (son ancien nom `time_series` est également accepté). ClickHouse extrait du tuple le type d’horodatage et le type scalaire, puis les propage à la table samples interne :
 
 ```sql
 CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -114,7 +114,7 @@ Cela revient à déclarer directement les types des colonnes `timestamp` et `val
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Si les deux formes sont utilisées dans la même instruction `CREATE TABLE`, les types déclarés doivent être identiques.
@@ -139,22 +139,25 @@ Les tables cibles sont les suivantes :
 
 La table *samples* contient des séries temporelles associées à un certain identifiant.
 
-La table *samples* doit comporter les colonnes suivantes :
+La table *samples* doit comporter les colonnes suivantes :
 
-| Nom         | Obligatoire ? | Type par défaut                       | Types possibles        | Description                                               |
+| Nom         | Obligatoire ? | Type par défaut                       | Types possibles        | Description                                               |
 | ----------- | ------------- | ------------------------------------- | ---------------------- | --------------------------------------------------------- |
 | `id`        | [x]           | `Tuple(UInt64, LowCardinality(UUID))` | tout type              | Identifie une combinaison de noms de métriques et de tags |
 | `timestamp` | [x]           | `DateTime64(3)`                       | `DateTime64(X)`        | Un instant donné                                          |
 | `value`     | [x]           | `Float64`                             | `Float32` ou `Float64` | Une valeur associée au `timestamp`                        |
 
-Les colonnes créées par le moteur lui-même reçoivent des codecs de compression pour séries temporelles :
-`timestamp CODEC(DoubleDelta, ZSTD(1))` et `value CODEC(ZSTD(3))`. Les horodatages quasi monotones se
+Les colonnes créées par le moteur lui-même reçoivent des codecs de compression pour séries temporelles :
+`timestamp CODEC(Delta, T64, ZSTD(3))` et `value CODEC(ALP, ZSTD(3))`. Les horodatages quasi monotones se
 compressent très peu avec des codecs génériques et peuvent sinon représenter l&#39;essentiel de la taille sur disque de la table *samples*.
+Le moteur active `ALP` pour ses tables internes *samples* et *recent samples* sans qu&#39;il soit nécessaire de définir `enable_alp_codec`.
 Voir aussi [Ajustement des types de colonnes](#adjusting-column-types).
 
 ### Table des échantillons récents {#recent-samples-table}
 
-La table des *échantillons récents* est facultative et activée par défaut (voir le paramètre [recent&#95;samples&#95;ttl&#95;seconds](#settings) ; définir sa valeur sur zéro désactive la table). Elle contient une copie des échantillons dont l’ancienneté est inférieure à la TTL définie par ce paramètre et doit comporter les mêmes colonnes que la table [samples](#samples-table).
+La table des *échantillons récents* est facultative et activée par défaut (voir le paramètre [recent&#95;samples&#95;ttl&#95;seconds](#settings) ; définir sa valeur sur zéro désactive la table). Elle contient une copie des échantillons dont l’ancienneté est inférieure à la TTL définie par ce paramètre et doit comporter les mêmes colonnes que la table [samples](#samples-table).
+La colonne générée `timestamp` utilise `CODEC(Delta, T64, ZSTD(3))`,
+et la colonne générée `value` utilise `CODEC(ALP, ZSTD(3))`.
 
 Chaque échantillon inséré est écrit à la fois dans la table samples et dans la table des échantillons récents.
 Les requêtes dont l’intervalle de temps est compris dans la fenêtre TTL lisent la table des échantillons récents plutôt que la table samples principale,
@@ -226,15 +229,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -260,7 +263,7 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 Les colonnes ont donc été générées automatiquement, et il existe également quatre tables cibles internes, chacune avec ses propres définitions de colonnes
 stockées dans les clauses `INNER COLUMNS`. Le paramètre `recent_samples_ttl_seconds` a été écrit dans la clause `SETTINGS`
 avec sa valeur par défaut : il définit le TTL de la table des échantillons récents, et sa valeur effective est donc fixée lors de la création.
-De plus, la dernière version du schéma a été fixée dans le paramètre `version` (voir [versionnement du schéma](#schema-versioning)).
+De plus, la dernière version du schéma a été fixée dans le paramètre `version` (voir [Versionnement du schéma](#schema-versioning)).
 
 Les tables cibles internes portent des noms tels que `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
@@ -271,8 +274,8 @@ et chaque table cible possède son propre ensemble de colonnes :
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -283,8 +286,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -347,14 +350,14 @@ structure actuelle, par exemple le type `id` actuel et l&#39;expression d&#39;id
 
 ## Ajustement des types de colonnes {#adjusting-column-types}
 
-Vous pouvez modifier le type des colonnes dans les tables cibles internes à l’aide de la clause `INNER COLUMNS`. Par exemple, pour stocker les horodatages en microsecondes et les valeurs en `Float32`, utilisez :
+Vous pouvez modifier le type des colonnes dans les tables cibles internes à l’aide de la clause `INNER COLUMNS`. Par exemple, pour stocker les horodatages en microsecondes et les valeurs en `Float32`, utilisez :
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
-Spécifier des colonnes internes sans codec revient à utiliser le codec par défaut pour celles-ci :
+Spécifier des colonnes internes sans codec revient à utiliser le codec par défaut pour celles-ci :
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries

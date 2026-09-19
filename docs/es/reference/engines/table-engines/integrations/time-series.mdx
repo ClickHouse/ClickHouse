@@ -114,7 +114,7 @@ Esto equivale a declarar directamente los tipos de las columnas `timestamp` y `v
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Si ambas formas se usan en la misma sentencia `CREATE TABLE`, los tipos declarados deben coincidir.
@@ -148,8 +148,9 @@ La tabla *samples* debe tener las siguientes columnas:
 | `value`     | [x]           | `Float64`                             | `Float32` o `Float64` | Un valor asociado al `timestamp`                              |
 
 Las columnas que crea el propio motor utilizan códecs de compresión para series temporales:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` y `value CODEC(ZSTD(3))`. Las marcas de tiempo casi monotónicas apenas
+`timestamp CODEC(Delta, T64, ZSTD(3))` y `value CODEC(ALP, ZSTD(3))`. Las marcas de tiempo casi monotónicas apenas
 se comprimen con códecs genéricos y, de lo contrario, pueden representar la mayor parte del tamaño en disco de la tabla samples.
+El motor habilita `ALP` para sus tablas internas de samples y muestras recientes sin requerir que se establezca `enable_alp_codec`.
 Consulte también [Ajustar los tipos de las columnas](#adjusting-column-types).
 
 ### Tabla de muestras recientes {#recent-samples-table}
@@ -157,6 +158,8 @@ Consulte también [Ajustar los tipos de las columnas](#adjusting-column-types).
 La tabla de *muestras recientes* es opcional y está habilitada de forma predeterminada (véase el ajuste [recent&#95;samples&#95;ttl&#95;seconds](#settings);
 si se establece en cero, la tabla se deshabilita). Contiene una copia de las muestras más recientes que el TTL definido por ese ajuste,
 y debe tener las mismas columnas que la tabla [samples](#samples-table).
+La columna generada `timestamp` usa `CODEC(Delta, T64, ZSTD(3))`,
+y la columna generada `value` usa `CODEC(ALP, ZSTD(3))`.
 
 Cada muestra insertada se escribe tanto en la tabla de muestras como en la tabla de muestras recientes.
 Las consultas cuyo rango temporal se ajusta a la ventana del TTL leen de la tabla de muestras recientes en lugar de la tabla principal de muestras,
@@ -228,15 +231,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -260,9 +263,9 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 Es decir, las columnas se generaron automáticamente y además hay cuatro tablas internas de destino con sus propias definiciones de columnas
-almacenadas en las cláusulas `INNER COLUMNS`. El SETTING `recent_samples_ttl_seconds` se escribió en la cláusula `SETTINGS`
-con su valor predeterminado: este SETTING define el TTL de la tabla de muestras recientes, por lo que su valor efectivo queda fijado en el momento de la creación.
-Además, la última versión del esquema quedó fijada en el SETTING `version` (véase [Control de versiones del esquema](#schema-versioning)).
+almacenadas en las cláusulas `INNER COLUMNS`. La opción `recent_samples_ttl_seconds` se escribió en la cláusula `SETTINGS`
+con su valor predeterminado: la opción define el TTL de la tabla de muestras recientes, por lo que su valor efectivo queda fijado al crearla.
+Además, la versión más reciente del esquema quedó fijada en la opción `version` (véase [Control de versiones del esquema](#schema-versioning)).
 
 Las tablas internas de destino tienen nombres como `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
@@ -273,8 +276,8 @@ y cada tabla de destino tiene su propio conjunto de columnas:
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -285,8 +288,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -349,11 +352,11 @@ estructura actual, p. ej., el tipo actual de `id` y la expresión de identificad
 
 ## Ajuste de los tipos de las columnas {#adjusting-column-types}
 
-Puede ajustar los tipos de las columnas en las tablas de destino internas mediante la cláusula `INNER COLUMNS`. Por ejemplo, para almacenar marcas de tiempo en microsegundos y valores como `Float32`, use:
+Puede ajustar los tipos de las columnas en las tablas internas de destino mediante la cláusula `INNER COLUMNS`. Por ejemplo, para almacenar marcas de tiempo en microsegundos y valores como `Float32`, use:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 Especificar columnas internas sin códecs implica usar el códec predeterminado para ellas:

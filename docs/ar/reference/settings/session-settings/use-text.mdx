@@ -43,9 +43,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ## use_text_index_postings_cache {#use_text_index_postings_cache}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "تم تفعيل ذاكرة التخزين المؤقت لقوائم الإحالة الخاصة بالفهرس النصي على مستوى النظام. في السابق كان كل استعلام يستخدم ذاكرة تخزين مؤقت خاصة بحد أقصى 100 ميبي بايت، مما تسبب في إعادة حساب قوائم الإحالة ونتائج البحث عن العبارات داخل الاستعلام الواحد على الجداول الكبيرة."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 ما إذا كان سيتم تخزين قوائم الإحالة الخاصة بالفهرس النصي مؤقتًا في الذاكرة بعد فك تسلسلها.
 يمكن أن تقلل ذاكرة التخزين المؤقت لقوائم الإحالة الخاصة بالفهرس النصي زمن الاستجابة بشكل كبير وتزيد معدل النقل عند العمل مع عدد كبير من استعلامات الفهرس النصي.

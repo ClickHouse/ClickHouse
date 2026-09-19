@@ -1048,7 +1048,7 @@ Clés des paramètres client/serveur :
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />Indique si les certificats de CA intégrés d’OpenSSL seront utilisés. ClickHouse suppose que ces certificats de CA intégrés se trouvent dans le fichier `</etc/ssl/cert.pem>` (ou, selon le cas, dans le répertoire `</etc/ssl/certs>`) ou dans le fichier (ou le répertoire) spécifié par la variable d’environnement `<SSL_CERT_FILE>` (ou `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Détermine si les certificats de CA par défaut sont utilisés. ClickHouse les recherche dans le fichier `</etc/ssl/cert.pem>` (resp. le répertoire `</etc/ssl/certs>`), dans le fichier (resp. le répertoire) indiqué par la variable d&#39;environnement `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), ainsi que dans d&#39;autres emplacements usuels des différentes distributions. Si aucun certificat de CA n&#39;est trouvé sur le système de fichiers, qu&#39;aucun `caConfig` explicite n&#39;est configuré et que le binaire a été compilé avec des certificats de CA intégrés (comportement par défaut, contrôlé par l&#39;option de compilation `ENABLE_EMBEDDED_CA_CERTIFICATES`), ce sont les certificats intégrés qui sont utilisés : TLS fonctionne ainsi même dans un environnement minimal dépourvu de tout fichier, par exemple dans un conteneur construit « from scratch ». Dans les builds sans certificats de CA intégrés, une erreur est levée dans ce cas.
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1104,7 +1104,7 @@ Clés des paramètres client/serveur :
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />Indique si les certificats CA intégrés d’OpenSSL seront utilisés. ClickHouse suppose que les certificats CA intégrés se trouvent dans le fichier `</etc/ssl/cert.pem>` (respectivement le répertoire `</etc/ssl/certs>`) ou dans le fichier (respectivement le répertoire) spécifié par la variable d’environnement `<SSL_CERT_FILE>` (respectivement `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Détermine si les certificats de CA par défaut sont utilisés. ClickHouse les recherche dans le fichier `</etc/ssl/cert.pem>` (respectivement le répertoire `</etc/ssl/certs>`), dans le fichier (respectivement le répertoire) indiqué par la variable d&#39;environnement `<SSL_CERT_FILE>` (respectivement `<SSL_CERT_DIR>`), ainsi que dans d&#39;autres emplacements usuels des différentes distributions. Si aucun certificat de CA n&#39;est trouvé sur le système de fichiers, qu&#39;aucun `caConfig` explicite n&#39;est configuré et que le binaire a été compilé avec des certificats de CA intégrés (le comportement par défaut, contrôlé par l&#39;option de compilation `ENABLE_EMBEDDED_CA_CERTIFICATES`), ce sont ces certificats intégrés qui sont utilisés : TLS fonctionne donc même dans un environnement minimal dépourvu de tout fichier, par exemple dans un conteneur construit « from scratch ». Dans les builds sans certificats de CA intégrés, une erreur est levée dans ce cas.
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 

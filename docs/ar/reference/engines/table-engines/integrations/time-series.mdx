@@ -114,7 +114,7 @@ CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 إذا استُخدمت الصيغتان كلتاهما ضمن عبارة `CREATE TABLE` نفسها، فيجب أن تتطابق الأنواع المُعلنة.
@@ -148,8 +148,9 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `value`     | [x]     | `Float64`                             | `Float32` أو `Float64` | قيمة مرتبطة بـ `timestamp`             |
 
 تستخدم الأعمدة التي ينشئها المحرك تلقائيًا برامج ترميز ضغط للسلاسل الزمنية:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` و`value CODEC(ZSTD(3))`. بالكاد
+`timestamp CODEC(Delta, T64, ZSTD(3))` و`value CODEC(ALP, ZSTD(3))`. بالكاد
 تُضغط الطوابع الزمنية شبه الرتيبة باستخدام برامج الترميز العامة، وقد تستحوذ لولا ذلك على معظم حجم جدول العينات على القرص.
+يفعّل المحرك `ALP` لجداول العينات الداخلية وجداول العينات الحديثة الخاصة به دون الحاجة إلى ضبط `enable_alp_codec`.
 انظر أيضًا [ضبط أنواع الأعمدة](#adjusting-column-types).
 
 ### جدول العينات الحديثة {#recent-samples-table}
@@ -157,8 +158,10 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 جدول *العينات الحديثة* اختياري ومُفعّل افتراضيًا (راجع إعداد [recent&#95;samples&#95;ttl&#95;seconds](#settings)؛
 إذ يؤدي ضبطه على صفر إلى تعطيل الجدول). يحتوي على نسخة من العينات الأحدث من قيمة TTL التي يحددها هذا الإعداد،
 ويجب أن يتضمن الأعمدة نفسها الموجودة في جدول [العينات](#samples-table).
+يستخدم العمود المُولَّد `timestamp` الترميز `CODEC(Delta, T64, ZSTD(3))`،
+ويستخدم العمود المُولَّد `value` الترميز `CODEC(ALP, ZSTD(3))`.
 
-تُكتب كل عينة مُدرجة في كلٍّ من جدول العينات وجدول العينات الحديثة.
+تُكتب كل عينة مُدرجة في كلٍّ من جدول العينات وجدول العينات الحديثة.
 تقرأ الاستعلامات التي يقع نطاقها الزمني ضمن نافذة TTL من جدول العينات الحديثة بدلًا من جدول العينات الرئيسي
 لأنه أصغر بكثير (يمكن تعطيل ذلك باستخدام إعداد على مستوى الاستعلام `time_series_prefer_recent_samples_table`).
 
@@ -226,15 +229,15 @@ SETTINGS version = 5, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -259,7 +262,7 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 
 لذلك، جرى إنشاء الأعمدة تلقائيًا، وهناك أيضًا أربعة جداول هدف داخلية، لكل منها تعريفات أعمدة خاصة
 مخزنة في عبارات `INNER COLUMNS`. وكُتب الإعداد `recent_samples_ttl_seconds` في عبارة `SETTINGS`
-بقيمة افتراضية: يحدد الإعداد TTL لجدول العينات الحديثة، لذا تُحدَّد قيمته الفعلية عند الإنشاء.
+بقيمته الافتراضية: يحدد الإعداد TTL لجدول العينات الحديثة، لذا تُثبَّت قيمته الفعلية عند الإنشاء.
 كما جرى تثبيت أحدث إصدار من المخطط في الإعداد `version` (انظر [إصدارات المخطط](#schema-versioning)).
 
 تحمل الجداول الهدف الداخلية أسماء مثل `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`،
@@ -271,8 +274,8 @@ METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -283,8 +286,8 @@ SETTINGS index_granularity = 32768
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
-    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
@@ -351,7 +354,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, T64, ZSTD(3)), value Float32 CODEC(ALP, ZSTD(3)))
 ```
 
 يعني تحديد الأعمدة الداخلية دون برامج ترميز الضغط استخدام برنامج ترميز الضغط الافتراضي لها:

@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 `OPTIMIZE` 쿼리는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진 계열([구체화된 뷰(Materialized View)](/ko/reference/statements/create/view#materialized-view) 포함)과 [Buffer](/ko/reference/engines/table-engines/special/buffer) 엔진에서 지원됩니다. 다른 테이블 엔진은 지원되지 않습니다.
 
-`OPTIMIZE`를 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/replication) 엔진 계열의 테이블 엔진에 사용하면, ClickHouse는 머지를 위한 작업을 생성하고 모든 레플리카에서 실행될 때까지 기다립니다([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `2`이거나, `ReplicatedMergeTree`에서 `3`인 경우). 또는 현재 레플리카에서 실행될 때까지 기다립니다([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `1`인 경우).
+`OPTIMIZE`를 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/replication) 엔진 계열의 테이블 엔진에 사용하면, ClickHouse는 머지를 위한 작업을 생성하고 모든 레플리카에서 실행될 때까지 기다리거나([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `2`인 경우), 활성 레플리카에서 실행될 때까지 기다리거나(`3`으로 설정된 경우), 현재 레플리카에서 실행될 때까지 기다립니다(`1`로 설정된 경우).
 
 * 어떤 이유로든 `OPTIMIZE`가 머지를 수행하지 않더라도 클라이언트에는 알리지 않습니다. 알림을 활성화하려면 [optimize&#95;throw&#95;if&#95;noop](/ko/reference/settings/session-settings/optimize#optimize_throw_if_noop) 설정을 사용하십시오.
 * `PARTITION`을 지정하면 지정한 파티션만 최적화됩니다. [파티션 표현식을 설정하는 방법](/ko/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,7 +36,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 비활성 레플리카가 `OPTIMIZE` 쿼리를 실행할 때까지 기다릴 시간(초)은 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
 
 <Note>
-  `alter_sync`가 `2`로 설정되어 있거나 `ReplicatedMergeTree`에서 `3`으로 설정되어 있고, 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면, `UNFINISHED` 예외가 발생합니다.
+  `alter_sync`가 `2`로 설정되어 있고, 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면, `UNFINISHED` 예외가 발생합니다. `alter_sync = 3`인 경우에는 비활성 레플리카를 기다리지 않으므로 예외가 발생하지 않습니다.
 </Note>
 
 ## DRY RUN {#dry-run}

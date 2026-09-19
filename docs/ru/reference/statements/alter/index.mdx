@@ -78,7 +78,7 @@ doc_type: 'reference'
 С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят все запросы `ALTER`.
 
 <Note>
-  Для всех запросов `ALTER`: если `alter_sync = 2` или `alter_sync = 3` для `ReplicatedMergeTree` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+  Для всех запросов `ALTER`: если `alter_sync = 2` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`. При `alter_sync = 3` ожидание неактивных реплик не выполняется, поэтому исключение не генерируется.
 </Note>
 
 ### Одновременное назначение `ALTER` для одной таблицы {#concurrent-alter-assignment-on-one-table}

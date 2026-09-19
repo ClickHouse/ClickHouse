@@ -56,23 +56,23 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 ## alter_sync {#alter_sync}
 
-**Alias** : `replication_alter_partitions_sync`
+**Alias** : `replication_alter_partitions_sync`
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Permet de spécifier le comportement d’attente pour les actions à exécuter sur les répliques par les requêtes [`ALTER`](/fr/reference/statements/alter/index), [`OPTIMIZE`](/fr/reference/statements/optimize) ou [`TRUNCATE`](/fr/reference/statements/truncate).
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `0` — Ne pas attendre.
 * `1` — Attendre l’exécution locale.
 * `2` — Attendre toutes les répliques.
-* `3` - Attendre uniquement les répliques actives. Pris en charge uniquement pour `SharedMergeTree`. Pour `ReplicatedMergeTree`, son comportement est identique à celui de `alter_sync = 2`.
+* `3` - Attendre uniquement les répliques actives. Les répliques inactives appliquent la modification lorsqu’elles redeviennent actives.
 
-Valeur par défaut dans Cloud : `0`.
+Valeur par défaut dans Cloud : `0`.
 
 <Note>
-  `alter_sync` s’applique uniquement aux tables `Replicated` et `SharedMergeTree` ; il n’a aucun effet sur les tables non `Replicated` ou `Shared`.
+  `alter_sync` s’applique uniquement aux tables `Replicated` et `SharedMergeTree` ; il n’a aucun effet sur les tables non `Replicated` ou `Shared`.
 </Note>
 
 ## alter_update_mode {#alter_update_mode}

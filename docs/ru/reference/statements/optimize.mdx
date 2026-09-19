@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 Запрос `OPTIMIZE` поддерживается для семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [materialized views](/ru/reference/statements/create/view#materialized-view)) и движка [Buffer](/ru/reference/engines/table-engines/special/buffer). Другие движки таблиц не поддерживаются.
 
-При использовании `OPTIMIZE` с семейством Движков таблиц [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication) ClickHouse создаёт задачу на слияние и ждёт её выполнения на всех репликах (если настройка [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync) установлена в `2` или в `3` для `ReplicatedMergeTree`) или на текущей реплике (если настройка [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync) установлена в `1`).
+При использовании `OPTIMIZE` с семейством Движков таблиц [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication) ClickHouse создаёт задачу на слияние и ждёт её выполнения на всех репликах (если настройка [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync) установлена в `2`), на активных репликах (если она установлена в `3`) или на текущей реплике (если она установлена в `1`).
 
 * Если `OPTIMIZE` по какой-либо причине не выполняет слияние, клиент не получает уведомление. Чтобы включить уведомления, используйте настройку [optimize&#95;throw&#95;if&#95;noop](/ru/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * Если указать `PARTITION`, будет оптимизирована только указанная партиция. [Как задать выражение партиционирования](/ru/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,7 +36,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать выполнения запросов `OPTIMIZE` на неактивных репликах.
 
 <Note>
-  Если `alter_sync` установлена в `2` или в `3` для `ReplicatedMergeTree` и некоторые реплики остаются неактивными дольше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, будет сгенерировано исключение `UNFINISHED`.
+  Если `alter_sync` установлена в `2` и некоторые реплики остаются неактивными дольше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, будет сгенерировано исключение `UNFINISHED`. При `alter_sync = 3` ожидание неактивных реплик не выполняется, поэтому исключение не генерируется.
 </Note>
 
 ## DRY RUN {#dry-run}
