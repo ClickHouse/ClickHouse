@@ -678,6 +678,44 @@ def test_macros_support(started_cluster):
         f"SHOW CREATE TABLE r.{table_name}"
     )
 
+    # ATTACH skips the CREATE-time macro unfolding, so {uuid} reaches metadata verbatim;
+    # an Atomic database additionally requires the UUID to be spelled out in the query.
+    uuid_table_name = f"{table_name}_uuid"
+    static_uuid = "aaaaaaaa-0000-0000-0000-0000000000f1"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/"
+    node.query(
+        f"""
+        ATTACH TABLE a.{uuid_table_name} UUID '{static_uuid}' (column1 UInt32, column2 UInt32, column3 UInt32)
+        ENGINE = S3Queue('{url}', 'minio', '{minio_secret_key}', 'CSV')
+        SETTINGS mode = 'unordered', keeper_path = '{uuid_table_name}/{{uuid}}'
+        """
+    )
+    assert f"keeper_path = \\'{uuid_table_name}/{{uuid}}\\'" in node.query(
+        f"SHOW CREATE TABLE a.{uuid_table_name}"
+    )
+    assert static_uuid in node.query(
+        f"SELECT value FROM system.s3_queue_settings WHERE database = 'a' AND table = '{uuid_table_name}' AND name = 'keeper_path'"
+    )
+
+    node.query("DROP DATABASE IF EXISTS o")
+    node.query(
+        "CREATE DATABASE o ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    assert "expands the {uuid} macro" in node.query_and_get_error(
+        f"RENAME TABLE a.{uuid_table_name} TO o.{uuid_table_name}"
+    )
+    # A rename into an Ordinary database runs with the table detached and re-attaches it
+    # only on error, so a refusal thrown too late would leave the table gone.
+    assert (
+        node.query(
+            f"SELECT count() FROM system.tables WHERE database = 'a' AND name = '{uuid_table_name}'"
+        )
+        == "1\n"
+    )
+    node.query(f"DROP TABLE a.{uuid_table_name} SYNC")
+    node.query("DROP DATABASE o")
+
 
 def test_disable_streaming(started_cluster):
     node = started_cluster.instances["instance"]
