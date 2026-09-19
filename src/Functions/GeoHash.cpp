@@ -319,13 +319,16 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
     };
 }
 
-UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
+UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out, CancellationBudget & budget)
 {
     if (args.precision == 0
         || args.precision > MAX_PRECISION
         || args.longitude_step <= 0
         || args.latitude_step <= 0)
     {
+        /// An unusable box costs one unit, the same as a box that emits a single geohash: a caller
+        /// filtering a column of them must still be able to observe a cancellation.
+        budget.charge();
         return 0;
     }
 
@@ -338,6 +341,8 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
         {
             for (size_t j = 0; j < args.latitude_items; ++j)
             {
+                budget.charge();
+
                 size_t length = geohashEncodeImpl(
                     args.longitude_min + args.longitude_step * static_cast<Float64>(i),
                     args.latitude_min + args.latitude_step * static_cast<Float64>(j),
@@ -352,6 +357,7 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 
     if (items == 0)
     {
+        budget.charge();
         geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
         ++items;
     }

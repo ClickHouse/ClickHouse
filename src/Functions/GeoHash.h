@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Functions/CancellationBudget.h>
 
 
 namespace DB
@@ -33,6 +34,9 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
     Float64 latitude_max,
     uint8_t precision);
 
-UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out);
+/// Writes the geohashes covering the prepared box to `out`, charging `budget` for every one of them so that
+/// the expansion of a single box can observe a timeout or `KILL QUERY` while it runs. A box holding no
+/// geohashes is charged once, so the cost of a row is counted whether or not it produces anything.
+UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out, CancellationBudget & budget);
 
 }
