@@ -18,6 +18,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# ast_fuzzer_runs = 0 for every query below: the stress profile runs a mutated copy of each statement,
+# and a fuzzed CREATE or DROP here can leave a table referencing a collection this test then drops,
+# which strands metadata that no later run can load. The sibling 03822 pins it for the same reason.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --ast_fuzzer_runs=0"
+
 U="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # ---------------------------------------------------------------------------------------------
