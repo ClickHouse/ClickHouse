@@ -287,7 +287,8 @@ SELECT 'string with \'quotes\' and \t with some special \n characters' AS test F
 ```response
 Row 1:
 ──────
-test: string with 'quotes' and ␉ with some special ␊ characters
+test: string with 'quotes' and ␉ with some special 
+ characters
 ```
 
 `ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines.
@@ -303,7 +304,7 @@ SETTINGS output_format_pretty_display_control_characters = 0
 ```response
 Row 1:
 ──────
-test: string with 'quotes' and      with some special
+test: string with 'quotes' and 	 with some special 
  characters
 ```
 

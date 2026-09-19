@@ -1,6 +1,3 @@
--- The multi-line CREATE statement below is shown in Vertical format; keep raw line breaks for a stable reference.
-SET output_format_pretty_display_control_characters = 0;
-
 SELECT formatQuerySingleLine('set additional_table_filters = {\'kjsnckjn\': \'ksanmn\', \'dkm\': \'dd\'}');
 SELECT formatQuerySingleLine('SELECT v FROM t1 SETTINGS additional_table_filters = {\'default.t1\': \'s\'}');
 

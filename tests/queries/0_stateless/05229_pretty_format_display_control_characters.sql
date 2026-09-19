@@ -22,12 +22,12 @@ SELECT 'tab\there' AS value FORMAT PrettySpace;
 SELECT 1 AS `tab\there` FORMAT PrettyCompact;
 SELECT 1 AS `nul\0name`, 2 AS ok FORMAT PrettyCompact;
 
--- A line feed is never replaced here: it becomes a new line of the table cell...
+-- A line feed is never replaced: it becomes a new line of the table cell...
 SELECT 'line\nbreak' AS value FORMAT PrettyCompact;
 -- ...or, with multi-line fields off, is emitted as is so that the value stays easy to copy-paste.
 SELECT 'line\nbreak' AS value FORMAT PrettyCompact SETTINGS output_format_pretty_multiline_fields = 0;
 
--- `ESC` is never replaced, so that the ANSI escape sequences carried by the data keep being
+-- `ESC` is never replaced either, so that the ANSI escape sequences carried by the data keep being
 -- interpreted by the terminal. They take no visible position, so the table outline is preserved.
 SELECT '\x1b[31mred\x1b[0m' AS value FORMAT PrettyCompact;
 

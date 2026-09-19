@@ -865,11 +865,9 @@ Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' -
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the `Vertical` and `Pretty*` output formats."}]}]}/>
 
-If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
+If enabled, non-printable control characters (NUL, SOH, tab, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␉, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
 
-`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
-
-A line feed is an exception in the `Pretty*` formats: it is never replaced there, because it either becomes a new line of the table cell (see [`output_format_pretty_multiline_fields`](/reference/settings/formats/output-format#output_format_pretty_multiline_fields)), or is deliberately emitted as is so that multi-line values stay easy to copy-paste. The `Vertical` format prints one field per line, so there a line feed is replaced with ␊ like any other control character.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines, which is how it is meant to be read and copy-pasted.
 
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 

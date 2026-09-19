@@ -52,9 +52,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test FORMAT PrettyC
 └──────────────────────────────────────┘
 ```
 
-`ESC` is an exception: it is always printed as is, so that ANSI escape sequences contained in the data keep being interpreted by the terminal, which is needed for visualizations.
-
-A line feed is another exception: it is never replaced, because it either becomes a new line of the table cell (see [`output_format_pretty_multiline_fields`](/reference/settings/formats#output_format_pretty_multiline_fields)), or is deliberately emitted as is so that multi-line values stay easy to copy-paste.
+`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a line feed keeps breaking the line - inside a table cell when [`output_format_pretty_multiline_fields`](/reference/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise.
 
 To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/reference/settings/formats#output_format_pretty_display_control_characters):
 
