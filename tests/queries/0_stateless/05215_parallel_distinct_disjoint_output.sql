@@ -8,6 +8,8 @@ SET allow_limit_by_partitions_independently = 1;
 SET allow_window_partitions_independently = 1;
 SET query_plan_enable_multithreading_after_window_functions = 0;
 SET max_rows_to_group_by = 0;
+SET max_rows_to_sort = 0;
+SET max_bytes_to_sort = 0;
 SET max_rows_in_distinct = 0;
 SET max_bytes_in_distinct = 0;
 
