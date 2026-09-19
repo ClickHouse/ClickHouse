@@ -56,6 +56,9 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -150,6 +153,24 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         /// In fact, there can be other similar situations.
         /// But it is OK, because there is a safety guard against deleting too many parts.
+        return false;
+    }
+}
+
+bool isQueryCancellation(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const Exception & e)
+    {
+        return e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
+    }
+    catch (...) /// Ok: only DB::Exception carries an error code, so nothing else can be a cancellation.
+    {
         return false;
     }
 }
