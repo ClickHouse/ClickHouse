@@ -1,6 +1,12 @@
 timeSeriesTagsToGroup:
 [('__name__','http_requests_count'),('env','dev'),('region','eu')]	[('__name__','http_failures')]	1	[]	0
 
+timeSeriesTagsToGroup FixedString:
+[('__name__','fixed_metric')]	[('region','eu')]	[]
+
+timeSeriesTagsToGroup FixedString tags_array:
+[('__name__','fixed_metric')]	[('__name__','fixed_metric')]	[('__name__','fixed_metric')]	1	1
+
 timeSeriesStoreTags:
 1	1	1	1	1	1	1	1	1	1	[('__name__','http_requests'),('env','dev'),('region','eu')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[]	1	1	1	1	1	1	1	1	1	1
 
