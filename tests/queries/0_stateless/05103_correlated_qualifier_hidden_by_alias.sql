@@ -87,5 +87,56 @@ SELECT x.c FROM t_qualifier_alias, (
         SELECT 1 FROM t_qualifier_alias AS c1 WHERE t_qualifier_alias.grp = c1.grp)) AS x
 SETTINGS analyzer_alias_hides_table_name = 1;
 
+SELECT 'the qualifier of a matcher follows the same rule';
+-- `t.*` and `t.COLUMNS(...)` resolve their qualifier as a table expression after the expression lookup
+-- misses, so they have to see the hidden name as well: otherwise the setting would change `t.col` and
+-- keep the old meaning of `t.*` in the very same query. Once the name is hidden there is nothing left to
+-- expand - a parent scope is not searched for the table expressions of an ordinary subquery - so the
+-- matcher is an unknown identifier, which is what a hidden name means.
+SELECT count() FROM t_qualifier_alias WHERE EXISTS (
+    SELECT t_qualifier_alias.* FROM t_qualifier_alias AS c WHERE c.id = t_qualifier_alias.id)
+SETTINGS analyzer_alias_hides_table_name = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count() FROM t_qualifier_alias WHERE EXISTS (
+    SELECT t_qualifier_alias.COLUMNS('val') FROM t_qualifier_alias AS c WHERE c.id = t_qualifier_alias.id)
+SETTINGS analyzer_alias_hides_table_name = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.t_qualifier_alias WHERE EXISTS (
+    SELECT {CLICKHOUSE_DATABASE:Identifier}.t_qualifier_alias.* FROM t_qualifier_alias AS c
+    WHERE c.id = {CLICKHOUSE_DATABASE:Identifier}.t_qualifier_alias.id)
+SETTINGS analyzer_alias_hides_table_name = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.t_qualifier_alias WHERE EXISTS (
+    SELECT {CLICKHOUSE_DATABASE:Identifier}.t_qualifier_alias.COLUMNS('val') FROM t_qualifier_alias AS c
+    WHERE c.id = {CLICKHOUSE_DATABASE:Identifier}.t_qualifier_alias.id)
+SETTINGS analyzer_alias_hides_table_name = 1; -- { serverError UNKNOWN_IDENTIFIER }
+-- The alias itself still qualifies the matcher, and so does the name where no enclosing scope carries it.
+SELECT c.* FROM t_qualifier_alias AS c ORDER BY id
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT t_qualifier_alias.* FROM t_qualifier_alias AS c ORDER BY id
+SETTINGS analyzer_alias_hides_table_name = 1;
+-- And the default reading is unchanged.
+SELECT count() FROM t_qualifier_alias WHERE EXISTS (
+    SELECT t_qualifier_alias.* FROM t_qualifier_alias AS c WHERE c.id = t_qualifier_alias.id);
+
+SELECT 'a hidden name does not prune a JOIN side that carries a real column';
+-- `analyzer_compatibility_prefer_alias_over_subcolumn` restricts resolution to the JOIN side the
+-- qualifier binds to. A name hidden by an alias binds to nothing, so it must not prune the other side:
+-- that would leave the identifier unresolved in this scope and hand it to the enclosing one, letting a
+-- correlated reference beat a valid same-scope column. Here the left side has a `Tuple` column named
+-- like the table on the right, and `t_qualifier_alias.id` is its subcolumn.
+CREATE TABLE t_qualifier_tuple (id UInt64, t_qualifier_alias Tuple(id UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_qualifier_tuple VALUES (1, (100)), (2, (200));
+
+SELECT count() FROM t_qualifier_alias WHERE EXISTS (
+    SELECT 1 FROM t_qualifier_tuple AS l JOIN t_qualifier_alias AS c ON l.id = c.id
+    WHERE t_qualifier_alias.id = 100)
+SETTINGS analyzer_alias_hides_table_name = 1, analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+-- Without the new setting the name is not hidden, so the qualifier addresses the aliased table on the
+-- right and the subquery compares its `id` with 100, which no row has.
+SELECT count() FROM t_qualifier_alias WHERE EXISTS (
+    SELECT 1 FROM t_qualifier_tuple AS l JOIN t_qualifier_alias AS c ON l.id = c.id
+    WHERE t_qualifier_alias.id = 100)
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+
+DROP TABLE t_qualifier_tuple;
+
 DROP TABLE t_qualifier_alias;
 DROP TABLE t_qualifier_other;
