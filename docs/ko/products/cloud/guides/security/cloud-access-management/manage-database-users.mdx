@@ -23,11 +23,9 @@ SQL 콘솔 사용자는 각 세션마다 생성되며, 자동으로 교체되는
 
 기본 SQL 콘솔 역할은 Service Read Only 및 Service Admin 권한이 있는 사용자에게 할당할 수 있습니다. 자세한 내용은 [SQL 콘솔 역할 할당 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)를 참조하십시오. 이 가이드에서는 SQL 콘솔 사용자를 위한 사용자 지정 역할을 만드는 방법을 설명합니다.
 
-<Note>
-  **콘솔에서 데이터베이스 역할 관리(베타)**
-
-  사용자 지정 역할에 데이터 권한을 추가하여 ClickHouse Cloud 콘솔에서 직접 데이터베이스 역할을 관리할 수도 있습니다. 이 기능은 베타이며 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 사용할 수 있습니다. `sql-console-role:<email>` 명명 규칙을 사용하여 수동으로 할당한 역할은 콘솔을 통해 할당한 역할보다 우선합니다. 자세한 내용은 [데이터베이스 역할 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)를 참조하십시오.
-</Note>
+<Tip>
+  콘솔에서 데이터베이스 액세스를 관리하려면 [Cloud 관리형 데이터베이스 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)(베타)을 사용하는 것이 좋습니다. `sql-console-role:<email>` 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않습니다.
+</Tip>
 
 SQL 콘솔 사용자를 위한 사용자 지정 역할을 만들고 일반 역할을 부여하려면 다음 명령을 실행하십시오. 이메일 주소는 콘솔에 등록된 사용자의 이메일 주소와 일치해야 합니다.
 

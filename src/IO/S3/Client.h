@@ -85,12 +85,12 @@ public:
 private:
     ClientCacheRegistry() = default;
 
-    void pruneExpiredCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
+    void pruneUnusedCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
 
     std::mutex clients_mutex;
     UnorderedMapWithMemoryTracking<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
     std::mutex cache_by_key_mutex;
-    UnorderedMapWithMemoryTracking<UInt128, std::weak_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
+    UnorderedMapWithMemoryTracking<UInt128, std::shared_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -98,8 +98,6 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
-    /// Disable checksum to avoid extra read of the input stream
-    bool disable_checksum = false;
     /// Should client send ComposeObject request after upload to GCS.
     ///
     /// Previously ComposeObject request was required to make Copy possible,
@@ -240,6 +238,8 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
+
+    bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
     std::string getGCSOAuthToken() const;
 

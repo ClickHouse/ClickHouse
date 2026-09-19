@@ -9,7 +9,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
@@ -104,6 +103,10 @@ public:
 
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
+
+    /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
+    /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
+    virtual std::optional<String> getRefreshCursor(ContextPtr) const { return std::nullopt; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 

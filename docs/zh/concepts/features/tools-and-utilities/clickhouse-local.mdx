@@ -248,7 +248,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--echo-query-id [ <bool> ]` — 在执行前打印 `query_id`。接受可选的布尔值。在交互模式中默认启用，在批次模式中默认禁用。
 * `--echo-query-separator <string>` — 在格式化回显的查询前打印此分隔符 (需要 `--echo-formatted`) ，这样更容易区分输入的查询与其重新格式化后的回显。默认为空 (禁用) 。
 * `--highlight`, `--hilite` `<bool>` — 切换命令提示符和回显查询的语法高亮。默认启用。仅在输出到终端时应用高亮。
-* `--hints <bool>` — 当光标位于输入末尾时，显示输入时自动补全提示 (内联 &quot;ghost&quot; 文本) ，给出最佳匹配建议。可使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选中某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开经典补全列表。需要启用 `--highlight` (提示需要颜色) 以及建议机制 (因此 `--disable_suggestion` 也会将其关闭) 。默认启用。
+* `--hints <bool>` — 当光标位于输入末尾时，显示输入时自动补全提示 (内联 &quot;ghost&quot; 文本) ，给出最佳匹配建议。可使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选中某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开经典补全列表。需要启用 `--highlight` (提示需要颜色) 。建议提示还需要建议机制，因此 `--disable_suggestion` 会将其关闭；客户端的 [`/`-commands](/zh/interfaces/client#slash-commands) 是静态列表，只要启用 `--hints` 和 `--highlight` 就会持续显示提示。即使关闭提示，`Tab` 也可补全 `/`-commands。默认启用。
 * `--verbose` — 输出更多查询执行细节。
 * `--logger.console` — 输出到控制台。
 * `--logger.log` — 日志文件名。

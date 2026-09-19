@@ -69,7 +69,7 @@ También nos limitamos a considerar la desnormalización de otras tablas en `Pos
 *Para cada uno de los siguientes ejemplos, suponga que existe una consulta que requiere usar ambas tablas en un join.*
 
 <div id="posts-and-votes">
-  ### Publicaciones and Votes
+  ### Posts and Votes
 </div>
 
 Los votos de las publicaciones se representan en tablas separadas. A continuación se muestra el esquema optimizado para ello, así como el comando `insert` para cargar los datos:
@@ -87,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -188,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,14 +196,14 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
 ```
 
-Aunque los usuarios pueden obtener insignias con frecuencia, es poco probable que este sea un conjunto de datos que necesitemos actualizar con una frecuencia superior a la diaria. La relación entre las insignias y los usuarios es de uno a muchos. Quizá podamos simplemente desnormalizar las insignias en los usuarios como una lista de tuplas. Aunque es posible, una comprobación rápida para confirmar el número máximo de insignias por usuario sugiere que esta no es la mejor opción:
+Mientras que los usuarios pueden obtener insignias con frecuencia, es poco probable que este sea un conjunto de datos que necesitemos actualizar con una frecuencia superior a la diaria. La relación entre las insignias y los usuarios es de uno a muchos. Quizá podamos simplemente desnormalizar las insignias en los usuarios como una lista de tuplas. Aunque es posible, una comprobación rápida para confirmar el número máximo de insignias por usuario sugiere que esta no es la mejor opción:
 
 ```sql
 SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
@@ -241,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response

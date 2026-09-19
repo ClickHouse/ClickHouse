@@ -138,7 +138,7 @@
       + '@media (min-width: 1024px) { #' + FOOTER_ID + ' { padding-left: calc(19rem + 32px) !important; padding-right: 32px !important; } }'
       + '#' + FOOTER_ID + ' [data-inner] { max-width: 1280px; margin: 0 auto; }'
       + '#' + FOOTER_ID + ' * { box-sizing: border-box; }'
-      + '#' + FOOTER_ID + ' a { text-decoration: none; transition: color 0.15s, border-color 0.15s; }'
+      + '#' + FOOTER_ID + ' a { text-decoration: none; }'
       // Top section: sitemap + CTA side by side only at wide viewports
       + '#' + FOOTER_ID + ' [data-top] { display: flex; flex-direction: column; gap: 32px; padding-bottom: 48px; }'
       + '@media (min-width: 1400px) { #' + FOOTER_ID + ' [data-top] { flex-direction: row; gap: 40px; } }'

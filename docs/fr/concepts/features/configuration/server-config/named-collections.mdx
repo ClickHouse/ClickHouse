@@ -6,13 +6,13 @@ title: 'Collections nommées'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 Les collections nommées permettent de stocker des ensembles de paires clé-valeur
 utilisés pour configurer des intégrations avec des sources externes. Vous pouvez utiliser des collections nommées avec
 des dictionnaires, des tables, des fonctions de table et le stockage d’objets.
+
+<Note>
+  Les collections nommées créées par DDL peuvent être activées sur certains services ClickHouse Cloud. Contactez le Support pour confirmer leur disponibilité. Les collections nommées définies dans des fichiers de configuration ne sont pas disponibles, car les utilisateurs ne peuvent pas modifier les fichiers de configuration du serveur dans ClickHouse Cloud.
+</Note>
 
 Les collections nommées peuvent être configurées via du DDL ou dans des fichiers de configuration, et sont prises en compte
 au démarrage de ClickHouse. Elles simplifient la création d’objets et permettent de masquer les informations d’authentification
