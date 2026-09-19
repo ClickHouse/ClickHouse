@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <functional>
 #include <optional>
 
 namespace DB
@@ -98,6 +99,19 @@ public:
     void rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
+
+    /// Decides whether the leader should be asked to stop sending log entries.
+    void setAppendEntriesPauseCondition(std::function<bool()> condition)
+    {
+        append_entries_pause_condition = std::move(condition);
+    }
+
+    /// -1 makes the leader fall back to heartbeats instead of resending entries.
+    ///  0 means any batch size is welcome.
+    int64_t get_next_batch_size_hint_in_bytes() override
+    {
+        return append_entries_pause_condition && append_entries_pause_condition() ? -1 : 0;
+    }
 
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
 
@@ -257,6 +271,9 @@ private:
     const std::string superdigest;
 
     KeeperContextPtr keeper_context;
+
+    /// Set once, before the Raft server starts, and only read afterwards.
+    std::function<bool()> append_entries_pause_condition;
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 

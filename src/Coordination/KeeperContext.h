@@ -95,7 +95,8 @@ public:
     void setLocalLogsPreprocessed();
     bool localLogsPreprocessed() const;
 
-    void waitLocalLogsPreprocessedOrShutdown();
+    /// returns whether the local logs were preprocessed; false if the wait ended on its deadline or on shutdown
+    bool waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms);
 
     uint64_t lastCommittedIndex() const;
     void setLastCommitIndex(uint64_t commit_index);
