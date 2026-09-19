@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -59,13 +58,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt64>();
-    }
+    String getSignatureString() const override { return "(String) -> UInt64"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

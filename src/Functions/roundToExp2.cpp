@@ -64,6 +64,7 @@ struct RoundToExp2Impl
 {
     using ResultType = T;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(A : NativeNumber) -> A";
 
     static T apply(T x)
     {

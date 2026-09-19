@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_COLUMN;
 }
@@ -41,28 +40,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        DataTypes arguments_types;
-        for (size_t index = 0; index < arguments.size(); ++index)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
-
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be array. Found {} instead.",
-                    toString(index + 1),
-                    getName(),
-                    arguments[index].type->getName());
-
-            auto nested_type = array_type->getNestedType();
-            if (allow_unaligned)
-                nested_type = makeNullable(nested_type);
-            arguments_types.emplace_back(nested_type);
-        }
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
+        /// Same "T was not captured" issue as `array()` — the zero-arg case
+        /// stays a separate alternative.
+        if (allow_unaligned)
+            return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(Nullable(T), ...))";
+        return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(T, ...))";
     }
 
     ColumnPtr

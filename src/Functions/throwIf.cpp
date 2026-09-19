@@ -45,7 +45,28 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
+    {
+        /// The third argument's presence depends on `allow_custom_error_code_in_throwif`;
+        /// when the setting is off, calls with three arguments must be rejected by the
+        /// analyzer (matching the legacy `getNumberOfArguments() == 1`/`2` contract that
+        /// the test exercises).
+        /// The legal prefixes are spelled out explicitly (rather than as two independent optional
+        /// groups `[const String], [const Int8 | …]`) because the latter would also match
+        /// `throwIf(cond, toInt8(1))` — the matcher could skip the message and bind the second
+        /// argument as the error code — while the real validator below rejects that call.
+        if (allow_custom_error_code_argument)
+            return "(NativeNumber) -> UInt8"
+                   " OR (NativeNumber, const String) -> UInt8"
+                   " OR (NativeNumber, const String, const Int8 | Int16 | Int32) -> UInt8";
+        return "(NativeNumber) -> UInt8 OR (NativeNumber, const String) -> UInt8";
+    }
+
+    /// The signature above documents the arity and types, but the legacy diagnostics that this
+    /// function's tests assert (the exact "should be 1 or 2" arity wording and the
+    /// "Third argument ... must be Int8, Int16 or Int32" message) cannot be produced by the
+    /// generic matcher. Keep the authoritative validation here and let the signature serve as documentation.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -54,22 +75,21 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, should be {}",
                 getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
 
-        if (!isNativeNumber(arguments[0]))
+        if (!isNativeNumber(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument of function {} must be a number (passed: {})", getName(), arguments[0]->getName());
+                "First argument of function {} must be a number (passed: {})", getName(), arguments[0].type->getName());
 
-        if (number_of_arguments > 1 && !isString(arguments[1]))
+        if (number_of_arguments > 1 && !isString(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument of function {} must be a string (passed: {})", getName(), arguments[1]->getName());
+                "Second argument of function {} must be a string (passed: {})", getName(), arguments[1].type->getName());
 
         if (allow_custom_error_code_argument && number_of_arguments > 2)
         {
-            WhichDataType which(arguments[2]);
+            WhichDataType which(arguments[2].type);
             if (!(which.isInt8() || which.isInt16() || which.isInt32()))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {} must be Int8, Int16 or Int32 (passed: {})", getName(), arguments[2]->getName());
+                    "Third argument of function {} must be Int8, Int16 or Int32 (passed: {})", getName(), arguments[2].type->getName());
         }
-
 
         return std::make_shared<DataTypeUInt8>();
     }

@@ -28,8 +28,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -57,34 +55,30 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Authoritative: accepts 1..3 integer (or `IPv4`, in the first two positions) arguments and
+    /// returns an array whose element type is their least common supertype. The result-type
+    /// computation lives in the `rangeResult` type function, which mirrors the historical
+    /// `getReturnTypeImpl`: a `Nullable` argument is stripped (not propagated) around the array,
+    /// an `onlyNull` argument collapses the whole result to a scalar `Nullable(Nothing)`, and an
+    /// `IPv4` counts as `UInt32`. The `Nothing` alternative accepts a bare `NULL` literal in any
+    /// position so `range(NULL)` keeps reaching `rangeResult`.
+    String getSignatureString() const override
     {
-        if (arguments.size() > 3 || arguments.empty())
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs 1..3 arguments; passed {}.",
-                getName(), arguments.size());
-        }
-
-        if (std::find_if (arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg->onlyNull(); }) != arguments.cend())
-            return makeNullable(std::make_shared<DataTypeNothing>());
-
-        DataTypes arg_types;
-        for (size_t i = 0, size = arguments.size(); i < size; ++i)
-        {
-            DataTypePtr type_no_nullable = removeNullable(arguments[i]);
-
-            if (i < 2 && WhichDataType(type_no_nullable).isIPv4())
-                arg_types.emplace_back(std::make_shared<DataTypeUInt32>());
-            else if (isInteger(type_no_nullable))
-                arg_types.push_back(type_no_nullable);
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arguments[i]->getName(), getName());
-        }
-
-        DataTypePtr common_type = getLeastSupertype(arg_types);
-        return std::make_shared<DataTypeArray>(common_type);
+        /// One arm per arity: the `rangeResult` type function cannot reference an absent optional
+        /// capture, so the three lengths are spelled out explicitly instead of using `[optional]`.
+        return "(A1 : MaybeNullable(Integer | IPv4) | Nothing) -> rangeResult(A1) "
+               "OR (A1 : MaybeNullable(Integer | IPv4) | Nothing, A2 : MaybeNullable(Integer | IPv4) | Nothing) -> rangeResult(A1, A2) "
+               "OR (A1 : MaybeNullable(Integer | IPv4) | Nothing, A2 : MaybeNullable(Integer | IPv4) | Nothing, A3 : MaybeNullable(Integer) | Nothing) -> rangeResult(A1, A2, A3) "
+               /// A single `NULL` argument makes the result `NULL` whatever the other arguments
+               /// are — the historical `getReturnTypeImpl` returns `Nullable(Nothing)` before it
+               /// looks at any type at all. These trailing arms reproduce that short circuit;
+               /// they are last so that a well-typed call still reports a type mismatch against
+               /// the arms above.
+               "OR (Nothing, Any) -> NULL "
+               "OR (Any, Nothing) -> NULL "
+               "OR (Nothing, Any, Any) -> NULL "
+               "OR (Any, Nothing, Any) -> NULL "
+               "OR (Any, Any, Nothing) -> NULL";
     }
 
     template <typename T>

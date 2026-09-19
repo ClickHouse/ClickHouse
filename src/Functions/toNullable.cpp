@@ -43,9 +43,9 @@ public:
     /// the type in Nullable without modifying inner types.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        return makeNullableOrLowCardinalityNullable(arguments[0]);
+        return "(T) -> Nullable(T)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override

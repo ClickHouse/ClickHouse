@@ -75,16 +75,12 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
-            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        /// Two-dimensional array of strings, each `row` of top array represents matching groups.
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
+        /// The regexp must be a constant: `executeImpl` reads it via
+        /// `typeid_cast<const ColumnConst &>(*column_needle).getValue<String>()`,
+        /// so a non-const second argument would only fail at execution.
+        return "(StringOrFixedString, const StringOrFixedString) -> Array(Array(String))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

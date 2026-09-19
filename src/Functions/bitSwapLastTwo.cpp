@@ -21,6 +21,7 @@ struct BitSwapLastTwoImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(UInt8) -> UInt8";
 
     static ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
     {

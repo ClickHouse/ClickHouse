@@ -80,6 +80,14 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isServerConstant() const override { return true; }
 
+    /// Documentation-only — internal helper; the result type comes from the
+    /// scalar subquery cached under the const-string name in the query
+    /// context, so the DSL can't resolve it.
+    String getSignatureString() const override
+    {
+        return "(const String) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
@@ -159,6 +167,13 @@ public:
     {
         return scalar.type;
     }
+
+    /// Both `shardNum` and `shardCount` are always populated with a `UInt32` scalar
+    /// (either supplied by the distributed-query coordinator or defaulted to `(0, UInt32)`
+    /// in `createScalar`). The declarative signature reflects that — even though the
+    /// `scalar.type` getter is still consulted by the dispatcher, having a signature
+    /// here lets `system.functions` advertise it to users and tooling.
+    String getSignatureString() const override { return "() -> UInt32"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {

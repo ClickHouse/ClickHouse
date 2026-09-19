@@ -66,6 +66,15 @@ public:
         return 0;
     }
 
+    /// Documentation-only — the result type is the aggregate function's
+    /// "return type to predict", which depends on the specific machine-learning
+    /// aggregate stored in the first argument and is not derivable from the
+    /// argument types alone.
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction, Number, ...) -> Number";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{

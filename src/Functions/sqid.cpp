@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// sqidEncode(number1, ...)
@@ -37,25 +36,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidEncode>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!checkDataTypes<
-                    DataTypeUInt8,
-                    DataTypeUInt16,
-                    DataTypeUInt32,
-                    DataTypeUInt64>(arguments[i].get()))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must have datatype UInt*, given type: {}.",
-                    i, getName(), arguments[i]->getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(NativeUInt, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -100,14 +83,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"sqid", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(String) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
