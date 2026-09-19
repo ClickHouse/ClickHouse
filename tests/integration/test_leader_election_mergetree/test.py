@@ -13,6 +13,18 @@ logging.basicConfig(level=logging.INFO)
 
 cluster = ClickHouseCluster(__file__)
 
+# Explicit transactions (`test_transactional_partition_ddl_rejected_under_leader_election`) need a
+# Keeper that advertises these feature flags: `TransactionManager` fails closed with
+# `SUPPORT_IS_DISABLED` without them, and the harness randomizes every flag off by default. The
+# list has to be repeated on every `add_instance` call because the parameter is stored on the
+# cluster, so the last call would otherwise reset it.
+KEEPER_FEATURE_FLAGS = [
+    "filtered_list",
+    "multi_read",
+    "check_stat",
+    "list_with_stat_and_data",
+]
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
@@ -22,6 +34,7 @@ node1 = cluster.add_instance(
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -32,6 +45,7 @@ node2 = cluster.add_instance(
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 node3 = cluster.add_instance(
     "node3",
@@ -42,6 +56,7 @@ node3 = cluster.add_instance(
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 # The feature contract is active/standby failover WITHOUT ClickHouse Keeper, so at
 # least one multi-node scenario must run on nodes that have no Keeper configured at
@@ -54,6 +69,7 @@ node4_no_keeper = cluster.add_instance(
     with_minio=True,
     with_zookeeper=False,
     stay_alive=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 node5_no_keeper = cluster.add_instance(
     "node5_no_keeper",
@@ -61,6 +77,7 @@ node5_no_keeper = cluster.add_instance(
     with_minio=True,
     with_zookeeper=False,
     stay_alive=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 # `test_global_leader_election_default_does_not_load_lazy_replicated` needs a node whose
@@ -75,6 +92,7 @@ node6_global_leader_election_default = cluster.add_instance(
     with_minio=False,
     with_zookeeper=True,
     stay_alive=True,
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 
@@ -4431,7 +4449,13 @@ VANISHED_PATCH_SETTINGS = (
     " enable_block_offset_column = 1,"
     " old_parts_lifetime = 0,"
     " merge_tree_clear_old_parts_interval_seconds = 1,"
-    " cleanup_delay_period = 1, cleanup_delay_period_random_add = 0"
+    # `max_cleanup_delay_period` is load-bearing, not a duplicate of `cleanup_delay_period`: the
+    # cleanup thread is adaptive, and an iteration that cleans nothing sleeps for the *maximum*
+    # delay (300s by default) whatever `cleanup_delay_period` says. The first iteration here runs
+    # before the table has any data, so with the default the next one - the one that would drop
+    # the unused patch part - lands long after the test has given up waiting.
+    " cleanup_delay_period = 1, max_cleanup_delay_period = 1,"
+    " cleanup_delay_period_random_add = 0"
 )
 
 
