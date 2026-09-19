@@ -19,7 +19,9 @@ struct StorageInMemoryMetadata;
 /// real column requires `SELECT` on it (qualification is stripped only when the result is not
 /// itself a real column, so a real dotted name like `` `t.id` `` is preserved); a name that is a
 /// virtual column not shadowed by a real one (e.g. `_part`, `_row_exists`) is skipped, since it is
-/// not real data and needs no grant. Does nothing when `expression` is null.
+/// not real data and needs no grant. A name on the right of `IN` that is not a column of this
+/// table is a table or a set rather than a column, and is left to
+/// `addExpressionIndirectReadsAccess`. Does nothing when `expression` is null.
 void addExpressionColumnsSelectAccess(
     AccessRightsElements & required_access,
     const IAST * expression,

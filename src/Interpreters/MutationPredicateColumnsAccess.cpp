@@ -1,6 +1,7 @@
 #include <Interpreters/MutationPredicateColumnsAccess.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Core/Names.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -28,6 +29,34 @@
 namespace DB
 {
 
+namespace
+{
+
+/// The identifiers on the right of an `IN` in a mutation expression. Such a name is a table or a
+/// set as often as it is an array column, and `RequiredSourceColumnsVisitor` reports it as a
+/// column either way, so the two have to be told apart by the mutated table's columns.
+/// Subqueries are not descended into, matching the visitor, whose required columns are the ones
+/// being resolved here.
+void collectInRightHandSideIdentifiers(const IAST & ast, NameSet & names)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
+        return;
+
+    if (const auto * function = ast.as<ASTFunction>();
+        function && function->arguments && functionIsInOrGlobalInOperator(function->name)
+        && function->arguments->children.size() == 2)
+    {
+        if (const auto * identifier = function->arguments->children[1]->as<ASTIdentifier>())
+            names.insert(identifier->name());
+    }
+
+    for (const auto & child : ast.children)
+        if (child)
+            collectInRightHandSideIdentifiers(*child, names);
+}
+
+}
+
 void addExpressionColumnsSelectAccess(
     AccessRightsElements & required_access,
     const IAST * expression,
@@ -41,6 +70,9 @@ void addExpressionColumnsSelectAccess(
     RequiredSourceColumnsVisitor::Data columns_context;
     auto expression_clone = expression->clone();
     RequiredSourceColumnsVisitor(columns_context).visit(expression_clone);
+
+    NameSet in_right_hand_side_names;
+    collectInRightHandSideIdentifiers(*expression, in_right_hand_side_names);
 
     Strings columns;
     const String db_table_prefix = database.empty() ? String{} : database + "." + table + ".";
@@ -66,6 +98,11 @@ void addExpressionColumnsSelectAccess(
             bare.remove_prefix(table_prefix.size());
 
         if (metadata.isVirtualColumn(String(bare)))
+            continue;
+
+        /// A name on the right of `IN` that is not a column of this table names a table or a set,
+        /// and `addExpressionIndirectReadsAccess` requires `SELECT` on that table instead.
+        if (!metadata.columns.has(String(bare)) && in_right_hand_side_names.contains(name))
             continue;
 
         columns.emplace_back(bare);

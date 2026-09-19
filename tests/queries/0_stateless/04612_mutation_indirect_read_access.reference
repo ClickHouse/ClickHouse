@@ -8,10 +8,10 @@ ACCESS_DENIED
 -- A table on the right of IN, validation off
 ACCESS_DENIED
 -- An array column on the right of IN is a column, not a table
-OK
-OK
+NOT_DENIED
+NOT_DENIED
 -- A WITH name on the right of IN is not a table either
-OK
+NOT_DENIED
 -- dictGet and joinGet name their object instead of reading it as a column
 ACCESS_DENIED
 ACCESS_DENIED

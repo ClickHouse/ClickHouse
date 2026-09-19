@@ -15,14 +15,19 @@ user_name="${CLICKHOUSE_DATABASE}_user_04612"
 udf_name="${CLICKHOUSE_DATABASE}_leak_04612"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab, secret_tab, secret_set, join_tab, dict_src;
+DROP TABLE IF EXISTS tab, arr_tab, secret_tab, secret_set, join_tab, dict_src;
 DROP DICTIONARY IF EXISTS dict;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
 
-CREATE TABLE tab (id UInt32, name String, hidden UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY id
+CREATE TABLE tab (id UInt32, name String, hidden UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO tab VALUES (1, 'a', 7, [1]), (42, 'b', 8, [42]);
+INSERT INTO tab VALUES (1, 'a', 7), (42, 'b', 8);
+
+-- A table of its own for the cases whose mutation cannot execute, so that a mutation left behind
+-- does not merge into the predicates of the other cases.
+CREATE TABLE arr_tab (id UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO arr_tab VALUES (1, [1]), (42, [42]);
 
 -- The tables, set, dictionary and Join table the user has no access to.
 CREATE TABLE secret_tab (secret UInt32, payload String) ENGINE = MergeTree ORDER BY secret;
@@ -45,9 +50,11 @@ CREATE FUNCTION $udf_name AS () -> hidden = 7;
 
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 GRANT ALTER UPDATE, ALTER DELETE, UPDATE, DELETE ON $CLICKHOUSE_DATABASE.tab TO $user_name;
+GRANT ALTER DELETE ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
 -- The user can read and write 'id' and 'name', but not 'hidden', and has no grant at all on the
 -- other objects.
-GRANT SELECT(id, name, arr) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
+GRANT SELECT(id, name) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
+GRANT SELECT(id, arr) ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
 "
 
 function check_access()
@@ -61,6 +68,17 @@ function check_access()
         echo "ACCESS_DENIED"
     else
         echo "$output"
+    fi
+}
+
+# Prints whether access control rejected the query, for the cases whose mutation cannot run to
+# completion for a reason of its own, where only the access decision is the point.
+function check_not_denied()
+{
+    if $CLICKHOUSE_CLIENT --user "$user_name" --password "password" -q "$1" 2>&1 | grep -q "ACCESS_DENIED"; then
+        echo "ACCESS_DENIED"
+    else
+        echo "NOT_DENIED"
     fi
 }
 
@@ -82,11 +100,17 @@ check_access "ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
 
 # The right-hand side of IN is a table name, a set name or an array-valued column, and the three are
 # the same identifier in the AST, so a column of the mutated table must not be mistaken for a table.
+# Neither shape below can execute as a mutation, for a reason of its own that predates this check:
+# the analyzer resolves the right-hand side of `IN` as a table name, and a `WITH` element of a
+# mutation subquery is not in scope when the mutation runs. Both are exactly why the access check
+# must not take such a name for a table, so the mutations are not waited for and only the access
+# decision is asserted, on a table of their own that is dropped right after.
 echo "-- An array column on the right of IN is a column, not a table"
-check_access "ALTER TABLE tab DELETE WHERE 1 IN arr AND 0 SETTINGS $off"
-check_access "ALTER TABLE tab DELETE WHERE 1 IN tab.arr AND 0 SETTINGS $off"
+check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN arr AND 0 SETTINGS validate_mutation_query = 0"
+check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN arr_tab.arr AND 0 SETTINGS validate_mutation_query = 0"
 echo "-- A WITH name on the right of IN is not a table either"
-check_access "ALTER TABLE tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM s) AND 0 SETTINGS $off"
+check_not_denied "ALTER TABLE arr_tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM s) AND 0 SETTINGS validate_mutation_query = 0"
+$CLICKHOUSE_CLIENT -q "DROP TABLE arr_tab SYNC"
 
 echo "-- dictGet and joinGet name their object instead of reading it as a column"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
@@ -126,7 +150,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
 
 $CLICKHOUSE_CLIENT -q "
 DROP DICTIONARY IF EXISTS dict;
-DROP TABLE IF EXISTS tab, secret_tab, secret_set, join_tab, dict_src;
+DROP TABLE IF EXISTS tab, arr_tab, secret_tab, secret_set, join_tab, dict_src;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
 "
