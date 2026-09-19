@@ -6,8 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Searching a constant map materialized one copy of its keys and values per row, and the whole
 # `rows * keys` scan then ran in a single function call with no cancellation checkpoint: the copy alone
-# asked for 65 GiB at 200k values and 50000 keys, and `max_execution_time` was observed only after the
-# call returned.
+# asked for 260 GiB at the 200k values and 200000 keys below, and `max_execution_time` was observed only
+# after the call returned.
 #
 # `has(mapFromArrays(...), uid)` over a `set` skip index is what makes the single call part-sized: the
 # index condition is one ExpressionActions run over every value the index stored for the part.
@@ -18,7 +18,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # function, and its message names the function.
 #
 # `max_memory_usage` is pinned because the unfixed copy is what the deadline query would otherwise try
-# to allocate; the cap turns that into an immediate error instead of 65 GiB of pressure.
+# to allocate; the cap turns that into an immediate error instead of 260 GiB of pressure.
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_map_idx
@@ -53,6 +53,10 @@ if timeout 120 $CLICKHOUSE_CLIENT --query "
         SELECT count() FROM t_map_idx WHERE has(mapFromArrays($KEYS, range(200000)), uid)
         SETTINGS use_skip_indexes = 1,               -- the scan lives in skip index condition evaluation
                  use_skip_indexes_on_data_read = 1,
+                 -- the oracle needs the index to be USED, not merely permitted: in break mode a query that
+                 -- reads the data instead ends with no error text at all and this would go red on a fixed
+                 -- build. Checked against the analysis-time useful_indices, so it holds either way.
+                 force_data_skipping_indices = 'idx_uid',
                  -- bulk filtering evaluates a whole part in one condition call, so this needs the
                  -- periodic checkpoint and cannot be satisfied by the per-granule entry check
                  secondary_indices_enable_bulk_filtering = 1,

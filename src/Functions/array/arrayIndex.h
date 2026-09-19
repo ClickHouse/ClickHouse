@@ -187,39 +187,54 @@ public:
     {
         ResultType current = 0;
         size_t j = 0;
-        for (; j < array_size; ++j)
+        /// A constant haystack is not bounded by the row, so one row can carry the whole key list: flush
+        /// the budget between chunks of the search and not only at its end (CancellationBudget.h:20-21).
+        size_t flushed = 0;
+        while (true)
         {
-            if constexpr (Case == 2) /// Right arg is Nullable
-                if (hasNull(null_map_item, row_index))
-                    continue;
+            const size_t chunk_end
+                = budget ? std::min(j + CancellationBudget::units_per_instruction_charge, array_size) : array_size;
 
-            if constexpr (Case == 3) /// Left arg is an array of Nullables
-                if (hasNull(null_map_data, current_offset + j))
-                    continue;
-
-            if constexpr (Case == 4) /// Both args are nullable
+            for (; j < chunk_end; ++j)
             {
-                const bool right_is_null = hasNull(null_map_data, current_offset + j);
-                const bool left_is_null = hasNull(null_map_item, row_index);
+                if constexpr (Case == 2) /// Right arg is Nullable
+                    if (hasNull(null_map_item, row_index))
+                        continue;
 
-                if (right_is_null != left_is_null)
+                if constexpr (Case == 3) /// Left arg is an array of Nullables
+                    if (hasNull(null_map_data, current_offset + j))
+                        continue;
+
+                if constexpr (Case == 4) /// Both args are nullable
+                {
+                    const bool right_is_null = hasNull(null_map_data, current_offset + j);
+                    const bool left_is_null = hasNull(null_map_item, row_index);
+
+                    if (right_is_null != left_is_null)
+                        continue;
+
+                    if (!right_is_null && !compare(data, target, current_offset + j, row_index))
+                        continue;
+                }
+                else if (!compare(data, target, current_offset + j, row_index))
                     continue;
 
-                if (!right_is_null && !compare(data, target, current_offset + j, row_index))
-                    continue;
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
             }
-            else if (!compare(data, target, current_offset + j, row_index))
-                continue;
 
-            ConcreteAction::apply(current, j);
+            if (j < chunk_end || j == array_size)
+                break; /// Matched and broke out of the search, or the whole array is scanned.
 
-            if constexpr (!ConcreteAction::resume_execution)
-                break;
+            budget->chargeUnits(j - flushed);
+            flushed = j;
         }
         /// `chargeUnits` checks the deadline as soon as one call exceeds its whole budget, so charge the
         /// comparisons performed rather than `array_size`.
         if (budget)
-            budget->chargeUnits(j + 1);
+            budget->chargeUnits(j - flushed + 1);
         return current;
     }
 
@@ -430,45 +445,61 @@ private:
 
             ResultType current = 0;
             size_t j = 0;
+            /// A constant haystack is not bounded by the row, so one row can carry the whole key list: flush
+            /// the budget between chunks of the search and not only at its end (CancellationBudget.h:20-21).
+            size_t flushed = 0;
 
-            for (; j < array_size; ++j)
+            while (true)
             {
-                const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
-                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
+                const ArrayOffset chunk_end = const_haystack
+                    ? std::min<ArrayOffset>(j + CancellationBudget::units_per_instruction_charge, array_size)
+                    : array_size;
 
-                if constexpr (IsConst)
+                for (; j < chunk_end; ++j)
                 {
-                    if constexpr (HasNullMapData)
-                        if ((*data_map)[current_offset + j])
-                            continue;
+                    const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
+                    const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
 
-                    if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
-                        continue;
-                }
-                else if constexpr (HasNullMapData)
-                {
-                    if ((*data_map)[current_offset + j])
+                    if constexpr (IsConst)
                     {
-                        if constexpr (!HasNullMapItem)
-                            continue;
+                        if constexpr (HasNullMapData)
+                            if ((*data_map)[current_offset + j])
+                                continue;
 
-                        if (!(*item_map)[i])
+                        if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
+                            continue;
+                    }
+                    else if constexpr (HasNullMapData)
+                    {
+                        if ((*data_map)[current_offset + j])
+                        {
+                            if constexpr (!HasNullMapItem)
+                                continue;
+
+                            if (!(*item_map)[i])
+                                continue;
+                        }
+                        else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                             continue;
                     }
                     else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
+
+                    ConcreteAction::apply(current, j);
+
+                    if constexpr (!ConcreteAction::resume_execution)
+                        break;
                 }
-                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
-                    continue;
 
-                ConcreteAction::apply(current, j);
+                if (j < chunk_end || j == array_size)
+                    break; /// Matched and broke out of the search, or the whole array is scanned.
 
-                if constexpr (!ConcreteAction::resume_execution)
-                    break;
+                const_haystack->budget.chargeUnits(j - flushed);
+                flushed = j;
             }
 
             if (const_haystack)
-                const_haystack->budget.chargeUnits(j + 1);
+                const_haystack->budget.chargeUnits(j - flushed + 1);
 
             return current;
         };
@@ -617,9 +648,9 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (auto res = executeMap(arguments, result_type))
+        if (auto res = executeMap(arguments, result_type, input_rows_count))
             return res;
 
         if (auto res = executeObject(arguments, result_type))
@@ -1012,7 +1043,7 @@ private:
         return col_result;
     }
 
-    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
             return nullptr;
@@ -1052,7 +1083,7 @@ private:
         /// `CancellationBudget` keeps a pointer to the check, so the functor needs a name of its own.
         const std::function<void()> check_cancellation = makeCancellationCheck(name);
         CancellationBudget budget(check_cancellation);
-        const Impl::ConstHaystack const_haystack{arguments[0].column->size(), budget};
+        const Impl::ConstHaystack const_haystack{input_rows_count, budget};
 
         return executeArrayImpl(arguments_copy, result_type, &const_haystack);
     }
