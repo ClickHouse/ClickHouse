@@ -10,6 +10,9 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
+/// Writes a key, key-value function or layout name: upper-cased when it is a plain word, back-quoted otherwise.
+void writeKeyValueName(WriteBuffer & ostr, const String & name);
+
 /// Pair with name and value in lisp programming langugate style. It contain
 /// string as key, but value either can be literal or list of
 /// pairs.

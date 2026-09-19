@@ -3,6 +3,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
+#include <IO/WriteHelpers.h>
 #include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -68,9 +70,21 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     set(second, child);
 }
 
+/// Keys, key-value function names and layout names are identifiers for the parser, so they may be
+/// back-quoted (`\`my key\` 1`). A plain word is written upper-cased, as always; anything else has to
+/// keep its quotes and its case, otherwise the formatted query does not parse back.
+void writeKeyValueName(WriteBuffer & ostr, const String & name)
+{
+    if (isValidIdentifier(name))
+        ostr << Poco::toUpper(name);
+    else
+        writeBackQuotedString(name, ostr);
+}
+
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << Poco::toUpper(first) << " ";
+    writeKeyValueName(ostr, first);
+    ostr << " ";
 
     if (second_with_brackets)
         ostr << "(";
@@ -172,7 +186,8 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
+    writeKeyValueName(ostr, name);
+    ostr << (has_brackets ? "(" : "");
     elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
 }
