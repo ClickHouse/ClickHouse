@@ -4161,6 +4161,39 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+namespace
+{
+
+/// A real NULL or a NaN. A `Null` field also carries the `-inf`/`+inf` stand-ins of a key range,
+/// which neither a constant nor a key value ever is, so ask for a real NULL.
+bool isRealNullOrNaN(const Field & field)
+{
+    const bool is_real_null = field.isNull() && !field.isPositiveInfinity() && !field.isNegativeInfinity();
+    return is_real_null || field.isNaN();
+}
+
+/// Whether a `NULL` or a `NaN` sits anywhere inside `field`. `Field::isNull` and `Field::isNaN` only
+/// look at the top level, while a whole-tuple comparison carries its `NULL`s and `NaN`s inside a
+/// `Tuple`.
+///
+/// In a constant either makes the comparison against it "not true" for every row - `NULL` for a `NULL`
+/// element and false for a `NaN` one - whatever the key values are. In key order both have a definite
+/// position instead, so the range built from such a constant covers granules whose rows the predicate
+/// rejects.
+///
+/// In a key bound it is the mirror case: a granule whose bound holds one cannot be proven wholly inside
+/// a comparison range, because the row-level comparison of such a value is false (for a `NaN`) or
+/// `NULL` (for a `NULL`), and `WHERE` rejects both, while key order gives the value a definite position.
+///
+/// A bound comes from stored key data, so the walk is `anyFieldSatisfies`, whose explicit worklist keeps
+/// the nesting depth of the value off the native stack.
+bool hasNullOrNaNInside(const Field & field)
+{
+    return anyFieldSatisfies(field, isRealNullOrNaN);
+}
+
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -4473,6 +4506,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// For other comparison operators, skip building the atom
                 return false;
             }
+
+            /// The two checks above only look at the top level of the constant. A `NULL` or a `NaN`
+            /// nested in a `Tuple` - what a whole-tuple comparison carries - slips past them, and it
+            /// makes an atom built from that constant unsound: at row level the comparison is `NULL`
+            /// or false for every row, while in key order the constant has a definite position, so the
+            /// range covers granules whose rows the predicate rejects. Nothing is pruned by such a
+            /// range anyway, and the exact-count optimization would count those rows without ever
+            /// evaluating the filter. The same holds once a key transform maps the constant into key
+            /// space, which is where the nested value stops being visible at all.
+            if (hasNullOrNaNInside(const_value))
+                return false;
 
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
@@ -6348,12 +6392,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
             ///   so no comparison condition can be true.
             /// - If only right bound is NaN: the range extends into NaN territory,
             ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
+            ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
+            ///   row-level comparison for it either, so the containment claim is dropped.
+            ///   `intersects` is left alone: keeping the granule is the safe direction.
             if (unlikely(key_range.left.isNaN()))
             {
                 intersects = false;
                 contains = false;
             }
             else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
+            else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
             {
                 contains = false;
             }
@@ -6786,12 +6838,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     ///   so no comparison condition can be true.
                     /// - If only right bound is NaN: the range extends into NaN territory,
                     ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+                    /// - A NaN or a NULL nested in a Tuple bound is invisible to `Field::isNaN` and
+                    ///   `Field::isNull`, so only the containment claim is dropped.
                     if (unlikely(key_range.left.isNaN()))
                     {
                         intersects = false;
                         contains = false;
                     }
                     else if (unlikely(key_range.right.isNaN()))
+                    {
+                        contains = false;
+                    }
+                    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
                     {
                         contains = false;
                     }
