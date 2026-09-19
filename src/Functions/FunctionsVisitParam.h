@@ -189,6 +189,10 @@ struct ExtractParamToStringImpl
 
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
+        /// Owned here rather than inside `extract`: a buffer local to that per row function would put a
+        /// stack canary on it, and it is cheaper to reuse one buffer across rows anyway.
+        typename ParamExtractor::Scratch scratch;
+
         /// We will search for the next occurrence in all strings at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
@@ -201,7 +205,7 @@ struct ExtractParamToStringImpl
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() <= begin + haystack_offsets[i])
-                ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data);
+                ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data, scratch);
 
             pos = begin + haystack_offsets[i];
 

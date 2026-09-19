@@ -715,12 +715,10 @@ ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
     return writeEighteenFixedDigits(out, low_block);
 }
 
-ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
+/// Only values above the 128-bit range reach here. Kept out of line so that the digit buffer, and the
+/// stack canary that any local array forces, stay off the common path.
+NO_INLINE char * writeUIntTextAbove128(const UInt256 & _x, char * p)
 {
-    /// If possible, treat it as a smaller integer as they are much faster to print
-    if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
-        return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
-
     /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
     /// and switch to that function.
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
@@ -743,14 +741,35 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     return writeDigitPairs(out, two_values, current_pos);
 }
 
+/// Taken by reference: by value a 256-bit integer is a `byval` aggregate holding an array, which alone
+/// puts a stack canary on the function.
+ALWAYS_INLINE inline char * writeUIntText(const UInt256 & _x, char * p)
+{
+    /// If possible, treat it as a smaller integer as they are much faster to print
+    if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
+        return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
+
+    return writeUIntTextAbove128(_x, p);
+}
+
 ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 {
     *pos = '-';
     return pos + 1;
 }
 
+/// Everything outside the fast path below needs a 256-bit local, and a local of that type carries an
+/// array, which forces a stack canary. Keep it out of line so the fast path stays free of one.
+NO_INLINE char * writeSInt256TextSlow(const Int256 & x, char * pos)
+{
+    if (x < 0)
+        return writeUIntText(UInt256(-x), writeLeadingMinus(pos));
+
+    return writeUIntText(UInt256(x), pos);
+}
+
 template <typename T>
-ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
+ALWAYS_INLINE inline char * writeSIntText(const T & x, char * pos)
 {
     static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
 
@@ -773,12 +792,25 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
         }
     }
 
-    if (x < 0)
+    if constexpr (std::is_same_v<T, Int256>)
     {
-        x = -x;
-        pos = writeLeadingMinus(pos);
+        /// A clear top limb means the value is non-negative and fits into 128 bits, which is the common
+        /// case. Reading the limbs through the reference avoids a copy, and a copy would mean a canary.
+        if (likely(x.items[Int256::_impl::little(3)] == 0 && x.items[Int256::_impl::little(2)] == 0))
+            return writeUIntText(UInt128{x.items[Int256::_impl::little(0)], x.items[Int256::_impl::little(1)]}, pos);
+
+        return writeSInt256TextSlow(x, pos);
     }
-    return writeUIntText(UnsignedT(x), pos);
+    else
+    {
+        T value = x;
+        if (value < 0)
+        {
+            value = -value;
+            pos = writeLeadingMinus(pos);
+        }
+        return writeUIntText(UnsignedT(value), pos);
+    }
 }
 }
 
@@ -802,12 +834,12 @@ char * itoa(Int128 i, char * p)
     return writeSIntText(i, p);
 }
 
-char * itoa(UInt256 i, char * p)
+char * itoa(const UInt256 & i, char * p)
 {
     return writeUIntText(i, p);
 }
 
-char * itoa(Int256 i, char * p)
+char * itoa(const Int256 & i, char * p)
 {
     return writeSIntText(i, p);
 }
@@ -894,15 +926,11 @@ char * writeFixedDigits(UInt128 value, UInt32 width, char * p)
     return end;
 }
 
-char * writeFixedDigits(UInt256 value, UInt32 width, char * p)
+/// Only values above the 128-bit range reach here. The running quotient is a local 256-bit value, so it
+/// carries an array and forces a stack canary; keeping it out of line keeps that off the common path.
+static NO_INLINE char * writeFixedDigitsAbove128(UInt256 value, UInt32 width, char * p)
 {
     char * const end = p + width;
-
-    if (likely(value.items[UInt256::_impl::little(3)] == 0 && value.items[UInt256::_impl::little(2)] == 0))
-    {
-        writeFixedDigits(UInt128{value.items[UInt256::_impl::little(0)], value.items[UInt256::_impl::little(1)]}, width, p);
-        return end;
-    }
 
     while (width > 18)
     {
@@ -932,6 +960,17 @@ char * writeFixedDigits(UInt256 value, UInt32 width, char * p)
 
     writeFixedDigits(static_cast<uint64_t>(value), width, p);
     return end;
+}
+
+char * writeFixedDigits(const UInt256 & value, UInt32 width, char * p)
+{
+    if (likely(value.items[UInt256::_impl::little(3)] == 0 && value.items[UInt256::_impl::little(2)] == 0))
+    {
+        writeFixedDigits(UInt128{value.items[UInt256::_impl::little(0)], value.items[UInt256::_impl::little(1)]}, width, p);
+        return p + width;
+    }
+
+    return writeFixedDigitsAbove128(value, width, p);
 }
 
 void setUseAVX512ItoaForTests([[maybe_unused]] bool value)

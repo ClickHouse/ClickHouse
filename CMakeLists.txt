@@ -376,6 +376,18 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+# Stack canary: a guard value is placed between the local variables and the return address and checked
+# before returning, so that an overflow of a local buffer aborts instead of returning to an address the
+# attacker wrote. 'strong' instruments only the functions that can actually be overflowed, those with a
+# local array, an address-taken local or an alloca, which keeps the cost low enough to always enable.
+# It goes into COMPILER_FLAGS rather than straight into CMAKE_C_FLAGS/CMAKE_CXX_FLAGS so that it is in
+# place before cmake/linux/default_libs.cmake adds libc++, libc++abi, libunwind, base/glibc-compatibility
+# and base/harmful: a subdirectory sees the flags as they were when it was added. Two bundled pieces stay
+# out: compiler-rt, because contrib/compiler-rt-cmake resets the inherited flags to an allowlist, and on
+# x86-64 the memcpy/memmove/memset entry points of contrib/libllvmlibc-cmake, which carry an explicit
+# no_stack_protector so that their CPU dispatch stays a plain tail call.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 

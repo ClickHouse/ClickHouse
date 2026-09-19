@@ -7,6 +7,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Transforms/ChunkRowRange.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -75,7 +76,7 @@ private:
     std::vector<UInt64> group_counts;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    PODArray<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };
@@ -139,7 +140,7 @@ private:
     UInt64 current_group_rows_seen = 0;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    PODArray<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };
