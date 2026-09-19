@@ -15,8 +15,10 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -41,6 +43,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
@@ -280,20 +284,24 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionIf>(
-            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        auto const & settings = context->getSettingsRef();
+        auto const use_variant_as_common_type = settings[Setting::use_variant_as_common_type];
+        auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
+        return std::make_shared<FunctionIf>(use_variant_as_common_type, settings[Setting::allow_lossy_numeric_supertype], use_low_cardinality_optimisation);
     }
 
-    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool allow_lossy_numeric_supertype_ = false, bool use_low_cardinality_optimisation_ = false)
         : FunctionIfBase()
         , use_variant_when_no_common_type(use_variant_when_no_common_type_)
         , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
-    {}
+        , use_low_cardinality_optimisation(use_low_cardinality_optimisation_)
+    {
+    }
 
 private:
     bool use_variant_when_no_common_type = false;
     bool allow_lossy_numeric_supertype = false;
+    bool use_low_cardinality_optimisation = false;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
@@ -1361,24 +1369,75 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!arguments[0]->onlyNull())
-        {
-            if (arguments[0]->isNullable())
-                return getReturnTypeImpl({
-                    removeNullable(arguments[0]), arguments[1], arguments[2]});
 
-            if (!WhichDataType(arguments[0]).isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
-                    "Must be UInt8.", arguments[0]->getName());
+    static void checkConditionArgType(const DataTypePtr & type)
+    {
+        if (!type->onlyNull())
+        {
+            if (type->isNullable())
+            {
+                checkConditionArgType(removeNullable(type));
+                return;
+            }
+            if (!WhichDataType(type).isUInt8())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument (condition) of function if. "
+                    "Must be UInt8.",
+                    type->getName());
+        }
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        checkConditionArgType(arguments[0].type);
+
+        // Some processing - for constant strings - for LowCardinality.
+        // If the condition is constant too, the whole expression is constant and gets folded into a single
+        // `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and functions
+        // that opt out of the default LowCardinality implementation (e.g. `arrayReduce`, `joinGet`,
+        // `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain `String` then.
+        /// The condition is not the only way for the result to be constant: when both branches carry the same
+        /// constant value, `executeImpl` returns that column as is (see the `arg_then.column == arg_else.column`
+        /// fast path below), so the result is constant regardless of the condition - e.g. in
+        /// `WITH 'sum' AS f SELECT arrayReduce(if(number % 2, f, f), [1, 2, 3])`.
+        /// A condition of type `Nullable(Nothing)` is always NULL, so `executeForConstAndNullableCondition`
+        /// always returns the (constant) else branch - the result is constant even when the condition column
+        /// is not (e.g. `materialize(NULL)`), so treat it as deciding the result too.
+        auto const is_condition_constant = (arguments[0].column && isColumnConst(*arguments[0].column))
+            || arguments[0].type->onlyNull();
+        auto const are_branches_constant = arguments[1].column && arguments[2].column
+            && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column);
+        auto const are_branches_identical = are_branches_constant && arguments[1].type->equals(*arguments[2].type)
+            && (*arguments[1].column)[0] == (*arguments[2].column)[0];
+        if (use_low_cardinality_optimisation && !is_condition_constant && !are_branches_identical && are_branches_constant)
+        {
+            auto const is_string1 = isString(arguments[1].type);
+            auto const is_string2 = isString(arguments[2].type);
+            if (is_string1 && is_string2)
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            // Still, might be a mix of (possibly nullable) strings and NULLs, e.g. `if(cond, 'a', NULL)`
+            // or `if(cond, CAST('a' AS Nullable(String)), CAST('b' AS Nullable(String)))`.
+            // Require at least one constant branch whose value is a non-NULL string: `if(cond, NULL, NULL)`
+            // must keep `Nullable(Nothing)`, and a typed all-NULL case like
+            // `if(cond, CAST(NULL AS Nullable(String)), NULL)` must keep plain `Nullable(String)` -
+            // there is no dictionary-compression benefit when no actual string value exists.
+            auto const is_nullable_string1 = arguments[1].type->isNullable() && isString(removeNullable(arguments[1].type));
+            auto const is_nullable_string2 = arguments[2].type->isNullable() && isString(removeNullable(arguments[2].type));
+            auto const is_string_like1 = is_string1 || is_nullable_string1;
+            auto const is_string_like2 = is_string2 || is_nullable_string2;
+            auto const is_null1 = arguments[1].type->onlyNull();
+            auto const is_null2 = arguments[2].type->onlyNull();
+            auto const has_string_value1 = is_string1 || (is_nullable_string1 && !arguments[1].column->isNullAt(0));
+            auto const has_string_value2 = is_string2 || (is_nullable_string2 && !arguments[2].column->isNullAt(0));
+            if ((is_string_like1 || is_null1) && (is_string_like2 || is_null2) && (has_string_value1 || has_string_value2))
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 
         if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1].type, arguments[2].type}, allow_lossy_numeric_supertype);
 
-        return getLeastSupertype(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
+        return getLeastSupertype(DataTypes{arguments[1].type, arguments[2].type}, allow_lossy_numeric_supertype);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1563,9 +1622,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype, bool use_low_cardinality_optimisation)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, allow_lossy_numeric_supertype));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, allow_lossy_numeric_supertype, use_low_cardinality_optimisation));
 }
 
 }
