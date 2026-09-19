@@ -32,3 +32,33 @@ SELECT portRFC('http://');
 SELECT firstSignificantSubdomainRFC('http://');
 SELECT cutToFirstSignificantSubdomainRFC('http://');
 SELECT domainRFC(materialize('http://'));
+
+SELECT domainRFC('http://[');
+SELECT domainRFC('http://user@[');
+SELECT domainRFC('http://foo:');
+SELECT domainRFC('http://user@foo:');
+SELECT domainRFC('http://[2001:db8::1');
+SELECT domainRFC('http://[2001:db8::1]');
+SELECT domainRFC('http://[2001:db8::1]:');
+SELECT domainRFC('http://[v');
+SELECT domainRFC('http://[v1');
+SELECT domainRFC('http://[v1.');
+SELECT domainRFC('http://[v1.a');
+SELECT domainRFC('http://[v1.a]');
+SELECT domainRFC('http://user@');
+SELECT domainRFC('http://user@[2001:db8::1]:80@');
+SELECT domainRFC('http://[]');
+SELECT domainRFC('http://user@[]');
+
+SELECT portRFC('http://[');
+SELECT portRFC('http://foo:');
+SELECT portRFC('http://[2001:db8::1]');
+SELECT portRFC('http://[2001:db8::1]:');
+SELECT portRFC('http://[v1.a]');
+
+SELECT firstSignificantSubdomainRFC('http://[v1.a]');
+SELECT cutToFirstSignificantSubdomainRFC('http://[v1.a]');
+SELECT topLevelDomainRFC('http://[v1.a]');
+SELECT firstSignificantSubdomainRFC('http://[');
+
+SELECT domainRFC(materialize('http://[v1.a]'));
