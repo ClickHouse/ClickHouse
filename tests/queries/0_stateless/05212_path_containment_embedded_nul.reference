@@ -1,0 +1,4 @@
+-- the file function checks with fileOrSymlinkPathStartsWith only
+data
+-- the Filesystem database engine checks with pathStartsWith only
+data
