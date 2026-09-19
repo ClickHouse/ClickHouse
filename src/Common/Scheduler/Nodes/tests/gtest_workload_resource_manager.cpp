@@ -436,13 +436,19 @@ TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
     t.query("CREATE WORKLOAD b");
 
     bool seen_root = false;
-    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
+    String root_type;
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
     {
         if (path == "/")
+        {
             seen_root = true;
+            root_type = String(node->getTypeName());
+        }
     });
     EXPECT_TRUE(seen_root)
         << "implicit root workload was not exposed in system.scheduler introspection";
+    EXPECT_EQ(root_type, "workload")
+        << "the node exposed at \"/\" should be the implicit root workload";
 }
 
 TEST(SchedulerWorkloadResourceManager, Fairness)
