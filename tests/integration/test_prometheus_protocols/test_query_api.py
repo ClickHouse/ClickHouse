@@ -225,8 +225,20 @@ def test_error_while_parsing():
         node.ip_address, 9093, "/api/v1/query", "((", 150,
     )
     assert response.status_code == 400, response.text
+    assert response.json()["errorType"] == "bad_data", response.text
     error_message = extract_error_from_http_api_response(response)
     assert "while parsing PromQL query" in error_message
+
+
+# Syntactically valid PromQL rejected during static validation is still bad data, not an execution error.
+def test_error_while_validating():
+    response = get_response_to_http_api_query(
+        node.ip_address, 9093, "/api/v1/query", "clamp(foo, 0)", 150,
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["errorType"] == "bad_data", response.text
+    error_message = extract_error_from_http_api_response(response)
+    assert "expects 3 arguments" in error_message
 
 
 # Checks the case when an exception appears before any block has been written to the response buffer.

@@ -53,7 +53,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int PROMQL_QUERY_EXECUTION_ERROR;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
@@ -616,7 +616,7 @@ public:
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                 writeString(R"({"status":"error","errorType":"internal","error":)", error_buf);
             }
-            else if (e.code() == ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY)
+            else if (e.code() == ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR)
             {
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY);
                 writeString(R"({"status":"error","errorType":"execution","error":)", error_buf);

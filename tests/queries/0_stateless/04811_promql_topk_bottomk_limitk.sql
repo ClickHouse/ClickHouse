@@ -54,7 +54,7 @@ SELECT * FROM prometheusQuery('prometheus', 'bottomk(1, m)', 140) ORDER BY tags;
 SELECT '-- topk of a metric which matches no series';
 SELECT * FROM prometheusQuery('prometheus', 'topk(2, nonexistent)', 130) ORDER BY tags;
 SELECT '-- k = +Inf is an error';
-SELECT * FROM prometheusQuery('prometheus', 'topk(+Inf, m)', 130); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('prometheus', 'topk(+Inf, m)', 130); -- { serverError PROMQL_QUERY_EXECUTION_ERROR }
 SELECT * FROM prometheusQuery('prometheus', 'topk(1 / 0, m)', 130); -- { serverError CANNOT_CONVERT_TYPE }
 
 DROP TABLE prometheus;
