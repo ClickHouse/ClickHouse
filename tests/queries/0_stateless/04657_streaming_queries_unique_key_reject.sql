@@ -1,6 +1,6 @@
 -- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET enable_streaming_queries = 1;
 
 DROP TABLE IF EXISTS uk_t_stream;

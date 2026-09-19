@@ -1,7 +1,7 @@
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET query_plan_join_swap_table = 0; -- Changes query plan
 SET correlated_subqueries_default_join_kind = 'left';
 SET query_plan_remove_unused_columns = 1;

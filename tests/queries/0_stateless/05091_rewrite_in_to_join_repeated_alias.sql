@@ -4,7 +4,7 @@
 -- identical expressions - rejected such a query with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
 
 SET rewrite_in_to_join = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 SELECT 'the same aliased IN twice in the projection';
 SELECT dummy IN (SELECT 1) AS ie, dummy IN (SELECT 1) AS ie FROM system.one;

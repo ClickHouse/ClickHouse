@@ -35,23 +35,23 @@ INSERT INTO chunk_buffer_max_threads_1_input SELECT number + 30000, ['a','b','c'
 -- times because the original abort was timing-dependent.
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_max_threads_1_input PREWHERE 38 QUALIFY -1
 SETTINGS max_threads = 1, max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_max_threads_1_input PREWHERE 38 QUALIFY -1
 SETTINGS max_threads = 1, max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_max_threads_1_input PREWHERE 38 QUALIFY -1
 SETTINGS max_threads = 1, max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_max_threads_1_input PREWHERE 38 QUALIFY -1
 SETTINGS max_threads = 1, max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_max_threads_1_input PREWHERE 38 QUALIFY -1
 SETTINGS max_threads = 1, max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 
 -- The original issue #96445 report shape: scalar correlated subquery over GROUP BY WITH TOTALS,
@@ -60,7 +60,7 @@ FORMAT `Null`;
 -- because the result depends on the totals-row representation, which CI may format differently.
 SELECT (SELECT count(*) FROM (SELECT t0.c0)) AS a0
 FROM (SELECT 1 AS c0 GROUP BY 1 WITH TOTALS) AS t0
-SETTINGS max_threads = 1, allow_experimental_correlated_subqueries = 1,
+SETTINGS max_threads = 1, allow_correlated_subqueries = 1,
     correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 
@@ -76,7 +76,7 @@ SELECT
     SELECT count(*) || '_' || sum(sub)
     FROM (SELECT key, (SELECT key WHERE 7) AS sub FROM chunk_buffer_max_threads_1_input PREWHERE 38 QUALIFY -1)
     SETTINGS max_threads = 1, max_rows_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-        allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+        allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 ) = (SELECT count(*) || '_' || sum(key) FROM chunk_buffer_max_threads_1_input) AS correlated_matches_plain_scan;
 
 DROP TABLE chunk_buffer_max_threads_1_input;

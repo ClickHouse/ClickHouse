@@ -1,7 +1,7 @@
 -- This form does not work even without Nullable(Tuple) for old analzyer
 SET enable_analyzer = 1;
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS qualified_match_nullable_tuple_direct;
 

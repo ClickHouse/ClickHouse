@@ -88,7 +88,7 @@ def test_postgresql_database_engine_respects_remote_host_filter(started_cluster)
         ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "UNACCEPTABLE_URL" in error
 
@@ -198,7 +198,7 @@ def test_materialized_postgresql_table_engine_named_collection_addresses_expr(st
         ENGINE = MaterializedPostgreSQL(mpg_nc_blocked, table='test_table')
         ORDER BY id
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "UNACCEPTABLE_URL" in error
 
@@ -211,7 +211,7 @@ def test_materialized_postgresql_table_engine_named_collection_addresses_expr(st
         ENGINE = MaterializedPostgreSQL(mpg_nc_multiple, table='test_table')
         ORDER BY id
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "BAD_ARGUMENTS" in error
 
@@ -224,7 +224,7 @@ def test_materialized_postgresql_table_engine_named_collection_addresses_expr(st
         ENGINE = MaterializedPostgreSQL(mpg_nc_allowed, table='test_table')
         ORDER BY id
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert_eq_with_retry(node, "SELECT count() FROM mpg_nc_allowed_tbl", "10", retry_count=120)
     node.query("DROP TABLE mpg_nc_allowed_tbl SYNC")

@@ -14,6 +14,6 @@ SELECT (1, 2) IN ((1, 2), (3, 4));
 SELECT tuple(1, 2) IN (tuple(1, 2), tuple(3, 4));
 
 -- Nullable tuple cases (requires experimental setting)
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SELECT (1, 2)::Nullable(Tuple(Int32, Int32)) IN ((1, 2), (3, 4));
 SELECT (1, 2)::Nullable(Tuple(Int32, Int32)) IN ((1, 2), NULL);

@@ -63,7 +63,7 @@ def test_create_insert_select(started_cluster):
             catalog_credential = '{ACCESS_KEY}:{SECRET_KEY}',
             oauth_server_uri = '{CATALOG_URL}/oauth/tokens'
         """,
-        settings={"allow_experimental_database_iceberg": 1},
+        settings={"allow_database_iceberg": 1},
     )
 
     node.query(
@@ -72,7 +72,7 @@ def test_create_insert_select(started_cluster):
         ENGINE = IcebergS3('{STORAGE_URL}/sales/returns/', '{ACCESS_KEY}', '{SECRET_KEY}')
         """,
         settings={
-            "allow_experimental_database_iceberg": 1,
+            "allow_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )

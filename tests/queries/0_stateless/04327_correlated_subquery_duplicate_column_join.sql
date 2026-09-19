@@ -6,7 +6,7 @@
 -- still produced two. See STID 2409-5283 (AST fuzzer).
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 -- Minimal case that previously threw: the duplicated column is NOT projected to the
 -- output, so the unreferenced duplicate input was pruned from the join DAG while the left child still
