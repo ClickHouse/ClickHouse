@@ -66,7 +66,7 @@ The command runs four steps in order and stops at the first failure:
 
 1. **Name.** Picks a service name, or validates the one you pass with `--instance <name>`. A generated name is recorded in `<output-dir>/_prepare/<eks-cluster-name>.name` and resumed by the next run, so a retry reuses the first run's buckets and role. `--new-name` picks another. The command refuses a name the executor still holds, or whose namespace already contains a ClickHouse cluster.
 2. **Storage.** Creates the data and backup buckets and the IAM role `CH-S3-<name>-<region>-00-Role`. The default bucket names are `<cluster>-clickhouse-data-<rand>` and `<cluster>-clickhouse-backup-<rand>`; `--data-bucket` and `--backup-bucket` override them. With `--role-arn` it verifies a role you bring and writes no IAM.
-3. **Grant and apply.** Renders the executor's access bundle for the service namespace (`ns-<name>`) and applies its RBAC. On a VM this also registers the service in the executor's registry. On Kubernetes the executor runs as the pod ServiceAccount and ignores per-service bundles; it registers the service itself when the create arrives.
+3. **Grant and apply.** On a VM, renders the executor's access bundle for the service namespace (`ns-<name>`), applies its RBAC, and registers the service in the executor's registry. On Kubernetes this step is skipped: the executor runs as its pod ServiceAccount and registers the service itself when the create arrives.
 4. **Summary.** Mints the `default` user's password and writes the create body to `<output-dir>/_prepare/<name>.create.json` (mode `0600`; it carries only the password's hashes). Prints the exact next command on a `Next:` line.
 
 <Warning>
@@ -177,7 +177,7 @@ sudo clicklink clctl executor teardown --instance <name>
 </Tab>
 </Tabs>
 
-The command reads the executor's record of the service: where its data lives and which role it had. It deletes the IAM role that `prepare` created, removes the local access bundle and registry entry, and makes the executor forget the service, which frees the name.
+The command reads the executor's record of the service: where its data lives and which role it had. It deletes the IAM role that `prepare` created and makes the executor forget the service, which frees the name. On a VM it also removes the local access bundle and registry entry.
 
 By default it keeps the service's data and backups. It re-tags a kept bucket from `clicklink:deployed-name` to `clicklink:retained-from=<name>`, so a re-created service with the same name never inherits it, and the summary says where the data is. To delete them, add `--delete-data --delete-backups --yes` to the same command.
 
