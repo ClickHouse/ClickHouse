@@ -313,6 +313,7 @@ public:
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    bool isSuitableForConstantFolding() const;
     /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
