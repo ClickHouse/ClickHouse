@@ -1,0 +1,34 @@
+storage types
+t_hashed_full	1	Full
+t_hashed_packed	1	Packed
+index materialized	2
+count path taken	1
+read path taken	1
+count hasToken	full	2000	1
+count hasToken	packed	2000	1
+count hasToken	control	2000	1
+count hasAllTokens	full	4	1
+count hasAllTokens	packed	4	1
+read hasToken	full	5495198987398369624	1	8
+read hasToken	packed	5495198987398369624	1	8
+read hasToken	control	5495198987398369624	1	8
+phrase	early	2000	1
+phrase	late	4	1
+phrase	latest	4	1
+empty part kept	t_hashed_full	1	1	Full
+empty part kept	t_hashed_packed	1	1	Packed
+count surviving	full	2000	1
+count surviving	packed	2000	1
+count deleted	full	0	1
+count deleted	packed	0	1
+read after delete	full	2392764416655080218	1	4
+read after delete	packed	2392764416655080218	1	4
+phrase after delete	late	4	1
+check full
+1
+check packed
+1
+check positions
+1
+check control
+1
