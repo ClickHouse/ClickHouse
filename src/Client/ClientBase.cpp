@@ -6118,13 +6118,6 @@ void ClientBase::runInteractive()
             lr->enableBracketedPaste();
             SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
 
-            // Check if we have a prepopulated query to show
-            if (!next_query_to_prepopulate.empty())
-            {
-                lr->setInitialText(next_query_to_prepopulate);
-                next_query_to_prepopulate.clear();
-            }
-
             input = lr->readLine(getPrompt(), ":-] ");
         }
 

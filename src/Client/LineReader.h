@@ -86,9 +86,6 @@ public:
     virtual void enableBracketedPaste() {}
     virtual void disableBracketedPaste() {}
 
-    /// Set text to be prepopulated in the next readLine call
-    virtual void setInitialText(const String &) {}
-
     /// Whether the reader is currently in AI-chat mode (entered by a leading `?`): the next
     /// line read should be sent to the AI agent rather than executed as SQL. Only the
     /// interactive replxx reader supports this; other readers are never in AI mode.

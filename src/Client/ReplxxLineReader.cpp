@@ -1155,19 +1155,4 @@ void ReplxxLineReader::disableBracketedPaste()
     rx.disable_bracketed_paste();
 }
 
-void ReplxxLineReader::setInitialText(const String & text)
-{
-    // Preload the buffer with the initial text
-    if (!text.empty())
-    {
-        rx.set_preload_buffer(text);
-        /// The preloaded query is displayed at once - do not pop hints on it (see
-        /// historyNavigate). The one-shot is consumed at the first render of the line inside
-        /// input(); the pin is set to the raw text (replxx may normalize whitespace in the
-        /// preload, in which case it just stays inert).
-        suppress_hints_once = true;
-        suppress_hints_for_text = text;
-    }
-}
-
 }

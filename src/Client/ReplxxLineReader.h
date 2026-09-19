@@ -52,9 +52,6 @@ public:
     /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
     static void setLastIsDelimiter(bool flag);
 
-    /// Set text to be prepopulated in the next readLine call
-    void setInitialText(const String & text) override;
-
     bool inAIMode() const override { return ai_mode; }
 
     void addQueryToHistory(const String & query) override;
