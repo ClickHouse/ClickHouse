@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/hasExactMetricNameMatcher.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -27,10 +28,8 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
 
-/// Checks that the arguments are valid for `quantile_over_time`:
-///   - exactly 2 arguments
-///   - first argument is a SCALAR (the quantile parameter `phi`)
-///   - second argument is a RANGE_VECTOR
+/// Validates arguments for `quantile_over_time`:
+/// exactly 2 arguments (SCALAR, RANGE_VECTOR).
 void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
 {
     if (arguments.size() != 2)
@@ -66,9 +65,8 @@ struct QuantileLevel
     /// nullptr if the level is statically empty, then the result of `quantile_over_time` is empty too.
     ASTPtr ast;
 
-    /// Whether the level is the same at every grid point. Then `ast` is a number: a literal or a reference to a single-row
-    /// scalar subquery. Otherwise (e.g. `time()` in a range query) it varies with the evaluation time and `ast` is an array
-    /// with one value per grid point.
+    /// Whether level is constant or varies with evaluation time
+    /// (e.g. `time()` in range query produces an array).
     bool is_constant = true;
 };
 
@@ -158,10 +156,8 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     const auto * fixed_at_node = getFixedAtModifier(range_argument);
     if (fixed_at_node && !quantile_level.is_constant)
     {
-        /// A fixed @ freezes the samples but not phi, so PromQL still evaluates per step; the aggregate derives its
-        /// window from each grid point and cannot express a frozen window with a per-point quantile level.
-        /// To implement this we need another aggregate function: not over a grid of timestamps like timeSeriesQuantileToGrid,
-        /// but over an array of levels, returning the quantile of the single frozen window for each of them.
+        /// A fixed @ freezes samples but not phi; PromQL evaluates per step.
+        /// Requires an aggregate over an array of quantile levels.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Function '{}' does not support a time-varying first argument (the quantile) together with "
                         "a fixed @ modifier on the range vector {}",
@@ -172,17 +168,40 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
     /// range vector holds series, and a scalar grid if it was made from a scalar.
     const bool has_group = (range_argument.store_method == StoreMethod::VECTOR_GRID) || (range_argument.store_method == StoreMethod::RAW_DATA);
+    const bool can_fuse_drop_metric_name = has_group
+        && (range_argument.store_method == StoreMethod::RAW_DATA)
+        && hasExactMetricNameMatcher(range_argument.node);
 
     SelectQueryBuilder builder;
 
-    if (has_group)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    if (range_argument.select_query)
+    {
+        auto & subqueries = context.subqueries;
+        subqueries.emplace_back(subqueries.size(), std::move(range_argument.select_query), SQLSubqueryType::TABLE);
+        builder.from_table = subqueries.back().name;
+    }
 
-    /// timeSeriesQuantileToGrid(<start_timestamp>, <end_timestamp>, <step>, <staleness_window>)(<timestamps>, <values>, <phi>) AS values
-    /// For each grid point it returns the phi-quantile of the values inside that window (NULL if the window is empty),
-    /// with the Prometheus edge cases of `phi` (below 0 gives -Inf, above 1 gives +Inf, NaN gives NaN).
-    /// `phi` is either one number or, for a quantile level varying with the evaluation time, an array with one number per
-    /// grid point.
+    if (has_group)
+    {
+        if (can_fuse_drop_metric_name)
+        {
+            auto remove_tag = makeASTFunction(
+                "timeSeriesRemoveTag",
+                make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group),
+                make_intrusive<ASTLiteral>(kMetricName));
+            remove_tag->setAlias(ColumnNames::Group);
+            builder.select_list.push_back(std::move(remove_tag));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group));
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        }
+    }
+
+    /// timeSeriesQuantileToGrid returns phi-quantile per grid point
+    /// (NULL if window empty). phi can be scalar or time-varying array.
     aggregate_function_arguments.push_back(std::move(quantile_level.ast));
     ASTPtr result_values = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesQuantileToGrid", std::move(aggregate_function_arguments)),
@@ -198,16 +217,6 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     builder.select_list.push_back(std::move(result_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-    if (range_argument.select_query)
-    {
-        auto & subqueries = context.subqueries;
-        subqueries.emplace_back(subqueries.size(), std::move(range_argument.select_query), SQLSubqueryType::TABLE);
-        builder.from_table = subqueries.back().name;
-    }
-
     SQLQueryPiece res = range_argument;
     res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
     res.scalar_value = {};
@@ -218,9 +227,11 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
+    if (can_fuse_drop_metric_name)
+        res.metric_name_dropped = true;
 
     /// `quantile_over_time` always drops the metric name (PromQL: function outputs have no `__name__`).
-    if (has_group)
+    if (has_group && !res.metric_name_dropped)
         res = dropMetricName(std::move(res), context);
 
     return res;

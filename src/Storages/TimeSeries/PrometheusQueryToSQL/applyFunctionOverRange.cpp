@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/hasExactMetricNameMatcher.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -161,13 +162,8 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
-            /// TODO:
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// mad_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
+            /// TODO: stddev_over_time, stdvar_over_time, mad_over_time,
+            /// ts_of_last_over_time, first_over_time, ts_of_first_over_time.
         };
 
         auto it = impl_map.find(function_name);
@@ -226,11 +222,39 @@ SQLQueryPiece applyFunctionOverRange(
     /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
     /// range vector holds series, and a scalar grid if it was made from a scalar.
     const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
+    const bool should_drop_metric_name = drop_metric_name.value_or(impl_info->drop_metric_name);
+    const bool can_fuse_drop_metric_name = has_group
+        && (argument.store_method == StoreMethod::RAW_DATA)
+        && should_drop_metric_name
+        && hasExactMetricNameMatcher(argument.node);
 
     SelectQueryBuilder builder;
 
+    if (argument.select_query)
+    {
+        auto & subqueries = context.subqueries;
+        subqueries.emplace_back(subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE);
+        builder.from_table = subqueries.back().name;
+    }
+
     if (has_group)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    {
+        if (can_fuse_drop_metric_name)
+        {
+            auto remove_tag = makeASTFunction(
+                "timeSeriesRemoveTag",
+                make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group),
+                make_intrusive<ASTLiteral>(kMetricName));
+            remove_tag->setAlias(ColumnNames::Group);
+            builder.select_list.push_back(std::move(remove_tag));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group));
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        }
+    }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
@@ -247,16 +271,6 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-    if (argument.select_query)
-    {
-        auto & subqueries = context.subqueries;
-        subqueries.emplace_back(subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE);
-        builder.from_table = subqueries.back().name;
-    }
-
     SQLQueryPiece res = argument;
     res.node = node;
     res.scalar_value = {};
@@ -267,8 +281,10 @@ SQLQueryPiece applyFunctionOverRange(
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
+    if (can_fuse_drop_metric_name)
+        res.metric_name_dropped = true;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (has_group && should_drop_metric_name && !res.metric_name_dropped)
         res = dropMetricName(std::move(res), context);
 
     return res;

@@ -36,28 +36,8 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
         case StoreMethod::VECTOR_GRID:
         {
-            /// When we remove the metric name `__name__` it's possible that we get the same set of tags (i.e. the same `group`)
-            /// on time series which were different before we removed the metric name.
-            /// This is not allowed, we can't have multiple time series with the same set of tags in the same resultset.
-            ///
-            /// Example:
-            ///             tags                           timestamp1        timestamp2
-            /// metric1{tag1='value1', tag2='value2'}       value_a           value_b
-            /// metric2{tag1='value1', tag2='value2'}       value_c           value_d
-            ///                                 ||
-            ///                                 \/
-            ///             tags                           timestamp1        timestamp2
-            /// {tag1='value1', tag2='value2'}              value_a           value_b
-            /// {tag1='value1', tag2='value2'}              value_c           value_d
-            ///
-            /// That's why we need the function timeSeriesThrowDuplicateSeriesIf() to detect such cases and throw an exception.
-
-            /// Step 1:
-            /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
-            ///        any(values) AS values
-            /// FROM <vector_grid>
-            /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
+            /// Removes __name__ and checks for duplicate series after tag removal.
+            /// Step 1 removes __name__ as new_group; Step 2 renames new_group to group.
             ASTPtr metric_name_removing_query;
             {
                 SelectQueryBuilder builder;
@@ -85,9 +65,8 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 metric_name_removing_query = builder.getSelectQuery();
             }
 
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
+            /// Step 2 renames new_group back to group.
+            /// Using new_group prevents identifier collision under prefer_column_name_to_alias.
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
