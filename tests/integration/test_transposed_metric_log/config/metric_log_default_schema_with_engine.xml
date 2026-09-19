@@ -1,0 +1,15 @@
+<clickhouse>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <!-- No `schema_type`, but an explicit `engine`, which replaces the default table
+             definition together with the settings of the bucketed Map serialization. -->
+        <engine>
+        ENGINE MergeTree
+        PARTITION BY toYYYYMM(event_date)
+        ORDER BY (event_date, event_time)
+        </engine>
+    </metric_log>
+</clickhouse>
