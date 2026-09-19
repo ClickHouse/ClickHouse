@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/VarInt.h>
 
 #include <functional>
 #include <limits>
