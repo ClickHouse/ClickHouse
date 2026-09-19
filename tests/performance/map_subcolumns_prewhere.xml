@@ -106,6 +106,29 @@
         SETTINGS optimize_functions_to_subcolumns=1
     </query>
 
+    <!-- Wide: count() with PREWHERE over conditions that the read step splitter treats as a step
+         boundary, because they report true from isSuitableForShortCircuitArgumentsExecution.
+         Each such condition gets its own step, so the same Map data is deserialized once per
+         condition. These two queries measure that cost against the `!= ''` shapes above, which
+         stay in a single step, and guard it against future changes to the boundary predicate. -->
+    <query>
+        SELECT count() FROM map_subcol_pw_wide
+        PREWHERE startsWith(tags['k0'], '1') AND startsWith(tags['k1'], '1') AND startsWith(tags['k2'], '1') AND startsWith(tags['k3'], '1')
+            AND startsWith(tags['k4'], '1') AND startsWith(tags['k5'], '1') AND startsWith(tags['k6'], '1') AND startsWith(tags['k7'], '1')
+            AND startsWith(tags['k8'], '1') AND startsWith(tags['k9'], '1') AND startsWith(tags['k10'], '1') AND startsWith(tags['k11'], '1')
+            AND startsWith(tags['k12'], '1') AND startsWith(tags['k13'], '1') AND startsWith(tags['k14'], '1') AND startsWith(tags['k15'], '1')
+        SETTINGS optimize_functions_to_subcolumns=1
+    </query>
+
+    <query>
+        SELECT count() FROM map_subcol_pw_wide
+        PREWHERE tags['k0'] LIKE '1%' AND tags['k1'] LIKE '1%' AND tags['k2'] LIKE '1%' AND tags['k3'] LIKE '1%'
+            AND tags['k4'] LIKE '1%' AND tags['k5'] LIKE '1%' AND tags['k6'] LIKE '1%' AND tags['k7'] LIKE '1%'
+            AND tags['k8'] LIKE '1%' AND tags['k9'] LIKE '1%' AND tags['k10'] LIKE '1%' AND tags['k11'] LIKE '1%'
+            AND tags['k12'] LIKE '1%' AND tags['k13'] LIKE '1%' AND tags['k14'] LIKE '1%' AND tags['k15'] LIKE '1%'
+        SETTINGS optimize_functions_to_subcolumns=1
+    </query>
+
     <!-- Table with an extra column to test WHERE optimizer grouping.
          When Map subcolumn conditions are interleaved with another column in WHERE,
          the optimizer should group Map conditions together to avoid redundant reads. -->
