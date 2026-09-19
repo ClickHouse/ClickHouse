@@ -13,6 +13,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
@@ -411,6 +412,15 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             {
                 ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
                 if (page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit))
+                    overcommit_result = OvercommitResult::MEMORY_FREED;
+            }
+
+            /// Then the columns cache, which also gives its memory back on demand.
+            DB::IMemoryReleasableCache * releasable_cache_ptr = nullptr;
+            if (overcommit_result == OvercommitResult::NONE && level == VariableContext::Global
+                && (releasable_cache_ptr = DB::getMemoryReleasableCache()))
+            {
+                if (releasable_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit))
                     overcommit_result = OvercommitResult::MEMORY_FREED;
             }
 

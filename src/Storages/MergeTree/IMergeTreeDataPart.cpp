@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -1080,6 +1081,28 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+
+    /// Remove deserialized columns from cache
+    if (mayStoreColumnsInColumnsCache())
+    {
+        /// No reader can hold this part any more: clearCaches runs from the destructor of the
+        /// part and for outdated parts that are uniquely owned, while a reader owns the part
+        /// through its `data_part_info_for_read` as long as it may still write to the cache. So
+        /// there is no in-flight write to guard against, and removing the entries is enough.
+        if (auto columns_cache = storage.getContext()->getColumnsCache())
+        {
+            columns_cache->removePart(storage.getStorageID().uuid, name);
+        }
+    }
+}
+
+bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
+{
+    /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
+    /// keyed by the UUID of the table and the name of the part.
+    return getType() == MergeTreeDataPartType::Wide
+        && !isProjectionPart()
+        && storage.getStorageID().uuid != UUIDHelpers::Nil;
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1088,7 +1111,18 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
         return false;
 
     auto caches = storage.getCachesToPrewarm(getBytesUncompressedOnDisk());
-    return caches.hasAny();
+    if (caches.hasAny())
+        return true;
+
+    /// The columns cache holds deserialized columns of this part, and the prewarmable caches above
+    /// know nothing about it: a part whose only footprint is there has to be cleared as well, or its
+    /// entries stay resident until a much later filesystem cleanup and evict entries of live parts
+    /// in the meantime. Asking the cache is one lookup in its per-part index.
+    if (!mayStoreColumnsInColumnsCache())
+        return false;
+
+    auto columns_cache = storage.getContext()->getColumnsCache();
+    return columns_cache && columns_cache->containsPart(storage.getStorageID().uuid, name);
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -2557,6 +2591,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/ nullptr,
         storage.getContext()->getMarkCache().get(),
         nullptr,
         MergeTreeReaderSettings::createFromSettings(),
@@ -2576,7 +2611,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         MutableColumns result;
         result.resize(1);
 
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, result);
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -3721,6 +3756,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/ nullptr,
         storage.getContext()->getMarkCache().get(),
         nullptr,
         settings,
@@ -3729,7 +3765,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     MutableColumns result;
     result.resize(1);
-    reader->readRows(0, false, 0, result);
+    reader->readRows(0, total_mark, false, 0, result);
     return std::move(result[0]);
 }
 

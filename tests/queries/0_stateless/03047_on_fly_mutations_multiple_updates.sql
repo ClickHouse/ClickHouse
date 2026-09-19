@@ -4,6 +4,7 @@
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
 SET apply_mutations_on_fly = 1;
+SET use_columns_cache = 0;
 
 CREATE TABLE t_lightweight_mut_5 (id UInt64, s1 String, s2 String)
 ENGINE = MergeTree ORDER BY id

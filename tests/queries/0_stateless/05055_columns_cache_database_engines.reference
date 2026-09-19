@@ -1,0 +1,16 @@
+Ordinary database
+1
+Wide
+3000	4498500
+3000	4498500
+0
+Replicated database
+1
+3000	4498500
+1
+3000	4498500
+ProfileEvents checks
+05055_ordinary_read1	0	0
+05055_ordinary_read2	0	0
+05055_replicated_read1	0	1
+05055_replicated_read2	1	0

@@ -1,9 +1,12 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -27,11 +30,122 @@ namespace Setting
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsUInt64 columns_cache_max_estimated_bytes_to_write_to_cache;
+    extern const SettingsUInt64 columns_cache_max_bytes_to_write_to_cache;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+/// Return the columns cache for a pool, or nullptr when it should not be used.
+/// A zero-sized cache (`columns_cache_size = 0`) accepts no entries, so treat it
+/// as absent: this turns off not only the writes but also the read-side probes
+/// (lookups counted as misses) and the prefetch-skipping walk
+/// when the columns cache is fully disabled, making size 0 mean "fully disabled".
+static ColumnsCachePtr getColumnsCacheIfEnabled(const ContextPtr & context, bool use_columns_cache)
+{
+    if (!use_columns_cache)
+        return nullptr;
+
+    ColumnsCachePtr cache = context->getGlobalContext()->getColumnsCache();
+    if (cache && cache->maxSizeInBytes() == 0)
+        return nullptr;
+
+    return cache;
+}
+
+/// Compute the columns cache write policy for a pool.
+/// Two budgets, both enforced per query (shared via ColumnsCacheWriteBudget across all
+/// of the query's read pools, not per pool):
+///   - estimate budget: if the total compressed bytes the query is expected to fetch
+///     exceeds it, disable cache writes for the rest of the query, so a single large
+///     scan does not displace useful data from the cache. The estimate itself is
+///     accumulated per read task, after the full set of read columns
+///     is known; readers observe the result through the shared writes-disabled flag.
+///   - runtime budget: a query-scoped atomic counter; once it reaches the budget,
+///     further writes for the query are skipped.
+/// Either value of 0 means "use half of the server-level columns_cache_size".
+static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
+    MergeTreeReaderSettings settings,
+    const ContextPtr & context,
+    const ColumnsCachePtr & columns_cache,
+    bool use_columns_cache)
+{
+    if (!use_columns_cache || !columns_cache || !settings.enable_columns_cache_writes)
+        return settings;
+
+    const size_t cache_size = columns_cache->maxSizeInBytes();
+    if (cache_size == 0)
+    {
+        settings.enable_columns_cache_writes = false;
+        return settings;
+    }
+
+    const auto & query_settings = context->getSettingsRef();
+
+    /// Per-query shared write accounting. All read pools of one query share this
+    /// object so the budgets below apply to the whole query, not to each pool.
+    const auto budget = context->getColumnsCacheWriteBudget();
+
+    /// If an earlier pool of this query already exceeded the estimate budget,
+    /// writes are disabled for the rest of the query.
+    if (budget && budget->writes_disabled.load(std::memory_order_relaxed))
+    {
+        settings.enable_columns_cache_writes = false;
+        return settings;
+    }
+
+    size_t runtime_budget = query_settings[Setting::columns_cache_max_bytes_to_write_to_cache];
+    if (runtime_budget == 0)
+        runtime_budget = cache_size / 2;
+
+    settings.columns_cache_max_bytes_to_write_to_cache = runtime_budget;
+    /// Point the reader at the query-scoped counter and writes-disabled flag
+    /// (aliasing shared_ptrs) so the budgets are shared across all of the query's
+    /// pools rather than reset to zero per pool.
+    if (budget)
+    {
+        settings.columns_cache_bytes_written_so_far
+            = std::shared_ptr<std::atomic<size_t>>(budget, &budget->bytes_written);
+        settings.columns_cache_writes_disabled
+            = std::shared_ptr<std::atomic<bool>>(budget, &budget->writes_disabled);
+    }
+    else
+    {
+        settings.columns_cache_bytes_written_so_far = std::make_shared<std::atomic<size_t>>(0);
+    }
+    return settings;
+}
+
+/// Identity of the schema this pool reads with, stored in the reader settings and used as the
+/// schema token of every columns cache key the pool's readers produce (see
+/// `ColumnsCacheKey::schema_identity`). It is a hash of the column list of the query's metadata
+/// snapshot, so it is a property of that snapshot alone: a reader can never hold the new schema
+/// together with the token of the old one, which is what a separately maintained counter cannot
+/// guarantee, because metadata publication and cache invalidation are two distinct steps.
+/// Computed once per pool - the columns of a metadata snapshot cannot change under it.
+static MergeTreeReaderSettings setColumnsCacheSchemaIdentity(
+    MergeTreeReaderSettings settings, const StorageSnapshotPtr & storage_snapshot, const ColumnsCachePtr & columns_cache)
+{
+    if (!columns_cache || (!settings.enable_columns_cache_reads && !settings.enable_columns_cache_writes))
+        return settings;
+
+    SipHash hash;
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    settings.columns_cache_schema_identity = hash.get64();
+    return settings;
+}
+
+/// Turn the columns cache off in the reader settings of a pool that must never use it.
+/// See the comment on the projection-index constructor below.
+static MergeTreeReaderSettings disableColumnsCache(MergeTreeReaderSettings settings)
+{
+    settings.enable_columns_cache_reads = false;
+    settings.enable_columns_cache_writes = false;
+    return settings;
 }
 
 
@@ -58,12 +172,20 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(reader_settings_)
+    , reader_settings(setColumnsCacheSchemaIdentity(
+          adjustReaderSettingsForColumnsCacheWrites(
+              reader_settings_,
+              context_,
+              getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache),
+              pool_settings_.use_columns_cache),
+          storage_snapshot_,
+          getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
+    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -72,6 +194,16 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     fillPerPartInfos(context_->getSettingsRef());
 }
 
+/// Constructor for `MergeTreeReadPoolProjectionIndex`, which reads projection index parts.
+///
+/// This pool never uses the columns cache. Projection parts share the projection name
+/// (e.g. `ailog_rule_count`) as their part name, which is not unique across parent parts,
+/// so `MergeTreeReaderWide` rejects them for both cache reads and cache writes. Turning the
+/// cache off here as well makes that invariant explicit at the pool level instead of relying
+/// on a predicate in the reader, and it removes the question of the query-scoped write budget
+/// for this path: the pool builds its tasks in `getTask` rather than in `fillPerPartInfos`,
+/// so it never calls `prepareColumnsCacheWriteEstimate`, and `adjustReaderSettingsForColumnsCacheWrites`
+/// would have nothing to budget for a pool that cannot write to the cache in the first place.
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     MutationsSnapshotPtr mutations_snapshot_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -87,12 +219,13 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(reader_settings_)
+    , reader_settings(disableColumnsCache(reader_settings_))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
+    , owned_columns_cache(nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -131,6 +264,61 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
     }
 
     return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
+}
+
+/// Uncompressed size of `columns_to_read` in a part: the memory their deserialized data takes,
+/// which is what the columns cache is charged for, so the columns cache write estimate is made
+/// from it and not from the compressed size. With a well-compressing codec the two differ by a
+/// large factor, and a gate that compared compressed bytes with a cache limit expressed in
+/// uncompressed bytes let a query write several times the size of the cache before it tripped.
+/// Returns 0 when nothing is known about the columns (they are absent from the part), so that
+/// such a read is not charged for the whole part. Compact parts never write to the columns
+/// cache, so their size is only a safety net.
+static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
+{
+    if (part.getType() == MergeTreeDataPartType::Compact)
+        return part.getBytesUncompressedOnDisk();
+
+    size_t data_uncompressed_size = 0;
+    for (const auto & col_name : columns_to_read)
+    {
+        auto column = part.tryGetColumn(col_name);
+        if (!column)
+            continue;
+
+        if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
+            data_uncompressed_size += part.getSubcolumnSize(col_name).data_uncompressed;
+        else
+            data_uncompressed_size += part.getColumnSize(column->getNameInStorage()).data_uncompressed;
+    }
+
+    return data_uncompressed_size;
+}
+
+/// Estimate the uncompressed bytes a read pool will produce for `columns` from one part, per mark
+/// of that part. `getUncompressedSizeOfColumns` returns the size of the whole column in the part,
+/// but a query that reads a few marks of a large part should not be charged for the entire part:
+/// that would trip the estimate budget on a tiny read and defeat the cache exactly where it
+/// helps. The caller multiplies this rate by the marks the query selected in the part.
+static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & part, const Names & columns, const Settings & settings)
+{
+    const size_t total_marks = part.getMarksCount();
+    if (total_marks == 0)
+        return 0;
+
+    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, settings)) / static_cast<double>(total_marks);
+}
+
+/// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`: only wide parts
+/// of a table with a non-nil UUID that are not projection parts ever write to the shared columns
+/// cache (compact parts use a reader that never writes to it; projection parts and nil-UUID tables
+/// are rejected there as well). A reader is created per part - the base part and every patch part -
+/// so this has to be evaluated for each of them separately.
+static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
+{
+    return part.getType() == MergeTreeDataPartType::Wide
+        && !part.isProjectionPart()
+        && part.storage.getStorageID().uuid != UUIDHelpers::Nil;
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
@@ -337,6 +525,151 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     return read_task_info;
 }
 
+void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
+    const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings)
+{
+    if (!reader_settings.enable_columns_cache_writes || !owned_columns_cache)
+        return;
+
+    const auto budget = getContext()->getColumnsCacheWriteBudget();
+    if (!budget || budget->writes_disabled.load(std::memory_order_relaxed))
+        return;
+
+    const size_t selected_marks = part_with_ranges.ranges.getNumberOfMarks();
+    if (selected_marks == 0)
+        return;
+
+    /// Eligibility is a property of every part a reader is created for, not of the task:
+    /// the base part and each patch part get their own reader and can have different
+    /// formats. A compact base part can have a wide patch part (which does write to the
+    /// cache), and a wide base part can have a compact patch part (which never does).
+    /// Both parts of the estimate are therefore gated by `partCanWriteToColumnsCache`
+    /// independently, so the accounted bytes match the set of readers that can really
+    /// write, and a query is neither allowed to write unaccounted bytes nor charged for
+    /// bytes it can never cache.
+    double bytes_per_mark = 0;
+
+    if (partCanWriteToColumnsCache(*part_with_ranges.data_part))
+    {
+        /// Columns read from the base part: result columns plus columns required for
+        /// defaults, prewhere and mutation steps. Estimating from the pool's result
+        /// columns alone would let a query that reads a small result column set but heavy
+        /// prewhere/mutation columns pass the gate while writing much more data than
+        /// estimated. Patch-part columns are read from separate parts and are accounted
+        /// for below.
+        const auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
+
+        /// Don't apply the estimate gate when there are no columns (e.g. some
+        /// projection paths build the column list later).
+        if (all_read_columns.empty())
+            return;
+
+        bytes_per_mark += estimateUncompressedColumnsSizePerMark(*part_with_ranges.data_part, all_read_columns, settings);
+    }
+
+    /// `getAllColumnNames` covers only the main and prewhere columns, which are read
+    /// from the base part sized above. Readers for patch parts (from lightweight
+    /// updates) read `patch_columns` from the patch parts and write them to the cache
+    /// through the same path. Those columns live in the patch parts, not the base
+    /// `part_with_ranges.data_part`, so sizing them against the base part would miss
+    /// their bytes: a lightweight update with a large updated column could pass the
+    /// gate on the base part's column size and then cache the much larger patch-part
+    /// column. Size each patch part's columns against the patch part itself and add
+    /// them to the estimate. The patch ranges a task will select are not known here, so
+    /// the whole patch column is spread over the marks of the base part: a query reading
+    /// the whole base part is charged for the whole patch column.
+    const size_t base_part_marks = part_with_ranges.data_part->getMarksCount();
+    for (size_t i = 0; i < read_task_info.patch_parts.size(); ++i)
+    {
+        Names patch_column_names;
+        if (i < read_task_info.task_columns.patch_columns.size())
+            patch_column_names = read_task_info.task_columns.patch_columns[i].getNames();
+        if (patch_column_names.empty())
+            continue;
+
+        const auto * patch_part_info
+            = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(read_task_info.patch_parts[i].part.get());
+        if (!patch_part_info)
+        {
+            /// Cannot tell whether this patch part's reader can write to the cache, nor
+            /// size its columns. Fail closed: stop caching for the rest of the query
+            /// rather than under-counting the write budget.
+            budget->writes_disabled.store(true, std::memory_order_relaxed);
+            return;
+        }
+
+        const auto & patch_part = *patch_part_info->getDataPart();
+        if (!partCanWriteToColumnsCache(patch_part))
+            continue;
+
+        if (base_part_marks != 0)
+            bytes_per_mark
+                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, settings))
+                / static_cast<double>(base_part_marks);
+    }
+
+    /// Nothing this part is read for can be written to the cache: charging the per-query
+    /// budget for it would let a large uncacheable scan latch `writes_disabled` and suppress
+    /// cache writes for later eligible parts of a mixed-format or mixed-database query.
+    if (bytes_per_mark <= 0)
+        return;
+
+    size_t estimate_budget = settings[Setting::columns_cache_max_estimated_bytes_to_write_to_cache];
+    if (estimate_budget == 0)
+        estimate_budget = owned_columns_cache->maxSizeInBytes() / 2;
+
+    /// The whole selected range of the part is accounted for before anything is read. Charging
+    /// the marks task by task, as the tasks were handed out, let a query that is far over the
+    /// budget write the first tasks' worth of data anyway; with data many times the size of
+    /// the cache, that was enough to evict everything useful and to pay for copying data that
+    /// could not stay in the cache.
+    const auto part_estimated_bytes = static_cast<size_t>(bytes_per_mark * static_cast<double>(selected_marks));
+    if (part_estimated_bytes == 0)
+        return;
+
+    /// Only accumulate here. The pool's total is charged against the query-wide budget by
+    /// `commitColumnsCacheWriteEstimate`, which runs once the caller has had its chance to
+    /// install a read ranges refiner.
+    staged_columns_cache_estimate_bytes += part_estimated_bytes;
+    columns_cache_estimate_budget = estimate_budget;
+}
+
+void MergeTreeReadPoolBase::commitColumnsCacheWriteEstimate() const
+{
+    std::call_once(columns_cache_estimate_committed, [this] { chargeStagedColumnsCacheWriteEstimate(); });
+}
+
+void MergeTreeReadPoolBase::chargeStagedColumnsCacheWriteEstimate() const
+{
+    if (staged_columns_cache_estimate_bytes == 0)
+        return;
+
+    /// A read ranges refiner drops marks of the selected ranges right before a task is cut from
+    /// them, and it can drop almost all of them - that is what it is for. Those marks are never
+    /// read, so for a pool that has a refiner the staged estimate is only an upper bound, and
+    /// gating on it would stop a selective query from caching the ranges that do survive. What
+    /// the query really writes stays bounded by `columns_cache_max_bytes_to_write_to_cache`,
+    /// which defaults to the same half of the cache the estimate budget does, so the estimate
+    /// gate stands down for such a pool instead of over-charging it.
+    if (ranges_refiner)
+        return;
+
+    const auto budget = getContext()->getColumnsCacheWriteBudget();
+    if (!budget)
+        return;
+
+    /// Accumulate into the query-wide total and compare against the budget, so the gate
+    /// enforces a true per-query budget across all pools. Readers observe the flag through
+    /// `MergeTreeReaderSettings::columns_cache_writes_disabled`, which they consult at write
+    /// time, so a pool that commits after another pool's task was handed out still suppresses
+    /// that pool's writes.
+    const size_t query_total
+        = budget->estimated_bytes.fetch_add(staged_columns_cache_estimate_bytes, std::memory_order_relaxed)
+        + staged_columns_cache_estimate_bytes;
+    if (query_total > columns_cache_estimate_budget)
+        budget->writes_disabled.store(true, std::memory_order_relaxed);
+}
+
 void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 {
     per_part_infos.reserve(parts_ranges.size());
@@ -348,6 +681,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         assertSortedAndNonIntersecting(part_with_ranges.ranges);
 #endif
         MergeTreeReadTaskInfo read_task_info = buildReadTaskInfo(part_with_ranges, settings);
+        stageColumnsCacheWriteEstimate(part_with_ranges, read_task_info, settings);
         if (!read_task_info.patch_parts.empty())
             ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
@@ -391,6 +725,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     std::vector<MarkRanges> patches_ranges,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
+    /// Every task of every pool is built here, so this is the one place that is guaranteed to
+    /// run before the first task exists and after `setReadRangesRefiner`.
+    commitColumnsCacheWriteEstimate();
+
     auto task_size_predictor = read_info->shared_size_predictor
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
@@ -471,6 +809,7 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
     return
     {
         .uncompressed_cache = owned_uncompressed_cache.get(),
+        .columns_cache = owned_columns_cache.get(),
         .mark_cache = owned_mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
         .reader_settings = reader_settings,

@@ -877,6 +877,34 @@ Using the uncompressed cache (only for tables in the MergeTree family) can signi
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
+    DECLARE(Bool, use_columns_cache, false, R"(
+Whether to use the columns cache. Accepts 0 or 1. By default, 0 (disabled).
+The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and a stripe of consecutive granules of about 65536 rows.
+
+Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs (`Atomic` and `Replicated`); `MergeTree` tables in databases without UUIDs — legacy `Ordinary` databases, and `Shared` databases (the default database engine in ClickHouse Cloud) — have a nil UUID and silently ignore this setting.
+
+The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
+
+An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+)", BETA) \
+    DECLARE(Bool, enable_writes_to_columns_cache, true, R"(
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+)", BETA) \
+    DECLARE(UInt64, columns_cache_max_estimated_bytes_to_write_to_cache, 0, R"(
+If the estimated size of the data a query reads from `MergeTree` parts exceeds this value, writes to the columns cache are inhibited for the entire query. The estimate is made in uncompressed bytes, which is what the cache is charged for, from the size of the columns the query reads (including `PREWHERE`, mutation and patch-part columns) scaled to the selected mark ranges, and the query is charged for all of it before it reads anything. This keeps a single large scan from displacing useful data from the cache, and from copying data into the cache that cannot stay there.
+
+A value of `0` means use half of the server-level `columns_cache_size`. With the default `columns_cache_size_ratio`, that is the size of the probationary segment of the cache, so the data of a query that passes the gate can be cached completely in one pass.
+
+The gate does not apply to a read that drops mark ranges while it runs, which is the case when `use_indexes_refiner_in_read_pools` is enabled: how many of the selected marks such a read really touches is decided only when each task is cut, so the estimate above would be an upper bound that charges marks the query never reads. For those reads the amount written is bounded by `columns_cache_max_bytes_to_write_to_cache` instead.
+)", BETA) \
+    DECLARE(UInt64, columns_cache_max_bytes_to_write_to_cache, 0, R"(
+Soft per-query threshold on the bytes a single query writes to the columns cache. The bytes written during the query are counted, and once the counter reaches this value, further cache writes for the rest of the query are skipped. This is an advisory threshold, not a hard cap: the write that crosses it is still stored in full and the counter is only charged afterwards, so the actual amount written may exceed this value by up to one cache entry (and slightly more under concurrency). The purpose is to keep a single large scan from displacing useful data from the cache, not to bound cache usage exactly.
+
+A value of `0` means use half of the server-level `columns_cache_size`.
+)", BETA) \
     DECLARE(Bool, replace_running_query, false, R"(
 When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
 If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.
