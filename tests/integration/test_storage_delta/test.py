@@ -6397,3 +6397,119 @@ def test_create_table_concurrent_race_attaches(started_cluster):
 
     instance.query(f"DROP TABLE {table_a}")
     instance.query(f"DROP TABLE {table_b}")
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+def test_schema_evolution_add_column_legacy(started_cluster, storage_type):
+    # delta-kernel-rs resolves schema evolution itself. This pins the C++ metadata parser, which
+    # reads the table when allow_delta_kernel_rs = 0, as on node_with_disabled_delta_kernel.
+    instance = get_node(started_cluster, "0")
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_schema_evolution_legacy")
+    delta_path = f"/{TABLE_NAME}"
+
+    schema_before = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    schema_after = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+            StructField("age", IntegerType(), True),
+        ]
+    )
+
+    def upload_and_create(path, table_name):
+        default_upload_directory(started_cluster, storage_type, path, "")
+        # Recreate: the legacy metadata is built once at CREATE and is not refreshed afterwards.
+        create_delta_table(instance, storage_type, table_name, started_cluster)
+
+    # Stage A: `age` is added by a second commit, so the two `metaData` actions in _delta_log differ.
+    spark.createDataFrame(
+        [(1, "alice"), (2, "anora")], schema_before
+    ).write.format("delta").save(delta_path)
+    spark.createDataFrame(
+        [(3, "bob", 30), (4, "bill", 25)], schema_after
+    ).write.option("mergeSchema", "true").mode("append").format("delta").save(delta_path)
+
+    upload_and_create(delta_path, TABLE_NAME)
+
+    # Reddens when the first `metaData` schema wins instead of the last: `age` is absent.
+    assert instance.query(f"DESCRIBE TABLE {TABLE_NAME} FORMAT TSV") == TSV(
+        [
+            ["id", "Nullable(Int32)"],
+            ["name", "Nullable(String)"],
+            ["age", "Nullable(Int32)"],
+        ]
+    )
+    # Rows committed before `age` existed read as NULL.
+    expected_rows = TSV(
+        [
+            ["1", "alice", "\\N"],
+            ["2", "anora", "\\N"],
+            ["3", "bob", "30"],
+            ["4", "bill", "25"],
+        ]
+    )
+    select_rows = f"SELECT id, name, age FROM {TABLE_NAME} ORDER BY id FORMAT TSV"
+    assert instance.query(select_rows) == expected_rows
+    # `modifyFormatSettings` must override a user who disables missing parquet columns, as the
+    # kernel reader does; without it this raises THERE_IS_NO_COLUMN on the pre-evolution file.
+    # A table function resolves format settings per query, while an engine table captures them at
+    # CREATE; the projection has to name `age`, because count() never materialises it.
+    table_function = delta_table_function(started_cluster, storage_type, TABLE_NAME)
+    assert (
+        instance.query(
+            f"SELECT id, name, age FROM {table_function} ORDER BY id FORMAT TSV",
+            settings={"input_format_parquet_allow_missing_columns": "0"},
+        )
+        == expected_rows
+    )
+
+    # Stage B: the schema change lands above a checkpoint, whose `metaData` seeds the schema that
+    # the replayed commit must supersede. Stage A cannot reach that seed: its schema comes from an
+    # earlier JSON commit, so the checkpoint reader and its call site stay untested there.
+    TABLE_NAME_CP = randomize_table_name("test_schema_evolution_legacy_cp")
+    delta_path_cp = f"/{TABLE_NAME_CP}"
+    spark.createDataFrame([(1, "alice"), (2, "anora")], schema_before).write.format(
+        "delta"
+    ).save(delta_path_cp)
+    # `delta.checkpointInterval` defaults to 10, so version 10 is checkpointed.
+    for i in range(3, 13):
+        spark.createDataFrame([(i, f"name{i}")], schema_before).write.mode(
+            "append"
+        ).format("delta").save(delta_path_cp)
+
+    files = default_upload_directory(started_cluster, storage_type, delta_path_cp, "")
+    assert any(
+        file.endswith("last_checkpoint") for file in files
+    ), f"no checkpoint was written, stage B would be vacuous: {files}"
+
+    spark.createDataFrame(
+        [(13, "bob", 30), (14, "bill", 25)], schema_after
+    ).write.option("mergeSchema", "true").mode("append").format("delta").save(
+        delta_path_cp
+    )
+    upload_and_create(delta_path_cp, TABLE_NAME_CP)
+
+    assert instance.query(f"DESCRIBE TABLE {TABLE_NAME_CP} FORMAT TSV") == TSV(
+        [
+            ["id", "Nullable(Int32)"],
+            ["name", "Nullable(String)"],
+            ["age", "Nullable(Int32)"],
+        ]
+    )
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME_CP}").strip() == "14"
+    assert instance.query(
+        f"SELECT id, name, age FROM {TABLE_NAME_CP} WHERE id IN (1, 12, 13, 14) ORDER BY id FORMAT TSV"
+    ) == TSV(
+        [
+            ["1", "alice", "\\N"],
+            ["12", "name12", "\\N"],
+            ["13", "bob", "30"],
+            ["14", "bill", "25"],
+        ]
+    )
