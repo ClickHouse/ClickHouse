@@ -224,6 +224,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     /// would restore the original row order incorrectly.
     FormatSettings modified_format_settings = format_settings ? *format_settings : getFormatSettings(context);
     modified_format_settings.parquet.preserve_order = true;
+    modified_format_settings.vortex.preserve_order = true;
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/ 1);
 

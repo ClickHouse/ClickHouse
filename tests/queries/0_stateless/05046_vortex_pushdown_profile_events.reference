@@ -1,0 +1,12 @@
+A fully translated conjunction (both conjuncts pushed, other splits dropped whole):
+1
+2	0	1	1
+A partly translatable condition (one conjunct pushed, one left to ClickHouse):
+1
+1	1	1	1
+An untranslatable condition (everything left to ClickHouse, no split dropped):
+3
+0	1	1	0
+Pushdown disabled:
+1
+0	0	1	0

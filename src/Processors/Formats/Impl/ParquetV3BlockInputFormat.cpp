@@ -136,7 +136,8 @@ Chunk ParquetV3BlockInputFormat::read()
 
 
         auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+        if (format_filter_info && format_filter_info->need_row_numbers)
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
         return chunk;

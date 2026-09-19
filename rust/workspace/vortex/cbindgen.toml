@@ -1,0 +1,105 @@
+# Configuration for generating `include/vortex_ffi.h` from `src/lib.rs`; `build.rs` runs it.
+#
+# Everything that cannot be derived from Rust - the file comment and the Arrow C Data Interface
+# definitions - lives in `header` below, so that the generated file stays entirely machine-produced.
+
+language = "C++"
+# The preamble below carries its own `#pragma once`.
+pragma_once = false
+# And its own includes.
+no_includes = true
+# As close to ClickHouse style as the generator gets. Deliberately not run through `clang-format`:
+# the check compares bytes, so that tool's version would decide whether the build passes.
+braces = "NextLine"
+line_length = 140
+tab_width = 4
+documentation_style = "auto"
+usize_is_size_t = true
+
+header = """
+#pragma once
+
+#include <stdint.h>
+
+/// C bindings for reading and writing Vortex files, implemented in Rust on top of the `vortex`
+/// crate; the other half lives in `rust/workspace/vortex/src/lib.rs`. Arrays cross the boundary as
+/// Arrow C Data Interface structs, and IO is delegated back through callbacks.
+///
+/// THIS FILE IS GENERATED FROM `src/lib.rs` BY `build.rs`. DO NOT EDIT IT BY HAND: change the Rust
+/// side, including its doc comments, and regenerate with
+/// `VORTEX_FFI_HEADER_UPDATE=1 cargo check -p _ch_rust_vortex`.
+///
+/// Ownership:
+///   - an Arrow struct passed into a function is consumed by it;
+///   - an Arrow struct written to an out-parameter belongs to the caller, who has to call its
+///     `release` - importing it with `arrow::ImportRecordBatch` or `arrow::ImportSchema` does that;
+///   - the Arrow struct passed to the scan's `on_chunk` is only borrowed for the duration of the
+///     call: the callback has to consume it before returning, by moving out of it (importing it
+///     with `arrow::ImportRecordBatch` does that) or by calling its `release`. The pointer must
+///     not be kept, and the struct must not be released after the callback has returned;
+///   - an error message has to be freed with `vortex_ffi_free_string`.
+///
+/// Every `vortex_ffi_expr_*` builder returns nullptr for input it cannot use, borrows rather than
+/// consumes its arguments, and returns a handle that has to be freed with `vortex_ffi_expr_free`.
+///
+/// Nothing here owns a thread. An `FFI_VortexRuntime` is two queues of pending work plus a way to
+/// report that something became runnable; the caller decides who runs it, when, and on how many
+/// threads, and may send the two queues to different thread pools. Without a notification callback
+/// the runtime only advances on the thread already inside a call, which is enough for opening a
+/// file and for writing one. A scan does not wait to be asked: it pushes its results to callbacks.
+
+/// The Arrow C Data Interface definitions, see
+/// https://arrow.apache.org/docs/format/CDataInterface.html
+/// They are compatible with the ones in `arrow/c/abi.h`.
+#ifndef ARROW_C_DATA_INTERFACE
+#define ARROW_C_DATA_INTERFACE
+
+#define ARROW_FLAG_DICTIONARY_ORDERED 1
+#define ARROW_FLAG_NULLABLE 2
+#define ARROW_FLAG_MAP_KEYS_SORTED 4
+
+struct ArrowSchema
+{
+    const char * format;
+    const char * name;
+    const char * metadata;
+    int64_t flags;
+    int64_t n_children;
+    struct ArrowSchema ** children;
+    struct ArrowSchema * dictionary;
+    void (*release)(struct ArrowSchema *);
+    void * private_data;
+};
+
+struct ArrowArray
+{
+    int64_t length;
+    int64_t null_count;
+    int64_t offset;
+    int64_t n_buffers;
+    int64_t n_children;
+    const void ** buffers;
+    struct ArrowArray ** children;
+    struct ArrowArray * dictionary;
+    void (*release)(struct ArrowArray *);
+    void * private_data;
+};
+
+#endif // ARROW_C_DATA_INTERFACE
+"""
+
+[export]
+# The Arrow structs come from the preamble above, not from the Rust definitions the crate uses
+# internally.
+exclude = ["ArrowSchema", "ArrowArray", "FFI_ArrowSchema", "FFI_ArrowArray"]
+
+[export.rename]
+# `arrow-array` spells these `FFI_ArrowSchema`/`FFI_ArrowArray`; the C Data Interface, and the
+# preamble above, spell them without the prefix.
+"FFI_ArrowSchema" = "ArrowSchema"
+"FFI_ArrowArray" = "ArrowArray"
+
+[enum]
+# `#[repr(i32)]` enums become `enum class ... : int32_t`.
+enum_class = true
+prefix_with_name = false
