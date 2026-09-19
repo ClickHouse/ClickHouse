@@ -50,7 +50,9 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
+    /// A snapshot, kept alive by the holder: `ALTER ... MODIFY SETTING` replaces the settings while inserts and
+    /// `system.table_settings` read them.
+    MultiVersion<MemorySettings>::Version getMemorySettings() const { return memory_settings.get(); }
 
     void readImpl(
         QueryPlan & query_plan,
@@ -156,7 +158,7 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
-    std::unique_ptr<MemorySettings> memory_settings;
+    MultiVersion<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

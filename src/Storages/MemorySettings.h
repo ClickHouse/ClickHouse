@@ -35,7 +35,7 @@ struct MemorySettings
 
     MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    ASTPtr getSettingsChangesQuery();
+    ASTPtr getSettingsChangesQuery() const;
     void sanityCheck() const;
     /// The table's own `SETTINGS` clause, recorded as the definition, as `loadFromQuery` records it.
     void loadFromQuery(ASTStorage & storage_def);

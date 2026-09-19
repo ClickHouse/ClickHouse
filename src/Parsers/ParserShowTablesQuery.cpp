@@ -581,7 +581,7 @@ The `SHOW TABLE SETTINGS` statement produces a result table with the following s
 | `name`    | The name of the setting                                                    | `String` |
 | `value`   | The value in effect, which may differ from the one the `CREATE` query states | `String` |
 | `changed` | `1` if `source` is anything other than `default`, `0` otherwise             | `UInt8`  |
-| `source`  | Where the value came from - see [`system.table_settings`](/reference/system-tables/table_settings) for the full list | `String` |
+| `source`  | Where the value came from - see [`system.table_settings`](/reference/system-tables/table_settings) for the full list | `Enum8` |
 
 ### Examples {#examples-9}
 

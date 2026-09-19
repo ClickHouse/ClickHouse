@@ -1790,6 +1790,7 @@ def test_table_settings_for_datalake_catalog(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 
     ## A table the catalog lists but no longer resolves is skipped without an error: looking it up again finds nothing.
+    ## `SHOW TABLE SETTINGS` names that one table, so it reports it missing, as `SHOW CREATE TABLE` does.
     node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
     try:
         assert (
@@ -1800,12 +1801,9 @@ def test_table_settings_for_datalake_catalog(started_cluster):
             ).strip()
             == "0"
         )
-        assert (
-            node.query(
-                f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
-                f"SETTINGS database_datalake_require_metadata_access = 1"
-            ).strip()
-            == ""
+        assert "UNKNOWN_TABLE" in node.query_and_get_error(
+            f"SHOW TABLE SETTINGS FROM {CATALOG_NAME}.`{full_name}` "
+            f"SETTINGS database_datalake_require_metadata_access = 1"
         )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_return_nullptr")

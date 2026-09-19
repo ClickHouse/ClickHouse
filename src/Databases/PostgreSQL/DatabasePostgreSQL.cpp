@@ -154,7 +154,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -166,8 +166,9 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         auto connection_holder = pool->get();
         auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
+        /// Filter before fetching: fetching a table queries its structure from the server.
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name))
+            if (!detached_or_dropped.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
                 tables[table_name] = fetchTable(table_name, local_context, true);
     }
     catch (...)

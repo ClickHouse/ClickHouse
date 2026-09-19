@@ -150,9 +150,9 @@ def test_table_settings_for_mysql_database(started_cluster):
         assert hidden.strip() == "0"
 
         # `SHOW TABLE SETTINGS` turns the visibility setting on for a database named explicitly.
-        # That must not also hand out rows the user has no `SHOW TABLES` for: it runs on a copy of
-        # the caller's context, so the grant still decides. Proven here rather than in a stateless
-        # test because only a reachable remote database has rows for the enabling path to reveal.
+        # That must not also hand out rows the user has no `SHOW TABLES` for: the statement refuses
+        # the table, as `SHOW CREATE TABLE` does. Proven here rather than in a stateless test because
+        # only a reachable remote database has rows for the enabling path to reveal.
         clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
         clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
         clickhouse_node.query(
@@ -165,12 +165,12 @@ def test_table_settings_for_mysql_database(started_cluster):
         )
         assert denied.strip() == "0"
 
-        denied_show = clickhouse_node.query(
+        denied_show = clickhouse_node.query_and_get_error(
             "SHOW TABLE SETTINGS FROM test_settings_database.t",
             user="mysql_settings_denied",
             settings={"show_remote_databases_in_system_tables": 0},
         )
-        assert denied_show.strip() == ""
+        assert "ACCESS_DENIED" in denied_show
 
         clickhouse_node.query(
             "GRANT SHOW TABLES ON test_settings_database.t TO mysql_settings_denied"

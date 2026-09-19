@@ -35,9 +35,8 @@ echo "-- without SHOW TABLES, system.table_settings yields nothing for the table
 $CLICKHOUSE_CLIENT --user="${DENIED}" -q \
     "SELECT count() FROM system.table_settings WHERE database = '${DB}' AND table = 'mt'"
 
-echo "-- nor does SHOW TABLE SETTINGS, which enables visibility settings but not privileges"
-$CLICKHOUSE_CLIENT --user="${DENIED}" -q "SHOW TABLE SETTINGS FROM ${DB}.mt" 2>&1 \
-    | sed -e "s/${DB}/{db}/g" -e 's/(version.*//' | head -3
+echo "-- SHOW TABLE SETTINGS refuses it, as SHOW CREATE TABLE does, rather than print an empty list"
+$CLICKHOUSE_CLIENT --user="${DENIED}" -q "SHOW TABLE SETTINGS FROM ${DB}.mt" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
 echo "-- a granted user sees its own table"
 $CLICKHOUSE_CLIENT --user="${GRANTED}" -q \
@@ -51,8 +50,7 @@ $CLICKHOUSE_CLIENT --user="${GRANTED}" -q \
     "SELECT count() FROM system.table_settings WHERE database = '${DB}' AND table = 'other'"
 
 echo "-- the per-table grant does not leak the neighbour through the statement either"
-$CLICKHOUSE_CLIENT --user="${GRANTED}" -q "SHOW TABLE SETTINGS FROM ${DB}.other" 2>&1 \
-    | sed -e "s/${DB}/{db}/g" -e 's/(version.*//' | head -3
+$CLICKHOUSE_CLIENT --user="${GRANTED}" -q "SHOW TABLE SETTINGS FROM ${DB}.other" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
 for u in "${DENIED}" "${GRANTED}"; do
     $CLICKHOUSE_CLIENT -q "DROP USER ${u}"

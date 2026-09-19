@@ -63,7 +63,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-ASTPtr MemorySettings::getSettingsChangesQuery()
+ASTPtr MemorySettings::getSettingsChangesQuery() const
 {
     auto settings_ast = make_intrusive<ASTSetQuery>();
     settings_ast->is_standalone = false;

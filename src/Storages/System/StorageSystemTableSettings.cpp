@@ -317,6 +317,12 @@ private:
         if (!table_filter)
             return {};
 
+        /// `WHERE table = '...'` can match only the table it names, so there is nothing to list, and listing a
+        /// `PostgreSQL` database fetches the structure of every table in it. The rest of the filter is applied to the
+        /// rows afterwards.
+        if (tables_filter.kind == TablesFilter::Kind::Equals && !databases_cursor.getDatabase()->isDatalakeCatalog())
+            return [name = tables_filter.pattern](const String & table_name) { return table_name == name; };
+
         auto database_column = ColumnString::create();
         auto table_column = ColumnString::create();
         for (const auto & table_details : databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(

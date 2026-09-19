@@ -4,8 +4,8 @@
 -- try to reach it and fail.
 
 -- `system.table_settings` on a `Remote` database. Its tables are `Distributed` storages, and it keeps the plain
--- table iterator, which is best-effort for `Remote`: an unreachable server yields no rows rather than an error
--- when the tables are listed only by database. A data lake catalog takes the hinted iterator instead, which
+-- table iterator, which is best-effort for `Remote`: an unreachable server yields no rows rather than an error,
+-- also for a query that names the table. A data lake catalog takes the hinted iterator instead, which
 -- would turn that into an error - see `test_database_iceberg::test_table_settings_for_datalake_catalog`.
 
 SET send_logs_level = 'fatal';
@@ -36,11 +36,11 @@ SET show_remote_databases_in_system_tables = 1;
 
 USE {CLICKHOUSE_DATABASE_2:Identifier};
 
-SELECT '-- an unreachable Remote database listed by database only: no rows, no error';
+SELECT '-- an unreachable Remote database: no rows, no error, whether listed by database or by table';
 SELECT count() FROM system.table_settings WHERE database = currentDatabase();
+SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 't';
 
-SELECT '-- naming one of its tables has to list the names, and reports that the server is unreachable';
-SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 't'; -- { serverError NO_REMOTE_SHARD_AVAILABLE }
+SELECT '-- SHOW TABLE SETTINGS looks the table up first, and reports that the server is unreachable';
 SHOW TABLE SETTINGS FROM t; -- { serverError NO_REMOTE_SHARD_AVAILABLE }
 -- Also with the visibility setting off: the statement enables it for the named database, and the server is still unreachable.
 SET show_remote_databases_in_system_tables = 0;

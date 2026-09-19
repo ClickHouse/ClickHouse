@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterShowTableSettingsQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -76,6 +77,16 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
     /// for this query - the same thing `InterpreterShowTablesQuery` does for `SHOW TABLES`.
     const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
     const String database = resolveReportedDatabase(query, getContext());
+
+    /// As `SHOW CREATE TABLE` does: a table the user may not see, or one that does not exist, is an error, not an
+    /// empty result, which would read as a table with no settings. `system.table_settings` shows a table to whoever
+    /// may `SHOW TABLES` it. A temporary table belongs to the session and needs no grant.
+    if (!database.empty())
+    {
+        getContext()->checkAccess(AccessType::SHOW_TABLES, database, query.table);
+        DatabaseCatalog::instance().getTable(StorageID(database, query.table), getContext());
+    }
+
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))

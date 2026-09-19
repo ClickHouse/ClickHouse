@@ -101,7 +101,7 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
-        if (storage.getMemorySettingsRef()[MemorySetting::compress])
+        if ((*storage.getMemorySettings())[MemorySetting::compress])
         {
             Block compressed_block;
             for (const auto & elem : block)
@@ -130,7 +130,8 @@ public:
         auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
         UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
         UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
-        const auto & memory_settings = storage.getMemorySettingsRef();
+        const auto memory_settings_snapshot = storage.getMemorySettings();
+        const auto & memory_settings = *memory_settings_snapshot;
         while (!new_data->empty()
                && ((memory_settings[MemorySetting::max_bytes_to_keep] && new_total_bytes > memory_settings[MemorySetting::max_bytes_to_keep])
                    || (memory_settings[MemorySetting::max_rows_to_keep] && new_total_rows > memory_settings[MemorySetting::max_rows_to_keep])))
@@ -173,13 +174,13 @@ StorageMemory::StorageMemory(
     const MemorySettings & memory_settings_)
     : StorageWithCommonVirtualColumns(table_id_)
     , data(std::make_unique<const Blocks>())
-    , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
+    , memory_settings(std::make_unique<const MemorySettings>(memory_settings_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
-    storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
+    storage_metadata.setSettingsChanges(memory_settings.get()->getSettingsChangesQuery());
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
@@ -330,7 +331,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     Block block;
     while (executor.pull(block))
     {
-        if ((*memory_settings)[MemorySetting::compress])
+        if ((*memory_settings.get())[MemorySetting::compress])
             for (auto & elem : block)
                 elem.column = elem.column->compress(/*force_compression=*/true);
 
@@ -441,14 +442,16 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     if (params.isSettingsAlter())
     {
         auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
-        auto changed_settings = *memory_settings;
+        const auto current_settings_snapshot = memory_settings.get();
+        const auto & current_settings = *current_settings_snapshot;
+        auto changed_settings = current_settings;
         changed_settings.applyDefinition(settings_changes.changes);
         changed_settings.sanityCheck();
 
         /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
         /// the old data needs to be removed.
-        if (!(*memory_settings)[MemorySetting::max_bytes_to_keep] || (*memory_settings)[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
-            || !(*memory_settings)[MemorySetting::max_rows_to_keep] || (*memory_settings)[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep])
+        if (!current_settings[MemorySetting::max_bytes_to_keep] || current_settings[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
+            || !current_settings[MemorySetting::max_rows_to_keep] || current_settings[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep])
         {
             std::lock_guard lock(mutex);
 
@@ -478,7 +481,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             total_size_rows.store(new_total_rows, std::memory_order_relaxed);
             total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
         }
-        *memory_settings = std::move(changed_settings);
+        memory_settings.set(std::make_unique<const MemorySettings>(std::move(changed_settings)));
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -691,7 +694,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 
         for (auto block = block_in.read(); !block.empty(); block = block_in.read())
         {
-            if ((*memory_settings)[MemorySetting::compress])
+            if ((*memory_settings.get())[MemorySetting::compress])
             {
                 Block compressed_block;
                 for (const auto & elem : block)
@@ -877,7 +880,7 @@ SettingDescriptions StorageMemory::getTableSettings(ContextPtr /* query_context 
 {
     /// The settings object records the definition as `loadFromQuery` and `applyChanges` - on `ALTER ... MODIFY
     /// SETTING`, the only settings `ALTER` this engine supports - apply it.
-    return memory_settings->enumerateSettings();
+    return memory_settings.get()->enumerateSettings();
 }
 
 }
