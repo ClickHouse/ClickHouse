@@ -37,8 +37,8 @@ ColumnsDescription sharedSettingColumns()
             "Where the value came from: the engine's compiled-in `default`, a server `config` section, an older "
             "release's default the `compatibility` setting rolled back to, a `named_collection` the table was built "
             "from, the table's own `SETTINGS` clause (`definition`), metadata shared between replicas "
-            "(`shared_metadata`), a value the engine adjusts as it runs (`runtime`), or `other` where the engine "
-            "does not say. Which of them can appear depends on the engine."},
+            "(`shared_metadata`), or `other` where the engine does not say - which is also how a value the engine "
+            "adjusts while it runs is reported. Which of them can appear depends on the engine."},
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
             "Minimum value the current user's settings constraints allow, or NULL if none is set. "

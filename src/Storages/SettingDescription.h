@@ -36,12 +36,12 @@ enum class SettingOrigin : uint8_t
     NamedCollection,
     Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
     SharedMetadata,   /// replicated table metadata, e.g. Keeper for S3Queue and AzureQueue
-    /// Adjusted by the engine while it runs, and not written back to its settings - the case
-    /// `SHOW CREATE TABLE` cannot serve. ⚠️ Reserved: nothing reports it yet. The intended first
-    /// producer is https://github.com/ClickHouse/ClickHouse/pull/116522 (`StorageKafka` halving
-    /// `kafka_max_block_size`); declared now so the values stay in the order they are applied in.
-    Runtime,
-    Other,            /// the engine does not report an origin for this setting
+    /// The engine does not report an origin for this setting. A value the engine adjusts while it runs and
+    /// does not write back - `StorageKafka` halving `kafka_max_block_size`, which
+    /// https://github.com/ClickHouse/ClickHouse/pull/116522 is about - is reported this way too, until an
+    /// engine reports such a value as its own source; a new value belongs in the order the sources are
+    /// applied in, before this one.
+    Other,
 };
 
 std::string_view toString(SettingOrigin origin);

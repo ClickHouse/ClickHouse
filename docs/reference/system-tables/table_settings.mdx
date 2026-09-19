@@ -17,7 +17,7 @@ An engine that keeps no settings of its own reports only what the table's `SETTI
 A setting known only from that clause has an empty `default`, `type` and `description` unless the engine lists it in `system.engine_settings`.
 
 Which values of `source` can appear depends on the engine: only `MergeTree` family tables report `compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and `File`, `URL` and the plain object storage engines report only `definition`.
-No engine reports `runtime` yet.
+A value an engine adjusts while it runs, and does not write back to its settings, is reported as `other`.
 
 A table is shown to a user who has the `SHOW TABLES` privilege on it.
 The [`SHOW TABLE SETTINGS`](/reference/statements/show#show-table-settings) statement reads this table for one table.
