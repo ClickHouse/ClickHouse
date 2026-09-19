@@ -93,7 +93,17 @@ private:
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
     ColumnsForPatches getColumnsForPatches(const Block & header, const Columns & columns) const;
 
-    void applyPatches(
+    /// Removes the columns the step's action recomputes from `result.columns_filled_by_defaults`:
+    /// their value is the action's, not their `DEFAULT`'s, and must not be evaluated again.
+    static void forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader);
+
+    /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
+    /// once more, after patches were applied to `patched_columns` of the result accumulated up to
+    /// the reader `reader_index`. A patched column leaves the set and keeps its patched value.
+    void reevaluateDefaultsAfterPatches(ReadResult & result, size_t reader_index, const NameSet & patched_columns) const;
+
+    /// Returns the names of the columns to which a patch was applied.
+    NameSet applyPatches(
         const Block & result_header,
         Columns & result_columns,
         Block & versions_block,

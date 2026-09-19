@@ -375,6 +375,13 @@ public:
         /// Contains columns with data versions for each column updated by patch parts.
         Block patch_versions_block;
 
+        /// Names of the columns the part does not store whose value is, so far, the one their
+        /// `DEFAULT` expression gave. A column leaves the set when a patch part overwrites it or a
+        /// chain step's action recomputes it. The rest are evaluated again after every pass that
+        /// applies patches, so that a `DEFAULT` that reads a patched column sees the patched value.
+        /// See `MergeTreeReadersChain::reevaluateDefaultsAfterPatches`.
+        NameSet columns_filled_by_defaults;
+
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
@@ -456,7 +463,7 @@ public:
     const Block & getSampleBlock() const { return result_sample_block; }
     const Block & getReadSampleBlock() const { return read_sample_block; }
 
-    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const;
+    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header) const;
 
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }
