@@ -1,0 +1,77 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS prewhere_uniform_filter</create_query>
+    <create_query>
+        CREATE TABLE prewhere_uniform_filter
+        (
+            id UInt64,
+            all_pass UInt8,
+            all_drop UInt8,
+            mixed UInt8,
+            tail UInt8,
+            almost_all UInt8,
+            payload UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 8192
+    </create_query>
+    <fill_query>
+        INSERT INTO prewhere_uniform_filter
+        SELECT
+            number,
+            2,
+            0,
+            toUInt8(number % 2),
+            toUInt8(number % 8192 &lt; 8190),
+            toUInt8(number != 9999999),
+            number
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE all_pass FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE all_drop FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE mixed FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE tail FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter PREWHERE almost_all FORMAT Null</query>
+
+    <create_query>DROP TABLE IF EXISTS prewhere_uniform_filter_sparse</create_query>
+    <create_query>
+        CREATE TABLE prewhere_uniform_filter_sparse
+        (
+            id UInt64,
+            sparse_true UInt8,
+            sparse_false UInt8,
+            sparse_mixed UInt8,
+            payload UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            ratio_of_defaults_for_sparse_serialization = 0.1,
+            compute_exact_num_defaults_for_sparse_columns = 1,
+            serialization_info_version = 'with_types'
+    </create_query>
+    <fill_query>
+        INSERT INTO prewhere_uniform_filter_sparse
+        SELECT
+            number,
+            if(number &lt; 8192, toUInt8(2), toUInt8(0)),
+            if(number &gt;= 8192 AND number &lt; 16384, toUInt8(2), toUInt8(0)),
+            if(number &lt; 8192 AND number % 2 = 0, toUInt8(2), toUInt8(0)),
+            number
+        FROM numbers(1000000)
+    </fill_query>
+
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_true WHERE id &lt; 8192 FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_false WHERE id &lt; 8192 FORMAT Null</query>
+    <query>SELECT sum(payload) FROM prewhere_uniform_filter_sparse PREWHERE sparse_mixed WHERE id &lt; 8192 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_uniform_filter</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prewhere_uniform_filter_sparse</drop_query>
+</test>
