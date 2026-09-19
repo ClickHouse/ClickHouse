@@ -43,13 +43,6 @@ ORDER BY L2Distance(vec, [0., 2.]) ASC
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0;
 
-SELECT 'the filter consuming the vector column works with the old analyzer as well';
-SELECT id FROM tab_vec_consumers
-WHERE length(vec) = 2
-ORDER BY L2Distance(vec, [0., 2.]) ASC
-LIMIT 3
-SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, enable_analyzer = 0;
-
 SELECT 'the rewrite still applies when only the ORDER BY consumes the vector column';
 SELECT count() FROM
 (

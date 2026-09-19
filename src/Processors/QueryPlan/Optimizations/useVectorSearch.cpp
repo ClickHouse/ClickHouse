@@ -259,11 +259,11 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
 
 /// Finds the INPUT node of `dag` which reads the vector search column, or nullptr if the column is not an input.
 ///
-/// `search_column` is the unqualified name of the storage column. An exact match always wins. The old analyzer can
-/// name the input with a table qualifier (`tab.vec`), so as a fallback a single leading qualifier is stripped, the
-/// same way `optimizeVectorSearchWithQuantizedCodes` resolves a dotted name. The fallback must not fire for an
-/// unrelated column that merely ends in the same leaf name: the `vec` element of a `Nested` column `n` is a physical
-/// column literally named `n.vec`, hence the check against the storage columns.
+/// `search_column` is the unqualified name of the storage column. An exact match always wins. An input may
+/// carry a table qualifier (`tab.vec`), so as a fallback a single leading qualifier is stripped, the same way
+/// `optimizeVectorSearchWithQuantizedCodes` resolves a dotted name. The fallback must not fire for an unrelated
+/// column that merely ends in the same leaf name: the `vec` element of a `Nested` column `n` is a physical column
+/// literally named `n.vec`, hence the check against the storage columns.
 static const ActionsDAG::Node * findSearchColumnInput(const ActionsDAG & dag, const String & search_column, const ColumnsDescription & storage_columns)
 {
     const ActionsDAG::Node * qualified_match = nullptr;
