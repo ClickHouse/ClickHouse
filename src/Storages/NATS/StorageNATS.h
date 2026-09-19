@@ -140,6 +140,7 @@ private:
 
     void createConsumersConnection();
     void createConsumers();
+    void dropConsumers();
 
     bool subscribeConsumers();
     /// Replaces the subscription of every consumer that stopped consuming, without losing what it
