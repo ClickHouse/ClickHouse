@@ -31,8 +31,13 @@ SELECT 'line\nbreak' AS value FORMAT PrettyCompact SETTINGS output_format_pretty
 -- interpreted by the terminal. They take no visible position, so the table outline is preserved.
 SELECT '\x1b[31mred\x1b[0m' AS value FORMAT PrettyCompact;
 
--- Trailing whitespace is still highlighted; a trailing tab is shown as its Control Picture.
-SELECT 'spaces  ' AS a, 'tab\t' AS b FORMAT PrettyCompact
+-- Trailing whitespace is still highlighted, including a tab or a carriage return, whose picture
+-- form gets the highlighting: it is detected on the bytes before the replacement, in one pass.
+SELECT 'spaces  ' AS a, 'tab\t' AS b, 'cr\r' AS c, 'mixed  \t' AS d FORMAT PrettyCompact
+SETTINGS output_format_pretty_color = 1, output_format_pretty_highlight_trailing_spaces = 1;
+
+-- The trailing whitespace of each line of a multi-line value is highlighted on its own.
+SELECT 'a\t\nbb  \nccc' AS v FORMAT PrettyCompact
 SETTINGS output_format_pretty_color = 1, output_format_pretty_highlight_trailing_spaces = 1;
 
 -- Multi-byte UTF-8 characters are preserved.
