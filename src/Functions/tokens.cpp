@@ -323,6 +323,7 @@ Available tokenizers:
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitByString)). The separators can be specified using an optional parameter, for example, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly, is a single whitespace `[' ']`.
 - `splitByRegexp(regexp[, match_tokens])` splits strings according to a user-defined regular expression `regexp`. The regular expression is mandatory, for example, `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`. With the optional `match_tokens` argument left at its default (`false`; `0`/`1` are also accepted), `regexp` is a separator (also see function [splitByRegexp](/sql-reference/functions/splitting-merging-functions.md/#splitByRegexp)). With `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded, for example `tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\w+)', true)` returns `['hello', 'world']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
+- `asciiCJK_v2` produces the same tokens as `asciiCJK`, but decodes non-ASCII characters with the [StringZilla](https://github.com/ashvardanian/StringZilla) library.
 - `chinese` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words, which yields more meaningful tokens and higher search quality for Chinese text. An optional `granularity` argument is either `coarse_grained` (the default) or `fine_grained`; the latter additionally enumerates overlapping sub-words, improving recall at the cost of a larger index.
 - `icu(locale)` splits strings into word tokens using the ICU library's Unicode word segmentation (UAX #29). For scripts without whitespace between words (for example Chinese, Japanese, and Thai) ICU applies dictionary-based segmentation, so such text is split into meaningful words. `locale` is the ICU locale passed to the segmenter (segmentation is mainly script- and dictionary-driven; the locale selects ICU's locale-specific tailoring); it is mandatory and passed as a separate argument, for example `tokens(value, 'icu', 'ja')`.
 - `japanese` splits Japanese text into words using the MeCab morphological analyzer. Requires a dictionary configured in the server configuration (see the [text index](/reference/engines/table-engines/mergetree-family/textindexes) documentation).
@@ -340,6 +341,7 @@ tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'splitByRegexp', regexp[, match_tokens])
 tokens(value, 'asciiCJK')
+tokens(value, 'asciiCJK_v2')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
 tokens(value, 'japanese')
@@ -349,7 +351,7 @@ tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `asciiCJK_v2`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
         {"locale", "Only relevant if argument `tokenizer` is `icu`: The mandatory locale, for example `'ja'`.", {"const String"}},
         {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
@@ -361,14 +363,14 @@ tokens(value, 'array')
         {"granularity", "Only relevant if argument `tokenizer` is `chinese`: An optional parameter, either `coarse_grained` (default) or `fine_grained`, controlling the segmentation granularity.", {"const String"}},
     };
 
-    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (`splitByRegexp`, `japanese`,
-    /// `chinese`, `icu` - see `supportsStringLike()`), so its tokenizer list, and the argument entries
-    /// only relevant to those tokenizers, are dropped too.
+    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (`splitByString`, `splitByRegexp`,
+    /// `array`, `japanese`, `chinese`, `icu` - see `supportsStringLike()`), so its tokenizer list, and the
+    /// argument entries only relevant to those tokenizers, are dropped too.
     FunctionDocumentation::Arguments arguments_like = arguments;
-    arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
+    arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `asciiCJK`, `asciiCJK_v2`, `ngrams`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
     std::erase_if(arguments_like, [](const auto & argument)
     {
-        return argument.name == "regexp" || argument.name == "match_tokens"
+        return argument.name == "separators" || argument.name == "regexp" || argument.name == "match_tokens"
             || argument.name == "locale" || argument.name == "granularity";
     });
 

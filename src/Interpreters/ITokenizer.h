@@ -35,6 +35,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        AsciiCJK_v2,
         KeyValuePairs,
 #if USE_JIEBA
         Chinese,
@@ -600,6 +601,34 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+/// Same tokens as `AsciiCJKTokenizer`, but the non-ASCII codepoints are decoded by the StringZilla library.
+struct AsciiCJKTokenizerV2 final : public ITokenizerHelper<AsciiCJKTokenizerV2>
+{
+    explicit AsciiCJKTokenizerV2()
+        : ITokenizerHelper(Type::AsciiCJK_v2)
+    {
+    }
+
+    static const char * getName() { return "asciiCJK_v2"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t & __restrict pos,
+        size_t & __restrict token_start,
+        size_t & __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
+};
+
 #if USE_JIEBA
 /// Parser segmenting Chinese text using the cppjieba library.
 /// Two granularities are supported:
@@ -741,6 +770,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::AsciiCJK_v2:
+        {
+            const auto & ascii_cjk_v2_tokenizer = assert_cast<const AsciiCJKTokenizerV2 &>(tokenizer);
+            detail::forEachTokenImpl(ascii_cjk_v2_tokenizer, data, length, callback);
             return;
         }
         case ITokenizer::Type::KeyValuePairs:

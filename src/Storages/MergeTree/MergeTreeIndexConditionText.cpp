@@ -1074,7 +1074,8 @@ static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Bl
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::Ngrams,
         ITokenizer::Type::SparseGrams,
-        ITokenizer::Type::AsciiCJK
+        ITokenizer::Type::AsciiCJK,
+        ITokenizer::Type::AsciiCJK_v2
     };
 
     if (zero_padding_tolerated_tokenizers.contains(tokenizer_type))
@@ -1406,12 +1407,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, asciiCJK_v2, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             SplitByRegexpTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
+            AsciiCJKTokenizerV2::getExternalName(),
 #if USE_ICU
             IcuTokenizer::getExternalName(),
 #endif
