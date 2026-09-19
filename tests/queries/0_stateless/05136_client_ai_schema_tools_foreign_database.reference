@@ -1,0 +1,6 @@
+local_show_create: OK
+foreign_show_create: OK
+foreign_list_tables: OK
+foreign_readonly_query: BLOCKED
+readonly_foreign_show_create: OK
+readonly_foreign_list_tables: OK

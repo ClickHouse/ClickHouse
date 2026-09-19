@@ -1,0 +1,289 @@
+# The queries of the agent are ClickHouse SQL, and the server parses with the effective `dialect`
+# of the session - which a settings profile of the user can set to KQL or PRQL. The client pins
+# `dialect = 'clickhouse'` for its own queries, and the question of whether the pin is needed used
+# to be answered from the client context. With `apply_settings_from_server = 0` that context holds
+# the local default while the server runs the session under the profile, so the pin was skipped and
+# every query of the agent was handed to the other parser.
+#
+# The client therefore asks the server about the effective value it cannot see
+# (`internalQueriesRequireDialectPin` -> `serverEffectiveSettingValue`). Here the profile of the
+# user selects Kusto, the session hides it from the client, and both the unconfirmed read-only tool
+# and the internal schema tool must still work. The positive control in the `.sh` wrapper shows that
+# the very same session really does parse ClickHouse SQL as KQL when the client does not pin it.
+import json
+import os
+import pty
+import select
+import shlex
+import signal
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 120
+
+# How long a client may take to end after its terminal was closed, before it is killed.
+TEARDOWN_SECONDS = 30
+
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script.
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
+)
+
+# Set when the pseudo-terminal reaches end of file: the client is gone.
+client_gone = False
+
+FINAL_ANSWER = "MOCK-DONE"
+
+DATABASE = os.environ["CLICKHOUSE_DATABASE"]
+
+# One tool call per case: the tool, its arguments, and whether it should be accepted.
+CASES = [
+    # The unconfirmed read-only tool: its query is sent on the connection of the user, so without
+    # the pin the server parses `SELECT 1` as KQL and the tool comes back with a syntax error.
+    ("readonly_query", "run_readonly_query", {"query": "SELECT 1"}, True),
+    # An internal query of the agent, which also carries the pin - and, being the tool whose result
+    # the user never sees, the masking of the secrets of a table definition on top of it.
+    ("show_create", "show_create_table", {"database": DATABASE, "table": "plain"}, True),
+]
+
+last_request = {}
+
+
+class Handler(BaseHTTPRequestHandler):
+    """A mock OpenAI-compatible provider. It answers with one tool call per case, in order, and
+    finishes the turn with a plain text message."""
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        request = json.loads(self.rfile.read(length))
+        last_request["value"] = request
+
+        # The number of tool results already in the history is the number of calls made so far.
+        index = sum(1 for m in request["messages"] if m.get("role") == "tool")
+
+        if index < len(CASES):
+            name, tool, arguments, _ = CASES[index]
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"call_{name}",
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(arguments)},
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": FINAL_ANSWER}
+            finish_reason = "stop"
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider. The credentials come
+    from the configuration and not from the environment, so the agent does not ask for the
+    confirmation of using an API key found there."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            f"<max_steps>{len(CASES) + 5}</max_steps>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def client_argv(config):
+    """The interactive client of the test environment, as the user whose profile selects KQL, with
+    the settings of the server kept away from the client. The configuration file of the environment
+    is replaced by the one of the mock provider rather than added to it: the client accepts one."""
+    argv = shlex.split(os.environ["CLICKHOUSE_CLIENT_BINARY"])
+    for option in shlex.split(os.environ["CLICKHOUSE_CLIENT_EXPECT_OPT"]):
+        if option.startswith("--config-file"):
+            continue
+        argv.append(option)
+    return argv + [
+        f"--config-file={config}",
+        f"--user={os.environ['CLICKHOUSE_AI_TEST_USER']}",
+        "--apply_settings_from_server",
+        "0",
+        "--history_file=/dev/null",
+    ]
+
+
+def drain(master, debug_log_fd, idle):
+    global client_gone
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone, so a client that died shows up in the diff of the
+    failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
+
+
+def wait_for_client(child_pid):
+    """Wait for the client to end after its terminal was closed, and make sure it is gone."""
+    deadline = time.time() + TEARDOWN_SECONDS
+    while time.time() < deadline:
+        try:
+            reaped, _ = os.waitpid(child_pid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if reaped == child_pid:
+            return
+        time.sleep(0.05)
+    try:
+        os.kill(child_pid, signal.SIGKILL)
+        os.waitpid(child_pid, 0)
+    except (ChildProcessError, ProcessLookupError):
+        pass
+
+
+def run_session(config, question):
+    """Drive one interactive session: ask `question` and return the results of the tool calls the
+    agent made, keyed by the id of the call."""
+    global client_gone
+    client_gone = False
+    last_request.clear()
+
+    argv = client_argv(config)
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(argv[0], argv)
+        return {}
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+        os.write(master, question.encode() + b"\n")
+        read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        report_client_if_gone(child_pid)
+        return collect(last_request)
+    finally:
+        # There is no way to type an exit: after answering, the client is still in AI-chat mode,
+        # where a line is a question for the agent and not a command. Closing the terminal is what
+        # ends the client.
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        wait_for_client(child_pid)
+
+
+def collect(request_holder):
+    """The results of the tool calls of the request, keyed by the id of the call."""
+    results = {}
+    for message in request_holder.get("value", {}).get("messages", []):
+        if message.get("role") == "tool":
+            results[message.get("tool_call_id")] = str(message.get("content"))
+    return results
+
+
+def main():
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    config = make_config(server.server_port)
+
+    try:
+        results = run_session(config, "? look around")
+        for name, _, _, should_be_allowed in CASES:
+            answer = results.get(f"call_{name}")
+            if answer is None:
+                print(f"{name}: NO RESULT")
+                continue
+            # The tool reports a refusal as an error; an accepted call reports its outcome.
+            allowed = '"success":true' in answer.replace(" ", "")
+            if allowed == should_be_allowed:
+                print(f"{name}: {'OK' if allowed else 'BLOCKED'}")
+            else:
+                print(f"{name}: UNEXPECTED {answer[:200]}")
+    finally:
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()
