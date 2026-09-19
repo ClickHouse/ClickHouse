@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: Tests TTL behavior dependent on ORDER BY
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} -q 'DROP TABLE IF EXISTS t_part_log_has_merge_type_table'
 
 ${CLICKHOUSE_CLIENT} -q '

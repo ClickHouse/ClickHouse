@@ -1,5 +1,7 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings
 -- - no-random-merge-tree-settings -- may change number of parts
+-- Disable force_primary_key_reverse_order: tests distributed_index_analysis ProfileEvents on MergeTree
+SET force_primary_key_reverse_order = 0;
 
 drop table if exists test_10m;
 create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0;

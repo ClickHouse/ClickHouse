@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests query_metric_log, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 readonly query_prefix=$CLICKHOUSE_DATABASE
 readonly same_query_not_finish="${query_prefix}_not_two_finish"
 readonly same_query_finish="${query_prefix}_two_finish"

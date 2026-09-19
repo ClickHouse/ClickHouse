@@ -1,4 +1,7 @@
 -- Tags: no-random-settings, no-object-storage, no-parallel
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
 -- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 

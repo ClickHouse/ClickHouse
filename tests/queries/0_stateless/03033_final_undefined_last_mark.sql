@@ -1,4 +1,6 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS account_test;
 

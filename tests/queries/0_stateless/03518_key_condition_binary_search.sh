@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
 # The query runs on the replicas, so keep the local plan: the ProfileEvents this test asserts on

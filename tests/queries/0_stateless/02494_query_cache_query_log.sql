@@ -1,4 +1,7 @@
 -- Tags: no-parallel
+-- Disable force_primary_key_reverse_order: tests query cache with system.query_log, creates MergeTree tables internally
+SET force_primary_key_reverse_order = 0;
+
 -- Tag no-parallel: Messes with internal cache
 
 SYSTEM CLEAR QUERY CACHE;

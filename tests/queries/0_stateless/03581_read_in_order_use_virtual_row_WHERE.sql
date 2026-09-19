@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
 
 create table tab (x UInt64, y UInt64) engine = MergeTree order by x;
 

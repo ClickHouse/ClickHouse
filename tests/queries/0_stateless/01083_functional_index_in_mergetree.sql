@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests functional index with specific ORDER BY direction
+SET force_primary_key_reverse_order = 0;
+
 SET max_threads = 1;
 
 CREATE TABLE IF NOT EXISTS functional_index_mergetree (x Float64) ENGINE = MergeTree ORDER BY round(x);

@@ -4,6 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: SHOW CREATE TABLE output checks the ORDER BY clause
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 USER1="u1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 USER2="u2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ROLE1="r1_${CLICKHOUSE_TEST_UNIQUE_NAME}"

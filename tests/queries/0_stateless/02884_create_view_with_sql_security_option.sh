@@ -5,6 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: creates many MergeTree tables and views, SELECT output row order depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 
 user1="user02884_1_${CLICKHOUSE_DATABASE}_$RANDOM"
 user2="user02884_2_${CLICKHOUSE_DATABASE}_$RANDOM"

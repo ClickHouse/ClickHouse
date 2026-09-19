@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 1, query_plan_optimize_lazy_materialization = 0, optimize_sorting_by_input_stream_properties = 1;
 -- Parallel replicas add plan steps around the read, which shifts the indentation of every

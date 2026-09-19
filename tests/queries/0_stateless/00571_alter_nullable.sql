@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests ALTER TABLE operations, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS nullable_00571;
 CREATE TABLE nullable_00571 (x String) ENGINE = MergeTree ORDER BY x;
 INSERT INTO nullable_00571 VALUES ('hello'), ('world');

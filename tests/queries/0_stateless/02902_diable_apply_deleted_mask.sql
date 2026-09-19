@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests deleted mask with mutations, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test_apply_deleted_mask;
 
 CREATE TABLE test_apply_deleted_mask(id Int64, value String) ENGINE = MergeTree ORDER BY id;

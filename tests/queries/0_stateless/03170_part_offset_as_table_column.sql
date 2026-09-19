@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests _part_offset virtual column, values depend on key direction
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE test_table
 (
     `key` UInt32,

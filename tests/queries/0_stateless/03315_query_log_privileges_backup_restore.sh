@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests query_log privileges, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 user_name="u_03315_query_log_${CLICKHOUSE_DATABASE}"
 table_name="d_03315_query_log"
 backup_name="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"

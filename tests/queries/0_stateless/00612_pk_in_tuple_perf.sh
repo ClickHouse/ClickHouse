@@ -7,6 +7,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 
+
+# Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS pk_in_tuple_perf;
 CREATE TABLE pk_in_tuple_perf

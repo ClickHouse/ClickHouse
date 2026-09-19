@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: tests INSERT...SELECT with MergeTree, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer=1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select=2;
 

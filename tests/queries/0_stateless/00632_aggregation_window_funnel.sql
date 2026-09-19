@@ -1,3 +1,6 @@
+-- windowFunnel is order-sensitive; reversing MergeTree key order feeds events backward, producing wrong funnel results
+SET force_primary_key_reverse_order = 0;
+
 -- { echoOn }
 drop table if exists funnel_test;
 

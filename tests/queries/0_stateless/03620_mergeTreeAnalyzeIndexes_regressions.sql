@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/93817
 drop table if exists data_add_minmax_index_for_numeric_columns;
 create table data_add_minmax_index_for_numeric_columns (key Int, value Int) engine=MergeTree() order by key settings merge_selector_base = 1000, index_granularity=8192, index_granularity_bytes=10e9, min_bytes_for_wide_part=1e9, add_minmax_index_for_numeric_columns=1 as

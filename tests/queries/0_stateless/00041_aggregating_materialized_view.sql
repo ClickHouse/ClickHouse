@@ -1,4 +1,6 @@
 -- Tags: stateful
+-- Disable force_primary_key_reverse_order: creates AggregatingMergeTree with ORDER BY, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS basic;
 DROP TABLE IF EXISTS visits_null;
 

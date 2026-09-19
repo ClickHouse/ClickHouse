@@ -1,3 +1,5 @@
+"SET force_primary_key_reverse_order = 0;","querystart","OK"
+"SET force_primary_key_reverse_order = 0;","queryfinish","OK"
 "-- Attach MV to system.query_log and check that writing query_log will not fail\n\nset log_queries=1;","querystart","OK"
 "-- Attach MV to system.query_log and check that writing query_log will not fail\n\nset log_queries=1;","queryfinish","OK"
 "drop table if exists log_proxy_02572;","querystart","OK"

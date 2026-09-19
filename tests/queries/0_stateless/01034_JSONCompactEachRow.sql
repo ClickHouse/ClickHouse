@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: output row order depends on MergeTree sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_table_2;
 SET input_format_null_as_default = 0;

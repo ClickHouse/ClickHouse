@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests ORDER BY key column type validation rules
+SET force_primary_key_reverse_order = 0;
+
 set allow_suspicious_primary_key = 0;
 
 drop table if exists data;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests index_granularity behavior, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_index_granularity;
 
 CREATE TABLE t_index_granularity (id UInt64, s String)

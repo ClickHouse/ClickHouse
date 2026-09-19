@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: output row order from MergeTree table depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 select '== arrayRotateLeft';
 select arrayRotateLeft([1,2,3,4,5], 2);
 select arrayRotateLeft([1,2,3,4,5], -2);

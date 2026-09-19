@@ -6,6 +6,8 @@
 -- to execute it, but the Set from the subquery is not built yet at that point.
 SET explain_query_plan_default = 'legacy';
 
+-- Reversed key changes primary key index pruning, altering EXPLAIN granule counts.
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET optimize_functions_to_subcolumns = 1;

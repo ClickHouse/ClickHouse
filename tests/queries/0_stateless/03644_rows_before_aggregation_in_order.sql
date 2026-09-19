@@ -1,4 +1,7 @@
 -- Tags: no-parallel-replicas, no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Tests aggregation-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- no-parallel-replicas: always returns rows_before_limit_counter in response
 
 drop table if exists 03644_data;

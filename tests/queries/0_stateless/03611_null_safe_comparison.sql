@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests null-safe comparison, creates MergeTree with order-dependent output
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer = 1;
 SELECT '=====================================================================';
 SELECT 'Test : ClickHouse NULL-safe comparison';

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests async insert deduplication with ReplicatedMergeTree, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE 03014_async_with_dedup_part_log (x UInt64)
 ENGINE=ReplicatedMergeTree('/clickhouse/table/{database}/03014_async_with_dedup_part_log', 'r1') ORDER BY tuple();
 
