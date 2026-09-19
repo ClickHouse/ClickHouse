@@ -211,10 +211,33 @@ else
     echo -e "Cannot list the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
 fi
 
-timeout 1m clickhouse-client --query "SELECT 'Unfinished mutations left:', count() FROM system.mutations WHERE NOT is_done" ||:
+# The mutation entries of the `<Error>` scan below are removed on the assumption that this queue is empty
+# when the new server starts, so that assumption is checked here, where a leftover can still be attributed
+# to the mutation that caused it - after the upgrade it is only an error message with nothing pointing back
+# at this step. Each `KILL` above is allowed to fail so that one read-only table does not stop the rest of
+# them, and this is where those failures are accounted for. This has to stay before the mutation submitted
+# below on purpose, which is meant to be unfinished at this point.
+if unfinished_mutations=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.mutations WHERE NOT is_done")
+then
+    if [ "$unfinished_mutations" = 0 ]
+    then
+        echo -e "The stress phase left no unfinished mutation to the upgrade$OK" >> /test_output/test_results.tsv
+    else
+        timeout 1m clickhouse-client --query "
+            SELECT database, table, mutation_id, command, parts_to_do, latest_fail_error_code_name, latest_fail_reason
+            FROM system.mutations
+            WHERE NOT is_done
+            ORDER BY database, table, mutation_id
+            FORMAT Vertical" > /test_output/unkilled_mutations.txt ||:
+        echo -e "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt)$FAIL$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
+    fi
+else
+    echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
+fi
 
-# The report is only interesting when there was something to kill
+# The reports are only interesting when there was something to kill, or something left after it
 [ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
+[ -s /test_output/unkilled_mutations.txt ] || rm -f /test_output/unkilled_mutations.txt
 
 # A mutation submitted to the old server and finished by the new one is a real part of the upgrade
 # contract - a submitted mutation is persisted and continues to execute after a restart - and the kill
