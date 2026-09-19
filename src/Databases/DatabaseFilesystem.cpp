@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -29,6 +30,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsString rename_files_after_processing;
@@ -40,6 +42,39 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+}
+
+namespace
+{
+
+/// The archive and the path inside it a name resolves to through the archive path syntax
+/// (`archive.tar.zst::data.native`). The first part is empty if the name is a plain path in this
+/// context, and the second one is then the name itself.
+std::pair<String, String> splitToArchiveParts(const String & table_path, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::allow_archive_path_syntax])
+        return {{}, table_path};
+
+    return splitToArchivePathAndPathInArchive(table_path);
+}
+
+/// The path to the archive a name resolves to through the archive path syntax, or an empty string
+/// if the name is a plain path in this context.
+String getPathToArchive(const String & table_path, const ContextPtr & context)
+{
+    return splitToArchiveParts(table_path, context).first;
+}
+
+/// The file whose presence decides whether a table name resolves to a table. A name can use the
+/// archive path syntax (`archive.tar.zst::data.native`), which the `file` table function resolves
+/// to a file stored inside the archive; the file that has to exist on the filesystem is then the
+/// archive, not the whole name.
+String getPathToProbe(const String & table_path, const ContextPtr & context)
+{
+    String path_to_archive = getPathToArchive(table_path, context);
+    return path_to_archive.empty() ? table_path : path_to_archive;
+}
+
 }
 
 DatabaseFilesystem::DatabaseFilesystem(
@@ -80,13 +115,13 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+StoragePtr DatabaseFilesystem::addTable(const std::string & cache_key, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
     /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
     /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
     /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    return loaded_tables.emplace(cache_key, table_storage).first->second;
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -95,27 +130,42 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
     const auto & user_files_path = context_->getUserFilesPath();
 
+    const auto [path_to_archive, path_in_archive] = splitToArchiveParts(table_path, context_);
+    const String path_to_probe = path_to_archive.empty() ? table_path : path_to_archive;
+
     /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
+    if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
     }
 
-    if (!containsGlobs(table_path))
+    if (!containsGlobs(path_to_probe))
     {
         /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
+        if (!fs::exists(path_to_probe))
         {
             if (throw_on_error)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path_to_probe);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path))
+        if (!fs::is_regular_file(path_to_probe))
         {
             if (throw_on_error)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path_to_probe);
+            return false;
+        }
+
+        /// The name addresses a file stored inside the archive, so the table exists only if that file
+        /// does. Answering with the presence of the archive alone would claim a table for a member
+        /// that is not there, and its resolution would fail with a schema inference error instead of
+        /// reporting the missing table, as this database does for a plain path.
+        if (!path_to_archive.empty() && !archiveContainsFile(path_to_archive, path_in_archive))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
+                                "File does not exist inside the archive {}: {}", path_to_archive, path_in_archive);
             return false;
         }
     }
@@ -123,21 +173,37 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     return true;
 }
 
-StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) const
+std::string DatabaseFilesystem::getCacheKey(const std::string & table_name, const ContextPtr & context_) const
 {
+    /// `allow_archive_path_syntax` is part of the resolution of a name: with it enabled,
+    /// `a.tar::x.csv` is the file `x.csv` inside the archive `a.tar`, and with it disabled the same
+    /// name is a file called `a.tar::x.csv`. Both files can exist at once, and the existence probe
+    /// succeeds in both modes, so the two interpretations must not share a cache entry, or a query
+    /// would read the source the previous query resolved. A file name cannot contain a zero byte,
+    /// so the marker cannot collide with the name of another table.
+    if (getPathToArchive(getTablePath(table_name), context_).empty())
+        return table_name;
+
+    return table_name + String(1, '\0') + "archive";
+}
+
+StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, const ContextPtr & context_) const
+{
+    const std::string key = getCacheKey(name, context_);
+
     StoragePtr table = nullptr;
     {
         std::lock_guard lock(mutex);
-        auto it = loaded_tables.find(name);
+        auto it = loaded_tables.find(key);
         if (it != loaded_tables.end())
             table = it->second;
     }
 
     /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(getTablePath(name)))
+    if (table && !fs::exists(getPathToProbe(getTablePath(name), context_)))
     {
         std::lock_guard lock(mutex);
-        loaded_tables.erase(name);
+        loaded_tables.erase(key);
         return nullptr;
     }
 
@@ -151,7 +217,7 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
     if (!context_->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ ""))
         return true;
 
-    if (tryGetTableFromCache(name))
+    if (tryGetTableFromCache(name, context_))
         return true;
 
     return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */ false);
@@ -173,7 +239,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// Check if table exists in loaded tables map.
     if (!renames_after_processing)
     {
-        if (auto table = tryGetTableFromCache(name))
+        if (auto table = tryGetTableFromCache(name, context_))
             return table;
     }
 
@@ -207,7 +273,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage && !renames_after_processing)
-        return addTable(name, table_storage);
+        return addTable(getCacheKey(name, context_), table_storage);
 
     return table_storage;
 }
