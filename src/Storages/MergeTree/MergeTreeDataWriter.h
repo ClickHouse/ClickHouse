@@ -160,6 +160,7 @@ private:
         MergeTreeIndices indices,
         bool merge_is_needed,
         bool try_adaptive_codec,
+        std::optional<UInt64> block_number,
         bool use_selected_codec = false);
 
     MergeTreeData & data;

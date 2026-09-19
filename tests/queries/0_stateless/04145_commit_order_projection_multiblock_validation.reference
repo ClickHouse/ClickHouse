@@ -1,0 +1,33 @@
+after materialize
+a	parent_bn	projection_bn	parent_bo	projection_bo
+1	1	1	0	0
+2	1	1	1	1
+3	1	1	2	2
+4	2	2	0	0
+5	2	2	1	1
+6	2	2	2	2
+7	3	3	0	0
+8	3	3	1	1
+9	3	3	2	2
+after merge
+a	parent_bn	projection_bn	parent_bo	projection_bo
+1	1	1	0	0
+2	1	1	1	1
+3	1	1	2	2
+4	2	2	0	0
+5	2	2	1	1
+6	2	2	2	2
+7	3	3	0	0
+8	3	3	1	1
+9	3	3	2	2
+after mutation
+a	parent_bn	projection_bn	parent_bo	projection_bo
+1	1	1	0	0
+2	1	1	1	1
+3	1	1	2	2
+4	2	2	0	0
+5	2	2	1	1
+6	2	2	2	2
+7	3	3	0	0
+8	3	3	1	1
+9	3	3	2	2
