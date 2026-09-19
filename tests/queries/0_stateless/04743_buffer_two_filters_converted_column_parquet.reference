@@ -1,0 +1,24 @@
+P1 no filter, the converted column reads correctly
+{'a':1,'b':2}
+{'b':2}
+{'a':1}
+P2 single row policy on the converted column
+{'a':1,'b':2}
+{'a':1}
+P2 the policy reached the destination read
+1
+P2 the same with the legacy analyzer
+1
+P3 row policy and PREWHERE on the converted column
+{'a':1,'b':2}
+P3 the policy reached the destination read
+1
+P3 the same with the legacy analyzer
+1
+P4 bare PREWHERE on the converted column
+2
+P4 the alias stays out of the read header
+0
+P4 the same with the legacy analyzer
+2
+0
