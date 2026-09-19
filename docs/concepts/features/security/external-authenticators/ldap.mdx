@@ -24,14 +24,17 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <ldap_servers>
-        <!- Typical LDAP server. -->
+        <!-- Typical LDAP server. -->
         <my_ldap_server>
             <host>localhost</host>
             <port>636</port>
             <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
             <verification_cooldown>300</verification_cooldown>
+            <operation_timeout>40</operation_timeout>
+            <network_timeout>30</network_timeout>
+            <search_timeout>20</search_timeout>
             <follow_referrals>false</follow_referrals>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
@@ -43,16 +46,23 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
 
-        <!- Typical Active Directory with configured user DN detection for further role mapping. -->
+        <!-- Typical Active Directory: a service account locates the user and performs the role mapping searches,
+             the user's password is verified by binding as the DN that was found (search and bind). -->
         <my_ad_server>
-            <host>localhost</host>
-            <port>389</port>
-            <bind_dn>EXAMPLE\{user_name}</bind_dn>
+            <host>ldap.example.com</host>
+            <port>636</port>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/ldap_ca.pem</tls_ca_cert_file>
+            <lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=example,DC=com</lookup_bind_dn>
+            <lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+            <bind_dn>{user_dn}</bind_dn>
             <user_dn_detection>
-                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <base_dn>DC=example,DC=com</base_dn>
+                <scope>subtree</scope>
                 <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
             </user_dn_detection>
-            <enable_tls>no</enable_tls>
+            <verification_cooldown>300</verification_cooldown>
         </my_ad_server>
     </ldap_servers>
 </clickhouse>
@@ -66,13 +76,17 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 |-----------|---------|-------------|
 | `host` | — | LDAP server hostname or IP. This parameter is mandatory and cannot be empty. |
 | `port` | `636` / `389` | LDAP server port. Defaults to `636` if `enable_tls` is set to `yes`, `389` otherwise. |
-| `bind_dn` | — | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt. |
+| `bind_dn` | — | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt. The exact value `{user_dn}` selects [search and bind](#ldap-search-and-bind): the DN to bind to is the one found by `user_dn_detection` under the `lookup_bind_dn` identity. `bind_dn` (or the deprecated `auth_dn_prefix`/`auth_dn_suffix`) is mandatory and cannot be empty; `lookup_bind_dn` does not replace it. |
 | `auth_dn_prefix` | — | **Deprecated.** An alternative to `bind_dn`. Cannot be used together with `bind_dn`. When specified, the bind DN is constructed as `auth_dn_prefix + {user_name} + auth_dn_suffix`. For example, setting `auth_dn_prefix` to `uid=` and `auth_dn_suffix` to `,ou=users,dc=example,dc=com` is equivalent to setting `bind_dn` to `uid={user_name},ou=users,dc=example,dc=com`. |
 | `auth_dn_suffix` | — | **Deprecated.** See `auth_dn_prefix`. |
-| `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
+| `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Cached logins also reuse the roles mapped at the last successful login. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
+| `operation_timeout` | `40` | Maximum time, in seconds, to wait for the result of a bind or of a StartTLS negotiation on an established connection. Searches are bounded by `search_timeout` instead. Must be greater than `0`. |
+| `network_timeout` | `30` | Maximum time, in seconds, to wait for the TCP connection to the LDAP server, including the TLS handshake, to be established. Must be greater than `0`. An unreachable server that silently drops packets makes every authentication attempt wait for the whole timeout, see [Transport security and timeouts](#ldap-server-tls-and-timeouts). |
+| `search_timeout` | `20` | Time limit, in seconds, for each LDAP search request (user DN detection and role mapping). It is sent to the server as the requested time limit and enforced on the client as well; `operation_timeout` does not apply to searches. Must be greater than `0`. |
 | `follow_referrals` | `false` | A flag to allow the LDAP client library to automatically chase LDAP referrals returned by the server. Mostly relevant for Microsoft Active Directory environments where subtree searches at a high-level base DN (e.g. `DC=example,DC=com`) can return referrals/search references (e.g. `DC=DomainDnsZones,...`). Set to `true` only when you explicitly need cross-partition searches. |
 | `enable_tls` | `yes` | A flag to trigger the use of the secure connection to the LDAP server. Specify `no` for plain text `ldap://` protocol (not recommended), `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended), or `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS). |
-| `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`. |
+| `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`, `tls1.3`. |
+| `tls_maximum_protocol_version` | — | The maximum protocol version of SSL/TLS. Accepted values are the same as for `tls_minimum_protocol_version`, and the value must not be lower than the minimum. When unset, the newest version supported by both sides is negotiated. |
 | `tls_require_cert` | `demand` | SSL/TLS peer certificate verification behavior. Accepted values: `never`, `allow`, `try`, `demand`. |
 | `tls_cert_file` | — | Path to certificate file. |
 | `tls_key_file` | — | Path to certificate key file. |
@@ -80,32 +94,112 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `tls_ca_cert_dir` | — | Path to the directory containing CA certificates. |
 | `tls_cipher_suite` | — | Allowed cipher suite (in OpenSSL notation). |
 | `search_limit` | `256` | Maximum number of entries that can be returned by LDAP search queries performed by this server definition (for user DN detection and role mapping). |
+| `lookup_bind_dn` | — | Optional. DN of a service account. When set, every LDAP search (`user_dn_detection` and `role_mapping`) runs under this identity instead of the user's, `bind_dn` may be `{user_dn}` ([search and bind](#ldap-search-and-bind)), and `EXECUTE AS` can resolve an LDAP-backed user before their first login. Requires `user_dn_detection`, whose query must be target-specific — its `base_dn` or `search_filter` must depend on the requested user, either directly via `{user_name}`, or transitively via `{bind_dn}` / `{user_dn}` when the `bind_dn` template itself contains `{user_name}`. A static `user_dn_detection` query that returns the same DN for every requested user is rejected at parse time with `BAD_ARGUMENTS`. Must not contain `{user_name}` and must be provided together with `lookup_password`. |
+| `lookup_password` | — | Password for `lookup_bind_dn`. Cannot be empty when `lookup_bind_dn` is set; an empty value is rejected with `BAD_ARGUMENTS` to avoid issuing an LDAP unauthenticated (anonymous) simple bind. Supports `from_env`, `from_zk` and `hide_in_preprocessed="true"`. |
+
+The timeouts and the `tls_*` options above are extensions that not every build of libldap provides. When the build lacks one, a value configured explicitly is refused at connection time (`... is not supported by this build of libldap`) rather than ignored, and a warning is logged when a default security bound (`tls_minimum_protocol_version` of `tls1.2`, `tls_require_cert` of `demand`) cannot be enforced.
 
 **`user_dn_detection` sub-parameters**
 
 Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated to the actual detected user DN value.
 
+When `user_dn_detection` is used together with `lookup_bind_dn`, the search must be target-specific: `base_dn` or `search_filter` must depend on the requested user via `{user_name}`, or via `{bind_dn}` / `{user_dn}` whose underlying `bind_dn` template contains `{user_name}`. A static query that returns the same single entry for every requested user is rejected at parse time, because it would let the service-bind path resolve `EXECUTE AS some_other_name` to an unrelated entry's DN.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search. |
+| `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}` and `{user_dn}` substrings of the template with the actual user name, bind DN and user DN during the LDAP search (before the detection has run, `{user_dn}` equals the bind DN). When `bind_dn` is `{user_dn}` (search and bind), only `{user_name}` may be used here. |
 | `scope` | `subtree` | Scope of the LDAP search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
-| `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note that special characters must be escaped properly in XML. |
+| `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}` and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN and base DN during the LDAP search (before the detection has run, `{user_dn}` equals the bind DN). When `bind_dn` is `{user_dn}` (search and bind), only `{user_name}` and `{base_dn}` may be used here. Note that special characters must be escaped properly in XML. |
+| `attribute` | `dn` | Attribute whose value becomes the user DN. Must stay `dn` whenever `lookup_bind_dn` is set, whatever `bind_dn` is: the value is consumed as the user DN by every `{user_dn}` placeholder, and in search and bind it is also the DN the user's password is verified against. |
+
+### Transport security and timeouts {#ldap-server-tls-and-timeouts}
+
+Recommended production settings:
+
+- `enable_tls` set to `yes` (LDAPS), `tls_require_cert` set to `demand`, and `tls_ca_cert_file` pointing at the CA that issued the LDAP server certificate. The certificate must contain the value of `host` as a DNS or IP subject alternative name. `never` disables certificate verification and leaves the connection open to interception; use it only for testing.
+- `tls_minimum_protocol_version` left at `tls1.2`, or raised to `tls1.3` once every LDAP server supports it.
+- `tls_maximum_protocol_version` left unset. Set it only to pin a version for a server whose newer protocol implementation misbehaves, for example `tls1.2`. A maximum lower than the minimum is rejected when the server definition is parsed.
+- `network_timeout` lowered to a few seconds where the LDAP server may become unreachable. Every authentication attempt against a server that silently drops packets holds its ClickHouse connection for the whole timeout, so a long timeout combined with clients that reconnect aggressively can exhaust `max_connections` and lock out users of other user directories as well.
+
+If you are migrating from another LDAP client configuration: `TLSv1_2` / `TLSv1.2` is `tls1.2` and `TLSv1_3` / `TLSv1.3` is `tls1.3`; `useSsl` or `useLdapSsl` is `enable_tls` set to `yes`; StartTLS is `enable_tls` set to `starttls`; the Active Directory Global Catalog listens on `3269` (LDAPS) and `3268` (LDAP), which go into `port`.
+
+A TLS failure (an untrusted or mismatching server certificate, or no protocol version acceptable to both sides) is reported in the server log as `LDAP_ERROR` with the message `Can't contact LDAP server` followed by the diagnostic message of the LDAP library; the client only sees a generic authentication failure. A server definition with an invalid value is reported in the server log at startup and on `SYSTEM RELOAD CONFIG`, and cannot be used for authentication until it is fixed.
+
+## Search and bind with a service account {#ldap-search-and-bind}
+
+By default ClickHouse verifies a password with a single LDAP "simple bind" as the DN built from the `bind_dn` template, and every LDAP search (`user_dn_detection`, `role_mapping`) runs on that same connection, that is with the user's own permissions. Many directories, in particular Active Directory, do not let ordinary users search for groups or read their own `memberOf`, and the login is frequently not part of any DN (`sAMAccountName`, `userPrincipalName`, `uid` spread over several organizational units). For those, configure a service account with `lookup_bind_dn` and `lookup_password`.
+
+Which of the three modes is used depends only on `bind_dn` and `lookup_bind_dn`:
+
+| `bind_dn` | `lookup_bind_dn` | Behavior |
+|-----------|------------------|----------|
+| template with `{user_name}` | not set | Direct bind. The password is verified by binding as the substituted template; the `user_dn_detection` and `role_mapping` searches run as the user. |
+| template with `{user_name}` | set | Direct bind, searches as the service account. After the user's bind succeeds the same connection is re-bound as `lookup_bind_dn`, and `user_dn_detection` and the `role_mapping` searches run under it. |
+| exactly `{user_dn}` | set (required) | Search and bind. The connection is bound as `lookup_bind_dn`, `user_dn_detection` locates the user, the password is verified by binding as the DN that was found, and the connection is re-bound as `lookup_bind_dn` for the `role_mapping` searches. |
+
+One connection is used per login in every mode. Example of search and bind against Active Directory:
+
+```xml
+<clickhouse>
+    <ldap_servers>
+        <my_ad_server>
+            <host>ldap.example.com</host>
+            <port>636</port>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/ldap_ca.pem</tls_ca_cert_file>
+            <lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=example,DC=com</lookup_bind_dn>
+            <lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>DC=example,DC=com</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+            </user_dn_detection>
+            <verification_cooldown>300</verification_cooldown>
+        </my_ad_server>
+    </ldap_servers>
+</clickhouse>
+```
+
+The following rules are checked when the configuration is loaded. A violation is logged as `Could not parse LDAP server`, the rest of the configuration is applied, and every authentication against that server then fails with `LDAP server ... is misconfigured` followed by the original message:
+
+- `lookup_bind_dn` and `lookup_password` must be set together, `lookup_password` must not be empty, and `lookup_bind_dn` must not contain `{user_name}`.
+- `lookup_bind_dn` requires `user_dn_detection`, whose `base_dn` or `search_filter` must depend on the login.
+- `bind_dn` (or the deprecated `auth_dn_prefix`/`auth_dn_suffix`) is mandatory and must not be empty. With `lookup_bind_dn` it may be exactly `{user_dn}` (search and bind); `lookup_bind_dn` without `bind_dn` is rejected with `'bind_dn' is required`. A configuration with neither would perform an unauthenticated bind and accept every password; it is rejected with `Either 'bind_dn' or 'lookup_bind_dn' must be specified`.
+- If `bind_dn` contains `{user_dn}` it must be exactly `{user_dn}`. This requires `lookup_bind_dn`, and `user_dn_detection` must reference `{user_name}` in `base_dn` or `search_filter` and must not reference `{bind_dn}` or `{user_dn}` (the user DN is not known before the detection).
+- With `lookup_bind_dn`, whatever `bind_dn` is, the `attribute` of `user_dn_detection` must be `dn` (the default): the value the detection returns is stored as the user DN and consumed as such by every `{user_dn}` placeholder (role mappings, the synchronization, `EXECUTE AS`); in search and bind it is also the DN that is bound.
+
+How failures are reported:
+
+- A wrong password, or in search and bind a login that `user_dn_detection` does not find, is a regular authentication failure: the user is treated as not existing in this directory, so the following user directories still get their chance. Active Directory sub-codes (`data 52e` wrong password, `data 533` disabled account, `data 775` locked out, ...) are logged at debug level; the client only ever sees `Authentication failed`.
+- A `user_dn_detection` search answered with `No such object` is treated as "login not found" only when its `base_dn` depends on the login, that is when it contains `{user_name}`, or `{bind_dn}` / `{user_dn}` while the `bind_dn` template contains `{user_name}`: the substituted base legitimately does not exist for an unknown login. A static `base_dn` that does not exist is a misconfiguration and is logged as `LDAP_ERROR`.
+- More than one entry matching `user_dn_detection`, a rejected service account bind (`LDAP lookup bind as ... failed for server ...: invalid credentials`) and every other LDAP error are logged as `LDAP_ERROR` and the login fails.
+- The login is escaped exactly once for the context it is substituted into: as an RFC 4514 DN component for `{user_name}` in `bind_dn` and `base_dn`, as an RFC 4515 filter value for `{user_name}` in `search_filter`. Logins such as `o'neil,doe` or `a=b` therefore match in filters, and characters like `*`, `(` and `)` cannot alter the filter.
+
+**Protecting the service password**
+
+`lookup_password` grants read access to the directory. Keep it out of the configuration file with `from_env` or `from_zk`, and out of the preprocessed configuration with `hide_in_preprocessed="true"`, as in the example above (see [configuration files](/operations/configuration-files#from_env_zk)). `lookup_bind_dn` and `lookup_password` are part of the key of the `verification_cooldown` cache, so a login verified under rotated service credentials is never reused. Rotating the password in the directory without reloading the ClickHouse configuration makes every uncached login fail with `LDAP lookup bind as ... failed for server ...: invalid credentials` until `SYSTEM RELOAD CONFIG` picks up the new value; cached logins keep working until their cooldown expires.
+
+:::note
+While a login is within `verification_cooldown`, the user is accepted without contacting the LDAP server and the roles mapped at the last successful login are reused, so group membership changes take effect only after the cooldown. Keep it short when group membership changes often.
+:::
 
 ## LDAP external authenticator {#ldap-external-authenticator}
 
 A remote LDAP server can be used as a method for verifying passwords for locally defined users (users defined in `users.xml` or in local access control paths). To achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
 
-At each login attempt, ClickHouse tries to "bind" to the specified DN defined by the `bind_dn` parameter in the [LDAP server definition](#ldap-server-definition) using the provided credentials, and if successful, the user is considered authenticated. This is often called a "simple bind" method.
+At each login attempt, ClickHouse verifies the provided password with an LDAP "simple bind": as the DN built from the `bind_dn` template in the [LDAP server definition](#ldap-server-definition), or, when `bind_dn` is `{user_dn}`, as the DN found by `user_dn_detection` under the service account (see [Search and bind with a service account](#ldap-search-and-bind)). If the bind succeeds, the user is considered authenticated.
 
 **Example**
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <users>
-        <!- ... -->
+        <!-- ... -->
         <my_user>
-            <!- ... -->
+            <!-- ... -->
             <ldap>
                 <server>my_ldap_server</server>
             </ldap>
@@ -126,7 +220,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 
 In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. To achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
 
-At each login attempt, ClickHouse tries to find the user definition locally and authenticate it as usual. If the user is not defined, ClickHouse will assume the definition exists in the external LDAP directory and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](/concepts/features/security/access-rights#access-control-usage) is enabled and roles are created using the [CREATE ROLE](/reference/statements/create/role) statement.
+At each login attempt, ClickHouse tries to find the user definition locally and authenticate it as usual. If the user is not defined, ClickHouse will assume the definition exists in the external LDAP directory and will verify the provided credentials against the LDAP server as described in [Search and bind with a service account](#ldap-search-and-bind): a "bind" as the DN built from the `bind_dn` template, or a search under the service account followed by a bind as the DN that was found. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](/concepts/features/security/access-rights#access-control-usage) is enabled and roles are created using the [CREATE ROLE](/reference/statements/create/role) statement.
 
 **Example**
 
@@ -134,9 +228,9 @@ Goes into `config.xml`.
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <user_directories>
-        <!- Typical LDAP server. -->
+        <!-- Typical LDAP server. -->
         <ldap>
             <server>my_ldap_server</server>
             <roles>
@@ -152,14 +246,22 @@ Goes into `config.xml`.
             </role_mapping>
         </ldap>
 
-        <!- Typical Active Directory with role mapping that relies on the detected user DN. -->
+        <!-- Typical Active Directory: the user's own `memberOf` attribute lists the DNs of the groups,
+             the CN of each allow-listed group becomes the role name. Relies on the detected user DN. -->
         <ldap>
             <server>my_ad_server</server>
             <role_mapping>
-                <base_dn>CN=Users,DC=example,DC=com</base_dn>
-                <attribute>CN</attribute>
-                <scope>subtree</scope>
-                <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+                <base_dn>{user_dn}</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=*)</search_filter>
+                <attribute>memberOf</attribute>
+                <rdn_attribute>cn</rdn_attribute>
+                <groups>
+                    <!-- DN form: pins the container (recommended for Active Directory). -->
+                    <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+                    <!-- Plain form: matched against the extracted CN in any container. -->
+                    <group>clickhouse_admins</group>
+                </groups>
                 <prefix>clickhouse_</prefix>
             </role_mapping>
         </ldap>
@@ -175,15 +277,197 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
 |-----------|---------|-------------|
 | `server` | — | One of LDAP server names defined in the `ldap_servers` config section above. This parameter is mandatory and cannot be empty. |
 | `roles` | — | Section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication. |
+| `exclude_users` | — | Optional section with a list of `<user>` entries. The listed user names are never served by this directory: no LDAP bind or search is performed for them and no user entity is created, whether the login carries a password, arrives through the interserver protocol of a cluster with a `secret`, or is resolved by [`EXECUTE AS`](/reference/statements/execute_as). The name is reported as not found, so the user directories that follow are still consulted. Names are matched exactly (case-sensitive). An empty name, or any element other than `<user>` inside `<exclude_users>`, is rejected at startup with `BAD_ARGUMENTS`. See [Keeping application users local](#ldap-exclude-users). |
+| `sync` | — | Optional section that makes the directory synchronize its users, and optionally the roles, with the LDAP server proactively instead of materializing users at their first login. Requires `lookup_bind_dn` on the server definition. See [Synchronizing LDAP users and roles](#ldap-user-sync). |
 
 **`role_mapping` sub-parameters**
 
-Section with LDAP search parameters and mapping rules. When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/reference/statements/create/role) statement. There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
+Section with LDAP search parameters and mapping rules. When a user authenticates, while still connected to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user; the search runs as the user, or as the service account when the server defines `lookup_bind_dn` (see [Search and bind with a service account](#ldap-search-and-bind)). For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/reference/statements/create/role) statement. Values can additionally be reduced to an RDN with `rdn_attribute` (for example, the CN of an Active Directory `memberOf` group DN) and filtered with a `groups` allow-list; see [Mapping pipeline](#ldap-role-mapping-pipeline) for the exact order. There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{user_dn}` substrings of the template with the actual user name, bind DN, and user DN during each LDAP search. |
 | `scope` | `subtree` | Scope of the LDAP search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
 | `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN, and base DN during each LDAP search. Note that special characters must be escaped properly in XML. |
-| `attribute` | `cn` | Attribute name whose values will be returned by the LDAP search. |
-| `prefix` | empty | Prefix expected in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. |
+| `attribute` | `cn` | Attribute name whose values will be returned by the LDAP search. The special value `dn` returns the DN of each found entry instead of an attribute. |
+| `prefix` | empty | Prefix expected in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Compared case-sensitively. |
+| `rdn_attribute` | empty | If set, each value returned by the LDAP search is parsed as a DN and replaced by the value of its first RDN whose attribute type equals `rdn_attribute` (compared case-insensitively). For example, with `rdn_attribute` set to `cn`, the Active Directory `memberOf` value `CN=clickhouse_admins,OU=Groups,DC=example,DC=com` becomes `clickhouse_admins`. Values that are not DNs or have no such RDN are ignored. Requires a non-empty `groups` list or a non-empty `prefix`. |
+| `groups` | empty | Optional allow-list of `<group>` entries; when non-empty, only values matching one of the entries are mapped and all others are ignored. An entry containing `=` is a full group DN: it is compared against the raw search result before `rdn_attribute` extraction, ignoring differences in letter case, whitespace and escaping, and the role name is derived from the `rdn_attribute` value of the configured DN (requires `rdn_attribute`). Any other entry is a plain group name compared ASCII-case-insensitively against the value after `rdn_attribute` extraction; the spelling configured here is used as the role name. `prefix` is removed from that spelling afterwards, so every entry (for a DN-form entry: its `rdn_attribute` value) must start with the configured `prefix`. Empty and duplicate entries, entries that are not valid DNs or lack the `rdn_attribute` RDN, and entries that do not carry the prefix are rejected at startup. See [Mapping pipeline](#ldap-role-mapping-pipeline). |
+
+### Mapping pipeline {#ldap-role-mapping-pipeline}
+
+Each value returned by the LDAP search of a `role_mapping` section goes through the following steps. A value dropped at any step grants no role.
+
+1. If `groups` contains DN-form entries and the value, normalized as a DN, equals one of them, the value is replaced by the `rdn_attribute` value of that configured DN, spelled as in the configuration, and step 2 is skipped.
+2. Otherwise, if `rdn_attribute` is set, the value is parsed as a DN and replaced by the unescaped value of its first RDN of that type; values that are not DNs or have no such RDN are dropped. Then, if `groups` is non-empty, the value must equal a plain-form entry ASCII-case-insensitively and is replaced by the configured spelling; otherwise it is dropped.
+3. If the value starts with `prefix`, the prefix is removed; otherwise the value is dropped. `prefix` is compared case-sensitively. Since a `groups` entry is matched with the configured spelling, an allow-listed entry that does not start with the prefix (or has nothing after it) could never grant a role; such entries are rejected when the configuration is loaded.
+4. The result is the name of a local role, which is expected to exist (see [CREATE ROLE](/reference/statements/create/role)). Missing roles are skipped with a warning in the server log.
+
+Because the configured spelling wins in both forms of `groups` entries, the ClickHouse role name is deterministic even though LDAP servers usually match attribute values case-insensitively.
+
+**Two forms of `<group>` entries**
+
+- A plain name, for example `<group>clickhouse_admins</group>`, matches a group with that name in any container. In Active Directory the CN of a group is unique only within its container, so a group `CN=clickhouse_admins,OU=Other,DC=example,DC=com` created elsewhere in the forest would match as well.
+- A full DN, for example `<group>CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com</group>`, pins the container and is the recommended form for Active Directory. It requires `rdn_attribute`, which selects the RDN whose value becomes the role name.
+
+**Reading `memberOf`**
+
+The example above reads the `memberOf` attribute of the user's own entry: `base_dn` is `{user_dn}`, so `user_dn_detection` must be configured for the server, `scope` is `base` and `search_filter` is `(objectClass=*)`. The search runs under whichever identity ClickHouse is bound with when it performs the role searches: the user's own bind, or the service account `lookup_bind_dn` where it is used (see [LDAP server definition](#ldap-server-definition)). That identity must be allowed to read the user's `memberOf` attribute; Active Directory lets users read their own `memberOf` by default.
+
+Active Directory returns at most `MaxValRange` values (1500 by default) of a multi-valued attribute and marks a truncated one as ranged (`memberOf;range=0-1499`). A user entry returned that way fails the login, or the `EXECUTE AS` lookup, with a message naming the entry and the attribute, instead of granting the part of the memberships that arrived. Raise `MaxValRange` in the LDAP policy of the domain, or search the groups as shown below, which is not subject to that limit.
+
+**Nested groups in Active Directory**
+
+`memberOf` lists direct memberships only. To grant roles through nested groups, search the groups with the `LDAP_MATCHING_RULE_IN_CHAIN` matching rule (`1.2.840.113556.1.4.1941`) instead. With `attribute` set to `dn` the search returns the DNs of the matching groups, which are then mapped exactly like `memberOf` values:
+
+```xml
+<role_mapping>
+    <base_dn>OU=ClickHouse,DC=example,DC=com</base_dn>
+    <scope>subtree</scope>
+    <search_filter>(&amp;(objectClass=group)(member:1.2.840.113556.1.4.1941:={user_dn}))</search_filter>
+    <attribute>dn</attribute>
+    <rdn_attribute>cn</rdn_attribute>
+    <groups>
+        <group>CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com</group>
+    </groups>
+    <prefix>clickhouse_</prefix>
+</role_mapping>
+```
+
+### Keeping application users local {#ldap-exclude-users}
+
+An LDAP user directory serves every name the LDAP server can authenticate. This is usually what you want for people, but not for application or service accounts that happen to exist in the corporate directory as well: such accounts should authenticate only with the secret that is managed for them in ClickHouse (for example, a password issued from a vault and defined in `users.xml`), and their LDAP password should not open a second door. The `exclude_users` section lists the names that this directory must never serve:
+
+```xml
+<clickhouse>
+    <!-- ... -->
+    <user_directories>
+        <ldap>
+            <server>my_ldap_server</server>
+            <exclude_users>
+                <user>app_user1</user>
+                <user>app_user2</user>
+            </exclude_users>
+            <role_mapping>
+                <!-- ... -->
+            </role_mapping>
+        </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
+```
+
+For an excluded name the directory reports "user not found" before doing anything else: no candidate user is built, the allowed-hosts check is not run, the LDAP server is not contacted, and nothing is stored in the directory. This holds for every way a user can reach the directory: a login with a password, the interserver authentication used by distributed queries in a cluster configured with a `secret`, and the forced lookup performed by [`EXECUTE AS`](/reference/statements/execute_as) for LDAP-backed users. Because the result is "not found" rather than an error, the user directories that follow in `user_directories` are consulted as usual, so an excluded name can be defined locally in `users.xml`, or created with `CREATE USER ... IDENTIFIED WITH ldap SERVER '...'` in a writable storage, where the [per-user LDAP authentication](#ldap-external-authenticator) is not affected by the exclusion. If no other user directory defines the name, the login fails.
+
+Names are matched exactly and are case-sensitive; patterns are not supported. An empty `<user>` entry, or any element other than `<user>` inside `<exclude_users>`, is rejected at startup with `BAD_ARGUMENTS`. Like the other parameters of the `ldap` user directory, `exclude_users` is read at server startup; changes require a restart and are not applied by `SYSTEM RELOAD CONFIG` or `SYSTEM RELOAD USERS`. The configured list is shown in the `params` column of the [`system.user_directories`](/reference/system-tables/user_directories) table as `exclude_users`.
+
+## Synchronizing LDAP users and roles {#ldap-user-sync}
+
+Without a `sync` section the directory is lazy: a user exists in ClickHouse only after their first successful login on that node, roles are mapped while the user logs in, and a user removed from the directory disappears only when the server restarts. The `sync` section adds a background job that enumerates the directory under the service account of the LDAP server (`lookup_bind_dn`, see [Search and bind with a service account](#ldap-search-and-bind)) and keeps the users of the directory, and optionally the roles they are mapped to, in step with it: users appear before their first login, role changes propagate without a login, and users that left the directory are removed.
+
+### Configuration {#ldap-user-sync-configuration}
+
+```xml
+<clickhouse>
+    <!-- ... -->
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <replicated>
+            <zookeeper_path>/clickhouse/access/</zookeeper_path>
+        </replicated>
+        <!-- The only ldap directory, declared last: see the layout rule below. -->
+        <ldap>
+            <server>my_ad_server</server>
+            <exclude_users>
+                <user>app_user1</user>
+            </exclude_users>
+            <role_mapping>
+                <base_dn>{user_dn}</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=*)</search_filter>
+                <attribute>memberOf</attribute>
+                <rdn_attribute>cn</rdn_attribute>
+                <groups>
+                    <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+                    <group>CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com</group>
+                </groups>
+                <prefix>clickhouse_</prefix>
+            </role_mapping>
+            <sync>
+                <interval>900</interval>
+                <base_dn>DC=example,DC=com</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=user)(|(memberOf=CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com)(memberOf=CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com)))</search_filter>
+                <attribute>sAMAccountName</attribute>
+                <page_size>500</page_size>
+                <create_roles>true</create_roles>
+                <roles_storage>replicated</roles_storage>
+                <only_synced_users>true</only_synced_users>
+                <min_users>1</min_users>
+                <max_users>10000</max_users>
+                <max_removed_fraction>0.5</max_removed_fraction>
+                <max_staleness>3600</max_staleness>
+                <dry_run>false</dry_run>
+            </sync>
+        </ldap>
+    </user_directories>
+</clickhouse>
+```
+
+The LDAP server referenced by `server` must define `lookup_bind_dn` and `lookup_password`; a run of a directory whose server has none fails with `LDAP sync requires 'lookup_bind_dn'`. Like the other parameters of the `ldap` user directory, the `sync` section is read at server startup; changes require a restart.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `interval` | `900` | Seconds between two synchronizations. The first run starts after a random delay of up to a tenth of the interval, so that several nodes started together do not query the LDAP server at the same moment; after a failed run the next one starts after min(`interval`, 60) seconds. `0` runs the synchronization once at startup and otherwise only on `SYSTEM RELOAD USERS`. At most `315360000` (ten years). |
+| `base_dn` | — | Base DN of the search that lists the users. Mandatory. Must not contain `{user_name}`, `{bind_dn}` or `{user_dn}`: the search is not performed on behalf of a user. |
+| `scope` | `subtree` | Scope of that search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
+| `search_filter` | — | Filter of that search, for example a filter over the groups whose members should exist in ClickHouse. Mandatory; the same placeholder rule as for `base_dn` applies. Special characters must be escaped properly in XML. |
+| `attribute` | — | Attribute whose value is the ClickHouse user name, for example `sAMAccountName` or `uid`. Mandatory, must not be `dn`. An entry returned by the search with zero or several values of this attribute fails the run with `LDAP entry ... has N values of the user name attribute ..., expected exactly one`: skipping it would make the user disappear from the plan, and the next run would remove them as if they had left the directory. |
+| `page_size` | `500` | Entries requested per page of the search (RFC 2696 paged results). Between `1` and `1000`; Active Directory returns at most 1000 entries per page. The control is requested as critical: a directory that does not support it rejects the search instead of silently truncating it. |
+| `create_roles` | `false` | Create the roles named by the `groups` allow-lists of the `role_mapping` sections (their configured spelling, or the `rdn_attribute` value of a DN-form entry, with `prefix` removed) when they do not exist in any access storage. Requires a non-empty `groups` list in at least one `role_mapping`. Roles are never altered or dropped. |
+| `roles_storage` | — | Name of the access storage the roles are created in. When unset, the first storage in `user_directories` that is not read-only is used and a warning names it if the choice was ambiguous. Either way the storage must not be ephemeral (a `memory` directory): the run fails with `LDAP sync cannot create roles in ephemeral storage` before writing anything. Recommended in clusters: `replicated`. |
+| `only_synced_users` | `true` | Serve only the users the last successful synchronization materialized. A name outside that snapshot is reported as not found for every kind of credential (password, interserver, `EXECUTE AS`), so before the first successful run nobody logs in through this directory, and the user directories that follow are consulted as usual. With `false` a user the search does not return can still log in lazily; such a user gets no mapped roles until a synchronization returns them, and is never removed by the synchronization. |
+| `min_users` | `1` | A run that finds fewer users after the exclusion and shadow rules applies nothing and fails with `fewer than min_users`. Protects against an emptied group or a lost search base. |
+| `max_users` | `10000` | A run that receives more entries from the search aborts with `LDAP_ERROR` and applies nothing. `0` disables the limit. Must be `0` or greater than `min_users`. |
+| `max_removed_fraction` | `0.5` | A run that would remove more than max(1, floor(`max_removed_fraction` × number of currently synchronized users)) users applies nothing and fails with `would remove N of M users`. One removal is always allowed, so a directory with a single user can still offboard them. Between `0` and `1`. |
+| `max_staleness` | `0` | Seconds. When greater than `0`, a login of a synchronized user is refused with `LDAP directory ... has not been synchronised for N s (max_staleness = M s), refusing to authenticate user` while the last successful run is older than this, and `EXECUTE AS` of such a user fails with the same error (`refusing to resolve user`). Requires `only_synced_users` set to `true`, `interval` greater than `0` and a value greater than `interval` (at least twice the interval is recommended). At most `315360000` (ten years). `0` disables the gate. |
+| `dry_run` | `false` | Enumerate the directory and compute the changes, log every change that would be made (`would add LDAP user`, `would remove LDAP user`, `would create role`, ...) and apply nothing. Use it to validate the filter and the guards before enabling the synchronization. |
+
+### What the synchronization does {#ldap-user-sync-semantics}
+
+Every node synchronizes independently; nothing is coordinated between nodes. A run has four phases:
+
+`SYSTEM RELOAD USERS` reloads the other storages first and the synchronized directory last, so that a role another storage loads in the same command is not created a second time.
+
+1. **Enumerate.** One paged search with `base_dn`, `scope`, `search_filter` and `attribute` runs under `lookup_bind_dn`, which the server must define: this is checked when the main configuration is applied, at startup and at every `SYSTEM RELOAD CONFIG`, and a synchronized directory whose server has no lookup identity is rejected. A `role_mapping` that reads an attribute of the user's own entry (`base_dn` set to `{user_dn}`, `scope` set to `base`, `search_filter` set to `(objectClass=*)`, for example the Active Directory `memberOf` mapping above) is answered from the enumerated entries themselves, so such a directory costs a single search per run. Every other `role_mapping` is one search per user on the same connection, with `{user_name}` and `{user_dn}` substituted from the entry and `{bind_dn}` with what a login of that user binds as (the entry's DN in search-and-bind mode, the `bind_dn` template with the name substituted otherwise), so a mapping grants during the run what it grants at a login. A server-side size limit (`sizeLimitExceeded`) fails the run with a message naming the service account; the account needs an unlimited size limit and, for OpenLDAP, an unlimited `size.prtotal`. Active Directory returns at most `MaxValRange` values (1500 by default) of a multi-valued attribute such as `memberOf` and marks the attribute as ranged (`memberOf;range=0-1499`); an entry returned that way fails the run with a message naming the entry and the attribute, because applying it would revoke every role beyond the slice. An entry with zero or several values of `attribute` fails the run the same way (see `attribute` above). Raise `MaxValRange` in the LDAP policy of the domain, or map roles with a search over the group entries (`base_dn` of the groups, `search_filter` such as `(member={user_dn})`), which is not subject to that limit.
+2. **Plan.** Two entries sharing a user name fail the run (`ambiguous directory`); names listed in `exclude_users` are dropped; a name that exists in an access storage declared **before** this directory is not materialized (the preceding storage wins at login time too, `exists in storage ..., not synchronised` is logged); a name that exists in a storage declared **after** it is materialized and a warning is logged, because the LDAP entry takes precedence at login time. Then the guards run: `min_users`, and `max_removed_fraction` against the users the earlier runs materialized on this node. A guard that trips fails the run before anything, roles included, is written.
+3. **Roles** (`create_roles` only). The target storage is selected as described for `roles_storage`, and every allow-listed role that does not exist in any storage is created with `CREATE ROLE IF NOT EXISTS` semantics, so nodes of a cluster creating the same role into a `replicated` storage do not conflict. The synchronization never alters or drops a role; a role that is dropped is created again by the next run. If a role of the same name appears in another storage as well (published there later, or created by the synchronization before it appeared), the synchronized users hold exactly the role the name resolves to (the first storage in `user_directories` order, the one `GRANT ... TO role_name` reaches) and every run logs a warning naming the storages; dropping the other copies is left to the operator, since a role can carry grants of its own.
+4. **Apply.** Under the directory's lock and in memory only: new users are created with the LDAP authentication type of the server (exactly like a user materialized by a login), users whose mapped roles changed are updated, users the synchronization created earlier that the directory no longer returns are removed. User identifiers are preserved across runs, so an open session is not affected by a run that does not remove its user. Subscribers are notified after the lock is released.
+
+The synchronized users live in the same in-memory storage the lazy path uses: they are ephemeral, owned by this directory and disappear on restart until the first run of the new process completes. With the default `only_synced_users`, logins through this directory fail during that window with "not found"; users of other storages are not affected. Set `only_synced_users` to `false` if lazy logins must work during the window.
+
+**The synchronization is the sole role authority.** In a synchronized directory a login only verifies the password (a bind as the user, or search and bind); it does not search roles and never changes the roles of a user. This is what makes the roles of the last run reliable: the `verification_cooldown` cache reuses the roles of an earlier login for up to `verification_cooldown` seconds, and a login-time refresh would re-apply that possibly stale set over what the synchronization wrote. Role changes made in LDAP therefore take effect at the next run or on `SYSTEM RELOAD USERS`, not at the next login. `EXECUTE AS` follows the same rules.
+
+**Login gates**, in this order, for a directory with `sync`: (1) `exclude_users`: the name is not found here; (2) `only_synced_users`: a name absent from the synchronized snapshot is not found here, for password logins, interserver authentication and `EXECUTE AS` alike; (3) `max_staleness`: only for a name present in the snapshot, the login, the interserver authentication and the `EXECUTE AS` lookup fail with `LDAP directory ... has not been synchronised for N s` while the last successful run is too old; (4) the password is verified against the LDAP server, and nothing else runs: with a `bind_dn` template the login is the user's bind alone, so the lookup identity is not involved and a broken one cannot lock synchronized users out (search-and-bind needs it to find the DN to bind as); for a name the synchronization materialized, a failed verification is an authentication failure and the storages that follow are not consulted (the synchronized entry shadows a same-named user declared after the directory), while for any other name it is reported as not found, as in a lazy directory. Because the staleness gate runs after the not-found gate, an LDAP outage can never lock out users defined in other storages: they are simply not found in this directory and the following storages are consulted.
+
+**A synchronized directory must be the only `ldap` directory.** Any other `ldap` directory in `user_directories`, lazy or synchronized, declared before or after the synchronized one, is a configuration error: the server refuses to start with `User directory ... has a 'sync' section and user directory ... is another 'ldap' user directory: a synchronised 'ldap' user directory must be the only 'ldap' user directory in 'user_directories'`, a `BAD_ARGUMENTS` error naming both directories. The reason is the shadow rule of the plan phase: the synchronization asks the other storages whether they define a name and leaves a name to a storage declared before it, because that storage wins the login. A storage of any other type (`users_xml`, `local_directory`, `replicated`, `memory`) answers from its whole user set, so its answer is authoritative and the user it defines is never overwritten. Another `ldap` directory can never answer authoritatively: a lazy one knows only the users who have already logged in through it, and a synchronized one knows only its last snapshot, taken on its own schedule (next to an `interval` of `60`, a directory with an `interval` of `3600` lags by up to an hour), so a user who starts matching both would be materialized by one directory first and taken over by the other at its next run or at the user's next login, and the identity, hence the roles, of that login would depend on the timing of the runs. Whether two `search_filter`s can select the same user cannot be checked in general, so the rule is enforced before the server starts instead. To synchronize the members of several groups or containers, use one directory whose `search_filter` matches all of them, as in the example above; the users of a second LDAP server cannot be synchronized on the same node.
+
+**Declare the `ldap` directory last.** Storages of other types may precede or follow the synchronized directory. A name that exists in a storage declared **before** it is not synchronized and cannot log in with the LDAP password: the earlier storage wins and keeps its user (`exists in storage ..., which precedes directory ...: not synchronised` is logged, `LDAPSyncUsersShadowed` is incremented). A name that also exists in a storage declared **after** it is synchronized, with a warning (`also exists in storage ..., which follows directory ...: the LDAP entry takes precedence`), and the LDAP entry shadows that user. `SYSTEM RELOAD USERS` reloads every storage even when a synchronization fails, but declaring the directory last keeps the precedence rules obvious and the shadow warnings rare.
+
+### Triggering and observing {#ldap-user-sync-observability}
+
+`SYSTEM RELOAD USERS` runs one synchronization of every directory with `sync` in the thread of the query and returns its error, for example `would remove 1200 of 1201 users` or the LDAP error of an unreachable directory; `SYSTEM RELOAD USERS ON CLUSTER` does the same on every node. `SYSTEM RELOAD CONFIG` does not trigger a synchronization.
+
+Each run writes one `INFO` line per change (`Added LDAP user`, `Updated roles of LDAP user`, `Removed LDAP user`, `Created role`) and one summary line (`LDAP synchronisation of directory ... finished in N ms: E entries, U users (A added, U updated, R removed, X excluded, S shadowed), C roles created, M roles missing`); a failed run is logged as `LDAP synchronisation of directory ... failed` with the reason. The following counters in [`system.events`](/reference/system-tables/events) and gauge in [`system.metrics`](/reference/system-tables/metrics) cover the runs: `LDAPSyncRuns` (runs started, including failed and dry runs), `LDAPSyncFailures`, `LDAPSyncUsersAdded`, `LDAPSyncUsersUpdated`, `LDAPSyncUsersRemoved`, `LDAPSyncUsersExcluded`, `LDAPSyncUsersShadowed`, `LDAPSyncRolesCreated`, `LDAPSyncRolesMissing` and `LDAPSyncRunning`. An alert on `LDAPSyncFailures` increasing, or on `LDAPSyncRuns` standing still, covers both an unreachable directory and a tripped guard. The configured parameters are shown as `sync` in the `params` column of [`system.user_directories`](/reference/system-tables/user_directories); no secret is part of them.
+
+### Offboarding and locking {#ldap-user-sync-offboarding}
+
+A user that leaves the groups selected by `search_filter`, or is disabled in a way the filter excludes, is removed from the directory at the next run without any login: queries in their open sessions fail from then on (`User has been dropped`) and further logins fail as "not found" (with `only_synced_users`). To lock a synchronized user immediately, run `SYSTEM RELOAD USERS` after the change in LDAP, or list the name in `exclude_users`, which takes effect at the next restart.
+
+The removal behaves like `DROP USER` towards the other access storages: the references to the removed user are dropped from the `TO` lists of row policies, quotas and settings profiles, and from the grantees and default roles of other users, exactly as when the user is dropped with SQL. A user who rejoins the groups later is materialized again under a new identifier and must be added to those entities again; a row policy that named them no longer applies to the new user (`apply_to_list` in [`system.row_policies`](/reference/system-tables/row_policies) no longer lists the name). The same re-identification happens at every restart of the server, without the cleanup: synchronized users are ephemeral, so the first run of the new process materializes every user under a new identifier, and a persistent entity that named a user by `TO <user>` keeps the old identifier and stops applying to them. References from persistent entities to a synchronized user therefore live at most as long as the process; prefer `TO <role>` with a role the synchronization maps, which is stable across runs and restarts, over `TO <user>` for synchronized users.
+
+Synchronized users are ephemeral and cannot be altered with SQL. For users **persisted** in a writable storage (`CREATE USER ... IDENTIFIED WITH ldap SERVER ...`), note that `ALTER USER ... NOT IDENTIFIED` is not a lock: it sets the authentication type `no_password`, that is, a passwordless login. The lock for a persisted user is an expiry date in the past, `ALTER USER name VALID UNTIL '2000-01-01 00:00:00 UTC'`, which rejects the login before any external check.

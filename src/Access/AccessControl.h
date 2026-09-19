@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 
 #include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
@@ -33,6 +34,7 @@ namespace zkutil
 namespace DB
 {
 class ContextAccess;
+class LDAPAccessStorage;
 class ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
@@ -267,6 +269,15 @@ public:
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
 
+    /// Strips the references to the given, already removed, entities from every entity of every storage (the `TO`
+    /// lists of row policies, quotas and settings profiles, grantees and default roles of users, ...), as `remove`
+    /// does after dropping an entity through this facade (`DROP USER` and friends), and delivers the notifications.
+    /// For a storage that removes entities of its own outside `remove`, such as an `ldap` directory whose
+    /// synchronisation removes the users who left the directory: its own `remove` only cleans the references
+    /// inside that storage. A public counterpart of the protected `IAccessStorage::removeReferencesToRemovedIDs`,
+    /// which `remove` calls on its own and which does not notify; named differently so that it does not hide it.
+    void dropReferencesToRemovedEntities(const std::unordered_set<UUID> & removed_ids);
+
     /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
     void allowAllSettings();
 
@@ -284,6 +295,17 @@ private:
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
+
+    /// Throws `BAD_ARGUMENTS` when an `ldap` storage with a `<sync>` section is not the only `ldap` storage.
+    /// Called by `addLDAPStorage` after every `ldap` storage and once every storage of the main configuration
+    /// has been added.
+    void checkLDAPStoragesLayout() const;
+    void checkLDAPStoragesLayout(const std::vector<ConstStoragePtr> & storages) const;
+
+    /// The `ldap` storages that have a `sync` section.
+    std::vector<std::shared_ptr<const LDAPAccessStorage>> getSyncedLDAPStorages() const;
+    /// Refuses a synchronised `ldap` storage whose server, as `authenticators` knows it, cannot enumerate users.
+    void checkLDAPSyncServers(const ExternalAuthenticators & authenticators) const;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;

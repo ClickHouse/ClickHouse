@@ -657,16 +657,24 @@ The following settings can be configured by sub-tags:
 
 | Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
 |--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `bind_dn` | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `bind_dn` | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt. The exact value `\{user_dn\}` selects search and bind: the DN to bind to is the one found by `user_dn_detection` under the `lookup_bind_dn` identity. This parameter is mandatory and cannot be empty; `lookup_bind_dn` does not replace it. |
 | `enable_tls` | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
+| `follow_referrals` | Whether the LDAP client library chases referrals returned by the server. `false` by default. |
 | `host` | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
+| `lookup_bind_dn` | Optional DN of a service account. When set, every LDAP search (`user_dn_detection` and `role_mapping`) runs under this identity instead of the user's, and `bind_dn` may be `\{user_dn\}`. Must not contain `\{user_name\}` and must be specified together with `lookup_password`. Requires `user_dn_detection` whose `base_dn` or `search_filter` depends on the requested user: directly via `\{user_name\}`, or via `\{bind_dn\}` / `\{user_dn\}` when the `bind_dn` template contains `\{user_name\}`; with `bind_dn` = `\{user_dn\}` (search and bind) the literal `\{user_name\}` is required. |
+| `lookup_password` | Password of `lookup_bind_dn`. Cannot be empty. Supports `from_env`, `from_zk` and `hide_in_preprocessed="true"`. |
+| `network_timeout` | Maximum time, in seconds, to wait for the TCP connection to the LDAP server, including the TLS handshake, to be established. Must be greater than `0`. Default is `30`. |
+| `operation_timeout` | Maximum time, in seconds, to wait for the result of a bind or of a StartTLS negotiation on an established connection. Searches are bounded by `search_timeout` instead. Must be greater than `0`. Default is `40`.                                                                                                                                                                                                                                                                                                                                                             |
 | `port` | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
+| `search_limit` | Maximum number of entries returned by the LDAP searches of this server (`user_dn_detection` and `role_mapping`). `256` by default. |
+| `search_timeout` | Time limit, in seconds, for each LDAP search request (user DN detection and role mapping). It is sent to the server as the requested time limit and enforced on the client as well; `operation_timeout` does not apply to searches. Must be greater than `0`. Default is `20`.                                                                                                                                                                                                                                                                                                                                                        |
 | `tls_ca_cert_dir` | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tls_ca_cert_file` | path to CA certificate file.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `tls_cert_file` | path to certificate file.                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `tls_cipher_suite` | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
 | `tls_key_file` | path to certificate key file.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).                                                                                                                                                                                                                                                                                                                |
+| `tls_maximum_protocol_version` | The maximum protocol version of SSL/TLS. Accepted values are the same as for `tls_minimum_protocol_version`, and the value must not be lower than the minimum. Unset by default, which negotiates the newest version supported by both sides. |
+| `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default), `tls1.3`.                                                                                                                                                                                                                                                                                                                |
 | `tls_require_cert` | SSL/TLS peer certificate verification behavior. Accepted values are: `never`, `allow`, `try`, `demand` (the default).                                                                                                                                                                                                                                                                                                                    |
 | `user_dn_detection` | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `\{user_dn\}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
 | `verification_cooldown` | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
@@ -675,9 +683,10 @@ Setting `user_dn_detection` can be configured with sub-tags:
 
 | Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}` and '\{bind_dn\}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
+| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}` and `\{user_dn\}` substrings of the template with the actual user name, bind DN and user DN during the LDAP search (before the detection has run, `\{user_dn\}` equals the bind DN; with `bind_dn` = `\{user_dn\}` only `\{user_name\}` may be used).                                                                                                       |
 | `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |
-| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, and `\{base_dn\}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
+| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, `\{user_dn\}` and `\{base_dn\}` substrings of the template with the actual user name, bind DN, user DN and base DN during the LDAP search (before the detection has run, `\{user_dn\}` equals the bind DN; with `bind_dn` = `\{user_dn\}` only `\{user_name\}` and `\{base_dn\}` may be used). Note, that the special characters must be escaped properly in XML.  |
+| `attribute`     | attribute whose value is taken as the user DN. `dn` (the default) is the DN of the entry found; with `lookup_bind_dn` it must be `dn`, since the value is consumed as the user DN by every `{user_dn}` placeholder. |
 
 Example:
 
@@ -687,6 +696,9 @@ Example:
     <port>636</port>
     <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
     <verification_cooldown>300</verification_cooldown>
+    <operation_timeout>40</operation_timeout>
+    <network_timeout>30</network_timeout>
+    <search_timeout>20</search_timeout>
     <enable_tls>yes</enable_tls>
     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
     <tls_require_cert>demand</tls_require_cert>
@@ -710,6 +722,27 @@ Example (typical Active Directory with configured user DN detection for further 
         <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
     </user_dn_detection>
     <enable_tls>no</enable_tls>
+</my_ad_server>
+```
+
+Example (Active Directory with search and bind: a service account locates the user by `sAMAccountName` and performs the role mapping searches, the user's password is verified by binding as the DN that was found):
+
+```xml
+<my_ad_server>
+    <host>ldap.example.com</host>
+    <port>636</port>
+    <enable_tls>yes</enable_tls>
+    <tls_require_cert>demand</tls_require_cert>
+    <tls_ca_cert_file>/etc/clickhouse-server/ldap_ca.pem</tls_ca_cert_file>
+    <lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=example,DC=com</lookup_bind_dn>
+    <lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+    <bind_dn>{user_dn}</bind_dn>
+    <user_dn_detection>
+        <base_dn>DC=example,DC=com</base_dn>
+        <scope>subtree</scope>
+        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+    </user_dn_detection>
+    <verification_cooldown>300</verification_cooldown>
 </my_ad_server>
 ```
 
@@ -2095,16 +2128,112 @@ To add an LDAP server as a remote user directory of users that are not defined l
 |----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `roles` | section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect. |
 | `server` | one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                            |
+| `exclude_users` | optional section with a list of `<user>` entries. The listed user names are never served by this directory: the LDAP server is not contacted for them (not even by the interserver authentication of a cluster with a `secret` or by `EXECUTE AS`), and they are reported as not found so that the user directories that follow are consulted instead. Names are matched exactly. An empty name, or any element other than `<user>` inside `<exclude_users>`, is rejected at startup with `BAD_ARGUMENTS`. Like the other parameters of the `ldap` user directory, `exclude_users` is read at server startup; changes require a restart and are not applied by `SYSTEM RELOAD CONFIG` or `SYSTEM RELOAD USERS`. See [Keeping application users local](/operations/external-authenticators/ldap#ldap-exclude-users). |
+| `role_mapping` | section with LDAP search parameters and rules that map the search results to local role names; can be repeated, all sections are applied. See the sub-parameters below and the [mapping pipeline](/operations/external-authenticators/ldap#ldap-role-mapping-pipeline). |
+| `sync` | optional section that makes the directory synchronize its users, and optionally the roles, with the LDAP server proactively (a background job plus `SYSTEM RELOAD USERS`) instead of materializing users at their first login. Requires `lookup_bind_dn` on the server definition. In a synchronized directory logins verify the password only; roles come from the synchronization. A synchronized directory must be the only `ldap` directory in `user_directories`, whatever the order; the server refuses to start otherwise. User directories of other types may precede or follow it. See the sub-parameters below and [Synchronizing LDAP users and roles](/operations/external-authenticators/ldap#ldap-user-sync). |
+
+**`role_mapping` sub-parameters**
+
+| Setting | Description |
+|---------|-------------|
+| `base_dn` | template used to construct the base DN for the LDAP search; `{user_name}`, `{bind_dn}` and `{user_dn}` are substituted with the actual user name, bind DN and user DN. |
+| `scope` | scope of the LDAP search: `base`, `one_level`, `children` or `subtree` (the default). |
+| `search_filter` | template used to construct the search filter; `{user_name}`, `{bind_dn}`, `{user_dn}` and `{base_dn}` are substituted. Special characters must be escaped properly in XML. |
+| `attribute` | attribute whose values are returned by the LDAP search, `cn` by default. The special value `dn` returns the DN of each found entry. |
+| `prefix` | prefix expected in front of each value returned by the search; it is removed and the rest of the value becomes the name of a local role. Compared case-sensitively. Empty by default. |
+| `rdn_attribute` | if set, each value returned by the search is parsed as a DN and replaced by the value of its first RDN of this type, compared case-insensitively. For example, `cn` turns the Active Directory `memberOf` value `CN=clickhouse_admins,OU=Groups,DC=example,DC=com` into `clickhouse_admins`. Values that are not DNs or have no such RDN are ignored. Requires a non-empty `groups` list or a non-empty `prefix`. |
+| `groups` | optional allow-list of `<group>` entries; when non-empty, values matching none of the entries are ignored. A plain name is compared ASCII-case-insensitively with the value after `rdn_attribute` extraction. A full DN (an entry containing `=`, requires `rdn_attribute`) is compared with the raw value before extraction and pins the container, which is recommended for Active Directory because group CNs are unique only per container. The configured spelling becomes the role name, `prefix` is removed afterwards, so every entry (for a DN, its `rdn_attribute` value) must start with the configured `prefix`. Empty, duplicate, unparsable and prefix-less entries are rejected at startup. |
+
+**`sync` sub-parameters**
+
+| Setting | Description |
+|---------|-------------|
+| `interval` | seconds between two synchronizations, `900` by default; the first run starts after a random delay of up to a tenth of the interval, a failed run is retried after min(`interval`, 60) seconds. `0` runs the synchronization at startup and on `SYSTEM RELOAD USERS` only; at most `315360000` (ten years). |
+| `base_dn` | base DN of the search that lists the users. Mandatory; must not contain `{user_name}`, `{bind_dn}` or `{user_dn}`. |
+| `scope` | scope of that search: `base`, `one_level`, `children` or `subtree` (the default). |
+| `search_filter` | filter of that search, mandatory; the same placeholder rule as for `base_dn` applies. Special characters must be escaped properly in XML. |
+| `attribute` | attribute whose value is the ClickHouse user name, e.g. `sAMAccountName` or `uid`. Mandatory, must not be `dn`. An entry with zero or several values of it fails the run. |
+| `page_size` | entries per page of the search (RFC 2696), between `1` and `1000`, `500` by default. |
+| `create_roles` | create the roles named by the `groups` allow-lists of the `role_mapping` sections when they do not exist; `false` by default. Requires a non-empty `groups` list in at least one `role_mapping`. Roles are never altered or dropped. |
+| `roles_storage` | name of the access storage the roles are created in. Unset by default: the first storage that is not read-only is used. The storage must not be ephemeral (`memory`), otherwise the run fails before writing anything. |
+| `only_synced_users` | serve only the users the last successful synchronization materialized, `true` by default. A name outside the snapshot is reported as not found for every kind of credential, so the user directories that follow are consulted. With `false` a user the search does not return can still log in lazily. |
+| `min_users` | a run that finds fewer users applies nothing; `1` by default. |
+| `max_users` | a run that receives more entries applies nothing; `10000` by default, `0` = unlimited. Must be `0` or greater than `min_users`. |
+| `max_removed_fraction` | a run that would remove more than max(1, floor(fraction × currently synchronized users)) users applies nothing; `0.5` by default, between `0` and `1`. |
+| `max_staleness` | seconds; when greater than `0`, logins and `EXECUTE AS` of synchronized users are refused while the last successful run is older than this. Requires `only_synced_users` = `true`, `interval` > `0` and a value greater than `interval`; at most `315360000` (ten years). `0` (the default) disables the gate. |
+| `dry_run` | enumerate and plan, log what would change, apply nothing; `false` by default. |
 
 **Example**
 
 ```xml
 <ldap>
     <server>my_ldap_server</server>
-        <roles>
-            <my_local_role1 />
-            <my_local_role2 />
-        </roles>
+    <roles>
+        <my_local_role1 />
+        <my_local_role2 />
+    </roles>
+    <exclude_users>
+        <user>app_user1</user>
+        <user>app_user2</user>
+    </exclude_users>
+    <role_mapping>
+        <base_dn>ou=groups,dc=example,dc=com</base_dn>
+        <scope>subtree</scope>
+        <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+        <attribute>cn</attribute>
+        <prefix>clickhouse_</prefix>
+    </role_mapping>
+</ldap>
+```
+
+**Example (Active Directory, roles from the user's `memberOf` attribute)**
+
+```xml
+<ldap>
+    <server>my_ad_server</server>
+    <role_mapping>
+        <base_dn>{user_dn}</base_dn>
+        <scope>base</scope>
+        <search_filter>(objectClass=*)</search_filter>
+        <attribute>memberOf</attribute>
+        <rdn_attribute>cn</rdn_attribute>
+        <groups>
+            <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+            <group>clickhouse_admins</group>
+        </groups>
+        <prefix>clickhouse_</prefix>
+    </role_mapping>
+</ldap>
+```
+
+**Example (Active Directory, users and roles synchronized every 15 minutes)**
+
+```xml
+<ldap>
+    <server>my_ad_server</server>
+    <role_mapping>
+        <base_dn>{user_dn}</base_dn>
+        <scope>base</scope>
+        <search_filter>(objectClass=*)</search_filter>
+        <attribute>memberOf</attribute>
+        <rdn_attribute>cn</rdn_attribute>
+        <groups>
+            <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+            <group>CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com</group>
+        </groups>
+        <prefix>clickhouse_</prefix>
+    </role_mapping>
+    <sync>
+        <interval>900</interval>
+        <base_dn>DC=example,DC=com</base_dn>
+        <scope>subtree</scope>
+        <search_filter>(&amp;(objectClass=user)(|(memberOf=CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com)(memberOf=CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com)))</search_filter>
+        <attribute>sAMAccountName</attribute>
+        <page_size>500</page_size>
+        <create_roles>true</create_roles>
+        <roles_storage>replicated</roles_storage>
+        <max_staleness>3600</max_staleness>
+    </sync>
 </ldap>
 ```
 

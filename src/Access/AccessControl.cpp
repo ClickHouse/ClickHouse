@@ -24,12 +24,15 @@
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <mutex>
+#include <utility>
 
 
 namespace DB
@@ -318,6 +321,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
+    checkLDAPSyncServers(*external_authenticators);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
@@ -431,6 +435,14 @@ void AccessControl::addMemoryStorage(const String & storage_name_, bool allow_ba
 void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
     auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, *this, config_, prefix_);
+
+    /// Refuse a second `ldap` storage next to a synchronised one before it is added, so that a caller other than
+    /// `addStoragesFromMainConfig` cannot leave the layout unchecked, and one that catches the exception is not
+    /// left with the very layout the check refuses.
+    auto candidate = std::as_const(*this).getStorages();
+    candidate.push_back(new_storage);
+    checkLDAPStoragesLayout(candidate);
+
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', LDAP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getLDAPServerName());
 }
@@ -540,12 +552,71 @@ void AccessControl::addStoragesFromMainConfig(
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
+
+    checkLDAPStoragesLayout();
+}
+
+
+void AccessControl::checkLDAPStoragesLayout() const
+{
+    checkLDAPStoragesLayout(getStorages());
+}
+
+
+void AccessControl::checkLDAPStoragesLayout(const std::vector<ConstStoragePtr> & storages) const
+{
+    /// The synchronisation of an `ldap` storage asks the other storages whether they define a name before it
+    /// materialises the user (see `LDAPAccessStorage::planSync`): a storage declared before it wins the login, so the
+    /// name is left to it; one declared after it is overridden. A storage of any other type answers from its whole
+    /// user set, so its answer is authoritative. Another `ldap` storage never answers authoritatively: a lazy one
+    /// knows only the users who have logged in through it, and a synchronised one only its last snapshot, taken on
+    /// its own schedule, so a user who starts matching both is materialised by one of them and taken over by the
+    /// other at its next run or at the next login, and the identity and the roles of the login follow the timing of
+    /// the runs. No run-time check makes that sound (whether two search filters can select the same user cannot be
+    /// told in general), so the layout is refused here, as soon as a second `ldap` storage is added and again once
+    /// every storage of the configuration is known, and the server does not start.
+    std::vector<const LDAPAccessStorage *> ldap_storages;
+    for (const auto & storage : storages)
+    {
+        if (const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get()))
+            ldap_storages.push_back(ldap_storage);
+    }
+
+    if (ldap_storages.size() < 2)
+        return;
+
+    const auto synced_it = std::ranges::find_if(ldap_storages, [](const auto * storage) { return storage->hasSync(); });
+    if (synced_it == ldap_storages.end())
+        return;
+
+    const auto * synced = *synced_it;
+    const auto * other = (ldap_storages.front() == synced) ? ldap_storages[1] : ldap_storages.front();
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "User directory {} has a 'sync' section and user directory {} is another 'ldap' user directory: "
+        "a synchronised 'ldap' user directory must be the only 'ldap' user directory in 'user_directories'. "
+        "Its synchronisation cannot tell from a snapshot whether another 'ldap' directory will serve a login, so a user "
+        "matching both would change directory, and roles, with the timing of the runs. Remove one of the two directories "
+        "or the 'sync' section; if both use the same server, widen the 'search_filter' of the synchronised one instead "
+        "(the users of a second LDAP server cannot be synchronised on the same node)",
+        backQuote(synced->getStorageName()), backQuote(other->getStorageName()));
 }
 
 
 void AccessControl::reload(ReloadMode reload_mode)
 {
-    MultipleAccessStorage::reload(reload_mode);
+    try
+    {
+        MultipleAccessStorage::reload(reload_mode);
+    }
+    catch (...)
+    {
+        /// `MultipleAccessStorage::reload` reloads every storage before rethrowing the first failure, and
+        /// storages such as `DiskAccessStorage` only queue their change notifications. Publish them before
+        /// reporting the failure, otherwise the sessions and subscribers keep the stale state until an
+        /// unrelated notification flushes the queue.
+        changes_notifier->sendNotifications();
+        throw;
+    }
     changes_notifier->sendNotifications();
 }
 
@@ -593,6 +664,15 @@ bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, 
 AccessChangesNotifier & AccessControl::getChangesNotifier()
 {
     return *changes_notifier;
+}
+
+
+void AccessControl::dropReferencesToRemovedEntities(const std::unordered_set<UUID> & removed_ids)
+{
+    /// Not inside `remove`, so the depth guard of `IAccessStorage::remove` does not apply: the cascade runs
+    /// exactly once, from this outermost storage, and `updateImpl` above notifies after every write.
+    IAccessStorage::removeReferencesToRemovedIDs(removed_ids);
+    changes_notifier->sendNotifications();
 }
 
 
@@ -674,7 +754,53 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
+    /// A reload must not put `ldap_servers` in effect that a synchronised `ldap` directory cannot use (see
+    /// `checkLDAPSyncServers`). A scratch instance parses the candidate configuration exactly as the application
+    /// below does, so that section-level errors count too, and nothing is applied when the check fails: the
+    /// previous servers stay in effect and `SYSTEM RELOAD CONFIG` reports the reason.
+    if (!getSyncedLDAPStorages().empty())
+    {
+        ExternalAuthenticators candidate;
+        candidate.setConfiguration(config, getLogger());
+        checkLDAPSyncServers(candidate);
+    }
+
     external_authenticators->setConfiguration(config, getLogger());
+}
+
+
+std::vector<std::shared_ptr<const LDAPAccessStorage>> AccessControl::getSyncedLDAPStorages() const
+{
+    std::vector<std::shared_ptr<const LDAPAccessStorage>> synced;
+    for (const auto & storage : getStorages())
+    {
+        if (auto ldap_storage = typeid_cast<std::shared_ptr<const LDAPAccessStorage>>(storage); ldap_storage && ldap_storage->hasSync())
+            synced.push_back(ldap_storage);
+    }
+    return synced;
+}
+
+
+void AccessControl::checkLDAPSyncServers(const ExternalAuthenticators & authenticators) const
+{
+    /// The enumeration binds as the lookup identity of the server, and with `only_synced_users` nobody logs in
+    /// through the directory until a run succeeds: a server that cannot enumerate would only be noticed by the
+    /// first run, with every login refused meanwhile. The main configuration is applied to the authenticators
+    /// before the storages are created, so the first moment both are known is the end of `setupFromMainConfig`;
+    /// a reload is checked before it is applied (see `setExternalAuthenticatorsConfig`).
+    for (const auto & ldap_storage : getSyncedLDAPStorages())
+    {
+        try
+        {
+            authenticators.checkLDAPServerCanEnumerate(ldap_storage->getLDAPServerName());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while checking LDAP server '{}' of user directory {}, which has a 'sync' section",
+                ldap_storage->getLDAPServerName(), backQuote(ldap_storage->getStorageName())));
+            throw;
+        }
+    }
 }
 
 

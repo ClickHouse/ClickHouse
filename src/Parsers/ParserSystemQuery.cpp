@@ -1422,6 +1422,8 @@ SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
 
 Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage.
 
+An `ldap` user directory with a `sync` section additionally runs one synchronization with the LDAP server right away, in the thread of the query. If that synchronization fails (the directory is unreachable, or a safety guard such as `min_users` or `max_removed_fraction` refuses the run), the remaining access storages are still reloaded and the error is returned to the caller. See [Synchronizing LDAP users and roles](/operations/external-authenticators/ldap#ldap-user-sync).
+
 ```sql
 SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 ```

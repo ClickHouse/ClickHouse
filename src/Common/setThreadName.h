@@ -92,6 +92,7 @@ namespace DB
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
     M(KAFKA_MAIN, "KafkaMain") \
+    M(LDAP_SYNC, "LDAPSync") \
     M(LOAD_MARKS, "LoadMarksThread") \
     M(LOCAL_SERVER_PTY, "LocalServerPty") \
     M(MEMORY_WORKER, "MemoryWorker") \

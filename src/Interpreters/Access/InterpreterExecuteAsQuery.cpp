@@ -1,6 +1,7 @@
 #include <Interpreters/Access/InterpreterExecuteAsQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/LDAPAccessStorage.h>
 #include <Access/User.h>
 #include <Core/Settings.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
@@ -21,6 +22,48 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Resolves the target user name to a UUID, preserving the pre-PR `getID<User>`
+    /// storage precedence: the first storage in `user_directories` order that has the
+    /// name cached in memory wins (including an LDAP storage ordered before `users_xml`).
+    ///
+    ///   1. In-memory `find<User>`. If it hits an LDAP-owned entry, refresh possibly-stale
+    ///      role mapping by re-running `find` on THAT storage with `force_external_lookup`
+    ///      (see `LDAPAccessStorage::findImpl`); never globally, which could materialize a
+    ///      same-named user in an earlier LDAP storage and change which directory wins.
+    ///      If that storage refuses to resolve the entry (the directory does not confirm the
+    ///      name), the cached id is not used: the storages after it may define the name, else
+    ///      the user is unknown.
+    ///   2. On a miss, `force_external_lookup=true` lets `LDAPAccessStorage` service-bind
+    ///      the directory to resolve users not yet cached here. No-op for other storages.
+    ///   3. Still nothing -> `getID` for the canonical `UNKNOWN_USER` error.
+    ///
+    /// The two-pass logic does NOT override storage order; it only stops the forced
+    /// lookup from materializing an LDAP entry that would shadow a local user on a miss.
+    UUID resolveImpersonationTargetUser(const ContextPtr & context, const String & target_user_name)
+    {
+        const auto & access_control = context->getAccessControl();
+        if (auto id = access_control.find<User>(target_user_name))
+        {
+            const auto storage = access_control.findStorage(*id);
+            if (!storage || storage->getStorageType() != LDAPAccessStorage::STORAGE_TYPE)
+                return *id;
+
+            if (auto refreshed_id = storage->find<User>(target_user_name, /* force_external_lookup = */ true))
+                return *refreshed_id;
+
+            /// The directory does not confirm the cached entry: a name the interserver path materialised
+            /// without asking it, or a user offboarded meanwhile. The stale id must not be impersonated. The
+            /// forced pass asks the storages in order (this one refuses again, a later one may define the
+            /// name); `getID` cannot report the miss because it would find the cached entry.
+            if (auto later_id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
+                return *later_id;
+            IAccessStorage::throwNotFound(AccessEntityType::USER, target_user_name, access_control.getStorageName());
+        }
+        if (auto id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
+            return *id;
+        return access_control.getID<User>(target_user_name);
+    }
+
     /// Creates another query context to execute a query as another user.
     ContextMutablePtr impersonateQueryContext(ContextPtr context, const String & target_user_name)
     {
@@ -56,7 +99,7 @@ namespace
         /// credential, not to the principal, so impersonation must not shed them: the impersonated
         /// context keeps the intersection with the originating method's grants and its expiry.
         new_context->setUser(
-            context->getAccessControl().getID<User>(target_user_name),
+            resolveImpersonationTargetUser(context, target_user_name),
             /* external_roles_= */ {},
             context->getAuthenticationGrants(),
             context->getAuthenticationValidUntil());
@@ -90,7 +133,7 @@ namespace
         auto authentication_valid_until = context->getAuthenticationValidUntil();
 
         context->setUser(
-            context->getAccessControl().getID<User>(target_user_name),
+            resolveImpersonationTargetUser(context, target_user_name),
             /* external_roles_= */ {},
             authentication_grants,
             authentication_valid_until);

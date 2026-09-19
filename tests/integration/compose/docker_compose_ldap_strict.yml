@@ -1,0 +1,29 @@
+services:
+    openldap_strict:
+        image: bitnamilegacy/openldap:2.6.8
+        stop_grace_period: 5s
+        restart: always
+        environment:
+            LDAP_ROOT: dc=example,dc=org
+            LDAP_ADMIN_DN: cn=admin,dc=example,dc=org
+            LDAP_ADMIN_USERNAME: admin
+            LDAP_ADMIN_PASSWORD: clickhouse
+            LDAP_USER_DC: users
+            LDAP_USERS: janedoe,johndoe
+            LDAP_PASSWORDS: qwerty,qwertz
+            LDAP_PORT_NUMBER: ${LDAP_STRICT_INTERNAL_PORT:-1389}
+            # Sets `olcDisallows: bind_anon` and `olcRequires: authc`, so every
+            # search needs a bound identity (see setup_strict.sh for the ACLs).
+            LDAP_ALLOW_ANON_BINDING: "no"
+        volumes:
+            - /misc/openldap_strict/setup_strict.sh:/docker-entrypoint-initdb.d/setup_strict.sh
+        healthcheck:
+            test: >
+                test -f /tmp/.openldap-initialized
+                && ldapsearch -x -H ldap://localhost:$$LDAP_PORT_NUMBER -D cn=svc.clickhouse,ou=service,dc=example,dc=org -w svcsecret -b ou=users,dc=example,dc=org "(uid=janedoe)" dn
+                | grep -c "^dn: cn=janedoe,ou=users,dc=example,dc=org$$"
+                | grep 1 >> /dev/null
+            interval: 10s
+            retries: 10
+            timeout: 2s
+        cpus: 3

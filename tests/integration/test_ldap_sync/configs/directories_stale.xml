@@ -1,0 +1,35 @@
+<clickhouse>
+    <users_config remove="remove"/>
+    <!-- Worst-case order: the synchronised directory is consulted FIRST, and `users_xml` with the local
+         user `local_after` comes after it. The `only_synced_users` gate must report unknown names as
+         "not found" before the `max_staleness` gate can fire, otherwise a stale directory would lock
+         out the local users too. -->
+    <user_directories replace="replace">
+        <ldap>
+            <server>openldap_strict</server>
+            <role_mapping>
+                <base_dn>{user_dn}</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=*)</search_filter>
+                <attribute>memberOf</attribute>
+                <rdn_attribute>cn</rdn_attribute>
+                <groups>
+                    <group>cn=clickhouse-role_a,ou=groups,dc=example,dc=org</group>
+                    <group>clickhouse-role_b</group>
+                </groups>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+            <sync>
+                <interval>1</interval>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(|(memberOf=cn=clickhouse-role_a,ou=groups,dc=example,dc=org)(memberOf=cn=clickhouse-role_b,ou=groups,dc=example,dc=org)))</search_filter>
+                <attribute>uid</attribute>
+                <max_staleness>3</max_staleness>
+            </sync>
+        </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>

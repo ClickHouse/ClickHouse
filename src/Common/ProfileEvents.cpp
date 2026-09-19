@@ -1786,6 +1786,16 @@ The server successfully detected this situation and will download merged part fr
     M(StatelessWorkerDiscoveryHeartbeatsRejected, "Number of heartbeats the stateless worker discovery service rejected because the worker had already been evicted.", ValueType::Number) \
     M(StatelessWorkerDiscoveryKeeperTransactionRetries, "Number of write transactions the stateless worker discovery service retried because its coordination store (Keeper) state was modified concurrently.", ValueType::Number) \
     \
+    M(LDAPSyncRuns, "Number of synchronization runs of `ldap` user directories that were started, including failed runs and dry runs.", ValueType::Number) \
+    M(LDAPSyncFailures, "Number of synchronization runs of `ldap` user directories that failed, because of an LDAP error or because a safety guard refused the result. A failed run changes nothing.", ValueType::Number) \
+    M(LDAPSyncUsersAdded, "Number of users created in `ldap` user directories by synchronization runs.", ValueType::Number) \
+    M(LDAPSyncUsersUpdated, "Number of users in `ldap` user directories whose assigned roles were changed by synchronization runs.", ValueType::Number) \
+    M(LDAPSyncUsersRemoved, "Number of users removed from `ldap` user directories by synchronization runs because the directory no longer returned them.", ValueType::Number) \
+    M(LDAPSyncUsersShadowed, "Number of LDAP entries returned to synchronization runs whose user name also exists in another access storage. An entry shadowed by a storage declared before the `ldap` directory is not synchronized.", ValueType::Number) \
+    M(LDAPSyncUsersExcluded, "Number of LDAP entries skipped by synchronization runs because their user name is listed in `exclude_users` of the `ldap` directory.", ValueType::Number) \
+    M(LDAPSyncRolesCreated, "Number of roles created by synchronization runs of `ldap` user directories with `create_roles` enabled.", ValueType::Number) \
+    M(LDAPSyncRolesMissing, "Number of role names mapped from LDAP groups by synchronization runs that did not exist in any access storage and therefore could not be granted.", ValueType::Number) \
+    \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
