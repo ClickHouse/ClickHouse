@@ -1,4 +1,5 @@
 import re
+from pathlib import PurePosixPath
 
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
@@ -168,22 +169,21 @@ _STRESS_AND_FUZZER_JOB_PREFIXES = (
 
 # Digest inputs of the skippable jobs that must not switch the skip off: a fifth
 # of all commits touches the stateless suite, so exempting it would make the rule
-# never fire. Only paths of that frequency belong here - `tests/config` is a
-# digest input as well, and it is deliberately absent because the stress and
-# fuzzer runners install their server config from it (`run-fuzzer.sh` copies
-# `listen.xml`, `ssl_certs.xml`, `server.crt` and friends, `stress.py` installs
-# `cannot_allocate_thread_injection.xml`), while 0.2% of commits change it.
-_COMMON_TEST_PATHS = (
-    "tests/queries/0_stateless/",
-    "tests/*.txt",
-)
+# never fire. It is the only path of that frequency, and the other test inputs of
+# these jobs are deliberately absent: `tests/config`, from which the runners
+# install their server configuration (`run-fuzzer.sh` copies `listen.xml`,
+# `ssl_certs.xml`, `server.crt` and friends, `stress.py` installs
+# `cannot_allocate_thread_injection.xml`), and `tests/*.txt`, the blacklists
+# `tests/clickhouse-test` reads to decide which tests run. Both change in well
+# under 1% of commits.
+_COMMON_TEST_PATHS = ("tests/queries/0_stateless/",)
 
 # Machinery of these jobs that is not a digest input of theirs, but still decides
 # what they do or whether they run at all.
 _EXTRA_STRESS_AND_FUZZER_PATHS = (
     # The fuzzers themselves live in the server code.
     "src/Client/BuzzHouse/",
-    "src/Common/QueryFuzzer",
+    "src/Common/QueryFuzzer*",
     # This rule, and the pre-hook computing the line count it reads.
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     "ci/jobs/scripts/workflow_hooks/store_data.py",
@@ -249,24 +249,40 @@ def _is_stress_or_fuzzer_job(job_name):
     return job_name.startswith(_STRESS_AND_FUZZER_JOB_PREFIXES) and "targeted" not in job_name
 
 
-def _has_stress_or_fuzzer_changes(changed_files):
-    for f in changed_files:
-        p = f.removeprefix(".").removeprefix("/")
-        if p.startswith(_STRESS_AND_FUZZER_PATHS):
+def _matches_digest_path(path, patterns):
+    """Whether `path` is covered by one of `patterns`, matched the way praktika
+    matches a job's digest `include_paths` in `Job.is_affected_by`: a pattern is a
+    directory prefix, an exact path, or a glob. Prefix matching alone would silently
+    ignore the glob entries - `tests/*.txt` holds the blacklists `clickhouse-test`
+    reads, and no file name starts with that string.
+
+    `path` must already have its `./` prefix stripped. That is done by the caller,
+    with `removeprefix("./")` rather than the `.`-then-`/` idiom of the older helpers
+    in this file, because some of these paths are root dotfiles (`.gitmodules`).
+    """
+    for pattern in patterns:
+        pattern = pattern.rstrip("/")
+        if PurePosixPath("/" + path).match("/" + pattern) or path.startswith(
+            pattern + "/"
+        ):
             return True
     return False
 
 
+def _has_stress_or_fuzzer_changes(changed_files):
+    return any(
+        _matches_digest_path(f.removeprefix("./"), _STRESS_AND_FUZZER_PATHS)
+        for f in changed_files
+    )
+
+
 def _has_uncounted_build_changes(changed_files):
     """True if the PR changes the built binary in a way the line count does not see
-    - see `_uncounted_build_paths`.
-
-    Strips `./` as a whole, unlike the `.`-then-`/` of the helpers above: one of
-    the paths matched here is itself a dotfile (`.gitmodules`)."""
+    - see `_uncounted_build_paths`."""
     for f in changed_files:
         p = f.removeprefix("./")
-        if p.startswith(_UNCOUNTED_BUILD_PATHS) and not p.startswith(
-            _BUILD_DIGEST_EXCLUDES
+        if _matches_digest_path(p, _UNCOUNTED_BUILD_PATHS) and not _matches_digest_path(
+            p, _BUILD_DIGEST_EXCLUDES
         ):
             return True
     return False
