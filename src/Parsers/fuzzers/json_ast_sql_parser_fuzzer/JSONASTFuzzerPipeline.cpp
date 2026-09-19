@@ -1,6 +1,7 @@
 #include <Parsers/fuzzers/json_ast_sql_parser_fuzzer/JSONASTFuzzerPipeline.h>
 #include <Parsers/fuzzers/json_ast_sql_parser_fuzzer/JSONASTProtoConverter.h>
 
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
