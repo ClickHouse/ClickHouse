@@ -3957,6 +3957,18 @@ Possible values:
 
  Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
 
+- gpu_hash
+
+ A hash join computed on a CUDA GPU with cuDF, requiring a build with `-DENABLE_GPU=1`. Experimental.
+
+ Supports only `ALL INNER JOIN` on a single equality of two non-nullable integer columns of the same type (`UInt8` to `UInt64`, `Int8` to `Int64`), with every output column of either side a non-nullable fixed-width numeric type. A float join key is not supported, because cuDF compares float keys with IEEE equality where ClickHouse compares their bytes, which would put `0.0` and `-0.0` in the same key.
+
+ Unlike every other value here, this one is never reached by `default` or by `auto` and is used only when it is listed by name. A join that it cannot execute fails with "none of the algorithms enabled by the `join_algorithm` setting", and so does any join at all in a build without GPU support or on a machine with no usable device - there is deliberately no fallback, so that a query which asked for the device either runs on it or says why it could not.
+
+ The right table's key and payload columns are sent to the device and its hash table is built there. Of a left block only the key column is sent; the matching rows' indices come back and the left block's own columns are indexed in host memory, so the left side - normally the larger one - never crosses the PCIe link. `GPUJoinBuildRows`, `GPUJoinProbeRows`, `GPUJoinMatchedRows` and `GPUJoinMicroseconds` in `system.events` say how much data went over and how long it took.
+
+ The right table lives in device memory, which no memory limit of the server's can see. `max_rows_in_join` and `max_bytes_in_join` are checked against it and are the only bound on its size.
+
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
@@ -9464,6 +9476,90 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
+Compute supported aggregations on a CUDA GPU instead of on the CPU.
+
+What is supported so far is `sum` over a column of a fixed-width numeric type (`UInt8` to
+`UInt64`, `Int8` to `Int64`, `Float32`, `Float64`), with or without `GROUP BY`, in a query over a
+single local `MergeTree` table. A `GROUP BY` key has to be a fixed-width integer: floats are
+excluded from the keys, because cuDF groups them by IEEE equality, which would put `0.0` and `-0.0`
+in one group where ClickHouse puts them in two.
+
+Everything else - another aggregate function, a `Nullable`, `Decimal` or `LowCardinality` argument
+or key, `ROLLUP`, `CUBE`, `GROUPING SETS`, `WITH TOTALS`, `group_by_use_nulls`, several tables, a
+distributed query - is aggregated on the CPU as before, so this setting does not change what a
+query returns, only where it is computed. `EXPLAIN` names the step `GPUAggregating` when the device
+is used.
+
+Requires a build with `-DENABLE_GPU=1` and has no effect without one. In a build that has it, a
+query which would have used the device on a machine that has none usable fails, rather than quietly
+aggregating on the CPU.
+
+:::note
+Every value has to cross the PCIe link to reach the device, and that link is narrower than the
+CPU's own path to memory - so a sum whose column has to be sent over is normally **slower** than
+the same sum on the CPU, and slower still than the CPU using several threads.
+
+Measured on a Tesla T4 over 1.49 GiB of `UInt64`: the reduction itself takes 8 ms, sending the
+values to the device takes 353 ms, and the whole query is 0.77 s against 0.35 s for the same query
+on sixteen cores. So a `sum` whose column has to be sent is currently about twice as slow as the
+CPU's, and the device pays for itself only once the data reaches it by some cheaper route than one
+uncompressed copy per query.
+
+`GPUAggregationRows`, `GPUAggregationBatches` and `GPUAggregationMicroseconds` in `system.events`
+say how much was summed and how long the device calls took.
+:::
+
+:::note
+`sum` over a `Float32` or `Float64` column adds the values in a different order than the CPU
+implementation does, so the last bits of the result can differ from it. The order is fixed, so
+repeated runs of the same query agree with each other. Integer sums are identical to the CPU's,
+wraparound included.
+:::
+
+Possible values:
+
+- 0 - Aggregations are computed on the CPU.
+- 1 - Supported aggregations are computed on a GPU.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
+How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
+to the device.
+
+A block is 65536 rows, half a megabyte of `UInt64` - too little to occupy either the link or the
+device on its own, so blocks are gathered into a batch first. What size is best depends on which
+aggregation it is, and the two want opposite things, which is why one number cannot serve both
+well.
+
+Without `GROUP BY` a batch is pure transfer, and a small one lets the host's reading and the
+device's work run at the same time where a large one does all of the reading and then all of the
+sending: measured on a Tesla T4 over 1.49 GiB of `UInt64`, `sum` took 0.70 s with a 256 MiB batch
+and 0.51 s with 3 MiB, against 0.35 s on sixteen cores.
+
+With `GROUP BY` every batch is merged into the groups seen so far, which costs what that partial
+result holds rather than what the batch holds - so more batches means more merges over the same
+groups, and larger is better. Over the same rows grouped into a million groups, the keyed `sum`
+took 9.41 s with a 4 MiB batch, 3.14 s with 32 MiB and 1.82 s with 256 MiB, against 1.01 s on
+sixteen cores. The default is sized for this path, because it is the one a wrong value hurts by
+five times rather than by one and a third.
+
+It also costs memory, on the host and on the device both: while a query runs, one batch of this
+size is staged in host memory and a copy of it is on the device. Without `GROUP BY` the budget is
+per aggregated column; with it, one batch covers a whole row - every key column and every
+aggregated column together - since they have to be grouped as one.
+
+The host staging is page-locked memory, pooled and reused across queries rather than locked per
+query: locking walks the pages it pins, which for a large batch costs more than the transfer it
+feeds.
+
+The device side is outside every memory limit the
+server knows about, and with `GROUP BY` so is the partial result, which holds one row per group
+seen so far for as long as the query runs.
+
+A `GROUP BY` on the device also returns all of its groups in one block, where the CPU path returns
+them in blocks of `max_block_size`. For a query with very many groups that is a memory spike the
+setting does not bound.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
