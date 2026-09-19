@@ -103,10 +103,9 @@ CODE=$?
 [ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
 
 # A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
-# replica it later cancels held the slot all the same. The parts are reported just before the slot is
-# taken, so a replica the limit refuses reports them too, and only the others witness a shared slot.
-# A cancelled replica reaches the log on a connection the statement above does not wait for, so its row
-# can be queued after a flush the statement's own row is already in, and the count is polled for.
+# replica it later cancels held the slot all the same, and one the limit refuses reports its parts too.
+# Each replica reports exactly one such row, on a connection the statement above does not wait for, so a
+# row can be queued after the statement's own flush and all three are waited for before they are counted.
 TIMELIMIT=$((SECONDS + 30))
 while [ $SECONDS -lt "$TIMELIMIT" ]; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
@@ -116,7 +115,7 @@ while [ $SECONDS -lt "$TIMELIMIT" ]; do
         WHERE event_date >= yesterday() AND is_initial_query = 0
           AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
         SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
-    [[ $refused -ne 0 || $replicas -ge 2 ]] && break
+    [ $((replicas + refused)) -ge 3 ] && break
     sleep 0.2
 done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
