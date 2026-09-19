@@ -1,0 +1,56 @@
+two granules per stripe
+0	2	1	3	5
+1	2	2	4	6
+2	2	7	9	11
+3	1	8	10	12
+0	0	
+1	10	x
+2	20	xx
+3	30	xxx
+4	40	xxxx
+5	50	xxxxx
+6	60	xxxxxx
+30
+40
+50
+60
+xxxxx
+2
+merged, three granules per stripe
+0	2	1	4	7
+1	2	2	5	8
+2	2	3	6	9
+3	2	10	13	16
+4	1	11	14	17
+5	2	12	15	18
+6	1	19	20	21
+12	66	660	66
+xxx
+yyyyyyyyy
+one granule per stripe
+0	2	1	2	3
+1	2	4	5	6
+2	2	7	8	9
+3	1	10	11	12
+byte limit
+0	2	1	2	3
+1	2	4	5	6
+2	2	7	8	9
+3	1	10	11	12
+incomplete granule stays in the buffer
+0	7
+1	7
+2	5
+3	5
+24	276	2760
+multiple buffers
+780	7800	115	780	3	{"k":9,"n":{"m":"0"}}
+780	115
+single buffer
+6	60	6	6
+multi-substream first column
+60	780	115
+05113 multiple buffers, four columns	5
+05113 multiple buffers, two columns	3
+05113 single buffer, four columns	2
+05113 multiple buffers, multi-substream first column	4
