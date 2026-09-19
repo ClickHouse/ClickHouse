@@ -273,6 +273,8 @@ bool isDeterministicForOracle(const std::string & sql_original)
         "listagg",
         /// `formatRow('XML'/'JSON*', ...)` embeds the format's statistics (`elapsed`, `rows_read`) per row.
         "formatrow",
+        /// UUIDv7 generators fill the low bits randomly, `dateTimeToUUIDv7` included.
+        "uuidv7",
     };
     for (const char * f : forbidden)
         if (sql.find(f) != std::string::npos)
