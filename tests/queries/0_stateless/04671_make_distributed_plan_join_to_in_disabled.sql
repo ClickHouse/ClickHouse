@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- `query_plan_convert_join_to_in` is not applied under `make_distributed_plan`: the set it
 -- would create uses `transform_null_in = false` and transfer limits, which the serialized set
 -- record does not carry, so a worker would rebuild the set with a different policy.
