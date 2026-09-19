@@ -17,6 +17,8 @@ class HTTPHeaderFilter
 public:
 
     void setValuesFromConfig(const Poco::Util::AbstractConfiguration & config);
+    /// Validates the headers (throws BAD_ARGUMENTS on an invalid or forbidden name/value) and
+    /// normalizes the names in place.
     void checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const;
 
 private:
