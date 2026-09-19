@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <IO/SocketPeerClosed.h>
 #include <Server/HTTP/DeadlineReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
@@ -55,7 +56,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     session.socket().setSendTimeout(send_timeout);
 
     auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
-    socket = session.socket().impl();
+    socket = session.socket();
 
     /// Wrap the socket buffer with a deadline check if configured.
     /// The deadline is enforced in DeadlineReadBuffer::nextImpl on every buffer refill,
@@ -113,7 +114,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    return socket->connectionOpen();
+    return !isSocketPeerClosed(socket);
 }
 
 #if USE_SSL
@@ -122,7 +123,7 @@ bool HTTPServerRequest::havePeerCertificate() const
     if (!secure)
         return false;
 
-    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket.impl());
     if (!secure_socket)
         return false;
 
@@ -134,7 +135,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
     if (!secure)
         throw Poco::Net::SSLException("No certificate available");
 
-    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket.impl());
     if (!secure_socket)
         throw Poco::Net::SSLException("No certificate available");
 

@@ -1448,6 +1448,10 @@ ContextData::ContextData(const ContextData &o) :
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
+    /// A query executed on behalf of a client connection through a copied context (e.g. the SQL generated
+    /// for a PromQL request) must still notice that the client has gone away while it waits for admission.
+    /// `executeQueryInBackground` clears it deliberately: a detached query outlives the connection.
+    connection_alive_check(o.connection_alive_check),
     process_list_elem(o.process_list_elem),
     has_process_list_elem(o.has_process_list_elem),
     normalized_query_hash(o.normalized_query_hash),
@@ -2633,6 +2637,12 @@ void Context::releaseQuerySlot() const
 {
     if (auto elem = getProcessListElementSafe())
         elem->releaseQuerySlot();
+}
+
+void Context::releaseAdmissionSlot() const
+{
+    if (auto elem = getProcessListElementSafe())
+        elem->releaseAdmissionSlot();
 }
 
 String Context::getMergeWorkload() const

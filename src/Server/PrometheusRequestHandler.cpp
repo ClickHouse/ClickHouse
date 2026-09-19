@@ -204,6 +204,11 @@ protected:
     {
         context = session->makeQueryContext();
 
+        /// Let a query parked in the admission queue or in the `replace_running_query` wait notice that the
+        /// client has gone away, the same way the main HTTP handler does. `request` outlives `context`:
+        /// the context is reset when the request has been handled (see `handleRequest`).
+        context->setConnectionAliveCheck([&request]() -> bool { return request.checkPeerConnected(); });
+
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
 
