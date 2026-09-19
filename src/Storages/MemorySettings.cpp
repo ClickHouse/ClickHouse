@@ -52,7 +52,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -93,7 +93,7 @@ void MemorySettings::sanityCheck() const
 
 void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
 {
-    impl->applyChanges(changes);
+    impl->applyChangesWithOrigin(changes, SettingOrigin::Definition);
 }
 
 bool MemorySettings::hasBuiltin(std::string_view name)

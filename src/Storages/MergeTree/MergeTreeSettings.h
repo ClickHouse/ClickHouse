@@ -94,7 +94,13 @@ struct MergeTreeSettings
     SettingsChanges changes() const;
     /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
     SettingsChanges changesFrom(const MergeTreeSettings & base) const;
-    void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
+    /// `origin` is recorded as the source of every setting assigned: `Definition` when `changes` is the table's
+    /// own `SETTINGS` clause, as `ALTER` applies it; none for a copy that only checks what the result would be.
+    void applyChanges(
+        const SettingsChanges & changes,
+        ContextPtr context,
+        bool is_loading_from_existing_metadata,
+        SettingOrigin origin = SettingOrigin::Default);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     static std::vector<std::string_view> getAllAliasNames();

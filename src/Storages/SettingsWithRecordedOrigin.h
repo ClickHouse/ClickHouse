@@ -41,6 +41,17 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
         setWithOrigin(name, value, SettingOrigin::Default);
     }
 
+    /// `applyChanges`, recording `origin` for every setting it assigns: for a loader that applies one source
+    /// whole, such as the table's own `SETTINGS` clause.
+    void applyChangesWithOrigin(const SettingsChanges & changes, SettingOrigin origin)
+    {
+        for (const auto & change : changes)
+        {
+            this->checkShorthandChange(change);
+            setWithOrigin(change.name, change.value, origin);
+        }
+    }
+
     /// The same for the setting whose field is at `offset` in the settings data, as a `SettingIndex` stores it.
     /// For the typed `set` of a public settings class, which holds this behind an incomplete type and so can
     /// pass on only the offset - for an engine that assigns a value itself, over whatever a loader assigned.

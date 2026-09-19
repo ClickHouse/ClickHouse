@@ -140,7 +140,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
@@ -6692,9 +6691,10 @@ void MergeTreeData::changeSettings(
             }
         }
 
-        /// Reset to default settings before applying existing.
+        /// Reset to default settings before applying existing. `new_changes` is the table's whole `SETTINGS` clause
+        /// after the `ALTER`, so what it states is the definition's again.
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true, SettingOrigin::Definition);
         if (run_sanity_checks)
         {
             copy->sanityCheck(
@@ -14409,10 +14409,10 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
 
 SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
 {
-    /// A `MergeTree` table starts from the server's settings, built by applying the `compatibility` setting and
-    /// then the `<merge_tree>` config section. The settings object is a `SettingsWithRecordedOrigin`, and
-    /// `applyCompatibilitySetting` and `loadFromConfig` record which of the two assigned each setting; the table's
-    /// copy keeps the marks, so enumeration reports them.
+    /// Every source is recorded in the settings object, which is a `SettingsWithRecordedOrigin`. A table starts
+    /// from the server's settings, built by `applyCompatibilitySetting` and then `loadFromConfig`, which record
+    /// `compatibility` and `config`; its own `SETTINGS` clause is applied over them by `loadFromQuery`, and again
+    /// by `changeSettings` after an `ALTER`, which record `definition`.
     const auto merge_tree_settings = getSettings();
     auto settings = merge_tree_settings->enumerateSettings();
 
@@ -14420,9 +14420,7 @@ SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) co
     /// `system.merge_tree_settings` reports them.
     const auto constraints_and_profiles = query_context->getSettingsConstraintsAndCurrentProfiles();
     merge_tree_settings->applyConstraints(settings, constraints_and_profiles->constraints);
-
-    /// Last: the table's own `SETTINGS` clause is applied after everything above.
-    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
+    return settings;
 }
 
 }

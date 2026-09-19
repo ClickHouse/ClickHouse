@@ -2664,7 +2664,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             if (table_disk)
                 validateTableDisk(disk);
 
-            applyChanges(changes);
+            applyChangesWithOrigin(changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -2682,11 +2682,17 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
     SettingsChanges & changes = storage_def.settings->changes;
 
+    /// Written into the definition, so from here on they are the definition's, as they are when the table is
+    /// loaded again from it: assigned again, so that they count as changed then as well as now.
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
                   [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
-        changes.push_back(SettingChange{#NAME, (*this)[MergeTreeSetting::NAME].value});
+    {                                                                                                         \
+        const Field value = (*this)[MergeTreeSetting::NAME].value;                                           \
+        changes.push_back(SettingChange{#NAME, value});                                                       \
+        setWithOrigin(#NAME, value, SettingOrigin::Definition);                                               \
+    }
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
@@ -2971,11 +2977,12 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
     return res;
 }
 
-void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettings::applyChanges(
+    const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, SettingOrigin origin)
 {
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
-    impl->applyChanges(resolved_changes);
+    impl->applyChangesWithOrigin(resolved_changes, origin);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)

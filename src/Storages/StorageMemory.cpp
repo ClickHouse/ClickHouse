@@ -19,7 +19,6 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/VirtualColumnsDescription.h>
-#include <Storages/TableSettingsHelpers.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -874,9 +873,11 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
         .syntax = "ENGINE = Memory"});
 }
 
-SettingDescriptions StorageMemory::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageMemory::getTableSettings(ContextPtr /* query_context */) const
 {
-    return withOriginFromDefinition(memory_settings->enumerateSettings(), getStorageID(), query_context);
+    /// The settings object records the definition as `loadFromQuery` and `applyChanges` - on `ALTER ... MODIFY
+    /// SETTING`, the only settings `ALTER` this engine supports - apply it.
+    return memory_settings->enumerateSettings();
 }
 
 }

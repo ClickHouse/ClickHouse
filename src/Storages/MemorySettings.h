@@ -38,6 +38,7 @@ struct MemorySettings
     void loadFromQuery(ASTStorage & storage_def);
     ASTPtr getSettingsChangesQuery();
     void sanityCheck() const;
+    /// The table's whole `SETTINGS` clause as `ALTER ... MODIFY SETTING` leaves it, recorded as the definition.
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
