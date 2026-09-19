@@ -71,6 +71,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
         const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups,
         UInt64 file_metadata_digest) const override;
     UInt64 getMinProtocolVersion() const override;
+    std::shared_ptr<FileBucketInfo> cloneWithoutOverwriteGuards() const override;
     bool coversWholeFile() const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;

@@ -26,7 +26,9 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
-ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(
+    ObjectInfoPtr object, const ContextPtr & context, bool read_is_generation_pinned_)
+    : read_is_generation_pinned(read_is_generation_pinned_)
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
@@ -117,6 +119,19 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         bucket_info_to_send = nullptr;
     }
 
+    if (bucket_info_to_send && protocol_version < bucket_info_to_send->getMinProtocolVersion() && read_is_generation_pinned)
+    {
+        /// The read is pinned to one immutable generation of the file (a data-lake snapshot: its
+        /// listed files are never rewritten in place, a new version is a new path), so the
+        /// concurrent-overwrite guard the newer fields carry has nothing to detect - every bucket
+        /// reader of this path necessarily sees the footer the split was computed from. Send the
+        /// assignment without those fields rather than failing the task: an older worker already
+        /// understands `row_group_ids`, so it reads exactly its own buckets, and a rolling upgrade
+        /// keeps working. Everything that is not merely a guard stays on the wire.
+        if (auto without_guards = bucket_info_to_send->cloneWithoutOverwriteGuards())
+            bucket_info_to_send = std::move(without_guards);
+    }
+
     if (bucket_info_to_send)
     {
         /// Fail closed: a bucketed task carries `file_bucket_info` so the worker reads only its assigned
@@ -127,7 +142,9 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         /// and (for Parquet) below `WITH_PARQUET_FILE_ROW_GROUP_COUNT` it would silently drop
         /// `file_num_row_groups` and `footer_digest`, disabling the `checkFileMatchesBucketAssignment`
         /// overwrite guard, so it could read a different generation of an object overwritten between the
-        /// split decision and the read instead of throwing.
+        /// split decision and the read instead of throwing. The exception is a read pinned to an
+        /// immutable generation, handled just above: there the guard is dropped explicitly because no
+        /// overwrite can happen under the read, and the task is sent rather than failed.
         const auto required_protocol_version = bucket_info_to_send->getMinProtocolVersion();
         if (protocol_version < required_protocol_version)
             throw Exception(

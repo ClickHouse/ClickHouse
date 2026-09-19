@@ -484,6 +484,20 @@ UInt64 ParquetFileBucketInfo::getMinProtocolVersion() const
         : DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO;
 }
 
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::cloneWithoutOverwriteGuards() const
+{
+    /// `file_num_row_groups` and `footer_digest` exist only for `checkFileMatchesBucketAssignment`,
+    /// the guard against the file being overwritten between the split decision and the read. A
+    /// bucket without them still names exactly the same row groups, so it is a correct assignment
+    /// for a file that cannot be overwritten under the read. Nothing else to drop.
+    if (file_num_row_groups == 0 && footer_digest == 0)
+        return nullptr;
+
+    auto result = std::make_shared<ParquetFileBucketInfo>(row_group_ids);
+    result->omitted_row_groups_are_pruned = omitted_row_groups_are_pruned;
+    return result;
+}
+
 bool ParquetFileBucketInfo::coversWholeFile() const
 {
     /// The bucket must hold every row group of the file: for `file_num_row_groups` total row

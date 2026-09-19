@@ -429,4 +429,77 @@ TEST(ClusterFunctionReadTaskResponseSerialization, CurrentVersionRoundTripsBucke
     EXPECT_EQ(*restored.read_source_index, 3u);
 }
 
+/// A partial bucket of a read pinned to one immutable generation (a data-lake snapshot) is sent to
+/// an old worker with the row-group assignment intact and only the overwrite-guard fields dropped:
+/// the guard has nothing to detect there, while failing the task would break rolling upgrades of
+/// bucketed lakehouse reads. The worker reads exactly its own row groups.
+TEST(ClusterFunctionReadTaskResponseSerialization, PinnedGenerationDropsGuardsForOldWorker)
+{
+    prepareResponseEnvironment();
+
+    const std::vector<size_t> row_group_ids = {0, 2};
+    auto bucket = std::make_shared<ParquetFileBucketInfo>(row_group_ids, /*file_num_row_groups=*/3);
+    bucket->footer_digest = 0xdeadbeef;
+    auto response = makeResponse(bucket);
+    response.read_is_generation_pinned = true;
+
+    const String str = serializeResponse(response, OLD_WORKER_VERSION);
+
+    ClusterFunctionReadTaskResponse restored;
+    ReadBufferFromMemory in(str);
+    restored.deserialize(in);
+
+    ASSERT_TRUE(in.eof());
+    const auto restored_bucket = std::dynamic_pointer_cast<ParquetFileBucketInfo>(restored.file_bucket_info);
+    ASSERT_NE(restored_bucket, nullptr);
+    EXPECT_EQ(restored_bucket->row_group_ids, row_group_ids);
+    /// An old worker cannot carry them, and with the read pinned they are not needed.
+    EXPECT_EQ(restored_bucket->file_num_row_groups, 0u);
+    EXPECT_EQ(restored_bucket->footer_digest, 0u);
+    ASSERT_TRUE(restored.read_source_index.has_value());
+    EXPECT_EQ(*restored.read_source_index, 3u);
+}
+
+/// Pinning changes nothing for a current worker: it carries the guard fields, so they are sent.
+TEST(ClusterFunctionReadTaskResponseSerialization, PinnedGenerationKeepsGuardsForCurrentWorker)
+{
+    prepareResponseEnvironment();
+
+    auto bucket = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{0, 2}, /*file_num_row_groups=*/3);
+    bucket->footer_digest = 0xdeadbeef;
+    auto response = makeResponse(bucket);
+    response.read_is_generation_pinned = true;
+
+    const String str = serializeResponse(response, NEW_VERSION);
+
+    ClusterFunctionReadTaskResponse restored;
+    ReadBufferFromMemory in(str);
+    restored.deserialize(in);
+
+    ASSERT_TRUE(in.eof());
+    const auto restored_bucket = std::dynamic_pointer_cast<ParquetFileBucketInfo>(restored.file_bucket_info);
+    ASSERT_NE(restored_bucket, nullptr);
+    EXPECT_EQ(restored_bucket->file_num_row_groups, 3u);
+    EXPECT_EQ(restored_bucket->footer_digest, 0xdeadbeefu);
+}
+
+/// The dropped fields are exactly the guard: the clone keeps the assignment and lowers the
+/// required protocol version, and a bucket that has no guard fields has nothing to clone.
+TEST(ParquetFileBucketInfoSerialization, CloneWithoutOverwriteGuards)
+{
+    const std::vector<size_t> row_group_ids = {0, 2};
+    ParquetFileBucketInfo guarded(row_group_ids, /*file_num_row_groups=*/3);
+    guarded.footer_digest = 0xdeadbeef;
+
+    const auto clone = std::dynamic_pointer_cast<ParquetFileBucketInfo>(guarded.cloneWithoutOverwriteGuards());
+    ASSERT_NE(clone, nullptr);
+    EXPECT_EQ(clone->row_group_ids, row_group_ids);
+    EXPECT_EQ(clone->file_num_row_groups, 0u);
+    EXPECT_EQ(clone->footer_digest, 0u);
+    EXPECT_EQ(clone->getMinProtocolVersion(), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO));
+
+    /// Nothing to drop: no clone.
+    EXPECT_EQ(ParquetFileBucketInfo(row_group_ids).cloneWithoutOverwriteGuards(), nullptr);
+}
+
 #endif

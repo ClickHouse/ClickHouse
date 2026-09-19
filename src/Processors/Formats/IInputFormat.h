@@ -79,6 +79,15 @@ struct FileBucketInfo
     /// is the version that introduced `file_bucket_info` itself.
     virtual UInt64 getMinProtocolVersion() const;
 
+    /// A copy of this bucket without the fields that only serve the concurrent-overwrite guard, or
+    /// `nullptr` when the bucket has no such fields to drop. Used for a read that is already pinned
+    /// to one immutable generation of the file (a data-lake snapshot): there the guard has nothing
+    /// to detect, so an older worker that cannot carry those fields can still run the task with the
+    /// row-group assignment intact, instead of the task failing closed (see
+    /// `ClusterFunctionReadTaskResponse::serialize`). The returned bucket's `getMinProtocolVersion`
+    /// is therefore lower than this one's.
+    virtual std::shared_ptr<FileBucketInfo> cloneWithoutOverwriteGuards() const { return nullptr; }
+
     /// Whether this bucket covers the whole file (a trivial split into a single bucket). For such a
     /// bucket, dropping it from a task is semantically safe: a worker reading the plain path once
     /// returns exactly the same rows, because there is no second bucket to duplicate or omit. Used to
