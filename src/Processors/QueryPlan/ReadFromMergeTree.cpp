@@ -134,7 +134,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 }
 
 /// check if a DAG node only depends on sorting key columns
-/// (ActionsDAG version of isExpressionOverSortingKey)
+/// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))
@@ -160,6 +160,12 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
         return false;
     if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
+
+    /// a folded lambda hides its body behind a constant column
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column
+        && !allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+        return false;
+
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
@@ -2324,10 +2330,31 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     const auto & primary_key_columns = storage_snapshot->metadata->getPrimaryKey().column_names;
     NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
 
-    const auto & partition_key_required_columns = partition_key_expression->getRequiredColumns();
-    for (const auto & partition_key_required_column : partition_key_required_columns)
-        if (!primary_key_columns_set.contains(partition_key_required_column))
+    /** The proof above equates "same primary key column values" with "one logical key for the FINAL
+      * merge", but the merge comparator is coarser than value identity for floating-point columns:
+      * `-0.0` compares equal to `0.0`, and every `NaN` bit pattern compares equal to every other. A
+      * partition expression can tell exactly those values apart - `toString(f)` maps `-0.0` and `0.0`
+      * to `'-0'` and `'0'`, `reinterpretAsUInt64(f)` separates `NaN` payloads - so rows the comparator
+      * treats as one key land in different partitions, and skipping the cross-partition merge would
+      * return both of them.
+      */
+    for (const auto & required_column : partition_key_expression->getRequiredColumnsWithTypes())
+    {
+        if (!primary_key_columns_set.contains(required_column.name))
             return false;
+
+        if (isFloat(removeLowCardinalityAndNullable(required_column.type)))
+            return false;
+
+        bool has_float = false;
+        required_column.type->forEachChild([&](const IDataType & child)
+        {
+            if (!has_float && WhichDataType(child).isFloat())
+                has_float = true;
+        });
+        if (has_float)
+            return false;
+    }
 
     return true;
 }
