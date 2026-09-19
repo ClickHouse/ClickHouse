@@ -442,6 +442,12 @@ def send_test_data():
                 {"__name__": "bad_le_bucket", "le": "+Inf"},
                 {300: 60},
             ),
+            # A NaN `le` label is parseable as a Float64, but it is not a valid
+            # histogram bucket bound and must be dropped like other malformed bounds.
+            (
+                {"__name__": "nan_le_bucket", "le": "NaN"},
+                {300: 25},
+            ),
             (
                 {"__name__": "rate_bucket", "le": "0.1"},
                 {300: 10, 330: 15, 360: 20},
@@ -5064,6 +5070,17 @@ def test_histogram_quantile():
         [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
     )
 
+    # Keep the previous SQL lowering available for compatibility with older servers.
+    assert tsv_close_to(
+        node.query(
+            "SELECT * FROM prometheusQuery("
+            "prometheus, "
+            "'histogram_quantile(0.5, http_request_duration_seconds_bucket)', "
+            "300) SETTINGS compatibility = '26.8'"
+        ),
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
+    )
+
     # phi=0.25 -> target rank = 15, falls inside bucket (0.1, 0.5]. Linear interpolation:
     #   0.1 + (0.5 - 0.1) * (15 - 10) / (30 - 10) = 0.1 + 0.4 * 0.25 = 0.2.
     do_query_test(
@@ -5201,6 +5218,16 @@ def test_histogram_quantile():
         eps=1e-12,
     )
 
+    # A NaN `le` label is parseable by toFloat64OrNull, but Prometheus drops it as
+    # an invalid bucket. In particular, it must not turn an all-invalid histogram
+    # into a zero-valued result.
+    do_query_test(
+        "histogram_quantile(0.5, nan_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
     # Idiomatic `histogram_quantile(phi, rate(bucket[window]))` pattern.
     do_query_test(
         "histogram_quantile(0.5, rate(rate_bucket[60s]))",
@@ -5284,6 +5311,46 @@ def test_histogram_quantile():
         "expected type scalar",
         "expects first argument of type",
     )
+
+
+def test_histogram_quantile_with_float32_scalar():
+    node.query(
+        "CREATE TABLE prometheus_f32_histogram "
+        "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32_histogram (metric_name, tags, time_series) VALUES"
+            " ('rate_bucket', {'le': '0.1'}, [(toDateTime64(300, 3), toFloat32(10)), (toDateTime64(330, 3), toFloat32(15)), (toDateTime64(360, 3), toFloat32(20))]),"
+            " ('rate_bucket', {'le': '0.5'}, [(toDateTime64(300, 3), toFloat32(30)), (toDateTime64(330, 3), toFloat32(45)), (toDateTime64(360, 3), toFloat32(60))]),"
+            " ('rate_bucket', {'le': '1.0'}, [(toDateTime64(300, 3), toFloat32(50)), (toDateTime64(330, 3), toFloat32(75)), (toDateTime64(360, 3), toFloat32(100))]),"
+            " ('rate_bucket', {'le': '+Inf'}, [(toDateTime64(300, 3), toFloat32(60)), (toDateTime64(330, 3), toFloat32(90)), (toDateTime64(360, 3), toFloat32(120))])"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_f32_histogram, "
+                "'histogram_quantile(0.5, rate(rate_bucket[60s]))', 360)"
+            ),
+            [["[]", "1970-01-01 00:06:00.000", "0.5"]],
+            eps=1e-6,
+        )
+
+        # Also exercise the raw Float32 vector path. This reaches the array aggregate
+        # without the rate function changing the query shape.
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_f32_histogram, "
+                "'histogram_quantile(0.5, rate_bucket)', 360)"
+            ),
+            [["[]", "1970-01-01 00:06:00.000", "0.5"]],
+            eps=1e-6,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_histogram SYNC")
 
 
 def test_label_manipulation_functions():

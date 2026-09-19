@@ -94,9 +94,8 @@ SQLQueryPiece applyHistogramQuantile(
     /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
     /// distinct histograms remain separate), and compute quantile.
     /// SELECT timeSeriesRemoveTag(group, 'le') AS new_group,
-    ///        quantilePrometheusHistogramForEach(phi)(
-    ///            arrayResize(CAST([] AS Array(Float64)), length(values),
-    ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
+    ///        quantilePrometheusHistogramArray(phi)(
+    ///            ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan),
     ///            values) AS values
     /// FROM <subquery>
     /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')))
@@ -154,31 +153,41 @@ SQLQueryPiece applyHistogramQuantile(
         }
         else
         {
-            /// quantilePrometheusHistogramForEach(phi)(le_array, values)
-            ///
-            /// le_array is constructed for each row as an array of the same length as values,
-            /// filled with the extracted `le` tag value. Series without a parsable `le` are
-            /// excluded by the WHERE clause added below, so the NaN fallback here is just a
-            /// safety net — `quantilePrometheusHistogramForEach` treats NaN `le` as
-            /// "ignore this bucket".
-            auto le_array_expr = makeASTFunction(
-                "arrayResize",
-                makeASTFunction("CAST",
-                    make_intrusive<ASTLiteral>(Array{}),
-                    make_intrusive<ASTLiteral>("Array(Float64)")),
-                makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                makeASTFunction("ifNull",
-                    makeASTFunction("toFloat64OrNull",
-                        makeASTFunction("timeSeriesExtractTag",
-                            make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                            make_intrusive<ASTLiteral>("le"))),
-                    make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN())));
+            auto le_expr = makeASTFunction(
+                "ifNull",
+                makeASTFunction("toFloat64OrNull",
+                    makeASTFunction("timeSeriesExtractTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>("le"))),
+                make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()));
 
-            quantile_expr = addParametersToAggregateFunction(
-                makeASTFunction("quantilePrometheusHistogramForEach",
-                    std::move(le_array_expr),
-                    make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                make_intrusive<ASTLiteral>(phi));
+            if (context.use_quantile_prometheus_histogram_array)
+            {
+                /// The histogram-specific array aggregate consumes the scalar `le` once per input
+                /// series and keeps one cumulative-value vector per bucket bound.
+                quantile_expr = addParametersToAggregateFunction(
+                    makeASTFunction("quantilePrometheusHistogramArray",
+                        std::move(le_expr),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    make_intrusive<ASTLiteral>(phi));
+            }
+            else
+            {
+                /// Keep the previous lowering for compatibility with servers before 26.9.
+                auto le_array_expr = makeASTFunction(
+                    "arrayResize",
+                    makeASTFunction("CAST",
+                        make_intrusive<ASTLiteral>(Array{}),
+                        make_intrusive<ASTLiteral>("Array(Float64)")),
+                    makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    std::move(le_expr));
+
+                quantile_expr = addParametersToAggregateFunction(
+                    makeASTFunction("quantilePrometheusHistogramForEach",
+                        std::move(le_array_expr),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    make_intrusive<ASTLiteral>(phi));
+            }
         }
 
         quantile_expr->setAlias(ColumnNames::Values);
@@ -187,15 +196,21 @@ SQLQueryPiece applyHistogramQuantile(
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        /// Prometheus silently drops input series whose `le` label is missing or cannot be
-        /// parsed as a float, so for example a pure non-histogram input produces an empty
-        /// result. This filter applies before the out-of-range phi short-circuit above:
-        /// even for an out-of-range phi only series with a parsable `le` produce output.
-        builder.where = makeASTFunction("isNotNull",
-            makeASTFunction("toFloat64OrNull",
+        /// Prometheus silently drops input series whose `le` label is missing, cannot be
+        /// parsed as a float, or parses as NaN, so for example a pure non-histogram input
+        /// produces an empty result. This filter applies before the out-of-range phi
+        /// short-circuit above: even for an out-of-range phi only series with a valid `le`
+        /// produce output.
+        auto parsed_le_expr = []
+        {
+            return makeASTFunction("toFloat64OrNull",
                 makeASTFunction("timeSeriesExtractTag",
                     make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                    make_intrusive<ASTLiteral>("le"))));
+                    make_intrusive<ASTLiteral>("le")));
+        };
+        builder.where = makeASTFunction("and",
+            makeASTFunction("isNotNull", parsed_le_expr()),
+            makeASTFunction("not", makeASTFunction("isNaN", parsed_le_expr())));
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
