@@ -91,8 +91,10 @@ constexpr std::string_view PIVOT_SOURCE_ALIAS = "__pivot_source";
 
 bool hasTopLevelPivot(IParser::Pos pos)
 {
+    const size_t max_position = pos.maxPosition();
     int round_depth = 0;
     int square_depth = 0;
+    bool found = false;
 
     while (pos->type != TokenType::EndOfStream && pos->type != TokenType::Semicolon)
     {
@@ -101,7 +103,7 @@ bool hasTopLevelPivot(IParser::Pos pos)
         else if (pos->type == TokenType::ClosingRoundBracket)
         {
             if (round_depth == 0)
-                return false;
+                break;
             --round_depth;
         }
         else if (pos->type == TokenType::OpeningSquareBracket)
@@ -109,19 +111,22 @@ bool hasTopLevelPivot(IParser::Pos pos)
         else if (pos->type == TokenType::ClosingSquareBracket)
         {
             if (square_depth == 0)
-                return false;
+                break;
             --square_depth;
         }
         else if (round_depth == 0 && square_depth == 0)
         {
             if (pos->type == TokenType::Comma)
-                return false;
+                break;
 
             if (pos->type == TokenType::BareWord)
             {
                 std::string_view word{pos->begin, pos->size()};
                 if (equalsCaseInsensitive(word, "PIVOT"))
-                    return true;
+                {
+                    found = true;
+                    break;
+                }
                 if (equalsCaseInsensitive(word, "JOIN")
                     || equalsCaseInsensitive(word, "SELECT")
                     || equalsCaseInsensitive(word, "PREWHERE")
@@ -139,14 +144,15 @@ bool hasTopLevelPivot(IParser::Pos pos)
                     || equalsCaseInsensitive(word, "UNION")
                     || equalsCaseInsensitive(word, "EXCEPT")
                     || equalsCaseInsensitive(word, "INTERSECT"))
-                    return false;
+                    break;
             }
         }
 
         ++pos;
     }
 
-    return false;
+    pos.restoreMaxPosition(max_position);
+    return found;
 }
 
 String qualifyPivotIdentifier(ASTPtr & node, const String & written_qualifier, const String & target_qualifier)
@@ -501,7 +507,7 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
     return result;
 }
 
-bool parseImplicitAliasTail(IParser::Pos & pos, ASTTableExpression & table_expression, Expected & expected)
+bool parseTableExpressionTail(IParser::Pos & pos, ASTTableExpression & table_expression, Expected & expected)
 {
     if (pos->type == TokenType::OpeningRoundBracket)
     {
@@ -583,12 +589,21 @@ bool parsePivotTableExpression(
 
         String result_alias = parseOptionalAlias(pos, expected, allow_alias_without_as_keyword);
         node = rewritePivot(std::move(source), spec, result_alias);
+
+        if (!parseTableExpressionTail(pos, node->as<ASTTableExpression &>(), expected))
+            return false;
+
         return true;
     };
 
     /// Common case: unaliased source, or an explicit `AS alias` already parsed by the ordinary path.
     if (IParserBase::wrapParseImpl(pos, parse_pivot))
         return true;
+
+    /// A malformed table-expression tail can fail after the source has already been moved into
+    /// the rewritten result. In that case there is no source left for the implicit-alias fallback.
+    if (!source)
+        return false;
 
     if (!allow_alias_without_as_keyword || !getTableExpressionAlias(source->as<ASTTableExpression &>()).empty())
         return false;
@@ -601,7 +616,7 @@ bool parsePivotTableExpression(
 
     auto & source_expression = source->as<ASTTableExpression &>();
     setTableExpressionAlias(source_expression, source_alias);
-    if (!parseImplicitAliasTail(pos, source_expression, expected))
+    if (!parseTableExpressionTail(pos, source_expression, expected))
         return false;
 
     return parse_pivot();
@@ -612,6 +627,7 @@ bool parsePivotTableExpression(
 
 bool ParserTableExpression::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    const size_t max_position = pos.maxPosition();
     if (!hasTopLevelPivot(pos))
         return IParserBase::parse(pos, node, expected);
 
@@ -629,6 +645,7 @@ bool ParserTableExpression::parse(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
 
+    pos.restoreMaxPosition(max_position);
     return IParserBase::parse(pos, node, expected);
 }
 

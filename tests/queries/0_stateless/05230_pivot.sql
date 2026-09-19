@@ -84,6 +84,23 @@ SELECT p.region, p.q1
 FROM values('region String, quarter String, amount UInt64', ('east', 'Q1', 3)) AS s
 PIVOT (sum(s.amount) FOR s.quarter IN ('Q1' AS q1)) AS p;
 
+-- Result aliases keep the ordinary table-expression column-alias tail.
+SELECT p.x, p.y
+FROM values('group_key String, k String, v UInt64', ('g', 'a', 1))
+PIVOT (sum(v) FOR k IN ('a' AS a)) AS p(x, y);
+
+-- Generated PIVOT names may duplicate an implicit grouping-column name.
+SELECT *
+FROM values('g String, k String, v UInt64', ('group', 'a', 1))
+PIVOT (sum(v) FOR k IN ('a' AS g));
+
+-- The generated query keeps source-column resolution under the caller's alias setting.
+WITH 999 AS v
+SELECT *
+FROM values('k String, v UInt64', ('a', 2))
+PIVOT (sum(v) FOR k IN ('a' AS a))
+SETTINGS prefer_column_name_to_alias = 0;
+
 -- Existing implicit table alias + column-alias-list syntax named `pivot` must not be stolen.
 SELECT number FROM numbers(1) pivot(x);
 
