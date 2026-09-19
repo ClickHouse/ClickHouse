@@ -1,0 +1,14 @@
+--- Default extrapolation (promql_exact_rate = 0) ---
+[20]
+[20]
+[0.5]
+--- Exact rate mode (promql_exact_rate = 1) ---
+[10]
+[10]
+[0.25]
+--- Single sample returns NULL ---
+[NULL]
+--- Counter reset with promql_exact_rate = 1 ---
+[5]
+[20]
+[0.5]

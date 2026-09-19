@@ -9402,6 +9402,10 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", PRIVATE_PREVIEW, evaluation_time) \
+    \
+    DECLARE(Bool, promql_exact_rate, false, R"(
+Calculate PromQL rate, increase, and delta functions without fractional boundary extrapolation.
+)", 0) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \

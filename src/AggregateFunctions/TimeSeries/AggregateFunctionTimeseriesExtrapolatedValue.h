@@ -103,9 +103,10 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         IntervalType window;
         TimestampType timestamp_scale_multiplier;
+        bool exact_rate = false;
 
-        Aggregator(IntervalType window_, TimestampType timestamp_scale_multiplier_)
-            : window(window_), timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        Aggregator(IntervalType window_, TimestampType timestamp_scale_multiplier_, bool exact_rate_ = false)
+            : window(window_), timestamp_scale_multiplier(timestamp_scale_multiplier_), exact_rate(exact_rate_)
         {
         }
 
@@ -169,49 +170,54 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
             Float64 value_difference = last_value - first_value + total_resets;
 
-            // Duration between first/last samples and boundary of range. Subtract in `Int128` first to avoid
-            // both signed overflow on `grid_timestamp - window` and `Float64` precision loss when timestamps
-            // are large (e.g. `DateTime64(9)` near present-day epoch ~1.7e18).
-            Float64 duration_to_start = static_cast<Float64>(
-                static_cast<Int128>(static_cast<Int64>(first_timestamp))
-                - static_cast<Int128>(static_cast<Int64>(grid_timestamp))
-                + static_cast<Int128>(static_cast<Int64>(window)));
-            Float64 duration_to_end = static_cast<Float64>(
-                static_cast<Int128>(static_cast<Int64>(grid_timestamp))
-                - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
-
-            const auto sampled_interval = time_difference;
-            const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(total_count - 1);
-
-            // If samples are close enough to the (lower or upper) boundary of the range, we extrapolate the
-            // rate all the way to the boundary in question. "Close enough" is up to 10% more than the average
-            // duration between samples within the range; otherwise we extrapolate by only half of the average
-            // duration between samples (our guess for where the series actually starts or ends).
-            const auto extrapolation_threshold = average_duration_between_samples * 1.1;
-            Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
-
-            if (duration_to_start >= extrapolation_threshold)
-                duration_to_start = average_duration_between_samples / 2;
-
-            if (check_resets && value_difference > 0 && first_value >= 0)
+            Float64 factor = 1.0;
+            if (exact_rate)
             {
-                // Counters cannot be negative. If we have any slope at all we can extrapolate the zero point
-                // of the counter; if that is closer than duration_to_start, take it as the start, avoiding
-                // extrapolation to negative counter values.
-                Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
-                duration_to_start = std::min(duration_to_zero, duration_to_start);
+                if constexpr (is_rate)
+                    factor = static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
             }
+            else
+            {
+                // Duration between first/last samples and boundary of range. Subtract in Int128
+                // to avoid signed overflow and Float64 precision loss with large timestamps.
+                Float64 duration_to_start = static_cast<Float64>(
+                    static_cast<Int128>(static_cast<Int64>(first_timestamp))
+                    - static_cast<Int128>(static_cast<Int64>(grid_timestamp))
+                    + static_cast<Int128>(static_cast<Int64>(window)));
+                Float64 duration_to_end = static_cast<Float64>(
+                    static_cast<Int128>(static_cast<Int64>(grid_timestamp))
+                    - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
 
-            extrapolate_to_interval += duration_to_start;
+                const auto sampled_interval = time_difference;
+                const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(total_count - 1);
 
-            if (duration_to_end >= extrapolation_threshold)
-                duration_to_end = average_duration_between_samples / 2;
-            extrapolate_to_interval += duration_to_end;
+                // Extrapolate to boundary if samples are close enough (within 10% of avg duration);
+                // otherwise extrapolate by half of the average duration between samples.
+                const auto extrapolation_threshold = average_duration_between_samples * 1.1;
+                Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
 
-            Float64 factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
+                if (duration_to_start >= extrapolation_threshold)
+                    duration_to_start = average_duration_between_samples / 2;
 
-            if constexpr (is_rate)
-                factor = factor * static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
+                if (check_resets && value_difference > 0 && first_value >= 0)
+                {
+                    // Counters cannot be negative; extrapolate zero point if closer than
+                    // duration_to_start, avoiding extrapolation to negative counter values.
+                    Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
+                    duration_to_start = std::min(duration_to_zero, duration_to_start);
+                }
+
+                extrapolate_to_interval += duration_to_start;
+
+                if (duration_to_end >= extrapolation_threshold)
+                    duration_to_end = average_duration_between_samples / 2;
+                extrapolate_to_interval += duration_to_end;
+
+                factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
+
+                if constexpr (is_rate)
+                    factor = factor * static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
+            }
 
             value_difference *= factor;
 
@@ -245,11 +251,25 @@ public:
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
-    using Base::Base;
+    bool exact_rate = false;
+
+    AggregateFunctionTimeseriesExtrapolatedValue(
+        const DataTypes & argument_types_,
+        const Array & parameters_,
+        TimestampType start_,
+        TimestampType end_,
+        IntervalType step_,
+        IntervalType window_,
+        UInt32 scale_,
+        bool exact_rate_ = false)
+        : Base(argument_types_, parameters_, start_, end_, step_, window_, scale_)
+        , exact_rate(exact_rate_)
+    {
+    }
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return Aggregator{Base::window, Base::timestamp_scale_multiplier};
+        return Aggregator{Base::window, Base::timestamp_scale_multiplier, exact_rate};
     }
 };
 

@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -98,9 +99,10 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            const bool exact_rate = settings && (*settings)[Setting::promql_exact_rate];
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, exact_rate);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
@@ -196,9 +198,10 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            const bool exact_rate = settings && (*settings)[Setting::promql_exact_rate];
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, exact_rate);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
@@ -294,9 +297,10 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            const bool exact_rate = settings && (*settings)[Setting::promql_exact_rate];
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, exact_rate);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
