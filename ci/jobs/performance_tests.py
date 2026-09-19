@@ -153,15 +153,15 @@ FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
 # The dashboard reads the tables this job uploads in the REPORT stage and
 # classifies every changed query of a run with a confidence tier that combines
 # the raw per-run samples of both sides, the quantile shift, and the recent
-# master history of the same query. In `master_head` mode that tier, not the
-# per-shard "N slower" count, decides the Praktika status: see
-# `perf_dashboard_gate`.
+# master history of the same query. In `master_head` mode a query fails the
+# check when that tier is blocking and this job's own report also published the
+# query as slower: see `perf_dashboard_gate`.
 PERF_DASHBOARD_URL = "https://performance.ci.clickhouse.com"
 PERF_DASHBOARD_API_URL = f"{PERF_DASHBOARD_URL}/api/v1"
 # The metric the gate looks at; compare.sh classifies queries by the same one.
 DASHBOARD_GATE_METRIC = "client_time"
-# Confidence tiers of a slowdown that fail the check. `likely_regression` and
-# `noise` rows are reported in the dashboard but do not block.
+# Confidence tiers of a slowdown that can fail the check. `likely_regression`
+# and `noise` rows are reported in the dashboard but do not block.
 DASHBOARD_BLOCKING_TIERS = frozenset({"confirmed_regression"})
 # How long to wait for the dashboard to serve this shard's rows. The dashboard
 # computes a run from the tables this job uploads in the REPORT stage, which
@@ -1429,12 +1429,13 @@ def find_base_release_build(info, build_type):
 
 
 # The number of distinct "slower" queries that fails the whole performance
-# check when the cumulative `release_base` mode has no previous master run to
-# compute a delta against. `report.py` embeds a status into `report.html`, but
-# `main` below discards it ("always green mode") and recomputes the final
-# status: in `master_head` mode from the performance dashboard's verdict (see
-# `perf_dashboard_gate`), in `release_base` mode from the slower counts below.
-# The value must stay synchronized with the slower-queries threshold in
+# check: the floor in `master_head` mode, and the gate in the cumulative
+# `release_base` mode when it has no previous master run to compute a delta
+# against. `report.py` embeds a status into `report.html`, but `main` below
+# discards it ("always green mode") and recomputes the final status: in
+# `master_head` mode from this count plus the performance dashboard's verdict
+# (see `perf_dashboard_gate`), in `release_base` mode from the slower counts
+# below. The value must stay synchronized with the slower-queries threshold in
 # `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
 # "slower" queries is dominated by CI noise (a single bad shard run, frequency
 # scaling, or code-layout artifacts can push several unrelated micro benchmarks
@@ -1551,21 +1552,44 @@ def dashboard_run_id(info):
     return identities[0]["runId"]
 
 
-def read_shard_queries(metrics_tsv_path):
-    """Tests and (test, query_index) pairs measured by this shard, from
-    `report/all-query-metrics.tsv` (columns: metric, left, right, diff,
-    times_change, stat_threshold, test, query_index, ...)."""
+def read_shard_confirmed_slowdowns(metrics_tsv_path):
+    """Tests measured by this shard, and the (test, query_index) pairs its own
+    report published as slower, from `report/all-query-metrics.tsv` (11 columns:
+    metric, left, right, diff, times_change, stat_threshold, test, query_index,
+    query_display_name, changed_threshold, unstable_threshold).
+
+    `diff > changed_threshold and diff >= stat_threshold` is compare.sh's
+    `changed_fail` restricted to a slowdown (see the `queries` table there), and
+    the file read here already excludes the queries the confirmation rerun
+    demoted. That rerun is advisory and fail-open, so a pair returned here
+    cleared the per-query thresholds but was not necessarily re-measured.
+
+    A `client_time` row that does not parse is corrupt output of this same job,
+    so it raises `PerfDashboardError`."""
     tests = []
-    queries = set()
+    slowdowns = set()
     with open(metrics_tsv_path, "r", encoding="utf-8", newline="") as f:
-        for row in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
-            if len(row) < 8 or row[0] != DASHBOARD_GATE_METRIC:
+        reader = csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line_number, row in enumerate(reader, start=1):
+            if not row or row[0] != DASHBOARD_GATE_METRIC:
                 continue
-            test, query_index = row[6], int(row[7])
+            try:
+                if len(row) < 11:
+                    raise ValueError(f"{len(row)} columns, expected 11")
+                test, query_index = row[6], int(row[7])
+                diff, stat_threshold = float(row[3]), float(row[5])
+                changed_threshold = float(row[9])
+            except ValueError as e:
+                where = f"{row[6]} #{row[7]}" if len(row) > 7 else f"line {line_number}"
+                raise PerfDashboardError(
+                    f"malformed {DASHBOARD_GATE_METRIC} row ({where}) in "
+                    f"[{metrics_tsv_path}]: {e}"
+                ) from e
             if test not in tests:
                 tests.append(test)
-            queries.add((test, query_index))
-    return tests, queries
+            if diff > changed_threshold and diff >= stat_threshold:
+                slowdowns.add((test, query_index))
+    return tests, slowdowns
 
 
 def dashboard_has_shard(run_id, arch, test):
@@ -1587,8 +1611,8 @@ def dashboard_query_link(run_id, test, query_index):
     )
 
 
-def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
-    """Slowdown rows of this shard with the dashboard's confidence tier."""
+def fetch_dashboard_slowdowns(run_id, arch, confirmed_slowdowns):
+    """Dashboard confidence tiers for the slowdowns this shard reported."""
     data = dashboard_api_get(
         f"/runs/{urllib.parse.quote(run_id)}/confidence",
         {"metrics": DASHBOARD_GATE_METRIC},
@@ -1599,7 +1623,7 @@ def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
             continue
         if row.get("metric") != DASHBOARD_GATE_METRIC:
             continue
-        if (row.get("test"), row.get("queryIndex")) not in shard_queries:
+        if (row.get("test"), row.get("queryIndex")) not in confirmed_slowdowns:
             continue
         confidence = row.get("confidence") or {}
         rows.append(
@@ -1624,14 +1648,21 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path):
 
     Waits until the dashboard serves this shard's data, then returns the
     slowdown rows of this shard and arch whose confidence tier is in
-    `DASHBOARD_BLOCKING_TIERS`. Raises `PerfDashboardError` when no verdict
-    could be obtained; the caller fails the check in that case rather than
-    passing a run nobody has judged."""
-    tests, shard_queries = read_shard_queries(metrics_tsv_path)
-    if not shard_queries:
+    `DASHBOARD_BLOCKING_TIERS` and which this job's own report also published as
+    slower. The dashboard classifies a single measurement episode, while the
+    report's per-query threshold is raised by a month of master history of the
+    same query, so the two disagree on chronically noisy micro benchmarks.
+
+    Raises `PerfDashboardError` when no verdict could be obtained; the caller
+    fails the check in that case rather than passing a run nobody has judged."""
+    tests, confirmed_slowdowns = read_shard_confirmed_slowdowns(metrics_tsv_path)
+    if not tests:
         raise PerfDashboardError(
             f"no {DASHBOARD_GATE_METRIC} rows in [{metrics_tsv_path}]"
         )
+    if not confirmed_slowdowns:
+        print("This shard reported no slower query: skipping the dashboard gate")
+        return []
 
     deadline = time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC
     run_id = None
@@ -1652,7 +1683,7 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path):
         print(f"Waiting for the performance dashboard: {reason}")
         time.sleep(DASHBOARD_POLL_INTERVAL_SEC)
 
-    rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
+    rows = fetch_dashboard_slowdowns(run_id, arch, confirmed_slowdowns)
     for row in rows:
         print(
             f"Dashboard slowdown: {row['test']} #{row['query_index']} "
@@ -2767,33 +2798,35 @@ def main():
                     )
                     if delta > SLOWER_QUERIES_DELTA_FAIL_THRESHOLD:
                         status = Result.Status.FAIL
-            elif info.is_local_run:
-                print("Local run: skipping the performance dashboard gate")
             else:
-                # `master_head` mode: the performance dashboard's verdict is the
-                # gate. It judges every changed query on its raw samples and
-                # master history, while a slower-count gate can only see how
-                # many queries crossed their per-shard threshold: a single
-                # 20x regression used to pass as "1 slower".
-                try:
-                    dashboard_regressions = perf_dashboard_gate(
-                        info,
-                        get_perf_arch(),
-                        f"{perf_wd}/report/all-query-metrics.tsv",
-                    )
-                except PerfDashboardError as e:
-                    print(f"ERROR: {e}")
+                # `master_head` mode: fail on a large number of slower queries,
+                # or when the performance dashboard confirms a regression among
+                # the queries this shard published as slower. The count alone
+                # cannot see magnitude - a single 20x regression is "1 slower".
+                if too_many_slow(message.lower()):
                     status = Result.Status.FAIL
-                    message += (
-                        f"; performance dashboard verdict unavailable: {e}"
-                    )
+                if info.is_local_run:
+                    print("Local run: skipping the performance dashboard gate")
                 else:
-                    if dashboard_regressions:
+                    try:
+                        dashboard_regressions = perf_dashboard_gate(
+                            info,
+                            get_perf_arch(),
+                            f"{perf_wd}/report/all-query-metrics.tsv",
+                        )
+                    except PerfDashboardError as e:
+                        print(f"ERROR: {e}")
                         status = Result.Status.FAIL
                         message += (
-                            f"; {len(dashboard_regressions)} confirmed regression(s) "
-                            "on the performance dashboard"
+                            f"; performance dashboard verdict unavailable: {e}"
                         )
+                    else:
+                        if dashboard_regressions:
+                            status = Result.Status.FAIL
+                            message += (
+                                f"; {len(dashboard_regressions)} confirmed regression(s) "
+                                "on the performance dashboard"
+                            )
             # TODO: Remove until here
         except Exception:
             traceback.print_exc()
