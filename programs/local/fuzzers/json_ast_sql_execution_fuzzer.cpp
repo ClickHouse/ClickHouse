@@ -271,6 +271,8 @@ bool isDeterministicForOracle(const std::string & sql_original)
         "anylastrespectnulls", "approx_top", "groupbitmap", "sumdistinct", "sum_distinct", "avgdistinct",
         "groupnumericindexedvector", "mapagg", "maparg", "distinctdynamictypes", "distinctjsonpaths", "string_agg",
         "listagg",
+        /// `formatRow('XML'/'JSON*', ...)` embeds the format's statistics (`elapsed`, `rows_read`) per row.
+        "formatrow",
     };
     for (const char * f : forbidden)
         if (sql.find(f) != std::string::npos)
