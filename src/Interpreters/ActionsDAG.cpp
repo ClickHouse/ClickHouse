@@ -19,6 +19,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
@@ -3308,6 +3309,51 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
+/// A `Variant`, `Dynamic` or JSON argument resolves the real function per stored alternative at
+/// execution time, so an alternative only the opposite side holds can throw there.
+bool typeAdaptsPerRow(const DataTypePtr & type)
+{
+    bool adapts = false;
+    IDataType::ChildCallback check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        adapts = adapts || which.isVariant() || which.isDynamic() || which.isObject();
+    };
+    check(*type); /// `forEachChild` visits the nested types, not this one
+    type->forEachChild(check);
+    return adapts;
+}
+
+/// Whether the per-row cast of a set lookup's probe column into the set's declared key type can throw.
+/// True whenever that cannot be established.
+bool setLookupCanThrow(const ActionsDAG::Node & node)
+{
+    if (node.children.size() != 2)
+        return true;
+
+    const auto * set_node = node.children[1];
+    if (set_node->type != ActionsDAG::ActionType::COLUMN || !set_node->column)
+        return true;
+
+    const auto * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
+    if (!column_set)
+        return true;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return true;
+
+    /// Reading the declared key types does not build the set, so no `IN` subquery is executed here.
+    const auto set_types = future_set->getTypes();
+    if (set_types.size() != 1 || typeAdaptsPerRow(set_types[0]))
+        return true;
+
+    /// The declared types have `LowCardinality` removed recursively while the type the lookup casts into
+    /// keeps a nested one, so what is left between the two normalized this way is a `LowCardinality`
+    /// wrapper, which re-encodes a value against a dictionary without reading it.
+    return !recursiveRemoveLowCardinality(node.children[0]->result_type)->equals(*set_types[0]);
+}
+
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
@@ -3461,6 +3507,54 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
     return arguments;
 }
 
+}
+
+bool ActionsDAG::conjunctIsTotal(const Node & conjunct)
+{
+    /// `and`, `or` and `not` read a boolean value and a null map; `isNull` and `isNotNull` read a
+    /// discriminator, a dictionary index or a null map; `__applyFilter` probes a set built from the same
+    /// common type its key argument is cast to. None of them reads the value itself.
+    static const std::unordered_set<std::string_view> total_functions
+        = {"and", "or", "not", "isNull", "isNotNull", "__applyFilter"};
+    static const std::unordered_set<std::string_view> comparisons
+        = {"equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals"};
+
+    std::vector<const Node *> to_visit{&conjunct};
+    std::unordered_set<const Node *> visited{&conjunct};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+
+        if (typeAdaptsPerRow(node->result_type))
+            return false;
+
+        if (node->type == ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (comparisons.contains(name))
+            {
+                /// A comparison across type domains parses one side per row and can fail there.
+                if (node->children.size() != 2
+                    || comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type))
+                    return false;
+            }
+            else if (name == "in")
+            {
+                if (setLookupCanThrow(*node))
+                    return false;
+            }
+            else if (!total_functions.contains(name))
+                return false;
+        }
+        else if (node->type != ActionType::INPUT && node->type != ActionType::ALIAS && node->type != ActionType::COLUMN)
+            return false;
+
+        for (const auto * child : node->children)
+            if (visited.insert(child).second)
+                to_visit.push_back(child);
+    }
+    return true;
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
@@ -3698,6 +3792,18 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
+
+    /// A both-streams conjunct is copied to the opposite side with its key column substituted for the
+    /// equivalent one, so that copy runs on values the side the conjunct names never held.
+    NodeRawConstPtrs both_streams_total_conjunctions;
+    for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+    {
+        if (conjunctIsTotal(*conjunct))
+            both_streams_total_conjunctions.push_back(conjunct);
+        else
+            both_streams_push_down_conjunctions.rejected.push_back(conjunct);
+    }
+    both_streams_push_down_conjunctions.allowed = std::move(both_streams_total_conjunctions);
 
     /// A cross-type equivalent input is replaced below by a cast of the opposite side's key rather than
     /// renamed to an equal-typed column, so it can be constant where the input is not and is computed a

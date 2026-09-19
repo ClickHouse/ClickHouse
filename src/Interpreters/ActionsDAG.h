@@ -570,6 +570,11 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
+    /// Whether the conjunct has a value for every value of its argument types, so a caller that also
+    /// evaluates it on rows it was not evaluated on cannot make it throw. False whenever that cannot be
+    /// established.
+    static bool conjunctIsTotal(const Node & conjunct);
+
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
 
