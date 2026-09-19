@@ -14,9 +14,9 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 SELECT DISTINCT bs FROM (SELECT arrayJoin(a), blockSize() AS bs FROM t_aj_limit LIMIT 3 SETTINGS max_threads = 1, enable_parallel_replicas = 0);
 
 -- the prefetched pool sizes its reads by marks, not by the block size, so a small LIMIT keeps it off
--- the pool is only ever a candidate for a single-node read, and its eligibility comes from the local
--- settings for local parts but from the remote ones for object-storage parts
-SELECT countIf(explain LIKE '%PrefetchedReadPool%') FROM (EXPLAIN PIPELINE SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', allow_prefetched_read_pool_for_remote_filesystem = 1, remote_filesystem_read_method = 'threadpool', max_threads = 8, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1, enable_parallel_replicas = 0);
+-- it is only a candidate for a single-node read that is multi-stream or all-remote, and the local
+-- read settings gate an all-local read while the remote ones gate an all-remote read
+SELECT countIf(explain LIKE '%PrefetchedReadPool%') FROM (EXPLAIN PIPELINE SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', allow_prefetched_read_pool_for_remote_filesystem = 1, remote_filesystem_read_method = 'threadpool', max_threads = 8, max_threads_min_free_memory_per_thread = 0, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1, enable_parallel_replicas = 0);
 
 DROP TABLE t_aj_limit;
 
