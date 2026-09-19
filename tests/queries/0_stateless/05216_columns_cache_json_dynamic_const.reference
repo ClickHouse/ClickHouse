@@ -31,6 +31,18 @@ quantized vectors	438905163937176715
 distinct paths	['a0','a1','a2','a3','b0','b1','b2','b3','b4','c0','c1','c2','c3','c4','c5','c6']
 distinct paths	['a0','a1','a2','a3','b0','b1','b2','b3','b4','c0','c1','c2','c3','c4','c5','c6']
 distinct paths	['a0','a1','a2','a3','b0','b1','b2','b3','b4','c0','c1','c2','c3','c4','c5','c6']
-d	1
-json	1
-vec	1
+cached after distinct paths	0	[]
+05216_fill_distinct_paths	0	0
+05216_fill_dyn_paths	0	1
+05216_fill_dyn_types	0	1
+05216_fill_dyn_values	1	0
+05216_fill_json_values	1	0
+05216_fill_quantized	0	1
+05216_fill_shared_paths	1	0
+05216_warm_distinct_paths	0	0
+05216_warm_dyn_paths	1	0
+05216_warm_dyn_types	1	0
+05216_warm_dyn_values	1	0
+05216_warm_json_values	1	0
+05216_warm_quantized	1	0
+05216_warm_shared_paths	1	0

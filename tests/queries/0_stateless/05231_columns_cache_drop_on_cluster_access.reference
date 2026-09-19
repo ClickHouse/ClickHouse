@@ -1,0 +1,2 @@
+granular privilege allowed
+cluster only -> SYSTEM DROP COLUMNS CACHE

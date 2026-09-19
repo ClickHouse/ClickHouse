@@ -8,6 +8,7 @@
 
 SET max_threads = 1;
 SET enable_quantized_codec = 1;
+SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_cc_json;
 
@@ -26,34 +27,52 @@ SYSTEM DROP COLUMNS CACHE;
 
 -- Without the cache, with the cache while it is filled, and with the cache warm: the same results.
 SELECT 'dynamic paths', arraySort(groupUniqArray(JSONDynamicPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 0;
-SELECT 'dynamic paths', arraySort(groupUniqArray(JSONDynamicPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1;
-SELECT 'dynamic paths', arraySort(groupUniqArray(JSONDynamicPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1;
+SELECT 'dynamic paths', arraySort(groupUniqArray(JSONDynamicPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_fill_dyn_paths';
+SELECT 'dynamic paths', arraySort(groupUniqArray(JSONDynamicPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_warm_dyn_paths';
 
 SELECT 'shared data paths', arraySort(groupUniqArray(JSONSharedDataPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 0;
-SELECT 'shared data paths', arraySort(groupUniqArray(JSONSharedDataPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1;
-SELECT 'shared data paths', arraySort(groupUniqArray(JSONSharedDataPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1;
+SELECT 'shared data paths', arraySort(groupUniqArray(JSONSharedDataPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_fill_shared_paths';
+SELECT 'shared data paths', arraySort(groupUniqArray(JSONSharedDataPaths(json))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_warm_shared_paths';
 
 SELECT 'json values', sum(cityHash64(toString(json))), count() FROM t_cc_json SETTINGS use_columns_cache = 0;
-SELECT 'json values', sum(cityHash64(toString(json))), count() FROM t_cc_json SETTINGS use_columns_cache = 1;
-SELECT 'json values', sum(cityHash64(toString(json))), count() FROM t_cc_json SETTINGS use_columns_cache = 1;
+SELECT 'json values', sum(cityHash64(toString(json))), count() FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_fill_json_values';
+SELECT 'json values', sum(cityHash64(toString(json))), count() FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_warm_json_values';
 
 SELECT 'dynamic types', dynamicType(d) AS t, count() FROM t_cc_json GROUP BY t ORDER BY t SETTINGS use_columns_cache = 0;
-SELECT 'dynamic types', dynamicType(d) AS t, count() FROM t_cc_json GROUP BY t ORDER BY t SETTINGS use_columns_cache = 1;
-SELECT 'dynamic types', dynamicType(d) AS t, count() FROM t_cc_json GROUP BY t ORDER BY t SETTINGS use_columns_cache = 1;
+SELECT 'dynamic types', dynamicType(d) AS t, count() FROM t_cc_json GROUP BY t ORDER BY t SETTINGS use_columns_cache = 1, log_comment = '05216_fill_dyn_types';
+SELECT 'dynamic types', dynamicType(d) AS t, count() FROM t_cc_json GROUP BY t ORDER BY t SETTINGS use_columns_cache = 1, log_comment = '05216_warm_dyn_types';
 
 SELECT 'dynamic values', sum(cityHash64(toString(d))) FROM t_cc_json SETTINGS use_columns_cache = 0;
-SELECT 'dynamic values', sum(cityHash64(toString(d))) FROM t_cc_json SETTINGS use_columns_cache = 1;
-SELECT 'dynamic values', sum(cityHash64(toString(d))) FROM t_cc_json SETTINGS use_columns_cache = 1;
+SELECT 'dynamic values', sum(cityHash64(toString(d))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_fill_dyn_values';
+SELECT 'dynamic values', sum(cityHash64(toString(d))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_warm_dyn_values';
 
 SELECT 'quantized vectors', sum(cityHash64(toString(vec))) FROM t_cc_json SETTINGS use_columns_cache = 0;
-SELECT 'quantized vectors', sum(cityHash64(toString(vec))) FROM t_cc_json SETTINGS use_columns_cache = 1;
-SELECT 'quantized vectors', sum(cityHash64(toString(vec))) FROM t_cc_json SETTINGS use_columns_cache = 1;
+SELECT 'quantized vectors', sum(cityHash64(toString(vec))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_fill_quantized';
+SELECT 'quantized vectors', sum(cityHash64(toString(vec))) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_warm_quantized';
+
+-- The distinct-paths subcase gets the cache to itself: the reads above have already populated
+-- entries of the `json` column, so what the cache holds afterwards would say nothing about what
+-- this subcolumn does.
+SYSTEM DROP COLUMNS CACHE;
 
 SELECT 'distinct paths', distinctJSONPaths(json) FROM t_cc_json SETTINGS use_columns_cache = 0;
-SELECT 'distinct paths', distinctJSONPaths(json) FROM t_cc_json SETTINGS use_columns_cache = 1;
-SELECT 'distinct paths', distinctJSONPaths(json) FROM t_cc_json SETTINGS use_columns_cache = 1;
+SELECT 'distinct paths', distinctJSONPaths(json) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_fill_distinct_paths';
+SELECT 'distinct paths', distinctJSONPaths(json) FROM t_cc_json SETTINGS use_columns_cache = 1, log_comment = '05216_warm_distinct_paths';
 
--- The distinct-paths subcolumn is never cached, the other columns are.
-SELECT column, count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cc_json' GROUP BY column ORDER BY column;
+-- The distinct-paths subcolumn is not a function of the rows it is read for, so it is never
+-- cached: this is what the cache holds after the reads above, and the hit oracle below shows
+-- they were not served from it.
+SELECT 'cached after distinct paths', count(), arraySort(groupUniqArray(column)) FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cc_json';
+
+-- Equal results alone would stay green if every warm read went to disk, so assert the reads were
+-- served from the cache: the second read of every family hits, and the first one, which had to
+-- fill the cache, misses.
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment, ProfileEvents['ColumnsCacheHits'] > 0 AS has_hits, ProfileEvents['ColumnsCacheMisses'] > 0 AS has_misses
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND (startsWith(log_comment, '05216_fill') OR startsWith(log_comment, '05216_warm'))
+ORDER BY log_comment;
 
 DROP TABLE t_cc_json;
