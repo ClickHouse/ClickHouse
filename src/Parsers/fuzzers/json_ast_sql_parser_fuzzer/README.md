@@ -229,6 +229,35 @@ statements are only parsed), converts the JSON to protobuf, converts it back and
 seed that the schema cannot represent fails the run. Statements whose AST nodes have no
 `writeJSON` (e.g. `GRANT`, `SHOW CREATE`, `INSERT ... VALUES`) cannot be seeds.
 
+### Corpus from the functional tests {#corpus-from-the-functional-tests}
+
+The functional tests are the largest source of realistic statements. `--from-tests` extracts every
+distinct statement of the `*.sql` tests (~90k after dropping comments, test-runner substitutions and
+`sleep`); `--shard I/N` splits the work so it can run in parallel (one shard takes ~20 minutes):
+
+```bash
+for i in $(seq 0 23); do
+    src/Parsers/fuzzers/json_ast_sql_parser_fuzzer/generate_seed_corpus.py \
+        --clickhouse build/programs/clickhouse --converter $CONVERTER \
+        --from-tests tests/queries/0_stateless --shard $i/24 --output tmp/all_seeds/part$(printf %02d $i) \
+        > tmp/all_seeds_part$i.log 2>&1 &
+done; wait
+```
+
+About 5 % of the statements fail (no `writeJSON` for the statement, or the schema cannot represent a
+property); they are listed in the logs. Do not fuzz on the raw 90k seeds directly (every libFuzzer job
+replays the whole corpus before mutating). Merge them once instead, and start the sessions from the
+merged corpus; both fuzzers accept the same seeds:
+
+```bash
+$FUZZER -merge=1 tmp/json_ast_corpus_full tmp/all_seeds/part*                # parser fuzzer, minutes
+tmp/json_ast_sql_execution_fuzzer -merge=1 tmp/json_ast_exec_corpus_full tmp/all_seeds/partNN \
+    -ignore_remaining_args=1 --output-format=Null ...                        # ~3 seeds/s: shard it too
+```
+
+The merged corpus of the whole test set raised the parser fuzzer from ~15k to ~26k edges and the
+execution fuzzer from ~250k to well above 500k edges compared with the 191 built-in seeds.
+
 ## Execution fuzzer {#execution-fuzzer}
 
 `json_ast_sql_execution_fuzzer` (programs/local/fuzzers/json_ast_sql_execution_fuzzer.cpp) runs the

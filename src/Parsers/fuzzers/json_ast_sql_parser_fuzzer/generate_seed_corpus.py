@@ -14,6 +14,18 @@ Usage:
 
 Any `clickhouse` binary works for the first step; the converter has to come from a fuzzing build
 (`-DENABLE_FUZZING=1`), because the protobuf schema is only compiled there.
+
+`--from-tests DIR [DIR ...]` takes the statements from every `*.sql` functional test in the
+directories instead of `--queries` (comments stripped, statements split at `;`, test-runner
+substitutions such as `{CLICKHOUSE_DATABASE}` skipped). That is ~90k statements; `--shard I/N`
+selects every N-th of them so the generation can run in parallel, one shard per output directory:
+
+    for i in $(seq 0 23); do
+        generate_seed_corpus.py ... --from-tests tests/queries/0_stateless tests/queries/1_stateful \
+            --shard $i/24 --output tmp/all_seeds/part$i &
+    done
+
+Statements the JSON AST cannot serialize are reported and skipped (the `failed` count).
 """
 
 import argparse
@@ -34,6 +46,24 @@ def read_queries(path):
                 yield query
 
 
+def read_test_statements(directories):
+    """Every distinct statement of the `*.sql` tests in `directories`, sorted (so shards are stable)."""
+    statements = set()
+    for directory in directories:
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith(".sql"):
+                continue
+            with open(os.path.join(directory, name), encoding="utf-8", errors="ignore") as file:
+                text = file.read()
+            text = re.sub(r"--[^\n]*", "", text)
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+            for statement in text.split(";"):
+                statement = " ".join(statement.split())
+                if 8 <= len(statement) <= 4000 and not re.search(r"\{CLICKHOUSE|\$\{|\bsleep\b", statement, re.I):
+                    statements.add(statement)
+    return sorted(statements)
+
+
 def slug(query, index):
     first_words = "_".join(re.findall(r"[A-Za-z]+", query)[:4]).lower()
     return f"{index:03d}_{first_words[:40]}"
@@ -48,7 +78,15 @@ def main():
     parser.add_argument("--queries", default=os.path.join(here, "seed_queries.sql"))
     parser.add_argument("--output", default=os.path.join(repo, "tests", "fuzz", "json_ast_sql_parser_fuzzer.in"))
     parser.add_argument("--keep-existing", action="store_true", help="do not delete the current content of --output")
+    parser.add_argument("--from-tests", nargs="+", metavar="DIR", help="take the statements from the *.sql tests in DIR instead of --queries")
+    parser.add_argument("--shard", default="0/1", metavar="I/N", help="with --from-tests: process only every N-th statement starting at I")
     args = parser.parse_args()
+
+    if args.from_tests:
+        shard_index, shard_count = (int(x) for x in args.shard.split("/"))
+        queries = read_test_statements(args.from_tests)[shard_index::shard_count]
+    else:
+        queries = list(read_queries(args.queries))
 
     if not args.keep_existing and os.path.isdir(args.output):
         shutil.rmtree(args.output)
@@ -57,7 +95,7 @@ def main():
     failures = 0
     written = 0
     with tempfile.TemporaryDirectory() as tmp:
-        for index, query in enumerate(read_queries(args.queries), start=1):
+        for index, query in enumerate(queries, start=1):
             # Bytes, not text: a string literal in the query may carry arbitrary bytes into the JSON.
             result = subprocess.run(
                 [args.clickhouse, "local", "--param_q", query, "--query", "SELECT parseQueryToJSON({q:String}) FORMAT TSVRaw"],
