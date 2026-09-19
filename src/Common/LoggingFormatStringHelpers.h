@@ -2,6 +2,7 @@
 
 #include <base/EnumReflection.h>
 #include <base/defines.h>
+#include <base/types.h>
 #include <fmt/base.h>
 
 #include <type_traits>
@@ -10,6 +11,7 @@
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
 template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x);
+constexpr UInt64 hashFormatString(std::string_view str);
 
 [[maybe_unused]] inline void tryGetFormattedArgs(std::vector<std::string>&) {};
 template <typename T, typename... Ts> [[maybe_unused]] inline void tryGetFormattedArgs(std::vector<std::string>&, T &&, Ts && ...);
@@ -20,9 +22,13 @@ template <typename... Args>
 struct FormatStringHelperImpl
 {
     std::string_view message_format_string;
+    UInt64 message_format_string_hash = 0;
     fmt::format_string<Args...> fmt_str;
     template<typename T>
-    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str)) /// NOLINT
+    consteval FormatStringHelperImpl(T && str) /// NOLINT
+        : message_format_string(tryGetStaticFormatString(str))
+        , message_format_string_hash(hashFormatString(message_format_string))
+        , fmt_str(std::forward<T>(str))
     {
         formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
     }
@@ -195,6 +201,18 @@ consteval ssize_t formatStringCountArgsNum(const char * const str, size_t len)
 }
 
 [[noreturn]] void functionThatFailsCompilationOfConstevalFunctions(const char * error);
+
+/// FNV-1a, computed at compile time.
+constexpr UInt64 hashFormatString(std::string_view str)
+{
+    UInt64 hash = 0xcbf29ce484222325;
+    for (char c : str)
+    {
+        hash ^= static_cast<unsigned char>(c);
+        hash *= 0x100000001b3;
+    }
+    return hash;
+}
 
 /// fmt::format checks that there are enough arguments, but ignores extra arguments (e.g. fmt::format("{}", 1, 2) compiles)
 /// This function will fail to compile if the number of "{}" substitutions does not exactly match
