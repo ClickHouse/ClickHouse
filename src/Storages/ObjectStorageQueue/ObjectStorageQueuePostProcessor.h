@@ -106,6 +106,11 @@ private:
     /// handled (see `process`).
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
     /// Move processed S3 objects, possibly to another S3 storage
+    /// Deletes each object by the version a `HEAD` reports for it, after checking that version is still
+    /// the generation that was ingested. Returns false when no version comes back, leaving an unversioned
+    /// bucket to the batched delete that matches on `ETag` alone.
+    bool deleteVersionedS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
+
     void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
     void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const;

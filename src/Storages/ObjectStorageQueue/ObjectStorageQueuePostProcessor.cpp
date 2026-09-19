@@ -237,6 +237,11 @@ void ObjectStorageQueuePostProcessor::process(
                 fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
                 });
+                /// Two generations of one key can share an `ETag`, so on a versioned bucket `If-Match`
+                /// alone would let a same-byte re-upload be deleted in place of the generation that was
+                /// ingested. The version names it, and only a `HEAD` reports one: a listing never does.
+                if (type == ObjectStorageType::S3 && deleteVersionedS3Objects(objects, successful_objects))
+                    return;
                 /// Deletes every object it can before reporting one that changed.
                 object_storage->removeObjectsIfExist(objects, &successful_objects);
             });
@@ -625,6 +630,46 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
     changed_generation.rethrowIfAny();
 }
+
+bool ObjectStorageQueuePostProcessor::deleteVersionedS3Objects(
+    const StoredObjects & objects, StoredObjects & successful_objects) const
+{
+#if USE_AWS_S3
+    auto * s3_storage = dynamic_cast<S3ObjectStorage *>(object_storage.get());
+    if (!s3_storage)
+        return false;
+
+    /// Every version is looked up before anything is deleted, so a bucket that turns out not to be
+    /// versioned is handed over untouched, and a changed object is reported with nothing removed.
+    Strings versions;
+    versions.reserve(objects.size());
+    for (const auto & object : objects)
+    {
+        auto metadata = object_storage->tryGetObjectMetadata(object.remote_path, /*with_tags=*/false);
+        if (!metadata || metadata->version_id.empty())
+            return false;
+        /// Only the generation the rows were read from may be deleted.
+        if (!isSameGeneration(ObjectStorageType::S3, metadata->etag, object.etag))
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "Object {} was not deleted: it changed after it was ingested (its `ETag` is {} instead of {})",
+                object.remote_path, metadata->etag, object.etag);
+        versions.push_back(metadata->version_id);
+    }
+
+    for (size_t i = 0; i != objects.size(); ++i)
+    {
+        s3_storage->removeObjectVersionIfExists(objects[i], versions[i]);
+        successful_objects.push_back(objects[i]);
+    }
+    return true;
+#else
+    (void)objects;
+    (void)successful_objects;
+    return false;
+#endif
+}
+
 
 void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
