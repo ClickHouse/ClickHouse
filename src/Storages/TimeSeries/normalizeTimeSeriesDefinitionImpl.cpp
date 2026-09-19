@@ -730,6 +730,16 @@ namespace
         }
     }
 
+    /// The generated partition key of an inner recent samples table, as the given version spells it.
+    /// `toStartOfInterval` counts hours from local midnight, so from `MIN_WITH_UTC_PARTITION_KEY` the
+    /// timezone is named instead of being taken from the server.
+    String defaultRecentSamplesPartitionBy(UInt64 version)
+    {
+        return version >= TimeSeriesVersion::MIN_WITH_UTC_PARTITION_KEY
+            ? "toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))"
+            : "toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))";
+    }
+
     ASTPtr makeDefaultTagsIndex()
     {
         auto index = make_intrusive<ASTIndexDeclaration>(
@@ -849,9 +859,11 @@ namespace
 
                 /// The partition key is the `recent_samples_partition_by` setting if set, otherwise the default one.
                 const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value;
+                /// The default names a timezone only from the version that introduced it, so an older table's
+                /// own spelling is still recognised as generated and does not survive into a copy of it.
                 String expected_partition_by = partition_by
                     ? partition_by->formatWithSecretsOneLine()
-                    : "toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))";
+                    : defaultRecentSamplesPartitionBy(settings[TimeSeriesSetting::version]);
                 if (partitioning_equals(expected_partition_by))
                     inner_engine.reset(inner_engine.partition_by);
 
@@ -1495,11 +1507,15 @@ namespace
                 {
                     /// Otherwise a declared partition key is kept; if there is none, the default one (5-hour buckets) is used.
                     /// `toDateTime` makes the default partition key work for any timestamp type (e.g. a raw `UInt32`),
-                    /// same as the TTL expression. Its timezone is pinned because `toStartOfInterval` counts hours from
-                    /// local midnight, so without one every stored partition value moves when the server timezone does.
-                    set_partition_by(makeASTFunction("toStartOfInterval",
-                        makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                        make_intrusive<ASTLiteral>(String{"UTC"})),
+                    /// same as the TTL expression. From `MIN_WITH_UTC_PARTITION_KEY` its timezone is pinned, because
+                    /// `toStartOfInterval` counts hours from local midnight and every server timezone change would
+                    /// otherwise move the meaning of the partition values already written.
+                    auto timestamp = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+                    auto to_date_time
+                        = (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_UTC_PARTITION_KEY)
+                        ? makeASTFunction("toDateTime", timestamp, make_intrusive<ASTLiteral>(String{"UTC"}))
+                        : makeASTFunction("toDateTime", timestamp);
+                    set_partition_by(makeASTFunction("toStartOfInterval", to_date_time,
                         makeASTFunction("toIntervalHour", make_intrusive<ASTLiteral>(static_cast<UInt64>(5)))));
                 }
 
