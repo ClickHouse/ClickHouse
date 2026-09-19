@@ -12,6 +12,30 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
+<Update label="2026-09-15">
+
+This week's updates expand ClickHouse Cloud's compliance footprint into new APAC regions and introduce private previews for PromQL support and On-Demand Compute. HIPAA- and PCI-regulated cells are now available in AWS Seoul and Sydney, while eligible customers can evaluate Prometheus-compatible metrics workloads and give individual heavy queries elastic access to additional workers without resizing their services.
+
+## Security {#security}
+
+### HIPAA and PCI support in AWS Seoul and Sydney {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+HIPAA- and PCI-regulated cells are now available in the AWS Seoul (`ap-northeast-2`) and AWS Sydney (`ap-southeast-2`) regions. Select HIPAA or PCI at service creation to run compliant workloads in these regions; see the [compliance overview](https://clickhouse.com/docs/products/cloud/reference/security/compliance-overview#hipaa-since-2024) and [supported regions](https://clickhouse.com/docs/products/cloud/reference/supported-regions) for details.
+
+## New features {#new-features}
+
+### PromQL support in private preview {#promql-support-in-private-preview}
+
+PromQL support lets you store Prometheus metrics in the `TimeSeries` table engine and query them through the Prometheus HTTP API on your existing ClickHouse service and endpoint. ClickHouse accepts Prometheus remote-write v1 and translates PromQL to SQL in the server, allowing existing collectors, Grafana dashboards, and Prometheus tooling to work without a proxy or query rewrite. You can also issue PromQL from a SQL session with the `prometheusQuery` and `prometheusQueryRange` table functions.
+
+The preview is available to selected ClickHouse Cloud and BYOC customers on AWS, GCP, and Azure through the [private-preview waitlist](https://clickhouse.com/cloud/promql-support-waitlist). It is actively developed and not feature-complete; current limitations include downsampling, native and exponential histograms, exemplars, recording and alerting rules, OpenMetrics- and OpenTelemetry-only features, and remote-write v2. See the [Prometheus interface documentation](https://clickhouse.com/docs/concepts/features/interfaces/prometheus) and [announcement](https://clickhouse.com/blog/introducing-promql).
+
+### On-Demand Compute now in private preview {#on-demand-compute-now-in-private-preview}
+
+On-Demand Compute lets eligible, compute-intensive `SELECT` queries tap additional ClickHouse workers through your existing service and endpoint—no resizing or extra provisioning required. You opt individual queries in via query settings while your service continues to handle authentication, planning, coordination, and results; under the hood it introduces a cost-based optimizer and multi-stage query execution. It is a fit for occasional heavy ad hoc reads, large scans, joins, and aggregations over `SharedMergeTree`, Apache Iceberg, or Delta Lake data. It is available to selected customers via the [private preview waitlist](https://clickhouse.com/cloud/on-demand-compute-waitlist). See the [On-Demand Compute documentation](https://clickhouse.com/docs/products/cloud/features/infrastructure/on-demand-compute) and [announcement](https://clickhouse.com/blog/on-demand-compute).
+
+</Update>
+
 
 <Update label="2026-09-08">
 
