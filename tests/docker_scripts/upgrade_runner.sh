@@ -195,11 +195,21 @@ timeout 1m clickhouse-client --query "
 # a hash of its key: database and table names are arbitrary strings that must not be carried through the
 # shell, while the hash is recomputed server-side. A collision is harmless, it only widens the statement
 # to another unfinished mutation, which is to be killed anyway.
-for mutation_key in $(timeout 1m clickhouse-client --query "SELECT DISTINCT cityHash64(database, table, mutation_id) FROM system.mutations WHERE NOT is_done")
-do
-    timeout 1m clickhouse-client --param_mutation_key="$mutation_key" --query \
-        "KILL MUTATION WHERE NOT is_done AND cityHash64(database, table, mutation_id) = {mutation_key:UInt64}" ||:
-done
+#
+# The keys are listed into a variable instead of directly into the `for`, because a command substitution
+# in the list of a `for` loop is not a command that `set -e` watches: a listing that fails or times out
+# would simply be an empty list, every mutation would survive into the upgraded server, and the log scan
+# below - which no longer tolerates their errors - would fail far away from the cause. Report it here.
+if mutation_keys=$(timeout 1m clickhouse-client --query "SELECT DISTINCT cityHash64(database, table, mutation_id) FROM system.mutations WHERE NOT is_done")
+then
+    for mutation_key in $mutation_keys
+    do
+        timeout 1m clickhouse-client --param_mutation_key="$mutation_key" --query \
+            "KILL MUTATION WHERE NOT is_done AND cityHash64(database, table, mutation_id) = {mutation_key:UInt64}" ||:
+    done
+else
+    echo -e "Cannot list the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
+fi
 
 timeout 1m clickhouse-client --query "SELECT 'Unfinished mutations left:', count() FROM system.mutations WHERE NOT is_done" ||:
 
