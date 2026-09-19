@@ -64,6 +64,11 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
         setOrigin(index, origin);
     }
 
+    /// Records `origin` for a setting already assigned, without assigning it again: for an engine that applies a
+    /// source through another path - a normalised copy of its definition, say - and records it afterwards. An
+    /// unknown name is ignored, as `resetToDefault` ignores it.
+    void recordOrigin(std::string_view name, SettingOrigin origin) { setOrigin(settingIndex(name), origin); }
+
     /// Hide the base versions, which are not virtual, so that a reset forgets the source as well.
     void resetToDefault(std::string_view name)
     {

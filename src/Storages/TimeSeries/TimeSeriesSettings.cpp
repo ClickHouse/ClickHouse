@@ -106,6 +106,12 @@ void TimeSeriesSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void TimeSeriesSettings::recordDefinition(const SettingsChanges & stated)
+{
+    for (const auto & change : stated)
+        impl->recordOrigin(change.name, SettingOrigin::Definition);
+}
+
 bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 {
     return TimeSeriesSettingsImpl::hasBuiltin(name);

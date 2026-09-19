@@ -30,7 +30,6 @@
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
 #include <boost/algorithm/string.hpp>
@@ -216,6 +215,12 @@ StorageTimeSeries::StorageTimeSeries(
         if (normalized_create_query->storage && normalized_create_query->storage->settings)
             storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
     }
+
+    /// What the table's own `CREATE` query states is its definition's: the query as stored for an `ATTACH`, and the
+    /// normalised one, which is what gets stored, for a `CREATE`. Not what normalisation added for an older definition,
+    /// nor, for an unsupported version, anything but `version`, the only setting assigned then.
+    if (query.storage && query.storage->settings)
+        settings->recordDefinition(query.storage->settings->changes);
 
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
     storage_settings.set(std::move(settings));
@@ -601,6 +606,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         settings_ast->changes = new_settings->changes();
+        new_settings->recordDefinition(settings_ast->changes);
         new_metadata.settings_changes = settings_ast;
     }
 
@@ -1373,9 +1379,10 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
         .syntax = "ENGINE = TimeSeries()"});
 }
 
-SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr /* query_context */) const
 {
-    return withOriginFromDefinition(storage_settings.get()->enumerateSettings(), getStorageID(), query_context);
+    /// The settings object records what the table's definition states - see the constructor and `alter`.
+    return storage_settings.get()->enumerateSettings();
 }
 
 }

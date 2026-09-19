@@ -51,6 +51,11 @@ struct TimeSeriesSettings
     /// Applies a list of settings changes, overwriting any existing values.
     void applyChanges(const SettingsChanges & changes);
 
+    /// Records every setting `stated` names as the table's definition's, without assigning it again. The settings
+    /// are loaded from a normalised copy of the definition, which can state more than the table's own does - a
+    /// setting normalisation adds for a definition written by an older server is not the definition's.
+    void recordDefinition(const SettingsChanges & stated);
+
     static bool hasBuiltin(std::string_view name);
     DECLARE_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
