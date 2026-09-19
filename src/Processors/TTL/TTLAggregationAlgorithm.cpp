@@ -1,7 +1,9 @@
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -13,6 +15,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace Setting
 {
     extern const SettingsBool compile_aggregate_expressions;
@@ -89,14 +96,30 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     , header(header_)
 {
     const auto & sorting_key = metadata_snapshot_->getSortingKey();
-    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    if (!sorting_key.column_names.empty())
     {
-        /// The header of a mutation may lack the sorting key expressions that are not in the primary key.
-        if (!header.has(sorting_key.column_names[i]))
-            break;
+        const auto & context = storage_.getContext();
 
-        bool reverse = !sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i];
-        sort_description.emplace_back(sorting_key.column_names[i], reverse ? -1 : 1, 1);
+        /// The sorting key may be calculated from subcolumns, which are not separate columns of the header.
+        auto sorting_key_dag = sorting_key.expression->getActionsDAG().clone();
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, sorting_key_dag.getRequiredColumnsNames(), context);
+        if (!extracting_subcolumns_dag.getNodes().empty())
+            sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
+
+        sorting_key_expression = std::make_shared<ExpressionActions>(std::move(sorting_key_dag), ExpressionActionsSettings(context));
+        sorting_key_required_columns = sorting_key_expression->getRequiredColumns();
+
+        /// Both a merge and a mutation that executes `TTL GROUP BY` process all columns of the table.
+        for (const auto & name : sorting_key_required_columns)
+            if (!header.has(name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Column {} is required to calculate the sorting key but is absent in the header of TTL GROUP BY", name);
+
+        for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        {
+            bool reverse = !sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i];
+            sort_description.emplace_back(sorting_key.column_names[i], reverse ? -1 : 1, 1);
+        }
     }
 
     current_key_value.resize(description.group_by_keys.size());
@@ -343,30 +366,50 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
     aggregation_result.invalidate();
 }
 
-void TTLAggregationAlgorithm::restoreSortOrder(Block & block)
+Columns TTLAggregationAlgorithm::calculateSortingKey(const Block & block) const
 {
-    size_t num_rows = block.rows();
-    if (num_rows == 0 || sort_description.empty())
-        return;
+    Block key_block;
+    for (const auto & name : sorting_key_required_columns)
+        key_block.insert(block.getByName(name));
+
+    sorting_key_expression->execute(key_block);
 
     Columns sort_key;
     for (const auto & elem : sort_description)
-        sort_key.push_back(block.getByName(elem.column_name).column->convertToFullColumnIfSparse());
+        sort_key.push_back(key_block.getByName(elem.column_name).column->convertToFullColumnIfSparse());
+    return sort_key;
+}
 
-    /// The row whose sorting key the previous row effectively has. A row with a replaced key never becomes
+void TTLAggregationAlgorithm::restoreSortOrder(Block & block)
+{
+    size_t num_rows = block.rows();
+    if (num_rows == 0 || !sorting_key_expression)
+        return;
+
+    Columns required_columns;
+    for (const auto & name : sorting_key_required_columns)
+        required_columns.push_back(block.getByName(name).column->convertToFullColumnIfSparse());
+
+    /// The sorting key is calculated from the data rather than taken from the header: a mutation does not have
+    /// the sorting key columns beyond the primary key, and after `SET` the sorting key columns of a merge hold
+    /// the values calculated before it.
+    Columns sort_key = calculateSortingKey(block);
+
+    /// The row whose sorting key the previous row effectively has. A row with replaced columns never becomes
     /// the reference, because its key is equal to the key of the current reference row.
-    const Columns * prev_columns = last_row_sort_key.empty() ? nullptr : &last_row_sort_key;
+    const Columns * prev_sort_key = last_row_sort_key.empty() ? nullptr : &last_row_sort_key;
+    const Columns * prev_required_columns = last_row_required_columns.empty() ? nullptr : &last_row_required_columns;
     size_t prev_row = 0;
-    /// Copies of the sorting key columns with the replaced keys, created on the first violation.
+    /// Copies of the columns the sorting key is calculated from, with the replaced values. Created on the first violation.
     MutableColumns fixed_columns;
 
     for (size_t i = 0; i < num_rows; ++i)
     {
         bool violated = false;
-        for (size_t j = 0; prev_columns && j < sort_key.size(); ++j)
+        for (size_t j = 0; prev_sort_key && j < sort_key.size(); ++j)
         {
             int res = sort_description[j].direction
-                * (*prev_columns)[j]->compareAt(prev_row, i, *sort_key[j], sort_description[j].nulls_direction);
+                * (*prev_sort_key)[j]->compareAt(prev_row, i, *sort_key[j], sort_description[j].nulls_direction);
             if (res != 0)
             {
                 violated = res > 0;
@@ -376,7 +419,7 @@ void TTLAggregationAlgorithm::restoreSortOrder(Block & block)
 
         if (violated && fixed_columns.empty())
         {
-            for (const auto & column : sort_key)
+            for (const auto & column : required_columns)
             {
                 fixed_columns.push_back(column->cloneEmpty());
                 fixed_columns.back()->insertRangeFrom(*column, 0, i);
@@ -385,28 +428,56 @@ void TTLAggregationAlgorithm::restoreSortOrder(Block & block)
 
         if (violated)
         {
-            for (size_t j = 0; j < sort_key.size(); ++j)
-                fixed_columns[j]->insertFrom(*(*prev_columns)[j], prev_row);
+            for (size_t j = 0; j < required_columns.size(); ++j)
+                fixed_columns[j]->insertFrom(*(*prev_required_columns)[j], prev_row);
         }
         else
         {
             for (size_t j = 0; j < fixed_columns.size(); ++j)
-                fixed_columns[j]->insertFrom(*sort_key[j], i);
+                fixed_columns[j]->insertFrom(*required_columns[j], i);
 
-            prev_columns = &sort_key;
+            prev_sort_key = &sort_key;
+            prev_required_columns = &required_columns;
             prev_row = i;
         }
     }
 
-    for (size_t j = 0; j < fixed_columns.size(); ++j)
+    if (!fixed_columns.empty())
     {
-        sort_key[j] = std::move(fixed_columns[j]);
-        block.getByName(sort_description[j].column_name).column = sort_key[j];
+        for (size_t j = 0; j < fixed_columns.size(); ++j)
+        {
+            required_columns[j] = std::move(fixed_columns[j]);
+            block.getByName(sorting_key_required_columns[j]).column = required_columns[j];
+        }
+
+        /// The sorting key is deterministic, so the replaced rows get the sorting key of their reference rows.
+        sort_key = calculateSortingKey(block);
+    }
+
+    /// The sorting key columns of the header are used for the primary index, so they must correspond to the data.
+    for (size_t j = 0; j < sort_key.size(); ++j)
+    {
+        const auto & name = sort_description[j].column_name;
+        if (!block.has(name))
+            continue;
+
+        auto & column = block.getByName(name);
+        const auto & type = sorting_key_expression->getSampleBlock().getByName(name).type;
+        if (!column.type->equals(*type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Sorting key column {} has type {} in the header of TTL GROUP BY but the sorting key expression returns {}",
+                name, column.type->getName(), type->getName());
+
+        column.column = sort_key[j];
     }
 
     last_row_sort_key.clear();
     for (const auto & column : sort_key)
         last_row_sort_key.push_back(column->cut(num_rows - 1, 1));
+
+    last_row_required_columns.clear();
+    for (const auto & column : required_columns)
+        last_row_required_columns.push_back(column->cut(num_rows - 1, 1));
 }
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
