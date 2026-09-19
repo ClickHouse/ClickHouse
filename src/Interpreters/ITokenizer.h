@@ -6,7 +6,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
-#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
@@ -41,7 +40,6 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
-        KeyValuePairs,
 #if USE_JIEBA
         Chinese,
 #endif
@@ -341,14 +339,13 @@ private:
     std::vector<String> separators;
 };
 
-/// Parser extracting tokens separated by a regular expression, or - in `match_tokens` mode - tokens
-/// that are the regexp's capture group matches themselves. Default mode: tokens are the (non-empty)
-/// pieces of text between successive matches, like `splitByRegexp`. `match_tokens` mode: each match
-/// contributes at most one token, capture group 1 (or the whole match if the pattern has none);
-/// scanning always resumes after the whole match, so matches never overlap.
+/// Parser extracting tokens which are separated by a regular expression.
+/// The regexp plays the role of the separator (like `splitByRegexp`): tokens are the pieces of text
+/// between successive matches. Empty pieces (produced by leading, trailing or consecutive separators) are
+/// not emitted, since empty tokens are useless for a text index.
 struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpTokenizer>
 {
-    explicit SplitByRegexpTokenizer(const String & regexp_, bool match_tokens_ = false);
+    explicit SplitByRegexpTokenizer(const String & regexp_);
 
     static const char * getName() { return "splitByRegexp"; }
     static const char * getExternalName() { return getName(); }
@@ -380,25 +377,13 @@ struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpToken
 
 private:
     /// Single split step, taking caller-owned RE2 match scratch so the hot path can reuse one buffer.
-    /// Dispatches to `nextMatchedToken` when `match_tokens` is set.
     bool nextInStringImpl(
         const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
 
-    /// `match_tokens` mode's split step. Can't reuse `nextRegexpMatch`: it treats an empty leftmost match
-    /// as "no further match", which would silently drop every match past the first empty one.
-    bool nextMatchedToken(
-        const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
-
     String regexp_str;
-    bool match_tokens;
     /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
     /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
     std::shared_ptr<OptimizedRegularExpression> regexp;
-    /// Index into the RE2 match vector of the span that becomes the token in `match_tokens` mode:
-    /// capture group 1 when the pattern has capture groups, otherwise 0 (the whole match).
-    /// Loop-invariant, so it is resolved once at construction rather than per match. Unused otherwise.
-    /// Declared after `regexp` because it is derived from it.
-    size_t token_group;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
@@ -409,40 +394,6 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     static const char * getName() { return "array"; }
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
-
-    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
-
-    bool supportsStringLike() const override { return false; }
-    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
-};
-
-/// Tokenizer for a text index on a `Map(String, String)` column: one token per `(key, value)` pair.
-///
-///     token = key ‖ value ‖ trailer
-///
-/// The trailer is `(length(key) << 1) | is_rest`, a varint with its bytes reversed so that a reader,
-/// which knows only where the token ends, can walk backwards to its start. The key length splits the
-/// token back into key and value, so both may hold any byte, unlike a `key=value` separator.
-/// `is_rest` is 0 for a key's first occurrence in a row and 1 for repetitions; `m['key']` is the first
-/// occurrence, so its lookup matches `is_rest = 0`. It shares the varint and costs no extra byte.
-/// Key first orders tokens by key, then value, so a search for one key reads a single range of tokens,
-/// which may also hold longer keys with the same start.
-///
-/// Tokens are built in `MergeTreeIndexAggregatorText::addDocumentsFromMap`; the methods below throw.
-struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
-{
-    KeyValuePairsTokenizer() : ITokenizerHelper(Type::KeyValuePairs) {}
-
-    static const char * getName() { return "keyValuePairs"; }
-    static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return getName(); }
-
-    /// `out` is cleared first, so a hot loop can reuse one buffer.
-    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
-    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out);
-    static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
@@ -711,12 +662,6 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
-            return;
-        }
-        case ITokenizer::Type::KeyValuePairs:
-        {
-            /// This tokenizer does not split strings: `nextInString` throws.
-            detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
         }
 #if USE_JIEBA

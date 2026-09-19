@@ -55,10 +55,3 @@ Test system.tables with an Alias database-level grant
 1	1	1	1
 Test other metadata tables with an Alias database-level grant
 0	0	0	0	0
-Test CREATE TABLE AS an Alias without target permission
-ACCESS_DENIED
-Test CREATE TABLE AS an Alias with column-scoped target permission
-ACCESS_DENIED
-Test CREATE TABLE AS an Alias with target permission
-id	UInt64
-value	String

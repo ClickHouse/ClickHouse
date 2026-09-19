@@ -310,37 +310,12 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
         (SELECT count() FROM system.completions WHERE context = 'column' AND belongs = '${shortcut_alias_table}');
 "
 
-# Test target access checks for `CREATE TABLE ... AS` an `Alias`
-copy_table="create_as_copy_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-create_as_username="create_as_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-
-${CLICKHOUSE_CLIENT} --multiquery --query "
-    CREATE USER ${create_as_username} NOT IDENTIFIED;
-    GRANT SHOW COLUMNS ON test_alias_access TO ${create_as_username};
-    GRANT CREATE TABLE, SHOW COLUMNS ON ${copy_table} TO ${create_as_username};
-    GRANT TABLE ENGINE ON Memory TO ${create_as_username};
-"
-
-echo "Test CREATE TABLE AS an Alias without target permission"
-${CLICKHOUSE_CLIENT} --user="${create_as_username}" --query "CREATE TABLE ${copy_table} AS test_alias_access ENGINE = Memory" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT(value) ON test_table_access TO ${create_as_username};"
-echo "Test CREATE TABLE AS an Alias with column-scoped target permission"
-${CLICKHOUSE_CLIENT} --user="${create_as_username}" --query "CREATE TABLE ${copy_table} AS test_alias_access ENGINE = Memory" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-
-${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON test_table_access TO ${create_as_username};"
-echo "Test CREATE TABLE AS an Alias with target permission"
-${CLICKHOUSE_CLIENT} --user="${create_as_username}" --query "CREATE TABLE ${copy_table} AS test_alias_access ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --user="${create_as_username}" --query "DESCRIBE ${copy_table}" | cut -f 1,2
-
 ${CLICKHOUSE_CLIENT} --query "
     DROP DATABASE ${alias_database};
     DROP DATABASE ${target_database};
-    DROP TABLE ${copy_table};
     DROP TABLE test_alias_buffer_access;
     DROP TABLE test_alias_access;
     DROP TABLE test_buffer_access;
     DROP TABLE test_table_access;
     DROP USER ${access_username};
-    DROP USER ${create_as_username};
 "

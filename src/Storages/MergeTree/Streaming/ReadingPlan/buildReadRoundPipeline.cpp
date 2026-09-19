@@ -174,9 +174,9 @@ Pipe buildPartitionReadingPipeline(
         context);
     plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(convert)));
 
-    /// Build pipeline. `buildQueryPipeline` optimizes internally, which also lets it decide the
-    /// distributed-to-local fallback before the optimization passes.
-    auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
+    /// Build pipeline.
+    plan->optimize(opt_settings);
+    auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
     return QueryPipelineBuilder::getPipe(std::move(*builder), resources);
 }
 

@@ -234,7 +234,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
             )
     return out
 
@@ -2230,12 +2230,9 @@ class ClickHouseCluster:
         self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
-        # (affect only WITH_COVERAGE=1 build).
-        # %c enables continuous mode: counters are memory-mapped into the file,
-        # so the profile survives SIGKILL / `docker kill` intact instead of being
-        # lost or half-written by an exit-time dump interrupted by the kill.
+        # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%c%4m.profraw"
+            "/debug/it-%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -2743,11 +2740,6 @@ class ClickHouseCluster:
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
-            if detach:
-                # A detached exec is left running, so docker reports `ExitCode: None` for it; a
-                # value here would only mean it happened to finish first, which was not waited for.
-                return exec_id if get_exec_id else output
-
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
             if exit_code:
                 container_info = self.docker_client.api.inspect_container(container_id)
@@ -2767,8 +2759,10 @@ class ClickHouseCluster:
                     logging.debug(message)
                 else:
                     raise Exception(message)
-            assert not get_exec_id
-            return output.decode()
+            if not detach:
+                assert not get_exec_id
+                return output.decode()
+            return exec_id if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -4086,12 +4080,6 @@ class ClickHouseCluster:
                 self.nats_ssl_context.load_verify_locations(
                     p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
                 )
-                # A broker started with `--tlsverify` demands a client certificate, including from
-                # the availability probe in `wait_nats_is_available`. One started without ignores it.
-                self.nats_ssl_context.load_cert_chain(
-                    p.join(self.nats_cert_dir, "client", "client-cert.pem"),
-                    p.join(self.nats_cert_dir, "client", "client-key.pem"),
-                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
@@ -4463,9 +4451,9 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance and not ignore_sanitizer:
+            if not sanitizer_assert_instance:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r", errors="replace") as f:
+                with open(self.docker_logs_path, "r") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -6165,7 +6153,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
             deadline = start_time + timeout
@@ -6178,7 +6166,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
