@@ -1,0 +1,123 @@
+---
+title: 'Platform updates'
+sidebarTitle: 'Platform updates'
+description: 'Approve the platform bundles ClickHouse Cloud proposes for a managed cluster: what a bundle is, how approval works, and what it grants'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor', 'platform']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+A managed cluster runs a small platform layer that the ClickHouse services depend on. ClickHouse Cloud proposes updates to that layer; nothing is applied until you approve each one with your own cluster credentials. This page explains what a platform update is, how to approve one on a VM or a Kubernetes install, how long an approval lasts, and exactly what it grants.
+
+## What a platform update is {#what-a-platform-update-is}
+
+The platform layer is three components, installed in this order because each needs the previous one's custom resource definitions: the snapshot controller, the ClickHouse operator, and the monitoring collectors. Alongside them sits a `gp3`-encrypted StorageClass the services use.
+
+A platform bundle is the rendered manifest ClickHouse Cloud produces for your environment: it pins the chart and image versions of those components and names the registry they are pulled from. Every bundle is identified by the sha256 digest of that manifest, and the digest is what you approve.
+
+Applying a bundle is split in two halves:
+
+- The **permission half** is everything that grants or shapes access: Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and ClusterRoleBindings, Roles and RoleBindings, webhook and admission configurations, and the StorageClass. Only you apply it, with your credentials, by running `clicklink clctl platform approve`.
+- The **workload half** is what runs: Deployments, Services, ConfigMaps, Secrets, Jobs, and PodDisruptionBudgets. The executor applies it, as a dedicated `pcm-platform` identity that can write those kinds and nothing else, and only while the short-lived token your approval minted is valid.
+
+The executor never applies a bundle you have not approved. When ClickHouse Cloud sends a platform sync for a bundle whose permission half is missing, whose digest differs from the approved one, or whose token has expired, the executor refuses it and reports that approval is needed, naming the digest. A service create that needs a custom resource definition your current platform lacks fails the same way, with the same message.
+
+## Approve a platform update {#approve-a-platform-update}
+
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector platform approval flow" />
+
+<Steps>
+<Step title="Find the digest" id="find-the-digest">
+Your ClickHouse account team tells you when a platform update is proposed, and the executor tells you as well: the refused sync is recorded as a failed command whose result ends with the exact command to run.
+
+```bash
+clicklink clctl commands list --status failed --action sync_platform
+```
+
+The `result` field reads `needs_admin ...; run: clctl platform approve --bundle <digest>`, where `<digest>` is the bundle's sha256. A create that hit a missing custom resource definition carries the same line in its own failed command, and in the error `clicklink clctl instances create --wait` prints. On Kubernetes, reach the executor's local API over a port-forward first, as described under [status](/products/bring-your-own-cloud/connector/managed-services#status).
+</Step>
+
+<Step title="Run approve" id="run-approve">
+`approve` fetches the bundle through your connector endpoint with the connector's own credentials and refuses it if its digest differs from the one you asked for. It renders every chart in it exactly as the executor will, applies the permission half with the kube context you choose, creates the `pcm-platform` identity if needed, and mints its token. It needs a kube context with cluster-admin rights on the managed cluster (`--context <name>` when your kubeconfig holds several) and, when a chart lives in Amazon ECR, AWS credentials that can read it. `--dry-run` renders and lists the permission half without applying or minting anything.
+
+<Tabs>
+<Tab title="Linux VM" id="approve-vm">
+Run on the connector host, as root, where the executor reads its access bundles:
+
+```bash
+sudo clicklink clctl platform approve --bundle <digest> --config /etc/clicklink/config.yaml
+```
+
+The token is written to `/etc/clicklink/access/executor/_platform`, next to the executor's other credentials. The new bundle is built beside the live one and swapped in only once its token exists, so a failed approve leaves a still-valid token alone.
+</Tab>
+<Tab title="Kubernetes" id="approve-kubernetes">
+The executor pod cannot receive a file, so `approve` delivers the bundle as a Secret in the connector namespace, which the chart mounts into the pod. Run it from a workstation whose kubeconfig reaches the cluster, with a copy of the connector configuration. The chart renders one into the executor's ConfigMap, and the credential files it names are read from the `clicklink-hmac` and `clicklink-mtls` Secrets when they are not on your workstation.
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+  -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+clicklink clctl platform approve --bundle <digest> --config clicklink-config.yaml \
+  --secret-namespace "${CONNECTOR_NAMESPACE}"
+```
+
+Add `--connector-namespace "${CONNECTOR_NAMESPACE}"` when the connector namespace is not `clicklink`, and `--hmac-secret-name` or `--mtls-secret-name` when your values overlay renamed those Secrets. The bundle lands in the Secret `clicklink-platform-bundle` (`--secret-name` to change it, matching the chart's `executor.platformBundleSecret`); the executor pod sees it once the kubelet refreshes the mount, within about a minute.
+</Tab>
+</Tabs>
+</Step>
+
+<Step title="Confirm" id="confirm">
+`approve` ends with a line like:
+
+```text
+Approved: 41 permission object(s) applied, platform token valid until 2026-09-18T16:04:11Z.
+The executor may now apply the 23 workload object(s) of this bundle inside <namespaces>.
+```
+
+ClickHouse Cloud re-sends the sync once the executor's next heartbeat shows the approval; the executor applies the workload half and reports the platform as `synced`. You can watch the sync land with:
+
+```bash
+clicklink clctl commands list --action sync_platform
+```
+
+The most recent `sync_platform` command turns `completed`. The executor also reports the platform status and the component versions to ClickHouse Cloud on every heartbeat, so your account team sees the same outcome.
+</Step>
+</Steps>
+
+## The approval window {#the-approval-window}
+
+An approval mints a token for the `pcm-platform` identity that is valid for 2 hours by default (`--ttl` changes it). The executor never renews that token: when it expires, the executor can no longer touch the platform layer, and the next platform sync is refused with the approval message again. That is the intended shape, not a failure, and it does not depend on connectivity: an approval given while the connector is offline still expires on its own clock.
+
+Run `approve` again whenever:
+
+- the token expired before the sync finished;
+- ClickHouse Cloud proposes a different bundle. The digest you approved is recorded on the `pcm-platform` ServiceAccount, and a sync for any other digest is refused until you approve that one;
+- a service create reports a missing custom resource definition.
+
+Approving the same bundle again is safe and replaces the token.
+
+## What the approval grants {#what-the-approval-grants}
+
+The permission half is applied by you and carries your authority: it is stamped with the bundle's digest so the executor can verify, before touching anything, that every permission object of the bundle it was sent is present and approved. Nothing in it is applied by the executor.
+
+The workload half is applied by the executor as `pcm-platform`. That identity may create and update Secrets, ConfigMaps, Services, Deployments, Jobs, and PodDisruptionBudgets, and only inside the platform namespaces, which an admission policy enforces. It can read the objects it needs for its preflight (pods, events, namespaces, ServiceAccounts, the permission kinds above), and it cannot:
+
+- write any cluster-scoped kind or any RBAC object;
+- `escalate`, `bind`, or `impersonate`;
+- mint or renew its own token.
+
+The executor's service-lifecycle identity, `pcm-executor`, is separate and is confined to the service namespaces; it cannot touch the platform namespaces at all. For the complete listing of both identities, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
+
+## Resetting a test cluster {#resetting-a-test-cluster}
+
+`clicklink clctl platform reset` exists for test clusters: it uninstalls the platform components so their first installation can be exercised again. Before changing anything it lists the ClickHouse clusters in the namespaces this connector owns and refuses if any service exists. On an empty cluster it uninstalls the platform releases in reverse dependency order and removes the executor's platform token bundle (the local directory on a VM, or the Secret with `--secret-namespace <connector-namespace>` on Kubernetes). CustomResourceDefinitions, RBAC, and the StorageClass stay in place. Run `approve` again before the next platform sync.
+
+```bash
+sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run
+```
+
+`reset` takes the rendered manifest as a file, not a digest; `--dry-run` checks for services and prints the plan without changing the cluster.
