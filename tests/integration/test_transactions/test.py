@@ -66,6 +66,82 @@ def expect_part_info(
     assert res[4] == removal_csn
 
 
+def test_ctor_unwind_releases_ephemeral_holders(start_cluster):
+    # An exception escaping TransactionManager's constructor must release the two ephemeral node
+    # holders while the constructor's Keeper component guard is still in scope. The holders are
+    # members, so they outlive the body's locals: without the release, ~EphemeralNodeHolder ->
+    # tryRemove -> pushRequest finds an empty component and throws LOGICAL_ERROR, which aborts a
+    # debug build and force-closes the server's shared Keeper session otherwise.
+    #
+    # This test has to run before any test that creates a transactional part: several part-loading
+    # paths build the TransactionManager singleton at startup once such a part exists on disk, and
+    # the singleton latches on success, so a server that already has one would never re-enter the
+    # constructor and this test would pass without covering anything.
+    zk = cluster.get_kazoo_client("zoo1")
+    log_path = "/clickhouse/txn/log"
+    bad_entry = f"{log_path}/csn-0009999999"
+    try:
+        # One successful transaction first, so that the transaction log in Keeper is created by
+        # TransactionLog::initLogRoot itself. It is the only thing that fast-forwards the sequential
+        # counter past the reserved CSNs, and it only does so when it finds the log absent -- so the
+        # injected node below must never be what brings the log into existence. This also creates no
+        # data part, which matters for the restart on the next line.
+        tx(100, "BEGIN TRANSACTION")
+        tx(100, "ROLLBACK")
+
+        # A graceful restart runs Context::shutdown -> TransactionManager::shutdownIfAny, which
+        # releases both holders, and leaves the new process with the singleton unbuilt.
+        node.restart_clickhouse()
+
+        # Positive control for the two lines above, and the reason there is no makepath below.
+        assert zk.exists(
+            log_path
+        ), f"{log_path} should have been created by the first transaction"
+
+        # A CSN log entry claiming a format version this server does not know. Deserializing it
+        # throws from reloadCSNLogs, i.e. after initOwnReplicaState has taken `_active` and the
+        # cleanup lease: that window is what this test is about.
+        zk.create(bad_entry, b"version: 2\n")
+
+        leases_before = int(node.count_in_log("Acquired cleanup lease"))
+        empty_component_before = int(node.count_in_log("Current component is empty"))
+
+        # Precondition and first arm in one: the constructor must actually run and throw. If the
+        # singleton were already built this would succeed, and everything below would be vacuous.
+        with pytest.raises(Exception) as excinfo:
+            tx(101, "BEGIN TRANSACTION")
+        assert "Unknown CSN entry format version" in str(excinfo.value), (
+            "BEGIN TRANSACTION did not fail inside the constructor -- the singleton was probably "
+            f"already built, so this test covers nothing. Got: {excinfo.value}"
+        )
+
+        zk.delete(bad_entry)
+
+        # A second construction, now unobstructed. It can only get the cleanup lease if the failed
+        # attempt actually removed the ephemeral node it took.
+        tx(102, "BEGIN TRANSACTION")
+        tx(102, "ROLLBACK")
+
+        # The direct symptom, in both build flavours: a debug build logs it from
+        # abortOnFailedAssertion, a release build from ~EphemeralNodeHolder's own handler.
+        assert (
+            int(node.count_in_log("Current component is empty"))
+            == empty_component_before
+        )
+
+        # Two acquisitions of an *ephemeral* znode in this window. One alone would only prove a
+        # holder existed; the second is possible only because the first was removed. It is emitted
+        # by the later successful construction, so this assert must come after the block above.
+        assert int(node.count_in_log("Acquired cleanup lease")) - leases_before >= 2
+
+        assert node.query("SELECT 1").strip() == "1"
+    finally:
+        if zk.exists(bad_entry):
+            zk.delete(bad_entry)
+        zk.stop()
+        zk.close()
+
+
 def test_rollback_unfinished_on_restart1(start_cluster):
     node.query("DROP TABLE IF EXISTS mt")
     node.query(
