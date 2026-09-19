@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -206,12 +207,22 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (getColumns().empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(
-        index_granularity,
-        index_granularity_info,
-        index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size(),
-        getDataPartStorage(),
-        *storage.getSettings());
+    try
+    {
+        loadIndexGranularityImpl(
+            index_granularity,
+            index_granularity_info,
+            index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size(),
+            getDataPartStorage(),
+            *storage.getSettings());
+    }
+    catch (...)
+    {
+        /// Compact parts keep all marks in a single "data" marks file.
+        throwIfMarksFileMissing(
+            getDataPartStorage(), checksums, getColumns(), name, index_granularity_info.getMarksFilePath(DATA_FILE_NAME));
+        throw;
+    }
 }
 
 void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
