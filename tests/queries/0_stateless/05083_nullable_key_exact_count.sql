@@ -132,5 +132,13 @@ SELECT count() FROM t_null_set_all WHERE NOT has(CAST([NULL], 'Array(Nullable(UI
 SELECT count() FROM t_null_set_all WHERE NOT has(CAST([NULL], 'Array(Nullable(UInt64))'), CAST(x, 'UInt64')) SETTINGS use_lightweight_primary_key_index_analysis = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT count() FROM t_null_set_all WHERE NOT has(CAST([NULL], 'Array(Nullable(UInt64))'), CAST(x, 'UInt64')) SETTINGS optimize_use_implicit_projections = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
+-- A bare key takes the exemption on a negated set too: no set element equals the NULL stand-in, so every
+-- granule of this all-NULL key answers definitely and the projection has nothing exact without it.
+SELECT 'a bare key under a negated set';
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set_all WHERE x NOT IN (0)) WHERE explain ILIKE '%_exact_count_projection%' SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set_all WHERE x NOT IN (0)) WHERE explain ILIKE '%_exact_count_projection%' SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_null_set_all WHERE x NOT IN (0) SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set_all WHERE x NOT IN (0) SETTINGS optimize_use_implicit_projections = 0;
+
 DROP TABLE t_null_set_all;
 DROP TABLE t_null_set;
