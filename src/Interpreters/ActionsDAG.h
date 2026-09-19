@@ -340,7 +340,9 @@ public:
     void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
-    /// Special handling for logical AND: non-computable children are replaced with constant true.
+    /// The result only ever widens the filter: a non-computable child of a logical AND is replaced with
+    /// constant true where that AND is read with positive polarity, and a filter that cannot be expressed
+    /// at all becomes constant true.
     /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
     ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
 
