@@ -19,6 +19,7 @@
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
@@ -61,6 +62,23 @@ bool sortingStepCarriesSetting(
 
     QueryPlanSerializationSettings settings;
     sort_settings.updatePlanSettings(settings, sorting_is_reachable, version);
+    return wireCarriesSetting(settings);
+}
+
+bool distinctStepCarriesSetting(
+    const String & codec, bool spill_codec_authorized, size_t max_bytes_before_external_distinct,
+    double max_bytes_ratio_before_external_distinct = 0., bool distinct_is_reachable = true,
+    UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+{
+    DistinctStep::Settings distinct_settings;
+    distinct_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    distinct_settings.temporary_files_codec = codec;
+    distinct_settings.spill_codec_authorized = spill_codec_authorized;
+    distinct_settings.max_bytes_before_external_distinct = max_bytes_before_external_distinct;
+    distinct_settings.max_bytes_ratio_before_external_distinct = max_bytes_ratio_before_external_distinct;
+
+    QueryPlanSerializationSettings settings;
+    distinct_settings.updatePlanSettings(settings, distinct_is_reachable, version);
     return wireCarriesSetting(settings);
 }
 
@@ -151,6 +169,30 @@ TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)
     /// gate, so it never looks for an opt-in.
     EXPECT_FALSE(sortingStepCarriesSetting(
         experimental_codec, true, 1_MiB, /*sorting_is_reachable=*/true,
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, DistinctStepEmitsItOnlyForAnExternalDistinct)
+{
+    EXPECT_TRUE(distinctStepCarriesSetting(experimental_codec, true, /*max_bytes_before_external_distinct=*/1_MiB));
+
+    /// Either threshold on its own arms the spill, so either one has to put the opt-in on the wire.
+    EXPECT_TRUE(distinctStepCarriesSetting(
+        experimental_codec, true, /*max_bytes_before_external_distinct=*/0, /*max_bytes_ratio_before_external_distinct=*/0.5));
+
+    /// With both thresholds at `0`, external `DISTINCT` is disabled and the codec is never resolved.
+    EXPECT_FALSE(distinctStepCarriesSetting(experimental_codec, true, /*max_bytes_before_external_distinct=*/0));
+
+    /// A preliminary `DISTINCT` deduplicates each stream in memory and never reaches the temporary data,
+    /// which is what `DistinctStep::serializeSettings` passes as `distinct_is_reachable` here.
+    EXPECT_FALSE(distinctStepCarriesSetting(experimental_codec, true, 1_MiB, 0., /*distinct_is_reachable=*/false));
+
+    EXPECT_FALSE(distinctStepCarriesSetting(plain_codec, true, 1_MiB));
+    EXPECT_FALSE(distinctStepCarriesSetting(experimental_codec, false, 1_MiB));
+
+    /// A worker that cannot know the setting name is not told, exactly as for the other spilling steps.
+    EXPECT_FALSE(distinctStepCarriesSetting(
+        experimental_codec, true, 1_MiB, 0., /*distinct_is_reachable=*/true,
         DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
 }
 
