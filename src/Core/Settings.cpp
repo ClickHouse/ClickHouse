@@ -4514,6 +4514,8 @@ Possible values: true, false
 )", 0) \
     DECLARE(Bool, optimize_or_like_chain, false, R"(
 Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.
+
+End-anchored patterns (those not ending in an unescaped `%`, e.g. `'foo'`, `'%foo'`, `'fo_o'`) are never rewritten: `multiMatchAny` runs the regexp through Vectorscan, whose `$` also matches before a final newline, while `like`/`ilike` use RE2, where `$` is the absolute end of the haystack.
 )", 0) \
     DECLARE(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, R"(
 Move arithmetic operations out of aggregation functions
