@@ -77,6 +77,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_database_glue_catalog](/reference/settings/session-settings/allow#allow_database_glue_catalog) | `0` |
 | [session_timezone](/reference/settings/session-settings/other#session_timezone) | `` |
 | [low_priority_query_wait_time_ms](/reference/settings/session-settings/other#low_priority_query_wait_time_ms) | `1000` |
+| [enable_json_lazy_type_hints](/reference/settings/session-settings/enable#enable_json_lazy_type_hints) | `0` |
 | [ai_function_request_timeout_sec](/reference/settings/session-settings/ai-function#ai_function_request_timeout_sec) | `60` |
 | [ai_function_max_retries](/reference/settings/session-settings/ai-function#ai_function_max_retries) | `1` |
 | [ai_function_retry_initial_delay_ms](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms) | `1000` |
@@ -157,7 +158,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [join_to_sort_minimum_perkey_rows](/reference/settings/session-settings/join-to#join_to_sort_minimum_perkey_rows) | `40` |
 | [join_to_sort_maximum_table_rows](/reference/settings/session-settings/join-to#join_to_sort_maximum_table_rows) | `10000` |
 | [allow_join_right_table_sorting](/reference/settings/session-settings/allow#allow_join_right_table_sorting) | `0` |
-| [enable_json_lazy_type_hints](/reference/settings/session-settings/enable#enable_json_lazy_type_hints) | `0` |
 | [enable_streaming_queries](/reference/settings/session-settings/enable#enable_streaming_queries) | `0` |
 | [stop_refreshable_materialized_views_on_startup](/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) | `0` |
 | [allow_experimental_database_materialized_postgresql](/reference/settings/session-settings/allow-experimental#allow_experimental_database_materialized_postgresql) | `0` |
@@ -172,7 +172,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_delta_lake_create_table](/reference/settings/session-settings/allow#allow_delta_lake_create_table) | `0` |
 | [allow_experimental_cleanup_old_data_files_compaction](/reference/settings/session-settings/allow-experimental#allow_experimental_cleanup_old_data_files_compaction) | `0` |
 | [allow_experimental_iceberg_compaction](/reference/settings/session-settings/allow-experimental#allow_experimental_iceberg_compaction) | `0` |
-| [iceberg_manifest_min_count_to_compact](/reference/settings/session-settings/iceberg#iceberg_manifest_min_count_to_compact) | `30` |
+| [iceberg_manifest_min_count_to_compact](/reference/settings/session-settings/iceberg#iceberg_manifest_min_count_to_compact) | `100` |
 | [allow_iceberg_remove_orphan_files](/reference/settings/session-settings/allow#allow_iceberg_remove_orphan_files) | `0` |
 | [iceberg_orphan_files_older_than_seconds](/reference/settings/session-settings/iceberg#iceberg_orphan_files_older_than_seconds) | `259200` |
 | [allow_experimental_expire_snapshots](/reference/settings/session-settings/allow-experimental#allow_experimental_expire_snapshots) | `0` |
