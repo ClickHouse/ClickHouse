@@ -177,7 +177,12 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
 
-    increment = 0;
+    /** `increment` is deliberately not reset: the numbers the files are given stay monotonic over the
+      * lifetime of the table, so a file number is never reused after a `TRUNCATE`. A mutation tells
+      * the files it replaces from the inserts made after it was committed by their number alone (see
+      * `completeMutation`), and restarting the numbering would make a stale number look like a
+      * post-commit insert.
+      */
     join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 

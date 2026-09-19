@@ -17,12 +17,22 @@ INSERT INTO j SELECT number, toString(number) FROM numbers(100);
 "
 
 # The rows of this insert arrive one at a time, long after its sink was created.
-${CLICKHOUSE_CLIENT} -q "
+insert_query_id="insert_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "${insert_query_id}" -q "
 INSERT INTO j SELECT number + 1000, toString(sleepEachRow(0.3)) FROM numbers(5) SETTINGS max_block_size = 1, max_threads = 1;
 " &
 insert_pid=$!
 
-sleep 0.5
+# The sink is created while the pipeline is built, so a row that the insert has already read proves
+# that the sink of this insert exists - which is the interleaving the mutation has to handle. Waiting
+# for a fixed time instead would let the `ALTER` win the race on a loaded machine and the test pass
+# without ever exercising it.
+for _ in {1..600}
+do
+    [[ "$(${CLICKHOUSE_CLIENT} -q "SELECT max(read_rows) FROM system.processes WHERE query_id = '${insert_query_id}'")" != "0" ]] && break
+    kill -0 ${insert_pid} 2>/dev/null || break
+    sleep 0.05
+done
 
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE j DELETE WHERE id < 50;"
 
