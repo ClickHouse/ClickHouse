@@ -270,6 +270,41 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
+void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `byteSize(String, ...)` with `String.size + byteSize(String.size, ...)`.
+    /// The generic matcher limits this rewrite to at most two arguments.
+    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+        return;
+
+    /// `byteSize(String, ...)` includes the storage representation's per-row
+    /// overhead. The size subcolumn keeps the same sparse wrapper, so its own
+    /// byteSize is 8 for dense rows, and includes the sparse offset for
+    /// non-default rows. This preserves the original result for both layouts.
+    auto size_node = std::make_shared<ColumnNode>(column, ctx.column_source);
+
+    auto byte_size_node = std::make_shared<FunctionNode>("byteSize");
+    auto & byte_size_arguments = byte_size_node->getArguments().getNodes();
+    byte_size_arguments.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
+
+    const auto & original_arguments = function_node.getArguments().getNodes();
+    for (size_t arg_num = 1; arg_num < original_arguments.size(); ++arg_num)
+        byte_size_arguments.push_back(original_arguments[arg_num]);
+
+    resolveOrdinaryFunctionNodeByName(*byte_size_node, "byteSize", ctx.context);
+
+    auto plus_node = std::make_shared<FunctionNode>("plus");
+    auto & plus_arguments = plus_node->getArguments().getNodes();
+    plus_arguments.push_back(std::move(size_node));
+    plus_arguments.push_back(std::move(byte_size_node));
+    resolveOrdinaryFunctionNodeByName(*plus_node, "plus", ctx.context);
+
+    node = std::move(plus_node);
+}
+
 template <bool positive>
 void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
 {
@@ -684,6 +719,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 {
     {
         {TypeIndex::String, "length"}, optimizeFunctionStringLength,
+    },
+    {
+        {TypeIndex::String, "byteSize"}, optimizeFunctionStringByteSize,
     },
     {
         {TypeIndex::String, "empty"}, optimizeFunctionStringEmpty<true>,
