@@ -175,8 +175,66 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     RPNBuilder<RPNElement> builder(
         predicate,
         context,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        [&](const RPNBuilderTreeNode & node, RPNElement & out)
+        {
+            if (!extractAtomFromTree(node, out))
+                return false;
+            out.cannot_reject_granule = !canRejectSomeGranule(out);
+            return true;
+        });
     rpn = std::move(builder).extractRPN();
+}
+
+bool MergeTreeConditionBloomFilterText::canRejectSomeGranule(RPNElement & out)
+{
+    auto is_unconstraining = [](const BloomFilter & filter) { return filter.isEmpty(); };
+
+    switch (out.function)
+    {
+        case RPNElement::FUNCTION_EQUALS:
+        case RPNElement::FUNCTION_NOT_EQUALS:
+        case RPNElement::FUNCTION_HAS:
+            return !is_unconstraining(*out.bloom_filter);
+
+        case RPNElement::FUNCTION_MATCH:
+            /// When alternatives are present, `bloom_filter` is allocated but empty and unused.
+            if (!out.set_bloom_filters.empty())
+                return std::ranges::none_of(out.set_bloom_filters[0], is_unconstraining);
+            return out.bloom_filter && !is_unconstraining(*out.bloom_filter);
+
+        case RPNElement::FUNCTION_MULTI_SEARCH:
+        case RPNElement::FUNCTION_HAS_ANY:
+            /// An empty needle list makes the function always false, so it does reject every granule.
+            return std::ranges::none_of(out.set_bloom_filters[0], is_unconstraining);
+
+        case RPNElement::FUNCTION_HAS_ALL:
+            std::erase_if(out.set_bloom_filters[0], is_unconstraining);
+            return !out.set_bloom_filters[0].empty();
+
+        case RPNElement::FUNCTION_IN:
+        case RPNElement::FUNCTION_NOT_IN:
+        {
+            const size_t num_rows = out.set_bloom_filters.back().size();
+            for (size_t row = 0; row < num_rows; ++row)
+            {
+                bool row_unconstraining = true;
+                for (const auto & column : out.set_bloom_filters)
+                    row_unconstraining = row_unconstraining && is_unconstraining(column[row]);
+                if (row_unconstraining)
+                    return false;
+            }
+            return true;
+        }
+
+        case RPNElement::FUNCTION_UNKNOWN:
+        case RPNElement::FUNCTION_NOT:
+        case RPNElement::FUNCTION_AND:
+        case RPNElement::FUNCTION_OR:
+        case RPNElement::ALWAYS_FALSE:
+        case RPNElement::ALWAYS_TRUE:
+            return true;
+        /// No `default:` to make the compiler warn if not all enum values are handled.
+    }
 }
 
 bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
@@ -208,6 +266,18 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
     size_t element_idx = 0;
     for (const auto & element : rpn)
     {
+        if (element.cannot_reject_granule)
+        {
+            /// May-be-true and may-be-false, so that a surrounding NOT does not reject the granule.
+            rpn_stack.emplace_back(true, true);
+            if (update_partial_disjunction_result_fn)
+            {
+                update_partial_disjunction_result_fn(element_idx, /*can_be_true=*/ true, /*is_unknown=*/ false);
+                ++element_idx;
+            }
+            continue;
+        }
+
         switch (element.function)
         {
             case RPNElement::FUNCTION_UNKNOWN:
