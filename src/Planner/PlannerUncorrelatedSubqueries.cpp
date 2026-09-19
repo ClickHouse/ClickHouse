@@ -256,6 +256,9 @@ void buildQueryPlanForUncorrelatedInSubquery(
     const SelectQueryOptions & select_query_options)
 {
     auto subquery_options = select_query_options.subquery();
+    /// Mirror the set subquery setup in `addBuildSubqueriesForSetsStepIfNeeded`.
+    subquery_options.forceMaterializeCTE();
+    subquery_options.ignore_limits = false;
     Planner subquery_planner(
         in_subquery.subquery, subquery_options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
     subquery_planner.buildQueryPlanIfNeeded();
