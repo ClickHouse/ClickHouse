@@ -698,16 +698,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     {
         serialized_value = String();
         start_from_offset = 0;
-        {
-            WriteBufferFromString out_serialize(*serialized_value);
-            serialization.serializeText(column, row_num, out_serialize, format_settings);
-        }
-
-        /// Make non-printable control characters visible instead of being silently swallowed by the
-        /// terminal. It has to be done before the value is split into lines and padded, the same way
-        /// as in `calculateWidths`, so that the widths calculated there match the printed text.
-        if (format_settings.pretty.display_control_characters)
-            serialized_value = replaceControlCharactersWithPictures(std::move(*serialized_value));
+        WriteBufferFromString out_serialize(*serialized_value);
+        serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
     size_t prefix = row_number_width + (style == Style::Space ? 1 : 2);
@@ -715,6 +707,9 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     bool is_continuation = start_from_offset > 0 && start_from_offset < serialized_value->size();
 
     String serialized_fragment;
+    /// Whether the width of the fragment has to be computed here, because it is one line of a
+    /// multi-line value rather than the whole value that `calculateWidths` measured.
+    bool fragment_is_one_line = false;
     if (start_from_offset == serialized_value->size())
     {
         /// Only padding, nothing remains.
@@ -726,8 +721,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         const char * next_nl = find_first_symbols<'\n'>(serialized_value->data() + start_from_offset, end);
         size_t fragment_end_offset = next_nl - serialized_value->data();
         serialized_fragment = serialized_value->substr(start_from_offset, fragment_end_offset - start_from_offset);
-        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
         start_from_offset = fragment_end_offset;
+        fragment_is_one_line = true;
     }
     else
     {
@@ -735,12 +730,25 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         start_from_offset = serialized_value->size();
     }
 
+    /// Make non-printable control characters visible instead of being silently swallowed by the
+    /// terminal. Trailing whitespace is highlighted in the same pass: it must be detected on the
+    /// pre-replacement bytes, because the replacement turns a trailing tab or carriage return into
+    /// a Control Picture that `highlightTrailingSpaces` would not recognize.
+    /// The line feed is never replaced, so splitting the value into lines and replacing the control
+    /// characters commute: the fragments are the same ones `calculateWidths` measured.
+    if (format_settings.pretty.display_control_characters)
+        serialized_fragment = replaceControlCharactersWithPictures(
+            std::move(serialized_fragment), color && format_settings.pretty.highlight_trailing_spaces);
+
+    if (fragment_is_one_line)
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
+
     /// Highlight groups of thousands.
     if (color && is_number && format_settings.pretty.highlight_digit_groups)
         serialized_fragment = highlightDigitGroups(serialized_fragment);
 
-    /// Highlight trailing spaces.
-    if (color && format_settings.pretty.highlight_trailing_spaces)
+    /// Highlight trailing spaces (unless the replacement above already did it in one pass).
+    if (color && format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.display_control_characters)
         serialized_fragment = highlightTrailingSpaces(serialized_fragment);
 
     const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
