@@ -504,6 +504,9 @@ def test_exceed_quota():
             "Quota.*has been exceeded",
             instance.query_and_get_error("SELECT * from test_table"),
         )
+        # `read_rows` and `read_bytes` are accounted by the same call, and all the counters of one call
+        # are accounted before any of them is checked, so the 200 bytes of the 50 read rows are recorded
+        # even though it is the `read_rows` limit that rejects the query.
         system_quota_usage(
             [
                 [
@@ -524,7 +527,7 @@ def test_exceed_quota():
                     "\\N",
                     50,
                     1,
-                    0,
+                    200,
                     "\\N",
                     "\\N",
                     "1",
