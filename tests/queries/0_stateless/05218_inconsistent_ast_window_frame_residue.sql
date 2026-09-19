@@ -7,8 +7,8 @@
 -- before and after the fix, so only the parse outcome distinguishes them. Do not relax them into
 -- format-only checks.
 
--- A frame ahead of the parent window name used to parse, and the frame was then invisible to the
--- formatter but still applied by the old analyzer.
+-- A frame ahead of the parent window name used to parse, and the frame was then dropped from the
+-- query text: `formatQuerySingleLine` returned `x AS (w)`.
 SELECT 1 WINDOW x AS (ROWS UNBOUNDED PRECEDING w); -- { clientError SYNTAX_ERROR }
 SELECT count() OVER (GROUPS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING w); -- { clientError SYNTAX_ERROR }
 SELECT 1 WINDOW x AS (ROWS 1 PRECEDING w); -- { clientError SYNTAX_ERROR }
