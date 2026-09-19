@@ -1,0 +1,15 @@
+compact parts before merge	3	3
+insert typed	[1]
+insert shared	[2]
+compact parts after merge	1	1
+compact merge typed	[3]
+compact merge shared	[1]
+wide parts after merge	1	1
+vertical merge typed	[6]
+vertical merge shared	[5]
+materialized typed	[4]
+materialized shared	[6]
+mutation typed	[2]
+mutation shared	[2]
+attached typed	[2]
+attached shared	[2]

@@ -1,0 +1,36 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>use_index</name>
+            <values><value>0</value><value>1</value></values>
+        </substitution>
+        <substitution>
+            <name>missing</name>
+            <values><value>2000000</value><value>2000197</value><value>2000394</value><value>2000591</value></values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
+    </settings>
+
+    <create_query>CREATE TABLE json_bf_cast (j JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity_bytes = 0</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_cast ADD INDEX bf j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+    <!-- Preserve the narrow runtime types instead of inferring them from JSON text. -->
+    <fill_query>INSERT INTO json_bf_cast SELECT * FROM format(RowBinary, 'j JSON', arrayStringConcat(arrayMap(n -> concat(unhex('030166'), formatRowNoNewline('RowBinary', CAST(toFloat32(n + 0.5) AS Dynamic)), unhex('0169'), formatRowNoNewline('RowBinary', CAST(toInt32(n) AS Dynamic)), unhex('0175'), formatRowNoNewline('RowBinary', CAST(toUInt32(n) AS Dynamic))), range(1000000)))) SETTINGS input_format_binary_read_json_as_string = 0</fill_query>
+
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.i AS Int64) = {missing} SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.i AS Int64) = '{missing}' SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.u AS UInt64) = {missing} SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.u AS UInt64) = '{missing}' SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.f AS Float64) = {missing}.5 SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.f AS Float64) = '{missing}.5' SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.u AS Int64) = {missing} SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.i AS Float64) = {missing} SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.i AS Int64) = 500001 SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_cast WHERE CAST(j.f AS Float64) = 500001.5 SETTINGS use_skip_indexes = {use_index}</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_bf_cast</drop_query>
+</test>
