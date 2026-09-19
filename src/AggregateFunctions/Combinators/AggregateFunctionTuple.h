@@ -140,6 +140,7 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override;
 
     bool allocatesMemoryInArena() const override;
+    bool mergeIsEquivalentToAddingRows() const override;
     bool isState() const override;
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;

@@ -64,9 +64,14 @@ public:
             SharedHeader output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
-                functions);
+                functions,
+            UInt64 min_frame_rows_for_aggregate_tree_);
 
     ~WindowTransform() override;
+
+    /// Whether a sliding frame over `function` may be evaluated with the frame aggregate tree
+    /// (see `FrameAggregateTree`) instead of re-aggregating the whole frame for every row.
+    static bool aggregateFunctionSupportsFrameTree(const IAggregateFunction & function);
 
     String getName() const override
     {
@@ -116,6 +121,14 @@ public:
     bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
     void updateAggregationState();
+    template <typename F>
+    void forEachRowsRangeInBlocks(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, F && func);
+    void addRowsToAggregationState(WindowFunctionWorkspace & ws, AggregateDataPtr state, RowNumber rows_begin, RowNumber rows_end);
+    UInt64 countRowsBetween(RowNumber from, RowNumber to, UInt64 limit = std::numeric_limits<UInt64>::max()) const;
+    void frameTreeActivate(size_t workspace_index);
+    void frameTreeAppend(size_t workspace_index);
+    void frameTreeQuery(size_t workspace_index);
+    void resetFrameTrees();
     void writeOutCurrentRow();
 
     Columns & inputAt(const RowNumber & x);
@@ -248,6 +261,144 @@ public:
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
+
+    // A FlatFAT-style tree of partial aggregate states over the rows of a sliding window
+    // frame (cf. Tangwongsan et al., "General Incremental Sliding-Window Aggregation",
+    // PVLDB 2015). A segment at level L holds the state of fanout^(L+1) consecutive rows,
+    // so re-aggregating a frame of N rows takes O(fanout * log N) merge calls instead of
+    // N add calls; for cheap fixed-size states the per-level suffix caches (LevelAccel)
+    // cut that further to about two merge calls per level. Only sound for functions
+    // with mergeIsEquivalentToAddingRows; the rest keep the full-recompute path.
+    // Rows are identified by their index counted from the frame start at activation
+    // (the tree is deactivated and rebuilt from scratch if the frame shrinks below the
+    // activation threshold and grows past it again).
+    // Frame boundaries only move forward, so segments are immutable once built; the
+    // single trailing level-0 segment accumulates rows as they arrive, and may be
+    // queried because it covers exactly the rows up to the current frame end.
+    // Floating-point rounding may differ from the reset-and-readd path (whose rounding
+    // already depends on the block layout); no summation order is guaranteed.
+    class FrameAggregateTree
+    {
+    public:
+        // With the suffix caches a wider fanout only means fewer levels; 32 measured
+        // ahead of 16 for both cheap and content-heavy states.
+        static constexpr UInt64 fanout = 32;
+
+        bool isActive() const { return function != nullptr; }
+        void activate(const IAggregateFunction & function_);
+        void append(const IColumn ** columns, size_t first_row, size_t past_the_end_row, Arena * arena_ptr);
+        // Must be called for every frame start advance while active.
+        void evict(UInt64 rows_passed);
+        // Rows at the frame start not covered by any usable segment (their level-0
+        // segment also covers evicted rows); the caller must add them to the result
+        // directly from the input, before calling mergeFrame().
+        UInt64 leadRowCount() const;
+        // Merges the segments covering the rest of the frame into `result`, in frame
+        // order (merge is not commutative for e.g. groupArray).
+        void mergeFrame(AggregateDataPtr result, Arena * arena_ptr);
+        void reset();
+
+        FrameAggregateTree() = default;
+        FrameAggregateTree(FrameAggregateTree &&) = default;
+        FrameAggregateTree & operator=(FrameAggregateTree &&) = default;
+        FrameAggregateTree(const FrameAggregateTree &) = delete;
+        FrameAggregateTree & operator=(const FrameAggregateTree &) = delete;
+        ~FrameAggregateTree() { reset(); }
+
+    private:
+        static constexpr UInt64 segments_per_chunk = 256;
+
+        struct Level
+        {
+            Level() = default;
+            explicit Level(UInt64 start_segment)
+                : chunk_begin_segment(start_segment), begin_segment(start_segment), end_segment(start_segment)
+            {
+            }
+
+            // Chunked storage so that states never move: slots for segments
+            // [chunk_begin_segment, chunk_begin_segment + capacity), of which
+            // [begin_segment, end_segment) are created.
+            std::deque<AlignedBuffer> chunks;
+            UInt64 chunk_begin_segment = 0;
+            UInt64 begin_segment = 0;
+            UInt64 end_segment = 0;
+        };
+
+        // Per-level cache cutting mergeFrame() from ~fanout merges per level down to ~2:
+        // a suffix table over one segment group for the leading partial range, and a
+        // running combination of the completed-but-unparented segments for the trailing
+        // range. Both hold own state copies keyed by segment indices (which are never
+        // reused within an activation), so a key match implies identical content; on
+        // any mismatch mergeFrame() falls back to merging the raw segments. Only used
+        // for cheap fixed-size states (see the gate in activate): for content-heavy
+        // states the merge cost is dominated by the state size, not the call count.
+        struct LevelAccel
+        {
+            // Slot j holds the combination of segments
+            // [table_group_begin + j, table_covered_end); slots >= table_first_slot are built.
+            AlignedBuffer table;
+            UInt64 table_group_begin = std::numeric_limits<UInt64>::max();
+            UInt64 table_covered_end = 0;
+            UInt64 table_first_slot = 0;
+            // Combination of segments [trailing_begin, trailing_end).
+            AlignedBuffer trailing;
+            bool trailing_created = false;
+            UInt64 trailing_begin = 0;
+            UInt64 trailing_end = 0;
+        };
+
+        char * segmentState(size_t level, UInt64 segment);
+        char * createSegment(size_t level);
+        void buildParents(Arena * arena_ptr);
+        void destroySegments(size_t level, UInt64 begin, UInt64 end);
+        void trailingAdd(size_t level, UInt64 segment, Arena * arena_ptr);
+        void trailingReset(size_t level);
+        // Merges the combination of segments [begin, end) of one group into `result`
+        // through the suffix table, (re)building the needed slots on a key mismatch.
+        void tableMerge(size_t level, UInt64 begin, UInt64 end, AggregateDataPtr result, Arena * arena_ptr);
+
+        const IAggregateFunction * function = nullptr;
+        UInt64 padded_state_size = 0;
+        UInt64 state_align = 1;
+        UInt64 frame_start_index = 0;
+        UInt64 frame_end_index = 0;   // == number of rows appended
+        bool use_accel = false;
+        std::vector<Level> levels;
+        std::vector<LevelAccel> accel;
+    };
+
+    // Indexed in parallel with `workspaces`.
+    struct WorkspaceFrameTree
+    {
+        FrameAggregateTree tree;
+        // The first row not yet appended; appends lag behind frame_end while the frame
+        // start is not moving (the tree is not queried then).
+        RowNumber appended_end;
+        // Cached virtual method results of the workspace's aggregate function.
+        bool merge_equivalent = false;
+        bool has_trivial_destructor = false;
+    };
+    std::vector<WorkspaceFrameTree> workspace_frame_trees;
+    // All eligible trees are activated together, so this is per-transform (see
+    // updateAggregationState()).
+    bool frame_trees_active = false;
+    bool any_workspace_supports_frame_tree = false;
+    // Below this observed frame size the plain reset-and-readd path is used (the trees
+    // are activated and deactivated as the frame size crosses the threshold). Comes from
+    // the `min_window_frame_rows_for_aggregate_tree` setting.
+    UInt64 min_frame_rows_for_aggregate_tree;
+
+    // Incremental state of advanceFrameStartRowsOffset (only for a PRECEDING start):
+    // the unclamped position current_row - N, the remaining (negative) offset while
+    // clamped at the start of the available data, and the current_row the cache was
+    // made for (the flag allows checking "advanced by exactly one row" without
+    // touching the blocks).
+    RowNumber frame_start_rows_cache_row;
+    Int64 frame_start_rows_cache_offset_left = 0;
+    RowNumber frame_start_rows_cache_current;
+    bool frame_start_rows_cache_current_at_block_end = false;
+    bool frame_start_rows_cache_valid = false;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).

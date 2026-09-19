@@ -49,6 +49,10 @@ public:
 
     String getName() const override { return "any"; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
+    bool addBatchSinglePlaceIsConstant() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (!this->data(place).has())
@@ -234,6 +238,11 @@ public:
     }
 
     String getName() const override { return "anyLast"; }
+
+    // set of an empty partial state keeps the current value.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
+    bool addBatchSinglePlaceIsConstant() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

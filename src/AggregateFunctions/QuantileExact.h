@@ -39,6 +39,7 @@ static inline Float64 quantileExactInterpolationDelta(const Value & a, const Val
 template <typename Value, typename Derived>
 struct QuantileExactBase
 {
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
     using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;

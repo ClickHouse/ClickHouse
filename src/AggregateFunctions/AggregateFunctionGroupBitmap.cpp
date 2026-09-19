@@ -40,6 +40,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).roaring_bitmap_with_small_set.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
@@ -85,6 +87,8 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     DataTypePtr getStateType() const override
     {

@@ -144,6 +144,11 @@ public:
         return nested_func->allocatesMemoryInArena();
     }
 
+    bool mergeIsEquivalentToAddingRows() const override
+    {
+        return nested_func->mergeIsEquivalentToAddingRows();
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
     bool isState() const override
