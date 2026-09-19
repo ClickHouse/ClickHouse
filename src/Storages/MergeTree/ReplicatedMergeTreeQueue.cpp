@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/MutateTask.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1659,7 +1660,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
     const CommittingBlocks & committing_blocks,
-    std::unique_lock<SharedMutex> & state_lock) const
+    std::unique_lock<SharedMutex> & state_lock,
+    ExecuteDecision * out_decision) const
 {
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
     {
@@ -1770,6 +1772,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * Such a situation is possible if the receive of a part has failed, and it was moved to the end of the queue.
           */
         size_t sum_parts_size_in_bytes = 0;
+        MergeTreeData::DataPartPtr mutation_source_part;
         for (const auto & name : entry.source_parts)
         {
             if (future_parts.contains(name))
@@ -1786,7 +1789,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 if (entry.type == LogEntry::MERGE_PARTS)
                     sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                 else
+                {
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+                    mutation_source_part = part;
+                }
             }
         }
 
@@ -1871,6 +1877,39 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             if (isMergeOfPatchPartsBlocked(entry, out_postpone_reason, state_lock))
                 return false;
+        }
+
+        /// A mutation that only hardlinks the files it does not touch needs almost no space, so the size
+        /// of its source part is the wrong requirement for it. Classify once, here, where the coalesced
+        /// commands can be read under the lock we already hold, and use the answer twice: to not refuse
+        /// the entry on size alone, and to tell the caller what it has to reserve for it.
+        ///
+        /// Only for a MUTATE_PART with a source part that exists locally: a missing part is legitimate
+        /// (the entry then falls back to fetching the result), and dereferencing it here would crash.
+        /// And only for a nonzero budget: unlike the two selection guards, this guard has no separate
+        /// zero-budget check above it, so a zero budget - meaning all mutations are throttled off - is
+        /// rejected here only through this very comparison. A zero therefore has three unrelated
+        /// meanings at this site (the throttle, a deliberately missing part, and this exemption) and
+        /// conflating any two of them is a bug.
+        if (entry.type == LogEntry::MUTATE_PART && mutation_source_part)
+        {
+            const auto mutation_version = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version).mutation;
+            Strings mutation_ids;
+            auto commands = getMutationCommandsLocked(mutation_source_part, mutation_version, mutation_ids, state_lock);
+            const bool hardlink_only = MutationHelpers::isHardlinkOnlyMutation(
+                data,
+                mutation_source_part,
+                commands,
+                hasPendingRenameForPartLocked(mutation_source_part, mutation_version, state_lock));
+
+            if (hardlink_only && max_source_parts_size != 0)
+                sum_parts_size_in_bytes = 0;
+
+            if (out_decision)
+            {
+                out_decision->mutation_source_part = mutation_source_part;
+                out_decision->hardlink_only = hardlink_only;
+            }
         }
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
@@ -2158,13 +2197,36 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
 
     std::unique_lock lock(state_mutex);
 
+    ReservationSharedPtr hardlink_only_reservation;
+
     for (auto it = queue.begin(); it != queue.end(); ++it)
     {
         if ((*it)->currently_executing)
             continue;
 
-        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
+        ExecuteDecision decision;
+        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock, &decision))
         {
+            /// A mutation that only hardlinks was admitted on the strength of needing almost no space,
+            /// so reserve that little space now, on the source part's own disk. Reserving here rather
+            /// than when the entry runs matters: failing here only postpones the entry, whereas the
+            /// reservation prepare() would otherwise make throws and fails the mutation attempt.
+            if (decision.hardlink_only)
+            {
+                hardlink_only_reservation = MergeTreeData::tryReserveSpace(0, decision.mutation_source_part->getDataPartStorage());
+                if (!hardlink_only_reservation)
+                {
+                    (*it)->postpone_reason = fmt::format(
+                        "Not executing log entry {} for part {} because there is no space to reserve on the disk of part {}",
+                        (*it)->znode_name, (*it)->new_part_name, decision.mutation_source_part->name);
+                    LOG_DEBUG(LogFrequencyLimiter(log, 5), fmt::runtime((*it)->postpone_reason));
+
+                    ++(*it)->num_postponed;
+                    (*it)->last_postpone_time = time(nullptr);
+                    continue;
+                }
+            }
+
             entry = *it;
             /// We gave a chance for the entry, move it to the tail of the queue, after that
             /// we move it to the end of the queue.
@@ -2177,7 +2239,8 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
     }
 
     if (entry)
-        return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{new CurrentlyExecuting(entry, *this, lock)});
+        return std::make_shared<SelectedEntry>(
+            entry, std::unique_ptr<CurrentlyExecuting>{new CurrentlyExecuting(entry, *this, lock)}, std::move(hardlink_only_reservation));
     return {};
 }
 
@@ -2498,7 +2561,19 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         return MutationCommands{};
     }
 
-    std::lock_guard lock(state_mutex);
+    std::unique_lock lock(state_mutex);
+    return getMutationCommandsLocked(part, desired_mutation_version, mutation_ids, lock);
+}
+
+MutationCommands ReplicatedMergeTreeQueue::getMutationCommandsLocked(
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version, Strings & mutation_ids,
+    std::unique_lock<SharedMutex> & /* state_lock */) const
+{
+    if (part->info.getDataVersion() > desired_mutation_version)
+    {
+        LOG_WARNING(log, "Data version of part {} is already greater than desired mutation version {}", part->name, desired_mutation_version);
+        return MutationCommands{};
+    }
 
     auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
@@ -2531,6 +2606,77 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     }
 
     return commands;
+}
+
+
+bool ReplicatedMergeTreeQueue::hasPendingRenameForPart(
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
+{
+    std::unique_lock lock(state_mutex);
+    return hasPendingRenameForPartLocked(part, desired_mutation_version, lock);
+}
+
+bool ReplicatedMergeTreeQueue::hasPendingRenameForPartLocked(
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
+    std::unique_lock<SharedMutex> & /* state_lock */) const
+{
+    auto in_partition = mutations_by_partition.find(part->info.getOriginalPartitionId());
+    if (in_partition == mutations_by_partition.end())
+        return false;
+
+    const Int64 part_data_version = part->info.getDataVersion();
+    const Int64 part_metadata_version = part->getMetadataVersion();
+
+    /// The walk MutationsSnapshot::getOnFlyMutationCommandsForPart does, stopping at the first rename.
+    /// Bounded to the version being executed: a rename queued after it belongs to a later mutation.
+    bool seen_all_data_mutations = false;
+    bool seen_all_metadata_mutations = mutation_counters.num_metadata == 0;
+
+    for (const auto & [mutation_version, status] : in_partition->second | std::views::reverse)
+    {
+        if (seen_all_data_mutations && seen_all_metadata_mutations)
+            break;
+
+        if (mutation_version > desired_mutation_version)
+            continue;
+
+        const auto & entry = *status->entry;
+        const auto has_rename = [&]
+        {
+            for (const auto & command : entry.commands)
+                if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                    return true;
+            return false;
+        };
+
+        /// Both dimensions: a RENAME_COLUMN is collected as a metadata mutation whichever kind of entry
+        /// carries it, so checking only the alter-versioned ones would miss it.
+        if (entry.alter_version != -1)
+        {
+            if (seen_all_metadata_mutations)
+                continue;
+
+            if (entry.alter_version > part_metadata_version)
+            {
+                if (has_rename())
+                    return true;
+            }
+            else
+                seen_all_metadata_mutations = true;
+        }
+        else if (!seen_all_data_mutations)
+        {
+            if (mutation_version > part_data_version)
+            {
+                if (has_rename())
+                    return true;
+            }
+            else
+                seen_all_data_mutations = true;
+        }
+    }
+
+    return false;
 }
 
 
