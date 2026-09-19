@@ -2725,12 +2725,12 @@ public:
             IStorage::checkAlterIsPossible(commands, context); // NOLINT(bugprone-parent-virtual-call)
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override
     {
         if (tryGetNestedIfMaterialized())
-            StorageProxy::alter(params, context, alter_lock_holder);
+            StorageProxy::alter(params, context, alter_lock_holder, ddl_guard);
         else
-            IStorage::alter(params, context, alter_lock_holder); // NOLINT(bugprone-parent-virtual-call)
+            IStorage::alter(params, context, alter_lock_holder, ddl_guard); // NOLINT(bugprone-parent-virtual-call)
     }
 
     /// `StorageProxy` forwards `supportsPrewhere` but not these two, so without the overrides the
@@ -2749,10 +2749,20 @@ public:
     /// Read by the `disable_insertion_and_mutation` guard before the `write()` that would
     /// materialize, so the `IStorage` default (a local engine) would reject an `INSERT` the eager
     /// `URL(...)` path allows. Materializing is fine: such an `INSERT` materializes anyway.
-    bool isDataLake() const override { return getNested()->isDataLake(); }
     bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
     bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
     bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
+
+    /// Not forwarded to the delegate while it is absent, because `system.tables` reads this one for
+    /// every row and a catalog sweep must neither materialize nor fail on a table whose collection is
+    /// missing. No engine a `URL` can dispatch to (`URL`, `File`, `S3`, `AzureBlobStorage`, `HDFS`)
+    /// carries a data lake configuration, so `false` is the delegate's answer too.
+    bool isDataLake() const override
+    {
+        if (auto materialized = tryGetNestedIfMaterialized())
+            return materialized->isDataLake();
+        return false;
+    }
 
     /// Partition DDL and `CHECK TABLE` are unsupported by every backend a `URL` can dispatch to, so
     /// resolve the answer here: `StorageProxy` would forward to `getNested()` and report the missing

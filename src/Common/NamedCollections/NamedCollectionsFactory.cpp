@@ -428,9 +428,9 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
 {
     std::lock_guard lock(mutex);
 
-    /// Idempotent: the dependency is set-membership. `removeDependencies` erases *all* entries for a
-    /// table and there is no "remove one", so a duplicate would survive a single `removeDependencies`
-    /// and be double-counted by `getDependents`.
+    /// Idempotent: the dependency is set-membership. A second entry for the same table would make
+    /// `getDependents`, and the `DROP NAMED COLLECTION` diagnostic built from it, report that table
+    /// twice.
     const auto & idx = dependencies.get<Collection>();
     auto range = idx.equal_range(collection_name);
     for (auto it = range.first; it != range.second; ++it)
