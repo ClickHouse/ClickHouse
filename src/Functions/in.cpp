@@ -114,6 +114,9 @@ public:
         if (!isImmutableEmptySet(*future_set))
             return nullptr;
 
+        auto set = future_set->get();
+        chassert(set);
+        validateDecayingEmptySetProbe(arguments[0], *set);
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
@@ -131,9 +134,6 @@ public:
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-
-        validateExponentialTimeDecayingFloat64Column(
-            *arguments[0].column, arguments[0].type, "IN set probe");
 
         ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = tryGetColumnSet(column_set_ptr);
@@ -160,26 +160,15 @@ public:
         }
 
         const auto set_types = set->getDataTypes();
-        if (!set_types.empty())
-        {
-            DataTypes left_types = {arguments[0].type};
-            const auto left_type_without_wrappers = removeLowCardinalityAndNullable(arguments[0].type);
-            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type_without_wrappers.get());
-
-            if (left_tuple_type && set_types.size() != 1 && set_types.size() == left_tuple_type->getElements().size())
-                left_types = left_tuple_type->getElements();
-
-            if (left_types.size() == set_types.size())
-            {
-                for (size_t i = 0; i < left_types.size(); ++i)
-                    assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(left_types[i], set_types[i]);
-            }
-        }
 
         /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
         /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
+        /// Non-empty probes are validated by Set::execute; only this early return needs a local check.
         if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
+        {
+            validateDecayingEmptySetProbe(arguments[0], *set);
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
+        }
 
         /// Unwrap ColumnConst for the first argument if needed.
         ColumnWithTypeAndName left_arg = arguments[0];
@@ -218,6 +207,31 @@ public:
     }
 
 private:
+    /// Set::execute validates normal probes. Empty-set constant folding bypasses it, so keep
+    /// the same recursive row/type checks only on that early-return path.
+    static void validateDecayingEmptySetProbe(const ColumnWithTypeAndName & probe, const Set & set)
+    {
+        validateExponentialTimeDecayingFloat64Column(
+            *probe.column, probe.type, "IN set probe");
+
+        const auto set_types = set.getDataTypes();
+        if (set_types.empty())
+            return;
+
+        DataTypes left_types = {probe.type};
+        const auto left_type_without_wrappers = removeLowCardinalityAndNullable(probe.type);
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type_without_wrappers.get());
+
+        if (left_tuple_type && set_types.size() != 1 && set_types.size() == left_tuple_type->getElements().size())
+            left_types = left_tuple_type->getElements();
+
+        if (left_types.size() != set_types.size())
+            return;
+
+        for (size_t i = 0; i < left_types.size(); ++i)
+            assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(left_types[i], set_types[i]);
+    }
+
     /// The set argument arrives either bare or wrapped in a ColumnConst.
     static const ColumnSet * tryGetColumnSet(const ColumnPtr & column)
     {
