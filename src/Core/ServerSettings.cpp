@@ -216,6 +216,23 @@ The maximum number of jobs that can be scheduled on thread pool for parsing inpu
 A value of `0` means unlimited.
 </Note>
 )", 0) \
+    DECLARE(UInt64, max_async_insert_parsing_thread_pool_size, 100, R"(
+Maximum total number of threads to use for parsing the data of asynchronous inserts when a batch is flushed, see [`async_insert_parse_threads`](/operations/settings/settings#async_insert_parse_threads).
+
+The pool always keeps at least one thread, so a smaller value is treated as 1: a flush that has already scheduled its parsing work on the pool must be able to finish it, also when the value is changed while the server is running. To switch parallel parsing off, set `async_insert_parse_threads` to 0 instead.
+
+This is a separate pool from the one bounded by [`max_format_parsing_thread_pool_size`](#max_format_parsing_thread_pool_size), because an input format may parallelize its own work on that pool while a flush is waiting for it.
+)", 0) \
+    DECLARE(UInt64, max_async_insert_parsing_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for parsing the data of asynchronous inserts.
+)", 0) \
+    DECLARE(UInt64, async_insert_parsing_thread_pool_queue_size, 10000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for parsing the data of asynchronous inserts.
+
+:::note
+A value of `0` means unlimited.
+:::
+)", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
     DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 16, R"(The number of threads to commit snapshot.)", 0) \
@@ -3721,6 +3738,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"iceberg_manifest_decode_thread_pool_queue_size",
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_async_insert_parsing_thread_pool_size",
+             {getAsyncInsertParsingThreadPool().isInitialized() ? std::to_string(getAsyncInsertParsingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_async_insert_parsing_thread_pool_free_size",
+             {getAsyncInsertParsingThreadPool().isInitialized() ? std::to_string(getAsyncInsertParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"async_insert_parsing_thread_pool_queue_size",
+             {getAsyncInsertParsingThreadPool().isInitialized() ? std::to_string(getAsyncInsertParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 

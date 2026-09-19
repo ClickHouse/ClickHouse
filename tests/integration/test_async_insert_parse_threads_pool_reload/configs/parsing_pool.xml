@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_async_insert_parsing_thread_pool_size>4</max_async_insert_parsing_thread_pool_size>
+</clickhouse>

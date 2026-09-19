@@ -291,6 +291,9 @@
     M(IcebergManifestDecodeThreads, "Number of threads in the thread pool used for decoding Iceberg data manifest files.") \
     M(IcebergManifestDecodeThreadsActive, "Number of threads in the thread pool used for decoding Iceberg data manifest files running a task.") \
     M(IcebergManifestDecodeThreadsScheduled, "Number of queued or active jobs in the thread pool used for decoding Iceberg data manifest files.") \
+    M(AsyncInsertParsingThreads, "Number of threads in the thread pool used for parsing the data of asynchronous inserts when a batch is flushed.") \
+    M(AsyncInsertParsingThreadsActive, "Number of threads in the thread pool used for parsing the data of asynchronous inserts running a task.") \
+    M(AsyncInsertParsingThreadsScheduled, "Number of queued or active jobs in the thread pool used for parsing the data of asynchronous inserts.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \

@@ -1,0 +1,17 @@
+-- all the rows of every batch are inserted, whoever parsed them
+36	180	360	9
+1	[1,1]	d1
+2	[2,2]	d2
+3	[3,3]	d3
+4	[4,4]	d4
+5	[5,5]	d5
+6	[6,6]	d6
+7	[7,7]	d7
+8	[8,8]	d8
+9	[9,9]	d9
+-- one flush is one part, no matter how many threads parsed its data
+4	[9]
+-- a row that does not parse fails only its own insert
+4	10
+Ok	4	4
+ParsingError	1	0
