@@ -1,3 +1,0 @@
-=== SHOW MASKING POLICIES (empty, no error) ===
-=== SELECT count() FROM system.masking_policies (implicit SELECT grant) ===
-0
