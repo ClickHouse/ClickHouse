@@ -256,3 +256,91 @@ def test_inactive_replica_not_counted(kafka_cluster):
             retry_count=60,
             sleep_time=1,
         )
+
+
+def test_inactive_replica_not_counted_with_shard_affinity(kafka_cluster):
+    """Same as `test_inactive_replica_not_counted`, but for the partition affinity path.
+
+    With `kafka_shard_count` set, `getActiveReplicasInfo` first filters the replicas by the shard
+    num stored as the replica znode data, and only then checks liveness. A same-shard replica that
+    died without cleaning up its persistent znode must not shrink the quota of the live replica.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_inactive_replica_affinity_topic"
+    num_partitions = 8
+    shard_count = 2
+    shard_num = 1
+    keeper_path = "/clickhouse/test/zk_inactive_replica_affinity"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+            settings={
+                # `kafka_partition_shard_num` is a String setting, so it has to render quoted;
+                # `create_settings_string` quotes Python strings, but emits ints bare.
+                "kafka_partition_shard_num": str(shard_num),
+                "kafka_shard_count": shard_count,
+            },
+        )
+        # Create the Kafka table first: it registers `r1` in Keeper, but nothing is consumed and no
+        # partition lock is taken until the materialized view is attached.
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            """
+        )
+
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            # A replica of our own shard that died without cleaning up: the persistent replica znode
+            # carries our shard num, but there is no `is_active` node under it.
+            zk.create(f"{keeper_path}/replicas/ghost_same_shard", str(shard_num))
+            # A live replica of the other shard: it has `is_active`, but it must be filtered out by
+            # the shard num, so it does not shrink our quota either.
+            zk.create(f"{keeper_path}/replicas/live_other_shard", str(shard_num + 1))
+            zk.create(f"{keeper_path}/replicas/live_other_shard/is_active", "")
+            assert set(zk.ls(f"{keeper_path}/replicas")) >= {
+                "r1", "ghost_same_shard", "live_other_shard"
+            }
+
+        # Now start consuming: the first lock assignment happens with both extra replicas present.
+        instance.query(
+            "CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka"
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(2 * num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        base = f"{keeper_path}/topic_partition_locks"
+        # Affinity: our shard owns the partitions with `partition_id % shard_count == shard_num - 1`.
+        own_partitions = [
+            pid for pid in range(num_partitions) if pid % shard_count == shard_num - 1
+        ]
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in own_partitions}
+
+        # `r1` is the only active replica of its shard, so it must own all of its shard's
+        # partitions. If the ghost replica were counted, the node quota would be halved and `r1`
+        # would never own the whole lock set of its shard.
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) > 0,
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # The lock set must stay complete across a refresh round as well.
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
