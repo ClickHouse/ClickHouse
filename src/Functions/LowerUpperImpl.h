@@ -2,6 +2,10 @@
 #include <Columns/ColumnString.h>
 #include <Common/TargetSpecific.h>
 
+#if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__))
+#include <immintrin.h>
+#endif
+
 namespace DB
 {
 
@@ -61,6 +65,28 @@ private:
 
                     _mm512_storeu_si512(reinterpret_cast<__m512i *>(dst), cased_chars);
                 }
+            }
+        }
+#endif
+
+#if defined(__AVX2__)
+        const auto bytes_avx2 = sizeof(__m256i);
+        if (static_cast<size_t>(src_end - src) >= bytes_avx2 && isArchSupported(TargetArch::x86_64_v3))
+        {
+            const auto * src_end_avx2 = src_end - (src_end - src) % bytes_avx2;
+            const auto v_not_case_lower_bound = _mm256_set1_epi8(not_case_lower_bound - 1);
+            const auto v_not_case_upper_bound = _mm256_set1_epi8(not_case_upper_bound + 1);
+            const auto v_flip_case_mask = _mm256_set1_epi8(flip_case_mask);
+
+            for (; src < src_end_avx2; src += bytes_avx2, dst += bytes_avx2)
+            {
+                const auto chars = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src));
+                const auto is_not_case = _mm256_and_si256(
+                    _mm256_cmpgt_epi8(chars, v_not_case_lower_bound),
+                    _mm256_cmpgt_epi8(v_not_case_upper_bound, chars));
+                const auto xor_mask = _mm256_and_si256(v_flip_case_mask, is_not_case);
+                const auto cased_chars = _mm256_xor_si256(chars, xor_mask);
+                _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst), cased_chars);
             }
         }
 #endif
