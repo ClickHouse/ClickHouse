@@ -1,0 +1,41 @@
+--- JSONEachRowWithNames output
+["id", "name"]
+{"id":1,"name":"David"}
+{"id":2,"name":"Julie"}
+--- JSONEachRowWithNamesAndTypes output
+["id", "name"]
+["UInt32", "String"]
+{"id":1,"name":"David"}
+{"id":2,"name":"Julie"}
+--- JSONStringsEachRowWithNames output
+["id", "name"]
+{"id":"1","name":"David"}
+{"id":"2","name":"Julie"}
+--- JSONStringsEachRowWithNamesAndTypes output
+["id", "name"]
+["UInt32", "String"]
+{"id":"1","name":"David"}
+{"id":"2","name":"Julie"}
+--- JSONEachRowWithNames input
+1	David
+2	Julie
+--- JSONEachRowWithNamesAndTypes input
+1	David
+2	Julie
+--- JSONStringsEachRowWithNamesAndTypes input
+1	David
+2	Julie
+--- the data rows still carry the names, so a subset of columns can be read
+0	David
+0	Julie
+--- the types from the header are checked against the destination
+--- a header row with fewer types than names is rejected
+--- schema inference takes the types from the header row
+id	UInt32					
+arr	Array(UInt64)					
+--- without a types row the schema is inferred from the data rows
+id	Nullable(Int64)					
+arr	Array(Nullable(Int64))					
+--- parallel parsing splits object rows on their own boundaries
+--- a JSON array of rows cannot contain the header rows
+1000	499500	500500

@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'Documentation for the JSONStringsEachRowWithNames format'
+input_format: true
+keywords: ['JSONStringsEachRowWithNames']
+output_format: true
+slug: /interfaces/formats/JSONStringsEachRowWithNames
+title: 'JSONStringsEachRowWithNames'
+doc_type: 'reference'
+---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+Differs from the [`JSONStringsEachRow`](/reference/formats/JSON/JSONStringsEachRow) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
+Data rows are still output as JSON objects, not arrays.
+
+## Example usage {#example-usage}
+
+### Reading data {#reading-data}
+
+Read data using the `JSONStringsEachRowWithNames` format:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONStringsEachRowWithNames
+```
+
+The output will be in JSON format:
+
+```json
+["date", "season", "home_team", "away_team", "home_team_goals", "away_team_goals"]
+{"date":"2022-04-30","season":"2021","home_team":"Sutton United","away_team":"Bradford City","home_team_goals":"1","away_team_goals":"4"}
+{"date":"2022-04-30","season":"2021","home_team":"Swindon Town","away_team":"Barrow","home_team_goals":"2","away_team_goals":"1"}
+```
+
+## Format settings {#format-settings}
+
+<Note>
+The data rows are JSON objects, so on input the columns are always matched by the names inside each
+row, as in the `JSONEachRow` format: the header row of names is read and skipped. Columns with unknown
+names are skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
+</Note>
