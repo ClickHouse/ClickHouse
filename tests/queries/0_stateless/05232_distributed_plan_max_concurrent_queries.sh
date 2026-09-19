@@ -102,16 +102,23 @@ ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
 CODE=$?
 [ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 # A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
 # replica it later cancels held the slot all the same. The parts are reported just before the slot is
 # taken, so a replica the limit refuses reports them too, and only the others witness a shared slot.
-read -r replicas refused <<< "$(${CLICKHOUSE_CLIENT} --query "
-    SELECT uniqExactIf(query_id, exception_code != 202), countIf(exception_code = 202)
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND is_initial_query = 0
-      AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
-    SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
+# A cancelled replica reaches the log on a connection the statement above does not wait for, so its row
+# can be queued after a flush the statement's own row is already in, and the count is polled for.
+TIMELIMIT=$((SECONDS + 30))
+while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    read -r replicas refused <<< "$(${CLICKHOUSE_CLIENT} --query "
+        SELECT uniqExactIf(query_id, exception_code != 202), countIf(exception_code = 202)
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND is_initial_query = 0
+          AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
+        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
+    [[ $refused -ne 0 || $replicas -ge 2 ]] && break
+    sleep 0.2
+done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
 [ "$refused" -ne "0" ] && echo "the table's limit refused $refused replicas of the statement" && exit 1
 [ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement took the table's slot: $replicas" && exit 1
