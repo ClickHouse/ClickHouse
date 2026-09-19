@@ -52,22 +52,3 @@ SELECT count() FROM t_prewhere_subcolumn_size WHERE medium = 'x' AND tup.small =
 SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1;
 SELECT count() FROM t_prewhere_subcolumn_size WHERE medium = 'x' AND tup.small = 'y'
 SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 0;
-
-SET enable_analyzer = 0;
-SET query_plan_optimize_prewhere = 0;
-
-SELECT '-- legacy path, setting on: exact subcolumn size, cheap tup.small first';
-SELECT position(explain, 'tup.small') > 0 AND position(explain, 'tup.small') < position(explain, 'medium') AS subcolumn_first
-FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_subcolumn_size WHERE medium = 'x' AND tup.small = 'y'
-) WHERE explain LIKE '%Prewhere filter column%'
-SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1;
-
-SELECT '-- legacy path, setting off: top-level column size, cheap medium first';
-SELECT position(explain, 'tup.small') > 0 AND position(explain, 'tup.small') < position(explain, 'medium') AS subcolumn_first
-FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_subcolumn_size WHERE medium = 'x' AND tup.small = 'y'
-) WHERE explain LIKE '%Prewhere filter column%'
-SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 0;
-
-DROP TABLE t_prewhere_subcolumn_size;

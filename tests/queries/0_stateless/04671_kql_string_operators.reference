@@ -1,0 +1,63 @@
+-- contains is a substring test, not a LIKE pattern --
+false
+true
+false
+true
+true
+false
+true
+false
+-- a needle cannot inject SQL --
+false
+false
+false
+-- startswith / endswith --
+true
+false
+true
+false
+false
+-- has matches whole terms --
+true
+false
+true
+true
+true
+false
+true
+false
+true
+false
+-- negated forms --
+true
+true
+true
+-- has_any / has_all --
+true
+true
+false
+-- in --
+true
+false
+true
+true
+-- between --
+true
+false
+true
+-- =~ and !~ --
+true
+true
+true
+-- matches regex --
+true
+false
+-- the operators still filter --
+alpha
+beta
+gamma
+a-b
+-- verbatim strings keep backslashes --
+a\\b
+a\\b
+3

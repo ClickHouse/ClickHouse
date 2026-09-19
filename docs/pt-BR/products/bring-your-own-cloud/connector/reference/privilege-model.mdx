@@ -1,0 +1,140 @@
+---
+title: 'Modelo de privilégios'
+sidebarTitle: 'Modelo de privilégios'
+description: 'Exatamente o que o ClickHouse Connector pode e não pode fazer: conexões de saída, grants do ClickHouse, RBAC do Kubernetes, atribuição e minimização de dados'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'privilégio', 'segurança']
+doc_type: 'reference'
+---
+
+Esta página é a referência de segurança do ClickHouse Connector: todas as conexões que ele estabelece, os privilégios exatos que possui, o que ele não pode fazer por sua própria estrutura e como cada ação é atribuída. Para entender como os componentes se encaixam, consulte a [arquitetura](/pt-BR/products/bring-your-own-cloud/connector/architecture).
+
+<div id="what-the-connector-can-do">
+  ## O que o conector pode fazer
+</div>
+
+<div id="outbound-connections">
+  ### Conexões de saída
+</div>
+
+Esta é a lista completa de conexões abertas pelo conector. Todas se originam dentro do seu ambiente.
+
+| Destino                                     | Protocolo                                                | Finalidade                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API endpoint do conector da sua org        | HTTPS com mTLS, todas as solicitações assinadas com HMAC | `POST /v1/metrics`, `/v1/self-metrics`, `/v1/status`, `/v1/instance/sync`, `/v1/infra/sync`, `/v1/backup/sync`, `/v1/pcm/cert/renew`                                                                                                                                                                                   |
+| API endpoint do conector da sua org        | WebSocket de saída, `/v1/commands/ws`                    | Canal de comandos do troubleshooter, condicionado ao estado da sessão de suporte                                                                                                                                                                                                                                       |
+| Endpoint de inscrição da sua org            | HTTPS (token de inscrição ou HMAC; sem mTLS)             | Resgate de token e assinatura de certificado (`/v1/pcm/cert/sign`) durante a instalação                                                                                                                                                                                                                                |
+| Suas instâncias do ClickHouse               | Protocolo nativo do ClickHouse                           | Consultas somente leitura como `pcm_scraper` e `pcm_troubleshooter`, além da instrução de descarregamento de logs do scraper (consulte [grants](#clickhouse-grants))                                                                                                                                                   |
+| O servidor da API do Kubernetes             | HTTPS                                                    | Leituras com escopo de espaço de nomes e solicitações de token de ServiceAccount (para ambos os destinos); leitura e atualização, por nome exato, do próprio Secret mTLS do conector para persistir certificados renovados (somente em instalações do Kubernetes; uma VM grava as renovações nos arquivos TLS locais) |
+| Endpoint JWKS do seu provedor de identidade | HTTPS                                                    | Validação do token do operator, somente quando o gateway de sessão está habilitado                                                                                                                                                                                                                                     |
+
+Para conexões de entrada, o conector expõe apenas portas locais de integridade e métricas, além do gateway de sessão opcional. Nenhum outro serviço fica escutando, e o ClickHouse Cloud nunca se conecta ao seu ambiente: ele só pode responder ao WebSocket de saída do troubleshooter.
+
+<div id="clickhouse-grants">
+  ### Permissões do ClickHouse
+</div>
+
+O Provisioning cria um usuário somente leitura para cada componente. A única exceção a operações exclusivamente de leitura é a permissão `SYSTEM FLUSH LOGS` do scraper, listada abaixo, que não permite ler nem modificar nada; ela apenas força as tabelas de logs a persistirem as entries que já estão no buffer. Os usuários são criados com `IDENTIFIED WITH bcrypt_hash`, portanto, no SQL de provisionamento existe apenas um hash bcrypt com salt; a senha em texto simples fica somente no arquivo de credenciais que o daemon lê em runtime. As permissões são exatamente estas, com os conjuntos de tabelas default:
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`server_settings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`tables` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`warnings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_scraper`;
+GRANT READ ON REMOTE TO `pcm_scraper`;
+GRANT SYSTEM FLUSH LOGS ON *.* TO `pcm_scraper`;
+```
+
+`READ ON REMOTE` é necessário porque as consultas de scrape envolvem cada tabela de sistema em `clusterAllReplicas()`. `SYSTEM FLUSH LOGS` deve ser concedido no escopo global porque o ClickHouse rejeita escopos mais restritos para esse privilégio; o ClickHouse só o considera para tabelas de sistema `*_log`, portanto, a concessão é mais ampla do que a capacidade efetiva.
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`build_options` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`clusters` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`databases` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`detached_parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`disks` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`events` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`formats` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`functions` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`grants` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`merges` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`mutations` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_summary` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`processes` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replicas` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replication_queue` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`roles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profile_elements` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profiles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`storage_policies` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`table_engines` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`tables` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
+```
+
+A permissão `system.user_directories` para ambos os usuários serve a um único diagnóstico: `clicklink clctl preflight` é executado com as credenciais do próprio conector e verifica como a instância armazena os usuários do ClickHouse (de forma replicada ou local). A tabela contém metadados de configuração do armazenamento de usuários, não dados de usuários, e não está incluída nem no conjunto de scrape nem na allowlist da tabela de sessão; portanto, nenhum caminho de saída de scrape ou sessão a lê. Sem essa permissão, essa única verificação de preflight informa que foi ignorada, e todo o restante prossegue.
+
+Além do `SELECT` por tabela, a única permissão no nível do sistema é `SYSTEM FLUSH LOGS` do scraper: ela força as tabelas de sistema `*_log` a persistir no disco as entradas em buffer para que as coletas vejam dados atuais e não faz mais nada; o ClickHouse só a aplica a tabelas de log, embora essa permissão só possa ser concedida no escopo global. Não há permissões de `INSERT`, DDL, gerenciamento de usuários, configurações nem controle de processos. Quando uma segunda implantação do conector compartilha uma instância, seus usuários recebem um sufixo (`pcm_scraper_<suffix>`) com o mesmo conjunto de permissões.
+
+<div id="kubernetes-rbac">
+  ### RBAC do Kubernetes
+</div>
+
+O chart cria apenas Roles com escopo de espaço de nomes; não há Função de cluster nem ClusterRoleBinding.
+
+| Recursos                                                                                        | Verbos                 | Escopo                                                                                                                            |
+| ----------------------------------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets`                                                                                       | `get`                  | Somente nomes exatos: o Secret de mTLS, o Secret de HMAC e cada Secret de pacote de acesso por instância                          |
+| `secrets`                                                                                       | `update`               | Somente o Secret de mTLS, pelo nome exato, para que os daemons possam persistir o certificado de cliente renovado automaticamente |
+| `serviceaccounts/token`                                                                         | `create`               | Somente nomes exatos: o ServiceAccount do próprio componente e cada ServiceAccount de pacote de acesso por instância              |
+| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | Somente para o Troubleshooter                                                                                                     |
+| `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | Somente para o Troubleshooter                                                                                                     |
+
+<div id="what-the-connector-cannot-do">
+  ## O que o conector não pode fazer
+</div>
+
+* **Não grava dados nem estado no ClickHouse.** As permissões acima não incluem `INSERT`, DDL nem privilégios de gerenciamento de usuários, configurações ou controle de processos; a única permissão da classe SYSTEM, `SYSTEM FLUSH LOGS` do scraper, apenas faz com que as tabelas de logs persistam o que já mantêm em buffer. O conector não pode modificar dados, schemas, usuários ou configurações.
+* **Não executa comandos.** O RBAC não inclui `pods/exec`; o conector não pode executar comandos nos seus pods.
+* **Não exclui nem aplica patches.** O RBAC permite duas mutações: o `update` com nome exato no Secret mTLS do próprio conector e `create` em `serviceaccounts/token`, que gera tokens de curta duração para as ServiceAccounts do próprio conector e não modifica nenhum objeto armazenado.
+* **Sem escopo de cluster.** Cada Role é vinculada a um espaço de nomes; o conector não pode listar nem ler recursos fora dos espaços de nomes aos quais você concedeu acesso.
+* **Nada de entrada.** O ClickHouse Cloud nunca abre uma conexão com o seu ambiente. O único canal de comandos é o WebSocket de saída do troubleshooter, que recusa todos os comandos, a menos que esteja ativa uma sessão de suporte habilitada por você. Mesmo durante uma sessão, o escopo é limitado em ambos os lados: as consultas do ClickHouse ficam restritas à allowlist de tabelas, e o validador nega `query_log` e `text_log` independentemente da configuração; separadamente, o acesso ao Kubernetes fica limitado às visualizações somente leitura e aos logs de pods concedidos pelas Roles com escopo de espaço de nomes.
+
+<div id="what-requires-your-action">
+  ## O que exige sua ação
+</div>
+
+* **Sessões de suporte.** A solução interativa de problemas ocorre apenas em uma sessão habilitada por você, limitada a 4 horas por padrão e a, no máximo, 24 horas. Desabilitá-la tem efeito imediato. Consulte as [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions).
+* **A allowlist de operadores.** Toda solicitação ao gateway deve incluir um token OIDC cujo e-mail atestado conste na sua allowlist. Uma allowlist vazia bloqueia o acesso. Você gerencia a lista; consulte o [guia de configuração](/pt-BR/products/bring-your-own-cloud/connector/configuration).
+* **Exposição do gateway.** O gateway da sessão permanece desativado até que você o habilite e só pode ser acessado por redirecionamento de porta, a menos que você habilite uma Entrada. Em uma VM, cada operador deve fixar a impressão digital do certificado autossinado antes que os comandos da sessão possam se comunicar com ele.
+* **Egress de rede.** Em uma CNI que aplica regras, o conector não tem egress até que você inclua na allowlist os CIDRs de endpoint na NetworkPolicy do chart.
+
+<div id="how-access-is-attributed">
+  ## Como o acesso é atribuído
+</div>
+
+* **Identidade da implantação.** O nome comum do certificado de cliente mTLS é o ID da sua org, com um único nome DNS associado ao host do endpoint. Assim, cada conexão de API pode ser atribuída à sua org. A renovação é automática e realizada no daemon; nenhum operador manipula o material de chave.
+* **Integridade da solicitação.** Cada solicitação de API também inclui uma assinatura HMAC-SHA256 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) calculada com base no método, no path, no timestamp e no hash do body, usando o par de chaves emitido na inscrição.
+* **Identidade do operador.** As chamadas do gateway são atribuídas ao e-mail atestado pelo token de ID OIDC do operador, verificado com base no JWKS do seu provedor de identidade; um nome autodeclarado nunca é considerado confiável quando há um token disponível.
+* **Trilha de auditoria.** Cada chamada do gateway e cada comando de solução de problemas, aceito ou bloqueado, é adicionado ao log de auditoria NDJSON: entradas do gateway com o e-mail atestado do operador, alterações de sessão local da VM com o usuário do host que as invocou e comandos de sessão com a identidade da org transportada pelo canal autenticado. Leia-o com `clicklink clctl troubleshoot audit tail`; consulte a [referência da CLI](/pt-BR/products/bring-your-own-cloud/connector/reference/cli).
+
+<div id="data-minimization-defaults">
+  ## Padrões de minimização de dados
+</div>
+
+* **`query_log` é excluída das coletas por padrão.** Suas colunas contêm SQL bruto com valores literais, que podem incluir dados pessoais ou segredos, portanto essas informações não ultrapassam sua fronteira, a menos que você a adicione deliberadamente.
+* **O troubleshooter lê apenas tabelas incluídas na allowlist**, e o validador bloqueia `query_log` e `text_log` incondicionalmente, portanto o histórico de consultas nunca pode ser lido. A allowlist padrão inclui `system.processes` (texto de consulta em execução); restrinja a allowlist de tabelas de sessão (`troubleshooter.allowedTables` no Kubernetes, `troubleshooter.allowed_tables` em uma VM) se isso precisar permanecer oculto durante as sessões.
+* **Toda a saída do troubleshooter é mascarada** com padrões integrados para endereços IPv4 e IPv6, tokens Bearer, chaves de acesso da AWS, e-mails, JWTs, chaves privadas SSH e credenciais de strings de conexão, além de quaisquer padrões que você definir. O daemon se recusa a iniciar se o arquivo de padrões for inválido, em vez de ser executado sem mascaramento.
+* **As credenciais são minimizadas em repouso.** O SQL de Provisioning contém hashes bcrypt, nunca senhas em texto simples; o token de inscrição nunca é gravado na linha de comando, no disco ou nos logs; as chaves ficam em Kubernetes Secrets ou em arquivos com modo 0600.

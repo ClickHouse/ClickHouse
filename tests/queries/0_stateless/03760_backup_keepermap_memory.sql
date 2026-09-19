@@ -1,3 +1,4 @@
+-- This setting does not reach the backup temporary file buffer, which is sized by a NonZeroUInt64 setting.
 SET max_compress_block_size = 0;
 
 CREATE TABLE 03760_backup_memory (c0 Int) ENGINE = Memory;

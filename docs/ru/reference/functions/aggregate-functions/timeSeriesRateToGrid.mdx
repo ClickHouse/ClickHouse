@@ -15,6 +15,8 @@ doc_type: 'reference'
 
 Агрегатная функция, которая принимает данные временных рядов в виде пар временных меток и значений и вычисляет [rate в стиле PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) на основе этих данных на регулярной временной сетке, задаваемой начальной временной меткой, конечной временной меткой и шагом. Для каждой точки сетки выборки для вычисления `rate` берутся в пределах указанного временного окна.
 
+Если несколько отсчётов имеют одинаковую временную метку, используется только один из них: отсчёт с наибольшим значением. Значение NaN уступает любому другому значению, поэтому оно используется, только если все отсчёты с этой временной меткой имеют значение NaN.
+
 <Warning>
   Эта функция экспериментальная; чтобы включить её, задайте `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -68,7 +70,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

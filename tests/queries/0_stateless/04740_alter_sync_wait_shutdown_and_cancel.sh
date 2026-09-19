@@ -45,7 +45,7 @@ wait_for_truncate()
 $CLICKHOUSE_CLIENT -q "
     TRUNCATE TABLE r1 SETTINGS alter_sync = 2, max_execution_time = 5,
         replication_wait_for_inactive_replica_timeout = -1
-" 2>&1 | grep -om1 'Code: 159.*Timeout exceeded: elapsed [0-9.]* ms, maximum: 5000 ms' \
+" 2>&1 | grep -om1 'Code: 159.*Timeout exceeded: elapsed [0-9.]* ms, maximum: 5000.000 ms' \
        | sed 's/DB::Exception: //g; s/elapsed [0-9.]* ms, //'
 
 # 2. KILL QUERY must terminate the wait.

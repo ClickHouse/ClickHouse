@@ -158,6 +158,10 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+
     void insertWithSampler(Data & a, const T & v, Arena * arena) const
     {
         ++a.total_values;
@@ -523,6 +527,10 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+
     void insertWithSampler(Data & a, const Node * v, Arena * arena) const
     {
         ++a.total_values;
@@ -885,7 +893,10 @@ groupArray(max_size)(x)
     {
         "Basic usage",
         R"(
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
         )",
         R"(
 ┌─id─┬─groupArray(10)(name)─┐
@@ -918,7 +929,7 @@ groupArraySample(max_size[, seed])(x)
     };
     FunctionDocumentation::Parameters parameters_groupArraySample = {
         {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
-        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. When omitted, every aggregation state seeds itself from a thread-local generator, so the sample is different for every evaluation and the function is non-deterministic. Pass a seed for a reproducible sample.", {"UInt64"}},
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
@@ -929,19 +940,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -953,19 +964,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
         )",
         R"(
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐

@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "ホーム",
+      "group": "Home",
       "icon": "house",
       "pages": [
         "ja/integrations/language-clients/index"
@@ -32,7 +32,7 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "サードパーティ製クライアント",
+      "group": "Third-party clients",
       "icon": "users",
       "pages": [
         "ja/integrations/language-clients/third-party/client-libraries"
@@ -40,5 +40,5 @@
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "各言語向けクライアント"
+  "item": "Language clients"
 }

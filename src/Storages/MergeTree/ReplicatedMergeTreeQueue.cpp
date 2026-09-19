@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -16,6 +16,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
@@ -286,7 +287,7 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
     {
         if (!intent.isDisjoint(part_info))
         {
-            constexpr auto fmt_string = "Not executing {} of type {} for part {} (actual part {})"
+            constexpr auto fmt_string = "Not executing {} of type {} for part {} (actual part {}) "
                                         "because there is a drop or replace intent with part name {}.";
             LOG_INFO(
                 LogToStr(out_reason, log),
@@ -1519,7 +1520,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
     if (entry_for_same_part_it != future_parts.end())
     {
         const LogEntry & another_entry = *entry_for_same_part_it->second;
-        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {})"
+        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {}) "
                                     "because another log entry {} of type {} for the same part ({}) is being processed.";
         LOG_INFO(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.type, entry.new_part_name, new_part_name,
                  another_entry.znode_name, another_entry.type, another_entry.new_part_name);

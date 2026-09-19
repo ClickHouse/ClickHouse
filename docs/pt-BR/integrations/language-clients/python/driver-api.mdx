@@ -321,6 +321,8 @@ Os métodos `query*` e `command` do cliente ClickHouse Connect aceitam o argumen
 
 O ClickHouse oferece [vinculação no servidor](/pt-BR/concepts/features/interfaces/client#cli-queries-with-parameters) para valores da consulta. O valor vinculado é enviado separadamente da consulta como um parâmetro HTTP. O ClickHouse Connect usa esse modo quando detecta uma expressão no formato `{<name>:<datatype>}`. Passe os valores como um dicionário Python.
 
+Os nomes dos parâmetros devem ser nomes ASCII BareWord do ClickHouse. O driver aceita `$` no início, no meio ou no final do nome quando o servidor também o aceita, como em `{$tenant_id:String}`. Uma chave de dicionário que começa e termina com `$` e tem um valor de buffer, como `bytes`, `bytearray` ou `memoryview`, é reservada para a convenção de parâmetros binários brutos do ClickHouse Connect. Se essa chave for usada para um parâmetro no servidor que não seja binário, mantenha-a em um único placeholder `{name:Type}`. Nomes `$tag$` repetidos podem ser interpretados pelo ClickHouse como marcadores Heredoc.
+
 Use `None` do Python para valores anuláveis. Valores `None` aninhados são compatíveis dentro de parâmetros `Array` e `Tuple` e dentro de literais `Map` quando `dict_parameter_format` está definido como `"map"`.
 
 * Vinculação no servidor com dicionário Python, valor DateTime e valor String
@@ -904,7 +906,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` e `Cursor.executemany` aceitam os argumentos nomeados adicionais `settings` e `query_formats`. `settings` passa configurações do ClickHouse. `query_formats` aplica formatos de leitura por tipo do ClickHouse quando uma instrução retorna linhas, usando o mesmo mapeamento de `Client.query`. `executemany` usa o caminho nativo de inserção em massa do driver para instruções `INSERT ... VALUES` compatíveis com uma sequência materializada de linhas. `fetchone`, `fetchmany` e `fetchall` consomem o resultado materializado atual.
+`Cursor.execute` e `Cursor.executemany` aceitam os argumentos nomeados adicionais `settings` e `query_formats`. `settings` passa configurações do ClickHouse. `query_formats` aplica formatos de leitura por tipo do ClickHouse quando uma instrução retorna linhas, usando o mesmo mapeamento de `Client.query`. `Cursor.execute` também aceita o argumento somente nomeado `pyformat_encoded`. Seu padrão `True` segue o contrato `pyformat` da DB-API. O dialeto SQLAlchemy o define como `False` quando o compilador de instruções emitiu sinais de porcentagem brutos, portanto, normalmente os aplicativos não devem defini-lo. `executemany` usa o caminho nativo de inserção em massa do driver para instruções `INSERT ... VALUES` compatíveis com uma sequência materializada de linhas. `fetchone`, `fetchmany` e `fetchall` consomem o resultado materializado atual.
 
 `Cursor.description` deriva `null_ok` do tipo de cada coluna de resultado. Tipos não anuláveis retornam `False`, e tipos anuláveis retornam `True`, incluindo wrappers `Nullable`, `Variant` e `Dynamic`. `None` significa que a anulabilidade é desconhecida. Quando uma consulta que começa com `SELECT` ou `WITH`, ignorando comentários iniciais, não retorna linhas nem metadados de coluna, o cursor executa uma consulta de metadados `LIMIT 0` para preencher `description`. Se essa consulta de metadados falhar, `description` permanece vazio.
 
