@@ -9164,6 +9164,8 @@ Selects the algorithm that intersects posting lists in lazy posting list apply m
 - `auto` (default): leapfrog is used only when the sparsest posting list can skip whole packed blocks of the densest one, and brute-force bitmap intersection otherwise.
 - `bruteforce`: always use the brute-force bitmap intersection.
 - `leapfrog`: always use the leapfrog intersection.
+
+Intersections of 256 or more tokens always use leapfrog.
 )", 0) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
