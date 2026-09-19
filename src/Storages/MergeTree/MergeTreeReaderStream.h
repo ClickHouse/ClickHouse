@@ -57,6 +57,11 @@ public:
      * (In case of MergeTree* tables). Mostly needed for reading from remote fs.
      */
     void adjustRightMark(size_t right_mark);
+
+    /// Set read-until to a position given by a mark, growing the bound only (like adjustRightMark, which
+    /// takes a mark index instead). Must be called before seeking (see ReadBuffer::setReadUntilPosition).
+    void setReadUntilMark(const MarkInCompressedFile & mark);
+
     ReadBuffer * getDataBuffer();
 
     size_t getFileSize() const { return file_size; }

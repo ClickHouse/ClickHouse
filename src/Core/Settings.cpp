@@ -1757,7 +1757,10 @@ DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
 DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
-Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches. Has no effect on the shared data Data substream when `merge_tree_bound_json_shared_data_path_reads` is enabled (it is not prefetched then).
+)", 0) \
+    DECLARE(Bool, merge_tree_bound_json_shared_data_path_reads, true, R"(
+Bounds the read of each JSON shared data path in Wide parts to the end of its data, so reading a path does not read ahead into the following paths. When disabled, a path's read is bounded only by the granule, which over-reads for small paths stored next to large ones.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.

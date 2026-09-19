@@ -1432,6 +1432,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_throw_if_noop", trueOrFalseSettingNoOracle},
     {"optimize_time_filter_with_preimage", trueOrFalseSetting},
     {"merge_tree_prefetch_json_shared_data_substreams", trueOrFalseSettingNoOracle},
+    {"merge_tree_bound_json_shared_data_path_reads", trueOrFalseSettingNoOracle},
     {"optimize_trivial_insert_select", trueOrFalseSetting},
     {"optimize_trivial_view_pushdown_to_distributed", trueOrFalseSetting},
     {"output_format_arrow_compression_method",

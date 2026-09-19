@@ -7,6 +7,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include <map>
+#include <optional>
 
 namespace DB
 {
@@ -242,6 +243,10 @@ private:
     {
         /// Mark of the ObjectSharedDataData stream for this path.
         MarkInCompressedFile data_mark{};
+        /// End of this path's data in the ObjectSharedDataData stream, used to bound the read so it does not
+        /// run into the following paths. Points to the first following path not read together with this one;
+        /// empty when the run reaches the chunk end (then the read is bounded to the next chunk/granule).
+        std::optional<MarkInCompressedFile> data_end_mark;
         /// Mark of the substreams list in ObjectSharedDataSubstreams stream for this path.
         MarkInCompressedFile substreams_mark{};
         /// Mark of the substreams marks in ObjectSharedDataSubstreamsMarks stream for this path.

@@ -518,6 +518,11 @@ public:
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
+        /// Bound a stream's reads to a given position (read-until) so a read does not go past it.
+        /// Must be called before seeking the stream.
+        std::function<void(const SubstreamPath &, const MarkInCompressedFile &)> set_stream_read_until_mark_callback;
+        /// Extend a stream's read-until to the end of the range currently being read.
+        std::function<void(const SubstreamPath &)> set_stream_read_until_to_range_end_callback;
         /// Callback to seek specific stream to the start.
         /// Used in MergeTree for prefix deserialization.
         std::function<void(const SubstreamPath &)> seek_to_start_callback;
@@ -748,8 +753,13 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    /// True for substreams that the serialization reads by seeking to individual marks and bounding each
+    /// read itself, instead of reading sequentially from the start of the range. The reader must not apply
+    /// its range-wide seek and read-until to such substreams (the serialization drives them).
+    static bool isSubstreamReadBySeekingToMarks(const SubstreamPath & path, size_t prefix_len, bool bound_json_shared_data_path_reads);
+
     /// Returns whether a substream should be prefetched.
-    static bool isPrefetchNeededForSubstream(const SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams);
+    static bool isPrefetchNeededForSubstream(const SubstreamPath & path, size_t prefix_len, bool bound_json_shared_data_path_reads, bool prefetch_json_shared_data_substreams);
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);

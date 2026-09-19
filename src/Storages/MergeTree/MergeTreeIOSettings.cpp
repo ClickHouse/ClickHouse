@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsBool merge_tree_prefetch_json_shared_data_substreams;
+    extern const SettingsBool merge_tree_bound_json_shared_data_path_reads;
     extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
@@ -141,6 +142,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
+    result.bound_json_shared_data_path_reads = settings[Setting::merge_tree_bound_json_shared_data_path_reads];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];
     result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
