@@ -1,6 +1,7 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -115,6 +116,47 @@ TTLTransform::TTLTransform(
             expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
     }
 
+    /// An expired column is not stored and reads as its `DEFAULT`, so the `DEFAULT` of another
+    /// expired column may reference it. Such a reference can only be evaluated once the referenced
+    /// column has been put into the block, therefore the expired columns are processed in
+    /// dependency order. Column defaults cannot form a cycle, and the `visiting` guard makes the
+    /// walk terminate even if one ever appeared.
+    NameSet visiting;
+    auto add_in_dependency_order = [&](const String & name, auto & self) -> void
+    {
+        if (!visiting.emplace(name).second)
+            return;
+
+        const auto & data = expired_columns_data.at(name);
+        if (data.default_expression)
+        {
+            for (const auto & required_column : data.default_expression->getRequiredColumns())
+            {
+                /// A required name may be a subcolumn (`n.b.size0`) of an expired column; resolve it
+                /// to the longest prefix that is an expired column itself.
+                String prefix = required_column;
+                while (true)
+                {
+                    if (prefix != name && expired_columns_data.contains(prefix))
+                    {
+                        self(prefix, self);
+                        break;
+                    }
+
+                    auto last_dot = prefix.rfind('.');
+                    if (last_dot == String::npos)
+                        break;
+                    prefix.resize(last_dot);
+                }
+            }
+        }
+
+        expired_columns_in_dependency_order.push_back(name);
+    };
+
+    for (const auto & expired_column : expired_columns)
+        add_in_dependency_order(expired_column.name, add_in_dependency_order);
+
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
         auto expired_columns_map = expired_columns.getNameToTypeMap();
@@ -169,8 +211,9 @@ void TTLTransform::consume(Chunk chunk)
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// Fill expired columns with default values which will later be handled in TTLColumnAlgorithm
-    for (const auto & [column, data] : expired_columns_data)
+    for (const auto & column : expired_columns_in_dependency_order)
     {
+        const auto & data = expired_columns_data.at(column);
         auto default_column
             = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
         if (default_column)
