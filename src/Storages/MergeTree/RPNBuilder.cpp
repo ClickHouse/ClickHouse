@@ -528,7 +528,7 @@ std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() con
 
 std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getLowCardinalityRemovingCastArgument() const
 {
-    /// Only an analyzer pass puts such a cast into a predicate, and that path always carries a DAG.
+    /// The AST path (the old analyzer) carries no DAG, so such a cast is not matched there.
     if (!dag_node)
         return {};
 
