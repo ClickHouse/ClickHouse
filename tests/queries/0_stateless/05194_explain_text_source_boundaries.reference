@@ -5,4 +5,6 @@
 1
 1
 1
+EXPLAIN TEXT (INSERT INTO t SETTINGS async_insert = 1 SELECT 1) FORMAT JSONEachRow SETTINGS max_threads = 2
+{"text":"EXECUTE AS u\nINSERT INTO t SELECT 1"}
 12	1	1	1

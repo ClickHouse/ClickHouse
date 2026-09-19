@@ -22,13 +22,22 @@ SELECT
     = parseQueryToJSON(
         'EXPLAIN TEXT (INSERT INTO t FROM INFILE ''unused.csv'' SELECT 1 FORMAT CSV)');
 
--- Relocation must not rewind past settings already consumed by the insert parser.
+-- With allow_settings_after_format_in_insert, a SETTINGS clause after the trailing FORMAT still
+-- belongs to EXPLAIN TEXT in the bare form, like the FORMAT itself; the insert keeps its own clause.
 SELECT
     parseQueryToJSON(
         'EXPLAIN TEXT INSERT INTO t SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 2')
     = parseQueryToJSON(
-        'EXPLAIN TEXT (INSERT INTO t SETTINGS max_threads = 2 SELECT 1) FORMAT JSONEachRow')
+        'EXPLAIN TEXT (INSERT INTO t SELECT 1) FORMAT JSONEachRow SETTINGS max_threads = 2')
 SETTINGS allow_settings_after_format_in_insert = 1;
+SELECT formatQuerySingleLine(formatQueryFromJSON(parseQueryToJSON(
+    'EXPLAIN TEXT INSERT INTO t SETTINGS async_insert = 1 SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 2')))
+SETTINGS allow_settings_after_format_in_insert = 1;
+-- `EXECUTE AS` has no JSON form, so the wrapped shape is executed; the setting reaches EXPLAIN TEXT
+-- as an outer setting and the source keeps none.
+SET allow_settings_after_format_in_insert = 1;
+EXPLAIN TEXT EXECUTE AS u INSERT INTO t SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 2;
+SET allow_settings_after_format_in_insert = 0;
 
 -- SQL and JSON formatting must preserve the original AST.
 -- `INTO OUTFILE` occurs only inside a string passed to the parser.

@@ -284,7 +284,9 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
-        ParserQuery p(end, allow_settings_after_format_in_insert, false, parse_output_options);
+        /// inside a bare `EXPLAIN TEXT` (no output options) a `SETTINGS` after the insert's
+        /// `FORMAT` travels upward with the `FORMAT`, so the insert parser must leave it alone
+        ParserQuery p(end, allow_settings_after_format_in_insert && parse_output_options, false, parse_output_options);
         bool parsed_query = false;
         if (p.parse(pos, query, expected))
         {

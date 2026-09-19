@@ -258,7 +258,10 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         return true;
     }
 
-    ParserQuery source_parser(end, allow_settings_after_format_in_insert, false, false);
+    /// A `SETTINGS` clause after the trailing `FORMAT` of an `INSERT ... SELECT` belongs to
+    /// `EXPLAIN TEXT` like the `FORMAT` itself, whatever `allow_settings_after_format_in_insert`
+    /// says, so the insert parser must not consume it here; the outer `ParserQueryWithOutput` will.
+    ParserQuery source_parser(end, /*allow_settings_after_format_in_insert=*/ false, /*implicit_select=*/ false, /*parse_output_options=*/ false);
     if (!source_parser.parse(pos, query, expected))
         return false;
 
