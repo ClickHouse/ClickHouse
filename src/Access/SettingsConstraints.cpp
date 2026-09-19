@@ -468,11 +468,11 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                 "supported. Remove '{} = 0' from the query, the session, the settings profile and the client configuration. "
                 "To compare with the old query analysis, use a ClickHouse version older than v26.9",
                 change.name, change.name);
-        /// Not on the clamp paths. They are reached for a query that another server sent to this one,
-        /// and the analyzer is still turned off for a whole query by a few remaining internal code
-        /// paths on the initiator (`EXPLAIN AST`, a view read by the old interpreter); the servers of a
-        /// cluster have to keep agreeing on how such a query is analyzed. Dropping the change instead
-        /// would make the initiator and this server disagree.
+        /// Not on the clamp paths: there the change is left alone rather than refused. They are
+        /// reached for a change this server did not author - a query that another server sent to this
+        /// one - and an initiator older than v26.9 still sends a `0`, because that is how it analyzes
+        /// the query itself. The value decides nothing here anymore: it is normalized at the start of
+        /// the query, before anything can read it.
         return true;
     }
 
