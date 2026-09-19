@@ -4673,6 +4673,22 @@ class QueryResultElement extends HTMLElement
         this.applyColumnColors();
     }
 
+    /// Drop the currently shown preview without waiting for the real result. Two callers:
+    /// an EMPTY `preview` packet - the intermediate result became empty (`HAVING`, `OFFSET`,
+    /// `LIMIT`), which is a preview state of its own and must not leave the rows of the previous
+    /// preview on the screen - and a query that failed before any real row arrived, where the error
+    /// replaces the result and an obsolete preview must not stay next to it.
+    clearPreview()
+    {
+        /// The real result is authoritative: it is not a preview and must never be cleared here.
+        if (this._received_real_meta) return;
+        if (!this._dataTable.classList.contains('preview')) return;
+        this._clearElement(this._dataTable);
+        this._dataTable.classList.remove('preview');
+        this._header = {};
+        this._row_idx = 0;
+    }
+
     appendRow(row, fragment)
     {
         if (this._row_idx >= this._max_rows || (1 + this._row_idx) * Object.keys(this._header).length > this._max_cells)
@@ -10096,7 +10112,10 @@ function makeEventStreamHandler(targetResultEl, options = {})
                 else
                     preview_rows.push(Object.fromEntries(preview_names.map((n, i) => [n, json[i]])));
             }
+            /// An empty payload is an empty preview: the intermediate result has no rows any more,
+            /// so the previous preview must be taken off the screen rather than left standing.
             if (preview_meta) targetResultEl.updatePreview(preview_meta, preview_rows);
+            else targetResultEl.clearPreview();
         }
         else if (name === 'progress')
         {
@@ -10132,7 +10151,10 @@ function makeEventStreamHandler(targetResultEl, options = {})
         }
         else if (name === 'exception')
         {
-            /// The payload is `{"exception": "..."}`, handled by `update` as an error.
+            /// The payload is `{"exception": "..."}`, handled by `update` as an error. A query that
+            /// fails after a few previews but before the first real row would otherwise keep the
+            /// last preview on the screen next to the error message.
+            targetResultEl.clearPreview();
             if (dataLines[0]) targetResultEl.update(JSON.parse(dataLines[0]));
             if (options.onException) options.onException();
         }
