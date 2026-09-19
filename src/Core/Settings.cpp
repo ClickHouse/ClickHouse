@@ -136,7 +136,7 @@ Supported values:
 - `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
 - `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
-- `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
+- `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table or a Distributed table over per-shard TimeSeries tables, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
 )", 0)\
@@ -6448,6 +6448,26 @@ Result:
 └────────┘
 ```
 )", 0) \
+    DECLARE(String, insert_expected_table_engine, "", R"(
+If not empty, an `INSERT` is refused unless the table it names has this engine, checked on the table the `INSERT` resolves when it is executed (for an asynchronous insert, when the queue flushes it). Once the table passes, the requirement is consumed: the writes that table makes on its own, into its inner tables or through materialized views, are not checked. A `Distributed` table is not checked itself but forwards the setting to its shards, as any query setting, where each shard's insert checks the table it resolves.
+
+Remote write over a `Distributed` table sets it to `TimeSeries`, so that a shard-local table swapped for one of another engine after the initiator's check refuses the batch where the insert resolves it, instead of taking it.
+
+Possible values:
+
+- An empty string (no check) or a table engine name, for example `TimeSeries`.
+)", 0) \
+    DECLARE(Map, insert_expected_column_types, "", R"(
+If not empty, an `INSERT` is refused unless the table it names declares these columns with exactly these types, checked with `insert_expected_table_engine` and consumed with it. A `Distributed` table forwards the setting to its shards instead of checking itself.
+
+Remote write over a `Distributed` table sets it to the `time_series` type the table declares, so that a shard-local table swapped for a `TimeSeries` table of another type refuses the batch instead of having the sink convert the samples into it.
+
+**Example**
+
+```sql
+INSERT INTO t SETTINGS insert_expected_column_types = {'time_series': 'Array(Tuple(DateTime64(3), Float64))'} VALUES (...)
+```
+)", 0) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
@@ -9396,7 +9416,7 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 )", PRIVATE_PREVIEW) \
     \
     DECLARE(String, promql_table, "", R"(
-Specifies the name of a TimeSeries table used by the 'promql' dialect.
+Specifies the name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables, used by the 'promql' dialect.
 )", PRIVATE_PREVIEW) \
     \
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
