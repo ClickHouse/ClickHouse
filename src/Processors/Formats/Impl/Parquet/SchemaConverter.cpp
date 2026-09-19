@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
 #include <Common/checkStackSize.h>
@@ -313,7 +314,8 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
-        !processSubtreeArrayInner(node))
+        !processSubtreeArrayInner(node) &&
+        !processSubtreeDynamic(node))
     {
         processSubtreeTuple(node);
     }
@@ -682,6 +684,139 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
         if (elem.__isset.num_children && elem.num_children > 0)
             stack.push_back(size_t(elem.num_children));
     }
+    return true;
+}
+
+static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx)
+{
+    size_t remaining = 1;
+    while (remaining > 0)
+    {
+        if (idx >= schema.size() || remaining > schema.size())
+            return std::nullopt;
+        const parq::SchemaElement & element = schema[idx];
+        remaining -= 1;
+        if (!isPrimitiveNode(element))
+        {
+            if (element.num_children < 0 || size_t(element.num_children) > schema.size())
+                return std::nullopt;
+            remaining += size_t(element.num_children);
+        }
+        idx += 1;
+    }
+    return idx;
+}
+
+bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
+{
+    if (node.element->num_children != 2 && node.element->num_children != 3)
+        return false;
+    const size_t num_children = size_t(node.element->num_children);
+    if (num_children > file_metadata.schema.size() - schema_idx)
+        return false;
+
+    const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
+
+    enum ChildRole : size_t { Metadata = 0, Value = 1, TypedValue = 2, NumRoles = 3 };
+
+    std::array<std::optional<size_t>, NumRoles> schema_idx_of_role;
+    std::vector<size_t> role_of_child(num_children);
+    size_t child_schema_idx = schema_idx;
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema[child_schema_idx];
+        size_t role;
+        if (child.name == "metadata")
+            role = Metadata;
+        else if (child.name == "value")
+            role = Value;
+        else if (child.name == "typed_value")
+            role = TypedValue;
+        else
+            return false;
+
+        if (schema_idx_of_role[role].has_value())
+            return false;
+        schema_idx_of_role[role] = child_schema_idx;
+        role_of_child[i] = role;
+
+        std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_schema_idx);
+        if (!end.has_value())
+            return false;
+        child_schema_idx = *end;
+    }
+
+    if (!schema_idx_of_role[Metadata].has_value())
+        return false;
+    if (!schema_idx_of_role[Value].has_value() && !schema_idx_of_role[TypedValue].has_value())
+        return false;
+
+    /// `metadata` and `value` hold variant-encoded blobs: unannotated BYTE_ARRAY, not an array.
+    auto is_variant_blob_leaf = [&](size_t idx)
+    {
+        const parq::SchemaElement & element = file_metadata.schema[idx];
+        return isPrimitiveNode(element)
+            && element.type == parq::Type::BYTE_ARRAY
+            && element.repetition_type != parq::FieldRepetitionType::REPEATED
+            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+    };
+
+    if (!is_variant_blob_leaf(*schema_idx_of_role[Metadata]))
+        return false;
+    if (schema_idx_of_role[Value].has_value() && !is_variant_blob_leaf(*schema_idx_of_role[Value]))
+        return false;
+
+    if (node.type_hint && !WhichDataType(node.type_hint->getTypeId()).isDynamic())
+        return false;
+
+    if (schema_idx_of_role[TypedValue].has_value()
+        && !isPrimitiveNode(file_metadata.schema[*schema_idx_of_role[TypedValue]]))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Parquet column {} is a variant whose `typed_value` is a group, i.e. an object or array "
+            "shredded into separate columns. Only shredding into a primitive type is supported.",
+            node.getNameForLogging());
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+
+    std::array<std::optional<size_t>, NumRoles> output_idx_of_role;
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        subnode.requested = node.requested;
+        processSubtree(subnode);
+        output_idx_of_role[role_of_child[i]] = subnode.output_idx;
+    }
+
+    if (!node.requested)
+        return true;
+
+    bool all_children_read = true;
+    for (size_t i = 0; i < num_children; ++i)
+        all_children_read &= output_idx_of_role[role_of_child[i]].has_value();
+
+    if (!all_children_read)
+    {
+        primitive_columns.resize(primitive_start);
+        output_columns.resize(output_start);
+        return true;
+    }
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.input_type = std::make_shared<DataTypeDynamic>();
+    output.output_type = output.input_type;
+    output.nested_columns = {output_idx_of_role[Metadata].value()};
+    output.variant_has_value = output_idx_of_role[Value].has_value();
+    if (output.variant_has_value)
+        output.nested_columns.push_back(output_idx_of_role[Value].value());
+    output.variant_has_typed_value = output_idx_of_role[TypedValue].has_value();
+    if (output.variant_has_typed_value)
+        output.nested_columns.push_back(output_idx_of_role[TypedValue].value());
     return true;
 }
 
