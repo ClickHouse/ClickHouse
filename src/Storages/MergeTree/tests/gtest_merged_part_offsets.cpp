@@ -367,6 +367,61 @@ TEST(PackedPartOffsetsTest, SingleValueConsecutive)
     EXPECT_EQ(offsets[0], 777);
 }
 
+// Parts that are disjoint apart from a few interleaved rows: pages 0 and 2 and the partial tail hold
+// consecutive values while page 1 carries a gap, so the pages of one map disagree
+TEST(PackedPartOffsetsTest, MixedConsecutiveAndPackedPages)
+{
+    PackedPartOffsets offsets;
+
+    const size_t tail = 500;
+    std::vector<UInt64> values;
+    values.reserve((3 * TEST_PAGE_SIZE) + tail);
+
+    UInt64 current = 9000;
+    for (size_t page = 0; page < 3; ++page)
+    {
+        for (size_t i = 0; i < TEST_PAGE_SIZE; ++i)
+        {
+            if (page == 1 && i == TEST_PAGE_SIZE / 2)
+                current += 7;
+            values.push_back(current);
+            ++current;
+        }
+    }
+    for (size_t i = 0; i < tail; ++i)
+    {
+        values.push_back(current);
+        ++current;
+    }
+
+    for (const auto & val : values)
+        offsets.insert(val);
+    offsets.flush();
+
+    for (size_t i = 0; i < values.size(); ++i)
+        EXPECT_EQ(offsets[i], values[i]) << "offset " << i;
+}
+
+// A full page whose only non-unit step is the last one: its values span size(), not size() - 1
+TEST(PackedPartOffsetsTest, ConsecutiveExceptLastValue)
+{
+    PackedPartOffsets offsets;
+
+    constexpr UInt64 first = 42;
+    std::vector<UInt64> values;
+    values.reserve(TEST_PAGE_SIZE);
+    for (size_t i = 0; i + 1 < TEST_PAGE_SIZE; ++i)
+        values.push_back(first + i);
+    values.push_back(values.back() + 2);
+
+    for (const auto & val : values)
+        offsets.insert(val);
+    offsets.flush();
+
+    for (size_t i = 0; i < values.size(); ++i)
+        EXPECT_EQ(offsets[i], values[i]) << "offset " << i;
+}
+
 //////////////////////////
 // MergedPartOffsets Tests
 //////////////////////////
