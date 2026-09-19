@@ -150,6 +150,65 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         {
             const Summary combined = sliding_sum.getCurrentSum();
 
+            if (exact_rate)
+            {
+                if (combined.count == 0)
+                    return std::nullopt;
+
+                const auto & last_removed = sliding_sum.getLastRemoved();
+                const TimestampType last_timestamp = combined.last_timestamp;
+                const ValueType last_value = combined.last_value;
+                const Float64 total_resets = combined.resets;
+
+                // Check if last_removed sample is valid and within staleness window.
+                bool has_prev = false;
+                ValueType prev_value = 0;
+                TimestampType prev_timestamp = 0;
+
+                if (last_removed.has_value())
+                {
+                    const auto & prev_summary = last_removed->second;
+                    Int64 sample_ts = toInt64(prev_summary.last_timestamp);
+                    Int64 cut_off_ts = toInt64(grid_timestamp) - toInt64(window);
+                    if (sample_ts <= cut_off_ts && (cut_off_ts - sample_ts) <= toInt64(window))
+                    {
+                        has_prev = true;
+                        prev_timestamp = prev_summary.last_timestamp;
+                        prev_value = prev_summary.last_value;
+                    }
+                }
+
+                Float64 value_difference = 0.0;
+                if (has_prev)
+                {
+                    const TimestampType time_difference = last_timestamp - prev_timestamp;
+                    if (time_difference == 0)
+                        return std::nullopt;
+
+                    Float64 resets_from_prev = (check_resets && prev_value > combined.first_value)
+                        ? static_cast<Float64>(prev_value) : 0.0;
+                    value_difference = last_value - prev_value + total_resets + resets_from_prev;
+                }
+                else
+                {
+                    if (combined.count < 2)
+                        return std::nullopt;
+
+                    const TimestampType time_difference = last_timestamp - combined.first_timestamp;
+                    if (time_difference == 0)
+                        return std::nullopt;
+
+                    value_difference = last_value - combined.first_value + total_resets;
+                }
+
+                Float64 factor = 1.0;
+                if constexpr (is_rate)
+                    factor = static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
+
+                value_difference *= factor;
+                return static_cast<ValueType>(value_difference);
+            }
+
             /// Need at least two samples to calculate the rate or delta.
             if (combined.count < 2)
                 return std::nullopt;
@@ -161,63 +220,52 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             const UInt64 total_count = combined.count;
             const Float64 total_resets = combined.resets;
 
-            /// The extrapolation logic is copied from Prometheus' rate calculation
-            /// (https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127),
-            /// licensed under the Apache License 2.0.
+            /// Extrapolation logic follows Prometheus' rate calculation (Apache 2.0).
             const TimestampType time_difference = last_timestamp - first_timestamp;
             if (time_difference == 0)
                 return std::nullopt;
 
             Float64 value_difference = last_value - first_value + total_resets;
 
-            Float64 factor = 1.0;
-            if (exact_rate)
+            // Duration between first/last samples and boundary of range. Subtract in Int128
+            // to avoid signed overflow and Float64 precision loss with large timestamps.
+            Float64 duration_to_start = static_cast<Float64>(
+                static_cast<Int128>(static_cast<Int64>(first_timestamp))
+                - static_cast<Int128>(static_cast<Int64>(grid_timestamp))
+                + static_cast<Int128>(static_cast<Int64>(window)));
+            Float64 duration_to_end = static_cast<Float64>(
+                static_cast<Int128>(static_cast<Int64>(grid_timestamp))
+                - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
+
+            const auto sampled_interval = time_difference;
+            const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(total_count - 1);
+
+            // Extrapolate to boundary if samples are close enough (within 10% of avg duration);
+            // otherwise extrapolate by half of the average duration between samples.
+            const auto extrapolation_threshold = average_duration_between_samples * 1.1;
+            Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
+
+            if (duration_to_start >= extrapolation_threshold)
+                duration_to_start = average_duration_between_samples / 2;
+
+            if (check_resets && value_difference > 0 && first_value >= 0)
             {
-                if constexpr (is_rate)
-                    factor = static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
+                // Counters cannot be negative; extrapolate zero point if closer than
+                // duration_to_start, avoiding extrapolation to negative counter values.
+                Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
+                duration_to_start = std::min(duration_to_zero, duration_to_start);
             }
-            else
-            {
-                // Duration between first/last samples and boundary of range. Subtract in Int128
-                // to avoid signed overflow and Float64 precision loss with large timestamps.
-                Float64 duration_to_start = static_cast<Float64>(
-                    static_cast<Int128>(static_cast<Int64>(first_timestamp))
-                    - static_cast<Int128>(static_cast<Int64>(grid_timestamp))
-                    + static_cast<Int128>(static_cast<Int64>(window)));
-                Float64 duration_to_end = static_cast<Float64>(
-                    static_cast<Int128>(static_cast<Int64>(grid_timestamp))
-                    - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
 
-                const auto sampled_interval = time_difference;
-                const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(total_count - 1);
+            extrapolate_to_interval += duration_to_start;
 
-                // Extrapolate to boundary if samples are close enough (within 10% of avg duration);
-                // otherwise extrapolate by half of the average duration between samples.
-                const auto extrapolation_threshold = average_duration_between_samples * 1.1;
-                Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
+            if (duration_to_end >= extrapolation_threshold)
+                duration_to_end = average_duration_between_samples / 2;
+            extrapolate_to_interval += duration_to_end;
 
-                if (duration_to_start >= extrapolation_threshold)
-                    duration_to_start = average_duration_between_samples / 2;
+            Float64 factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
 
-                if (check_resets && value_difference > 0 && first_value >= 0)
-                {
-                    // Counters cannot be negative; extrapolate zero point if closer than
-                    // duration_to_start, avoiding extrapolation to negative counter values.
-                    Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
-                    duration_to_start = std::min(duration_to_zero, duration_to_start);
-                }
-
-                extrapolate_to_interval += duration_to_start;
-
-                if (duration_to_end >= extrapolation_threshold)
-                    duration_to_end = average_duration_between_samples / 2;
-                extrapolate_to_interval += duration_to_end;
-
-                factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
-
-                if constexpr (is_rate)
-                    factor = factor * static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
-            }
+            if constexpr (is_rate)
+                factor = factor * static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
 
             value_difference *= factor;
 

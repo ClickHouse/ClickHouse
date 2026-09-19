@@ -79,9 +79,11 @@ public:
         {
             while (!window.empty() && window.front().first <= cut_off)
             {
-                const SummaryType leaving = std::move(window.front().second);
+                SummaryType leaving = std::move(window.front().second);
+                TimestampType ts = window.front().first;
                 window.pop_front();
                 current_sum.unmerge(leaving, window.empty() ? nullptr : &window.front().second);
+                last_removed = {ts, std::move(leaving)};
             }
         }
         else if (use_two_stacks)
@@ -149,6 +151,9 @@ public:
             }
             return current_sum;
         }
+    const std::optional<std::pair<TimestampType, SummaryType>> & getLastRemoved() const
+    {
+        return last_removed;
     }
 
 private:
@@ -162,6 +167,7 @@ private:
     bool use_two_stacks;
     mutable SummaryType current_sum;
     mutable bool current_sum_valid;
+    std::optional<std::pair<TimestampType, SummaryType>> last_removed;
     VectorWithMemoryTracking<StackEntry> back_stack;   /// two-stacks: newer values; pushed here
     VectorWithMemoryTracking<StackEntry> front_stack;  /// two-stacks: older values; popped here
     DequeWithMemoryTracking<std::pair<TimestampType, SummaryType>> window;  /// invertible/recompute: in-window values in time order

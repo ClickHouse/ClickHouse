@@ -12,3 +12,9 @@
 [5]
 [20]
 [0.5]
+--- Sliding window carries the previous sample ---
+[NULL,10,10]
+[NULL,10,10]
+--- Counter reset across window boundaries ---
+[NULL,10,15]
+

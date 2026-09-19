@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool promql_exact_rate;
+}
+
 void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFactory & factory)
 {

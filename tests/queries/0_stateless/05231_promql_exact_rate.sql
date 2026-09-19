@@ -22,3 +22,11 @@ SELECT '--- Counter reset with promql_exact_rate = 1 ---';
 SELECT timeSeriesDeltaToGrid(120, 120, 1, 40)([90, 100, 120]::Array(UInt32), [15, 5, 20]::Array(Float64));
 SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40)([90, 100, 120]::Array(UInt32), [15, 5, 20]::Array(Float64));
 SELECT timeSeriesRateToGrid(120, 120, 1, 40)([90, 100, 120]::Array(UInt32), [15, 5, 20]::Array(Float64));
+
+SELECT '--- Sliding window carries the previous sample ---';
+SELECT timeSeriesIncreaseToGrid(100, 120, 10, 10)([100, 110, 120]::Array(UInt32), [10, 20, 30]::Array(Float64));
+SELECT timeSeriesDeltaToGrid(100, 120, 10, 10)([100, 110, 120]::Array(UInt32), [10, 20, 30]::Array(Float64));
+
+SELECT '--- Counter reset across window boundaries ---';
+SELECT timeSeriesIncreaseToGrid(100, 120, 10, 10)([100, 110, 120]::Array(UInt32), [100, 10, 25]::Array(Float64));
+
