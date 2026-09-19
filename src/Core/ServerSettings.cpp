@@ -592,8 +592,11 @@ This setting can be modified at runtime and will take effect immediately. Querie
 </Note>
 )", 0) \
     DECLARE(UInt64, max_waiting_queries, 0, R"(
-Limit on total number of concurrently waiting queries.
-Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases).
+Limit on total number of concurrently waiting queries, excluding internal queries.
+Execution of a waiting query is blocked while an asynchronous load or startup job it needs is still running: loading a table, starting up a table or a database, or starting up the distributed DDL worker (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases)).
+The limit covers queries waiting to execute. It does not cover the rollback of a query it already
+refused: that rollback can block until a job the query had scheduled finishes, for example the startup
+of a database a refused `CREATE DATABASE` had already attached.
 
 <Note>
 Waiting queries are not counted when limits controlled by the following settings are checked:
@@ -605,6 +608,10 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
+A query that stops waiting takes its place in these limits back before it continues, and is still counted
+as waiting until it has one. If a limit is full at that moment, the query waits for up to
+`queue_max_wait_ms`, and is refused only if the limit is still full then. Note that a query that has just arrived waits like that only for
+`max_concurrent_queries`, and is refused right away by the other four.
 </Note>
 
 <Note>
@@ -612,6 +619,7 @@ This correction is done to avoid hitting these limits just after server startup.
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+The limit is checked when a query starts waiting, so lowering it does not refuse queries that are already waiting.
 </Note>
 )", 0) \
     \

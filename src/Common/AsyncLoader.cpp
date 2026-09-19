@@ -472,7 +472,7 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool)
 void AsyncLoader::wait(const LoadJobPtr & job, bool no_throw)
 {
     std::unique_lock job_lock{job->mutex};
-    wait(job_lock, job);
+    wait(job_lock, job, /* run_waiter_callbacks = */ true);
     if (!no_throw && job->load_exception)
         throw Exception(ErrorCodes::ASYNC_LOAD_WAIT_FAILED, "Waited job failed: {}", getExceptionMessage(job->load_exception, /* with_stacktrace = */ false));
 }
@@ -507,7 +507,11 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             chassert(info->second.isExecuting());
             lock.unlock();
-            wait(job, /* no_throw = */ true); // Wait for job to finish
+            {
+                // Wait for job to finish. `~LoadTask` is noexcept, so this wait must not be refusable.
+                std::unique_lock job_lock{job->mutex};
+                wait(job_lock, job, /* run_waiter_callbacks = */ false);
+            }
             lock.lock();
         }
     }
@@ -779,7 +783,7 @@ bool static detectWaitDependentDeadlock(const LoadJobPtr & waited)
     return false;
 }
 
-void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job)
+void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job, bool run_waiter_callbacks)
 {
     // Ensure job we are going to wait was scheduled to avoid "wait not scheduled" deadlocks
     if (job->job_id == 0)
@@ -847,7 +851,7 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     if (log_events)
         LOG_DEBUG(log, "Wait load job '{}' in {}", job->name, getPoolName(job->pool_id));
 
-    if (job->on_waiters_increment)
+    if (run_waiter_callbacks && job->on_waiters_increment)
         job->on_waiters_increment(job);
 
     // WARNING: it is important not to throw below this point to avoid `on_waiters_increment` call w/o matching `on_waiters_decrement` call
@@ -858,8 +862,28 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     job->waiters--;
     ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
 
-    if (job->on_waiters_decrement)
-        job->on_waiters_decrement(job);
+    if (run_waiter_callbacks && job->on_waiters_decrement)
+    {
+        // Called without the job mutex, because taking back what the wait gave up can block on
+        // another thread. The handler is copied: the last waiter to leave clears it, and with the
+        // mutex released that can happen while this call is in progress.
+        auto on_waiters_decrement = job->on_waiters_decrement;
+        std::exception_ptr refusal;
+        job_lock.unlock();
+        try
+        {
+            on_waiters_decrement(job);
+        }
+        catch (...) // Ok: rethrown below unless the job itself failed
+        {
+            refusal = std::current_exception();
+        }
+        job_lock.lock();
+        // A job that failed or was canceled is what this thread waited for and has to hear about, so
+        // the handler's refusal gives way to the job's own exception.
+        if (refusal && !job->load_exception)
+            std::rethrow_exception(refusal);
+    }
 
     if (job->waiters == 0)
     {

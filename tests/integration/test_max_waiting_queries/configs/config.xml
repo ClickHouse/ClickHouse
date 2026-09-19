@@ -1,0 +1,8 @@
+<clickhouse>
+    <async_load_databases>true</async_load_databases>
+    <max_concurrent_queries>0</max_concurrent_queries>
+    <max_waiting_queries>2</max_waiting_queries>
+    <fail_points_active>
+        <database_replicated_startup_pause>false</database_replicated_startup_pause>
+    </fail_points_active>
+</clickhouse>

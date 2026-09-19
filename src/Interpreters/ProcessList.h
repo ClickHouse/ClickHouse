@@ -41,6 +41,8 @@ class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
+class LoadJob;
+using LoadJobPtr = std::shared_ptr<LoadJob>;
 class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -144,8 +146,12 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
+    /// Guards this query's transition between waiting for load jobs and not waiting: the first
+    /// blocked thread registers the query in the waiting counters, the last one to wake up
+    /// unregisters it. Taken only when a thread enters or leaves a wait, never during query admission.
+    std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
-    std::atomic<UInt64> waiting_threads{0};
+    UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
 
     /// For initialization of ProcessListForUser during process insertion.
     void setUserProcessList(ProcessListForUser * user_process_list_);
@@ -205,6 +211,10 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
+
+    /// `isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port`, as computed
+    /// by `insert`. Such a query is exempt from the concurrency limits.
+    bool is_unlimited = false;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -295,6 +305,11 @@ public:
         return is_internal;
     }
 
+    bool isUnlimited() const
+    {
+        return is_unlimited;
+    }
+
     /// Manually release all acquired workload resources.
     void releaseWorkloadResources();
 
@@ -348,6 +363,9 @@ struct ProcessListForUser
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
+
+    /// Number of queries of this user that are waiting for load jobs
+    std::atomic<UInt64> waiting_queries_amount{0};
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
@@ -475,10 +493,28 @@ protected:
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
+    /// amounts of queries waiting for load jobs, excludes internal queries
+    std::atomic<UInt64> waiting_queries_amount{0};
+    std::atomic<UInt64> waiting_insert_queries_amount{0};
+    std::atomic<UInt64> waiting_select_queries_amount{0};
+
     /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
+
+    /// WARNING: for non-internal queries only. The increase throws if `max_waiting_queries_amount`
+    /// is reached, in which case the query does not become a waiter and must not be decreased.
+    void increaseWaitingQueryAmount(const QueryStatusPtr & status);
+    void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
+
+    /// The description of a concurrency limit that has no room for `status` to run, if there is one.
+    /// `status` is still counted as waiting, so a limit has room exactly when it would admit one more query.
+    std::optional<String> limitWithoutRoomToResume(const QueryStatusPtr & status, const Settings & settings) const;
+
+    /// Take back the concurrency slot the query gave up when it started waiting, then stop counting it
+    /// as waiting. Blocks while the limits are full and refuses the query if they stay full.
+    void stopWaitingAndReacquireSlot(const QueryStatusPtr & status, const Settings & settings, bool wait_failed);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -512,6 +548,8 @@ public:
     {
         Lock lock(mutex);
         max_size = max_size_;
+        /// A raised limit can admit a query that is waiting for a slot, here or in `insert`.
+        have_space.notify_all();
     }
 
     size_t getMaxSize() const
@@ -524,6 +562,7 @@ public:
     {
         Lock lock(mutex);
         max_insert_queries_amount = max_insert_queries_amount_;
+        have_space.notify_all();
     }
 
     size_t getMaxInsertQueriesAmount() const
@@ -548,6 +587,7 @@ public:
     {
         Lock lock(mutex);
         max_select_queries_amount = max_select_queries_amount_;
+        have_space.notify_all();
     }
 
     size_t getMaxSelectQueriesAmount() const
@@ -567,6 +607,15 @@ public:
         return max_waiting_queries_amount.load();
     }
 
+    /// A query's cancellation is settled: `cancelled_cv` for a thread waiting for that cancellation to
+    /// finish, and `have_space` because a query waiting for a concurrency slot gives up when killed.
+    void notifyCancellationSettled() const { cancelled_cv.notify_all(); have_space.notify_all(); }
+
+    /// Register (unregister) `status` as waiting for load jobs. Unregistering waits for the
+    /// concurrency limits to have room for the query again, so it must run without `LoadJob::mutex`.
+    void incrementWaiters(const QueryStatusPtr & status);
+    void decrementWaiters(const QueryStatusPtr & status, const Settings & settings, bool wait_failed);
+
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
@@ -582,5 +631,11 @@ public:
 
     void killAllQueries();
 };
+
+/// `LoadJob::on_waiters_increment` / `on_waiters_decrement` for load jobs that a user query may have
+/// to wait for. Such a query is registered as waiting in the process list while it is blocked in
+/// `AsyncLoader::wait`; past `max_waiting_queries` the increment throws, which cancels the wait.
+void onLoadJobWaitersIncrement(const LoadJobPtr & job);
+void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 
 }

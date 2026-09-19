@@ -128,10 +128,13 @@ private:
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
 
-    // Handlers that is called by every new waiting thread, just before going to sleep.
+    // Handlers that is called by every new waiting thread, just before going to sleep and after waking up.
     // If `on_waiters_increment` throws, then wait is canceled, and corresponding `on_waiters_decrement` will never be called.
     // It can be used for counting and limits on number of waiters.
-    // Note that implementations are called under `LoadJob::mutex` and should be fast.
+    // Note that `on_waiters_increment` is called under `LoadJob::mutex` and should be fast.
+    // Note that `on_waiters_decrement` is called without that mutex: it is where a waiter takes back what it
+    // gave up for the wait, so it is allowed to block and to throw, which cancels the wait in the same way.
+    // Note that the cleanup wait in `AsyncLoader::remove` does not call them, because it runs in the noexcept `~LoadTask`.
     std::function<void(const LoadJobPtr & self)> on_waiters_increment;
     std::function<void(const LoadJobPtr & self)> on_waiters_decrement;
 
@@ -476,7 +479,9 @@ private:
     void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
-    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
+    // `run_waiter_callbacks` must be false for a wait that cannot be refused: `on_waiters_increment`
+    // may throw to cancel the wait, and `remove` waits from the noexcept `~LoadTask`.
+    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job, bool run_waiter_callbacks);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
     void setCurrentPriority(std::unique_lock<std::mutex> & lock, std::optional<Priority> priority);
