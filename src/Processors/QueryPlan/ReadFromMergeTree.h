@@ -422,6 +422,38 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
+    /// Adopt from another read of the same table, for the same query, everything that
+    /// `optimizePrimaryKeyConditionAndLimit` and `applyFilters` would have produced. A plan optimized
+    /// without that pass has none of it, and a read handed an analysis result never builds it later
+    /// either: `selectRangesToRead` returns the analysis it was given and stops. The ranges are not
+    /// enough on their own, because each of these is consumed separately while reading:
+    ///   - `indexes`, or `supportsSkipIndexesOnDataRead` is false and skip indexes are not applied to
+    ///     granules at all;
+    ///   - the filter actions, or the reader has no condition to record, so the query condition cache is
+    ///     never populated and every later query over the same predicate misses it;
+    ///   - `limit`, which bounds how much an ordered read has to produce;
+    ///   - the filters `FINAL` defers past deduplication, which must not be applied before it.
+    /// They are adopted together rather than one at a time as each turns out to be needed.
+    void adoptFiltersFrom(const ReadFromMergeTree & other)
+    {
+        if (!indexes)
+            indexes = other.indexes;
+
+        if (!filter_actions_dag && other.filter_actions_dag)
+        {
+            filter_actions_dag = other.filter_actions_dag;
+            query_info.filter_actions_dag = filter_actions_dag;
+        }
+
+        if (!limit && other.limit)
+            limit = other.limit;
+
+        if (!deferred_row_level_filter)
+            deferred_row_level_filter = other.deferred_row_level_filter;
+        if (!deferred_prewhere_info)
+            deferred_prewhere_info = other.deferred_prewhere_info;
+    }
+
     /// selectRangesToRead() will always re-analyze
     AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
