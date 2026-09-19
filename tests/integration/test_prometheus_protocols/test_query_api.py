@@ -1,3 +1,5 @@
+import json
+import struct
 import urllib
 import uuid
 
@@ -38,6 +40,10 @@ node = cluster.add_instance(
 STREAM_ERROR_SERIES_COUNT = 32
 STREAM_ERROR_ROW_LIMIT = 16
 
+# Prometheus marks the end of a time series with a special NaN value, the "stale marker".
+# `struct` is used to build it because a literal `float("nan")` would lose the payload bits.
+STALE_MARKER = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
+
 
 def send_to_clickhouse(time_series):
     protobuf = convert_time_series_to_protobuf(time_series)
@@ -55,6 +61,16 @@ def send_test_data():
             ({"__name__": "foo", "shape": "square", "size": "s"}, {110: 4, 130: 40}),
             ({"__name__": "foo", "shape": "triangle", "size": "m"}, {110: 8, 120: 80}),
             ({"__name__": "foo", "shape": "circle", "size": "l"}, {110: 16, 130: 16, 150: 16}),
+        ]
+    )
+    # `stale_marker_metric` / `stale_marker_other` are used by the stale-marker tests: series `a`
+    # ends with a stale marker at 140, series `b` keeps going.
+    send_to_clickhouse(
+        [
+            ({"__name__": "stale_marker_metric", "instance": "a"}, {100: 1, 120: 2, 140: STALE_MARKER}),
+            ({"__name__": "stale_marker_metric", "instance": "b"}, {100: 10, 140: 20}),
+            ({"__name__": "stale_marker_other", "instance": "a"}, {140: 5}),
+            ({"__name__": "stale_marker_other", "instance": "b"}, {140: 50}),
         ]
     )
     # `stream_error` is used by the tests that expect the error only after results have
@@ -226,6 +242,129 @@ def test_error_while_parsing():
     )
     error_message = extract_error_from_http_api_response(response)
     assert "while parsing PromQL query" in error_message
+
+
+# Runs an instant query and returns its result sorted by metric labels, so that tests don't depend
+# on the order in which series are returned.
+def sorted_instant_query_result(query, timestamp):
+    data = json.loads(
+        execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp)
+    )
+    assert data["resultType"] == "vector"
+    return sorted(data["result"], key=lambda item: json.dumps(item["metric"], sort_keys=True))
+
+
+# Runs a range query and returns its result sorted by metric labels.
+def sorted_range_query_result(query, start, end, step):
+    data = json.loads(
+        execute_range_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_range", query, start, end, step
+        )
+    )
+    assert data["resultType"] == "matrix"
+    return sorted(data["result"], key=lambda item: json.dumps(item["metric"], sort_keys=True))
+
+
+def metric_a(name):
+    return {"__name__": name, "instance": "a"}
+
+
+def metric_b(name):
+    return {"__name__": name, "instance": "b"}
+
+
+# Behavior: an instant selector whose latest sample within the lookback window is a stale marker
+# doesn't return the series, even though there are older samples in the window. Range selectors
+# simply skip stale markers.
+def test_stale_marker_hides_series_from_instant_selector():
+    assert sorted_instant_query_result("stale_marker_metric", 125) == [
+        {"metric": metric_a("stale_marker_metric"), "value": [125, "2"]},
+        {"metric": metric_b("stale_marker_metric"), "value": [125, "10"]},
+    ]
+    assert sorted_instant_query_result("stale_marker_metric", 145) == [
+        {"metric": metric_b("stale_marker_metric"), "value": [145, "20"]},
+    ]
+    assert sorted_instant_query_result('stale_marker_metric{instance="a"}', 145) == []
+    # A range selector excludes stale markers, so `last_over_time` finds the older sample of `a`.
+    assert sorted_instant_query_result("last_over_time(stale_marker_metric[1m])", 145) == [
+        {"metric": metric_a("stale_marker_metric"), "value": [145, "2"]},
+        {"metric": metric_b("stale_marker_metric"), "value": [145, "20"]},
+    ]
+
+
+# Behavior: a stale series must be absent not only in a bare selector but also when the selector
+# is composed with operators which decide the presence of a series by the presence of its value:
+# aggregations (`count`, `group`, `sum`), set operators (`and`, `or`, `unless`) and `scalar`.
+def test_stale_marker_hides_series_from_composed_expressions():
+    assert sorted_instant_query_result("count(stale_marker_metric)", 125) == [
+        {"metric": {}, "value": [125, "2"]},
+    ]
+    assert sorted_instant_query_result("count(stale_marker_metric)", 145) == [
+        {"metric": {}, "value": [145, "1"]},
+    ]
+    assert sorted_instant_query_result('count(stale_marker_metric{instance="a"})', 145) == []
+    assert sorted_instant_query_result("group(stale_marker_metric)", 145) == [
+        {"metric": {}, "value": [145, "1"]},
+    ]
+    assert sorted_instant_query_result("sum(stale_marker_metric)", 145) == [
+        {"metric": {}, "value": [145, "20"]},
+    ]
+    assert sorted_instant_query_result("count by (instance) (stale_marker_metric)", 145) == [
+        {"metric": {"instance": "b"}, "value": [145, "1"]},
+    ]
+    assert sorted_instant_query_result("stale_marker_metric and stale_marker_other", 145) == [
+        {"metric": metric_b("stale_marker_metric"), "value": [145, "20"]},
+    ]
+    assert sorted_instant_query_result("stale_marker_metric or stale_marker_other", 145) == [
+        {"metric": metric_b("stale_marker_metric"), "value": [145, "20"]},
+        {"metric": metric_a("stale_marker_other"), "value": [145, "5"]},
+    ]
+    assert sorted_instant_query_result("stale_marker_other unless stale_marker_metric", 145) == [
+        {"metric": metric_a("stale_marker_other"), "value": [145, "5"]},
+    ]
+    assert sorted_instant_query_result("stale_marker_metric + stale_marker_other", 145) == [
+        {"metric": {"instance": "b"}, "value": [145, "70"]},
+    ]
+    # `scalar` returns a scalar result, `vector` wraps it back so that the same helper can be used.
+    assert sorted_instant_query_result("vector(scalar(stale_marker_metric))", 145) == [
+        {"metric": {}, "value": [145, "20"]},
+    ]
+    assert sorted_instant_query_result("absent(stale_marker_metric{instance=\"a\"})", 145) == [
+        {"metric": {"instance": "a"}, "value": [145, "1"]},
+    ]
+
+
+# Behavior: the same in a range query - the steps at which the series is stale are omitted,
+# both for a bare selector and for a selector composed with an aggregation.
+def test_stale_marker_hides_series_from_range_query():
+    assert sorted_range_query_result('stale_marker_metric{instance="a"}', 100, 160, 20) == [
+        {"metric": metric_a("stale_marker_metric"), "values": [[100, "1"], [120, "2"]]},
+    ]
+    assert sorted_range_query_result("count(stale_marker_metric)", 100, 160, 20) == [
+        {"metric": {}, "values": [[100, "2"], [120, "2"], [140, "1"], [160, "1"]]},
+    ]
+    assert sorted_range_query_result("stale_marker_metric and stale_marker_other", 100, 160, 20) == [
+        {"metric": metric_b("stale_marker_metric"), "values": [[140, "20"], [160, "20"]]},
+    ]
+
+
+# Behavior: the Prometheus HTTP API rejects malformed matcher regexes during
+# parsing and returns a Prometheus-style error envelope.
+def test_error_while_parsing_invalid_matcher_regex():
+    response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        'demo_memory_usage_bytes{instance=~"(.*"}',
+        150,
+    )
+    error_message = extract_error_from_http_api_response(response)
+    assert "while parsing PromQL query" in error_message
+    assert (
+        "invalid regular expression" in error_message
+        or "error parsing regexp" in error_message
+        or "missing closing" in error_message
+    )
 
 
 # Checks the case when an exception appears before any block has been written to the response buffer.
