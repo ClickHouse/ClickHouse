@@ -1,0 +1,6 @@
+before the drop	1	3
+after the drop	[10,20,30]	3
+and the same for a Nested subcolumn name
+[1,2]	[3,4]
+a physically written column of that name is dropped as before
+[10,20,30]	3
