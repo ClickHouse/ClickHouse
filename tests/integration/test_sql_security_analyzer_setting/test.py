@@ -35,7 +35,10 @@ def test_definer_profile_cannot_disable_the_analyzer(start_cluster):
 
     node.query("CREATE TABLE src (x UInt8) ENGINE = Memory")
     node.query("CREATE TABLE dst (a UInt8) ENGINE = Memory")
-    node.query("GRANT SELECT, INSERT ON default.* TO definer_user")
+    # No `GRANT` for `definer_user`: it is defined in `users.xml`, and a configuration-defined user
+    # with no `<grants>` section is granted everything already. Granting to it would not be a no-op
+    # but an error - that storage is read-only, so `IAccessStorage::updateImpl` refuses with
+    # `ACCESS_STORAGE_READONLY`.
 
     node.query(
         "CREATE VIEW v DEFINER = definer_user SQL SECURITY DEFINER "
