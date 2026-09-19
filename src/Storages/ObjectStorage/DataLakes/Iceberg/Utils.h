@@ -20,6 +20,7 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -153,7 +154,7 @@ void forEachAvroEntry(
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
 
-using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
+using PartitionColumnValues = std::vector<IdentityPartitionColumn>;
 
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
