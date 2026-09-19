@@ -498,7 +498,16 @@ NamesAndTypesList MergeTreePartition::executePartitionByExpression(const Storage
 
 KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    return adjustPartitionKey(
+        metadata_snapshot->getPartitionKey(), metadata_snapshot->columns, metadata_snapshot->virtuals, context);
+}
+
+KeyDescription MergeTreePartition::adjustPartitionKey(
+    const KeyDescription & partition_key,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context)
+{
     if (!partition_key.definition_ast)
         return partition_key;
 
@@ -508,7 +517,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, columns, virtuals, context);
         return adjusted_partition_key;
     }
 
