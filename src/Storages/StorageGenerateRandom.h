@@ -10,8 +10,10 @@ namespace DB
 
 /// If `fuzzy` is true, tries to generate more "interesting" values. E.g. small numbers are more
 /// likely, and strings sometimes are in datetime format.
+/// `max_json_dynamic_keys` limits how many randomly-generated dynamic paths are added per JSON object.
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy = false);
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng,
+    bool fuzzy = false, UInt64 max_json_dynamic_keys = 5);
 
 /* Generates random data for given schema.
  */
@@ -42,6 +44,7 @@ public:
         size_t num_streams) override;
 
     bool supportsTransactions() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 private:
     UInt64 max_array_length = 10;
     UInt64 max_string_length = 10;
