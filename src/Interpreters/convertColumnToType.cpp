@@ -153,11 +153,11 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
     return from;
 }
 
-void validateConvertedColumn(const ColumnPtr & column, const DataTypePtr & type)
+void validateConvertedColumn(const IColumn & column, const DataTypePtr & type)
 {
-    if (column && containsExponentialTimeDecayingFloat64(type))
+    if (containsExponentialTimeDecayingFloat64(type))
         validateExponentialTimeDecayingFloat64Column(
-            *column, type, "conversion to ExponentialTimeDecayingFloat64");
+            column, type, "conversion to ExponentialTimeDecayingFloat64");
 }
 
 }
@@ -202,7 +202,7 @@ ColumnPtr convertColumnToTypeOrNull(
         {
             auto null_column = to->createColumn();
             null_column->insert(Field());
-            validateConvertedColumn(null_column, to);
+            validateConvertedColumn(*null_column, to);
             return null_column;
         }
         return {};
@@ -210,7 +210,7 @@ ColumnPtr convertColumnToTypeOrNull(
 
     auto column = to->createColumn();
     column->insert(converted);
-    validateConvertedColumn(column, to);
+    validateConvertedColumn(*column, to);
     return column;
 }
 
