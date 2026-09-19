@@ -862,7 +862,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             parallel_replicas_custom_key_ast_to_check
                 = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
 
-            context->setSetting("distributed_group_by_no_merge", 2);
+            /// Skipping the merge on the initiator (distributed_group_by_no_merge=2) is only correct when the
+            /// custom key is a function of the GROUP BY keys, so each group is fully processed by one replica.
+            /// Otherwise (e.g. `SELECT count()`) merging is required, so keep it enabled by default.
+            if (parallel_replicas_custom_key_ast_to_check
+                && customKeyResultCanSkipMerge(query, parallel_replicas_custom_key_ast_to_check, *context))
+                context->setSetting("distributed_group_by_no_merge", 2);
             context->setSetting("prefer_localhost_replica", Field(0));
         }
         else if (
