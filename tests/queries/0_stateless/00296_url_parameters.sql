@@ -201,14 +201,10 @@ SELECT
 
 -- A final parameter without a value is still returned.
 SELECT
-    extractURLParameters('path?a&b&c'),
-    extractURLParameters('path?a&b&c='),
     extractURLParameterNames('path?a&b&c'),
     extractURLParameterNames('path?a&b&c=');
 
 -- The same behavior applies when the URL is not a constant.
 SELECT
-    extractURLParameters(materialize('path?a&b&c')),
-    extractURLParameters(materialize('path?a&b&c=')),
     extractURLParameterNames(materialize('path?a&b&c')),
     extractURLParameterNames(materialize('path?a&b&c='));

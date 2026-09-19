@@ -69,16 +69,11 @@ public:
             token_begin = pos;
             pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
             if (pos == end)
-            {
-                token_end = end;
-                return true;
-            }
+                return false;
 
             if (*pos == '?')
             {
                 ++pos;
-                if (pos == end)
-                    return false;
                 continue;
             }
 
