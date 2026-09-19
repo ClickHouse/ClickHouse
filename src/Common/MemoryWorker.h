@@ -135,6 +135,12 @@ public:
 private:
     uint64_t getMemoryUsage(bool log_error);
 
+#if USE_JEMALLOC
+    /// The amount of live jemalloc allocations (`stats.allocated`) after refreshing the statistics epoch.
+    /// Used to re-baseline the global `MemoryTracker`; it must be fresh regardless of the memory usage source.
+    Int64 getJemallocAllocated();
+#endif
+
     void updateResidentMemoryThread();
 
     ThreadFromGlobalPool update_resident_memory_thread;
@@ -267,6 +273,7 @@ private:
 
     Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
     Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
+    Jemalloc::MibCache<size_t> allocated_mib{"stats.allocated"};
     Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
     Jemalloc::MibCache<size_t> dirty_decay_ms_mib{"arenas.dirty_decay_ms"};
 
