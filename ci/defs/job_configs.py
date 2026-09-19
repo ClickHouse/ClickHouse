@@ -147,6 +147,18 @@ darwin_fast_test_digest_config = Job.CacheDigestConfig(
     + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
 )
 
+# The limited clang-tidy check is configured exactly like the full tidy build, so
+# it shares the build digest, and adds the two files that decide what it reports:
+# its own selection logic and the clang-tidy configuration itself.
+tidy_changed_files_digest_config = Job.CacheDigestConfig(
+    include_paths=build_digest_config.include_paths
+    + [
+        "./ci/jobs/scripts/clang_tidy_changed_files.py",
+        "./.clang-tidy",
+    ],
+    with_git_submodules=True,
+)
+
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
     runs_on=[],  # from parametrize()
@@ -331,6 +343,25 @@ class JobConfigs:
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+    )
+    # The merge queue's clang-tidy gate. The full tidy build above walks the whole
+    # tree and takes hours, which is why the merge queue cannot run it - and why a
+    # pull request that was green on its own can still break clang-tidy on
+    # `master` once it is merged on top of later changes. This job runs clang-tidy
+    # only on the translation units the change touches and reports only the
+    # diagnostics in the changed files, which keeps it cheap and keeps a
+    # pre-existing diagnostic in a widely included header from blocking the queue.
+    # It is a `build_clickhouse.py` build type because it needs that job's
+    # checkout, version and cmake steps verbatim - the tidy cmake configuration is
+    # what makes its diagnostics the same ones the full check reports.
+    tidy_changed_files_job = Job.Config(
+        name=JobNames.CLANG_TIDY_CHANGED_FILES,
+        runs_on=RunnerLabels.ARM_LARGE,
+        command=f'python3 ./ci/jobs/build_clickhouse.py --build-type "{BuildTypes.ARM_TIDY_CHANGED_FILES}"',
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=3600 * 2,
+        digest_config=tidy_changed_files_digest_config,
+        needs_submodules=True,
     )
     build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[

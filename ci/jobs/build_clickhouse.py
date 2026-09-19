@@ -4,6 +4,7 @@ import os
 import shutil
 
 from ci.defs.defs import BuildTypes, ToolSet
+from ci.jobs.scripts import clang_tidy_changed_files
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -63,6 +64,15 @@ PR_CACHE_WARMUP_TO_RELEASE = {
 PR_CACHE_WARMUP_BUILD_TYPES = set(PR_CACHE_WARMUP_TO_RELEASE)
 for _warmup_type, _release_type in PR_CACHE_WARMUP_TO_RELEASE.items():
     BUILD_TYPE_TO_CMAKE[_warmup_type] = BUILD_TYPE_TO_CMAKE[_release_type]
+
+# The limited clang-tidy check (merge queue) uses the full tidy build's cmake
+# configuration verbatim - that is what makes the diagnostics it reports the same
+# ones the full check would report. It differs only in what happens in place of
+# the build: see the `ARM_TIDY_CHANGED_FILES` branch below and
+# ci/jobs/scripts/clang_tidy_changed_files.py.
+BUILD_TYPE_TO_CMAKE[BuildTypes.ARM_TIDY_CHANGED_FILES] = BUILD_TYPE_TO_CMAKE[
+    BuildTypes.ARM_TIDY
+]
 
 # Only the release builds are packaged: their packages are what gets published, and what
 # the `Install packages` and `Compatibility check` jobs install. The debug, sanitizer and
@@ -409,6 +419,24 @@ def main():
 
     # Activate FIPS-permissive config for OpenSSL
     os.environ["OPENSSL_CONF"] = "/etc/ssl/openssl.cnf"
+
+    # The limited clang-tidy check has no build of its own: instead of compiling
+    # the tree it generates only the sources the affected translation units are
+    # built against and runs clang-tidy on those translation units. Everything
+    # after this point - packaging, the unit tests, the profile upload - belongs
+    # to a real build, so the job is completed here.
+    if build_type == BuildTypes.ARM_TIDY_CHANGED_FILES:
+        if res and JobStages.BUILD in stages:
+            results.append(
+                clang_tidy_changed_files.run(
+                    changed_files=clang_tidy_changed_files.changed_files_from_ci(info),
+                    repo_dir=repo_path_normalized,
+                    build_dir=build_dir_normalized,
+                    temp_dir=temp_dir,
+                )
+            )
+        Result.create_from(results=results).complete_job()
+        return
 
     files = []
     if res and JobStages.BUILD in stages:
