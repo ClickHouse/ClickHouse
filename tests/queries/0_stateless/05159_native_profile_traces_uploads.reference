@@ -1,0 +1,3 @@
+external uploads finish and retain enabled trace samples
+INSERT and input uploads retain samples and complete every row
+upload exceptions preserve the error without waiting for trace collection

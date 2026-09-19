@@ -1,0 +1,18 @@
+compression=true, full query ID
+1
+compression=false, full query ID
+1
+traces before the INSERT schema preserve the server exception
+1
+SQL setting enables trace packets
+1
+disabled delivery emits no traces
+1
+SQL setting disables trace packets
+1
+connection reuse resets packet readers and query subscriptions
+1
+remote traces, use_hedged_requests=0
+1
+remote traces, use_hedged_requests=1
+1

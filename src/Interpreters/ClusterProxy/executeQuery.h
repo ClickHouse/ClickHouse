@@ -95,6 +95,11 @@ bool isInitiatorOnlySettingName(std::string_view name);
 /// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 
+/// Prepare an already-cloned secondary query before SQL or `QueryPlan` serialization. In addition to
+/// initiator-only settings, remove trace opt-ins carried by the wire settings and prune empty clauses.
+/// This transport rewrite must not be applied to queued DDL containing stored query definitions.
+void prepareSecondaryQueryAST(const ASTPtr & query);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)

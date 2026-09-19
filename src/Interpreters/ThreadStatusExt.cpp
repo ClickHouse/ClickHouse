@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileTraces.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
@@ -321,6 +322,40 @@ void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEvents
     current_thread->attachInternalProfileEventsQueue(queue);
 }
 
+void ThreadGroup::attachInternalProfileTracesQueue(const InternalProfileTracesQueuePtr & queue)
+{
+    std::lock_guard lock(mutex);
+    shared_data.profile_traces_queue = queue;
+    shared_data.profile_traces_id = queue ? queue->getId() : 0;
+}
+
+void ThreadStatus::attachInternalProfileTracesQueue(const InternalProfileTracesQueuePtr & queue)
+{
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
+
+    local_data.profile_traces_queue = queue;
+    local_data.profile_traces_id = queue ? queue->getId() : 0;
+    profile_traces_id.store(local_data.profile_traces_id, std::memory_order_relaxed);
+    thread_group->attachInternalProfileTracesQueue(queue);
+}
+
+InternalProfileTracesQueuePtr ThreadStatus::getInternalProfileTracesQueue() const
+{
+    return local_data.profile_traces_queue.lock();
+}
+
+void CurrentThread::attachInternalProfileTracesQueue(const InternalProfileTracesQueuePtr & queue)
+{
+    if (current_thread)
+        current_thread->attachInternalProfileTracesQueue(queue);
+}
+
+InternalProfileTracesQueuePtr CurrentThread::getInternalProfileTracesQueue()
+{
+    return current_thread ? current_thread->getInternalProfileTracesQueue() : nullptr;
+}
+
 void CurrentThread::attachQueryForLog(const String & query_)
 {
     if (unlikely(!current_thread))
@@ -401,6 +436,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         fatal_error_callback = thread_group->fatal_error_callback;
 
         local_data = thread_group->getSharedData();
+        profile_traces_id.store(local_data.profile_traces_id, std::memory_order_relaxed);
 
         applyGlobalSettings();
         applyQuerySettings();
@@ -429,6 +465,8 @@ void ThreadStatus::detachFromGroup()
 {
     if (!thread_group)
         return;
+
+    profile_traces_id.store(0, std::memory_order_relaxed);
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 

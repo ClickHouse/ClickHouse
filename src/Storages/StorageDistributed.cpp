@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -1179,16 +1180,17 @@ static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
     /// `default_settings`), pruning emptied clauses.
     if (query.select)
     {
-        ClusterProxy::stripInitiatorOnlySettingsFromQuery(query.select);
+        ClusterProxy::prepareSecondaryQueryAST(query.select);
         if (auto * union_query = query.select->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
             for (const auto & arm : union_query->list_of_selects->children)
-                ClusterProxy::stripInitiatorOnlySettingsFromQuery(arm);
+                ClusterProxy::prepareSecondaryQueryAST(arm);
     }
 
     if (!query.settings_ast)
         return;
 
     auto & set_query = query.settings_ast->as<ASTSetQuery &>();
+    stripProfileTraceOptInsFromQuery(query.settings_ast);
     strip_set_query(set_query);
 
     /// `ASTInsertQuery::formatImpl` always prints a bare `SETTINGS` keyword when `settings_ast` is set,
