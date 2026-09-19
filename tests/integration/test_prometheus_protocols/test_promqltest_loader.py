@@ -2,6 +2,7 @@ import textwrap
 from pathlib import Path
 
 from . import promqltest_loader as loader
+from . import update_compliance_baseline
 
 
 def test_parse_duration():
@@ -54,6 +55,10 @@ def test_parse_sort_ordered_and_trig_and_fail(tmp_path: Path):
             {group="production", instance="0"} 1
             {group="canary", instance="1"} 1
 
+        eval instant at 50m http_requests
+            expect info
+            http_requests{group="production", instance="0"} 100
+
         eval instant at 0 label_replace(http_requests, "~invalid", "", "src", "(.*)")
             expect fail
 
@@ -76,6 +81,8 @@ def test_parse_sort_ordered_and_trig_and_fail(tmp_path: Path):
     assert by_expr["sort_desc(http_requests)"].expect_ordered is True
     assert by_expr["acos(vector(1))"].expected_series[0].samples[0].value == 0
     assert any("present_over_time" in expr for expr in by_expr)
+    assert by_expr["http_requests"].exclusion_reason() == "annotation_assertion"
+    assert loader.classify_eval(by_expr["http_requests"]) == "excluded_assertion"
     assert by_expr['label_replace(http_requests, "~invalid", "", "src", "(.*)")'].expect_fail
     hist = [ev for ev in evals if ev.expr.startswith("resets(http_requests_histogram")]
     assert hist[-1].exclusion_reason() is not None
@@ -179,3 +186,16 @@ def test_insert_sql_skips_native_histogram():
     assert sql is not None
     assert "toDateTime64(0, 9)" in sql
     assert "toDateTime64(600, 9)" in sql
+    assert loader.series_insert_values(300, spec2) in sql
+
+
+def test_compliance_record_schema_version_2():
+    compliance = {"passed": 1, "total": 1}
+    payload = {
+        "schema_version": 2,
+        "suites": {
+            "compliance": compliance,
+            "extended_support": {"passed": 2, "total": 2},
+        },
+    }
+    assert update_compliance_baseline._compliance_record(payload) == compliance

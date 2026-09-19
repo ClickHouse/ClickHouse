@@ -657,12 +657,6 @@ def _run_promql_sql(sql: str):
         return "", str(e)
 
 
-def _reset_extended_table():
-    table = promqltest.TABLE_NAME
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-    node.query(f"CREATE TABLE {table} ENGINE=TimeSeries")
-
-
 def test_promql_extended_support():
     """Score ClickHouse against pinned upstream promqltest expected results."""
     meta = promqltest.load_snapshot_meta()
@@ -674,18 +668,24 @@ def test_promql_extended_support():
     )
 
     table = promqltest.TABLE_NAME
-    _reset_extended_table()
+    node.query(f"CREATE TABLE {table} ENGINE=TimeSeries")
     try:
         for scenario in scenarios:
-            _reset_extended_table()
+            node.query(f"TRUNCATE TABLE {table}")
+            insert_values = []
             for block in scenario.loads:
                 for series in block.series:
-                    sql = promqltest.series_insert_sql(table, block.interval_s, series)
-                    if sql is None:
-                        continue
-                    tsv, err = _run_promql_sql(sql)
-                    if err:
-                        print(f"INSERT failed {scenario.file_name}:{block.line}: {err}")
+                    values = promqltest.series_insert_values(block.interval_s, series)
+                    if values is not None:
+                        insert_values.append(values)
+            if insert_values:
+                sql = (
+                    f"INSERT INTO {table} (metric_name, tags, samples) VALUES "
+                    + ", ".join(insert_values)
+                )
+                _, err = _run_promql_sql(sql)
+                if err:
+                    print(f"INSERT failed {scenario.file_name}:{scenario.line}: {err}")
             for case in scenario.evals:
                 seen.append(case.eval_id)
                 excluded = promqltest.classify_eval(case)

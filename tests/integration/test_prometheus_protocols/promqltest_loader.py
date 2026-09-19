@@ -108,8 +108,8 @@ class EvalCase:
             return "string_literal"
         if self.expect_range_vector:
             return "range_vector_instant"
-        if self.annotation_asserts and self.expect_fail is False and not self.expected_series and not self.has_scalar:
-            return "annotation_only"
+        if self.annotation_asserts:
+            return "annotation_assertion"
         query_names = set(_METRIC_NAME_RE.findall(self.expr))
         if query_names & self.native_hist_metric_names:
             return "query_uses_native_histogram_metric"
@@ -581,7 +581,7 @@ def assert_manifest_complete(scenarios: list[Scenario], snapshot_dir: Path = SNA
         )
 
 
-def series_insert_sql(table: str, interval_s: float, series: SeriesSpec) -> Optional[str]:
+def series_insert_values(interval_s: float, series: SeriesSpec) -> Optional[str]:
     if series.native_histogram or series.start_timestamp:
         return None
     points = []
@@ -607,10 +607,14 @@ def series_insert_sql(table: str, interval_s: float, series: SeriesSpec) -> Opti
         f"'{k}': '{v.replace(chr(39), chr(39)+chr(39))}'" for k, v in labels.items()
     )
     metric_sql = metric.replace("'", "''")
-    return (
-        f"INSERT INTO {table} (metric_name, tags, samples) VALUES "
-        f"('{metric_sql}', {{{tag_items}}}, [{', '.join(points)}])"
-    )
+    return f"('{metric_sql}', {{{tag_items}}}, [{', '.join(points)}])"
+
+
+def series_insert_sql(table: str, interval_s: float, series: SeriesSpec) -> Optional[str]:
+    values = series_insert_values(interval_s, series)
+    if values is None:
+        return None
+    return f"INSERT INTO {table} (metric_name, tags, samples) VALUES {values}"
 
 
 def sql_literal(expr: str) -> str:
@@ -837,7 +841,7 @@ def classify_eval(case: EvalCase) -> Optional[str]:
     if reason in {
         "string_literal",
         "range_vector_instant",
-        "annotation_only",
+        "annotation_assertion",
         "start_timestamp",
     }:
         return "excluded_assertion"
