@@ -3648,26 +3648,40 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (auto alter = command.ast(); alter && alter->partition)
+    /// The partition ids of a command scoped with `IN PARTITION` are resolved once, when the mutation
+    /// entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and they are
+    /// the source of truth here. A partition expression is arbitrary user SQL and may evaluate to a
+    /// different partition later - re-evaluating it per part would let the set of parts the mutation
+    /// rewrites diverge from the one the pending on-the-fly reads have already been answering from.
+    /// The expression is re-evaluated below only for an entry whose ids are not resolved.
+    if (command.has_partition && command.partition_ids)
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        if (part->info.getPartitionId() != command_partition_id)
+        if (!command.partition_ids->contains(part->info.getPartitionId()))
             return true;
     }
-    else if (alter && alter->partitions)
+    else if (auto alter = command.ast())
     {
-        bool part_in_partitions = false;
-        for (const auto & partition_ast : alter->partitions->children)
+        if (alter->partition)
         {
-            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-            if (part->info.getPartitionId() == command_partition_id)
-            {
-                part_in_partitions = true;
-                break;
-            }
+            auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+            if (part->info.getPartitionId() != command_partition_id)
+                return true;
         }
-        if (!part_in_partitions)
-            return true;
+        else if (alter->partitions)
+        {
+            bool part_in_partitions = false;
+            for (const auto & partition_ast : alter->partitions->children)
+            {
+                auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+                if (part->info.getPartitionId() == command_partition_id)
+                {
+                    part_in_partitions = true;
+                    break;
+                }
+            }
+            if (!part_in_partitions)
+                return true;
+        }
     }
 
     /// APPLY PATCHES command is handled separately.
