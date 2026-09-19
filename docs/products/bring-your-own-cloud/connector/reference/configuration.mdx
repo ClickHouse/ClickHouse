@@ -23,17 +23,19 @@ On a Linux VM the connector reads `/etc/clicklink/config.yaml`, written by `clic
 | `pcm_infra_uuid` | minted by `init` | Unique identifier for this connector deployment, carried on every upstream request. Preserved across re-runs, including `--force`. Do not edit. |
 | `cloud` | detected by `init` | Cloud provider label for this host. Required; the daemons refuse to start when empty. |
 | `region` | detected by `init` | Region label for this host. Required; the daemons refuse to start when empty. |
+| `namespace_prefix` | `ns-` | Prefix of the Kubernetes namespaces managed services live in (`<prefix><service>`). Every daemon derives namespaces from it. |
 | `api` | | Upstream API connection block, see [api](#vm-api). |
 | `instances` | `{}` | Map of ClickHouse instances by name, see [instances](#vm-instances). |
 | `scraper` | | Scraper daemon block, see [scraper](#vm-scraper). |
 | `troubleshooter` | | Troubleshooter daemon block, see [troubleshooter](#vm-troubleshooter). |
+| `executor` | | Executor daemon block (managed mode), see [executor](#vm-executor). |
 | `observability` | | Shared logging and port block, see [observability](#vm-observability). |
 
 ### api {#vm-api}
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `api.endpoint` | from the enrollment bundle | Your org connector API endpoint, `https://<subdomain>.<connector domain>`. |
+| `api.endpoint` | from the enrollment bundle | Your connector endpoint, `https://<subdomain>.<connector-domain>`. |
 | `api.access_key_file` | `/etc/clicklink/access-key` (written by `init`) | File holding the HMAC access key (mode 0600). |
 | `api.secret_key_file` | `/etc/clicklink/secret-key` (written by `init`) | File holding the HMAC secret key (mode 0600). |
 | `api.tls.enabled` | `true` | Present the mTLS client certificate on API connections. |
@@ -71,12 +73,11 @@ Each entry under `instances.<name>` describes one ClickHouse native-protocol tar
 | `scraper.scrape.interval` | `2m` | How often each instance is scraped. |
 | `scraper.scrape.timeout` | `30s` | Per-scrape query timeout. |
 | `scraper.scrape.tables` | see below | System tables scraped per instance. The default set is `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`; `query_log` is deliberately excluded so raw SQL text never leaves your boundary by default. |
-| `scraper.buffer.path` | `/var/lib/clicklink/buffer` | On-disk spool for at-least-once delivery while the API endpoint is unreachable. |
+| `scraper.buffer.path` | `/var/lib/clicklink/buffer` | On-disk spool for at-least-once delivery while your connector endpoint is unreachable. |
 | `scraper.buffer.retention` | `168h` | Maximum age of spooled data. |
 | `scraper.buffer.max_size_mb` | `1024` | Spool size cap in MB. |
 | `scraper.sender.bandwidth_limit_mb` | `1.0` | Upload rate limit in MB/s. |
-| `scraper.observability.health_port` | `8082` | Scraper health endpoint port. |
-| `scraper.observability.metrics_port` | `9092` | Scraper metrics port. |
+| `scraper.observability.health_port` | `8082` | Scraper health and metrics port. |
 | `scraper.access_directory` | `/etc/clicklink/access/scraper` | Root of the scraper's per-instance access bundles. |
 
 ### troubleshooter {#vm-troubleshooter}
@@ -114,6 +115,28 @@ Each entry under `instances.<name>` describes one ClickHouse native-protocol tar
 | `troubleshooter.gateway.tls.key_file` | `/var/lib/clicklink/gateway/tls/server.key` | Gateway serving key. |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` prefills the host) | SANs for the self-signed certificate the daemon mints itself when none exists; entries that parse as IP addresses become IP SANs. |
 
+### executor {#vm-executor}
+
+The executor runs in [managed mode](/products/bring-your-own-cloud/connector/managed-services). `init --managed` writes `enabled: true` and the `cluster` identity; the rest falls back to the defaults.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `executor.enabled` | `false` (`init --managed` writes `true`) | Run the executor daemon. |
+| `executor.cluster.name` | written by `init` | Name of the one EKS cluster this executor manages. Required when the executor is enabled. |
+| `executor.cluster.region` | written by `init` | The cluster's AWS region. Required. |
+| `executor.cluster.account_id` | written by `init` | The cluster's AWS account. Required. |
+| `executor.cluster.kubeconfig_path` | unset | Kubeconfig the executor authenticates with. Unset, every service command runs on the access bundles under `/etc/clicklink/access/executor`. |
+| `executor.cluster.in_cluster` | `false` | Authenticate as the pod's own ServiceAccount instead of a kubeconfig; the Kubernetes install's shape, mutually exclusive with `kubeconfig_path`. |
+| `executor.cluster.delete_instance_data.enabled` | `false` | Whether `clicklink clctl executor teardown` deletes a retired service's data without `--delete-data`. The executor daemon itself deletes no data. |
+| `executor.target_cluster` | `executor.cluster.name` | Cluster inbound commands dispatch to. Leave unset; any other value is fatal at startup. |
+| `executor.poll_interval` | `5m` | Poll interval. Must be positive. |
+| `executor.sync_interval` | `30s` | How often service status is refreshed from the cluster. Must be positive. |
+| `executor.db_path` | `/var/lib/clicklink/executor.db` | Local command database. |
+| `executor.api_port` | `9999` | Local API port, bound to loopback only. |
+| `executor.observability.health_port` | `8086` | Executor health and metrics port. |
+
+`executor.cluster` is a single mapping: one cluster per executor. A `clusters` list beside it is refused.
+
 ### observability {#vm-observability}
 
 | Key | Default | Meaning |
@@ -121,9 +144,8 @@ Each entry under `instances.<name>` describes one ClickHouse native-protocol tar
 | `observability.enabled` | `true` | Serve health and metrics endpoints. |
 | `observability.log_level` | `info` | Log level. |
 | `observability.health_port` | `8080` | Shared health port base. |
-| `observability.metrics_port` | `9090` | Shared metrics port base. |
 
-Per-component `observability` blocks overlay this base: the scraper uses `8082`/`9092`, the troubleshooter `8084`/`9094`, and the gateway listens on `8443` when enabled.
+Each daemon serves `/healthz` and `/metrics` on one listener; there is no separate metrics port. Per-component `observability` blocks overlay this base: the scraper uses `8082`, the troubleshooter `8084`, the executor `8086`, and the gateway listens on `8443` when enabled. A `metrics_port` key from an older configuration still loads but binds nothing.
 
 ### Default table allowlist {#default-table-allowlist}
 
@@ -154,6 +176,8 @@ On Kubernetes the connector is configured through the `clicklink-connector` char
 | `cluster.pcmInfraUuid` | `""` (`init` fills it) | Unique identifier for this connector deployment. Required when any component is enabled; preserved across re-runs. |
 | `cluster.region` | `""` (`init` fills it) | Region label. Required. |
 | `cluster.cloud` | `""` (`init` fills it) | Cloud provider label. Required. |
+| `cluster.namespacePrefix` | `ns-` | Prefix of the Kubernetes namespaces managed services live in (`<prefix><service>`). |
+| `cluster.reportInfraMeta` | `true` | Report the managed cluster's name, region, and account to ClickHouse Cloud on each heartbeat, for triage. Set `false` to opt out. |
 
 ### image {#helm-image}
 
@@ -167,7 +191,7 @@ On Kubernetes the connector is configured through the `clicklink-connector` char
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `api.endpoint` | `""` (`init` fills it) | Your org connector API endpoint, shared by both components. |
+| `api.endpoint` | `""` (`init` fills it) | Your connector endpoint, shared by every component. |
 | `api.tls.enabled` | `true` | Present the mTLS client certificate on API connections. |
 | `api.tls.caFile` | `""` (system roots) | CA appended to the system roots for server verification. Set to `/etc/clicklink/secrets/mtls/ca.crt` (or re-run `init` with `--api-private-ca`) when the endpoint serves a private-CA certificate. |
 
@@ -188,8 +212,7 @@ The chart consumes pre-created Secrets; `init` creates them before install.
 | `scraper.enabled` | `false` (`init` writes `true`) | Deploy the scraper. |
 | `scraper.replicaCount` | `1` | Scraper replicas. |
 | `scraper.logLevel` | `info` | Log level. |
-| `scraper.ports.health` | `8082` | Health endpoint port. |
-| `scraper.ports.metrics` | `9092` | Metrics port. |
+| `scraper.ports.health` | `8082` | Health and metrics port. |
 | `scraper.instances` | `{}` | Map of ClickHouse instances, same shape as the VM [instances](#vm-instances) fields. |
 | `scraper.labels.platform`, `scraper.labels.env`, `scraper.labels.region` | `""` | Labels injected into every emitted metric. All three are required when the scraper is enabled; the chart errors at render time otherwise. |
 | `scraper.config` | `{}` | Passthrough for any `scraper` config key not modeled above (scrape interval, buffer, sender, and so on, same schema as the VM [scraper](#vm-scraper) block). |
@@ -203,8 +226,7 @@ The chart consumes pre-created Secrets; `init` creates them before install.
 |-----|---------|---------|
 | `troubleshooter.enabled` | `false` (`init` writes `true`) | Deploy the troubleshooter (a single-replica StatefulSet). |
 | `troubleshooter.logLevel` | `info` | Log level. |
-| `troubleshooter.ports.health` | `8084` | Health endpoint port. |
-| `troubleshooter.ports.metrics` | `9094` | Metrics port. |
+| `troubleshooter.ports.health` | `8084` | Health and metrics port. |
 | `troubleshooter.instances` | `{}` | Map of ClickHouse instances, same shape as `scraper.instances`. |
 | `troubleshooter.sessionTimeout` | `4h` | Default support-session duration. |
 | `troubleshooter.allowedTables` | the [default table allowlist](#default-table-allowlist) | Tables the troubleshooter's ClickHouse user may `SELECT`. This is the security review surface to edit in your overlay; a hardcoded denylist (`query_log`, `text_log`) applies in the command validator regardless of what is listed here. |
@@ -219,6 +241,35 @@ The chart consumes pre-created Secrets; `init` creates them before install.
 | `troubleshooter.config` | `{}` | Passthrough for any `troubleshooter` config key not modeled above (poll interval, command timeout, connection caps, and so on). |
 | `troubleshooter.rbac.extraSecretNames` | `[]` | Additional Secret names the troubleshooter ServiceAccount may `get`, exact names only. |
 | `troubleshooter.accessBundles` | `{}` | Per-instance access bundles, same shape as `scraper.accessBundles`, mounted at `/etc/clicklink/access/troubleshooter/<instance>/`. |
+
+### executor {#helm-executor}
+
+The executor for [managed mode](/products/bring-your-own-cloud/connector/managed-services): a single-replica Deployment on a PersistentVolumeClaim. `init --managed` stages it enabled with the cluster identity filled in.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `executor.enabled` | `false` (`init --managed` writes `true`) | Deploy the executor. |
+| `executor.logLevel` | `info` | Log level. |
+| `executor.pollInterval` | `30s` | Poll interval. |
+| `executor.syncInterval` | `30s` | How often service status is refreshed from the cluster. |
+| `executor.apiPort` | `9999` | Local API port. Bound to `127.0.0.1` in the pod and not exposed through the Service; reach it with `kubectl port-forward`. |
+| `executor.ports.health` | `8086` | Health and metrics port. |
+| `executor.cluster.name` | `""` (`init` fills it) | Name of the one EKS cluster this executor manages. Required when the executor is enabled. |
+| `executor.cluster.region` | `""` (`init` fills it) | The cluster's AWS region. Required. |
+| `executor.cluster.accountId` | `""` (`init` fills it) | The cluster's AWS account. Required; the snake_case `account_id` spelling is also accepted. |
+| `executor.cluster.inCluster` | `false` (`init` writes `true`) | Authenticate as the pod's ServiceAccount. This is the point of the Kubernetes shape: no access bundle exists in the pod. |
+| `executor.cluster.delete_instance_data.enabled` | `false` (`init` writes `true`) | Whether `clicklink clctl executor teardown` deletes a retired service's data without `--delete-data`. Other per-cluster keys pass through verbatim in the binary's snake_case spelling. |
+| `executor.targetCluster` | `""` (derived from `cluster.name`) | Cluster inbound commands dispatch to. Leave unset; a value that does not match `cluster.name` fails at render. |
+| `executor.config` | `{}` | Passthrough for any `executor` config key not modeled above. |
+| `executor.platformBundleSecret` | `clicklink-platform-bundle` | Secret holding the platform approval bundle, mounted read-only at `/etc/clicklink/access/executor/_platform`; `clicklink clctl platform approve --secret-namespace` writes it. The mount is optional, so the pod starts before the first approval. Empty disables the mount. |
+| `executor.serviceAccount.create` | `false` | Whether the chart creates the executor ServiceAccount. Default off: the executor's RBAC is granted out of band by `init --managed` against a fixed name, and the chart binds to it. |
+| `executor.serviceAccount.name` | `pcm-executor` | ServiceAccount the executor runs as. Required when `create` is `false`. |
+| `executor.persistence.enabled` | `true` | Back `/var/lib/clicklink` (command database and instance registry) with a PersistentVolumeClaim. |
+| `executor.persistence.storageClass` | `""` (cluster default) | StorageClass for the claim; `init` fills it. |
+| `executor.persistence.size` | `5Gi` | Claim size. |
+| `executor.persistence.accessModes` | `[ReadWriteOnce]` | Claim access modes. |
+
+`executor.cluster` is a single mapping: one cluster per executor. A `clusters` list fails the render.
 
 ### persistence {#helm-persistence}
 
@@ -254,9 +305,9 @@ The session gateway for [support sessions](/products/bring-your-own-cloud/connec
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `networkPolicy.enabled` | `true` | Emit a default-deny NetworkPolicy with an egress allowlist. Enforcement requires an enforcing CNI. |
-| `networkPolicy.allowEgressCIDRs` | `[]` | CIDRs behind your connector API endpoint. Under an enforcing CNI the connector has no egress until this is filled in. |
+| `networkPolicy.allowEgressCIDRs` | `[]` (`init --egress-cidrs` fills it) | CIDRs behind your connector endpoint. Under an enforcing CNI the connector has no egress until this is filled in; `init` stages the policy enabled only when these are known. |
 | `networkPolicy.allowEgressPorts` | `[443]` | Ports opened to `allowEgressCIDRs`; override when the endpoint listens on a non-default port. |
-| `networkPolicy.clickhouseNamespaces` | `[]` | Namespaces of your ClickHouse Services, matched by the `kubernetes.io/metadata.name` label. Empty allows no in-cluster ClickHouse access. |
+| `networkPolicy.clickhouseNamespaces` | `[]` | Namespaces of your ClickHouse Services, matched by the `kubernetes.io/metadata.name` label. Namespaces the executor creates are admitted regardless, by the `clicklink.clickhouse.com/managed-by=executor` label it stamps on them, so a managed install lists only namespaces created outside the executor. Empty with no executor allows no in-cluster ClickHouse access. |
 | `networkPolicy.metricsScrapeSelector` | `{}` | Restrict metrics-scrape ingress to a specific Prometheus namespace by label; empty allows scrape from any pod in the chart's namespace. |
 | `networkPolicy.kubeletProbeCIDRs` | `[]` | CIDRs kubelet health probes originate from (node IPs). Empty allows probe ingress from any source, matching most CNIs' kubelet exemption; set explicitly under strict default-deny. |
-| `networkPolicy.apiserverCIDRs` | `[]` | Kubernetes API server CIDRs. Empty emits no API server egress rule, and the daemons fail their first token request on managed Kubernetes until it is set. |
+| `networkPolicy.apiserverCIDRs` | `[]` (`init --managed` fills it from the cluster VPC) | Kubernetes API server CIDRs. Empty emits no API server egress rule, and the daemons fail their first token request on managed Kubernetes until it is set. Pin the VPC's ranges, not the API server's own addresses, which change over the cluster's life. |
