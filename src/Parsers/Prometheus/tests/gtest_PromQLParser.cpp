@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
@@ -68,7 +69,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     expectRoundTrip(R"({""="value"})", R"({""="value"})");
-    expectRoundTrip(R"({"métric.name","服务.name"="api"})", R"({"métric.name","服务.name"="api"})");
+    expectRoundTrip(R"({"mÃ©tric.name","æå¡.name"="api"})", R"({"mÃ©tric.name","æå¡.name"="api"})");
     expectRoundTrip(R"({"NaN"})", R"({"NaN"})");
     expectRoundTrip(R"({"Inf"})", R"({"Inf"})");
     expectRoundTrip(R"(up{"NaN"="x"})", R"(up{"NaN"="x"})");
@@ -1719,6 +1720,7 @@ TEST(PromQLParser, DurationUnitOrder)
              {"up[1m1d]", 6},
              {"up[1h2h]", 6},
              {"up offset 1ms1s", 14},
+             {"up offset (   1m2h )", 17},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1734,14 +1736,54 @@ TEST(PromQLParser, DurationUnitOrder)
 }
 
 
+TEST(PromQLParser, GenericDurationParsingRemainsStrict)
+{
+    PrometheusQueryParsingUtil::DurationType result;
+    EXPECT_FALSE(PrometheusQueryParsingUtil::tryParseDuration("(30m)", 3, result));
+    EXPECT_TRUE(PrometheusQueryParsingUtil::tryParseDuration("30m", 3, result));
+}
+
+
+TEST(PromQLParser, ParenthesizedDurations)
+{
+    for (const auto & [query, expected] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+             {"up[(5m)]", "up[300]"},
+             {"up[( 5m )]", "up[300]"},
+             {"up[(5m):(1m)]", "up[300:60]"},
+             {"up[5m:(1m)]", "up[300:60]"},
+             {"up[(5m):1m]", "up[300:60]"},
+             {"up offset (5m)", "up offset 300"},
+             {"up offset (-5m)", "up offset -300"},
+             {"up offset ( -5m )", "up offset -300"},
+             {"up offset -(5m)", "up offset -300"},
+             {"up offset +(5m)", "up offset 300"},
+         })
+    {
+        EXPECT_EQ(PrometheusQueryTree{query}.toString(), expected) << query;
+    }
+}
+
+
+TEST(PromQLParser, ParenthesizedDurationExpressionsRemainUnsupported)
+{
+    for (const auto * const query : {"up[(5m * 2)]", "up offset (5m * 2)"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+}
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {"$metric", 0},
              {"up\n$down", 3},
-             {R"("é"$)", 4},
-             {R"("é" "x")", 5},
-             {R"(label_join(up, "dst", "é", "src", "\q"))", 36},
+             {R"("Ã©"$)", 4},
+             {R"("Ã©" "x")", 5},
+             {R"(label_join(up, "dst", "Ã©", "src", "\q"))", 36},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1861,39 +1903,39 @@ PrometheusQueryTree(STRING):
 )");
 
     EXPECT_EQ(parse(R"(
-        "日本語"
+        "æ¥æ¬èª"
         )"), R"(
-"日本語"
+"æ¥æ¬èª"
 
 PrometheusQueryTree(STRING):
-    StringLiteral('日本語')
+    StringLiteral('æ¥æ¬èª')
 )");
 
     EXPECT_EQ(parse(R"(
         "\u65e5\u672c\u8a9e" 
         )"), R"(
-"日本語"
+"æ¥æ¬èª"
 
 PrometheusQueryTree(STRING):
-    StringLiteral('日本語')
+    StringLiteral('æ¥æ¬èª')
 )");
 
     EXPECT_EQ(parse(R"(
         "\U000065e5\U0000672c\U00008a9e" 
         )"), R"(
-"日本語"
+"æ¥æ¬èª"
 
 PrometheusQueryTree(STRING):
-    StringLiteral('日本語')
+    StringLiteral('æ¥æ¬èª')
 )");
 
     EXPECT_EQ(parse(R"(
         "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"
         )"), R"(
-"日本語"
+"æ¥æ¬èª"
 
 PrometheusQueryTree(STRING):
-    StringLiteral('日本語')
+    StringLiteral('æ¥æ¬èª')
 )");
 
 }
