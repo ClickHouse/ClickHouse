@@ -61,11 +61,14 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
 
 # read_in_order_two_level_merge_threshold = 0 and read_in_order_use_virtual_row_per_block = 0 pin
-# the preliminary merge that cuts the sorting key down to the announced prefix.
+# the preliminary merge that cuts the sorting key down to the announced prefix. Parallel replicas
+# are pinned off because the harness randomizes them on: they re-plan the children through
+# `ClusterProxy`, which changes both the `planned:` lines and the spreading counts asserted below.
 $CLICKHOUSE_CLIENT --query_id="${QID}" --query "
     SELECT a, b FROM m ORDER BY a, b LIMIT 5
     SETTINGS optimize_read_in_order = 1, max_threads = 4, max_block_size = 8,
-             read_in_order_two_level_merge_threshold = 0, read_in_order_use_virtual_row_per_block = 0
+             read_in_order_two_level_merge_threshold = 0, read_in_order_use_virtual_row_per_block = 0,
+             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
 " > "${CLICKHOUSE_TMP}/05210_result.txt" 2> "${CLICKHOUSE_TMP}/05210_error.txt" &
 SELECT_PID=$!
 
@@ -107,6 +110,25 @@ $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
       AND query_id = '${QID}' AND message LIKE 'Building plan for child table%'
     ORDER BY event_time_microseconds
 "
+
+# The `planned:` lines above only prove the choreography - the same five rows and the same two
+# lines come out of a plain `Sorting` fallback, so they would not notice a planner change that
+# stops calling `requestReadingInOrder` for this shape at all. Each `ReadFromMergeTree` logs which
+# way it spread its mark ranges, and that pair of counts is the real witness of the guard: the
+# widened prefix did reach the children, `z_plain` honored it (its sorting key is as wide as the
+# prefix), and the alias child - whose snapshot key is one column short of the prefix - is the one
+# the guard sends back to the default path instead of resizing the expression list into null
+# `ASTPtr`s. If this shape ever stops reading in order, the counts become `0` and `2` and the test
+# fails instead of passing vacuously.
+$CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
+    SELECT 'spread with order: ' || toString(countIf(message = 'Spreading ranges among streams with order'))
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QID}'
+    UNION ALL
+    SELECT 'spread default: ' || toString(countIf(message = 'Spreading mark ranges among streams (default reading)'))
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QID}'
+" | sort
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE m;
