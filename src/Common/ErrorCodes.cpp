@@ -692,7 +692,9 @@
     M(1016, TABLE_SIZE_LIMIT_EXCEEDED) \
     M(1017, ASYNC_INSERT_FLUSH_TIMEOUT) \
     M(1018, EXCHANGE_PEER_DISCONNECTED) \
-    M(1019, GPU_ERROR) \
+    M(1019, QUERY_SLOT_ACQUISITION_TIMEOUT) \
+    M(1020, MEMORY_RESERVATION_ACQUISITION_TIMEOUT) \
+    M(1021, GPU_ERROR) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -709,7 +711,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1019;
+    constexpr ErrorCode END = 1021;
 
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,
