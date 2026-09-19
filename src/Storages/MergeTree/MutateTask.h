@@ -76,4 +76,15 @@ private:
     return task->getFuture().get();
 }
 
+/// True if mutating `part` would skip `command` and clone the part forward untouched, so the part
+/// owes nothing on account of that command.
+bool canSkipMutationCommandForPart(
+    const MergeTreeDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MutationCommand & command,
+    const ContextPtr & context);
+
+/// The settings the mutation executor reads and evaluates its commands under.
+ContextMutablePtr createContextForMutationRead(const ContextPtr & context);
+
 }

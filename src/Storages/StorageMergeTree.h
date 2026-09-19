@@ -280,6 +280,46 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Registered mutations and the metadata to evaluate them against, snapshotted under
+    /// `currently_processing_in_background_mutex`. Deciding whether a mutation has to rewrite a part
+    /// must happen OUTSIDE that mutex: it re-parses the command AST and can evaluate an
+    /// `IN PARTITION` expression, and evaluating one reaches `getMutationsSnapshot`, which locks this
+    /// same non-recursive mutex.
+    struct UnappliedMutations
+    {
+        struct Entry
+        {
+            std::shared_ptr<const MutationCommands> commands;
+            /// A transactional mutation only ever rewrites parts visible at its own snapshot, so the
+            /// tid is part of deciding what it owes.
+            TransactionID tid = Tx::NonTransactionalTID;
+            /// `mutation_*.txt`, which is what system.mutations and KILL MUTATION call `mutation_id`.
+            String file_name;
+        };
+
+        StorageMetadataPtr metadata_snapshot;
+        std::map<UInt64, Entry> entries_by_version;
+    };
+
+    /// The version of the first mutation in `mutations` that may still have to rewrite `part`, or 0 if
+    /// there is none. A command the executor would skip for this part does not count: such a part is
+    /// cloned forward untouched. `context_for_reading` is the mutation executor's read context, which
+    /// decides how a command's `IN PARTITION` expression resolves.
+    UInt64 getNextMutationVersionToRewrite(
+        const DataPartPtr & part, const UnappliedMutations & mutations, const ContextPtr & context_for_reading) const;
+
+    /// Refuses `command` while a mutation may still have to rewrite one of `parts`. Only for removals that
+    /// keep the data recoverable: DROP and TRUNCATE destroy it, and `replacePartitionFrom`'s source
+    /// keeps its parts, so none of those narrows an obligation.
+    /// `parts` is the pre-removal snapshot, while `MergeTreeData::Transaction::commit` computes the
+    /// authoritative removed set, which can be wider (see the fast path in `dropPart`).
+    /// Must be called with no parts lock held.
+    void assertNoUnappliedMutationsForParts(const DataPartsVector & parts, std::string_view command) const;
+
+    /// The table's alter lock, which mutation publication takes as well, so a partition command that
+    /// holds it across its check and its commit cannot have a mutation registered behind it.
+    AlterLockHolder lockForAlterForPartitionCommandOrThrow(std::string_view command, const ContextPtr & query_context);
+
     /// A merge writes its result with the column names of the current metadata, so it materializes
     /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
     /// mutation version the result part has to carry so that those mutations are not applied to it a

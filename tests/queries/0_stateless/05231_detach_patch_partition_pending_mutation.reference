@@ -1,0 +1,8 @@
+patch parts 1
+mutation armed 0	1
+detach_patch_refused 0
+detach_base_refused_by_guard 1
+detached parts 1
+sum after patch detach 10
+base parts 1
+mutation still pending 1

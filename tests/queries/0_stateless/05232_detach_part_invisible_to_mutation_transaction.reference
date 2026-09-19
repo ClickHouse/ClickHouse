@@ -1,0 +1,14 @@
+mutation armed 0	1
+rows before detach
+1	1100
+2	200
+detach_invisible_refused 0
+control_refused_by_guard 1
+detached parts 1
+rows after detach
+1	1100
+mutation pending after detach 0
+txn_vis armed 1	1
+detach_txn_vis_refused 1
+txn_vis mutation pending 0
+txn_vis sum 1100
