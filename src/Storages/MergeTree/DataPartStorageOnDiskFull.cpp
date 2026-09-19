@@ -36,17 +36,18 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
     return std::make_shared<DataPartStorageOnDiskFull>(std::move(volume_), std::move(root_path_), std::move(part_dir_));
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
+MutableDataPartProjectionStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
     /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
     /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
     /// `getProjectionPartBuilder`, which scopes the arena itself.
-    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
+    return std::make_shared<DataPartProjectionStorageOnDiskFull>(
+        volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr);
 }
 
-DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name) const
+DataPartProjectionStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name);
+    return std::make_shared<DataPartProjectionStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name, nullptr);
 }
 
 bool DataPartStorageOnDiskFull::exists() const
@@ -103,7 +104,7 @@ size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) cons
 std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
 {
     if (looksLikePackedSkipIndexFile(file_name))
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+        if (auto reader = index_storage->getSkipIndicesPackedReader(); reader && reader->exists(file_name))
             return reader->getFileUncompressedSize(file_name);
     return {};
 }
@@ -199,7 +200,8 @@ void DataPartStorageOnDiskFull::removeFileIfExists(const String & name)
 
 void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
 {
-    const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
+    /// dynamic_cast, not typeid_cast: the source may be the projection flavor of the full storage.
+    const auto * source_on_disk = dynamic_cast<const DataPartStorageOnDiskFull *>(&source);
     if (!source_on_disk)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -216,7 +218,8 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
 
 void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
 {
-    const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
+    /// dynamic_cast, not typeid_cast: the source may be the projection flavor of the full storage.
+    const auto * source_on_disk = dynamic_cast<const DataPartStorageOnDiskFull *>(&source);
     if (!source_on_disk)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

@@ -6,14 +6,14 @@ namespace DB
 {
 
 /// A storage for data part that stores files on filesystem as is.
-class DataPartStorageOnDiskFull final : public DataPartStorageOnDiskBase
+class DataPartStorageOnDiskFull : public DataPartStorageOnDiskBase
 {
 public:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_);
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Full; }
 
-    MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
-    DataPartStoragePtr getProjection(const std::string & name) const override;
+    MutableDataPartProjectionStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
+    DataPartProjectionStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
     bool existsDirectory(const std::string & name) const override;
@@ -54,8 +54,11 @@ public:
     void deserializeAuxiliaryInfo(ReadBuffer &) override {}
 #endif
 
-private:
+protected:
+    /// Also used by the projection storage below, which is a full part storage plus identity.
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
+
+private:
     MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;
 
     NameSet getActualFileNamesOnDisk(const NameSet & file_names) const override { return file_names; }
@@ -71,6 +74,18 @@ private:
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const override;
+};
+
+/// Storage of a projection sub-part on full part storage: physically identical to a part storage,
+/// joined with the projection identity (see IDataPartProjectionStorage). Constructed only by
+/// DataPartStorageOnDiskFull::getProjection.
+class DataPartProjectionStorageOnDiskFull final : public DataPartStorageOnDiskFull, public IDataPartProjectionStorage
+{
+public:
+    DataPartProjectionStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_)
+        : DataPartStorageOnDiskFull(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
+    {
+    }
 };
 
 }
