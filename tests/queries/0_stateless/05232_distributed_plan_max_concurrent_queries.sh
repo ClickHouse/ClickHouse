@@ -112,7 +112,7 @@ while [ $SECONDS -lt "$TIMELIMIT" ]; do
     read -r replicas refused <<< "$(${CLICKHOUSE_CLIENT} --query "
         SELECT uniqExactIf(query_id, exception_code != 202), countIf(exception_code = 202)
         FROM system.query_log
-        WHERE event_date >= yesterday() AND is_initial_query = 0
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND is_initial_query = 0
           AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
         SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
     [ $((replicas + refused)) -ge 3 ] && break
@@ -127,7 +127,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT throwIf(count() = 0, 'the rows counted above do not belong to a statement of this test')
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
       AND current_database = currentDatabase() AND query_id = '$query_id'
     SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
     FORMAT Null"
