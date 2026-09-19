@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <optional>
+
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -37,7 +40,13 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
-    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+    /// The `MergeTree` table a "simple" view reads, for `parallel_replicas_allow_view_over_mergetree`,
+    /// or `nullptr` when the view is not suitable for that shortcut. `alias` is the alias the outer
+    /// query gives the view (empty when it has none): a security barrier view declines the shortcut
+    /// when an `additional_table_filters` entry of the caller applies to it by name or by that alias,
+    /// exactly as `QueryAnalyzer::inlineViewSubqueryIfNeeded` declines to inline it then. A caller
+    /// that does not know the alias passes `std::nullopt` and the view fails closed on any entry.
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context, const std::optional<String> & alias) const;
 
     /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
     /// Returns nullptr otherwise.
@@ -67,6 +76,78 @@ public:
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
 
     static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
+
+    /// Whether the view's inner query runs as somebody other than the invoker, so that the rows it
+    /// filters out are rows the invoker has no right to observe. Such a view must not be inlined
+    /// into the invoker's query, and expressions from the invoker's query must not be evaluated
+    /// below its own filtering. See `IQueryPlanStep::isSecurityBarrier`.
+    static bool isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context);
+
+    /// Whether one of the `additional_table_filters` entries applies to a table expression, with
+    /// the matching rule of the interpreters: an entry is keyed by the alias of the table
+    /// expression, by the bare table name (of a table in the current database) or by the
+    /// qualified `database.table` name. Every table the read may end up at is passed, so a proxy
+    /// or an `Alias` table lists both itself and the storage that serves the read. Only a
+    /// well-formed value (a map of string to string) can be proven not to apply; anything else
+    /// counts as applying.
+    static bool additionalTableFiltersApplyTo(const Field & additional_table_filters, const std::vector<StorageID> & table_ids, const String & alias, const String & current_database);
+
+    /// Whether `additional_table_filters` has a predicate that applies to this view. Such a
+    /// predicate is evaluated in the view's output namespace and can hide rows just like a row
+    /// policy attached to the view.
+    static bool hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context);
+    /// Whether an entry of `additional_table_filters` is keyed to an internal `__table<N>` alias
+    /// (`N` a non-empty sequence of digits, the exact form), the name the analyzer gives every table
+    /// expression in the query text it ships to other replicas. A user-visible name that merely
+    /// starts with `__table` is not one.
+    static bool additionalTableFiltersApplyToInternalAlias(const Field & additional_table_filters);
+
+    /// Whether a `SETTINGS` clause written in the view's query can hide rows (a `limit`, an extra
+    /// filter, `final`, an identifier-resolution switch, ...). Only settings that provably tune
+    /// execution alone are accepted; anything else, including a reset to a default, fails closed.
+    /// It is the AST-side counterpart of `effectiveContextCanHideRows` and
+    /// `shapeDependentOverflowCanHideRows` together: the limits of `GROUP BY`, sorting and
+    /// `DISTINCT` with a non-throwing overflow mode hide rows only of a query that contains the
+    /// corresponding operator, so `has_sort` / `has_grouping` / `has_distinct` describe the shape
+    /// of the query the clause applies to (including any operator the caller injects itself), and
+    /// such a setting is accepted only when the query provably lacks the operator.
+    /// `additional_table_filters` is the one setting whose effect depends on what the query reads:
+    /// a caller that knows the source table of the query passes `additional_table_filters_apply`,
+    /// which decides whether the value of the clause matches that source (see
+    /// `additionalTableFiltersApplyTo`); without it the setting fails closed like any other.
+    static bool settingsClauseCanHideRows(
+        const ASTPtr & settings_ast,
+        bool has_sort,
+        bool has_grouping,
+        bool has_distinct,
+        const std::function<bool(const Field &)> & additional_table_filters_apply = {});
+
+    /// Whether the effective security context of the view hides rows by itself, through settings
+    /// inherited from a `SQL SECURITY DEFINER` view's definer profile (a `limit`, an extra result
+    /// filter, `final`, a limit with a non-throwing overflow mode, ...). Fails closed like
+    /// `canHideRows`, of which it is the settings-only part. Only settings that hide rows of *any*
+    /// query belong here; the ones whose effect depends on the shape of the query are in
+    /// `shapeDependentOverflowCanHideRows`, and `additional_table_filters`, whose effect depends
+    /// on what the query reads, is matched against the source table by `canHideRows` itself.
+    static bool effectiveContextCanHideRows(const ContextPtr & context);
+
+    /// Whether the effective security context hides rows through a limit with a non-throwing
+    /// overflow mode on an operator that the query actually contains: `max_rows_to_group_by` /
+    /// `group_by_overflow_mode` need a `GROUP BY` (or an aggregation), `max_rows_to_sort` /
+    /// `sort_overflow_mode` an `ORDER BY`, `max_rows_in_distinct` / `distinct_overflow_mode` a
+    /// `DISTINCT`. A caller that injects one of those operators itself - the `ORDER BY ... LIMIT`
+    /// pushdown into a view - passes the corresponding flag even when the view's own query has no
+    /// such clause.
+    static bool shapeDependentOverflowCanHideRows(const ContextPtr & context, bool has_sort, bool has_grouping, bool has_distinct);
+
+    /// Whether the view's inner query can drop or collapse rows at all. `false` is returned only
+    /// when the query provably preserves every row of a plainly readable source, so that a
+    /// projection-only view keeps the fully optimizable path even when `isSecurityBarrier` holds;
+    /// anything unproven counts as able to hide rows. The plan-level marking stays exact either
+    /// way — `readImpl` marks only the steps that actually drop rows.
+    /// A remote source (a `Distributed` table) fails closed too: whatever a shard resolves it to is
+    /// read under the shard's own users and row policies, which this server cannot inspect.
+    static bool canHideRows(const ASTPtr & inner_query, const ContextPtr & context);
 
 protected:
     bool is_parameterized_view;

@@ -1,0 +1,16 @@
+-- GROUP BY 1 through a remote shard: 3 groups
+3
+3
+3
+-- GROUP BY 1 through a local plan: 3 groups
+3
+3
+3
+-- ORDER BY 1 DESC through a remote shard: v descending
+5,4,3,2,1,0
+5,4,3,2,1,0
+5,4,3,2,1,0
+-- ORDER BY 1 DESC through a local plan: v descending
+5,4,3,2,1,0
+5,4,3,2,1,0
+5,4,3,2,1,0

@@ -69,7 +69,7 @@ bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextP
         const auto * view = typeid_cast<const StorageView *>(storage.get());
         if (view)
         {
-            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context, table_node.getOriginalAlias());
             if (!underlying_storage)
                 return false;
 

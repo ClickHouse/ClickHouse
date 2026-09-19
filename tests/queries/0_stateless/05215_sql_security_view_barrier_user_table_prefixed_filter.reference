@@ -1,0 +1,17 @@
+--- utpf_definer_view ---
+no filter, aggregation on the replicas:	1
+filter on a bare user table named like an internal alias, aggregation on the replicas:	1
+filter on a qualified user table named like an internal alias, aggregation on the replicas:	1
+filter on an internal alias, aggregation on the replicas:	0
+rows with the filter on a bare user table named like an internal alias:	6
+--- utpf_none_view ---
+no filter, aggregation on the replicas:	1
+filter on a bare user table named like an internal alias, aggregation on the replicas:	1
+filter on a qualified user table named like an internal alias, aggregation on the replicas:	1
+filter on an internal alias, aggregation on the replicas:	0
+rows with the filter on a bare user table named like an internal alias:	6
+--- utpf_invoker_view ---
+no filter, aggregation on the replicas:	1
+filter on a bare user table named like an internal alias, aggregation on the replicas:	1
+filter on a qualified user table named like an internal alias, aggregation on the replicas:	1
+rows with the filter on a bare user table named like an internal alias:	6

@@ -59,7 +59,6 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTIdentifier.h>
@@ -136,9 +135,7 @@ namespace Setting
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
-    extern const SettingsDouble limit;
     extern const SettingsBool make_distributed_plan;
-    extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsJoinAlgorithm join_algorithm;
@@ -1395,8 +1392,16 @@ void pushOrderByIntoView(
     if (!sel)
         return;
 
-    /// View must not have transformations that change ORDER BY semantics
-    if (sel->hasJoin() || sel->groupBy() || sel->distinct)
+    /// View must not have transformations that change ORDER BY semantics.
+    /// `GROUP BY ALL` leaves `groupBy()` empty and only raises the `group_by_all` flag, so the
+    /// expression-list check alone misses it; the `WITH TOTALS`/`ROLLUP`/`CUBE`/`GROUPING SETS`
+    /// modifiers are aggregation markers of the same kind. Under the pushdown the aggregation
+    /// would run per shard over the shard-local top-N instead of once on the coordinator over
+    /// all rows, so the outer `ORDER BY ... LIMIT` could return the wrong result. This mirrors
+    /// the shape test that `StorageView::tryGetTrivialViewUnderlyingStorage` already applies.
+    if (sel->hasJoin() || sel->groupBy() || sel->group_by_all || sel->group_by_with_totals
+        || sel->group_by_with_rollup || sel->group_by_with_cube || sel->group_by_with_grouping_sets
+        || sel->distinct)
         return;
 
     /// Window functions partition/order globally; with ORDER BY/LIMIT pushed
@@ -1423,27 +1428,40 @@ void pushOrderByIntoView(
 
     /// View must not already have ORDER BY/LIMIT, including a `LIMIT [n] AFTER/UNTIL` range: the
     /// injected `ORDER BY` would change which rows its boundaries select, and the injected
-    /// `LIMIT_LENGTH` would become the count of a range that had none.
-    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset() || sel->limitAfter() || sel->limitUntil())
+    /// `LIMIT_LENGTH` would become the count of a range that had none. A per-group limit applied
+    /// per shard keeps different rows than the same limit applied once over all rows, which the
+    /// outer `ORDER BY ... LIMIT` can no longer recover from, so every carrier of `LIMIT BY` and of
+    /// `ORDER BY ALL` is checked: the `ALL` forms raise the `limit_by_all` / `order_by_all` flags
+    /// and the `N`/`OFFSET` of a `LIMIT BY` live in `limitByLength()`/`limitByOffset()`. The
+    /// parser happens to leave a (empty) `limitBy()` list and an `orderBy()` placeholder behind
+    /// for the `ALL` forms, so the two list checks already reject them today; the flags and the
+    /// payload are checked as well so that the guard does not depend on that, exactly as
+    /// `StorageView::tryGetTrivialViewUnderlyingStorage` does it.
+    if (sel->orderBy() || sel->order_by_all
+        || sel->limitBy() || sel->limit_by_all || sel->limitByLength() || sel->limitByOffset()
+        || sel->limitLength() || sel->limitOffset() || sel->limitAfter() || sel->limitUntil())
         return;
 
-    /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.
-    /// `SETTINGS limit = N` / `offset = N` constrain which rows the view exposes,
-    /// just like an explicit `LIMIT`/`OFFSET`. Pushing the outer `ORDER BY`/`LIMIT`
-    /// into the inner query would re-sort and truncate around that setting and
-    /// change which rows the view returns, so treat it like an existing inner
-    /// `LIMIT` and skip the pushdown.
-    ///
-    /// Likewise reject `prefer_column_name_to_alias` here: the injected inner
-    /// `ORDER BY` identifiers are resolved under the view's own `SETTINGS`
-    /// clause, so it could re-introduce the alias-vs-source-column ambiguity
-    /// that the outer-context guard above already excludes.
-    if (const auto & settings_ast = sel->settings())
-    {
-        const auto & changes = settings_ast->as<ASTSetQuery &>().changes;
-        if (changes.tryGet("limit") || changes.tryGet("offset") || changes.tryGet("prefer_column_name_to_alias"))
-            return;
-    }
+    /// The view's own `SETTINGS` clause is applied to the context its inner query runs in, so it
+    /// can constrain which rows the view exposes without any clause of the `SELECT` doing so:
+    /// `SETTINGS limit = N` / `offset = N` truncate the result just like an explicit
+    /// `LIMIT`/`OFFSET`, `additional_result_filter` grows a filter above the inner plan (applied
+    /// by `IInterpreterUnionOrSelectQuery::addAdditionalPostFilter` only after that plan is
+    /// built, so an injected inner `LIMIT` would keep the wrong rows and the late filter would
+    /// then drop them), `final` collapses row versions, and `prefer_column_name_to_alias`
+    /// re-introduces the alias-vs-source-column ambiguity that the outer-context guard above
+    /// already excludes. Rather than enumerate them here, reuse the same allowlist proof that
+    /// `StorageView::canHideRows` applies to the clause, so that the two guards cannot drift
+    /// apart: anything but pure execution tuning skips the pushdown. The pushdown injects a sort
+    /// into the inner query, so a sort limit written in the clause counts even though the view's
+    /// own query has no `ORDER BY`; the aggregation and `DISTINCT` limits follow the view's own
+    /// shape, exactly as for the effective context below.
+    if (StorageView::settingsClauseCanHideRows(
+            sel->settings(),
+            /*has_sort=*/ true,
+            /*has_grouping=*/ sel->groupBy() != nullptr || sel->group_by_all || sel->having() != nullptr,
+            /*has_distinct=*/ sel->distinct))
+        return;
 
     /// The pushed `ORDER BY`/`LIMIT` is evaluated by the view's inner query,
     /// before `StorageView` converts the inner result to the view's declared
@@ -1471,13 +1489,36 @@ void pushOrderByIntoView(
         /// query context. The AST `SETTINGS` guard above only rejects `limit`/`offset`/
         /// `prefer_column_name_to_alias` written in the view definition; it does not see
         /// settings inherited through a `SQL SECURITY DEFINER` view's definer profile.
-        /// A definer profile `limit`/`offset` constrains which rows the view exposes
-        /// (just like an inner `LIMIT`/`OFFSET`), so re-sorting and truncating around it
-        /// changes the result; a definer profile `prefer_column_name_to_alias` reintroduces
-        /// the alias-vs-source-column ambiguity that the outer-context guard already excludes.
-        /// Check the effective context here and skip the pushdown when any of these is set.
-        const auto & view_settings = view_context->getSettingsRef();
-        if (view_settings[Setting::limit] != 0 || view_settings[Setting::offset] != 0 || view_settings[Setting::prefer_column_name_to_alias])
+        /// Any setting of that context that hides rows - a `limit`/`offset`, an extra
+        /// result filter, `final`, a limit with a non-throwing overflow mode - constrains which
+        /// rows the view exposes just like an inner clause would, so re-sorting and
+        /// truncating around it changes the result. Reuse the very set that
+        /// `StorageView::canHideRows` rejects, so that the two guards cannot drift apart.
+        /// `additional_table_filters` is not part of that set: an entry of the definer profile
+        /// keyed by the view's source table is applied at the source read, below the injected
+        /// `ORDER BY ... LIMIT`, exactly like a `WHERE` of the view's query (which the pushdown
+        /// allows), and `parseAdditionalFilterAstIfNeeded` below forwards it to the shards.
+        if (StorageView::effectiveContextCanHideRows(view_context))
+            return;
+
+        /// This optimization injects a sort into the view's inner query, so a definer profile
+        /// `sort_overflow_mode = 'break'` with a sort limit would truncate the sorted result
+        /// even though the view's own query has no `ORDER BY` - the injected top-N would keep an
+        /// arbitrary subset instead of the correct one. The aggregation and `DISTINCT` limits are
+        /// passed according to the view's own shape: they hide rows only where those operators
+        /// already exist, and there they do so with or without the pushdown, but pushing a
+        /// truncating `LIMIT` below them is not worth proving sound.
+        if (StorageView::shapeDependentOverflowCanHideRows(
+                view_context,
+                /*has_sort=*/ true,
+                /*has_grouping=*/ sel->groupBy() != nullptr || sel->group_by_all || sel->having() != nullptr,
+                /*has_distinct=*/ sel->distinct))
+            return;
+
+        /// A definer profile `prefer_column_name_to_alias` reintroduces the alias-vs-source-column
+        /// ambiguity that the outer-context guard already excludes. It hides no rows, so it is not
+        /// part of the shared set above.
+        if (view_context->getSettingsRef()[Setting::prefer_column_name_to_alias])
             return;
 
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
@@ -1535,7 +1576,10 @@ void pushOrderByIntoView(
 /// Storage-level eligibility check: is this storage on its own a candidate for
 /// reading via parallel replicas?  Strips View / MaterializedView wrappers down
 /// to the underlying MergeTree and applies the MergeTree / replication gates.
-bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const ContextPtr & context, const Settings & query_settings)
+/// `table_expression` is the node that reads `current_storage`; a view needs the alias the query
+/// gives it for the `parallel_replicas_allow_view_over_mergetree` decision.
+bool parallelReplicasEnabledForStorage(
+    const StoragePtr & current_storage, const ContextPtr & context, const Settings & query_settings, const IQueryTreeNode & table_expression)
 {
     const auto * table_ptr = current_storage.get();
 
@@ -1544,7 +1588,7 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
         const auto * view = typeid_cast<const StorageView *>(current_storage.get());
         if (view)
         {
-            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+            auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context, table_expression.getOriginalAlias());
             if (!underlying_storage)
                 return false;
 
@@ -1603,11 +1647,11 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     {
         // check that left table expression can be used for parallel replicas
         if (left_table)
-            return parallelReplicasEnabledForStorage(left_table->getStorage(), context, query_settings);
+            return parallelReplicasEnabledForStorage(left_table->getStorage(), context, query_settings, *left_table);
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
+            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings, *left_table_function);
 
         // check if left one is not subquery
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -1631,11 +1675,11 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
             return false;
 
         const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
-        if (parallelReplicasEnabledForStorage(right_storage, context, query_settings))
+        if (parallelReplicasEnabledForStorage(right_storage, context, query_settings, *right_table_expr))
         {
             const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
             const auto left_storage = (left_table ? left_table->getStorage() : left_table_function->getStorage());
-            if (!parallelReplicasEnabledForStorage(left_storage, context, query_settings))
+            if (!parallelReplicasEnabledForStorage(left_storage, context, query_settings, *left_table_expr))
                 // TODO: support parallel replicas for (non_mt_table RIGHT JOIN mt_table) later
                 return false;
 
@@ -1892,6 +1936,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
+                const bool view_is_security_barrier = typeid_cast<const StorageView *>(storage.get())
+                    && StorageView::isSecurityBarrier(*storage_snapshot->metadata, query_context);
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -2112,7 +2158,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// row policies do not apply to the underlying distributed table. Use that
                         /// same context here to match `StorageView::readImpl`, which uses the override
                         /// for both the inner interpreter and the inner storage read. (`DEFINER` views
-                        /// are rejected by `tryGetUnderlyingDistributed` outright.)
+                        /// are rejected by `tryGetUnderlyingDistributed` outright, and so is every
+                        /// `NONE` view while `sql_security_views_are_optimization_barriers` is on, so
+                        /// this branch is only reached with that server setting off.)
                         if (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
                             inner_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
 
@@ -2191,7 +2239,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
+                        /// A view-keyed `additional_table_filters` entry hides rows exactly like the
+                        /// view's own `WHERE` does, and the pushdown folds it into the shipped query
+                        /// (see below), where the invoker's predicate is free to merge with it on the
+                        /// shard. A barrier view must decline the rewrite for the same fail-closed
+                        /// reason it declines for a row policy, and read through
+                        /// `StorageView::readImpl`, which marks that filter step as a barrier.
+                        const bool additional_filter_needs_barrier = table_expression_query_info.additional_filter_ast
+                            && StorageView::isSecurityBarrier(*storage_snapshot->metadata, query_context);
+
                         if (has_row_policy
+                            || additional_filter_needs_barrier
                             || force_skip_unused_shards
                             || inner_settings_forbid_pushdown
                             || outer_group_by_forbids_pushdown
@@ -2604,7 +2662,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// parallel replicas are applied later as a plan transformation (see QueryPlanOptimizations::applyParallelReplicas),
                 /// so skip the parallel-replicas construction here.
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
-                    && parallelReplicasEnabledForStorage(storage, query_context, settings))
+                    && parallelReplicasEnabledForStorage(storage, query_context, settings, *table_expression))
                 {
                     /// The custom-key read below replaces the plan with a remote read at the fixed stage
                     /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
@@ -2766,6 +2824,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
+                /// A view-keyed additional filter and a row policy on the view itself hide rows of a
+                /// `SQL SECURITY DEFINER` / `NONE` view exactly like the view's own `WHERE` does, and
+                /// `StorageView::readImpl` already treats both as row-hiding when it seals the view's
+                /// subplan. The filters built here sit above that subplan (`StorageView` takes no
+                /// `PREWHERE`, so the policy is never pushed into the read), so they must be barriers
+                /// themselves: otherwise the invoker's predicate merges into them and is evaluated on
+                /// the rows they are about to drop. See IQueryPlanStep::isSecurityBarrier.
+                const bool where_filters_are_security_barriers = view_is_security_barrier
+                    && (table_expression_query_info.additional_filter_ast || row_policy_filter_not_pushed);
+
                 for (auto && [filter_info, description] : where_filters)
                 {
                     if (query_plan.isInitialized() &&
@@ -2776,6 +2844,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             filter_info.column_name,
                             filter_info.do_remove_column);
                         description->setStepDescription(*filter_step);
+                        if (where_filters_are_security_barriers)
+                            filter_step->setSecurityBarrier();
                         query_plan.addStep(std::move(filter_step));
                     }
                 }

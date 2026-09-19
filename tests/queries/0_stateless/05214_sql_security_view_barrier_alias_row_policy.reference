@@ -1,0 +1,10 @@
+===== the views expose no row =====
+0
+0
+0
+===== the definer view keeps the invoker's predicate above the source read =====
+differs
+differs
+===== reading the definer view costs the same whether or not the hidden row matches =====
+same
+same

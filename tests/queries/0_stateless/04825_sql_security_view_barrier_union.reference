@@ -1,0 +1,3 @@
+invoker union view duplicates the outer predicate into branches:	1
+definer union view keeps the outer predicate in one filter:	1
+definer union view results:	1000	0	1998

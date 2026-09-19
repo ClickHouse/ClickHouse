@@ -1,0 +1,6 @@
+invoker, analyzer:
+definer, analyzer:	198
+definer keeps the predicate above the ARRAY JOIN:	1
+invoker, legacy analyzer:
+definer, legacy analyzer:	198
+definer results:	98	0	98

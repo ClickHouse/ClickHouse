@@ -217,6 +217,11 @@ static size_t addNewFilterStepOrThrow(
     auto & child = child_node->step;
 
     auto * filter = assert_cast<FilterStep *>(parent.get());
+    /// The filter being pushed may decide which rows a `SQL SECURITY` view exposes. The step that
+    /// carries its condition below the child, and the step that takes its place above, must both
+    /// stay barriers, or a later pass would treat the view boundary as transparent.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    const bool security_barrier = filter->isSecurityBarrier();
     auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
 
@@ -239,6 +244,8 @@ static size_t addNewFilterStepOrThrow(
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
     node.step->setStepDescription(*filter);
+    if (security_barrier)
+        node.step->setSecurityBarrier();
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
@@ -250,6 +257,8 @@ static size_t addNewFilterStepOrThrow(
             /// Replace current actions to expression, as we don't need to filter anything.
             auto new_step = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
             new_step->setStepDescription(*filter);
+            if (security_barrier)
+                new_step->setSecurityBarrier();
             parent = std::move(new_step);
         }
         else
@@ -1069,7 +1078,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
+            /// The replacement keeps the filter's role as a `SQL SECURITY` barrier.
+            const bool security_barrier = filter->isSecurityBarrier();
             parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
+            if (security_barrier)
+                parent->setSecurityBarrier();
             filter = nullptr;
         }
         else
@@ -1165,6 +1178,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 0;
 
     if (filter->getExpression().hasStatefulFunctions())
+        return 0;
+
+    /// The child selects which rows a `SQL SECURITY` view exposes, so the filter above it — which
+    /// the invoker of the view wrote — must not be evaluated on the rows it discards.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (child->isSecurityBarrier())
         return 0;
 
     const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());
@@ -1411,6 +1430,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
+            /// Every copy of a `SQL SECURITY` barrier filter is a barrier. See IQueryPlanStep::isSecurityBarrier.
+            if (filter->isSecurityBarrier())
+                filter_node.step->setSecurityBarrier();
         }
 
         ///       - Filter - Something
@@ -1427,7 +1449,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        parallel_replicas_local_plan->addFilter(std::move(info));
+        parallel_replicas_local_plan->addFilter(std::move(info), filter->isSecurityBarrier());
         std::swap(*parent_node, *child_node);
         return 1;
     }
@@ -1435,7 +1457,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))
     {
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        read_from_merge->addFilter(std::move(info));
+        read_from_merge->addFilter(std::move(info), filter->isSecurityBarrier());
         std::swap(*parent_node, *child_node);
         return 1;
     }

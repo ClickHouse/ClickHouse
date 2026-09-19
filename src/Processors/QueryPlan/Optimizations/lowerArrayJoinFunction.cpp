@@ -65,6 +65,17 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
         after_step = std::make_unique<ExpressionStep>(array_join_output, std::move(extracted->after));
     after_step->setStepDescription(*parent);
 
+    /// A barrier step decides which rows the invoker of a `SQL SECURITY DEFINER` / `NONE` view may
+    /// observe. The rewrite splits it into three steps, and every one of them keeps the flag, so an
+    /// expression from above the barrier can neither merge into the new filter nor be pushed below the
+    /// `ArrayJoinStep`. See IQueryPlanStep::isSecurityBarrier.
+    if (parent->isSecurityBarrier())
+    {
+        before_node.step->setSecurityBarrier();
+        array_join_node.step->setSecurityBarrier();
+        after_step->setSecurityBarrier();
+    }
+
     parent = std::move(after_step);
     parent_node->children = {&array_join_node};
     return 3;

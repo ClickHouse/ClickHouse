@@ -1,0 +1,40 @@
+===== the view exposes one row =====
+visible
+===== an outer predicate cannot observe the filtered-out row =====
+0
+0
+0
+0
+0
+0
+0
+0
+0
+===== an additional filter on a view is a security boundary =====
+0
+0
+0
+===== nor through the value in a cast error message =====
+0
+===== nor after the plan is serialized and optimized again on a shard =====
+0
+0
+===== an outer predicate merges into a view that is not a barrier =====
+1
+1
+2
+2
+===== a projection-only view stays exactly as optimizable as an INVOKER view =====
+same
+different
+same
+different
+same
+different
+===== a view that hides no rows keeps PREWHERE =====
+1
+===== but a filtering DEFINER view keeps the outer predicate out of PREWHERE =====
+0
+===== results through a barrier view are still correct =====
+visible
+0

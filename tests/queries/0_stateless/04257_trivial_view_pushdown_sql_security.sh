@@ -7,6 +7,10 @@
 #      query actually reads from the view, not every column the view body mentions;
 #      matches readImpl, which forwards the outer column list into its inner
 #      interpreter and lets the analyzer drop unreferenced columns.
+#   3. SQL SECURITY NONE: the view is an optimization barrier (see
+#      `sql_security_views_are_optimization_barriers`), so the pushdown is declined and the view is
+#      read through `StorageView::readImpl` under the no-user context; a user with SELECT on the view
+#      but not on the underlying Distributed table still succeeds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -87,10 +91,13 @@ ${CLICKHOUSE_CLIENT} \
     "
 
 # -------------------------------------------------------------------
-# Scenario 3: SQL SECURITY NONE — the pushdown executes the inner
-# query via getSQLSecurityOverriddenContext (no-user/global context),
-# not the calling user's context. A user with SELECT on the view but
-# not on the underlying Distributed table must succeed.
+# Scenario 3: SQL SECURITY NONE — the view is an optimization barrier,
+# so the pushdown is declined: a shard runs the shipped query as the
+# cluster's user, and a row policy on the shard-local table could hide
+# rows that the invoker's pushed-down predicate would then probe. The
+# view is read through StorageView::readImpl under the no-user/global
+# context instead, so a user with SELECT on the view but not on the
+# underlying Distributed table must still succeed.
 # -------------------------------------------------------------------
 
 # Revoke the per-column grant added in Scenario 2; the user must have
@@ -114,7 +121,7 @@ ${CLICKHOUSE_CLIENT} \
         SELECT id FROM ${db}.t04257_dist ORDER BY id;
     " 2>&1 | grep -o "Not enough privileges" | head -1
 
-echo "=== NONE: view access succeeds with pushdown ==="
+echo "=== NONE: view access succeeds ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
@@ -126,7 +133,7 @@ ${CLICKHOUSE_CLIENT} \
         SELECT id FROM ${db}.v04257_none ORDER BY id;
     "
 
-echo "=== NONE: pushdown fires (no VIEW subquery step) ==="
+echo "=== NONE: pushdown declined (the VIEW subquery step stays) ==="
 ${CLICKHOUSE_CLIENT} \
     --query "
         SET enable_analyzer = 1;
@@ -134,7 +141,7 @@ ${CLICKHOUSE_CLIENT} \
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET optimize_trivial_view_pushdown_to_distributed = 1;
-        SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
+        SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS view_is_a_barrier
         FROM (EXPLAIN SELECT id FROM ${db}.v04257_none);
     "
 

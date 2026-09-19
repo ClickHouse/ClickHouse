@@ -1,0 +1,22 @@
+===== rows through the views =====
+target_definer (enable_analyzer = 1):	100000
+target_definer (enable_analyzer = 0):	100000
+target_none (enable_analyzer = 1):	100000
+target_none (enable_analyzer = 0):	100000
+target_invoker (enable_analyzer = 1):	100000
+target_invoker (enable_analyzer = 0):	100000
+alias_definer (enable_analyzer = 1):	10
+alias_definer (enable_analyzer = 0):	10
+alias_none (enable_analyzer = 1):	10
+alias_none (enable_analyzer = 0):	10
+alias_invoker (enable_analyzer = 1):	10
+alias_invoker (enable_analyzer = 0):	10
+===== the plan of a barrier-capable view against the plan of its invoker twin =====
+target_definer (enable_analyzer = 1):	same
+target_definer (enable_analyzer = 0):	same
+target_none (enable_analyzer = 1):	same
+target_none (enable_analyzer = 0):	same
+alias_definer (enable_analyzer = 1):	differs
+alias_definer (enable_analyzer = 0):	differs
+alias_none (enable_analyzer = 1):	differs
+alias_none (enable_analyzer = 0):	differs

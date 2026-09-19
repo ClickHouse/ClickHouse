@@ -807,8 +807,11 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     return optimization_settings;
 }
 
-void ReadFromMerge::addFilter(FilterDAGInfo filter)
+void ReadFromMerge::addFilter(FilterDAGInfo filter, bool security_barrier)
 {
+    if (security_barrier)
+        setSecurityBarrier();
+
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
             *output_header,
             &filter.actions,
@@ -828,6 +831,8 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
                 filter.actions.clone(),
                 filter.column_name,
                 filter.do_remove_column);
+            if (security_barrier)
+                filter_step->setSecurityBarrier();
 
             child.plan.addStep(std::move(filter_step));
 
@@ -836,7 +841,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
         }
     }
 
-    pushed_down_filters.push_back(std::move(filter));
+    pushed_down_filters.push_back({std::move(filter), security_barrier});
 }
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1398,13 +1403,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 /// We must return streams with structure equals to structure of Merge table.
                 convertAndFilterSourceStream(*common_header, query_info, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
-                for (const auto & filter_info : pushed_down_filters)
+                for (const auto & [filter_info, security_barrier] : pushed_down_filters)
                 {
                     auto filter_step = std::make_unique<FilterStep>(
                         child.plan.getCurrentHeader(),
                         filter_info.actions.clone(),
                         filter_info.column_name,
                         filter_info.do_remove_column);
+                    if (security_barrier)
+                        filter_step->setSecurityBarrier();
 
                     child.plan.addStep(std::move(filter_step));
                 }
@@ -2384,8 +2391,9 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    for (const auto & filter_info : pushed_down_filters)
-        added_filter_nodes.nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+    for (const auto & pushed_down_filter : pushed_down_filters)
+        added_filter_nodes.nodes.push_back(
+            &pushed_down_filter.info.actions.findInOutputs(pushed_down_filter.info.column_name));
 
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 

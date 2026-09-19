@@ -1,0 +1,21 @@
+===== the views expose no row =====
+0
+0
+0
+===== the invoker's predicate stays out of the source read of the barrier views =====
+owned_merge_definer (enable_analyzer = 1)	the invoker's predicate in PREWHERE: 0
+owned_merge_definer (enable_analyzer = 0)	the invoker's predicate in PREWHERE: 0
+owned_merge_none (enable_analyzer = 1)	the invoker's predicate in PREWHERE: 0
+owned_merge_none (enable_analyzer = 0)	the invoker's predicate in PREWHERE: 0
+owned_merge_invoker (enable_analyzer = 1)	the invoker's predicate in PREWHERE: 1
+owned_merge_invoker (enable_analyzer = 0)	the invoker's predicate in PREWHERE: 1
+===== reading a barrier view costs the same whether or not the hidden row matches =====
+owned_merge_definer (enable_analyzer = 1)	same
+owned_merge_definer (enable_analyzer = 0)	same
+owned_merge_none (enable_analyzer = 1)	same
+owned_merge_none (enable_analyzer = 0)	same
+===== an additional_result_filter of the invoker never sees a hidden row =====
+owned_merge_definer (enable_analyzer = 1): no hidden row seen
+owned_merge_definer (enable_analyzer = 0): no hidden row seen
+owned_merge_none (enable_analyzer = 1): no hidden row seen
+owned_merge_none (enable_analyzer = 0): no hidden row seen

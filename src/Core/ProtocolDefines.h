@@ -121,7 +121,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `ORDER BY ... WITH FILL` can be shipped in full.
 /// Version 19 writes a per-step serialization version next to every step, so a step can change its
 /// own bytes without moving this global version (see the constant below).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
+/// Version 20 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
+/// filtering of a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view. An older worker does not read the
+/// flag and would optimize the fragment as if the view were an ordinary subquery, which is exactly the
+/// row disclosure the flag prevents, so the serializer fails closed on a plan that carries a barrier.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -168,6 +172,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First query-plan serialization version that carries the per-step security-barrier flag. Used to fail
+/// closed when a plan containing a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view is about to be sent
+/// to a peer that would silently optimize the barrier away.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
