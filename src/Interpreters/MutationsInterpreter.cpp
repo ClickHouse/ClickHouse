@@ -189,7 +189,7 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
-    query_node.getJoinTreeNode() = std::make_shared<TableNode>(storage, context);
+    query_node.getJoinTree() = std::make_shared<TableNode>(storage, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
@@ -1579,15 +1579,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
-        {
-            if (projection.with_block_number || projection.with_block_offset)
-            {
-                LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
-                materialized_projections.insert(projection.name);
-            }
-
             continue;
-        }
 
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))

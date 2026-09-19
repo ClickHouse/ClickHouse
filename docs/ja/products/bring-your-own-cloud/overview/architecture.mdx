@@ -52,7 +52,7 @@ BYOC では、ClickHouse VPC 上で稼働する **ClickHouse コントロール�
 ClickHouse Cloud がお客様のアカウントにデプロイする主なクラウドリソースは次のとおりです。
 
 * **VPC:** ClickHouse デプロイメント専用の Virtual Private Cloud です。これは ClickHouse が管理することも、お客様自身が管理することもでき、通常はお客様のアプリケーション VPC とピアリングされます。
-* **IAM ロール and policies:** Kubernetes、ClickHouse サービス、監視スタックに必要な IAM ロールと権限です。これらは ClickHouse がプロビジョニングすることも、お客様が用意することもできます。
+* **IAM roles and policies:** Kubernetes、ClickHouse サービス、監視スタックに必要な IAM ロールと権限です。これらは ClickHouse がプロビジョニングすることも、お客様が用意することもできます。
 * **Storage buckets:** データパーツ、バックアップ、さらに (必要に応じて) 長期保存用のメトリクスやログアーカイブの保存に使用されます。
 * **Kubernetes cluster:** クラウドプロバイダーに応じて Amazon EKS、Google GKE、または Azure AKS となり、アーキテクチャ図に示されている ClickHouse サーバーと補助サービスをホストします。
 

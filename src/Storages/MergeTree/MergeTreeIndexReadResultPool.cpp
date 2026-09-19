@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Interpreters/ActionsDAG.h>
@@ -59,12 +58,6 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     , context(std::move(context_))
     , log(std::move(log_))
 {
-}
-
-bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
-{
-    /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
-    return dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty());
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
@@ -560,42 +553,6 @@ void MergeTreeProjectionIndexReader::cancel() noexcept
 {
     for (auto && [_, reader] : projection_index_readers)
         reader.cancel();
-}
-
-bool MergeTreeIndexReadResult::canSkipAnyMark() const
-{
-    return skip_index_read_result || projection_index_read_result;
-}
-
-bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const
-{
-    if (skip_index_read_result)
-    {
-        const auto & skip_result = *skip_index_read_result;
-        chassert(mark < skip_result.granules_selected.size());
-
-        if (!skip_result.granules_selected.at(mark))
-            return true;
-
-        if (skip_result.threshold_tracker && skip_result.threshold_tracker->isSet() && skip_result.min_max_index_for_top_k)
-        {
-            auto granule_num = skip_result.min_max_index_for_top_k->granules_map[mark];
-            if (!skip_result.threshold_tracker->isValueInsideThreshold(
-                    skip_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
-                return true;
-        }
-    }
-
-    if (projection_index_read_result)
-    {
-        size_t begin = index_granularity.getMarkStartingRow(mark);
-        size_t end = begin + index_granularity.getMarkRows(mark);
-
-        if (projection_index_read_result->rangeAllZero(begin, end))
-            return true;
-    }
-
-    return false;
 }
 
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(

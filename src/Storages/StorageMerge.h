@@ -46,6 +46,7 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return true; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
@@ -57,7 +58,6 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 

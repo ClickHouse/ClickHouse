@@ -192,20 +192,35 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
     }
 }
 
+namespace
+{
+
+/// Index of the first mark after `from` that points to a different position, or `marks_count` if
+/// there is none. Marks are non-decreasing positions in the file, so equal marks form contiguous
+/// runs and binary search is valid.
+size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, size_t marks_count)
+{
+    auto indices = collections::range(from, marks_count);
+    auto less_mark = [&](size_t lhs, size_t rhs)
+    {
+        return marks.getMark(lhs, 0).asTuple() < marks.getMark(rhs, 0).asTuple();
+    };
+
+    auto it = std::upper_bound(indices.begin(), indices.end(), from, std::move(less_mark));
+    return it == indices.end() ? marks_count : *it;
+}
+
+}
+
 bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
 {
     auto marks = marks_loader->loadMarks();
-    size_t num_transitions = 0;
-    MarkInCompressedFile last_mark{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
-    for (size_t i = 0; i < marks_count; ++i)
+
+    size_t num_distinct = 0;
+    for (size_t pos = 0; pos < marks_count; pos = findNextDifferentMark(*marks, pos, marks_count))
     {
-        auto mark = marks->getMark(i, 0);
-        if (mark != last_mark)
-        {
-            last_mark = mark;
-            if (++num_transitions > max_transitions)
-                return false;
-        }
+        if (++num_distinct > max_transitions)
+            return false;
     }
     return true;
 }
@@ -306,17 +321,11 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
         /// Mark 8, points to [84995, 7738]
         /// Mark 9, points to [126531, 8637] <--- what we are looking for
 
-        auto indices = collections::range(right_mark, marks_count);
-        auto next_different_mark = [&](auto lhs, auto rhs)
-        {
-            return marks_getter->getMark(lhs, 0).asTuple() < marks_getter->getMark(rhs, 0).asTuple();
-        };
-
-        auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_mark));
-        if (it == indices.end())
+        size_t next_different_mark = findNextDifferentMark(*marks_getter, right_mark, marks_count);
+        if (next_different_mark == marks_count)
             return file_size;
 
-        right_mark = *it;
+        right_mark = next_different_mark;
     }
 
     /// Special case for streams with dynamic/object structure.
@@ -324,13 +333,6 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
     if (settings.is_metadata_file)
-        return file_size;
-
-    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
-    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
-    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
-    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
-    if (settings.is_single_value_per_part)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

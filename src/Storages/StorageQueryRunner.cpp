@@ -458,7 +458,12 @@ private:
 
     void executeLocally(const QueryRunnerJob & job, ContextMutablePtr job_context) const
     {
-        auto io = executeQuery(job.query, job_context, QueryFlags{ .internal = true }).second;
+        /// The job is nested, hence `internal` - which is also what marks these queries with
+        /// `is_internal = 1` in `system.query_log`. Its text comes from the user who inserted it,
+        /// hence `user_initiated`: without it the access checks of `CREATE` jobs would be skipped, so
+        /// a job would not be limited to the privileges of the principal it runs as.
+        auto io
+            = executeQuery(job.query, job_context, QueryFlags{ .internal = true, .user_initiated = true }).second;
         try
         {
             if (io.pipeline.initialized())
@@ -609,29 +614,29 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
-        query_log->add([&](QueryLogElement & element)
+        QueryLogElement elem;
+        elem.type = type;
+        elem.event_time = timeInSeconds(event_time);
+        elem.event_time_microseconds = timeInMicroseconds(event_time);
+        elem.query_start_time = timeInSeconds(query_start_time);
+        elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
+        elem.query_duration_ms = duration_ms;
+        elem.query = job.query;
+        elem.current_database = job.database;
+        elem.log_comment = settings[Setting::log_comment];
+        elem.client_info = job_context->getClientInfo();
+        elem.is_internal = true;
+
+        if (settings[Setting::log_query_settings])
+            elem.query_settings = std::make_shared<Settings>(settings);
+
+        if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
         {
-            element.type = type;
-            element.event_time = timeInSeconds(event_time);
-            element.event_time_microseconds = timeInMicroseconds(event_time);
-            element.query_start_time = timeInSeconds(query_start_time);
-            element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
-            element.query_duration_ms = duration_ms;
-            element.query = job.query;
-            element.current_database = job.database;
-            element.log_comment = settings[Setting::log_comment];
-            element.client_info = job_context->getClientInfo();
-            element.is_internal = true;
+            elem.exception_code = getCurrentExceptionCode();
+            elem.exception = getCurrentExceptionMessage(false);
+        }
 
-            if (settings[Setting::log_query_settings])
-                element.query_settings = settings.changedToMap();
-
-            if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
-            {
-                element.exception_code = getCurrentExceptionCode();
-                element.exception = getCurrentExceptionMessage(false);
-            }
-        });
+        query_log->add(std::move(elem));
     }
 
     static constexpr std::string_view client_name = "QueryRunner";

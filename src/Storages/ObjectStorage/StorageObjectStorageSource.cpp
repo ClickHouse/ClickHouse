@@ -600,7 +600,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_snapshot->storage.getStorageID(),
+                    .storage_id = storage_id,
                     .size = object_size,
                     .filename = &filename,
                     /// Report an unknown modification time (e.g. a web object whose HTTP response has no
@@ -633,7 +633,7 @@ Chunk StorageObjectStorageSource::generate()
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
+                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
                 {
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
@@ -1067,18 +1067,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
                     const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
-                    auto result = std::make_shared<FormatFilterInfo>(
+                    return std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? format_filter_info->row_level_filter : nullptr,
                         keep_in_reader ? format_filter_info->prewhere_info : nullptr);
-                    /// `mapper` is scoped to the schema this specific file was written under, so it
-                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
-                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
-                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
-                    /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->column_mapper;
-                    return result;
                 }
             }
 
@@ -1138,7 +1131,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+            && !object_info->getObjectMetadata()->etag.empty())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1273,8 +1266,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// The query planner puts row policies into `row_level_filter` when
         /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
         /// files in mixed-format tables may not support it at format level.
-        /// `update_row_numbers_info = true`: safe here because every transform between the format
-        /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.
         if (stripped_row_level_filter)
         {
             auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
@@ -1283,9 +1274,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, row_level_actions,
                     stripped_row_level_filter->column_name,
-                    stripped_row_level_filter->do_remove_column,
-                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
-                    /*update_row_numbers_info=*/true);
+                    stripped_row_level_filter->do_remove_column);
             });
         }
 
@@ -1297,9 +1286,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, prewhere_actions,
                     stripped_prewhere_info->prewhere_column_name,
-                    stripped_prewhere_info->remove_prewhere_column,
-                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
-                    /*update_row_numbers_info=*/true);
+                    stripped_prewhere_info->remove_prewhere_column);
             });
         }
 
@@ -1391,9 +1378,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
-    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    if (use_page_cache && object_info.metadata->etag.empty())
     {
-        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
+        LOG_WARNING(log, "Cannot use page cache, no etag specified");
         use_page_cache = false;
     }
 
@@ -1467,9 +1454,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (!object_info.metadata->isEtagUsableAsCacheKey())
+        if (object_info.metadata->etag.empty())
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
+            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
         }
         else
         {

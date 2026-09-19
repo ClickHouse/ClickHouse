@@ -28,20 +28,20 @@ ClickHouse 中的分区允许根据某个列或 SQL 表达式，在磁盘上对�
 
 <Image img="/images/use-cases/observability/observability-14.webp" alt="分区" size="lg" />
 
-表的 schema 还包含 `TTL toDateTime(Timestamp) + ${TABLES_TTL}` 以及设置 `ttl_only_drop_parts = 1`。前一个子句可确保数据在超过已配置的生存时间 (TTL) 后被删除 (默认 3 天)。设置 `ttl_only_drop_parts = 1` 会强制仅在整个数据 parts 中的数据都已过期时才删除该数据 parts (而不是尝试部分删除行)。由于分区可确保不同日期的数据永远不会被“merged”，因此可以高效地删除数据。
+表的 schema 还包含 `TTL toDateTime(Timestamp) + ${TABLES_TTL}` 以及设置 `ttl_only_drop_parts = 1`。前一个子句可确保数据在超过已配置的生存时间 (TTL) 后被删除 (默认 3 天)。设置 `ttl_only_drop_parts = 1` 会强制仅在整个数据分区片段中的数据都已过期时才删除该数据分区片段 (而不是尝试部分删除行) 。由于分区可确保不同日期的数据永远不会被“merged”，因此可以高效地删除数据。
 
 <Warning>
   **`ttl_only_drop_parts`**
 
-  我们建议始终使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts)。启用此设置后，当某个 part 中的所有行都已过期时，ClickHouse 会直接删除整个 part。删除整个 part，而不是对生存时间 (TTL) 过期的行做部分清理 (在 `ttl_only_drop_parts=0` 时，这需要通过资源密集型的 mutations 来实现)，可以将 `merge_with_ttl_timeout` 设置得更短，并降低对系统性能的影响。如果数据按执行生存时间 (TTL) 过期处理时所用的相同单位进行分区，例如按天分区，那么 parts 自然只会包含该时间间隔内的数据。这将确保 `ttl_only_drop_parts=1` 能够被高效应用。
+  我们建议始终使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts)。启用此设置后，当某个 part 中的所有行都已过期时，ClickHouse 会直接删除整个 part。删除整个 part，而不是对生存时间 (TTL) 过期的行做部分清理 (在 `ttl_only_drop_parts=0` 时，这需要通过资源密集型的 mutations 来实现) ，可以将 `merge_with_ttl_timeout` 设置得更短，并降低对系统性能的影响。如果数据按执行生存时间 (TTL) 过期处理时所用的相同单位进行分区，例如按天分区，那么 parts 自然只会包含该时间间隔内的数据。这将确保 `ttl_only_drop_parts=1` 能够被高效应用。
 </Warning>
 
-默认情况下，生存时间 (TTL) 已过期的数据会在 ClickHouse [合并数据 parts](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 时被移除。当 ClickHouse 检测到数据已过期时，它会执行一次计划外合并。
+默认情况下，生存时间 (TTL) 已过期的数据会在 ClickHouse [合并数据分区片段](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 时被移除。当 ClickHouse 检测到数据已过期时，它会执行一次计划外合并。
 
 <Info>
   **生存时间 (TTL) 调度**
 
-  如上所述，生存时间 (TTL) 不会立即生效，而是按计划执行。MergeTree 表设置 `merge_with_ttl_timeout` 用于设置再次执行带删除生存时间 (TTL) 的合并前的最小延迟秒数。默认值为 14400 秒 (4 小时)。但这只是最小延迟；生存时间 (TTL) 合并实际触发前，可能还需要更长时间。如果该值过低，系统会执行大量计划外合并，可能消耗大量资源。可以使用命令 `ALTER TABLE my_table MATERIALIZE TTL` 强制触发一次生存时间 (TTL) 过期处理。
+  如上所述，生存时间 (TTL) 不会立即生效，而是按计划执行。MergeTree 表设置 `merge_with_ttl_timeout` 用于设置再次执行带删除生存时间 (TTL) 的合并前的最小延迟秒数。默认值为 14400 秒 (4 小时) 。但这只是最小延迟；生存时间 (TTL) 合并实际触发前，可能还需要更长时间。如果该值过低，系统会执行大量计划外合并，可能消耗大量资源。可以使用命令 `ALTER TABLE my_table MATERIALIZE TTL` 强制触发一次生存时间 (TTL) 过期处理。
 </Info>
 
 <div id="modifying-ttl">

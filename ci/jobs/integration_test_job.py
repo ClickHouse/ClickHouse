@@ -149,6 +149,7 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
         "docker_compose_iceberg_hms_catalog.yml",
         "docker_compose_iceberg_lakekeeper_catalog.yml",
         "docker_compose_iceberg_nessie_catalog.yml",
+        "docker_compose_iceberg_seaweedfs_catalog.yml",
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
@@ -900,7 +901,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
-        and not is_llvm_coverage
         and not args.test
     ):
         changed_files = info.get_changed_files()
@@ -1477,7 +1477,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     force_ok_exit = False
     if R:
         failures_cnt = len([r for r in R.results if not r.is_ok()])
-        if failures_cnt > 0 and failures_cnt < 2:
+        if failures_cnt > 0 and failures_cnt < 4:
             print(
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )

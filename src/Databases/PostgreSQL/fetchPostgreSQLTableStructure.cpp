@@ -14,11 +14,13 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <boost/algorithm/string/join.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <base/FnTraits.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -186,9 +188,17 @@ bool isTableEmpty(T & tx, const String & postgres_table)
     return result[0][0].as<bool>();
 }
 
+/// `postgres_table` is quoted and schema-qualified, ready to be pasted into a query.
+/// `postgres_table_for_messages` is the same relation as it is named in diagnostics: identifier
+/// quoting belongs in the SQL we send, not in what we show the user.
 template<typename T>
 PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
-    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
+    T & tx,
+    const String & postgres_table,
+    const String & postgres_table_for_messages,
+    const String & query,
+    bool use_nulls,
+    bool only_names_and_types)
 {
     auto columns = NamesAndTypes();
     PostgreSQLTableStructure::Attributes attributes;
@@ -250,7 +260,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// If the relation is empty, then array_ndims returns NULL.
             /// ClickHouse cannot support this use case.
             if (isTableEmpty(tx, postgres_table))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL relation containing arrays cannot be empty: {}", postgres_table);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL relation containing arrays cannot be empty: {}", postgres_table_for_messages);
 
             /// All rows must contain the same number of dimensions.
             /// 1 is ok. If number of dimensions in all rows is not the same -
@@ -264,7 +274,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// Nullable(Array) is not supported.
             auto is_null_array = result[0][0].as<bool>();
             if (is_null_array)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL: {}.{}", postgres_table, postgres_column);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL: {}.{}", postgres_table_for_messages, postgres_column);
 
             /// Cannot infer dimension of empty arrays.
             auto is_empty_array = result[0][1].is_null();
@@ -273,7 +283,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "PostgreSQL cannot infer dimensions of an empty array: {}.{}. Make sure no empty array values in the first row.",
-                    postgres_table,
+                    postgres_table_for_messages,
                     postgres_column);
             }
 
@@ -289,7 +299,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
     }
     catch (const pqxx::undefined_table &)
     {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_for_messages);
     }
     catch (const pqxx::syntax_error & e)
     {
@@ -321,7 +331,20 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     std::string columns_part;
     if (!columns.empty())
-        columns_part = fmt::format(" AND attname IN ('{}')", boost::algorithm::join(columns, "','"));
+    {
+        /// Quote each column name individually so a name containing a quote cannot break out of the
+        /// literal (a plain join with `','` left the interpolated names unescaped).
+        WriteBufferFromOwnString buffer;
+        buffer << " AND attname IN (";
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            if (i != 0)
+                buffer << ", ";
+            writeQuotedStringPostgreSQLLossless(columns[i], buffer);
+        }
+        buffer << ')';
+        columns_part = std::move(buffer.str());
+    }
 
     /// Bypassing the error of the missing column `attgenerated` in the system table `pg_attribute` for PostgreSQL versions below 12.
     /// This trick involves executing a special query to the DBMS in advance to obtain the correct line with comment /// if column has GENERATED.
@@ -344,11 +367,20 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
-    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
+    auto postgres_table_with_schema = postgres_schema.empty()
+        ? doubleQuoteString(postgres_table)
+        : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    /// How the relation is named in diagnostics. Deliberately the spelling this function used before
+    /// the table identifier was quoted for the empty-schema branch, so that no error message
+    /// changes: the schema-qualified form has always been shown quoted, the bare one unquoted.
+    auto postgres_table_for_messages = postgres_schema.empty()
+        ? postgres_table
+        : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    table.physical_columns
+        = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, false);
 
     if (!table.physical_columns)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_for_messages);
 
     for (const auto & column : table.physical_columns->columns)
     {
@@ -405,7 +437,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.primary_key_columns
+            = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, true);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -433,7 +466,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
         );
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.replica_identity_columns
+            = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, true);
     }
 
     return table;

@@ -370,54 +370,36 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
     }
 }
 
-class KeeperMemNodesStorage::NodesReadView final : public KeeperNodesReadView
+std::unique_ptr<KeeperNodeStreamForSnapshot> KeeperMemNodesStorage::beginWritingSnapshot()
 {
-public:
-    NodesReadView(KeeperMemNodesStorage * nodes_storage_, std::unique_ptr<Container::ReadView> view_)
-        : nodes_storage(nodes_storage_)
-        , view(std::move(view_))
-        , it(view->begin())
-    {
-    }
-
-    ~NodesReadView() override
-    {
-        nodes_storage->retireReadView(std::move(view));
-    }
-
-    size_t getNodeCount() const override { return view->nodeCount(); }
-
-    bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
-
-private:
-    KeeperMemNodesStorage * nodes_storage;
-    std::unique_ptr<Container::ReadView> view;
-    Container::ReadView::Iterator it;
-};
-
-std::unique_ptr<KeeperNodesReadView> KeeperMemNodesStorage::issueReadView()
-{
-    std::lock_guard lock(*storage_mutex);
-    return std::make_unique<NodesReadView>(this, container.issueReadView());
+    auto res = std::make_unique<NodeStreamForSnapshot>();
+    auto [size, ver] = container.snapshotSizeWithVersion();
+    container.enableSnapshotMode(ver);
+    res->node_count = size;
+    res->it = container.begin();
+    return res;
 }
 
-void KeeperMemNodesStorage::retireReadView(std::unique_ptr<Container::ReadView> view) noexcept
+void KeeperMemNodesStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream)
 {
-    std::lock_guard lock(*storage_mutex);
-    container.retireReadView(std::move(view));
+    stream->node_count = 0;
+    container.disableSnapshotMode();
+    container.clearOutdatedNodes();
 }
 
-bool KeeperMemNodesStorage::NodesReadView::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
+bool KeeperMemNodesStorage::NodeStreamForSnapshot::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
 {
-    if (it == view->end())
+    if (next_node_idx >= node_count)
         return false;
 
-    const auto & elem = *it;
-    out_path = elem.key;
-    out_data = elem.value.getData();
-    out_stats = elem.value.stats;
+    out_path = it->key;
+    out_data = it->value.getData();
+    out_stats = it->value.stats;
 
-    ++it;
+    ++next_node_idx;
+    if (next_node_idx < node_count) // don't move the iterator past the end of immutable range
+        ++it;
+
     return true;
 }
 

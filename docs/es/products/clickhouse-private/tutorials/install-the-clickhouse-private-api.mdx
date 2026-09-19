@@ -25,7 +25,9 @@ Antes de comenzar, asegúrese de tener:
 ***
 
 <Steps>
-  <Step title="Paso 1: Copiar imágenes de contenedor" id="step-1-copy-container-images">
+  <Step>
+    ## Paso 1: Copiar imágenes de contenedor
+
     Use skopeo para copiar la imagen de la ClickHouse Private API y el gráfico de Helm a su ECR.
 
     ```ini
@@ -51,7 +53,9 @@ Antes de comenzar, asegúrese de tener:
     ***
   </Step>
 
-  <Step title="Paso 2: Instalar con Helm" id="step-2-install-via-helm">
+  <Step>
+    ## Paso 2: Instalar con Helm
+
     La ClickHouse Private API se instala en un espacio de nombres dedicado.
 
     ```text
@@ -76,7 +80,9 @@ Antes de comenzar, asegúrese de tener:
     ***
   </Step>
 
-  <Step title="Paso 3: Configurar la autenticación" id="step-3-configure-authentication">
+  <Step>
+    ## Paso 3: Configurar la autenticación
+
     De forma predeterminada, la autenticación básica está deshabilitada. Para entornos de producción, habilítela estableciendo estos valores de Helm:
 
     * `api.basicAuth.enabled=true`
@@ -88,7 +94,9 @@ Antes de comenzar, asegúrese de tener:
     ***
   </Step>
 
-  <Step title="Paso 4: Verificar la instalación" id="step-4-verify-installation">
+  <Step>
+    ## Paso 4: Verificar la instalación
+
     ### Comprobar el pod de Kubernetes
 
     ```bash

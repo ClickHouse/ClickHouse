@@ -13,7 +13,6 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Poco/URI.h>
-#include <Poco/Net/IPAddress.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -47,12 +46,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
-    extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
 
 namespace ErrorCodes
@@ -65,7 +59,7 @@ namespace
 {
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeForModel(std::string_view input)
+String sanitizeTextForAI(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -77,17 +71,6 @@ String sanitizeForModel(std::string_view input)
             output.push_back(static_cast<char>(ch));
     }
     return output;
-}
-
-/// Whether an endpoint host refers to the local machine.
-bool isLoopbackHost(const String & host)
-{
-    if (host == "localhost")
-        return true;
-    Poco::Net::IPAddress address;
-    if (Poco::Net::IPAddress::tryParse(host, address))
-        return address.isLoopback();
-    return false;
 }
 
 /// Providers serialize integer fields (`max_tokens`, `dimensions`) as `Int64` (Poco JSON has no
@@ -275,19 +258,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    const Poco::URI endpoint_uri(params.collection.endpoint);
-    context->getRemoteHostFilter().checkURL(endpoint_uri);
-
-    /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
-    /// Local hosts are exempt, the `ai_function_allow_insecure_endpoint` setting overrides the check.
-    if (endpoint_uri.getScheme() != "https"
-        && !isLoopbackHost(endpoint_uri.getHost())
-        && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
-            "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
-            "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+    context->getRemoteHostFilter().checkURL(Poco::URI(params.collection.endpoint));
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
@@ -377,7 +348,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
-    String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
+    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
     auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
@@ -400,11 +371,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    AIQuotaTracker quota(
-        settings[Setting::ai_function_max_input_tokens_per_query].value,
-        settings[Setting::ai_function_max_output_tokens_per_query].value,
-        settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    /// Shared across every AI function call in the query
+    auto quota_tracker = getContext()->getAIQuotaTracker();
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -427,22 +395,22 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        if (quota.checkQuotas())
+        if (quota_tracker->checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
             continue;
         }
 
-        String user_message = sanitizeForModel(buildUserMessage(arguments, i));
+        String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
         String result;
         bool success = false;
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota.checkQuotas())
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+            if (!quota_tracker->recordApiCall())
                 break;
 
             try
@@ -456,13 +424,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.max_tokens = max_tokens;
                 ai_request.function_name = getName();
 
-                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
-                quota.recordAttempt();
 
                 auto ai_response = provider->call(ai_request, timeouts);
 
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 

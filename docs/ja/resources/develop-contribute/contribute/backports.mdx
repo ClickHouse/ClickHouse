@@ -123,62 +123,76 @@ ClickHouse のバージョンは `YY.M.patch.build-type` という形式に従�
   ### 手順
 </div>
 
-<Steps>
-  <Step title="アクティブなリリースを検出する" id="discover-active-releases">
-    `BackportPRs.receive_release_prs` は GitHub に対して、`release` label が付いたすべての open PR を問い合わせます。これらの PR の head ref はリリースブランチ名 (例: `release/25.3`) です。これらから、検索対象となる version-specific label の集合を導き出します。つまり、repository に存在し、そのバージョンが最新の active release より新しくない、すべての `v{VER}-must-backport` label です。古い label は、その release がすでに active でなくても含まれます (すべての active release より新しい label は、どの active branch にも展開できないためスキップされます)。そのため、end-of-life release 用の label が付いた PR も、より新しい release が active である限り検出されます。
-  </Step>
+<div id="discover-active-releases">
+  #### 1. アクティブなリリースを特定する
+</div>
 
-  <Step title="バックポート対象の PR を見つける" id="find-prs-to-backport">
-    `BackportPRs.receive_prs_for_backport` は、GitHub Search API を使用して、次の条件を満たすマージ済み PR を見つけます。
+`BackportPRs.receive_release_prs` は、`release` ラベルが付いたオープンな PR をすべて GitHub に対して照会します。これらの PR の head ref がリリースブランチ名です (例: `release/25.3`) 。そこから、検索対象となるバージョン固有のラベルのセット、すなわちリポジトリ内に存在し、そのバージョンが最新のアクティブなリリースより新しくないすべての `v{VER}-must-backport` ラベルを導き出します。古いラベルは、そのリリースがすでにアクティブでなくても含まれます (アクティブなすべてのリリースより新しいラベルは、どのアクティブなブランチにも展開できないためスキップされます) 。そのため、サポート終了済みのリリース向けのラベルが付いた PR であっても、より新しいリリースがアクティブである限り、引き続き見つけることができます。
 
-    * 少なくとも1つの バックポートラベル (`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix`、または バージョン固有の label) が付いており、
-    * まだ `pr-backports-created` が付与されておらず、
-    * いずれかの リリースブランチ 上で見つかった最も古いコミット日時より後にマージされており、
-    * 直近90日以内に更新されているもの (検索クエリ を効率的に保つため) です。
-  </Step>
+<div id="find-prs-to-backport">
+  #### 2. バックポート対象のPRを見つける
+</div>
 
-  <Step title="Rolling-out ブランチの扱い" id="rolling-out-branch-handling">
-    release PR に `rolling-out` ラベルが付いている場合、一般的なバックポートラベル (`pr-must-backport`、`pr-critical-bugfix`) はそのブランチをスキップします。bot は、そのブランチに対して以前に作成された cherry-pick PR または バックポート PR を、説明コメントを付けてクローズします。バージョン固有のラベル (たとえば `v25.3-must-backport`) は常にこれを上書きし、指定された release と、それが展開されるそれより新しいすべてのアクティブな release branch に適用されます。`pr-must-backport-force` は、すべてのブランチで `rolling-out` チェックをバイパスします。
-  </Step>
+`BackportPRs.receive_prs_for_backport` は GitHub Search API を使って、次の条件を満たすマージ済みPRを検索します。
 
-  <Step title={<>Cherry-pick 段階 (<code>ReleaseBranch.create_cherrypick</code>)</>} id="cherry-pick-stage">
-    まだ cherry-pick PR が存在しない各 (元の PR、リリースブランチ) の組について:
+* 少なくとも 1 つのバックポートラベル (`pr-must-backport`、`pr-must-backport-force`、`pr-critical-bugfix`、またはバージョン固有のラベル) が付いており、
+* まだ `pr-backports-created` が付与されておらず、
+* いずれかのリリースブランチで見つかった最も古いコミット日より後にマージされており、
+* 過去 90 日以内に更新されている (検索クエリの効率を保つため) 。
 
-    1. リリースブランチ をチェックアウトし、そこから **バックポートブランチ** (`backport/release/X.Y/N`) を作成します。
-    2. マージコミットの第1親に対して `git merge -s ours` を実行し、内容変更を伴わない合成マージベースを作成します。
-    3. 元の PR のマージコミットを直接指す **cherry-pick branch** (`cherrypick/release/X.Y/N`) を強制的に作成します。
-    4. cherry-pick branch を backport branch に `git merge --no-commit --no-ff` でマージします。
-       * すでに最新であれば、その変更は リリースブランチ にすでに含まれているため、完了としてマークしてスキップします。
-       * それ以外の場合は (競合の有無にかかわらず) 、両方のブランチをリセットして push します。
-    5. `cherrypick/release/X.Y/N` から `backport/release/X.Y/N` への cherry-pick PR を作成し、`pr-cherrypick` と `do not test` の label を付与します。
-    6. 該当する場合は、元の PR から `pr-bugfix` または `pr-critical-bugfix` を引き継ぎます。
-    7. この時点では 担当者 は設定しません。担当者 が追加されるのは、競合が検出された場合のみです。
-  </Step>
+<div id="rolling-out-branch-handling">
+  #### 3. `rolling-out` ブランチの処理
+</div>
 
-  <Step title="競合のない cherry-pick PR の自動マージ" id="auto-merge-conflict-free-cherry-pick-prs">
-    cherry-pick PR がマージ可能であれば (競合がなければ) 、bot は GitHub API 経由でそれを自動的にマージし、ただちにバックポート段階に進みます。
-  </Step>
+リリース PR に `rolling-out` ラベルが付いている場合、一般的なバックポートラベル (`pr-must-backport`、`pr-critical-bugfix`) ではそのブランチはスキップされます。ボットは、そのブランチ向けに以前作成された cherry-pick または バックポート PR を、説明コメント付きでクローズします。バージョン固有のラベル (例: `v25.3-must-backport`) は、常にこの動作より優先されます — 指定されたリリースと、そこから展開されるそれ以降のすべてのアクティブなリリースブランチに対してです。`pr-must-backport-force` は、すべてのブランチで `rolling-out` チェックを無視します。
 
-  <Step title={<>バックポート段階 (<code>ReleaseBranch.create_backport</code>)</>} id="backport-stage">
-    cherry-pick PR がマージされた後:
+<div id="cherry-pick-stage">
+  #### 4. Cherry-pick 段階 (`ReleaseBranch.create_cherrypick`)
+</div>
 
-    1. バックポートブランチ をチェックアウトして pull します。
-    2. リリースブランチ と バックポートブランチ の間のマージベースを特定します。
-    3. マージベースに対して `git reset --soft` を実行し、cherry-pick したすべてのコミットを1つにまとめます。
-    4. バックポート PR のタイトルをメッセージとしてコミットします。
-    5. バックポートブランチ を force-push し、実際のリリースブランチ を対象とする バックポート PR を作成します。
-    6. PR に `pr-backport` の label を付与し、該当する場合は `pr-bugfix` / `pr-critical-bugfix` も付与します。
-    7. PR を、元の PR の 著者、マージした人、および既存の 担当者 (ロボットアカウントを除く) に割り当てます。
-  </Step>
+まだ cherry-pick PR が存在しない各 (元の PR、リリースブランチ) の組について:
 
-  <Step title="完了" id="completion">
-    ある元の PR に対応するすべてのリリースブランチへのバックポートが完了すると、ボットは元の PR に `pr-backports-created` を追加します。
-  </Step>
+1. リリースブランチ をチェックアウトし、そこから **バックポートブランチ** (`backport/release/X.Y/N`) を作成します。
+2. マージコミットの第1親に対して `git merge -s ours` を実行し、内容変更を伴わない合成マージベースを作成します。
+3. 元の PR のマージコミットを直接指す **cherry-pick branch** (`cherrypick/release/X.Y/N`) を強制的に作成します。
+4. cherry-pick branch を backport branch に `git merge --no-commit --no-ff` でマージします。
+   * すでに最新であれば、その変更は リリースブランチ にすでに含まれているため、完了としてマークしてスキップします。
+   * それ以外の場合は (競合の有無にかかわらず) 、両方のブランチをリセットして push します。
+5. `cherrypick/release/X.Y/N` から `backport/release/X.Y/N` への cherry-pick PR を作成し、`pr-cherrypick` と `do not test` の label を付与します。
+6. 該当する場合は、元の PR から `pr-bugfix` または `pr-critical-bugfix` を引き継ぎます。
+7. この時点では 担当者 は設定しません。担当者 が追加されるのは、競合が検出された場合のみです。
 
-  <Step title="事前確認" id="pre-check">
-    PR での作業を開始する前に、`ReleaseBranch.pre_check` は `git merge-base --is-ancestor` を実行して、マージコミットに リリースブランチ からすでに到達できないことを確認します。到達できる場合、その PR はすでにバックポート済みと見なされ、スキップされます。
-  </Step>
-</Steps>
+<div id="auto-merge-conflict-free-cherry-pick-prs">
+  #### 5. 競合のない cherry-pick PR の自動マージ
+</div>
+
+cherry-pick PR をマージ可能な状態 (競合なし) であれば、ボットは GitHub API を通じて自動的にマージし、直ちに backport 段階に進みます。
+
+<div id="backport-stage">
+  #### 6. バックポート段階 (`ReleaseBranch.create_backport`)
+</div>
+
+cherry-pick PR がマージされたら、次の手順を実行します。
+
+1. バックポートブランチをチェックアウトし、pull します。
+2. リリースブランチとバックポートブランチの間の merge-base を見つけます。
+3. merge-base に対して `git reset --soft` を実行し、cherry-pick したすべてのコミットを 1 つにまとめます。
+4. バックポート PR のタイトルをメッセージとしてコミットします。
+5. バックポートブランチを force-push し、実際のリリースブランチを対象とするバックポート PR を作成します。
+6. PR に `pr-backport` のラベルを付けます (必要に応じて `pr-bugfix` / `pr-critical-bugfix` も付けます) 。
+7. PR を、元の PR の著者、マージしたユーザー、および既存の担当者 (ロボットアカウントを除く) に割り当てます。
+
+<div id="completion">
+  #### 7. 完了
+</div>
+
+特定の元の PRに対応するすべてのリリースブランチへのバックポートが完了すると、ボットはその元の PRに`pr-backports-created`を追加します。
+
+<div id="pre-check">
+  #### 8. 事前チェック
+</div>
+
+PR の作業を開始する前に、`ReleaseBranch.pre_check` は `git merge-base --is-ancestor` を実行し、そのマージコミットがリリースブランチからすでにたどれる状態にないことを確認します。すでにたどれる状態にある場合、その PR はすでにバックポート済みと見なされ、スキップされます。
 
 <div id="stale-cherry-pick-pr-handling">
   ### Stale Cherry-pick PR の処理

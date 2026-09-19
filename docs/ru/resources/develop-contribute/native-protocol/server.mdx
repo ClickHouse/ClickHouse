@@ -51,14 +51,14 @@ keywords: ['собственный протокол', 'TCP-протокол', '�
 | поле            | тип    | значение                               | описание                     |
 | --------------- | ------ | -------------------------------------- | ---------------------------- |
 | code            | Int32  | `60`                                   | См. [ErrorCodes.cpp][codes]. |
-| name            | String | `DB::Exception`                        | мажорная версия сервера      |
-| message         | String | `DB::Exception: Table X doesn't exist` | минорная версия сервера      |
+| name            | String | `DB::Exception`                        | Основная версия сервера      |
+| message         | String | `DB::Exception: Table X doesn't exist` | Младшая версия сервера       |
 | stack&#95;trace | String | ~                                      | Трассировка стека C++        |
 | nested          | Bool   | `true`                                 | Дополнительные ошибки        |
 
 Это может быть непрерывный список исключений, пока `nested` не равно `false`.
 
-[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "Список кодов ошибок"
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "Список кодов ошибок"
 
 <div id="progress">
   ## Прогресс

@@ -310,7 +310,7 @@ ClickHouse client の出力から、次のことがわかります。
   ClickHouse では、主キーカラムの値が同一の複数の行を挿入できます。この場合 (下図の行 1 と行 2 を参照) 、最終的な順序は指定されたソートキー、つまり `EventTime` カラムの値によって決まります。
 </Note>
 
-ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">カラム指向データベース管理システム</a>です。以下の図に示すとおり、
+ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">カラム指向データベース管理システム</a>です。以下の図に示すとおり、
 
 * ディスク上の表現では、テーブルの各カラムごとに 1 つのデータファイル (*.bin) があり、そのカラムのすべての値が<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>フォーマットで保存されます。
 * 887 万行は、主キーカラム (および追加のソートキーカラム) に従って、辞書式順序の昇順でディスク上に保存されます。つまり、この場合は
@@ -329,7 +329,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
 </Note>
 
 <div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### データは並列データ処理のためにグラニュールに編成されます
+  ### データは並列処理のためにグラニュールに編成されます
 </div>
 
 データ処理の観点では、テーブルのカラム値は論理的にグラニュールへ分割されます。
@@ -390,87 +390,72 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
   * プライマリインデックスファイルは全体が主記憶に読み込まれます。ファイルサイズが利用可能な空きメモリ容量を超えると、ClickHouse はエラーを返します。
 </Note>
 
-<Accordion title="プライマリインデックスの内容を確認する">
-  セルフマネージドの ClickHouse クラスターでは、[file table function](/ja/reference/functions/table-functions/file) を使って、サンプルテーブルのプライマリインデックスの内容を確認できます。
+<Accordion title="プライマリインデックスの内容を調べる">
+  <p>
+    セルフマネージドのClickHouseクラスターでは、サンプルテーブルのプライマリインデックスの内容を調べるために、<a href="/ja/reference/functions/table-functions/file" target="_blank">file table function</a>を使用できます。
 
-  そのためには、まずプライマリインデックスファイルを、稼働中のクラスター内のノードの [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings#user_files_path) にコピーする必要があります。
+    そのためには、まず実行中のクラスター内のノードの<a href="/ja/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a>にプライマリインデックスファイルをコピーする必要があります:
 
-  **ステップ 1: プライマリインデックスファイルを含む part-path を取得する**
+    <ul>
+      <li>ステップ 1: プライマリインデックスファイルを含むパーツのパスを取得する</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
 
-  ```sql
-  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
-  ```
+      テストマシンでは、`/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`が返されます。
 
-  テストマシンでは `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` が返されます。
+      <li>ステップ 2: user&#95;files&#95;path を取得する</li>
+      Linux での<a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">デフォルトの user&#95;files&#95;path</a>は
+      `/var/lib/clickhouse/user_files/`
 
-  **ステップ 2: user&#95;files&#95;path を取得する**
+      です。Linux では、変更されているかどうかを次のように確認できます: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  Linux での[デフォルトの user&#95;files&#95;path](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) は `/var/lib/clickhouse/user_files/` です。
+      テストマシンでのパスは`/Users/tomschreiber/Clickhouse/user_files/`です。
 
-  また、Linux では次のようにして変更されているか確認できます: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+      <li>ステップ 3: プライマリインデックスファイルを user&#95;files&#95;path にコピーする</li>
 
-  テストマシンでは、このパスは `/Users/tomschreiber/Clickhouse/user_files/` です。
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
 
-  **ステップ 3: プライマリインデックスファイルを user&#95;files&#95;path にコピーする**
+    <br />
 
-  ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
-  ```
+    これで、SQL 経由でプライマリインデックスの内容を調べられます:
 
-  これで、SQL でプライマリインデックスの内容を確認できます。
+    <ul>
+      <li>エントリ数を取得する</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      `1083`が返されます。
 
-  **エントリ数を取得する**
+      <li>最初の 2 つのインデックスマークを取得する</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
 
-  ```sql
-  SELECT count()
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
-  ```
+      結果は次のとおりです。
 
-  `1083` が返されます。
+      `240923, http://showtopics.html%3...<br/>
+                  4073710, http://mk.ru&pos=3_0`
 
-  **最初の 2 つの索引マークを取得する**
+      <li>最後のインデックスマークを取得する</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      結果は次のとおりです。
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
 
-  ```sql
-  SELECT UserID, URL
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 0, 2;
-  ```
+    <br />
 
-  結果:
-
-  ```response
-  240923, http://showtopics.html%3...
-  4073710, http://mk.ru&pos=3_0
-  ```
-
-  **最後の索引マークを取得する**
-
-  ```sql
-  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 1082, 1;
-  ```
-
-  結果:
-
-  ```response
-  4292714039 │ http://sosyal-mansetleri...
-  ```
-
-  これは、サンプルテーブルのプライマリインデックス内容を示した図と完全に一致します。
+    これは、サンプルテーブルのプライマリインデックスの内容を示した図と完全に一致しています:
+  </p>
 </Accordion>
 
-主キーのエントリは、各索引エントリが特定のデータ範囲の開始位置を示すことから、索引マークと呼ばれます。サンプルテーブルでは、具体的には次のようになります。
+主キーのエントリは インデックスマーク と呼ばれます。各 索引エントリ は特定のデータ範囲の開始位置を示すためです。サンプルテーブルでは、具体的には次のようになります:
 
-* UserID 索引マーク:
+* UserID インデックスマーク:
 
-  プライマリインデックスに格納されている `UserID` の値は昇順にソートされています。<br />
-  したがって、上の図の &#39;mark 1&#39; は、グラニュール 1 内のすべてのテーブル行と、それ以降のすべてのグラニュールにおける `UserID` の値が、4.073.710 以上であることを示しています。
+  プライマリインデックスに格納されている`UserID`の値は昇順に並んでいます。<br />
+  したがって、上の図の「mark 1」は、グラニュール 1 のすべてのテーブル行と、それ以降のすべての グラニュール に含まれる`UserID`の値が、4.073.710 以上であることを示しています。
 
-[後で説明するように](#the-primary-index-is-used-for-selecting-granules)、この全体的な順序により、主キーの最初のカラムでクエリをフィルタリングする場合、ClickHouse は最初のキーカラムの索引マークに対して <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索アルゴリズムを使用</a>できます。
+[後で説明するように](#the-primary-index-is-used-for-selecting-granules)、この全体的な順序により、主キーの先頭カラムでクエリを絞り込む場合、ClickHouse は先頭キーカラムの インデックスマーク に対して<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分探索アルゴリズムを使用</a>できます。
 
-* URL 索引マーク:
+* URL インデックスマーク:
 
-  主キーカラム `UserID` と `URL` のカーディナリティがかなり近いため、一般に、2 番目以降のすべてのキーカラムの索引マークが示せるデータ範囲は、少なくとも現在の グラニュール 内のすべてのテーブル行で直前のキーカラムの値が同じである場合に限られます。<br />
+  主キーカラム `UserID` と `URL` のカーディナリティがかなり近いため、一般に、2 番目以降のすべてのキーカラムのインデックスマークが示せるデータ範囲は、少なくとも現在の グラニュール 内のすべてのテーブル行で直前のキーカラムの値が同じである場合に限られます。<br />
   たとえば、上の図では mark 0 と mark 1 の UserID の値が異なるため、ClickHouse は グラニュール 0 内のすべてのテーブル行の URL の値が `'http://showtopics.html%3...'` 以上であるとは判断できません。ですが、上の図で mark 0 と mark 1 の UserID の値が同じであれば (つまり、グラニュール 0 内のすべてのテーブル行で UserID の値が変わらないことを意味します) 、ClickHouse は グラニュール 0 内のすべてのテーブル行の URL の値が `'http://showtopics.html%3...'` 以上であると判断できます。
 
   これがクエリ実行性能にどのような影響を与えるかについては、後ほどさらに詳しく説明します。
@@ -625,7 +610,7 @@ ClickHouse が、クエリに一致する行を含む可能性がある グラ�
 
 特定のカラムに対応する各 マークファイル エントリには、offset の形で 2 つの位置が格納されています。
 
-* 1 つ目の offset (上図の &#39;block&#95;offset&#39;) は、選択された グラニュール の圧縮版を含む、<a href="/ja/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> の位置を、<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>されたカラムデータファイル内で示します。この圧縮 block には、複数の圧縮された グラニュール が含まれている可能性があります。特定された圧縮ファイル block は、読み取り時にメインメモリ上で展開されます。
+* 1 つ目の offset (上図の &#39;block&#95;offset&#39;) は、選択された グラニュール の圧縮版を含む、<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>されたカラムデータファイル内の <a href="/ja/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> の位置を示します。この圧縮 block には、複数の圧縮された グラニュール が含まれている可能性があります。特定された圧縮ファイル block は、読み取り時にメインメモリ上で展開されます。
 
 * 2 つ目の offset (上図の &#39;granule&#95;offset&#39;) は マークファイル から取得され、非圧縮の block data 内における グラニュール の位置を示します。
 

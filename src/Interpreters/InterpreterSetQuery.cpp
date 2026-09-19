@@ -44,6 +44,8 @@ BlockIO InterpreterSetQuery::execute()
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+    /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
+    getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -61,7 +63,11 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
+    {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+        /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
+        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
+    }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
@@ -179,12 +185,8 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     String & name = it->name;
                     if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
                     {
-                        /// A value-less `SETTINGS name` in a `CREATE` reaches the context here
-                        /// rather than through `executeForCurrentContext`, and the constraint check
-                        /// below converts the value first, so this has to come before it.
-                        context_settings.checkShorthandChange(*it);
                         context_->checkSettingsConstraints(*it, SettingSource::QUERY);
-                        context_->applySettingChange(*it);
+                        context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);
                     }
                     else

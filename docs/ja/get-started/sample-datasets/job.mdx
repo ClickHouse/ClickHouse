@@ -24,7 +24,7 @@ Join Order Benchmark (JOB) は、実世界の強い相関を持つデータセ�
 
 JOB データセットは、21 個のテーブルで構成される IMDb のスナップショットです。テーブル定義は、ClickHouse リポジトリ内の [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) で確認できます。
 
-各テーブルは、主キーのカラム `id` でソートされた [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンを使用しており、すべてのテーブルで `id integer NOT NULL PRIMARY KEY` を宣言している元の PostgreSQL スキーマを反映しています。NULL 許容の PostgreSQL カラムは、`Nullable(...)` 型に対応します。
+各テーブルは、主キーのカラム `id` でソートされた [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) エンジンを使用しており、すべてのテーブルで `id integer NOT NULL PRIMARY KEY` を宣言している元の PostgreSQL スキーマを反映しています。NULL 許容の PostgreSQL カラムは、`Nullable(...)` 型に対応します。
 
 テーブルを作成します:
 

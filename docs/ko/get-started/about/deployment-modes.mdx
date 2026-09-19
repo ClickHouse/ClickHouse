@@ -49,11 +49,11 @@ ClickHouse 서버는 전통적인 클라이언트/서버 아키텍처를 기반�
 
 <Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm" />
 
-ClickHouse Cloud의 주요 장점 중 하나는 통합 도구 세트입니다. [ClickPipes](/ko/get-started/setup/cloud#clickpipes)는 강력한 데이터 수집 프레임워크를 제공하므로 복잡한 ETL 파이프라인을 관리하지 않고도 다양한 소스의 데이터를 손쉽게 연결하고 스트리밍할 수 있습니다. 또한 이 플랫폼은 전용 [쿼리 API](/ko/products/cloud/guides/sql-console/query-endpoints)도 제공하므로 애플리케이션을 훨씬 더 쉽게 구축할 수 있습니다.
+ClickHouse Cloud의 주요 장점 중 하나는 통합 도구 세트입니다. [ClickPipes](/ko/get-started/setup/cloud#clickpipes)는 강력한 데이터 수집 프레임워크를 제공하므로 복잡한 ETL 파이프라인을 관리하지 않고도 다양한 소스의 데이터를 손쉽게 연결하고 스트리밍할 수 있습니다. 또한 이 플랫폼은 전용 [querying API](/ko/products/cloud/guides/sql-console/query-endpoints)도 제공하므로 애플리케이션을 훨씬 더 쉽게 구축할 수 있습니다.
 
-ClickHouse Cloud의 SQL 콘솔에는 강력한 [대시보드](/ko/products/cloud/features/sql-console-features/dashboards) 기능이 포함되어 있어 쿼리를 대화형 시각화로 변환할 수 있습니다. 저장된 쿼리를 기반으로 대시보드를 만들고 공유할 수 있으며, 쿼리 매개변수를 통해 대화형 요소를 추가할 수도 있습니다. 이러한 대시보드는 Global Filters를 사용해 동적으로 구성할 수 있으므로 사용자는 사용자 지정 가능한 보기로 데이터를 탐색할 수 있습니다. 다만 시각화를 보려면 기반이 되는 저장된 쿼리에 대해 최소한 읽기 권한이 있어야 한다는 점에 유의해야 합니다.
+ClickHouse Cloud의 SQL 콘솔에는 강력한 [dashboarding](/ko/products/cloud/features/sql-console-features/dashboards) 기능이 포함되어 있어 쿼리를 대화형 시각화로 변환할 수 있습니다. 저장된 쿼리를 기반으로 대시보드를 만들고 공유할 수 있으며, 쿼리 매개변수를 통해 대화형 요소를 추가할 수도 있습니다. 이러한 대시보드는 전역 필터를 사용해 동적으로 구성할 수 있으므로 사용자는 사용자 지정 가능한 보기로 데이터를 탐색할 수 있습니다. 다만 시각화를 보려면 기반이 되는 저장된 쿼리에 대해 최소한 읽기 권한이 있어야 한다는 점에 유의해야 합니다.
 
-모니터링과 최적화를 위해 ClickHouse Cloud에는 기본 제공 차트와 [쿼리 인사이트](/ko/products/cloud/features/sql-console-features/query-insights)가 포함되어 있습니다. 이러한 도구는 클러스터 성능에 대한 심층적인 가시성을 제공하여 쿼리 패턴, 리소스 사용률, 잠재적인 최적화 기회를 파악하는 데 도움이 됩니다. 이러한 수준의 관측성은 인프라 관리를 위해 별도의 리소스를 투입하지 않으면서도 고성능 분석 운영을 유지해야 하는 팀에 특히 유용합니다.
+모니터링과 최적화를 위해 ClickHouse Cloud에는 기본 제공 차트와 [query insights](/ko/products/cloud/features/sql-console-features/query-insights)가 포함되어 있습니다. 이러한 도구는 클러스터 성능에 대한 심층적인 가시성을 제공하여 쿼리 패턴, 리소스 사용률, 잠재적인 최적화 기회를 파악하는 데 도움이 됩니다. 이러한 수준의 관측성은 인프라 관리를 위해 별도의 리소스를 투입하지 않으면서도 고성능 분석 운영을 유지해야 하는 팀에 특히 유용합니다.
 
 이 서비스는 관리형이므로 업데이트, 백업, 스케일링, 보안 패치를 걱정할 필요가 없습니다. 이러한 작업은 모두 자동으로 처리됩니다. 따라서 데이터베이스 관리보다 데이터와 애플리케이션에 집중하려는 조직에 이상적인 선택입니다.
 
@@ -95,7 +95,7 @@ clickhouse-local에는 ClickHouse의 모든 기능이 포함되어 있으므로,
   ## chDB
 </div>
 
-[chDB](/ko/chdb/index)는 ClickHouse를 프로세스 내 데이터베이스 엔진으로 내장한 형태이며, Python이 주요 구현체이지만 Go, Rust, NodeJS, Bun에서도 사용할 수 있습니다. 이 배포 옵션은 ClickHouse의 강력한 OLAP 기능을 애플리케이션 프로세스에 직접 제공하므로 별도의 데이터베이스 설치가 필요 없습니다.
+[chDB](/ko/products/chdb/index)는 ClickHouse를 프로세스 내 데이터베이스 엔진으로 내장한 형태이며, Python이 주요 구현체이지만 Go, Rust, NodeJS, Bun에서도 사용할 수 있습니다. 이 배포 옵션은 ClickHouse의 강력한 OLAP 기능을 애플리케이션 프로세스에 직접 제공하므로 별도의 데이터베이스 설치가 필요 없습니다.
 
 <Image img="/images/deployment-modes/chdb.webp" alt="chDB - 내장 ClickHouse" size="sm" />
 

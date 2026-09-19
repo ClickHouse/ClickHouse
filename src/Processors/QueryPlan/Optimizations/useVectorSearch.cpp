@@ -532,18 +532,6 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     }
 
     const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
-
-    /// Both vector-search optimizations narrow each granule to the candidate rows returned by the
-    /// vector index before the WHERE/PREWHERE filter runs. The query condition cache key encodes
-    /// only the filter predicate, so a granule whose candidates all fail the filter would be
-    /// recorded as "the predicate matches nothing" and a later ordinary query with the same
-    /// predicate would skip it and lose rows. Same reasoning as the SAMPLE exclusion in
-    /// ReadFromMergeTree::initializePipeline. Reading and index analysis are already excluded for
-    /// vector search (MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache and
-    /// ReadFromMergeTree::selectRangesToRead); this covers the remaining write paths.
-    if (vector_optimization_applied)
-        read_from_mergetree_step->disableQueryConditionCache();
-
     if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
         optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
 

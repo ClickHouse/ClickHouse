@@ -499,7 +499,7 @@ The output will be in JSON format:
 {"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
 ```
 
-Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
+Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 
 ## Format settings {#format-settings}
 )DOCS_MD"});
@@ -584,7 +584,7 @@ The output will be in JSON format:
 {"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
 ```
 
-Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
+Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 
 ## Format settings {#format-settings}
 )DOCS_MD"});
@@ -597,7 +597,7 @@ Importing data columns with unknown names will be skipped if setting [input_form
 
 ## Description {#description}
 
-Differs from the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) only in that data fields are output in strings, not in typed JSON values.
+Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
 
 ## Example usage {#example-usage}
 

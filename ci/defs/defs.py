@@ -6,8 +6,6 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
-GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
-
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
@@ -36,6 +34,7 @@ class RunnerLabels:
     MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
 class CIFiles:
@@ -48,6 +47,12 @@ BASE_BRANCH = "master"
 azure_secret = Secret.Config(
     name="azure_connection_string",
     type=Secret.Type.AWS_SSM_PARAMETER,
+)
+
+chcache_secret = Secret.Config(
+    name="chcache_password",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 SECRETS = [
@@ -71,6 +76,7 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
+    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -129,6 +135,12 @@ DOCKERS = [
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
@@ -367,6 +379,8 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
+    SIGN_MACOS = "Sign macOS binary"
+    DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -379,7 +393,6 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
-    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -455,6 +468,10 @@ class ArtifactNames:
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
+    CH_AMD_DARWIN_SIGNED = "CH_AMD_DARWIN_SIGNED"
+    CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
@@ -490,7 +507,6 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
-    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
@@ -505,6 +521,26 @@ class ArtifactNames:
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 8
+# Batch count of the two ASan integration-test flavors, which run the whole integration suite
+# on `AMD_MEDIUM` with three xdist workers against a two-hour pytest `--session-timeout`.
+#
+# Eight, not six: the suite measures about 112000 test-seconds, so six batches put the heaviest
+# shard at 119.7 of the 120 available minutes - no margin at all, however well they are
+# balanced - and `amd_asan_ubsan, db disk, old analyzer` timed out 133 times in the three weeks
+# after it went to six. Eight brings the heaviest shard to 82 minutes, 68% of the budget.
+#
+# Batches are the right lever rather than a longer timeout: the aggregate compute is unchanged,
+# since the work is the same and only the parallelism differs, so the only cost is one more
+# per-batch setup - and the job gets its answer 25% sooner.
+#
+# Both flavors must keep the same count: they run the same suite with the same worker count
+# against the same budget, so a count that does not fit one does not fit the other.
+#
+# To re-measure, score the packing of `get_optimal_test_batch` against per-module
+# `sum(test_duration_ms)` from CIDB rather than against its own `TEST_DURATIONS` table - that
+# table currently sums to 97000 test-seconds against a measured 112000, so it reports every
+# shard as evenly packed while the measured spread across six is 1.24.
+ASAN_IT_NUM_BATCHES = 8
 # The old-analyzer + s3 + DBReplicated + WasmEdge parallel variant runs the
 # whole stateless suite un-batched and is the slowest job in CI (main run alone
 # ~1h40m-2h10m under coverage instrumentation). It is split into batches so each
@@ -604,6 +640,27 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_CFI,
         ]
     )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
+        ]
+    )
+    clickhouse_darwin_signed_zips = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-macos.zip",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_SIGNED,
+            ArtifactNames.CH_ARM_DARWIN_SIGNED,
+        ]
+    )
     llvm_profdata_file = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
@@ -689,11 +746,6 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    clickhouse_examples = Artifact.Config(
-        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,

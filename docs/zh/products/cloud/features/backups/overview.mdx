@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
-import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 数据库备份可作为一道安全保障：如果因任何不可预见的原因导致数据丢失，便可通过最近一次成功备份将服务恢复到之前的状态。
 这能最大限度地缩短停机时间，并避免业务关键数据永久丢失。
@@ -21,11 +21,11 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   ### ClickHouse Cloud 中备份的工作原理
 </div>
 
-ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，形成一条备份链。每条链都始于一次全量备份，随后在接下来几个计划时间周期内执行增量备份，从而形成一系列备份。当备份链达到一定长度后，就会开始新的一条链。必要时，可以利用整条备份链将数据恢复到新的服务中。一旦某条链中的所有备份都超过了为该服务设置的保留期 (有关保留期的更多信息见下文) ，该链就会被丢弃。
+ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，形成一条备份链。每条链都始于一次全量备份，随后在接下来几个计划时间周期内执行增量备份，从而形成一系列备份。当备份链达到一定长度后，就会开始新的一条链。必要时，可以利用整条备份链将数据恢复到新的 service 中。一旦某条链中的所有备份都超过了为该 service 设置的保留期限 (有关保留策略的更多信息见下文) ，该链就会被丢弃。
 
-在下图中，实线方框表示全量备份，虚线方框表示属于该链的增量备份。
+在下图中，实线方框表示全量备份，虚线方框表示增量备份。方框外侧的实线矩形表示保留期，以及终端用户可见、可用于恢复的备份。在下面的示例中，系统每 24 小时执行一次备份，并保留 2 天。
 
-第 1 天会执行一次全量备份，以启动备份链。第 2 天会执行一次增量备份，此时全量备份和增量备份都可用于恢复。到第 7 天时，这条链中已有 1 个全量备份和 6 个增量备份，且它们全部可见并可用于恢复。到第 8 天，系统会执行一次新的全量备份；到第 9 天，当新链中已有 2 个备份后，前一条链就会被丢弃。
+第 1 天会执行一次全量备份，以启动备份链。第 2 天会执行一次增量备份，此时全量备份和增量备份都可用于恢复。到第 7 天时，这条链中已有 1 个全量备份和 6 个增量备份，其中用户可见的是最近的 2 个增量备份。到第 8 天，系统会执行一次新的全量备份；到第 9 天，当新链中已有 2 个备份后，前一条链就会被丢弃。
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud 中的备份链示例" />
 
@@ -90,14 +90,18 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
 要将备份导出到您自己的云账户，您有两种方式可选：
 
 <Steps>
-  <Step title="通过 Cloud 控制台 UI" id="via-ui">
+  <Step>
+    ##### 通过 Cloud Console UI
+
     可以[在 UI 中配置](/zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui)外部备份。
     默认情况下，系统会按天执行备份 (如[默认备份策略](/zh/products/cloud/features/backups/overview#default-backup-policy)所述) 。
     不过，我们也支持导出到您自己的云账户的[可配置](/zh/products/cloud/guides/backups/configurable-backups)备份，允许您设置自定义计划。
-    需要特别注意的是，导出到您的存储桶的所有备份都是全量备份，与之前或之后的任何其他备份都没有关联。
+    需要特别注意的是，导出到您的存储桶的所有备份都是全量备份，与之前或之后的任何其他备份都没有关系。
   </Step>
 
-  <Step title="使用 SQL 命令" id="using-commands">
+  <Step>
+    ##### 使用 SQL 命令
+
     您可以使用[SQL 命令](/zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands)将备份导出到您的存储桶。
   </Step>
 </Steps>
@@ -105,5 +109,5 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
 <Warning>
   ClickHouse Cloud 不会管理客户存储桶中备份的生命周期。
   客户有责任确保其存储桶中的备份得到妥善管理，以满足合规要求并控制成本。
-  如果备份已损坏，将无法恢复。
+  如果备份损坏，将无法恢复。
 </Warning>

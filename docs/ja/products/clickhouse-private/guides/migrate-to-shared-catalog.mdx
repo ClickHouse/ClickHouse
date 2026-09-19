@@ -24,11 +24,15 @@ Shared Catalog には、次のような利点があります。
 移行を開始する前に、次の前提条件を確認してください。
 
 <Steps>
-  <Step title="1. Server レプリカが少なくとも 2 つあること" id="1-at-least-2-server-replicas">
+  <Step>
+    ### 1. Server レプリカが少なくとも 2 つあること
+
     Operator は、新しい Shared データベースエンジンにデータベースを移行するため、ローリングアップグレードを実行します。`server.replicas` の helm 値を 2 以上に設定してください。
   </Step>
 
-  <Step title="2. すべてのデータベースが Replicated エンジンを使用していること" id="2-all-databases-use-the-replicated-engine">
+  <Step>
+    ### 2. すべてのデータベースが Replicated エンジンを使用していること
+
     すべてのデータベース (`system` を除く) は、Replicated データベースエンジンを使用している必要があります。次のクエリで確認してください。
 
     ```sql
@@ -43,7 +47,9 @@ Shared Catalog には、次のような利点があります。
     このクエリは 0 行を返す必要があります。
   </Step>
 
-  <Step title="3. すべてのテーブルが非レプリケートのテーブルエンジンを使用していること" id="3-all-tables-use-non-replicated-table-engines">
+  <Step>
+    ### 3. すべてのテーブルが非レプリケートのテーブルエンジンを使用していること
+
     どのテーブルも (`system` を除く) 、レプリケートされたテーブルエンジンまたは従来のテーブルエンジンを使用していてはなりません。次のクエリで確認してください。
 
     ```sql
@@ -59,7 +65,9 @@ Shared Catalog には、次のような利点があります。
     このクエリは 0 行を返す必要があります。
   </Step>
 
-  <Step title="4. デタッチされたテーブルが存在しないこと" id="4-no-detached-tables-exist">
+  <Step>
+    ### 4. デタッチされたテーブルが存在しないこと
+
     ```sql
     SELECT * FROM system.detached_tables
     ```
@@ -79,11 +87,15 @@ Shared Catalog には、次のような利点があります。
 </Warning>
 
 <Steps>
-  <Step title="1. Enable Shared Catalog configuration" id="1-enable-shared-catalog-configuration">
+  <Step>
+    ### 1. Shared Catalog 設定を有効にする
+
     Helm の values で `featureFlags.enableSharedCatalog` を `true` に設定します。これにより設定は有効になりますが、データベースの移行はトリガーされません。このフラグを `true` に設定したまま、既存のレプリケーション対応データベースを移行せずに ClickHouse クラスターをデプロイすると、ClickHouse クラスターは起動に失敗します。
   </Step>
 
-  <Step title="2. Add the 移行マーカー" id="2-add-the-migration-markers">
+  <Step>
+    ### 2. 移行マーカーを追加する
+
     Helm の values で `featureFlags.migrateToSharedCatalog` を `true` に設定します。これにより、次の処理が行われます。
 
     * ClickHouse に `shared_database_catalog.migration_from_database_replicated` 設定が追加され、Shared Catalog モードで実行中に既存の `Replicated` データベースが存在することを想定するようになります
@@ -92,17 +104,23 @@ Shared Catalog には、次のような利点があります。
     デプロイ後、Operator は Server ノードのローリングアップグレードをトリガーします。これにより、すべてのデータベースの type も `Shared` に変更されます。
   </Step>
 
-  <Step title="3. Wait for the status to be Ready" id="3-wait-for-the-status-to-be-ready">
+  <Step>
+    ### 3. status が Ready になるまで待つ
+
     ```bash
     kubectl get ClickHouseCluster <instance-name>
     ```
   </Step>
 
-  <Step title="4. Remove the 移行マーカー" id="4-remove-the-migration-markers">
+  <Step>
+    ### 4. 移行マーカーを削除する
+
     status が Ready になったら、Helm の values で `featureFlags.migrateToSharedCatalog` を `false` に設定します。すべてのデータベースは `Replicated` ではなく `Shared` type に移行済みのため、移行設定は不要になります。
   </Step>
 
-  <Step title="5. Verify all databases are migrated" id="5-verify-all-databases-are-migrated">
+  <Step>
+    ### 5. すべてのデータベースが移行されたことを確認する
+
     system database 以外のすべてのデータベースで Shared engine が使用されていることを確認します。
 
     ```sql
@@ -125,15 +143,21 @@ Shared Catalog には、次のような利点があります。
 Shared Catalog で問題が発生した場合は、以前の状態にロールバックできます。
 
 <Steps>
-  <Step title="1. 移行マーカーを削除する" id="1-remove-the-migration-markers">
+  <Step>
+    ### 1. 移行マーカーを削除する
+
     Helm の values で `featureFlags.migrateToSharedCatalog` を `false` に設定します。
   </Step>
 
-  <Step title="2. Shared Catalog の設定を削除する" id="2-remove-the-shared-catalog-settings">
+  <Step>
+    ### 2. Shared Catalog の設定を削除する
+
     Helm の values で `featureFlags.enableSharedCatalog` を `false` に設定します。これにより、Operator が変更を元に戻します。
   </Step>
 
-  <Step title="3. Keeper 内の Catalog を削除する" id="3-remove-the-catalog-in-keeper">
+  <Step>
+    ### 3. Keeper 内の Catalog を削除する
+
     Keeper への接続をポートフォワードし、keeper-client セッション (`clickhouse keeper-client` を使用) を開始します。
 
     セッションを開始したら、次のコマンドを実行します。
@@ -150,8 +174,10 @@ Shared Catalog で問題が発生した場合は、以前の状態にロール�
     これにより、Keeper から Shared Catalog の状態がすべてクリーンアップされます。
   </Step>
 
-  <Step title="4. ロールバックを確認する" id="4-verify-rollback">
-    system database 以外のすべての database が再び Replicated エンジン を使用していることを確認します。
+  <Step>
+    ### 4. ロールバックを確認する
+
+    system database 以外のすべての database が再び Replicated engine を使用していることを確認します。
 
     ```sql
     SELECT DISTINCT

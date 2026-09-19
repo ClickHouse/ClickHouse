@@ -29,7 +29,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 min_time_between_fsyncs_ms;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
@@ -321,7 +320,6 @@ KeeperStateManager::KeeperStateManager(
           FlushSettings
           {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
-              .min_time_between_fsyncs_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::min_time_between_fsyncs_ms],
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)

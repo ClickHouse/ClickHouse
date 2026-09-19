@@ -88,16 +88,8 @@ public:
     virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
-    /// `check_create_temporary_table` is passed as false by database engines that resolve their
-    /// tables through a table function (e.g. the `URL` database): the table is referenced in the
-    /// query by an identifier and governed by the grants on the database, so the
-    /// `CREATE TEMPORARY TABLE` privilege required for a table function call written in a query
-    /// does not apply.
-    /// `check_source_access` is passed as false by callers that cannot know the direction of the
-    /// access yet (the `URL` database resolves a table before knowing whether it is the source or
-    /// the target of the query) and therefore run their own source access checks around the call.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     /// Returns actual table structure after enforcing source access checks.
     /// Use this instead of getActualTableStructure() from outside execute().
@@ -113,6 +105,9 @@ public:
         static const String empty;
         return empty;
     }
+
+    /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
+    void checkEngineAccess(ContextPtr context) const;
 
     virtual ~ITableFunction() = default;
 
@@ -131,6 +126,11 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+
+    /// Opt in only for engines exposing a server-side capability with no other access gate
+    /// (`Executable` runs a user-provided script). Wrapper engines such as `Merge` or `Loop` are
+    /// gated by their delegated data access, source engines by `checkSourceAccess`.
+    virtual bool requiresTableEngineGrant() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.

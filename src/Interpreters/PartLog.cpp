@@ -134,7 +134,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
         {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
-        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of `DataPartStorage`. Possible values: `Packed` - most part files are stored in a single archive (projections and a few service files such as `txn_version.txt` are written separately), `Full` - each file is stored separately."},
+        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
@@ -267,41 +267,41 @@ bool PartLog::addNewPartsImpl(
             const auto & part_log_entry = parts[i];
             const auto & part = part_log_entry.part;
 
-            part_log->add([&](PartLogElement & element)
-            {
-                if (!query_id.empty())
-                    element.query_id.insert(0, query_id.data(), query_id.size());
+            PartLogElement elem;
 
-                element.event_type = PartLogElement::NEW_PART;
+            if (!query_id.empty())
+                elem.query_id.insert(0, query_id.data(), query_id.size());
 
-                // construct event_time and event_time_microseconds using the same time point
-                // so that the two times will always be equal up to a precision of a second.
-                const auto time_now = std::chrono::system_clock::now();
-                element.event_time = timeInSeconds(time_now);
-                element.event_time_microseconds = timeInMicroseconds(time_now);
-                element.duration_ms = part_log_entry.elapsed_ns / 1000000;
+            elem.event_type = PartLogElement::NEW_PART;
 
-                element.database_name = table_id.database_name;
-                element.table_name = table_id.table_name;
-                element.table_uuid = table_id.uuid;
-                element.partition_id = part->info.getPartitionId();
-                element.partition = part->partition.serializeToString(part->getMetadataSnapshot());
-                element.part_name = part->name;
-                element.disk_name = part->getDataPartStorage().getDiskName();
-                element.path_on_disk = part->getDataPartStorage().getFullPath();
-                element.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : deduplication_block_ids[i];
-                element.part_format = part->getFormat();
+            // construct event_time and event_time_microseconds using the same time point
+            // so that the two times will always be equal up to a precision of a second.
+            const auto time_now = std::chrono::system_clock::now();
+            elem.event_time = timeInSeconds(time_now);
+            elem.event_time_microseconds = timeInMicroseconds(time_now);
+            elem.duration_ms = part_log_entry.elapsed_ns / 1000000;
 
-                element.bytes_compressed_on_disk = part->getBytesOnDisk();
-                element.bytes_uncompressed = part->getBytesUncompressedOnDisk();
-                element.rows = part->rows_count;
+            elem.database_name = table_id.database_name;
+            elem.table_name = table_id.table_name;
+            elem.table_uuid = table_id.uuid;
+            elem.partition_id = part->info.getPartitionId();
+            elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+            elem.part_name = part->name;
+            elem.disk_name = part->getDataPartStorage().getDiskName();
+            elem.path_on_disk = part->getDataPartStorage().getFullPath();
+            elem.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : std::move(deduplication_block_ids[i]);
+            elem.part_format = part->getFormat();
 
-                element.error = static_cast<UInt16>(execution_status.code);
-                element.exception = execution_status.message;
+            elem.bytes_compressed_on_disk = part->getBytesOnDisk();
+            elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
+            elem.rows = part->rows_count;
 
-                if (part_log_entry.profile_counters)
-                    element.profile_counters = *part_log_entry.profile_counters;
-            });
+            elem.error = static_cast<UInt16>(execution_status.code);
+            elem.exception = execution_status.message;
+
+            elem.profile_counters = part_log_entry.profile_counters;
+
+            part_log->add(std::move(elem));
         }
     }
     catch (...)

@@ -2,6 +2,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/YAMLParser.h>
 
+#include <sys/utsname.h>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>

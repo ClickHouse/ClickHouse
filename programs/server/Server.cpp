@@ -30,7 +30,6 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
-#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -154,6 +153,7 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <glibc-rseq/rseq.h>
 #endif
 
 #if USE_SSL
@@ -440,6 +440,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
+    extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -861,7 +862,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
-    if (!PerCPU::haveRSeq())
+    if (rseq_cpu_id() < 0)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
             PreformattedMessage::create(
@@ -891,7 +892,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).contains("[always]"))
+        if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
@@ -1651,17 +1652,6 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
-        /// Stop accepting connections on the regular servers. In the normal shutdown path they are
-        /// already stopped, but on startup failure some of them can still be running: the Prometheus
-        /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
-        /// would wait forever for their listener threads.
-        {
-            std::lock_guard lock(servers_lock);
-            for (auto & server : servers)
-                if (!server.isStopping())
-                    server.stop();
-        }
-
         async_metrics->stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1978,7 +1968,7 @@ try
 
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
-        auto cancellation_task_holder = global_context->getSchedulePool()->createTask(
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
             StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
@@ -2077,6 +2067,13 @@ try
             ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
+    }
+
+    {
+        const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
+        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
+            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
+        global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {
@@ -2749,11 +2746,11 @@ try
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
-            global_context->getSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
-            global_context->getMessageBrokerSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
-            global_context->getDistributedSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
-            global_context->getStreamingSchedulePool()->increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
+            global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
+            global_context->getStreamingSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
@@ -3269,12 +3266,10 @@ try
 
     /// Check sanity of MergeTreeSettings on server startup
     {
-        /// All settings can be changed in the global config
-        bool allowed_experimental = true;
-        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(
+            background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -3287,40 +3282,6 @@ try
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
-
-    /// Start collecting asynchronous metrics before loading tables, so that the Prometheus endpoint
-    /// (started below) exposes meaningful values during the potentially long metadata loading phase.
-    /// This includes the OS/jemalloc metrics and the per-table metrics such as
-    /// `TotalIndexGranularityBytesInMemoryAllocated`, which let one observe memory growth as tables
-    /// are loaded. The metric computation skips not-yet-loaded tables (just like with
-    /// `async_load_databases`), and writing to `system.asynchronous_metric_log` is skipped until the
-    /// system logs are initialized below. The asynchronous metrics thread reads the `servers` lists
-    /// under `servers_lock`, so it is safe to start before the main `servers` exist.
-    async_metrics->start();
-    global_context->setAsynchronousMetrics(async_metrics.get());
-
-    /// Start the Prometheus endpoint before loading tables, so that metrics stay observable during
-    /// the potentially long metadata loading phase. Only do it for metrics-only configurations:
-    /// custom `prometheus.handlers` may serve queries (`remote_write`, `remote_read`, `query`,
-    /// `api_v1`) and must follow the regular `servers` lifecycle. The server is created in the
-    /// regular `servers` list, so runtime reconfiguration and `SYSTEM START/STOP LISTEN` handle it
-    /// as usual. The later `createServers` call skips it (`createServer` does not recreate a live
-    /// server), and the start loop for `servers` skips it too (`ProtocolServerAdapter::start` does
-    /// nothing for an already started server).
-    if (!config().has("prometheus.handlers"))
-    {
-        std::lock_guard lock(servers_lock);
-        createServers(
-            config(),
-            server_settings,
-            listen_hosts,
-            listen_try,
-            server_pool,
-            *async_metrics,
-            servers,
-            /* start_servers= */ true,
-            ServerType(ServerType::Type::PROMETHEUS));
-    }
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
@@ -3460,6 +3421,10 @@ try
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
+
+        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
+        async_metrics->start();
+        global_context->setAsynchronousMetrics(async_metrics.get());
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();

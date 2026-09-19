@@ -87,14 +87,20 @@ BlockIO InterpreterExecuteAsQuery::execute()
     }
 
     const auto & query = query_ptr->as<const ASTExecuteAsQuery &>();
-    String target_user_name = query.target_user->as<const ASTUserNameWithHost &>().toString();
+    String target_user_name = query.target_user->toString();
     getContext()->checkAccess(AccessType::IMPERSONATE, target_user_name);
 
     if (query.subquery)
     {
         /// EXECUTE AS <user> <subquery>
         auto subquery_context = impersonateQueryContext(getContext(), target_user_name);
-        return executeQuery(query.subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
+        /// The subquery is nested, hence `internal`, but its text comes from the user, hence `user_initiated`:
+        /// without it the access checks of `CREATE` subqueries would be skipped, so the impersonated statement
+        /// would not be limited to the privileges of the target user.
+        return executeQuery(
+                   query.subquery->formatWithSecretsOneLine(), subquery_context,
+                   QueryFlags{ .internal = true, .user_initiated = true })
+            .second;
     }
     else
     {

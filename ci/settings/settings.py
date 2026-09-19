@@ -46,6 +46,7 @@ SECRET_CI_DB_URL = "clickhouse-test-stat-url"
 SECRET_CI_DB_USER = "clickhouse-test-stat-login"
 SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
+USE_CUSTOM_GH_AUTH = True
 GH_AUTH_LAMBDA_NAME: str = "mint-token-pr-lambda-terraform"
 GH_AUTH_LAMBDA_REGION: str = "us-east-1"
 
