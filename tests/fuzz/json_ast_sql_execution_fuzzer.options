@@ -1,0 +1,53 @@
+[libfuzzer]
+# Each input is one query executed by an in-process clickhouse-local; --max_execution_time below cuts
+# runaway queries well before libFuzzer's timeout.
+timeout = 60
+max_len = 65536
+rss_limit_mb = 8192
+# One-time library initialization triggered by a query (e.g. the AWS SDK behind the `s3` table function) is
+# reported by libFuzzer's per-input leak check although it is not a leak; the end-of-process check of
+# LeakSanitizer stays enabled.
+detect_leaks = 0
+
+[fuzzer_arguments]
+--output-format=Null
+# clickhouse-local installs its own fatal signal handler, which replaces libFuzzer's; without console
+# logging an abort inside a query would end the process silently.
+--logger.console=1
+--logger.level=fatal
+--max_execution_time=2
+# Infinite sources (`numbers()`, `generateRandom()`) otherwise run until the time limit on every input.
+--max_rows_to_read=1000000
+--max_bytes_to_read=2000000000
+--max_memory_usage=2000000000
+--max_parser_backtracks=10000
+--max_query_size=0
+# Reach experimental code paths too.
+--allow_experimental_correlated_subqueries=1
+--allow_experimental_full_text_index=1
+--allow_experimental_lightweight_update=1
+--allow_experimental_time_time64_type=1
+--allow_experimental_qbit_type=1
+--allow_suspicious_low_cardinality_types=1
+--allow_suspicious_types_in_group_by=1
+--allow_suspicious_types_in_order_by=1
+--allow_not_comparable_types_in_order_by=1
+# Table functions and engines that reach out to other servers (`mysql`, `remote`, `url`, `s3`) must fail fast.
+--connect_timeout=1
+--connect_timeout_with_failover_ms=200
+--connections_with_failover_max_tries=1
+--receive_timeout=2
+--send_timeout=2
+--external_storage_connect_timeout_sec=1
+--external_storage_rw_timeout_sec=1
+# The S3 client retries a connection failure hundreds of times with backoff, and query cancellation waits for it.
+--s3_retry_attempts=1
+--s3_max_redirects=1
+--s3_connect_timeout_ms=500
+--s3_request_timeout_ms=1000
+--s3_max_single_read_retries=1
+--backup_restore_s3_retry_attempts=1
+--http_connection_timeout=1
+--http_send_timeout=1
+--http_receive_timeout=1
+--http_max_tries=1
