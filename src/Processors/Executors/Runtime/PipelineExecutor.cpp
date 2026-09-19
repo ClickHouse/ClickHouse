@@ -615,6 +615,29 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
 
+    /// Sources hold the totals they already know (set while building the plan) before any chunk
+    /// exists. This must run before the first task is dispatched: getReadProgress() also drains a
+    /// source's read counters, which are only zero while nothing has been read.
+    if (read_progress_callback)
+    {
+        for (const auto & processor : graph->getProcessors())
+        {
+            if (!processor->getInputs().empty())
+                continue;
+
+            if (auto read_progress = processor->getReadProgress())
+            {
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+
+                if (read_progress->counters.total_bytes)
+                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+            }
+        }
+
+        read_progress_callback->publishTotals();
+    }
+
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.

@@ -651,6 +651,13 @@ private:
         size_t min_marks_for_concurrent_read,
         bool use_uncompressed_cache);
 
+    /// Rows of this read's estimate not yet reported, while the query has a limit to spread over the
+    /// sources; nullopt when it has none. Sources report disjoint shares and the executor adds them up,
+    /// so the limit is drawn down over the whole read instead of clamping every share to it.
+    std::optional<size_t> total_rows_approx_budget;
+
+    size_t takeTotalRowsApprox(size_t rows_in_this_read);
+
     Pipe readFromPool(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,

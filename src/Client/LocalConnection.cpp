@@ -218,8 +218,9 @@ void LocalConnection::sendQuery(
             /// Send accumulated progress to the client so the progress bar updates during analysis.
             if (progress_callback)
             {
+                /// The fetch drains the accumulator, so a report not forwarded here is lost.
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
-                if (progress.read_rows || progress.read_bytes)
+                if (progress.read_rows || progress.read_bytes || progress.total_rows_to_read || progress.total_bytes_to_read)
                     progress_callback(progress);
             }
 
