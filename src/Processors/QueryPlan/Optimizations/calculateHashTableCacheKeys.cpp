@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -111,9 +112,13 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     IQueryPlanStep::Serialization ctx{
         .out = wbuf, .registry = registry, .for_cache_key = true, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
 
-    writeStringBinary(transform.getSerializationName(), wbuf);
+    const auto step_name = transform.getSerializationName();
+    writeStringBinary(step_name, wbuf);
     if (transform.isSerializable())
+    {
+        ctx.step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         transform.serialize(ctx);
+    }
 
     wbuf.finalize();
     return hash.get64();

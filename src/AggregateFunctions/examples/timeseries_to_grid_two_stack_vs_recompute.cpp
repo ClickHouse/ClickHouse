@@ -143,7 +143,7 @@ int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
 
     /// Linear regression (`timeSeriesDerivToGrid` / `timeSeriesPredictLinearToGrid` share the same `Summary`, so
     /// one measurement covers both).
-    using LinearRegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits<UInt32, /* IntervalType */ Int32, /* ValueType */ Float64, /* is_predict */ false>;
+    using LinearRegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits<UInt32, /* IntervalType */ Int32, /* ValueType */ Float64, TimeseriesLinearRegressionReturnKind::Slope>;
     runFunction("timeSeriesDerivToGrid", buildDataset<AggregateFunctionTimeseriesSamples<UInt32, Float64>>(),
         [](size_t stack_size) { return LinearRegressionTraits::Aggregator{stack_size, /* base */ UInt32(0), /* predict_offset */ Float64(0), /* timestamp_scale_multiplier */ UInt32(1)}; },
         checksum);

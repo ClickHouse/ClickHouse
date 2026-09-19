@@ -48,7 +48,7 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/SystemCommandFactory.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1606,7 +1606,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-    TransactionLog::instance().sync();
+    TransactionManager::instance().sync();
 }
 
 
