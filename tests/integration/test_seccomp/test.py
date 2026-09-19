@@ -8,14 +8,15 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 
-# The default of the `seccomp` server setting is `trap`, so this node gets a filter without being
-# configured for one.
+# The default of the `seccomp` server setting is `log`, so this node gets a filter - one that
+# enforces nothing - without being configured for one.
 default_node = cluster.add_instance("default_node")
 disabled_node = cluster.add_instance(
     "disabled_node", main_configs=["configs/disabled.xml"]
 )
 errno_node = cluster.add_instance("errno_node", main_configs=["configs/errno.xml"])
 log_node = cluster.add_instance("log_node", main_configs=["configs/log.xml"])
+trap_node = cluster.add_instance("trap_node", main_configs=["configs/trap.xml"])
 
 # `/proc/<pid>/status` reports the seccomp mode of a process: 0 is no filter, 2 is a BPF filter.
 SECCOMP_MODE_DISABLED = "0"
@@ -27,7 +28,7 @@ def started_cluster():
     try:
         cluster.start()
 
-        for node in [default_node, disabled_node, errno_node, log_node]:
+        for node in [default_node, disabled_node, errno_node, log_node, trap_node]:
             os.system(
                 f"docker cp {os.path.join(SCRIPT_DIR, 'user_scripts/.')} "
                 f"{node.docker_id}:/var/lib/clickhouse/user_scripts"
@@ -74,10 +75,11 @@ def run_probe(node):
 
 def test_setting_is_reported(started_cluster):
     for node, expected in [
-        (default_node, "trap"),
+        (default_node, "log"),
         (disabled_node, "disabled"),
         (errno_node, "errno"),
         (log_node, "log"),
+        (trap_node, "trap"),
     ]:
         assert (
             node.query(
@@ -174,7 +176,7 @@ def test_server_works_under_the_filter(started_cluster):
     # threads, networking, timers. `errno_node` is the interesting one: if the policy were missing
     # something, the call would fail with `EPERM` instead of taking the server down, so the query
     # would report a strange error rather than losing the connection.
-    for node in [default_node, errno_node]:
+    for node in [trap_node, errno_node]:
         node.query("CREATE TABLE t (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
         node.query("INSERT INTO t SELECT number, toString(number) FROM numbers(100000)")
         node.query("OPTIMIZE TABLE t FINAL")
@@ -182,3 +184,17 @@ def test_server_works_under_the_filter(started_cluster):
         assert node.query("SELECT count() > 0 FROM system.stack_trace") == "1\n"
         node.query("SYSTEM FLUSH LOGS")
         node.query("DROP TABLE t SYNC")
+
+
+def test_binary_integrity_check_survives_the_filter(started_cluster):
+    # The filter is installed before the integrity check of the executable, and `ptrace` is outside
+    # the policy, so the check must not depend on it: the `trap` mode would take the server down on
+    # the call, and the `errno` mode would turn a real checksum mismatch into the "run under
+    # debugger" warning. The check now reads `TracerPid` instead, so it runs to the end in every
+    # mode - as the log line it writes shows, on a server that is up and answering.
+    for node in [trap_node, errno_node, default_node]:
+        assert node.contains_in_log(
+            "Integrity check of the executable successfully passed"
+        ) or node.contains_in_log("Integrity check of the executable skipped")
+        assert node.query("SELECT 1") == "1\n"
+        assert not node.contains_in_log("is modified (most likely with breakpoints)")
