@@ -561,6 +561,32 @@ def test_executable_pool_storage_input_multiple_pipes_python(started_cluster):
     node.query("DROP TABLE test_table")
 
 
+def test_executable_pool_storage_multiple_pipes_worker_is_reaped_through_all_its_inputs(started_cluster):
+    skip_test_msan(node)
+
+    # The worker answers, closes its stdout and waits for both of its inputs to reach EOF. A hung-up
+    # stdout is a worker that cannot serve anyone else, so it is discarded - and with
+    # `check_exit_code` the query is entitled to its exit status, which means the server has to let
+    # it exit. Closing only its stdin would leave it reading its second input: the wait would run
+    # out and the query would fail for an exit code it could have had.
+    #
+    # `command_termination_timeout` is short on purpose: the whole point is that the answer comes
+    # back without anything waiting that budget out.
+    query = (
+        "CREATE TABLE test_table (value String) "
+        "ENGINE=ExecutablePool('input_multiple_pipes_closing_stdout_pool.py', 'TabSeparated', "
+        "(SELECT 1), (SELECT 2)) "
+        "SETTINGS send_chunk_header=1, pool_size=1, check_exit_code=1, command_termination_timeout=3"
+    )
+
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query)
+
+    assert node.query("SELECT * FROM test_table") == "answered\n"
+
+    node.query("DROP TABLE test_table")
+
+
 def test_executable_pool_storage_input_count_python(started_cluster):
     skip_test_msan(node)
 

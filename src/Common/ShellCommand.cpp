@@ -776,8 +776,16 @@ void ShellCommand::readBufferedOutput(int (&drain_fds)[2], const StderrSink & st
                 available -= static_cast<int>(res);
                 continue;
             }
-            if (res < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+            if (res < 0 && errno == EINTR)
                 continue;
+
+            /// `EAGAIN` on a descriptor that `FIONREAD` just said holds bytes: the count and the
+            /// pipe disagree (another reader took them, or the count went stale). Nothing more is
+            /// coming out of this read, so the descriptor is left for the drain that follows -
+            /// which polls - rather than retried here on the strength of a count that is wrong.
+            if (res < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                break;
+
             if (res < 0)
                 LOG_WARNING(getLogger(), "Cannot read a pipe of shell command pid {}, error: '{}'", pid, errnoToString());
             drain_fds[i] = -1;
@@ -1000,6 +1008,15 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
         drainOutputPipes(drain_fds, stderr_sink, step_ms, /*budget_is_quiet_time=*/ false, /*max_total_ms=*/ 0, &stdout_bytes_drained);
     }
 }
+
+void ShellCommand::closeInputs()
+{
+    in.close();
+
+    for (auto & [descriptor, buffer] : write_fds)
+        buffer.close();
+}
+
 
 void ShellCommand::wait()
 {

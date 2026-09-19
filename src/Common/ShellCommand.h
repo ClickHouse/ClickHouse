@@ -107,6 +107,26 @@ public:
         return wait_called;
     }
 
+    /// Closes every descriptor the command reads its input from: its `stdin` and the extra
+    /// `write_fds` of a command that was given more than one input (`executable` with several
+    /// input queries). A command is written to exit when its inputs reach EOF, so a teardown that
+    /// closed only `stdin` would leave one that waits for all of them running until its
+    /// `command_termination_timeout` ran out - and, where the teardown wants its exit status, fail
+    /// the query for a status that was a `close` away. Idempotent, and the send tasks that write
+    /// into these buffers are joined by the callers before they call this.
+    void closeInputs();
+
+    /// Whether the command's `stdout` descriptor is gone. `wait` closes every stream once the
+    /// child has been reaped, and `waitDrainingOutput` closes this one on its own where a command
+    /// floods its stdout past what was asked of it (see there), without reaping it. A reader that
+    /// cached the descriptor number - `TimeoutReadBufferFromFileDescriptor` does, because it may
+    /// outlive the streams - must not poll it after that: the number may already stand for an
+    /// unrelated descriptor another thread has opened since.
+    bool isStdoutClosed() const
+    {
+        return out.getFD() < 0;
+    }
+
     void setDoNotTerminate()
     {
         do_not_terminate = true;

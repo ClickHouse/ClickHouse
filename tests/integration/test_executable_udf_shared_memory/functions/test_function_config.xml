@@ -460,6 +460,20 @@
     </function>
     <function>
         <type>executable_pool</type>
+        <name>test_function_shm_stderr_at_startup_throw_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <stderr_reaction>throw</stderr_reaction>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>4096</shared_memory_size>
+        <command>shm_udf.py --stderr-at-startup</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
         <name>test_function_shm_chatty_stderr_pool_python</name>
         <return_type>String</return_type>
         <argument>
@@ -1041,5 +1055,24 @@
         <shared_memory_size>1048576</shared_memory_size>
         <shared_memory_max_size>524288</shared_memory_max_size>
         <command>shm_udf.py</command>
+    </function>
+    <function>
+        <type>executable</type>
+        <name>test_function_shm_zero_arg_python</name>
+        <return_type>String</return_type>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>1048576</shared_memory_size>
+        <command>shm_udf.py --zero-argument</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_zero_arg_pool_python</name>
+        <return_type>String</return_type>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>1048576</shared_memory_size>
+        <command>shm_udf.py --zero-argument</command>
     </function>
 </functions>

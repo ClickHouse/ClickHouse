@@ -75,6 +75,8 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "Milliseconds for reading from command stdout."},
         {"command_write_timeout", std::make_shared<DataTypeUInt64>(),
             "Milliseconds for writing to command stdin."},
+        {"command_pipe_capacity", std::make_shared<DataTypeUInt64>(),
+            "Capacity in bytes asked of the pipes to the command. 0 keeps the kernel's default."},
         {"pool_size", std::make_shared<DataTypeUInt64>(),
             "Number of command process instances. Only for 'executable_pool' type."},
         {"send_chunk_header", std::make_shared<DataTypeUInt8>(),
@@ -89,7 +91,10 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "What is done with the command's stderr output: 'none', 'log', 'log_first', 'log_last' or 'throw'. "
             "Empty when the function failed to load."},
         {"check_exit_code", std::make_shared<DataTypeUInt8>(),
-            "Whether a non-zero exit code of the command fails the query (boolean)."},
+            "Whether the exit status of the command is held against the query (boolean). A non-zero "
+            "exit code fails it, and so does an exit status that could not be read: a command that "
+            "has finished writing its output is waited for up to `command_termination_timeout` "
+            "seconds, and a command that has not exited by then fails the query and is signalled."},
         {"use_shared_memory", std::make_shared<DataTypeUInt8>(),
             "Whether the data is exchanged with the command through a shared-memory file instead of "
             "the `stdin`/`stdout` pipes (boolean)."},
@@ -182,6 +187,7 @@ void StorageSystemUserDefinedFunctions::fillData(
             res_columns[i++]->insert(exec_config.command_termination_timeout_seconds);
             res_columns[i++]->insert(exec_config.command_read_timeout_milliseconds);
             res_columns[i++]->insert(exec_config.command_write_timeout_milliseconds);
+            res_columns[i++]->insert(exec_config.command_pipe_capacity);
             res_columns[i++]->insert(exec_config.pool_size);
             res_columns[i++]->insert(exec_config.send_chunk_header ? 1 : 0);
             res_columns[i++]->insert(exec_config.execute_direct ? 1 : 0);
@@ -211,10 +217,10 @@ void StorageSystemUserDefinedFunctions::fillData(
             // Failed to load - configuration unavailable, insert defaults for all config fields
             // Config fields: type, command, format, return_type, return_name, argument_types, argument_names,
             // max_command_execution_time, command_termination_timeout, command_read_timeout, command_write_timeout,
-            // pool_size, send_chunk_header, execute_direct, lifetime, deterministic, stderr_reaction,
-            // check_exit_code, use_shared_memory, shared_memory_size, shared_memory_max_size,
+            // command_pipe_capacity, pool_size, send_chunk_header, execute_direct, lifetime, deterministic,
+            // stderr_reaction, check_exit_code, use_shared_memory, shared_memory_size, shared_memory_max_size,
             // shared_memory_pipeline
-            constexpr size_t config_fields_count = 22;
+            constexpr size_t config_fields_count = 23;
             for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }

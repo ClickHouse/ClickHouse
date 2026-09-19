@@ -96,11 +96,15 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-        # Long after the server has taken this worker back and pronounced it clean.
+        # Long after the server has taken this worker back and pronounced it clean. The marker file
+        # is created after the byte is on the pipe, so a test that waits for it does not have to
+        # guess how long this takes on the machine it runs on.
         def litter():
             time.sleep(1)
             stdout.write(b"\x00")
             stdout.flush()
+            with open("/tmp/shm_udf_stray_byte_written", "w"):
+                pass
 
         threading.Thread(target=litter, daemon=True).start()
 

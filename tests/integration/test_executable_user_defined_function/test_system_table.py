@@ -48,6 +48,7 @@ working_udf_config = """<functions>
         <command_termination_timeout>5</command_termination_timeout>
         <command_read_timeout>2000</command_read_timeout>
         <command_write_timeout>1500</command_write_timeout>
+        <command_pipe_capacity>131072</command_pipe_capacity>
         <lifetime>300</lifetime>
     </function>
 
@@ -151,6 +152,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
             command_termination_timeout,
             command_read_timeout,
             command_write_timeout,
+            command_pipe_capacity,
             lifetime
         FROM system.user_defined_functions
         WHERE name = 'test_working_udf'
@@ -164,7 +166,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     assert TSV(result) == TSV([[
         "test_working_udf", "Success", "", 1, 1,
         "executable", "working_script.sh", "TabSeparated",
-        "String", "result", 0, 5, 2000, 1500, 300
+        "String", "result", 0, 5, 2000, 1500, 131072, 300
     ]])
 
     # Test pool UDF configuration with all relevant fields
@@ -334,6 +336,7 @@ def test_system_user_defined_functions_columns(started_cluster):
         "command_termination_timeout",
         "command_read_timeout",
         "command_write_timeout",
+        "command_pipe_capacity",
         "pool_size",
         "send_chunk_header",
         "execute_direct",

@@ -390,30 +390,38 @@ TEST(SharedMemoryRegion, GrowThatCommitsButCannotMapKeepsMappingAndReportsBackin
 /// pressure with the one signal the whole design exists to avoid.
 TEST(SharedMemoryRegion, CommandExtendingTheFileIsSeenAndItsTailIsCommittedOnGrowth)
 {
-    SharedMemoryRegion region(4096);
+    /// In pages, not in bytes: this test counts the pages the file holds, and what a page is here
+    /// is the unit the kernel backs the region in - 4 KiB, 64 KiB on some kernels, or a transparent
+    /// huge page where `shmem` is backed with those. A region of a page and a file of sixteen
+    /// written as 4096 and 65536 would be one page and one page on a 64 KiB kernel, and the "the
+    /// tail is sparse" check below would have nothing left to be true about.
+    const size_t page = SharedMemoryRegion::roundUpToPages(1);
+    const size_t grown = 16 * page;
+
+    SharedMemoryRegion region(page);
 
     /// What a command could do through its inherited descriptor: `ftruncate` up is not sealed.
-    ASSERT_EQ(::ftruncate(region.fd(), 65536), 0);
+    ASSERT_EQ(::ftruncate(region.fd(), static_cast<off_t>(grown)), 0);
 
     /// The cached figure does not know; the re-read does. The mapping is untouched either way.
-    EXPECT_EQ(region.backingSize(), 4096u);
-    EXPECT_EQ(region.refreshBackingSize(), 65536u);
-    EXPECT_EQ(region.backingSize(), 65536u);
-    EXPECT_EQ(region.size(), 4096u);
+    EXPECT_EQ(region.backingSize(), page);
+    EXPECT_EQ(region.refreshBackingSize(), grown);
+    EXPECT_EQ(region.backingSize(), grown);
+    EXPECT_EQ(region.size(), page);
 
     /// The tail the command added is sparse ...
     struct stat st{};
     ASSERT_EQ(::fstat(region.fd(), &st), 0);
-    EXPECT_LT(static_cast<size_t>(st.st_blocks) * 512, 65536u);
+    EXPECT_LT(static_cast<size_t>(st.st_blocks) * 512, grown);
 
     /// ... and a growth into it commits it before mapping it, even though the file is already
     /// long enough.
-    region.grow(65536);
-    EXPECT_EQ(region.size(), 65536u);
+    region.grow(grown);
+    EXPECT_EQ(region.size(), grown);
     ASSERT_EQ(::fstat(region.fd(), &st), 0);
-    EXPECT_GE(static_cast<size_t>(st.st_blocks) * 512, 65536u);
-    memset(region.data() + 60000, 'x', 100);
-    EXPECT_EQ(std::string(region.data() + 60000, 3), "xxx");
+    EXPECT_GE(static_cast<size_t>(st.st_blocks) * 512, grown);
+    memset(region.data() + grown - 100, 'x', 100);
+    EXPECT_EQ(std::string(region.data() + grown - 100, 3), "xxx");
 }
 
 /// The seal stops the command from making the file shorter; it does not stop it from freeing pages
@@ -423,12 +431,22 @@ TEST(SharedMemoryRegion, CommandExtendingTheFileIsSeenAndItsTailIsCommittedOnGro
 /// there is none).
 TEST(SharedMemoryRegion, HolePunchedByTheCommandIsNotASigbus)
 {
-    constexpr size_t size = 16 * 4096;
+    /// Whole pages of whatever size this kernel backs the region in - a hole of less than a page,
+    /// or one that is not aligned to a page, frees nothing and would leave this test proving
+    /// nothing.
+    const size_t page = SharedMemoryRegion::roundUpToPages(1);
+    const size_t size = 16 * page;
     SharedMemoryRegion region(size);
     memset(region.data(), 'x', size);
 
     /// What a command could do through its inherited descriptor.
-    ASSERT_EQ(::fallocate(region.fd(), FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, 4096, 8 * 4096), 0);
+    ASSERT_EQ(
+        ::fallocate(
+            region.fd(),
+            FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+            static_cast<off_t>(page),
+            static_cast<off_t>(8 * page)),
+        0);
 
     struct stat st{};
     ASSERT_EQ(::fstat(region.fd(), &st), 0);
@@ -438,10 +456,10 @@ TEST(SharedMemoryRegion, HolePunchedByTheCommandIsNotASigbus)
     /// The mapping is intact: the hole reads as zeros, the rest as it was, and a write into the
     /// hole is an ordinary page allocation.
     EXPECT_EQ(region.data()[0], 'x');
-    EXPECT_EQ(region.data()[4096], '\0');
-    EXPECT_EQ(region.data()[9 * 4096], 'x');
-    region.data()[4096] = 'y';
-    EXPECT_EQ(region.data()[4096], 'y');
+    EXPECT_EQ(region.data()[page], '\0');
+    EXPECT_EQ(region.data()[9 * page], 'x');
+    region.data()[page] = 'y';
+    EXPECT_EQ(region.data()[page], 'y');
     EXPECT_EQ(region.refreshBackingSize(), size);
 }
 
@@ -450,12 +468,14 @@ TEST(SharedMemoryRegion, HolePunchedByTheCommandIsNotASigbus)
 /// footprint is what a cap or a charge has to go by, and it sees them.
 TEST(SharedMemoryRegion, PagesCommittedPastTheEndOfTheFileShowInTheFootprintButNotInTheLength)
 {
-    constexpr size_t size = 16 * 4096;
+    /// Whole pages, so that the footprint of the file is its length: a size that is not a multiple
+    /// of what the kernel backs the region in is rounded up in the footprint and nowhere else.
+    const size_t size = 16 * SharedMemoryRegion::roundUpToPages(1);
     SharedMemoryRegion region(size);
     EXPECT_EQ(region.refreshFootprint(), size);
 
     /// What a command could do through its inherited descriptor.
-    ASSERT_EQ(::fallocate(region.fd(), FALLOC_FL_KEEP_SIZE, size, 2 * size), 0);
+    ASSERT_EQ(::fallocate(region.fd(), FALLOC_FL_KEEP_SIZE, static_cast<off_t>(size), static_cast<off_t>(2 * size)), 0);
 
     EXPECT_EQ(region.refreshBackingSize(), size);
     EXPECT_EQ(region.size(), size);
@@ -464,7 +484,7 @@ TEST(SharedMemoryRegion, PagesCommittedPastTheEndOfTheFileShowInTheFootprintButN
 
     /// And the other way round: a sparse tail is length without pages, and the footprint is the
     /// length then.
-    ASSERT_EQ(::ftruncate(region.fd(), 8 * size), 0);
+    ASSERT_EQ(::ftruncate(region.fd(), static_cast<off_t>(8 * size)), 0);
     EXPECT_EQ(region.refreshBackingSize(), 8 * size);
     EXPECT_EQ(region.refreshFootprint(), 8 * size);
 

@@ -64,6 +64,18 @@ def write_string_binary(stream, text):
 
 
 def process(input_data, region, region_size):
+    # A function without arguments: the request carries no input at all (offset 0, size 0) and the
+    # answer is one row that depends on none. The server still has to make that request - there is
+    # nothing else that would make this command produce a row.
+    if "--zero-argument" in sys.argv:
+        output = b"42\n"
+        output_offset = len(input_data)
+        if output_offset + len(output) > region_size:
+            raise NeedMoreSpace(output_offset + len(output))
+        region[output_offset : output_offset + len(output)] = output
+        region.flush()
+        return output_offset, len(output)
+
     # Input format is TabSeparated: one UInt64 per line.
     output = bytearray()
     for line in input_data.split(b"\n"):
@@ -88,6 +100,14 @@ def process(input_data, region, region_size):
 def main():
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
+
+    # A line on stderr before the first request is ever read: what a command that logs its startup
+    # writes. It belongs to the query that started the process, and under `stderr_reaction`
+    # `throw` it fails that query - the process is new, so there is no earlier invocation for the
+    # server to pin it on.
+    if "--stderr-at-startup" in sys.argv:
+        sys.stderr.write("starting up\n")
+        sys.stderr.flush()
 
     while True:
         version = read_varint(stdin)

@@ -473,6 +473,112 @@ def test_executable_source_exit_code_check(started_cluster):
     )
 
 
+def test_executable_source_stderr_reaction(started_cluster):
+    skip_test_msan(node)
+
+    # The same source, which answers and complains on `stderr`, under the two ends of
+    # `stderr_reaction`. Under `throw` the diagnostic fails the load, and it is quoted in the
+    # exception so that the dictionary's `last_exception` says what the command said. Under `none`
+    # it is read off the pipe and dropped, and the load sees only the rows.
+    assert "the source complains" in node.query_and_get_error(
+        "SELECT * FROM dictionary(executable_source_stderr_throw_python) ORDER BY input"
+    )
+    assert "Executable generates stderr" in node.query(
+        "SELECT last_exception FROM system.dictionaries WHERE name='executable_source_stderr_throw_python'"
+    )
+
+    assert (
+        node.query(
+            "SELECT * FROM dictionary(executable_source_stderr_none_python) ORDER BY input"
+        )
+        == "1\tValue 1\n2\tValue 2\n3\tValue 3\n"
+    )
+
+
+def test_executable_source_exit_code(started_cluster):
+    skip_test_msan(node)
+
+    # A source that produces every row and then exits with `3`. `check_exit_code` is on by default,
+    # so that is a failed load however complete the rows were; turned off, the rows are all that
+    # counts.
+    assert "Child process was exited with return code 3" in node.query_and_get_error(
+        "SELECT * FROM dictionary(executable_source_exit_code_checked_python) ORDER BY input"
+    )
+    assert (
+        node.query(
+            "SELECT status FROM system.dictionaries WHERE name='executable_source_exit_code_checked_python'"
+        )
+        == "FAILED\n"
+    )
+
+    assert (
+        node.query(
+            "SELECT * FROM dictionary(executable_source_exit_code_ignored_python) ORDER BY input"
+        )
+        == "1\tValue 1\n2\tValue 2\n3\tValue 3\n"
+    )
+
+
+def test_executable_source_that_lingers_after_its_output(started_cluster):
+    skip_test_msan(node)
+
+    # A source that closes its stdout after the rows and stays alive. It is given
+    # `command_termination_timeout` (one second here) to exit. With `check_exit_code` on, an exit
+    # code that could not be read within that budget is not a passing one: the load fails and says
+    # so, instead of waiting for the command indefinitely or waving it through. With it off, the
+    # budget is spent, the command is signalled, and the rows are the result.
+    error = node.query_and_get_error(
+        "SELECT * FROM dictionary(executable_source_lingers_python) ORDER BY input"
+    )
+    assert "did not exit within command_termination_timeout (1 seconds)" in error, error
+
+    assert (
+        node.query(
+            "SELECT * FROM dictionary(executable_source_lingers_unchecked_python) ORDER BY input"
+        )
+        == "1\tValue 1\n2\tValue 2\n3\tValue 3\n"
+    )
+
+
+def test_executable_pool_source_stderr_reaction(started_cluster):
+    skip_test_msan(node)
+
+    # The pooled source: a worker that answers a key and complains on `stderr` at the same time.
+    # Under `throw` the request that caused the line fails; under `none` the line is dropped and
+    # the answer is what comes back.
+    assert "the command complains" in node.query_and_get_error(
+        "SELECT dictGet('executable_pool_stderr_throw_python', 'result', toUInt64(1))"
+    )
+
+    assert (
+        node.query(
+            "SELECT dictGet('executable_pool_stderr_none_python', 'result', toUInt64(1))"
+        )
+        == "Key 1\n"
+    )
+
+
+def test_executable_pool_source_that_lingers_after_its_output(started_cluster):
+    skip_test_msan(node)
+
+    # The pooled counterpart: the worker answers the key, closes its stdout and stays alive. A
+    # worker without a stdout cannot answer anyone else, so it is discarded, and it has
+    # `command_termination_timeout` (one second here) to exit. With `check_exit_code` on, an exit
+    # code that could not be read within that budget fails the request; with it off, the budget
+    # is spent, the worker is signalled, and the answer it gave is the result.
+    error = node.query_and_get_error(
+        "SELECT dictGet('executable_pool_lingers_python', 'result', toUInt64(1))"
+    )
+    assert "did not exit within command_termination_timeout (1 seconds)" in error, error
+
+    assert (
+        node.query(
+            "SELECT dictGet('executable_pool_lingers_unchecked_python', 'result', toUInt64(1))"
+        )
+        == "Key 1\n"
+    )
+
+
 def test_executable_source_rejects_shared_memory_configuration(started_cluster):
     skip_test_msan(node)
 

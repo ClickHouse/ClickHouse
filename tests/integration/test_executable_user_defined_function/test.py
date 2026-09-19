@@ -77,6 +77,21 @@ def wait_until_blocked_writing(pid, timeout=30):
     raise AssertionError(f"process {pid} did not block writing to its stderr within {timeout}s (wchan={wchan!r})")
 
 
+def wait_until_blocked_reading(pid, timeout=30):
+    # Waits until the process is blocked in `read` on its stdin. The commands here write everything
+    # they have to write for a request - including whatever they write late, after the answer -
+    # before they come back for the next one, so this is the observable form of "the late output
+    # has landed": on any machine, rather than after a sleep long enough to hope for it.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        wchan = node.exec_in_container(["bash", "-c", f"cat /proc/{pid}/wchan 2>/dev/null || true"]).strip()
+        # `pipe_read` up to Linux 6.x, `anon_pipe_read` from 7.0 on.
+        if wchan.endswith("pipe_read"):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"process {pid} did not come back for its next request within {timeout}s (wchan={wchan!r})")
+
+
 def wait_until_exited(pid, timeout=30):
     # Waits until the process has exited - left as a zombie for the server to reap, or gone. What
     # the tests need is "provably dead before the next borrow", on any machine, rather than a sleep.
@@ -401,7 +416,9 @@ def test_executable_function_none_reaction_worker_flooding_after_a_quiet_gap(sta
 
     pids = {first}
     for i in range(1, 3):
-        time.sleep(0.5)
+        # The next borrow starts once the worker is provably blocked in `write` on its full stderr
+        # pipe - the state this test is about - not after a sleep long enough to hope for it.
+        wait_until_blocked_writing(first)
         started = time.monotonic()
         pids.add(node.query(f"SELECT test_function_pool_stderr_flood_after_gap_python({i})").strip())
         elapsed = time.monotonic() - started
@@ -446,7 +463,9 @@ def test_executable_function_pooled_late_stderr_fails_the_query_that_caused_it(s
     # waited for, so this is the one path on which nothing looks at its stderr again: the probe that
     # refuses to pool a dirty worker runs after the query has already succeeded. Under `throw` that
     # would mean the setting silently costs a worker instead of failing the query that caused the
-    # output - which is the only thing it promises to do.
+    # output - which is the only thing it promises to do. The command puts the diagnostic on the
+    # pipe before it flushes its rows (see the script), so the server finds it there every time it
+    # has the rows - the check is deterministic, not a race against the command's scheduling.
     with pytest.raises(Exception) as exc:
         node.query("SELECT test_function_pool_stderr_after_rows_python(1)")
 
@@ -463,7 +482,7 @@ def test_executable_function_pooled_worker_that_exited_while_idle_is_replaced(st
     # and it must not find out by failing its own first write to a closed stdin. The pool holds one
     # process, so a replacement is visible as a different pid.
     first = node.query("SELECT test_function_pool_late_exit_python(0)").strip()
-    time.sleep(0.5)
+    wait_until_exited(first)
     second = node.query("SELECT test_function_pool_late_exit_python(1)").strip()
 
     assert first != second, f"the dead worker was reused: {first}"
@@ -521,7 +540,9 @@ def test_executable_function_late_stdout_cannot_be_parsed_as_the_next_query_resu
     first = node.query("SELECT test_function_pool_late_stdout_python(0)").strip()
     assert first != "999999", first
 
-    time.sleep(0.5)
+    # The stale row is written before the command comes back for its next request, so a worker
+    # blocked reading its stdin is one whose row is already on the pipe.
+    wait_until_blocked_reading(first)
 
     second = node.query("SELECT test_function_pool_late_stdout_python(1)").strip()
     assert second != "999999", second

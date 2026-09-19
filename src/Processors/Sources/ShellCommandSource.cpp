@@ -1355,10 +1355,31 @@ namespace
                 /// A worker that is not going back to the pool has to die before its slot does: the
                 /// query waiting for that slot starts a replacement at once, so leaving this process
                 /// to be destroyed later - with a `command_termination_timeout` wait in front of it -
-                /// lets the pool run over `pool_size` for as long as that takes.
+                /// lets the pool run over `pool_size` for as long as that takes. Its inputs are
+                /// closed first, so that a worker written to exit on EOF is already on its way out
+                /// when the destructor waits for it, instead of sitting out that whole timeout and
+                /// being signalled. The send threads were joined at the top of this function.
+                if (command)
+                    closeCommandInputsNoThrow();
+
                 command = nullptr;
 
                 process_pool->returnObject(std::move(command_holder));
+            }
+        }
+
+        /// The teardown paths must not throw, and closing a descriptor can (a `WriteBufferFromFile`
+        /// finalizes itself on the way out). A worker whose inputs could not be closed is being
+        /// thrown away anyway: the destructor's bounded wait and its signal are what is left.
+        void closeCommandInputsNoThrow() noexcept
+        {
+            try
+            {
+                command->closeInputs();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
             }
         }
 
@@ -1505,7 +1526,11 @@ namespace
                     /// pool: a non-pooled command started without input pipes (a dictionary's
                     /// `loadAll`, an `Executable` table without input queries) had no send task to
                     /// close its stdin either, and would sit out the same timeout. Idempotent.
-                    command->in.close();
+                    ///
+                    /// Every input, not only `stdin`: a command given several input queries reads
+                    /// the rest from the extra descriptors, and one written to exit when its inputs
+                    /// are done waits for EOF on all of them.
+                    command->closeInputs();
 
                     /// Stop reading the child's stdout before this wait touches the same descriptor.
                     /// The source can be finished from above - a `LIMIT` downstream closes the
@@ -1609,7 +1634,8 @@ namespace
         /// non-zero.
         void checkPooledWorkerAfterAnswering()
         {
-            if (!command)
+            /// Nothing to poll once the streams are gone, for the reasons the two probes give.
+            if (!command || command->isWaitCalled() || command->isStdoutClosed())
                 return;
 
             const auto state = timeout_command_out.channelState(/*consider_buffered_output=*/ false);
@@ -1635,8 +1661,10 @@ namespace
             /// closed before the wait, so that a worker that hung up its stdout but is still alive
             /// on its stdin sees EOF and exits at once, rather than sitting out the whole
             /// `command_termination_timeout` and failing the query for an exit code that was a
-            /// close away. The send threads are joined by the caller, so nothing is writing into it.
-            command->in.close();
+            /// close away. The send threads are joined by the caller, so nothing is writing into
+            /// them - and it is every input, not only `stdin`: a command given several input
+            /// queries waits for EOF on all of them before it exits.
+            command->closeInputs();
 
             try
             {
@@ -1758,7 +1786,13 @@ namespace
         /// across borrows until the command blocks in `write`.)
         bool pipeWorkerIsAtACleanBoundary() noexcept
         {
-            if (!command)
+            /// The same rule as the shared-memory probe (`controlChannelIsClean`): a command whose
+            /// streams are gone has nothing left to poll - the descriptor numbers this buffer
+            /// cached may stand for something else by now - and a worker without a stdout cannot
+            /// answer the next query anyway. `waitDrainingOutput` closes stdout on its own where a
+            /// command floods it past its rows, which is how this can be reached without a reaped
+            /// child.
+            if (!command || command->isWaitCalled() || command->isStdoutClosed())
                 return false;
 
             /// The drain polls and reads; either can fail, and this function may not throw. A
@@ -2145,8 +2179,11 @@ namespace
                         regions_created_by_this_borrow[i] = region_created;
                     }
 
+                    /// In whole pages, like the charge above and every growth (`ensureRegionFits`):
+                    /// a region is committed in pages, and a counter that mixed bytes here with
+                    /// pages there would not add up to what the memory trackers report.
                     if (region_created)
-                        ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, shared_memory_size_);
+                        ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, regions[i]->footprint());
                 }
 
                 if (command_holder)
@@ -2160,7 +2197,7 @@ namespace
                 /// given at its declaration.
                 if (command_holder)
                 {
-                    const bool worker_is_reused = command_holder->hasReturnedCommand();
+                    worker_is_reused = command_holder->hasReturnedCommand();
                     command = command_holder->buildCommand();
 
                     /// A worker that exited while it sat in the pool is replaced before anything
@@ -2187,6 +2224,7 @@ namespace
 
                         command.reset();
                         command = command_holder->buildCommand();
+                        worker_is_reused = false;
                     }
 
                     /// A worker that wrote to its stdout after it was handed back is replaced as
@@ -2216,6 +2254,7 @@ namespace
                         command->in.close();
                         command.reset();
                         command = command_holder->buildCommand();
+                        worker_is_reused = false;
                     }
 
                     /// Borrow acquired: capture the pid for procfs sampling. Best-effort, and it
@@ -2565,6 +2604,22 @@ namespace
         /// In pipelined mode this runs on the background producer thread; otherwise inline.
         std::optional<size_t> serializeInto(size_t index)
         {
+            /// A function without arguments has nothing to serialize: its input block has no
+            /// columns, so it has no rows either, whatever the query asked for, and the pipeline
+            /// carries no chunk at all. It is still a call - the command is asked to produce rows,
+            /// exactly as it is over the pipes, where this function writes an empty payload and the
+            /// command answers it - so the request is made by hand, once, with nothing in the
+            /// region, and the input is exhausted after it. Leaving it out would call the command
+            /// not at all and fail the query for the rows it never produced.
+            if (input_header.columns() == 0)
+            {
+                if (zero_argument_request_sent)
+                    return std::nullopt;
+
+                zero_argument_request_sent = true;
+                return 0;
+            }
+
             Block input_block;
             bool have_input = false;
             /// A teardown (cancellation, or the consumer having read all the rows it needs) waits
@@ -2822,6 +2877,29 @@ namespace
             query_memory_charge.fetch_add(bytes, std::memory_order_relaxed);
         }
 
+        /// Same, for a path that is already unwinding. The bytes are committed whatever happens to
+        /// this growth, so the query has to be charged for them; but a `MEMORY_LIMIT_EXCEEDED`
+        /// raised over them here would replace the exception on its way out - the one that says
+        /// what actually went wrong with the growth.
+        ///
+        /// Blocked rather than caught, the way `~SharedMemoryRegion` blocks them: a caught
+        /// `MEMORY_LIMIT_EXCEEDED` is a charge that was rolled back, which would leave committed
+        /// pages counted nowhere at all. With the exception blocked the tracker takes the bytes -
+        /// over the limit, which is what actually happened - and `cleanup` gives them back with
+        /// the rest of the borrow's charge.
+        void chargeQueryMemoryNoThrow(size_t bytes) noexcept
+        {
+            LockMemoryExceptionInThread block_exceptions(VariableContext::Global);
+            try
+            {
+                chargeQueryMemory(bytes);
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSharedMemorySource", "Cannot charge the query for the pages a failed growth committed");
+            }
+        }
+
         void unchargeQueryMemory(size_t bytes)
         {
             [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(bytes));
@@ -2939,6 +3017,13 @@ namespace
                 added = refreshFootprintKeepingTheChargeOnFailure(region, footprint_before + expected) - footprint_before;
                 if (expected > added)
                     unchargeQueryMemory(expected - added);
+                /// More than the bound, for the one reason the bound does not cover: a page the
+                /// command punched out of the file that `posix_fallocate` committed again before
+                /// the remap failed. The growth failed, but those pages are in the file and the
+                /// file cannot shrink, so the query pays for them exactly as it does on the path
+                /// where the growth succeeds.
+                else if (added > expected)
+                    chargeQueryMemoryNoThrow(added - expected);
                 if (added)
                     ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, added);
                 throw;
@@ -3152,7 +3237,11 @@ namespace
 
         void discardStderrLeftByAPreviousBorrow()
         {
-            if (!is_pooled)
+            /// Only a worker that served an earlier borrow can have left anything: a process
+            /// started for this borrow (or just now, as a replacement) has no previous invocation,
+            /// and what it writes at startup is this query's - under `throw` it fails it, as on
+            /// the pipe path.
+            if (!is_pooled || !worker_is_reused)
                 return;
 
             static constexpr size_t stderr_drain_budget_ms = 100;
@@ -3220,8 +3309,12 @@ namespace
 
             /// Once the child has been reaped its pipes are closed and the descriptor numbers may
             /// have been recycled, so there is nothing safe to poll here - and a reaped child is
-            /// not going back to the pool anyway.
-            if (!command || command->isWaitCalled())
+            /// not going back to the pool anyway. The same holds for a stdout closed on its own:
+            /// `waitDrainingOutput` closes it where a command floods it past what was asked, and it
+            /// can return without reaping, so a worker can reach this with its stdout gone and
+            /// `isWaitCalled` still false. Such a worker has no way to answer the next query in any
+            /// case.
+            if (!command || command->isWaitCalled() || command->isStdoutClosed())
                 return false;
 
             /// The constructor builds the process before it wraps the process's pipes, and the
@@ -3352,7 +3445,14 @@ namespace
             /// its stdin still has to be closed: otherwise the wait in cleanup() and in
             /// ~ShellCommand blocks for the whole command_termination_timeout before the child is
             /// signalled.
-            if (!timeout_command_in)
+            ///
+            /// A buffer that was canceled is in the same position: `cleanup` cancels it where
+            /// finalizing it threw, and a worker can be decided against after that (the late cap
+            /// re-check), which brings it back here. `WriteBuffer::finalize` refuses a canceled
+            /// buffer with a `LOGICAL_ERROR`, which in a debug or sanitizer build aborts the server
+            /// rather than being caught - and there is nothing to finalize anyway. The descriptor
+            /// still has to be closed, which is all this is here for.
+            if (!timeout_command_in || timeout_command_in->isCanceled())
             {
                 command->in.close();
                 return;
@@ -3574,6 +3674,11 @@ namespace
             if (keep_command && command_holder && !regionsAreWithinTheCap())
             {
                 keep_command = false;
+                /// The stdin was left open above, for a worker that was going back to the pool.
+                /// This one is not, and it is destroyed next: closed first, so that it exits on
+                /// EOF at once rather than `~ShellCommand` sitting out `command_termination_timeout`
+                /// on a child that is blocked reading its next request.
+                closeStdinNoThrow(/*command_is_reused=*/ false);
                 command = nullptr;
                 for (size_t i = 0; i < regions.size(); ++i)
                 {
@@ -3607,6 +3712,11 @@ namespace
         SharedHeader sample_block;
         Block input_header;
 
+        /// Whether the one request a function without arguments makes has been made. Touched only
+        /// by whichever thread serializes the input - the producer thread in pipelined mode, the
+        /// query thread otherwise - and never by both.
+        bool zero_argument_request_sent = false;
+
         ShellCommandSourceConfiguration configuration;
 
         /// regions[0] is used by both transports; regions[1] is the second double-buffer used only
@@ -3626,6 +3736,9 @@ namespace
         bool command_can_be_reused = false;
 
         bool is_pooled;
+        /// Whether the process served an earlier borrow (and may have left output on its pipes),
+        /// as opposed to one started for this borrow or as a replacement during it.
+        bool worker_is_reused = false;
         size_t shared_memory_max_size;
         /// The cap in the unit footprints come in - whole pages: a region of 16 bytes holds a page,
         /// and a cap of 16 bytes has to mean that page, not fail it on every borrow.
@@ -3879,7 +3992,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 leftover_stderr.empty() ? "" : " Stderr: ",
                 leftover_stderr);
 
-            process->in.close();
+            process->closeInputs();
             process.reset();
             process = process_holder->buildCommand();
             worker_is_reused = false;
