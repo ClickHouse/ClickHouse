@@ -712,6 +712,14 @@ void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_cont
     }
 }
 
+void StorageMaterializedView::checkInsertIsAllowed(ContextPtr local_context) const
+{
+    /// The context is derived exactly as `write` derives it, so the check answers as the sink would.
+    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
+    getTargetTable()->checkInsertIsAllowed(context);
+}
+
 void StorageMaterializedView::checkStatementCanBeForwarded() const
 {
     if (!has_inner_table)

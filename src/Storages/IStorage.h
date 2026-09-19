@@ -515,10 +515,11 @@ public:
       *
       * Called when the storage is the destination of an `INSERT`, before the query is executed or
       * queued for asynchronous insertion. A storage whose `write` guards the write with an access
-      * check of its own must repeat the check here: with `async_insert = 1` the sink is created
+      * check of its own, or refuses the insert, must repeat that here: with `async_insert = 1` the sink is created
       * later, in a background flush, so a check done only in `write` neither reaches the user
       * (with `wait_for_async_insert = 0` the query has already returned success) nor happens with
       * the privileges the user had when the query was issued.
+      * Only a refusal whose answer cannot differ between the initiator and the flush belongs here.
       */
     virtual void checkInsertIsAllowed(ContextPtr /*context*/) const {}
 

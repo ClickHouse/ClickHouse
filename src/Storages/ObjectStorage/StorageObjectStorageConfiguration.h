@@ -255,6 +255,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
 
+    /// Must not need the metadata, which the initiator has not loaded.
+    virtual void checkInsertIsPossible(ContextPtr /*context*/) const {}
+
     virtual void checkAlterIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const AlterCommands & commands)
     {
         for (const auto & command : commands)

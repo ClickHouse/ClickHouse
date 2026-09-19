@@ -115,6 +115,8 @@ public:
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
+    static void checkInsertIsPossible(ContextPtr);
+
     /// Data which we are going to read is sorted by sorting key specified in StorageMetadataPtr.
     /// For example in Iceberg it's a valid query to change sort_order for table, but older files will
     /// not be rewritten and will be left unsorted or with previous sort order.

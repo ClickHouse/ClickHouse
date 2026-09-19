@@ -257,6 +257,11 @@ public:
         return DataLakeMetadata::supportsTotalBytes(context, storage_type);
     }
 
+    void checkInsertIsPossible(ContextPtr context) const override
+    {
+        DataLakeMetadata::checkInsertIsPossible(context);
+    }
+
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         return getMetadata()->totalBytes(local_context);
