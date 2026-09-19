@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -654,8 +655,14 @@ ColumnPtr IExecutableFunction::execute(
             }
         }
 
+        /// A lambda argument is as deterministic as its body: `arrayMap(i -> rand64(i), ...)` must run per output row.
+        bool lambdas_deterministic = true;
+        for (const auto & argument : arguments)
+            lambdas_deterministic = lambdas_deterministic
+                && allColumnFunctions(*argument.column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+
         auto arguments_without_replicated = arguments;
-        if (has_full_columns || !common_replicated_indexes || !isDeterministicInScopeOfQuery())
+        if (has_full_columns || !common_replicated_indexes || !isDeterministicInScopeOfQuery() || !lambdas_deterministic)
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
