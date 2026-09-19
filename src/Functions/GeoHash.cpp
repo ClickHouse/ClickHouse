@@ -1,11 +1,17 @@
 #include <array>
 #include <base/defines.h>
 #include <cmath>
+#include <Common/Exception.h>
 #include <Functions/GeoHash.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -186,7 +192,10 @@ inline Encoded base32Decode(const char * encoded_string, size_t encoded_length)
     for (size_t i = 0; i < encoded_length; ++i)
     {
         const uint8_t c = static_cast<uint8_t>(encoded_string[i]);
-        const uint8_t decoded = geohash_base32_decode_lookup_table[c] & 0x1F;
+        const uint8_t decoded = geohash_base32_decode_lookup_table[c];
+        if (decoded == 0xFF)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid character '{}' in geohash", encoded_string[i]);
+
         result[i * 5 + 4] = (decoded >> 0) & 0x01;
         result[i * 5 + 3] = (decoded >> 1) & 0x01;
         result[i * 5 + 2] = (decoded >> 2) & 0x01;
