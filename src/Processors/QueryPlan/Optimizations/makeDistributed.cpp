@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -71,6 +72,12 @@ bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
     if (typeid_cast<const BlocksMarshallingStep *>(&step))
         return true;
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
+        return false;
+    /// `StreamInQueryResultCacheStep` is a pass-through that writes the rows flowing through it into
+    /// the query result cache, which is node-local and has no serialized representation. It is not a
+    /// reason to keep the plan local: `QueryPlan::convertToDistributed` removes these steps before it
+    /// splits the plan, so only their children decide whether the plan can run on a worker.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(&step))
         return false;
     return !step.isSerializable();
 }

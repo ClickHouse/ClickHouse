@@ -560,6 +560,12 @@ void StorageView::readImpl(
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    /// The view body becomes part of the plan that reads the view, so it is planned in the same
+    /// process as that plan. Keep the "this fragment stays in-process" fact of a local fragment of a
+    /// distributed query: the body's subqueries are planned through `SelectQueryOptions::subquery`,
+    /// which only carries the fact if it is set here, and without it they lose the query result cache
+    /// reads that are safe in this process (see `shouldReadFromQueryCacheForSubquery`).
+    options.inside_local_plan_for_distributed_query = query_info.inside_local_plan_for_distributed_query;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {

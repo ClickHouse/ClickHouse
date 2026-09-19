@@ -1689,6 +1689,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
+        /// The read is part of this plan, so it stays in the same process as this plan does.
+        table_expression_query_info.inside_local_plan_for_distributed_query
+            = select_query_options.is_local_plan_for_distributed_query || select_query_options.inside_local_plan_for_distributed_query;
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 

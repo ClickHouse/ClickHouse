@@ -63,7 +63,7 @@ namespace QueryPlanOptimizations
 /// `ExtraSettings` reads every field as zero, which silently turns the gated behaviour off - a filter that
 /// stops short of a read, or a step description truncated to nothing - and the two passes had already
 /// drifted apart by three fields. Build it here instead of at each call site, where one is easy to forget.
-static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimizationSettings & optimization_settings)
+static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan & query_plan)
 {
     return {
         optimization_settings.max_step_description_length,
@@ -87,6 +87,8 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.is_explain,
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
+        query_plan.getMaxThreads(),
+        query_plan.getConcurrencyControl(),
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
@@ -109,7 +111,11 @@ static String describeProjectionRejections(const std::unordered_map<String, Stri
     return fmt::format("{}", fmt::join(formatted_reasons, "; "));
 }
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    const QueryPlan & query_plan)
 {
     if (!optimization_settings.optimize_plan)
         return;
@@ -133,7 +139,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     size_t total_applied_optimizations = 0;
 
 
-    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
+    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings, query_plan);
 
     while (!stack.empty())
     {
@@ -243,7 +249,7 @@ void optimizeTreeSecondPass(
     std::unordered_map<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
-    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
+    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings, query_plan);
 
     Stack stack;
 
@@ -636,7 +642,7 @@ void optimizeTreeSecondPass(
             /// The local plan was optimized under `local_optimization_settings`, so merge the seam it
             /// forms with the outer plan under the same ones.
             if (local_optimization_settings.merge_expressions)
-                tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings));
+                tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings, query_plan));
         }
         else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
         {

@@ -206,6 +206,14 @@ struct SelectQueryInfo
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
+    /// The plan this read belongs to is the in-process local fragment of a distributed query, or a
+    /// subquery of one (`SelectQueryOptions::is_local_plan_for_distributed_query` or its sticky
+    /// companion `inside_local_plan_for_distributed_query`). A storage that plans a query of its own
+    /// for the read - `StorageView` interprets the view body - starts from fresh `SelectQueryOptions`
+    /// and would otherwise lose the fact that the whole fragment stays in this process, which is what
+    /// allows the query result cache reads of the view body's subqueries (see
+    /// `shouldReadFromQueryCacheForSubquery`).
+    bool inside_local_plan_for_distributed_query = false;
     bool is_internal = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
