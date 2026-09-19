@@ -39,6 +39,10 @@ public:
     virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
     virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) = 0;
 
+    /// Request that every metadata file this transaction writes is fsync'ed once written.
+    /// Default is a no-op for metadata not backed by a syncable local file.
+    virtual void setSyncMetadata(bool /* sync */) {}
+
     /// General purpose methods
 
     /// Write metadata string to file
@@ -182,6 +186,10 @@ public:
     virtual const std::string & getPath() const = 0;
 
     virtual MetadataStorageType getType() const = 0;
+
+    /// fsync the already-committed metadata file for `path`. Throws if it does not exist: callers
+    /// reach this only after the metadata was written. Default no-op where there is no local file.
+    virtual void syncMetadataFile(const std::string & /* path */) {}
 
     virtual std::string getZooKeeperName() const { return ""; }
     virtual std::string getZooKeeperPath() const { return ""; }
