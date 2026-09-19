@@ -5,6 +5,7 @@
 #include <shared_mutex>
 #include <Compression/CompressionFactory.h>
 #include <algorithm>
+#include <ranges>
 #include <functional>
 #include <unordered_map>
 #include <Core/Defines.h>
@@ -139,15 +140,20 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
-
+    /// `getName`, not `IDataType::equals`: `equals` ignores the `SimpleAggregateFunction` wrapper.
+    /// Only explicit statistics: implicit ones are never serialized.
     return name == other.name
-        && type->equals(*other.type)
+        && type->getName() == other.type->getName()
         && default_desc == other.default_desc
-        && statistics == other.statistics
-        && ast_to_str(codec) == ast_to_str(other.codec)
+        && statistics.hasSameExplicitStatistics(other.statistics)
+        && sameAST(codec, other.codec)
         && settings == other.settings
-        && ast_to_str(ttl) == ast_to_str(other.ttl);
+        && sameAST(ttl, other.ttl);
+}
+
+bool ColumnsDescription::operator==(const ColumnsDescription & other) const
+{
+    return std::ranges::equal(columns, other.columns);
 }
 
 /// This is how a column is serialized into ZooKeeper, and `ColumnsDescription::operator==` compares

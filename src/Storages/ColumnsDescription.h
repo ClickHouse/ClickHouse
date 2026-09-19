@@ -163,7 +163,10 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
+    /// Column-by-column comparison (`ColumnDescription::operator==` compares the expressions as
+    /// ASTs, not as formatted text). Comments are not compared, matching the previous behavior
+    /// of comparing `toString(false)`.
+    bool operator==(const ColumnsDescription & other) const;
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
