@@ -217,7 +217,7 @@ CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
 ```
 
-The executor's PersistentVolumeClaim is annotated `helm.sh/resource-policy: keep`, so the uninstall leaves it behind with the command database and service registry on it. The Secrets that `init` created, the platform bundle Secret that platform approval wrote, and the service registry ConfigMap the executor maintains are not chart-owned either and survive the uninstall. Delete them explicitly, including the per-instance access Secrets for every instance you registered yourself. `--ignore-not-found` covers objects that were never created, such as the platform bundle Secret before a first approval:
+The executor's PersistentVolumeClaim is annotated `helm.sh/resource-policy: keep`, so the uninstall leaves it behind with the command database and service registry on it. The Secrets that `init` created, the platform bundle Secret that platform approval wrote, and the service registry ConfigMap the executor maintains are not chart-owned either and survive the uninstall. Delete them explicitly, including the access Secret and ServiceAccount pair of every instance you registered yourself and of every managed service you provisioned the troubleshooter for (named after the service). `--ignore-not-found` covers objects that were never created, such as the platform bundle Secret before a first approval:
 
 ```bash
 kubectl delete pvc -n "${CONNECTOR_NAMESPACE}" -l app.kubernetes.io/instance=clicklink-connector --ignore-not-found
@@ -228,7 +228,8 @@ kubectl delete secret -n "${CONNECTOR_NAMESPACE}" --ignore-not-found \
   clicklink-connector-troubleshooter-access-<instance>
 kubectl delete serviceaccount -n "${CONNECTOR_NAMESPACE}" --ignore-not-found \
   pcm-scraper-<instance> pcm-troubleshooter-<instance>
-# Repeat for every ClickHouse namespace that holds an instance you registered yourself.
+# Repeat for every ClickHouse namespace that holds an instance you registered yourself;
+# a managed service's namespace went away with the service.
 for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
   kubectl delete serviceaccount,role,rolebinding -n "${ns}" --ignore-not-found \
     pcm-scraper pcm-troubleshooter

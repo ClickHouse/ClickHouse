@@ -209,7 +209,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
 | `--config <path>` | Connector config file to read the instance from. |
 | `--target <shape>` | `systemd` (default: ship the bundle to a VM over a remote channel, or generate in place with `--provider local`) or `helm` (push the bundle as a Kubernetes Secret for the chart). |
 | `--target-namespace <ns>` | Namespace the bundle Secret lands in (required with `--target helm`). |
-| `--instance-namespace <ns>` | (`--target helm`) Namespace of the target ClickHouse instance. |
+| `--instance-namespace <ns>` | Namespace of the target ClickHouse instance; with it the command needs no registry entry for `--instance`. |
 | `--force` | Overwrites an existing bundle: the re-run and credential-rotation path. |
 | `--secret-name <name>` | Overrides the bundle Secret name (default `clicklink-connector-<component>-access-<instance>`). |
 | `--output-dir <path>` | (`--target helm` or `--provider local`) Root directory where the bundle lands (default: `./<component>/` in the working directory for `helm`, the component's access directory for `local`). |

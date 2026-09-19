@@ -167,6 +167,7 @@ The executor wires the scraper into each service it creates. It does not provisi
 clicklink clctl troubleshoot access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance <name> --instance-namespace ns-<name> \
+  --server <kubernetes-api-server-url> \
   --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
 ```
 
@@ -175,7 +176,8 @@ Then add the Secret and ServiceAccount pair to `troubleshooter.accessBundles` an
 <Tab title="Linux VM" id="troubleshooter-vm">
 ```bash
 printf '%s\n' "$CH_DEFAULT_PASSWORD" | sudo clicklink clctl troubleshoot access provision --provider local \
-  --instance <name> --instance-namespace ns-<name> --ch-admin-password-stdin
+  --instance <name> --instance-namespace ns-<name> \
+  --server <kubernetes-api-server-url> --ch-admin-password-stdin
 ```
 
 `$CH_DEFAULT_PASSWORD` is the `default` user's password that `prepare` printed.
