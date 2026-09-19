@@ -92,6 +92,10 @@ SELECT 'nullable_string_prunes', (SELECT sum(granules_read) = 1 AND sum(granules
           FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str WHERE toString(s) = 'dd'
                 SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)));
 SELECT count() FROM tab_str WHERE CAST(s AS String) = 'cc'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+-- Read in key order, `LIMIT` stops before the `NULL` row is reached, as `ORDER BY CAST(d AS Date)` on a
+-- `Nullable(DateTime)` key does today; without the order the whole column is evaluated.
+SELECT s FROM tab_str ORDER BY CAST(s AS String) LIMIT 1 SETTINGS optimize_read_in_order = 1;
+SELECT s FROM tab_str ORDER BY CAST(s AS String) LIMIT 1 SETTINGS optimize_read_in_order = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 -- Without a `NULL` in the part, `CAST` prunes as `toString` does.
 CREATE TABLE tab_str_no_null (s Nullable(String)) ENGINE = MergeTree ORDER BY s
     SETTINGS allow_nullable_key = 1, index_granularity = 2;
