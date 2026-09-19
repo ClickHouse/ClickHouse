@@ -97,12 +97,8 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = createMergedColumns();
 
-    size_t size_to_reserve = 0;
-    for (const auto & chunk : chunks)
-        size_to_reserve += chunk.getNumRows();
-
     /// Reserve at most one output block because reserved capacity counts toward tracked memory.
-    size_to_reserve = std::min(size_to_reserve, max_merged_block_size);
+    size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
     for (auto & column : merged_columns)
         column->reserve(size_to_reserve);
 
