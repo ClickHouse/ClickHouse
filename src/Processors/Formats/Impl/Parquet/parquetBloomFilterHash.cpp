@@ -4,6 +4,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
 
 #if USE_PARQUET
 
@@ -280,6 +282,94 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
     }
 
     return hashes;
+}
+
+namespace
+{
+
+struct RequestedIntegerSpace
+{
+    size_t bits;
+    bool is_signed;
+    /// Converting into `Date`/`Date32`/`DateTime`/`Enum*`/`IPv4` clamps or does arithmetic instead of
+    /// wrapping modulo 2^bits, so those types never qualify as a bit reinterpretation.
+    bool is_native_integer;
+    /// The integer -> date CAST reads the value as a day number only while it fits in 16 bits; a wider
+    /// source is read as a Unix timestamp instead, which is a unit change, not a bit pattern change.
+    bool source_must_fit_in_16_bits;
+};
+
+std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isNativeInteger())
+        return RequestedIntegerSpace{type.getSizeOfValueInMemory() * 8, which.isNativeInt(), true, false};
+    if (which.isIPv4() || which.isDateTime())
+        return RequestedIntegerSpace{32, false, false, false};
+    if (which.isEnum8())
+        return RequestedIntegerSpace{8, true, false, false};
+    if (which.isEnum16())
+        return RequestedIntegerSpace{16, true, false, false};
+    if (which.isDate())
+        return RequestedIntegerSpace{16, false, false, true};
+    if (which.isDate32())
+        return RequestedIntegerSpace{32, true, false, true};
+    /// No constant of any other type reaches `tryHashInt`'s `Int64`/`UInt64`/`IPv4` `Field` cases.
+    return {};
+}
+
+}
+
+bool parquetHashFilterOutputTypeIsExact(
+    const DataTypePtr & decoded_type, const DataTypePtr & requested_type, parquet::Type::type physical_type)
+{
+    /// `castColumn` applies the `LowCardinality`/`Nullable` wrappers around values it does not change.
+    const DataTypePtr requested = removeLowCardinalityAndNullable(requested_type);
+    const DataTypePtr decoded = removeLowCardinalityAndNullable(decoded_type);
+
+    switch (physical_type)
+    {
+        case parquet::Type::type::INT32:
+        case parquet::Type::type::INT64:
+        {
+            const size_t physical_bits = physical_type == parquet::Type::type::INT32 ? 32 : 64;
+
+            WhichDataType decoded_which(*decoded);
+            if (!decoded_which.isNativeInteger())
+                return false;
+            const size_t decoded_bits = decoded->getSizeOfValueInMemory() * 8;
+            const bool decoded_signed = decoded_which.isNativeInt();
+
+            const auto requested_space = getRequestedIntegerSpace(*requested);
+            if (!requested_space)
+                return false;
+            if (requested_space->source_must_fit_in_16_bits && decoded_bits > 16)
+                return false;
+
+            /// The conversion preserves every value of the decoded type, so both sides cast to the same
+            /// physical value. A signed source cannot widen into an unsigned target: negatives do not survive.
+            const bool value_preserving = requested_space->bits >= decoded_bits
+                && (requested_space->is_signed == decoded_signed
+                    || (!decoded_signed && requested_space->bits > decoded_bits));
+
+            /// Or the conversion wraps modulo 2^bits at or above the physical width, so the low
+            /// `physical_bits` bits - the only ones the digests are computed over - are unchanged.
+            const bool reinterpretation = requested_space->is_native_integer && requested_space->bits >= physical_bits;
+
+            return value_preserving || reinterpretation;
+        }
+        case parquet::Type::type::BYTE_ARRAY:
+        case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
+            /// Both sides hash raw bytes, so any difference in the byte count breaks the comparison.
+            /// A 16-byte fixed array is decoded as `FixedString(16)` even when `IPv6` was requested
+            /// (see `SchemaConverter`), and `IPv6` holds exactly those 16 bytes in the same order.
+            return requested->equals(*decoded)
+                || (WhichDataType(*requested).isIPv6() && WhichDataType(*decoded).isFixedString()
+                    && decoded->getSizeOfValueInMemory() == sizeof(IPv6));
+        default:
+            /// `parquetTryHashField` hashes nothing for the remaining physical types.
+            return false;
+    }
 }
 
 }
