@@ -100,8 +100,11 @@ bool isExpectedException(Stage stage, int code)
                 || code == ErrorCodes::TOO_DEEP_RECURSION;
         case Stage::PARSE:
         case Stage::REPARSE:
+            /// `ParserInsertQuery` and `ParserExplainQuery` validate the `input` table function while
+            /// parsing (`tryFindInputFunction`), hence `INVALID_USAGE_OF_INPUT`.
             return code == ErrorCodes::SYNTAX_ERROR
                 || code == ErrorCodes::BAD_ARGUMENTS
+                || code == ErrorCodes::INVALID_USAGE_OF_INPUT
                 || code == ErrorCodes::TOO_DEEP_RECURSION
                 || code == ErrorCodes::TOO_DEEP_AST
                 || code == ErrorCodes::TOO_BIG_AST
