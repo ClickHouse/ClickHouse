@@ -12,15 +12,18 @@ SELECT sum(isNull(e)), max(isNull(e)) FROM (SELECT if(number % 3, NULL, material
 20	1
 -- The compiled path and the interpreted path must agree. A bare `isNull(e)` is a single node and is
 -- not compiled, and `* 1` is folded away before compilation, so `+ 0` is what puts the function
--- inside a compiled expression; the argument needs a native type for the same reason.
-SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, toInt64(7)) AS e FROM numbers(30)) SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
+-- inside a compiled expression; the argument needs a native type for the same reason. Neither sum
+-- below moves if this map turns canonical, so byte 2 is asserted here directly.
+SELECT countIf(e.null = 2), sum(isNull(e)) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30));
+10	20
+SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30)) SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
 20
-SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, toInt64(7)) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
 20
 -- The pair above only compares the two paths while the compiled one is really compiled. The control
 -- shape holds no `isNull`, so it reports whether the embedded compiler runs at all; requiring the two
 -- to agree keeps this red if `isNull` stops being compiled, and green where the compiler is absent.
-SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, toInt64(7)) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_isnull' FORMAT Null;
+SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_isnull' FORMAT Null;
 SELECT sum((toInt64(number) + 1) * 2) FROM numbers(30) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_arith' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 WITH shapes AS (SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05212_shape_isnull', '05212_shape_arith') GROUP BY log_comment) SELECT (SELECT compiled FROM shapes WHERE log_comment = '05212_shape_isnull') = (SELECT compiled FROM shapes WHERE log_comment = '05212_shape_arith');
