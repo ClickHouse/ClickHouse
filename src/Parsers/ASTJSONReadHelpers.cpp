@@ -321,10 +321,10 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Expected a string 'value' (Field dump) for field type '{}' during AST JSON deserialization", field_type);
     String dump_str = obj.getValue<String>("value");
 
-    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps
-    /// without an internal depth limit, so a hostile JSON payload could trigger unbounded
-    /// recursion even when the JSON object itself is shallow. Reject overly deep payloads
-    /// against the same depth bound used for AST node construction.
+    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps and stops
+    /// only when the native stack runs low, so a hostile JSON payload could recurse deeply even when
+    /// the JSON object itself is shallow. Reject overly deep payloads against the same deterministic
+    /// depth bound used for AST node construction.
     if (size_t max_depth = getJSONDeserializationMaxDepth();
         computeFieldDumpNestingDepth(dump_str) > max_depth)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
