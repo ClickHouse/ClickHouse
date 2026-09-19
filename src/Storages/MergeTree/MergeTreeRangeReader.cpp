@@ -795,7 +795,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         return;
     }
 
-    if (!filter.present())
+    if (total_rows_per_granule == 0 || !filter.present())
         return;
 
     NumRows zero_tails;
