@@ -176,6 +176,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ false);
+    }
+
+    /// `impl` can be a higher-order function that evaluates a user lambda, and a lambda body may
+    /// reference a set that the plan has not built yet, so a dry run must reach `impl` as a dry run.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ true);
+    }
+
+private:
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    {
         auto nested_arguments = arguments;
         extractNestedTypesAndColumns(nested_arguments);
 
@@ -195,15 +208,22 @@ public:
                 argument.type = recursiveRemoveLowCardinality(argument.type);
             }
 
-            auto nested_result = impl.executeImpl(nested_arguments, nested_result_type_no_lc, input_rows_count);
+            auto nested_result = dry_run
+                ? impl.executeImplDryRun(nested_arguments, nested_result_type_no_lc, input_rows_count)
+                : impl.executeImpl(nested_arguments, nested_result_type_no_lc, input_rows_count);
             nested_result = recursiveLowCardinalityTypeConversion(nested_result, nested_result_type_no_lc, nested_result_type);
             return Adapter::wrapColumn(std::move(nested_result));
         }
         else
-            return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
+        {
+            const auto nested_result_type = Adapter::extractResultType(result_type);
+            auto nested_result = dry_run
+                ? impl.executeImplDryRun(nested_arguments, nested_result_type, input_rows_count)
+                : impl.executeImpl(nested_arguments, nested_result_type, input_rows_count);
+            return Adapter::wrapColumn(std::move(nested_result));
+        }
     }
 
-private:
     /// Adapters that synthesize a lambda-like ColumnFunction take the lazy replication flag
     /// to defer the physical replication of the captured column: the capture stays lazy
     /// (ColumnReplicated) until the lambda is executed.
