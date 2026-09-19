@@ -76,8 +76,7 @@ private:
     return task->getFuture().get();
 }
 
-/// True if mutating `part` would skip `command` and clone the part forward untouched, so the part
-/// owes nothing on account of that command.
+/// True if mutating `part` would skip `command` and clone the part forward untouched.
 bool canSkipMutationCommandForPart(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,

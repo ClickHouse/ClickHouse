@@ -1236,8 +1236,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        /// The holder must outlive `startMutation`: DETACH and MOVE PARTITION take this same lock
-        /// across their check and their commit, and rely on no mutation registering in between.
+        /// Held across `startMutation`: DETACH and MOVE PARTITION rely on no mutation registering in between.
         auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (alter_lock == std::nullopt)
         {
@@ -2519,17 +2518,14 @@ UInt64 StorageMergeTree::getNextMutationVersionToRewrite(
          it != mutations.entries_by_version.end();
          ++it)
     {
-        /// A transactional mutation never rewrites a part that was invisible at its snapshot, so such a
-        /// part owes it nothing. Only this branch of `selectPartsToMutate`: for a non-transactional
-        /// mutation an invisible part is merely POSTPONED and still has to be rewritten later.
-        /// Per mutation rather than per part, because each transaction has its own snapshot.
+        /// A transactional mutation never rewrites a part invisible at its snapshot, so such a part owes
+        /// it nothing. A non-transactional mutation merely POSTPONES it, and still has to rewrite it.
         if (!it->second.tid.isNonTransactional()
             && !part->version->isVisible(it->second.tid.start_csn, it->second.tid))
             continue;
 
         for (const auto & command : *it->second.commands)
         {
-            /// Evaluated exactly as the mutation executor evaluates it: same context, same settings.
             if (!canSkipMutationCommandForPart(part, mutations.metadata_snapshot, command, context_for_reading))
                 return it->first;
         }
@@ -2560,30 +2556,24 @@ void StorageMergeTree::assertNoUnappliedMutationsForParts(const DataPartsVector 
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        /// Pairs with `alter`, which publishes in-memory metadata and the matching rename mutation
-        /// under this mutex, so the snapshot cannot disagree with the mutations taken alongside it.
-        /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
+        /// Pairs with `alter`, which publishes metadata and the matching rename mutation under this mutex.
         auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
         mutations.metadata_snapshot = metadata_snapshot_handle;
 
-        /// A superset of every part's own range, bounded by the smallest data version among the parts.
         for (auto it = current_mutations_by_version.upper_bound(min_data_version);
              it != current_mutations_by_version.end();
              ++it)
         {
-            /// A mutation whose transaction was rolled back will never run, so it owes nothing;
-            /// `selectPartsToMutate` skips it for the same reason.
+            /// A mutation whose transaction was rolled back will never run, so it owes nothing.
             if (it->second.csn == Tx::RolledBackCSN)
                 continue;
 
-            /// Only the pointer is copied, as `getMutationsSnapshot` does: a registered entry's
-            /// commands are never edited in place.
+            /// Only the pointer is copied, as `getMutationsSnapshot` does: commands are never edited in place.
             mutations.entries_by_version.emplace(
                 it->first, UnappliedMutations::Entry{it->second.commands, it->second.tid, it->second.file_name});
         }
     }
 
-    /// Nothing registered in range: no part can owe anything, and the context below is not needed.
     if (mutations.entries_by_version.empty())
         return;
 
@@ -2605,7 +2595,6 @@ void StorageMergeTree::assertNoUnappliedMutationsForParts(const DataPartsVector 
     if (min_mutation_version == 0)
         return;
 
-    /// `getNextMutationVersionToRewrite` returns one of this map's keys, so the lookup always resolves.
     const auto & blocking_mutation = mutations.entries_by_version.at(min_mutation_version);
     auto storage_id = getStorageID();
 
@@ -3198,8 +3187,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
     {
-        /// Before the merge blocker, never after: a barrier ALTER holds this lock while waiting for a
-        /// mutation, and the blocker is what would keep that mutation from running.
+        /// Before the merge blocker: a barrier ALTER holds this lock awaiting a mutation the blocker would stall.
         std::optional<AlterLockHolder> alter_lock;
         if (detach)
             alter_lock = lockForAlterForPartitionCommandOrThrow("DETACH PART " + part_name, query_context);
@@ -3209,16 +3197,15 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         auto merge_blocker = stopMergesAndWait();
 
         /// Only the base part is detached; the pending patch is left behind, so re-attaching would
-        /// silently revert the update. Reject instead (the Replicated engine still gates this on current support).
-        /// A patch keeps applying on read after the block-number settings are switched off, so the
-        /// obligation follows the patch parts and not the table's current lightweight-update support.
+        /// silently revert the update. Reject instead.
+        /// A patch keeps applying on read after the block-number settings are switched off, so this guard
+        /// cannot depend on them.
         if (detach)
         {
             if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}))
             {
                 auto patch_parts = getPatchPartsVectorForPartition(part->info.getPartitionId());
                 assertNoPatchesForParts({part}, patch_parts, "DETACH PART " + part_name);
-                /// After the patch guard, so the more specific patch message keeps winning where both apply.
                 assertNoUnappliedMutationsForParts({part}, "DETACH PART " + part_name);
             }
         }
@@ -3282,8 +3269,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     {
         const auto * partition_ast = partition->as<ASTPartition>();
 
-        /// Before the merge blocker, never after: a barrier ALTER holds this lock while waiting for a
-        /// mutation, and the blocker is what would keep that mutation from running.
+        /// Before the merge blocker: a barrier ALTER holds this lock awaiting a mutation the blocker would stall.
         std::optional<AlterLockHolder> alter_lock;
         if (detach)
             alter_lock = lockForAlterForPartitionCommandOrThrow("DETACH PARTITION", query_context);
@@ -3313,7 +3299,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                     parts_to_detach_by_partition[part->info.getPartitionId()].push_back(part);
 
                 /// Only base parts are detached; pending patches are left behind, so re-attaching would
-                /// silently revert the update. Reject instead (the Replicated engine still gates this on current support).
+                /// silently revert the update. Reject instead.
                 for (const auto & [partition_id, partition_parts] : parts_to_detach_by_partition)
                 {
                     auto patch_parts = getPatchPartsVectorForPartition(partition_id, data_parts_lock);
@@ -3321,9 +3307,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 }
             }
 
-            /// After the patch guard, so the more specific patch message keeps winning, and outside the
-            /// parts lock: the guard takes `currently_processing_in_background_mutex`, which the
-            /// established order puts before the parts lock.
+            /// Outside the parts lock: this guard takes `currently_processing_in_background_mutex`, which
+            /// the established lock order puts before the parts lock.
             for (const auto & [partition_id, partition_parts] : parts_to_detach_by_partition)
                 assertNoUnappliedMutationsForParts(partition_parts, "DETACH PARTITION " + partition_id);
         }
@@ -3786,7 +3771,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
 
-    /// `*this` is the source table, which is what `src_data` refers to.
     assertNoUnappliedMutationsForParts(src_parts, "MOVE PARTITION " + partition_id);
 
     if (src_parts.size() > settings[Setting::max_parts_to_move])
