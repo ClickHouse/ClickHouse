@@ -9161,10 +9161,9 @@ Controls how posting lists are applied during text index queries.
 )", 0) \
     DECLARE(TextIndexPostingsCursorIntersectionAlgorithm, text_index_postings_cursor_intersection_algorithm, TextIndexPostingsCursorIntersectionAlgorithm::Auto, R"(
 Selects the algorithm that intersects posting lists in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
-- `auto` (default): leapfrog is used only when the sparsest posting list can skip whole packed blocks of the densest one (`min_density * 128 < max_density`), and brute-force bitmap intersection otherwise.
+- `auto` (default): leapfrog is used only when the sparsest posting list can skip whole packed blocks of the densest one, and brute-force bitmap intersection otherwise.
 - `bruteforce`: always use the brute-force bitmap intersection.
 - `leapfrog`: always use the leapfrog intersection.
-Leapfrog is used regardless of this setting for 256 or more posting lists, which the brute-force counters cannot represent.
 )", 0) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
@@ -9609,7 +9608,8 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1) \
-    ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, text_index_density_threshold)
+    MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f) \
+    MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

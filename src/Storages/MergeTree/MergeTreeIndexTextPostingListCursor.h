@@ -95,10 +95,8 @@ public:
     /// Current doc_id. Undefined when `valid` returns false.
     uint32_t value() const { return decoded_values_ptr[index]; }
 
-    /// Advance to the first doc_id >= target. The common case, the target lying within the decoded
-    /// values of the current block, is resolved inline; block and segment transitions go through
-    /// `advanceSlow`. Leapfrog intersections call this once per posting of the leading list, so the
-    /// fast path must stay a handful of instructions.
+    /// Advance to the first doc_id >= target. The common case, the target lying within the decoded block,
+    /// is resolved inline; block and segment transitions go through `advanceSlow`.
     ALWAYS_INLINE void advance(uint32_t target)
     {
         ++counters.advance_count;
