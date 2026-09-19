@@ -1,0 +1,64 @@
+--- not applicable cases ---
+With p_key (normal projection, hypothetical):
+reason: 10 marks would be read instead of 2 from the base table
+With p_agg (aggregate projection, hypothetical):
+reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
+With p_where (normal projection, hypothetical):
+reason: EXPLAIN WHATIF does not estimate projections with a WHERE clause yet
+With p_nocol (normal projection, hypothetical):
+reason: Projection does not contain column v required by the query, so it could only filter the base table\'s parts, which EXPLAIN WHATIF does not estimate yet
+With p_skipidx (normal projection, hypothetical):
+reason: EXPLAIN WHATIF does not estimate projections with their own skip indexes yet
+--- a key over a virtual column is not estimated ---
+reason: Projection orders by _part_offset, which it does not store, so EXPLAIN WHATIF cannot rebuild its key
+--- retargeting an ALIAS the projection selects denies the estimate ---
+status: applicable
+ACCESS_DENIED
+--- a _part_offset predicate does not engage a projection ---
+_part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
+b = 42 AND _part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
+b = 42: with Granules: 1, without Granules: 10, from projection 1
+--- a commit_order projection is not estimated ---
+reason: Projection orders by the commit order (`_block_number`, `_block_offset`), which EXPLAIN WHATIF does not estimate yet
+reason: Projection orders by the commit order (`_block_number`, `_block_offset`), which EXPLAIN WHATIF does not estimate yet
+--- a projection that merely stores _block_number is not estimated ---
+reason: Projection stores `_block_number`, so it is built only when a part is merged, which EXPLAIN WHATIF does not estimate yet
+--- uneven row widths withhold the verdict ---
+verdict: too close to call
+--- projections disabled by the query ---
+reason: Projections are disabled by `optimize_use_projections = 0`
+--- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
+reason: the same 10 marks would be read, and the query has no ORDER BY to serve
+real: read from the base table
+--- empirical = 0 scans nothing, and reports no marks it does not have ---
+status: applicable
+source: applicability_only
+empirical_status: disabled
+--- a forced projection must not fail the statement before the candidate is seen ---
+status: applicable
+verdict: chosen
+--- a query that reads no parts gets no verdict, the optimizer ignores projections then ---
+status: not_applicable
+reason: The query reads no parts, so the optimizer would not consider a projection
+--- the preferred-projection setting only narrows existing projections, so it is ignored ---
+status: applicable
+verdict: chosen
+--- a descending projection key does not parse ---
+SYNTAX_ERROR
+--- a limit the query respects does not fail the estimate, in either overflow mode ---
+status: applicable
+source: applicability_only
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+status: applicable
+source: applicability_only
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+--- the base read exceeding the limit does not produce a verdict either ---
+marks: 5
+rows: 500
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+--- estimating needs SELECT on the projection columns ---
+ACCESS_DENIED
+status: applicable

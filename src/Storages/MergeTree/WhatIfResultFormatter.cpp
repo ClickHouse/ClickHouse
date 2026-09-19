@@ -14,6 +14,7 @@ void WhatIfResult::format(WriteBuffer & out) const
     writeString(fmt::format("  table:       {}.{}\n", database, table), out);
     writeString(fmt::format("  parts:       {}\n", baseline_parts), out);
     writeString(fmt::format("  marks:       {}\n", baseline_marks), out);
+    writeString(fmt::format("  rows:        {}\n", baseline_rows), out);
     if (baseline_est_bytes > 0)
         writeString(fmt::format("  est_bytes:   {}\n", ReadableSize(baseline_est_bytes)), out);
     writeCString("\n", out);
@@ -34,16 +35,35 @@ void WhatIfResult::format(WriteBuffer & out) const
         }
 
         writeCString("  status:       applicable\n", out);
-        writeString(fmt::format("  marks:        {}\n", idx.estimated_marks), out);
+        if (idx.estimated_marks)
+            writeString(fmt::format("  marks:        {}\n", *idx.estimated_marks), out);
+        if (idx.estimated_rows)
+            writeString(fmt::format("  rows:         {}\n", *idx.estimated_rows), out);
 
-        if (baseline_marks > 0 && baseline_est_bytes > 0)
+        /// only for indexes
+        if (idx.kind == WhatIfCandidateResult::Index && idx.estimated_marks && baseline_marks > 0 && baseline_est_bytes > 0)
         {
             UInt64 hypo_bytes = static_cast<UInt64>(
-                static_cast<double>(baseline_est_bytes) * static_cast<double>(idx.estimated_marks) / static_cast<double>(baseline_marks));
+                static_cast<double>(baseline_est_bytes) * static_cast<double>(*idx.estimated_marks) / static_cast<double>(baseline_marks));
             writeString(fmt::format("  est_bytes:    {}\n", ReadableSize(hypo_bytes)), out);
         }
 
-        writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
+        /// a projection can read more than the base table, and a ratio reads better than a negative skip
+        if (idx.kind == WhatIfCandidateResult::Projection)
+        {
+            if (idx.estimated_marks && baseline_marks > 0)
+            {
+                const double read_ratio = static_cast<double>(*idx.estimated_marks) / static_cast<double>(baseline_marks);
+                writeString(fmt::format("  read_ratio:   {:.2f}x\n", read_ratio), out);
+            }
+        }
+        else if (idx.estimated_marks)
+            writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
+
+        if (!idx.verdict.empty())
+            writeString(fmt::format("  verdict:      {}\n", idx.verdict), out);
+        if (!idx.verdict_reason.empty())
+            writeString(fmt::format("  reason:       {}\n", idx.verdict_reason), out);
         writeCString("\n", out);
 
         writeCString("Estimation:\n", out);
