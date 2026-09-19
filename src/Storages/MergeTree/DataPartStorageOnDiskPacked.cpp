@@ -14,7 +14,13 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event PackedSkipIndicesArchiveIndexLoads;
+}
 
 namespace DB
 {
@@ -687,6 +693,8 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         const String data_path = getRelativeDataPath();
         try
         {
+            /// Counts attempts: the catch below does not cache a miss, so a re-probe counts again.
+            ProfileEvents::increment(ProfileEvents::PackedSkipIndicesArchiveIndexLoads);
             auto inner_archive_buf = reader->readFile(
                 volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
             auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
