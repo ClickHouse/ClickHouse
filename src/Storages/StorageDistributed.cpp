@@ -1427,6 +1427,28 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         new_query->reset(new_query->table_function);
     }
 
+    /// With `parallel_distributed_insert_select = 2` the forwarded INSERT was retargeted at the shard's own
+    /// local table just above, so a row stays on whichever shard happened to read it. For a `Distributed`
+    /// source that is sound — the rows a shard reads are already the rows placed there — but a cluster table
+    /// function hands out files by rendezvous hashing over their paths, which has nothing to do with the
+    /// destination's sharding key. A deterministic sharding key states where a row must live, and
+    /// `optimize_skip_unused_shards` later prunes shards by it, so scattering rows against it would silently
+    /// produce wrong results. Skip the distributed execution and let the ordinary `INSERT ... SELECT` place
+    /// the rows through `DistributedSink`; the `SELECT` still reads the source cluster in parallel. A
+    /// non-deterministic sharding key (`rand()`, ...) cannot describe placement, so the fast path stays.
+    if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
+        && hasShardingKeyForReads() && sharding_key_is_deterministic)
+    {
+        LOG_WARNING(
+            log,
+            "Parallel distributed INSERT SELECT into {} is not possible: the rows read from {} cannot satisfy "
+            "its deterministic sharding key ({}); falling back to the ordinary INSERT SELECT",
+            getStorageID().getNameForLogs(),
+            src_storage_cluster.getName(),
+            sharding_key_column_name);
+        return {};
+    }
+
     /// `distributedWrite` only gets here for a single `SELECT` over a single table expression.
     auto & select_to_send = new_query->select->as<ASTSelectWithUnionQuery &>();
     chassert(select_to_send.list_of_selects->children.size() == 1);

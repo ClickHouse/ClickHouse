@@ -37,9 +37,14 @@ done
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS dist_05219;
     DROP TABLE IF EXISTS local_05219;
+    DROP TABLE IF EXISTS dist_05219_sharded;
+    DROP TABLE IF EXISTS local_05219_sharded;
     CREATE TABLE local_05219 (x UInt32) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE dist_05219 AS local_05219
         ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_05219, rand());
+    CREATE TABLE local_05219_sharded (x UInt32) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE dist_05219_sharded AS local_05219_sharded
+        ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_05219_sharded, x);
 "
 
 SETTINGS="enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
@@ -91,7 +96,64 @@ do
             AND event_date >= yesterday()"
 done
 
+# A deterministic sharding key states where every row must live, and a cluster table function hands out
+# files by hashing their paths, so the rows a shard reads cannot satisfy it. With
+# `parallel_distributed_insert_select = 2` - which inserts into the shard's own local table - the
+# distributed execution is therefore skipped and the ordinary INSERT SELECT places the rows through the
+# `Distributed` sink. With `= 1` the forwarded INSERT still targets the `Distributed` table, so every shard
+# re-shards its own rows and the distributed execution is kept.
+# `send_logs_level`: skipping the distributed execution is reported with a warning, which would otherwise
+# reach the client's stderr.
+SHARDED_SETTINGS="enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_cluster_engines = 1, distributed_foreground_insert = 1, log_queries = 1,
+    send_logs_level = 'fatal'"
+
+QUERY_ID_SHARDED_2="05219_${CLICKHOUSE_DATABASE}_sharded2"
+QUERY_ID_SHARDED_1="05219_${CLICKHOUSE_DATABASE}_sharded1"
+
+echo "--- deterministic sharding key, parallel_distributed_insert_select = 2 ---"
+$CLICKHOUSE_CLIENT --query_id "${QUERY_ID_SHARDED_2}" -q "
+    INSERT INTO dist_05219_sharded SELECT * FROM url('${S3_DIR}/part_{1..3}.tsv', 'TSV', 'x UInt32')
+    SETTINGS ${SHARDED_SETTINGS}, parallel_distributed_insert_select = 2"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219_sharded"
+
+echo "--- deterministic sharding key, parallel_distributed_insert_select = 1 ---"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE local_05219_sharded"
+$CLICKHOUSE_CLIENT --query_id "${QUERY_ID_SHARDED_1}" -q "
+    INSERT INTO dist_05219_sharded SELECT * FROM url('${S3_DIR}/part_{1..3}.tsv', 'TSV', 'x UInt32')
+    SETTINGS ${SHARDED_SETTINGS}, parallel_distributed_insert_select = 1"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219_sharded"
+
+# Only the number of forwarded queries that name the `*Cluster` function is asserted here: whether the
+# `Distributed` sink's own per-shard inserts reach the query log is not what these cases are about.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+for query_id in "${QUERY_ID_SHARDED_2}" "${QUERY_ID_SHARDED_1}"
+do
+    echo "--- forwarded cluster-function queries with parallel_distributed_insert_select = ${query_id: -1} ---"
+    $CLICKHOUSE_CLIENT -q "
+        WITH initial AS
+        (
+            SELECT query_id
+            FROM system.query_log
+            WHERE current_database = currentDatabase()
+                AND query_id = '${query_id}'
+                AND is_initial_query = 1
+                AND type = 'QueryFinish'
+                AND event_date >= yesterday()
+        )
+        SELECT countIf(query LIKE '%Cluster(''test_cluster_two_shards_localhost''%') AS cluster_function_queries
+        FROM system.query_log
+        WHERE initial_query_id IN (SELECT query_id FROM initial)
+            AND is_initial_query = 0
+            AND query_kind = 'Insert'
+            AND type = 'QueryFinish'
+            AND event_date >= yesterday()"
+done
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE dist_05219;
     DROP TABLE local_05219;
+    DROP TABLE dist_05219_sharded;
+    DROP TABLE local_05219_sharded;
 "
