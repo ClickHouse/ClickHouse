@@ -105,7 +105,7 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixHoldsOnlyUnmatchedObject)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
 
-        const String message = e.message();
+        const String & message = e.message();
         EXPECT_NE(message.find("The metadata file for Paimon table with path"), String::npos) << message;
         EXPECT_NE(message.find("No schema file was found under"), String::npos) << message;
 
@@ -134,7 +134,7 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixEmpty)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
 
-        const String message = e.message();
+        const String & message = e.message();
         EXPECT_NE(message.find("The metadata file for Paimon table with path"), String::npos) << message;
         EXPECT_NE(message.find("which held 0 entries"), String::npos) << message;
     }

@@ -145,7 +145,7 @@ TEST(IcebergMetadataListingRequests, ReportsTheListingThatDecidedTheThrow)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
-        const String message = e.message();
+        const String & message = e.message();
         EXPECT_NE(message.find("which held 1 entry: /late-arrival.text"), String::npos) << message;
     }
 
@@ -180,7 +180,7 @@ TEST(IcebergMetadataListingRequests, ReportsAnObjectKeyedExactlyAsThePrefix)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
-        const String message = e.message();
+        const String & message = e.message();
         const String listed_prefix = (table / "metadata").string();
         EXPECT_NE(
             message.find("which held 1 entry: " + listed_prefix + " (2001-09-09T01:46:40Z)"), String::npos) << message;
