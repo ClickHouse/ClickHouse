@@ -708,6 +708,8 @@ ExpireSnapshotsResult expireSnapshots(
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
 
+        validateGarbageCollectionEnabled(metadata, "expire snapshots");
+
         if (!metadata->has(Iceberg::f_current_snapshot_id))
         {
             LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");

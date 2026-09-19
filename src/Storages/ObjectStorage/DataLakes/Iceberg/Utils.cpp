@@ -539,6 +539,23 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
+void validateGarbageCollectionEnabled(const Poco::JSON::Object::Ptr & metadata, std::string_view operation)
+{
+    bool gc_enabled = true;
+    if (metadata->has(Iceberg::f_properties))
+    {
+        auto properties = metadata->getObject(Iceberg::f_properties);
+        if (properties && properties->has(Iceberg::f_gc_enabled))
+            gc_enabled = Poco::toLower(properties->getValue<String>(Iceberg::f_gc_enabled)) == "true";
+    }
+
+    if (!gc_enabled)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot {}: GC is disabled (deleting files may corrupt other tables)",
+            operation);
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

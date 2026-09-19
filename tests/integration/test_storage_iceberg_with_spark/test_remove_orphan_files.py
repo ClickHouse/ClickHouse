@@ -8,6 +8,7 @@ from helpers.iceberg_utils import (
     create_iceberg_table,
     drop_iceberg_table,
     get_uuid_str,
+    spark_alter_table,
 )
 
 
@@ -501,6 +502,38 @@ def test_remove_orphan_files_gate_setting(started_cluster_iceberg_with_spark, st
         settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 0},
     )
     assert "SUPPORT_IS_DISABLED" in error, f"Expected SUPPORT_IS_DISABLED error, got: {error}"
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_rejected_when_gc_disabled(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """remove_orphan_files must not delete files when gc.enabled is false."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_gc_disabled")
+    env.populate(1)
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        started_cluster_iceberg_with_spark.spark_session,
+        storage_type,
+        env.table_name,
+        "SET TBLPROPERTIES('gc.enabled' = 'false')",
+    )
+    env.add_orphan("data", "orphan-gc-disabled.parquet")
+    time.sleep(2)
+    files_before = env.list_files()
+
+    for dry_run in [0, 1]:
+        error = env.instance.query_and_get_error(
+            f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files(older_than = '{env.now_ts()}', dry_run = {dry_run});",
+            settings=ICEBERG_SETTINGS,
+        )
+        assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
+        assert "GC is disabled" in error, f"Expected GC-disabled error, got: {error}"
+
+    assert env.list_files() == files_before
+    assert env.exists("data", "orphan-gc-disabled.parquet")
+    env.assert_data_intact()
 
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
