@@ -1,6 +1,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -720,6 +721,33 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+
+        /// Every other known source type is rendered with its own text serialization, so that a set
+        /// built for `IN` holds what `CAST(x AS String)` produces. `FieldVisitorToString` below writes
+        /// a query literal instead, which for several types is not the value's text at all: a `Date`
+        /// comes out as its day number, a `Float64` as `1.`, and a `UUID` or an `IPv4` carries the
+        /// quote characters of the literal inside the string.
+        if (unwrapped_hint)
+        {
+            auto column = unwrapped_hint->createColumn();
+            if (column->tryInsert(src))
+            {
+                /// `CAST(x AS String)` writes numbers, decimals, dates and times with fixed text
+                /// (`FormatImpl` in `FunctionsConversion.h`), so `date_time_output_format` or
+                /// `decimal_trailing_zeros` do not apply to them, and it serializes every other type
+                /// with the query's format settings, so `bool_true_representation` does apply. Mirror
+                /// that split, or the set would hold a text that `CAST` never produces.
+                static const FormatSettings fixed_text_format_settings;
+                WhichDataType which_hint(*unwrapped_hint);
+                bool fixed_text = (which_hint.isNumber() && unwrapped_hint->getName() != "Bool")
+                    || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+
+                WriteBufferFromOwnString out;
+                unwrapped_hint->getDefaultSerialization()->serializeText(
+                    *column, 0, out, fixed_text ? fixed_text_format_settings : format_settings);
+                return convertFieldToTypeImpl(out.str(), type, nullptr, format_settings, strict, convert_inexact_floats);
+            }
+        }
 
         return applyVisitor(FieldVisitorToString(), src);
     }
