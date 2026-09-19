@@ -96,6 +96,13 @@ public:
         return storage ? storage->totalRows(query_context) : std::nullopt;
     }
 
+    /// Counted on every CREATE/ATTACH into a database with `max_rows`, so it must not resolve the function either.
+    UInt64 rowsForDatabaseLimit() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->rowsForDatabaseLimit() : 0;
+    }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
         auto storage = nestedIfResolved();

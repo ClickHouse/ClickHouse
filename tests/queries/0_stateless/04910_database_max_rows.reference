@@ -1,0 +1,49 @@
+-- 1. setting is stored and visible in system.databases
+1
+-- 2. counter tracks inserts and matches system.tables
+8
+1
+-- 3. a single batch may overshoot the limit, the next insert throws
+13
+TOO_MANY_ROWS
+-- 4. TRUNCATE frees rows
+0
+3
+-- 4a. MOVE PARTITION inside an over-limit database succeeds
+12
+-- 5. DROP PARTITION lowers the counter
+3
+1
+-- 6. ALTER DATABASE MODIFY SETTING raises and lowers the limit
+1
+59
+TOO_MANY_ROWS
+-- 7. max_rows = 0 means unlimited
+1059
+-- 8. only max_rows is alterable, bad values rejected
+BAD_ARGUMENTS
+rejected
+-- 9. ATTACH of a populated table is checked
+0
+TOO_MANY_ROWS
+60
+-- 9a. ATTACH PARTITION on a local MergeTree table is all-or-nothing
+90
+TOO_MANY_ROWS
+0
+20
+20
+-- 10. max_rows and lazy_load_tables cannot be combined
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+-- 11. RENAME into a full Ordinary database is rejected without orphaning the table
+TOO_MANY_ROWS
+da=50 db=0
+50
+-- 12. lazy proxy forwards rows for reporting and cross-database RENAME
+50
+TOO_MANY_ROWS
+1
+-- 13. RENAME inside an over-limit Ordinary database succeeds
+1
+12

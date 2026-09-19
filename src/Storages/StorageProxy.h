@@ -181,6 +181,7 @@ public:
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
+    UInt64 rowsForDatabaseLimit() const override { return getNested()->rowsForDatabaseLimit(); }
 
 };
 

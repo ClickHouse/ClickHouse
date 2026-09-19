@@ -36,6 +36,9 @@ public:
 
     String getEngineName() const override { return "Backup"; }
 
+    std::optional<UInt64> getCurrentRowCount() const override { return {}; }
+    UInt64 getMaxRows() const override { return 0; }
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     void createTable(
