@@ -4,6 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/SilkFiberScheduler.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -70,6 +71,11 @@ void Throttler::sleep(UInt64 nanoseconds)
         return;
     }
 #endif
+    /// A real thread sleep to enforce a rate limit: the thread is not using CPU, so park its CPU
+    /// lease (release the slot) for the duration, like a blocking I/O or an idle wait. The fiber
+    /// path above yields cooperatively — the carrier thread keeps running other work — so it must
+    /// not park. No-op when the thread holds no CPU lease.
+    CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }
 

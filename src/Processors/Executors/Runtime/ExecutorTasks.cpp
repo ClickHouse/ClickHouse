@@ -151,6 +151,9 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         threads_queue.push(context.thread_number);
     }
 
+    /// This worker has no task and is going to sleep. `context.wait()` parks the CPU lease while it
+    /// actually blocks (a sleeping worker never renews to downscale) and unparks on wake; the park
+    /// is gated on the real block there, so a wake that arrives before we sleep does not churn the slot.
     context.wait(finished);
 }
 

@@ -70,6 +70,25 @@ public:
     /// Returns true if the slot is still acquired (possibly after a preemption period).
     /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
     virtual bool renew() = 0;
+
+    /// Park the slot for the duration of a non-CPU-intensive wait (blocking I/O, or an idle
+    /// worker sleeping while there is no task). The holder keeps the lease object but stops
+    /// counting against the CPU concurrency limit, so another thread can use the freed CPU.
+    /// Lightweight: no CPU-time accounting is done here; CPU consumed during the wait is
+    /// reported by the next `renew`. Does not block. Returns true if the slot was actually
+    /// parked (then `unpark` must be called once); false if parking was a no-op (e.g. the
+    /// allocation is shutting down) and `unpark` must NOT be called. Default is a no-op.
+    [[nodiscard]] virtual bool park() { return false; }
+
+    /// Re-acquire the slot after a parked wait. Borrows a slot immediately and never blocks;
+    /// if the allocation is over budget again, the next `renew` corrects it. Call only after a
+    /// `park` that returned true. Default is a no-op.
+    virtual void unpark() {}
+
+    /// Whether parking is enabled for this lease (from the `cpu_slot_parking` server setting).
+    /// When false the executor does not publish this lease as the current CPU lease, so
+    /// `park`/`unpark` are never invoked and there is no overhead.
+    virtual bool isParkingEnabled() const { return false; }
 };
 
 using SlotLeasePtr = std::shared_ptr<ISlotLease>;
