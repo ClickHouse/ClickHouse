@@ -30,6 +30,9 @@ SET optimize_move_to_prewhere = 1;
 {% for join_algorithm in ['hash', 'parallel_hash', 'grace_hash'] -%}
 
 SET join_algorithm = '{{ join_algorithm }}';
+{% if join_algorithm == 'grace_hash' -%}
+SET max_bytes_before_external_join = 100000; -- `grace_hash` forces an external join and requires a spill threshold
+{% endif -%}
 
 SELECT '============= {{ join_algorithm }} ===============';
 
