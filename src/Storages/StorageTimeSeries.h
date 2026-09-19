@@ -11,6 +11,8 @@ namespace DB
 {
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
+class TimeSeriesActiveSeriesCache;
+using TimeSeriesActiveSeriesCachePtr = std::shared_ptr<TimeSeriesActiveSeriesCache>;
 
 /// Represents a table engine to keep time series received by Prometheus protocols.
 /// Examples of using this table engine:
@@ -42,6 +44,7 @@ public:
     std::string getName() const override { return "TimeSeries"; }
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
+    TimeSeriesActiveSeriesCachePtr getActiveSeriesCache() const { return active_series_cache; }
 
     /// Returns the schema version of this table (the `version` setting, see TimeSeriesVersion.h).
     UInt64 getVersion() const;
@@ -146,6 +149,7 @@ private:
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+    TimeSeriesActiveSeriesCachePtr active_series_cache;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

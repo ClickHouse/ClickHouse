@@ -22,6 +22,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesActiveSeriesCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -45,6 +46,9 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsUInt64 tags_cache_max_series;
+    extern const TimeSeriesSettingsUInt64 tags_cache_ttl_seconds;
     extern const TimeSeriesSettingsUInt64 version;
 }
 
@@ -73,10 +77,21 @@ namespace
         return copy;
     }
 
-    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
+    /// Skipping a tags insert also skips the `min_time` and `max_time` that batch would have contributed, and the
+    /// selector prunes series by those columns, so the cache is only sound where the row does not carry them.
+    bool activeSeriesCacheAllowed(const TimeSeriesSettings & settings)
+    {
+        return (settings[TimeSeriesSetting::tags_cache_max_series] != 0)
+            && !settings[TimeSeriesSetting::store_min_time_and_max_time];
+    }
+
+    /// We allow altering `id_generator`, `filter_by_min_time_and_max_time`, `tags_cache_max_series`, and `tags_cache_ttl_seconds`.
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
-        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+        if ((setting_name != "id_generator")
+            && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "tags_cache_max_series")
+            && (setting_name != "tags_cache_ttl_seconds"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -218,6 +233,12 @@ StorageTimeSeries::StorageTimeSeries(
 
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
     storage_settings.set(std::move(settings));
+
+    const auto & initial_settings = *storage_settings.get();
+    if (activeSeriesCacheAllowed(initial_settings))
+        active_series_cache = std::make_shared<TimeSeriesActiveSeriesCache>(
+            initial_settings[TimeSeriesSetting::tags_cache_max_series],
+            static_cast<UInt32>(initial_settings[TimeSeriesSetting::tags_cache_ttl_seconds]));
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -430,6 +451,9 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                 /* ignore_sync_setting= */ false, /* need_ddl_guard= */ false, /* propagate_metadata_transaction= */ false);
         }
     }
+
+    if (active_series_cache)
+        active_series_cache->clear();
 }
 
 
@@ -609,7 +633,23 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     setInMemoryMetadata(new_metadata);
 
     if (new_settings)
+    {
         storage_settings.set(std::move(new_settings));
+        const auto & updated_settings = *storage_settings.get();
+        UInt64 max_series = updated_settings[TimeSeriesSetting::tags_cache_max_series];
+        UInt64 ttl = updated_settings[TimeSeriesSetting::tags_cache_ttl_seconds];
+        if (activeSeriesCacheAllowed(updated_settings))
+        {
+            if (active_series_cache)
+                active_series_cache->updateSettings(max_series, static_cast<UInt32>(ttl));
+            else
+                active_series_cache = std::make_shared<TimeSeriesActiveSeriesCache>(max_series, static_cast<UInt32>(ttl));
+        }
+        else
+        {
+            active_series_cache.reset();
+        }
+    }
 }
 
 
