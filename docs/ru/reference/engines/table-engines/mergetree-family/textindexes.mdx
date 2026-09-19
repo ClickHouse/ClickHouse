@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -139,7 +139,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -597,6 +597,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
   * `none` — списки вхождений хранятся без дополнительного сжатия.
   * `bitpacking` — применяет [дифференциальное (delta) кодирование](https://en.wikipedia.org/wiki/Delta_encoding), а затем [упаковку битов](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (в обоих случаях в блоках фиксированного размера). Замедляет запросы SELECT, поэтому сейчас не рекомендуется.
+  * `pfor` — применяет дифференциальное (delta) кодирование, а затем упаковку битов PFor (в обоих случаях в блоках фиксированного размера). Похоже на `bitpacking`, но разрядность для каждого блока выбирается так, чтобы минимизировать общий размер, а значения, которые не помещаются, сохраняются отдельно как исключения-заплатки, поэтому один большой разрыв больше не увеличивает размер всего блока. Блоки, все дельты которых равны, сворачиваются в константу.
 
   Указанные выше расширенные параметры также можно задавать на уровне таблицы с помощью соответствующих настроек MergeTree: [`text_index_dictionary_block_size`](/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) и [`text_index_posting_list_codec`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Они применяются ко всем текстовым индексам таблицы, в которых параметр не задан явно.
@@ -1565,6 +1566,7 @@ Aggregating
 Версия формата хранения текстовых индексов на диске задаётся настройкой уровня таблицы [`text_index_serialization_version`](/ru/reference/settings/merge-tree-settings/text-index) (по умолчанию: `v2_with_positions`).
 Эта настройка является предпочтительной, а не жёстким ограничением: если настроенная версия не может представить индекс, автоматически выбирается более новая версия, способная это сделать. Поэтому запись текстового индекса из-за этой настройки никогда не завершается ошибкой.
 При поэтапном обновлении зафиксируйте формат с помощью настройки [`compatibility`](/ru/reference/settings/session-settings/compatibility#compatibility) на уже обновлённых серверах: если для неё указана версия, предшествующая той, в которой был введён соответствующий формат, `text_index_serialization_version` автоматически возвращается к более старому значению, а новые серверы продолжают записывать формат, который старые серверы всё ещё могут читать.
+Кодек списка вхождений этой версией не управляется: часть, записанная с `posting_list_codec = 'pfor'` (или с настройкой `text_index_posting_list_codec`), не может быть прочитана серверами, выпущенными до появления этого кодека, и ни `text_index_serialization_version`, ни `compatibility` не препятствуют его использованию, поскольку кодек, указанный для индекса, имеет старшинство над предпочтением версии — так же, как и `support_phrase_search`. Не включайте `pfor`, пока не будут обновлены все серверы, которые могут читать эту таблицу.
 
 ## Текстовые индексы и индексы на основе фильтра Блума {#text-index-vs-bloom-filter-indexes}
 

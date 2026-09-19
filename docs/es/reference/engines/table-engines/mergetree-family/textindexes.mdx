@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -139,7 +139,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -597,6 +597,7 @@ Establezca `support_phrase_search = 0` (el valor predeterminado) para conservar 
 
   * `none` - las posting lists se almacenan sin compresión adicional.
   * `bitpacking` - aplica [codificación diferencial (delta)](https://en.wikipedia.org/wiki/Delta_encoding) y, a continuación, [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (cada uno dentro de bloques de tamaño fijo). Ralentiza las consultas SELECT; no se recomienda por el momento.
+  * `pfor` - aplica codificación diferencial (delta) y, a continuación, bit-packing PFor (cada uno dentro de bloques de tamaño fijo). Similar a `bitpacking`, pero el ancho de bits por bloque se elige de modo que se minimice el tamaño total, y los valores que no caben se almacenan por separado como excepciones parcheadas, de manera que un único hueco grande ya no ensancha todo el bloque. Los bloques cuyos deltas son todos iguales se reducen a una constante.
 
   Los parámetros avanzados anteriores también pueden establecerse alternativamente a nivel de tabla mediante los ajustes de MergeTree correspondientes: [`text_index_dictionary_block_size`](/es/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/es/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/es/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) y [`text_index_posting_list_codec`](/es/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Se aplican a cada índice de texto de la tabla que no especifique el parámetro explícitamente.
@@ -1565,6 +1566,7 @@ El índice de texto presenta actualmente las siguientes limitaciones:
 La versión del formato en disco de los índices de texto se controla mediante la configuración de tabla [`text_index_serialization_version`](/es/reference/settings/merge-tree-settings/text-index) (valor predeterminado: `v2_with_positions`).
 La configuración es una preferencia, no una restricción estricta: si la versión configurada no puede representar un índice, se elige automáticamente una versión más reciente que pueda hacerlo, por lo que la escritura de un índice de texto nunca falla debido a esta configuración.
 Durante una actualización progresiva, fije el formato mediante la configuración [`compatibility`](/es/reference/settings/session-settings/compatibility#compatibility) en los servidores que ya se hayan actualizado: cuando se establece en una versión anterior a la que introdujo el formato correspondiente, `text_index_serialization_version` vuelve automáticamente a un valor anterior y los servidores más recientes siguen escribiendo en un formato que los servidores más antiguos aún pueden leer.
+El codec de la lista de postings no se rige por esta versión: una parte escrita con `posting_list_codec = 'pfor'` (o con la configuración `text_index_posting_list_codec`) no puede ser leída por servidores anteriores a ese codec, y ni `text_index_serialization_version` ni `compatibility` impiden su uso, porque un codec indicado para el índice tiene precedencia sobre la preferencia de versión, del mismo modo que ocurre con `support_phrase_search`. No habilite `pfor` hasta que se hayan actualizado todos los servidores que puedan leer la tabla.
 
 ## Índices de texto frente a índices basados en filtros Bloom {#text-index-vs-bloom-filter-indexes}
 

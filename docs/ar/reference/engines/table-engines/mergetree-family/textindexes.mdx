@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -139,7 +139,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -597,6 +597,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
   * `none` - تُخزَّن قوائم الترحيل من دون ضغط إضافي.
   * `bitpacking` - يطبّق [الترميز التفاضلي (delta)](https://en.wikipedia.org/wiki/Delta_encoding)، ثم [حزم البتات](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (وذلك داخل كتل ثابتة الحجم). يبطئ استعلامات SELECT، ولا يُنصح به حاليًا.
+  * `pfor` - يطبّق الترميز التفاضلي (delta)، ثم حزم البتات بأسلوب PFor (وذلك داخل كتل ثابتة الحجم). يشبه `bitpacking`، لكن يُختار عرض البتات لكل كتلة بما يقلل الحجم الإجمالي، وتُخزَّن القيم التي لا تتسع بشكل منفصل كاستثناءات مرقَّعة، بحيث لم تعد فجوة كبيرة واحدة توسّع الكتلة بأكملها. أما الكتل التي تتساوى فيها جميع فروق دلتا فتنكمش إلى قيمة ثابتة.
 
   يمكن أيضًا ضبط المعلمات المتقدمة المذكورة أعلاه على مستوى الجدول عبر إعدادات MergeTree المقابلة: [`text_index_dictionary_block_size`](/ar/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size)، و[`text_index_dictionary_block_frontcoding_compression`](/ar/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression)، و[`text_index_posting_list_block_size`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size)، و[`text_index_posting_list_codec`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   وتُطبَّق هذه الإعدادات على كل فهرس نصي في الجدول لا يحدد المعلمة صراحةً.
@@ -1565,6 +1566,7 @@ Aggregating
 يتحكم إعداد مستوى الجدول [`text_index_serialization_version`](/ar/reference/settings/merge-tree-settings/text-index) (القيمة الافتراضية: `v2_with_positions`) في إصدار تنسيق الفهارس النصية المخزنة على القرص.
 هذا الإعداد تفضيل وليس قيدًا صارمًا: فإذا تعذر على الإصدار المُهيأ تمثيل فهرس، يُختار تلقائيًا إصدار أحدث قادر على تمثيله، لذا لا تفشل كتابة فهرس نصي بسبب هذا الإعداد.
 أثناء الترقية المتتابعة، ثبّت التنسيق باستخدام إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) على الخوادم التي تمت ترقيتها بالفعل: فعند ضبطه على إصدار أقدم من الإصدار الذي أُضيف فيه التنسيق المقابل، يعود `text_index_serialization_version` تلقائيًا إلى قيمة أقدم، وتواصل الخوادم الأحدث كتابة التنسيق الذي لا تزال الخوادم الأقدم قادرة على قراءته.
+أما ترميز قائمة النشر فلا يخضع لهذا الإصدار: فجزء البيانات المكتوب باستخدام `posting_list_codec = 'pfor'` (أو إعداد `text_index_posting_list_codec`) لا يمكن أن تقرأه الخوادم السابقة لهذا الترميز، ولا يمنع استخدامَه `text_index_serialization_version` ولا `compatibility`، لأن الترميز المحدد باسم الفهرس تكون له الأسبقية على تفضيل الإصدار، تمامًا كما هو الحال مع `support_phrase_search`. لا تُفعّل `pfor` قبل ترقية كل خادم قد يقرأ الجدول.
 
 ## فهارس النص مقابل الفهارس المعتمدة على Bloom filter {#text-index-vs-bloom-filter-indexes}
 

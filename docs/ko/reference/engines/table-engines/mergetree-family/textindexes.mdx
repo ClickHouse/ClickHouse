@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -139,7 +139,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -597,6 +597,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
   * `none` - 포스팅 리스트는 추가 압축 없이 저장됩니다.
   * `bitpacking` - [차분(델타) 코딩](https://en.wikipedia.org/wiki/Delta_encoding)을 적용한 다음 [비트 패킹](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70)을 적용합니다(각 고정 크기 블록 내에서 수행). SELECT 쿼리 속도가 느려지므로 현재로서는 권장하지 않습니다.
+  * `pfor` - 차분(델타) 코딩을 적용한 다음 PFor 비트 패킹을 적용합니다(각 고정 크기 블록 내에서 수행). `bitpacking`과 유사하지만, 블록별 비트 폭이 전체 크기를 최소화하도록 선택되고 여기에 맞지 않는 값은 패치된 예외로 별도 저장되므로, 큰 간격 하나 때문에 블록 전체가 넓어지지 않습니다. 델타가 모두 동일한 블록은 상수로 축약됩니다.
 
   위의 고급 매개변수는 해당 MergeTree 설정을 통해 테이블 수준에서도 설정할 수 있습니다: [`text_index_dictionary_block_size`](/ko/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ko/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ko/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), [`text_index_posting_list_codec`](/ko/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   이 설정은 매개변수를 명시적으로 지정하지 않은 테이블의 모든 텍스트 인덱스에 적용됩니다.
@@ -1565,6 +1566,7 @@ Aggregating
 텍스트 인덱스의 디스크 저장 포맷 버전은 테이블 수준 설정인 [`text_index_serialization_version`](/ko/reference/settings/merge-tree-settings/text-index)(기본값: `v2_with_positions`)으로 제어됩니다.
 이 설정은 엄격한 제약 조건이 아니라 우선순위입니다. 구성된 버전으로 인덱스를 표현할 수 없으면 이를 표현할 수 있는 더 최신 버전이 자동으로 선택되므로, 이 설정으로 인해 텍스트 인덱스 쓰기가 실패하지는 않습니다.
 롤링 업그레이드 중에는 이미 업그레이드된 서버에서 [`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility) 설정을 사용해 포맷을 고정하십시오. 해당 포맷이 도입된 버전보다 이전 버전으로 설정하면 `text_index_serialization_version`이 자동으로 이전 값으로 되돌아가고, 최신 서버는 이전 서버에서도 계속 읽을 수 있는 포맷으로 기록합니다.
+포스팅 리스트 코덱은 이 버전의 적용을 받지 않습니다. `posting_list_codec = 'pfor'`(또는 `text_index_posting_list_codec` 설정)로 기록된 파트는 해당 코덱이 도입되기 이전 버전의 서버에서는 읽을 수 없으며, `text_index_serialization_version`이나 `compatibility` 중 어느 것도 그 사용을 막지 못합니다. `support_phrase_search`와 마찬가지로, 인덱스에 지정된 코덱이 버전 우선순위보다 우선하기 때문입니다. 해당 테이블을 읽을 가능성이 있는 모든 서버가 업그레이드되기 전까지는 `pfor`를 활성화하지 마십시오.
 
 ## 텍스트 인덱스와 블룸 필터 기반 인덱스 비교 {#text-index-vs-bloom-filter-indexes}
 

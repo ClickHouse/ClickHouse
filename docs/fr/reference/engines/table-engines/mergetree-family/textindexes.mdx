@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -139,7 +139,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -597,6 +597,7 @@ Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver u
 
   * `none` - les posting lists sont stockées sans compression supplémentaire.
   * `bitpacking` - applique le [codage différentiel (delta)](https://en.wikipedia.org/wiki/Delta_encoding), suivi du [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (chacun dans des blocs de taille fixe). Cela ralentit les requêtes SELECT et n&#39;est pas recommandé pour le moment.
+  * `pfor` - applique le codage différentiel (delta), suivi du bit-packing PFor (chacun dans des blocs de taille fixe). Semblable à `bitpacking`, mais la largeur en bits de chaque bloc est choisie de façon à minimiser la taille totale, et les valeurs qui n&#39;y tiennent pas sont stockées séparément comme exceptions corrigées (patched exceptions) : ainsi, un seul grand écart n&#39;élargit plus l&#39;ensemble du bloc. Les blocs dont tous les deltas sont égaux se réduisent à une constante.
 
   Les paramètres avancés ci-dessus peuvent également être définis au niveau de la table via les paramètres MergeTree correspondants : [`text_index_dictionary_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) et [`text_index_posting_list_codec`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Ils s&#39;appliquent à chaque index de texte de la table qui ne spécifie pas explicitement le paramètre.
@@ -1562,9 +1563,10 @@ L’index de texte présente actuellement les limitations suivantes :
 
 ## Notes de mise à niveau {#upgrade-notes}
 
-La version du format sur disque des index de texte est contrôlée par le paramètre de table [`text_index_serialization_version`](/fr/reference/settings/merge-tree-settings/text-index) (par défaut : `v2_with_positions`).
-Ce paramètre constitue une préférence plutôt qu&#39;une contrainte stricte : si la version configurée ne permet pas de représenter un index, une version plus récente qui le permet est automatiquement sélectionnée. Ainsi, l&#39;écriture d&#39;un index de texte n&#39;échoue jamais à cause de ce paramètre.
-Lors d&#39;une mise à niveau progressive, verrouillez le format à l&#39;aide du paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur les serveurs déjà mis à niveau : lorsqu&#39;il est défini sur une version antérieure à celle ayant introduit le format correspondant, `text_index_serialization_version` reprend automatiquement une valeur antérieure et les serveurs plus récents continuent d&#39;écrire dans un format que les serveurs plus anciens peuvent toujours lire.
+La version du format sur disque des index de texte est contrôlée par le paramètre de table [`text_index_serialization_version`](/fr/reference/settings/merge-tree-settings/text-index) (par défaut : `v2_with_positions`).
+Ce paramètre constitue une préférence plutôt qu&#39;une contrainte stricte : si la version configurée ne permet pas de représenter un index, une version plus récente qui le permet est automatiquement sélectionnée. Ainsi, l&#39;écriture d&#39;un index de texte n&#39;échoue jamais à cause de ce paramètre.
+Lors d&#39;une mise à niveau progressive, verrouillez le format à l&#39;aide du paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur les serveurs déjà mis à niveau : lorsqu&#39;il est défini sur une version antérieure à celle ayant introduit le format correspondant, `text_index_serialization_version` reprend automatiquement une valeur antérieure et les serveurs plus récents continuent d&#39;écrire dans un format que les serveurs plus anciens peuvent toujours lire.
+Le codec de liste de postings n&#39;est pas régi par cette version : une partie de données écrite avec `posting_list_codec = 'pfor'` (ou le paramètre `text_index_posting_list_codec`) ne peut pas être lue par des serveurs antérieurs à ce codec, et ni `text_index_serialization_version` ni `compatibility` n&#39;empêchent son utilisation, car un codec désigné pour l&#39;index prend le pas sur la préférence de version, de la même manière que `support_phrase_search`. N&#39;activez pas `pfor` tant que chaque serveur susceptible de lire la table n&#39;a pas été mis à niveau.
 
 ## Index de texte vs index basés sur des filtres de Bloom {#text-index-vs-bloom-filter-indexes}
 

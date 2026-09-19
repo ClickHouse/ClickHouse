@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -139,7 +139,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -597,8 +597,9 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
   * `none` - ポスティングリストは追加の圧縮を行わずに保存されます。
   * `bitpacking` - [差分 (delta) 符号化](https://en.wikipedia.org/wiki/Delta_encoding) を適用した後、[bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) を適用します (いずれも固定サイズのブロック内で実行されます) 。SELECT クエリが遅くなるため、現時点では推奨されません。
+  * `pfor` - 差分 (delta) 符号化を適用した後、PFor による bit-packing を適用します (いずれも固定サイズのブロック内で実行されます) 。`bitpacking` と似ていますが、ブロックごとのビット幅は合計サイズが最小になるように選択され、収まらない値はパッチ例外として個別に保存されるため、1 つの大きなギャップによってブロック全体が拡大することはなくなります。差分がすべて等しいブロックは定数に縮約されます。
 
-  上記の詳細パラメータは、対応する MergeTree settings を通じてテーブルレベルで設定することもできます: [`text_index_dictionary_block_size`](/ja/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ja/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), および [`text_index_posting_list_codec`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec)。
+  上記の詳細パラメータは、対応する MergeTree 設定を通じてテーブルレベルで設定することもできます: [`text_index_dictionary_block_size`](/ja/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ja/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), および [`text_index_posting_list_codec`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec)。
   これらは、パラメータを明示的に指定していない、そのテーブル内のすべてのテキスト索引に適用されます。
 
   テーブルレベル設定の主なユースケースは、すべてのテーブルパーツ上のテキスト索引を削除して再作成することなく、既存テーブルの索引パラメータを変更することです。
@@ -1565,6 +1566,7 @@ cache を設定するには、以下のサーバー設定を参照してくだ�
 テキスト索引のオンディスクフォーマットのバージョンは、テーブルレベルの設定 [`text_index_serialization_version`](/ja/reference/settings/merge-tree-settings/text-index) (デフォルト: `v2_with_positions`) で制御されます。
 この設定は厳密な制約ではなく優先指定です。設定されたバージョンで索引を表現できない場合は、表現可能なより新しいバージョンが自動的に選択されるため、この設定が原因でテキスト索引の書き込みに失敗することはありません。
 ローリングアップグレード中は、すでにアップグレード済みのサーバーで [`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定を使用してフォーマットを固定します。この設定を対応するフォーマットが導入されたバージョンより古いバージョンにすると、`text_index_serialization_version` は自動的に古い値に戻り、新しいサーバーでも古いサーバーが引き続き読み取れるフォーマットで書き込まれます。
+posting list コーデックはこのバージョンの管理対象外です。`posting_list_codec = 'pfor'` (または `text_index_posting_list_codec` 設定) で書き込まれたパーツは、そのコーデックが導入される前のサーバーでは読み取れず、`text_index_serialization_version` も `compatibility` もその使用を抑止できません。これは、`support_phrase_search` の場合と同様に、索引に対して指定されたコーデックがバージョンの優先指定よりも優先されるためです。そのテーブルを読み取る可能性のあるすべてのサーバーをアップグレードし終えるまで、`pfor` を有効にしないでください。
 
 ## テキスト索引とブルームフィルタベースの索引の違い {#text-index-vs-bloom-filter-indexes}
 
