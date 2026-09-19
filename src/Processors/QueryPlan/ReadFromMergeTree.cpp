@@ -495,9 +495,8 @@ std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
         && data_settings_[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
         && selected_marks >= data_settings_[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
     {
-        /// The limit counts logical queries: one query that reads this table through several
-        /// fragments or secondary queries holds a single slot, which is what the id set deduplicates.
-        /// `initial_query_id` is that identity; `current_query_id` is per fragment.
+        /// The limit counts whole queries: `initial_query_id` is shared by every fragment and secondary
+        /// query of one client query, and is empty only when the client itself sent a secondary query.
         auto query_id = context_.getInitialQueryId();
         if (query_id.empty())
             query_id = context_.getCurrentQueryId();

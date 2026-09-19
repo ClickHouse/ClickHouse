@@ -945,8 +945,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     return {nullptr, object_storage_path};
 }
 
-/// The query all fragments of a plan belong to. `initial_query_id` is empty when the client itself
-/// sent a secondary query, and a per-query resource keyed on `current_query_id` is then per fragment.
+/// `initial_query_id` is shared by every fragment of a plan, and is empty when the client itself sent a secondary query.
 static String logicalQueryId(const ClientInfo & client_info)
 {
     return client_info.initial_query_id.empty() ? client_info.current_query_id : client_info.initial_query_id;
@@ -962,8 +961,6 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
 
-    /// `initial_query_id` is the chain's first query: inherited with the rest of `ClientInfo`, and
-    /// resolved to this query when the client sent a secondary query without one.
     {
         ClientInfo client_info = task_context->getClientInfo();
         client_info.initial_query_id = logicalQueryId(client_info);
@@ -975,9 +972,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
-    /// A query's log row reports the profile counters of its process-list entry's thread group, so a
-    /// task needs an entry of its own. Internal, unlike on a worker: this initiator is admitted on this
-    /// same server and waits for the task, so admitting the task too could reject it against itself.
+    /// A query's log row reports the profile counters of its process-list entry's thread group.
     Stopwatch task_watch(CLOCK_MONOTONIC);
     auto process_list_entry = task_context->getProcessList().insert(
         task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,

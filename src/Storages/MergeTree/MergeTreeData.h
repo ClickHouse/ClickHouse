@@ -2301,8 +2301,7 @@ private:
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
-    // Query ids which access the table, each with the number of readers holding it: one query can read
-    // the table through several fragments, and its slot is freed only when the last of them is done.
+    // Query ids which access the table, each with the number of readers holding it: the last one frees the slot.
     mutable std::map<String, size_t> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
     mutable std::mutex query_id_set_mutex;
 
