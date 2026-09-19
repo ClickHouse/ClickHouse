@@ -494,20 +494,28 @@ try
 
         runNonInteractive();
 
-        // If exception code isn't zero, we should return non-zero return
-        // code anyway.
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-
-        if (exception)
+        /// `--ignore-error` has already reported every failed statement and elected to carry on,
+        /// so the run is not a failure. Reporting one here would mean reporting whichever error
+        /// the final statement happened to hit, which says nothing about the rest of the batch;
+        /// `clickhouse-local --ignore-error` returns success in the same situation. BuzzHouse is
+        /// the exception: it stops the run on an error, so it keeps the error code.
+        if (buzz_house || !ignore_error)
         {
-            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
-        }
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
 
-        if (have_error)
-        {
-            // Shouldn't be set without an exception, but check it just in
-            // case so that at least we don't lose an error.
-            return -1;
+            if (exception)
+            {
+                return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
+            }
+
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
+            }
         }
 
         if (delayed_interactive)
@@ -1447,12 +1455,19 @@ void Client::processConfig()
     }
     else
     {
-        ignore_error = config().getBool("ignore-error", false);
-
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    /// A delayed-interactive run executes the given queries through `runNonInteractive` before it
+    /// enters the prompt, so that prelude is a batch and follows the batch contract of
+    /// `--ignore-error`, the same as in `clickhouse-local` and in the embedded client. Taken from
+    /// the branch above, the option would be dropped for a delayed-interactive run on a terminal:
+    /// the prelude would stop at its first failing statement and the exit code of that statement
+    /// would end the run before the prompt.
+    if (!is_interactive || delayed_interactive)
+        ignore_error = config().getBool("ignore-error", false);
 
     setupEchoAndHighlightSettings();
 
