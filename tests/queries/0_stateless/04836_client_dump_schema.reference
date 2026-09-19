@@ -1,0 +1,146 @@
+--- the legacy samples alias is a user table once the modern helper exists ---
+legacy-named user table present: 1
+engine-owned helpers in dump: 0
+--- a dump containing gated object types replays into a default session ---
+dump enables the Ordinary setting: 1
+dump enables the TimeSeries setting: 1
+OK: replayed into a default session
+replayed TimeSeries table present: 1
+--- a dump whose view needs an analyzer-side relaxation replays too ---
+OK: replayed into a default session
+replayed Dynamic GROUP BY view present: 1
+--- dependency ordering ---
+OK: every dependent is dumped after what it depends on
+OK: multi-source MV (JOIN and UNION ALL) dumped after every source, including an untracked one that sorts after it by name
+metrics view present: 1
+metrics_daily view present: 1
+audit_orders view present: 1
+audit_users view present: 1
+tmp.inner-named literal user table present: 1
+OK: genuine view-on-view/view-on-table dependency chain still dumped in dependency order
+OK: dictGet/dictionary()/joinGet/IN function-argument references dumped after what they depend on
+OK: explicit TO target named like a generated inner table is dumped before its materialized view
+OK: merge()/loop() source dumped before the materialized view that reads it
+colliding real table present: 1
+generated inner tables in dump: 0
+literal .inner.-named user table present: 1
+dictionary statements: 2
+materialized view statements: 12
+plain view statements: 9
+--- round-trip ---
+context switch emitted: 1
+1	hello
+hello
+1	hello
+1	hello
+1	hello
+1	hello
+1	hello	world
+1	hello
+1
+hello
+hello
+world
+1
+--- unknown database ---
+OK: non-zero exit code
+UNKNOWN_DATABASE
+--- predefined database is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- a selector that names nothing is rejected, not broadened ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- an exclude naming an unknown database is rejected, not ignored ---
+OK: non-zero exit code
+UNKNOWN_DATABASE
+--- a database-less reference that two dumped databases can satisfy is refused ---
+ambiguous reference refused: 1
+--- a database-less reference only a wrong-engine namesake collides with is dumped ---
+OK: wrong-engine namesake in another dumped database is not a competing binding
+OK: wrong-engine namesake in an omitted database is not a competing binding
+--- a database-less merge() satisfiable by two dumped databases is refused ---
+ambiguous merge refused: 1
+--- a database-less merge() bound outside the dump set is refused ---
+outside binding refused: 1
+--- a database-less reference satisfiable by an omitted database is refused, not rebound ---
+omitted-database reference refused: 1
+--- a plain unqualified reference is stored qualified, so it is reported, not rebound ---
+reference kept bound to the omitted database: 1
+omitted binding reported: 1
+--- a database-less merge() satisfiable by an omitted database is refused, not rebound ---
+omitted-database merge refused: 1
+--- a database-less reference whose only namesake is predefined is dumped ---
+OK: a predefined namesake is not a competing binding
+--- the prelude omits dump-specific gates this schema cannot need ---
+ungated gate emitted: 0
+explicit-uuid gate emitted: 0
+replicated-args gate emitted: 0
+dead gates emitted: 0
+--- all databases ---
+target database present: 3
+system database present: 0
+information_schema database present: 0
+default database tolerant: 1
+--- combined with --query is rejected (clickhouse-local) ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- combined with --query is rejected (clickhouse-client) ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- clickhouse-client happy path ---
+OK: zero exit code
+database present: 1
+source table present: 1
+materialized view present: 1
+OK: dependency order preserved over the client connection
+--- a database name containing a comma needs backquoting ---
+OK: unquoted name rejected
+OK: backquoted name accepted
+comma database present: 1
+databases in the comma dump: 1
+--- a malformed backquoted database name in the list is rejected ---
+OK: non-zero exit code
+Unterminated backquoted database name in list
+OK: non-zero exit code
+Unexpected text after a backquoted database name in list
+--- explicit database list ---
+first database present: 1
+second database present: 1
+unlisted database absent: 0
+--- exclude list ---
+first database present: 1
+excluded database present: 0
+other database still present: 1
+--- explicit list combined with exclude list is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- a dependency outside the dumped databases is reported, not silently dropped ---
+dictionary still dumped: 1
+omitted dependency named: 1
+omitted dependency explained: 1
+same omission via exclude reported: 1
+no warning when the dependency is in the dump: 0
+--- dump to directory ---
+confirmation lines: 2
+files created: 2
+OK: first database file exists
+OK: second database file exists
+first database file has its table: 1
+second database file has its table: 1
+per-database file replays its materialized view: 1
+--- dump-schema-dir without --dump-schema is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- cross-database dependency orders the confirmation lines and is noted ---
+OK: dependency database is dumped/confirmed before the dependent database
+cross-database note present: 1
+--- the replay prelude only names settings the source server has ---
+prelude emitted settings: yes
+unknown to the server: 0
+replicated engine arguments gate at 3: 0
+explicit uuid gate at 3: 0
+explicit uuid gate at 3 when dumped with uuids: 1
+replicated engine arguments gate at 3 when the dump keeps the arguments: 1

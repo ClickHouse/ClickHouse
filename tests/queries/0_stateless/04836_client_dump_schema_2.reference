@@ -1,0 +1,88 @@
+--- database names colliding only by case are rejected for --dump-schema-dir ---
+OK: non-zero exit code
+would be written to the same file
+--- circular cross-database table dependencies are rejected for --dump-schema-dir ---
+OK: non-zero exit code
+circular cross-database table dependencies
+OK: plain dump without --dump-schema-dir still succeeds (no table-level cycle)
+--- combined with --file/--structure is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- merge()/loop() with a computed (non-literal) argument fails clearly instead of silently dropping the dependency ---
+OK: non-zero exit code
+NOT_IMPLEMENTED
+--- a qualified cross-database dictionary() reference keeps its real dependency ---
+OK: dump succeeded
+OK: qualified dictionary() dependency ordered before its reader
+--- a database-less dictionary() reference in a view is refused, not rebound ---
+OK: non-zero exit code
+resolves against the session database
+rebound dump emitted: 0
+--- a database-less joinGet() reference in a materialized view is refused, not rebound ---
+OK: non-zero exit code
+resolves against the session database
+rebound dump emitted: 0
+--- an IN <table> reference keeps the database it was created under ---
+OK: dump succeeded
+OK: IN table reference keeps its create-time database dependency
+--- a database-less one-argument loop(table) reference is refused, not rebound ---
+OK: non-zero exit code
+resolves against the session database
+rebound dump emitted: 0
+--- a database-less reference is satisfied from the object database inside the dump set ---
+OK: zero exit code
+OK: unqualified dictionary ordered before its reader
+--- a computed joinGet/dictionary argument fails clearly instead of being treated as dependency-free ---
+OK: non-zero exit code
+NOT_IMPLEMENTED
+--- merge() naming a database outside the dump set warns instead of silently dropping the edge ---
+OK: dump succeeded
+outside the dumped database(s)
+--- a large as_select (over the old query-size default) still gets its dependencies tracked ---
+OK: large as_select dumped successfully
+OK: dependency correctly tracked for a large as_select
+--- a large CREATE with an explicit TO target named like inner storage is still classified correctly ---
+OK: large explicit-TO target named like generated inner storage is dumped before its materialized view
+--- a table function inside remote() is not a local dependency ---
+OK: remote() table function did not invent a local cycle
+both views dumped: 2
+--- a table function under a cluster with no local replicas is not a local dependency ---
+OK: remote-only cluster() table function did not invent a local cycle
+both views dumped: 2
+--- a cluster the dumping instance does not define fails clearly instead of guessing ---
+unresolvable cluster refused: 1
+--- a cluster with local replicas names a real local dependency ---
+OK: local cluster() source dumped before its reader
+OK: identifier-spelled local cluster() source dumped before its reader
+OK: computed cluster name classified as local and ordered
+OK: computed db/table arguments name the local source
+OK: computed qualified argument names the local source
+OK: merge() wrapped in a local cluster() names the local source
+OK: session context inside the wrapped merge() is folded into the stored view
+OK: folded wrapped merge() source dumped before its reader
+OK: empty-database merge() resolves against the owning database
+--- a remote() address the server reads locally names a real local dependency ---
+OK: local remote() source dumped before aaa_remote_reader
+OK: local remote() source dumped before aab_remote_reader_port
+OK: local remote() source dumped before aac_remote_reader_merge
+OK: local remote() source dumped before aad_remote_mv
+OK: local remote() source dumped before aae_remote_reader_case
+OK: local remote() source dumped before aaf_remote_reader_case_port
+OK: local remote() source dumped before aag_remote_secure_reader
+--- a cluster() argument reading the session database is refused, not rebound ---
+session-database cluster() argument refused: 1
+--- a cluster() argument reading the session user is refused too ---
+session-user cluster() argument refused: 1
+--- a cluster() argument reading the database setting is refused too ---
+database-setting cluster() argument refused: 1
+--- a cluster() argument reading any other setting is refused too ---
+other-setting cluster() argument refused: 1
+--- a cluster() argument reading a server constant is refused too ---
+server-constant cluster() argument refused: 1
+--- a cluster() name written as a macro resolves ---
+macro cluster name resolved: 1
+--- a cluster() name written as a nested macro resolves ---
+nested macro cluster name resolved: 1
+--- a TimeSeries table is dumped after its explicitly named external target ---
+engine-owned inner tables in TimeSeries dump: 0
+OK: TimeSeries external target dumped before the TimeSeries table

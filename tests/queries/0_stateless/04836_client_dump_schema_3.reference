@@ -1,0 +1,89 @@
+--- a database-less TimeSeries target keeps the session database it was created under ---
+target named in the creator's database: 1
+target rebound to the object's own database: 0
+OK: cross-database TimeSeries target still ordered first
+--- merge(REGEXP(...)) reaching an omitted database is reported ---
+omitted regexp-matched dependency named: 1
+no warning when the regexp stays inside the dump: 0
+--- IN right-hand sides: literals and aliases are not dependencies, qualified tables are ---
+OK: zero exit code
+stderr lines: 0
+OK: qualified IN table precedes its reader
+--- a view reading a name-based helper table replays through the owning object ---
+OK: helper-table reader ordered after the owning materialized view
+replayed view resolves the helper: 0
+helper emitted as a standalone table: 0
+--- a view reading a UUID-named helper table is refused ---
+OK: nonzero exit code
+refusal names the owning object: 1
+--- a user table named like a nil-UUID tmp helper is kept ---
+nil-uuid-named user table present: 1
+--- a lookalike table of an explicitly targeted kind is kept ---
+lookalike of the explicit kind present: 1
+engine-owned helpers of the implicit kinds in dump: 0
+--- a merge() reader over a helper table is ordered after its owner ---
+OK: merge() helper reader ordered after the owning materialized view
+--- a database-less reference outside the dump warns instead of dropping silently ---
+dump still emits the view: 1
+without a database; no dumped database contains it
+--- an object whose credentials came back masked is reported, not silently emitted ---
+OK: zero exit code
+masked table still dumped: 1
+masked credential reported: 1
+secret in the dump: 0
+--- a materialized view accepted under a relaxed check replays through the prelude ---
+bad-select view replayed: 1
+--- the prelude is scoped to what the dumped statements can reach ---
+no-mv schema, mv gate emitted: 0
+no-mv schema, ungated gate emitted: 0
+no-mv schema, analyzer gate emitted: 0
+empty dump, any SET emitted: 0
+projection schema, analyzer gate emitted: 1
+projection schema, dead gates emitted: 0
+--- a plain dump replays under an unrelated analyzer constraint ---
+OK: constrained replay succeeded
+constrained replay table present: 1
+--- the prelude keeps the residual shared gates conservative ---
+unique-key gate present: 1
+suspicious-primary-key gate present: 1
+fuzz-functions gate present: 1
+deprecated-mt-syntax gate present: 1
+--- a dump with a MATERIALIZED expression replays through the prelude ---
+OK: replayed into a default session
+replayed MATERIALIZED table present: 1
+--- a remote() named collection on a loopback address names a local dependency ---
+OK: named-collection source dumped before aaa_nc_reader
+OK: named-collection source dumped before aab_nc_reader_override
+--- a remote() named collection is reported, not emitted, and its readers break on replay ---
+readers warned about the collection: 2
+collection emitted into the dump: 0
+collection values leaked into the dump: 0
+OK: schema replayed without the collection
+replayed reader needs the collection: 1
+--- a remote() named collection the dump session cannot read is refused, not assumed remote ---
+masked named collection refused: 1
+--- a remote() identifier that names neither a cluster nor a collection is refused ---
+unresolvable remote() first argument refused: 1
+--- a named collection carried by a stored engine or dictionary source is reported ---
+engine carrier warned: 1
+nested engine carrier warned: 1
+dictionary carrier warned: 1
+ordinary scalar function warned: 0
+collections emitted into the dump: 0
+engine carrier dumped naming the collection: 1
+--- an RBAC-hidden named collection carrier is reported explicitly ---
+hidden carrier warned: 1
+--- Remote databases replay from database DDL, not proxy table DDL ---
+external source warning retained: 1
+Remote proxy table DDL emitted: 0
+RemoteSecure proxy table DDL emitted: 0
+OK: directory dump orders source, proxies, and readers
+OK: external database-only dump replayed
+replayed Remote table resolves: 1
+replayed RemoteSecure table resolves: 1
+replayed Remote reader exists: 1
+replayed RemoteSecure reader exists: 1
+--- a simple dump does not read protected cluster or macro metadata ---
+OK: system.clusters is denied
+OK: system.macros is denied
+restricted dump table present: 1

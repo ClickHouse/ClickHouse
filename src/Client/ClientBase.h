@@ -119,6 +119,8 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
+    /// Handles `--dump-schema`, if given, and returns true; otherwise returns false unchanged.
+    bool tryRunDumpSchema();
 
     char * argv0 = nullptr;
     String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
