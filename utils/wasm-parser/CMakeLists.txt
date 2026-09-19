@@ -87,6 +87,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/levenshteinDistance.cpp"
     "${CH}/src/Common/likePatternToRegexp.cpp"
     "${CH}/src/Common/quoteString.cpp"
+    "${CH}/src/Common/SettingsChanges.cpp"
     "${CH}/src/Common/typeid_cast.cpp"
     "${CH}/src/Core/DecimalFunctions.cpp"
     "${CH}/src/Core/Field.cpp"
