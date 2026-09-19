@@ -228,6 +228,7 @@ ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/bpe_vocabularies.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
