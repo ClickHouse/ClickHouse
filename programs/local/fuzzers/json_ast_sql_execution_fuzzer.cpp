@@ -276,6 +276,8 @@ bool isDeterministicForOracle(const std::string & sql_original)
         "formatrow",
         /// UUIDv7 generators fill the low bits randomly, `dateTimeToUUIDv7` included.
         "uuidv7",
+        /// Random replacement words unless a seed is given.
+        "obfuscatequery",
     };
     for (const char * f : forbidden)
         if (sql.find(f) != std::string::npos)
