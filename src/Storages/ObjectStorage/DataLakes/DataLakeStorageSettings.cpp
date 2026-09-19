@@ -37,7 +37,9 @@ STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, IMPL
 
 void DataLakeStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    impl->applyChanges(settings_ast.changes);
+    /// The table's own `SETTINGS` clause, recorded as the definition. A data lake catalog's table takes its
+    /// settings from the database instead, through `loadFromSettingsChanges`, which records nothing.
+    impl->applyChangesWithOrigin(settings_ast.changes, SettingOrigin::Definition);
 }
 
 Field DataLakeStorageSettings::get(const std::string & name)

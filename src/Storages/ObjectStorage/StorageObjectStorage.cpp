@@ -45,7 +45,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -1236,7 +1235,9 @@ SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_cont
         return stated;
     }
 
-    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
+    /// A data lake configuration keeps a `DataLakeStorageSettings`, which records the table's own `SETTINGS`
+    /// clause as `loadFromQuery` applies it.
+    return settings;
 }
 
 }

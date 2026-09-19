@@ -150,7 +150,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(*nested_metadata);
 }
 
-SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr /* query_context */) const
 {
     /// The constructors a `MaterializedPostgreSQL` database uses receive no settings - there they belong to
     /// the database - so there is nothing for such a table to report here. It is not what the user sees for
@@ -159,12 +159,10 @@ SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr q
     if (!replication_settings)
         return {};
 
-    /// A setting the definition does not state carries the compiled-in default, except
-    /// `materialized_postgresql_tables_list`, which the constructor sets to this table's remote name - the
-    /// value the replication handler works with, reported as `other` since the definition did not state it.
+    /// What the definition states, `MaterializedPostgreSQLSettings::loadFromQuery` records in the settings object.
+    /// A setting it does not state carries the compiled-in default, except `materialized_postgresql_tables_list`,
+    /// which the constructor sets to this table's remote name - the value the replication handler works with.
     SettingDescriptions settings = replication_settings->enumerateSettings();
-    setOriginByValue(settings);
-    settings = withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
 
     /// The constructor replaced this one with the table's own remote name, so the value reported is the
     /// handler's rather than the clause's even where the clause states it - and `definition` promises the

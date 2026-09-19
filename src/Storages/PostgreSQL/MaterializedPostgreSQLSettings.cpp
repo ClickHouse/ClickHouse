@@ -75,7 +75,7 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {

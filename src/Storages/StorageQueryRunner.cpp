@@ -23,7 +23,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/QueryRunnerSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/TableSettingsHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -806,13 +805,11 @@ StorageQueryRunner::StorageQueryRunner(
 
 StorageQueryRunner::~StorageQueryRunner() = default;
 
-SettingDescriptions StorageQueryRunner::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageQueryRunner::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The engine reads its settings from the definition alone, so what the definition does not state is at
-    /// the compiled-in default.
-    SettingDescriptions descriptions = settings.enumerateSettings();
-    setOriginByValue(descriptions);
-    return withOriginFromDefinition(std::move(descriptions), getStorageID(), query_context);
+    /// The engine reads its settings from the definition alone, which `QueryRunnerSettings::loadFromQuery`
+    /// records in the settings object, so what the definition does not state is at the compiled-in default.
+    return settings.enumerateSettings();
 }
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
