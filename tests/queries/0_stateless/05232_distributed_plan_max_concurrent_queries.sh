@@ -79,46 +79,41 @@ done
 # Parallel replicas read the table the same way, on several replicas of this server at once, and they
 # are one query too, so the statement must not reject itself against a limit of one.
 echo "parallel replicas"
-# How many replicas answer is not ours to pin (measured: 27 of 30 statements read the table on more
-# than one), and a statement served by a single replica would say nothing about sharing a slot. So
-# every attempt must be served, and the assertion is made on the first one that really did fan out.
-# Each attempt reads its own table, so that no attempt can be refused by its predecessor's slot.
-fanout=0
-for attempt in {1..10}; do
-    table="t_pr_limit_$attempt"
-    ${CLICKHOUSE_CLIENT} --multiline --query "
-    DROP TABLE IF EXISTS $table;
+table="t_pr_limit"
+${CLICKHOUSE_CLIENT} --multiline --query "
+DROP TABLE IF EXISTS $table;
 
-    CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
 
-    SYSTEM STOP MERGES $table;
-    INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
-    INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
-    "
+SYSTEM STOP MERGES $table;
+INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+"
 
-    query_id="05232_pr_${attempt}_$CLICKHOUSE_DATABASE"
-    ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
-        SELECT count() FROM $table WHERE k < 150000
-        SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
-            cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-            parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
-            automatic_parallel_replicas_mode = 0, use_query_condition_cache = 0, make_distributed_plan = 0
-        FORMAT Null"
-    CODE=$?
-    [ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
+query_id="05232_pr_$CLICKHOUSE_DATABASE"
+${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
+    SELECT count() FROM $table WHERE k < 150000
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+        cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
+        automatic_parallel_replicas_mode = 0, use_query_condition_cache = 0, make_distributed_plan = 0
+    FORMAT Null"
+CODE=$?
+[ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    fanout=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT countIf(ProfileEvents['SelectedParts'] > 0)
-        FROM system.query_log
-        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
-          AND initial_query_id = '$query_id'
-        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
-    [ "$fanout" -ge 2 ] && break
-done
-[ "$fanout" -lt 2 ] && echo "no attempt read the table on more than one replica" && exit 1
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+# A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so
+# every replica of the statement holds it. Replicas whose ranges another one covers are cancelled,
+# and report their selected parts on a cancelled query rather than on a finished one.
+replicas=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT uniqExact(query_id)
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND is_initial_query = 0
+      AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
+    SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
+[ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement selected parts: $replicas" && exit 1
 
 # A replica's read carries the default database rather than this test's, which is why the rows above are
 # found through the initiator's id; this anchors that id to a statement this test ran.
@@ -129,7 +124,7 @@ ${CLICKHOUSE_CLIENT} --query "
       AND current_database = currentDatabase() AND query_id = '$query_id'
     SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
     FORMAT Null"
-echo "one statement reading the table on several replicas is served"
+echo "one statement holding the table's only slot on several replicas is served"
 
 # A client may send the statement itself as a secondary query, which carries no initial query id. The
 # plan's fragments belong to it all the same, so they must share its slot rather than take one each.
