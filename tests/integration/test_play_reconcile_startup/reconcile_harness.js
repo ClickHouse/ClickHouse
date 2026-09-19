@@ -394,7 +394,7 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm }) {
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm, fetch: fetchOverride, open: openOverride }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
@@ -414,15 +414,18 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
             userAgent: 'play-reconcile-harness',
         },
         /// Deterministic environment: no network. The only top-level fetch (the webterminal
-        /// probe) checks `resp.ok`, and every other call site handles a non-ok response.
-        fetch: async () => ({
+        /// probe) checks `resp.ok`, and every other call site handles a non-ok response. A scenario
+        /// that needs the probe to succeed passes its own `fetch`.
+        fetch: fetchOverride || (async () => ({
             ok: false,
             status: 503,
             statusText: 'harness: network disabled',
             headers: { get: () => null },
             text: async () => '',
             json: async () => ({}),
-        }),
+        })),
+        /// `window.open` opens nothing here; a scenario that asserts on it passes its own `open`.
+        open: openOverride || (() => null),
         setTimeout, clearTimeout, setInterval, clearInterval,
         queueMicrotask,
         requestAnimationFrame: (fn) => setTimeout(fn, 0),
@@ -1639,6 +1642,137 @@ async function main() {
         check('close-folds-draft', 'Back recreates the closed tab with the draft',
             vm.runInContext("tabs.some(t => t.query === 'SELECT 2')", r.sandbox),
             vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
+    }
+
+    /// Contract: the endpoint the page defaults to is the WHOLE address it was served at - the path
+    /// prefix and the routing query. A reverse proxy can expose one origin as several backends and
+    /// select between them with `?cluster=a`, so dropping that query would point a direct load, and a
+    /// `clickhouse-credentials` handover that carries no `url`, at the proxy's default backend. The
+    /// query string of the configured address is part of the endpoint identity everywhere else (it is
+    /// sent verbatim with every request, and `sameServerAddress` compares it), and every URL derived
+    /// from that address - the Documentation link here - has to stay on the same backend. That address
+    /// is also not trusted input (it comes from `?url=`, from a handover and from a text field), so a
+    /// non-HTTP scheme must never be turned into a link: `new URL` accepts `javascript:` just as
+    /// happily as an HTTP endpoint.
+    {
+        const r = await runScenario(js, {
+            href: 'https://proxy.example/clickhouse/play?cluster=a',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+        });
+        const configured = vm.runInContext('url_elem.value', r.sandbox);
+        check('proxied-endpoint', 'the default connection keeps the path prefix and the routing query',
+            configured === 'https://proxy.example/clickhouse/?cluster=a', configured);
+        /// `writeHistoryEntry` is the one place that rebuilds the query string from scratch. The
+        /// routing parameter has to survive it: otherwise the very next read of `defaultServerAddress`
+        /// resolves to a different endpoint, and a reload lands on the proxy's default backend. It must
+        /// also not be mistaken for a non-default endpoint and serialized as a redundant `url=`.
+        vm.runInContext("query_area.value = 'SELECT 1'; onQueryInput({ type: 'input', isTrusted: true });"
+            + "refreshCurrentHistoryEntry(tabs.find(t => t.id === activeTabId));", r.sandbox);
+        await sleep(50);
+        check('proxied-endpoint', 'the history write keeps the routing parameter and adds no url=',
+            r.sandbox.location.search.includes('cluster=a')
+                && !r.sandbox.location.search.includes('url='),
+            r.sandbox.location.href);
+        check('proxied-endpoint', 'the default connection is unchanged by that write',
+            vm.runInContext('defaultServerAddress()', r.sandbox) === 'https://proxy.example/clickhouse/?cluster=a',
+            vm.runInContext('defaultServerAddress()', r.sandbox));
+        const docs_href = vm.runInContext('docsURL().href', r.sandbox);
+        check('proxied-endpoint', 'the Documentation link stays on the selected backend',
+            docs_href === 'https://proxy.example/clickhouse/docs?cluster=a', docs_href);
+        /// The credentials of the configured address are the exception: they are not routing, and the
+        /// derived URL is written into a link `href`, where a password would be recorded in browser
+        /// history, referrer headers and access logs.
+        const with_credentials = vm.runInContext(
+            "url_elem.value = 'https://u:p@proxy.example/clickhouse/?cluster=a&user=u&password=p'; docsURL().href",
+            r.sandbox);
+        check('proxied-endpoint', 'the Documentation link carries no credentials of its own',
+            with_credentials === 'https://proxy.example/clickhouse/docs?cluster=a', with_credentials);
+        const non_http = vm.runInContext("url_elem.value = 'javascript:alert(1)'; docsURL()", r.sandbox);
+        check('proxied-endpoint', 'a non-HTTP configured address yields no Documentation URL',
+            non_http === null, non_http);
+    }
+
+    /// Contract: the inline Web Terminal panel is offered only when the embedded terminal will accept
+    /// the credentials `/play` posts to it. `webterminal.html` takes `webterminal-credentials` only
+    /// from a parent at its own origin or on its exact allowlist, and applies that rule to the origin of
+    /// THIS page, while the configured server can be at any origin. A successful `HEAD /webterminal`
+    /// probe therefore proves only that a terminal exists there: embedded, the terminal of a
+    /// cross-origin server would drop the handover and sit at `Waiting for credentials...`. A plain click
+    /// on the icon must then fall through to the anchor's own new-tab navigation (where the terminal
+    /// reads `user` from its URL and prompts for the password), and the `~` shortcut must open that
+    /// same link in a new tab, instead of either of them embedding a terminal that cannot be logged into.
+    {
+        const opened = [];
+        const r = await runScenario(js, {
+            href: 'https://a.example/play',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            /// Both servers answer the probe: the terminal exists at each of them.
+            fetch: async () => ({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({}),
+            }),
+            open: (href, target) => { opened.push({ href, target }); return null; },
+        });
+        const terminal_icon = r.sandbox.document.getElementById('terminal-icon');
+        const terminal_panel = r.sandbox.document.getElementById('terminal-panel');
+        const embedded = () => terminal_panel.children.filter(c => c.tagName === 'IFRAME').map(c => c.src);
+        const point_at = async (url) => {
+            vm.runInContext(`url_elem.value = ${JSON.stringify(url)}; url_elem.dispatchEvent(new Event('input'));`, r.sandbox);
+            /// `probeTerminal` shows the icon from the `fetch` continuation.
+            await sleep(50);
+        };
+        const plain_click = () => {
+            const ev = new Event('click', { cancelable: true });
+            terminal_icon.dispatchEvent(ev);
+            return ev;
+        };
+        const tilde = () => {
+            const ev = new Event('keydown', { cancelable: true });
+            ev.key = '~';
+            r.sandbox.document.dispatchEvent(ev);
+            return ev;
+        };
+
+        await point_at('https://b.example/');
+        check('cross-origin-terminal', 'the probe of a cross-origin server shows the icon',
+            terminal_icon.style.display === '', terminal_icon.style.display);
+        const href = terminal_icon.getAttribute('href');
+        check('cross-origin-terminal', 'the icon links to the terminal of that server',
+            typeof href === 'string' && href.startsWith('https://b.example/webterminal'), href);
+        const click = plain_click();
+        check('cross-origin-terminal', 'a plain click falls through to the anchor instead of embedding',
+            !click.defaultPrevented && embedded().length === 0 && !terminal_panel.classList.contains('active'),
+            { defaultPrevented: click.defaultPrevented, embedded: embedded(), active: terminal_panel.classList.contains('active') });
+        tilde();
+        check('cross-origin-terminal', 'the ~ shortcut opens the terminal in a new tab instead of embedding',
+            opened.length === 1 && opened[0].href === href && opened[0].target === '_blank'
+                && embedded().length === 0 && !terminal_panel.classList.contains('active'),
+            { opened, embedded: embedded() });
+
+        /// The terminal of the server this page came from accepts the handover, and is embedded.
+        await point_at('https://a.example/');
+        const own_click = plain_click();
+        check('cross-origin-terminal', 'a plain click embeds the terminal of the same-origin server',
+            own_click.defaultPrevented && embedded().length === 1 && embedded()[0] === 'https://a.example/webterminal'
+                && terminal_panel.classList.contains('active') && opened.length === 1,
+            { defaultPrevented: own_click.defaultPrevented, embedded: embedded(), opened });
+        /// A hidden panel holding a session is toggled back regardless of the address now configured:
+        /// the session belongs to the server it was opened against.
+        plain_click();
+        await point_at('https://b.example/');
+        const reopen = plain_click();
+        check('cross-origin-terminal', 'a hidden inline session is shown again even after the address changed',
+            reopen.defaultPrevented && terminal_panel.classList.contains('active')
+                && embedded().length === 1 && opened.length === 1,
+            { defaultPrevented: reopen.defaultPrevented, embedded: embedded(), opened });
     }
 
     if (failures) {

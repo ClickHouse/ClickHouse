@@ -96,6 +96,8 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "dirty-startup-allblank-entry-reowned",
         "dirty-startup-merge-entry-reowned",
         "shape-not-stamped-before-run",
+        "proxied-endpoint",
+        "cross-origin-terminal",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out
