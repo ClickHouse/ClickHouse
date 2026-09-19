@@ -28,6 +28,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Core/Joins.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -137,23 +138,7 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileDD", "quantilesDD",
     "quantileTiming", "quantileTimingWeighted",
     "quantilesTiming", "quantilesTimingWeighted",
-    /// `quantileDeterministic` / `quantilesDeterministic` are deliberately NOT listed:
-    /// `ReservoirSamplerDeterministic` retains a sample purely by `hash & skip_mask == 0`,
-    /// `merge` raises `skip_degree` to the maximum of the two states and re-thins everything
-    /// (`setSkipDegree` calls `thinOut`), and the final degree is the smallest one whose
-    /// retained count fits `max_sample_size` - a function of the hash multiset alone. So the
-    /// merged sample equals the directly accumulated one no matter how the rows were
-    /// partitioned, which is exactly the property the oracle needs. Verified over 1M rows
-    /// (and over a duplicate-heavy set containing `nan` / `inf`) that direct evaluation,
-    /// `max_threads` fan-out, and a `State`/`Merge` over 3, 7, 31, 997 and 9991 partitions
-    /// all agree, including through the version-0 state serialization that drops
-    /// `skip_degree`: the samples are filtered again at the final degree, so nothing that
-    /// should survive is lost.
-    /// The exact families below stay listed: `QuantileExact` selects with `::nth_element`
-    /// over the concatenated array, and that selection is order-dependent for values that
-    /// compare equal but format differently. Concretely, over 100000 rows alternating
-    /// `-0.` and `0.`, `quantileExact(0.5)` (and `*Low` / `*High`) print `-0` when computed
-    /// directly and `0` when merged from three partial states.
+    "quantileDeterministic", "quantilesDeterministic",
     "quantileExact", "quantileExactWeighted",
     "quantilesExact", "quantilesExactWeighted",
     "quantileExactLow", "quantileExactHigh",
@@ -489,31 +474,6 @@ bool hasArrayJoin(const ASTSelectQuery & select)
         if (elem && elem->array_join)
             return true;
     }
-    return false;
-}
-
-/// Recursively walks `ast` looking for any call to `arrayJoin(...)`
-/// — the function form, distinct from the ARRAY JOIN clause caught by
-/// `hasArrayJoin` above. Both forms multiply rows, so any of them in a
-/// SELECT list breaks oracle invariants like NoREC's
-/// `count(SELECT ... arrayJoin ...) == countIf(WHERE)`.
-bool hasArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        /// `unnest` is registered as a case-insensitive alias of `arrayJoin`,
-        /// and the parser preserves the caller's spelling, so match both names
-        /// lowercased. Over-matching a spelling that would not resolve merely
-        /// skips one more query, which is the safe direction for this gate.
-        const String name_lower = Poco::toLower(func->name);
-        if (name_lower == "arrayjoin" || name_lower == "unnest")
-            return true;
-    }
-    for (const auto & child : ast->children)
-        if (hasArrayJoinFunction(child))
-            return true;
     return false;
 }
 
@@ -1238,12 +1198,11 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
     /// stays identical across all TLP partitions, only WHERE changes.
     /// ARRAY JOIN clause and PASTE JOIN are NOT safe. Neither is the `arrayJoin()`
-    /// *function* appearing anywhere in the query: it multiplies rows, breaking
+    /// *function* in this query's own scope: it multiplies rows, breaking
     /// `count(Q) == countIf(WHERE)` (NoREC) and the partitioned-vs-whole-table
-    /// row-count equality the TLP oracles depend on.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
-        return false;
-    if (hasArrayJoinFunction(select.clone()))
+    /// row-count equality the TLP oracles depend on. A nested query keeps its
+    /// `arrayJoin` to itself, so it does not disturb these invariants.
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
@@ -1784,9 +1743,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     /// The `arrayJoin(...)` *function* multiplies rows just like the ARRAY JOIN
     /// clause; partitioning by WHERE then breaks the row-count invariant the
     /// oracle relies on. `isSafeForOracle` rejects both — mirror that here.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
-        return false;
-    if (hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
     if (select.limitLength() || select.limitBy() || select.limitOffset() || select.limitAfter() || select.limitUntil()
         || select.prewhere() || select.qualify())
@@ -2589,10 +2546,10 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
-    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions
-    /// anywhere in the query before it can remove an `ORDER BY arrayJoin(...)`
+    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions in
+    /// this query's own scope before it can remove an `ORDER BY arrayJoin(...)`
     /// expression and make the oracle validate a different query shape.
-    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+    if (hasArrayJoin(select) || hasPasteJoin(select) || expressionContainsArrayJoin(select))
         return false;
 
     auto ref_ast = select.clone();
