@@ -2638,6 +2638,12 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE,
             [](LoggerPtr log, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
             { DistributedCache::clearDistributedCache(interpreter.getContext(), query, log); }));
+#else
+    reg_fn(
+        Type::CLEAR_DISTRIBUTED_CACHE,
+        with_check_fn(
+            std::nullopt,
+            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without distributed cache support"); }));
 #endif
     reg_fn(
         Type::SYNC_FILESYSTEM_CACHE,
@@ -2919,6 +2925,24 @@ void registerSystemCommandLambdas()
     reg_fn(Type::START_PULLING_REPLICATION_LOG, with_startstop_fn(ActionLocks::PullReplicationLog, true));
     reg_fn(Type::STOP_CLEANUP, with_startstop_fn(ActionLocks::Cleanup, false));
     reg_fn(Type::START_CLEANUP, with_startstop_fn(ActionLocks::Cleanup, true));
+    reg_fn(
+        Type::START_REPLICATED_DDL_QUERIES,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+    reg_fn(
+        Type::STOP_REPLICATED_DDL_QUERIES,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+    reg_fn(
+        Type::START_VIRTUAL_PARTS_UPDATE,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+    reg_fn(
+        Type::STOP_VIRTUAL_PARTS_UPDATE,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+    reg_fn(
+        Type::START_REDUCE_BLOCKING_PARTS,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+    reg_fn(
+        Type::STOP_REDUCE_BLOCKING_PARTS,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     auto dup = with_check_fn(
         std::nullopt,
         [](LoggerPtr, InterpreterSystemQuery & interpreter)
@@ -3085,6 +3109,9 @@ void registerSystemCommandLambdas()
         with_check_fn(
             std::nullopt,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.dropDatabaseReplica(query); }));
+    reg_fn(
+        Type::DROP_CATALOG_REPLICA,
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::SYNC_REPLICA,
         with_check_fn(
@@ -3362,6 +3389,8 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::UNLOAD_PRIMARY_KEY,
         with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.unloadPrimaryKeys(); }));
+    reg_fn(
+        Type::UNLOCK_SNAPSHOT, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
 #if USE_XRAY
     reg_fn(
         Type::INSTRUMENT_ADD,
