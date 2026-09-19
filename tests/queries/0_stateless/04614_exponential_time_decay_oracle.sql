@@ -632,7 +632,7 @@ SELECT DISTINCT _CAST(
     [(1., 0., 20.)],
     'Array(ExponentialTimeDecayingFloat64(10))'); -- { serverError BAD_ARGUMENTS }
 
--- Generic tuple comparison and sorting must validate every reconstructed row.
+-- Reconstruction validates malformed rows before generic tuple comparison and sorting.
 WITH
     _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
     _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
@@ -659,7 +659,7 @@ SELECT arraySort([
     _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
 ]); -- { serverError BAD_ARGUMENTS }
 
--- Set-backed membership must validate reconstructed values on both sides.
+-- Reconstruction validates malformed values before set-backed membership on either side.
 WITH
     _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
     _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
@@ -697,7 +697,7 @@ WITH
     CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
 SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Empty-set shortcuts must retain recursive validation and pairwise compatibility.
+-- Empty-set shortcuts must retain pairwise type compatibility even though row validity is checked at reconstruction.
 WITH _CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS malformed
 SELECT malformed IN
 (

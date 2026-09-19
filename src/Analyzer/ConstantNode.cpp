@@ -12,7 +12,6 @@
 #include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -34,8 +33,6 @@ namespace DB
     , is_deterministic(is_deterministic_)
 {
     source_expression = std::move(source_expression_);
-    validateExponentialTimeDecayingFloat64Column(
-        *constant_value.getColumn(), constant_value.getType(), "constant ExponentialTimeDecayingFloat64");
 }
 
 ConstantNode::ConstantNode(ConstantValue constant_value_)

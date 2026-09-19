@@ -9,8 +9,6 @@
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
 
@@ -114,13 +112,6 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
         const auto & sort_column_description = description[i];
 
         auto column = block.getColumnOrSubcolumnByName(sort_column_description.column_name);
-
-        /// Some internal sorting paths intentionally omit type metadata because the
-        /// column implementation is sufficient for sorting. Only custom-type
-        /// validation needs the type; the existing tuple sorter remains unchanged.
-        if (column.type && containsExponentialTimeDecayingFloat64(column.type))
-            validateExponentialTimeDecayingFloat64Column(
-                *column.column, column.type, "sorting");
 
         if (isCollationRequired(sort_column_description))
         {

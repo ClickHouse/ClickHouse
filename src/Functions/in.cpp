@@ -116,7 +116,7 @@ public:
 
         auto set = future_set->get();
         chassert(set);
-        validateDecayingEmptySetProbe(arguments[0], *set);
+        validateDecayingEmptySetTypes(arguments[0], *set);
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
@@ -163,10 +163,10 @@ public:
 
         /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
         /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
-        /// Non-empty probes are validated by Set::execute; only this early return needs a local check.
+        /// Non-empty probes check compatibility in `Set::execute`; this early return must do the same.
         if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
         {
-            validateDecayingEmptySetProbe(arguments[0], *set);
+            validateDecayingEmptySetTypes(arguments[0], *set);
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
         }
 
@@ -207,13 +207,10 @@ public:
     }
 
 private:
-    /// Set::execute validates normal probes. Empty-set constant folding bypasses it, so keep
-    /// the same recursive row/type checks only on that early-return path.
-    static void validateDecayingEmptySetProbe(const ColumnWithTypeAndName & probe, const Set & set)
+    /// `Set::execute` checks normal probes. Empty-set constant folding bypasses it, so keep
+    /// the same recursive type-compatibility check on that early-return path.
+    static void validateDecayingEmptySetTypes(const ColumnWithTypeAndName & probe, const Set & set)
     {
-        validateExponentialTimeDecayingFloat64Column(
-            *probe.column, probe.type, "IN set probe");
-
         const auto & set_types = set.getDataTypes();
         if (set_types.empty())
             return;

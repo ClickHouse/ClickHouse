@@ -1941,15 +1941,6 @@ public:
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
-        if (containsExponentialTimeDecayingFloat64(left_type)
-            || containsExponentialTimeDecayingFloat64(right_type))
-        {
-            validateExponentialTimeDecayingFloat64Column(
-                *col_with_type_and_name_left.column, left_type, getName());
-            validateExponentialTimeDecayingFloat64Column(
-                *col_with_type_and_name_right.column, right_type, getName());
-        }
-
         /// The case when arguments are the same (tautological comparison). Return constant.
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)

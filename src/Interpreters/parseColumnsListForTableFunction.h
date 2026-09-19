@@ -16,7 +16,7 @@ struct DataTypeValidationSettings
 
     explicit DataTypeValidationSettings(const Settings & settings);
 
-    static DataTypeValidationSettings forExperimentalTimeDecay(const Settings & settings);
+    static DataTypeValidationSettings forNonStorageDefinition(const Settings & settings);
 
     bool allow_suspicious_low_cardinality_types = true;
     bool allow_suspicious_fixed_string_types = true;
