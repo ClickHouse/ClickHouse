@@ -1,3 +1,9 @@
+-- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas
+-- no-parallel: enables the server-global failpoint patch_parts_reverse_column_order, which a concurrent
+--   04034_patch_parts_column_order_mismatch would disable before the decisive query.
+-- no-shared-merge-tree: needs SYSTEM SCHEDULE MERGE and the exact two-pair merge layout it asserts.
+-- no-parallel-replicas: both merged parts must read the patch part through one shared read pool.
+
 SET enable_lightweight_update = 1;
 
 DROP TABLE IF EXISTS t_pjc;
@@ -47,11 +53,26 @@ WHERE database = currentDatabase() AND table = 't_pjc' AND active AND startsWith
 -- parts read the shared patch part with different column orders.
 SYSTEM ENABLE FAILPOINT patch_parts_reverse_column_order;
 
--- One bucket puts every range of the shared patch part into a single cache entry.
+-- One bucket puts every range of the shared patch part into a single cache entry, and two
+-- streams put both merged parts in the one shared read pool that holds that cache. A
+-- one-stream read is planned per part in order instead, each with a pool, and cache, of its own.
 SELECT sum(a), sum(b), count() FROM t_pjc
-SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size = 1;
+SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size = 1,
+    max_threads = 2,
+    log_comment = '04991_decisive';
 
 SYSTEM DISABLE FAILPOINT patch_parts_reverse_column_order;
+
+-- A regression that gave every read task its own cache entry would also avoid the mismatch
+-- and return the same sums, so assert that both merged parts really did apply a Join-mode
+-- patch. A lower bound, not an equality: the count scales with granule splitting.
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['PatchesJoinAppliedInAllReadTasks'] >= 2
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04991_decisive' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 SELECT sum(a), sum(b), count() FROM t_pjc;
 
