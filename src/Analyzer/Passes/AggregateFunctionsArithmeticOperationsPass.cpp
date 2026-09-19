@@ -12,6 +12,8 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DecimalNativeWidthTruncation.h>
+
 namespace DB
 {
 namespace Setting
@@ -132,6 +134,13 @@ public:
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
             const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
+
+            if (operandTruncatesIntoDecimalWidth(
+                    arithmetic_function_arguments_nodes[1]->getResultType(),
+                    left_argument_constant_node->getResultType(),
+                    left_argument_constant_value_literal))
+                return;
+
             bool need_reverse = (arithmetic_function_name == "multiply" && left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
                 || (arithmetic_function_name == "minus");
 
@@ -144,6 +153,13 @@ public:
         {
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
+
+            if (operandTruncatesIntoDecimalWidth(
+                    arithmetic_function_arguments_nodes[0]->getResultType(),
+                    right_argument_constant_node->getResultType(),
+                    right_argument_constant_value_literal))
+                return;
+
             bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
 
             if (need_reverse)

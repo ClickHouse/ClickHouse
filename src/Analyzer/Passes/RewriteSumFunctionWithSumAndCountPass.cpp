@@ -7,6 +7,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DecimalNativeWidthTruncation.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -74,6 +75,10 @@ public:
 
         const auto column_type = column_node->getColumnType();
         if (!column_type || !isNumber(column_type))
+            return;
+
+        /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, `sum(a) + 4294967296 * count(a)` would not.
+        if (operandTruncatesIntoDecimalWidth(column_type, literal_type, literal->getValue()))
             return;
 
         const auto lhs = std::make_shared<FunctionNode>("sum");
