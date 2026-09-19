@@ -3050,40 +3050,40 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        /// With a non-ClickHouse dialect (e.g. polyglot) the client already transpiled the query
-        /// locally to obtain this AST (see parseQuery), but that transpiled form — including any
-        /// inline INSERT data — differs from the text the client holds, so the client cannot split
-        /// the query from its data. Instead it sends the *original* query verbatim and lets the
-        /// server perform the authoritative transpilation and read the inline data itself (the
-        /// server keeps the transpiled query alive so the data pointers stay valid).
-        /// `clickhouse_json` is excluded: it is not a foreign SQL dialect but a different serialization
-        /// of a ClickHouse AST, the client deserializes it locally without rewriting any query text, and
-        /// its INSERT data is streamed by the client as usual (from stdin, INFILE or `input`).
+        /// In the `polyglot` dialect the client already transpiled the query locally to obtain this
+        /// AST (see parseQuery), but that transpiled form — including any inline INSERT data —
+        /// differs from the text the client holds, so the client cannot split the query from its
+        /// data. Instead it sends the *original* query verbatim and lets the server perform the
+        /// authoritative transpilation and read the inline data itself (the server keeps the
+        /// transpiled query alive so the data pointers stay valid).
+        /// Every other dialect is excluded, because none of them replaces the query text the client
+        /// parsed: `clickhouse_json` is a different serialization of a ClickHouse AST that the client
+        /// deserializes locally; `trino` rewrites Trino syntax at the token level but hands an INSERT
+        /// with inline data to the standard parser as is, precisely so that `data` keeps pointing into
+        /// the original buffer (see `ParserTrinoQuery`); `kusto`, `prql` and `promql` have no inline
+        /// INSERT data at all. For all of them `data` points into the text the client is about to send,
+        /// so the client splits the query from its data and streams it as usual.
         /// The decision is made from the *parse-time* dialect: the AST in hand was produced by the
-        /// foreign-dialect classifier, so a query-local `SETTINGS dialect = ...` must not switch the
+        /// polyglot classifier, so a query-local `SETTINGS dialect = ...` must not switch the
         /// same query onto the native path (where e.g. `insert->data`, already cleared by the polyglot
         /// parser, would be expected to carry the inline data).
-        const bool send_query_verbatim = parse_dialect != Dialect::clickhouse && parse_dialect != Dialect::clickhouse_json;
+        const bool send_query_verbatim = parse_dialect == Dialect::polyglot;
         current_query_sent_verbatim = send_query_verbatim;
 
         if (send_query_verbatim)
         {
-            /// The original query text is sent verbatim, and the server reparses (for polyglot:
-            /// transpiles) it under the settings that accompany the query. Pin those settings to their
-            /// parse-time values so the query's own `SETTINGS` clause cannot change how the very same
-            /// text is interpreted on the server (e.g. `SELECT 1 SETTINGS
-            /// allow_experimental_polyglot_dialect = 0` in the polyglot dialect must not be accepted
-            /// locally and then rejected by the server before transpilation). Like the `clickhouse_json`
-            /// pinning above, this is transient: a `SET` still takes effect for subsequent queries (it
-            /// is applied to the server session and re-applied to the client context after this query
-            /// completes), and a `SETTINGS` clause is applied by the server itself when it executes the
-            /// transpiled query.
+            /// The original query text is sent verbatim, and the server transpiles it under the
+            /// settings that accompany the query. Pin those settings to their parse-time values so the
+            /// query's own `SETTINGS` clause cannot change how the very same text is interpreted on the
+            /// server (e.g. `SELECT 1 SETTINGS allow_experimental_polyglot_dialect = 0` must not be
+            /// accepted locally and then rejected by the server before transpilation). Like the
+            /// `clickhouse_json` pinning above, this is transient: a `SET` still takes effect for
+            /// subsequent queries (it is applied to the server session and re-applied to the client
+            /// context after this query completes), and a `SETTINGS` clause is applied by the server
+            /// itself when it executes the transpiled query.
             client_context->setSetting("dialect", parse_dialect_value);
-            if (parse_dialect == Dialect::polyglot)
-            {
-                for (size_t i = 0; i < polyglot_parse_setting_names.size(); ++i)
-                    client_context->setSetting(polyglot_parse_setting_names[i], parse_polyglot_values[i]);
-            }
+            for (size_t i = 0; i < polyglot_parse_setting_names.size(); ++i)
+                client_context->setSetting(polyglot_parse_setting_names[i], parse_polyglot_values[i]);
         }
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
