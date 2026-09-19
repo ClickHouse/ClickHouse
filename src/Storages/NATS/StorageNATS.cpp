@@ -1692,11 +1692,12 @@ For the recommended materialized-view consumption path (the acknowledgement is s
             .related = {"Kafka", "RabbitMQ", "FileLog"}});
 }
 
-SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// What a named collection supplied is recorded by `loadSettingsFromNamedCollection` in the settings object
-    /// (a `SettingsWithRecordedOrigin`), so enumeration reports it; the definition wins over it.
-    auto settings = withOriginFromDefinition(nats_settings->enumerateSettings(), getStorageID(), query_context);
+    /// The settings object (a `SettingsWithRecordedOrigin`) records what a named collection supplied, as
+    /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
+    /// applies it over the collection.
+    auto settings = nats_settings->enumerateSettings();
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no
     /// authentication of its own, takes it from the `nats` server config section.

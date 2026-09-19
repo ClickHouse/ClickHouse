@@ -1183,18 +1183,15 @@ namespace DB::StorageKafkaUtils
 /// name, the expanded topics, the brokers, the group, the format, the schema and the generated client id - is
 /// private to each storage, and neither exposes all of it.
 template <typename KafkaStorage>
-SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context)
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr /* query_context */)
 {
-    /// Three things set a `Kafka` table's settings, in this order: a named collection given in the engine
-    /// arguments, which `loadSettingsFromNamedCollection` records in the settings object (a
-    /// `SettingsWithRecordedOrigin`); the table's own `SETTINGS` clause; and the storage's constructor, which pins
-    /// a few format settings through the typed `set`, forgetting the collection. Anything left as `Other` was set
-    /// by the engine itself. Saying so is the point of that value - guessing `named_collection` for it would be
-    /// wrong, and there is no source to name.
+    /// Three things set a `Kafka` table's settings, in this order, and the settings object (a
+    /// `SettingsWithRecordedOrigin`) records each: a named collection given in the engine arguments, as
+    /// `loadSettingsFromNamedCollection` loads it; the table's own `SETTINGS` clause, as `loadFromQuery` applies
+    /// it over the collection; and the storage's constructor, which pins a few format settings through the typed
+    /// `set`, forgetting whichever of the two supplied them. Anything left as `Other` was set by the engine
+    /// itself. Saying so is the point of that value - guessing a source for it would be wrong.
     auto settings = storage.kafka_settings->enumerateSettings();
-
-    /// The `SETTINGS` clause is applied after the collection and so wins over it.
-    settings = withOriginFromDefinition(std::move(settings), storage.getStorageID(), query_context);
 
     /// What the table works with: the constructor expands macros in these, and generates a client id when none is
     /// given - a value nothing but the engine set.
