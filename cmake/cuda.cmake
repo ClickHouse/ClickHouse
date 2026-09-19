@@ -35,7 +35,7 @@ if (ENABLE_GPU)
     endif ()
 
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-        set (CMAKE_CUDA_ARCHITECTURES "75-real" CACHE STRING "CUDA architectures to generate code for")
+        set (CMAKE_CUDA_ARCHITECTURES "75" CACHE STRING "CUDA architectures to generate code for")
     endif ()
 
     if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER)
@@ -126,16 +126,8 @@ if (ENABLE_GPU)
     # no-op here - CMake emits -std=c++20 for nvcc either way.
     string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIC -Xcompiler -std=gnu++20")
 
-    option (ENABLE_GPU_KERNEL_LINEINFO "Emit CUDA line info, for profiling kernels in Nsight Compute" OFF)
-
-    if (ENABLE_GPU_KERNEL_LINEINFO)
-        set (GPU_LINEINFO_FLAG " -lineinfo")
-    else ()
-        set (GPU_LINEINFO_FLAG "")
-    endif ()
-
     set (CMAKE_CUDA_FLAGS_DEBUG          "-G -g")
-    set (CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O3${GPU_LINEINFO_FLAG}")
+    set (CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O3 -lineinfo")
     set (CMAKE_CUDA_FLAGS_RELEASE        "-O3")
 
     # Puts a target on the cuDF island: one libstdc++ shared with the device code, and none

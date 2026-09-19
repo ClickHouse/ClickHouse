@@ -383,12 +383,6 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
 #       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
 #       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
-# `Cannot convert string 'b' to type UInt64` while executing `equals(c0.size` is the same class, from
-#       `03640_multiple_mutations_with_error_with_rewrite_parts`: its asserted-to-fail `DELETE WHERE c0.size = 'b'`
-#       mutation outlives the test when the closing `KILL MUTATION` is skipped, which happens when an earlier
-#       statement draws the stress runner's injected memory fault and the client stops the file. Only that command
-#       builds this comparison, and the entry pins `Code: 53` as well, so the code, the literal, the target type
-#       and the expression together mask nothing else: the same text under any other code still fails this job.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -581,7 +575,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
            -e "Cannot parse string 'fail' as Int8" \
-           -e "Code: 53. DB::Exception: Cannot convert string 'b' to type UInt64: while executing 'FUNCTION equals(c0.size" \
            -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \

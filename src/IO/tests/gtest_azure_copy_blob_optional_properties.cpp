@@ -55,7 +55,8 @@ private:
 /// header. The SDK models `BlobProperties::CopySource` as `Nullable`, and `Nullable::Value()` of an
 /// empty one aborts the process in a release build (`AZURE_ASSERT_MSG` expands to a bare
 /// `std::abort` under `NDEBUG`), so an endpoint behaving this way must not be able to take the
-/// server down.
+/// server down. The copy id is reported, both when the copy is accepted and in the properties that
+/// report it as completed, so that the completion names the copy that was started here.
 class CopyWithoutCopySourceTransport : public Azure::Core::Http::HttpTransport
 {
 public:
@@ -141,6 +142,7 @@ TEST(AzureNativeCopy, CompletionWithoutTheCopySourceInTheProperties)
         /* src_container_for_logging */ "container",
         /* src_blob */ "blob",
         /* src_size */ blob_size,
+        /* src_etag */ "",
         /* dest_container_for_logging */ "container",
         /* dest_blob */ "copy",
         settings,
