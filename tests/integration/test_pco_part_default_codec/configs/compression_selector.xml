@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- A size-based `<compression>` selector: parts at least `min_part_size` bytes use `ZSTD(3)`, and
+         smaller parts fall through to the factory default (`LZ4`). Used to check that sanitizing an
+         unsuitable part default codec on the metadata-load path evaluates this selector with the part's
+         real size, so a large part gets `ZSTD(3)` rather than the smallest-part codec a zero size would
+         always match. -->
+    <compression>
+        <case>
+            <min_part_size>1000</min_part_size>
+            <method>zstd</method>
+            <level>3</level>
+        </case>
+    </compression>
+</clickhouse>

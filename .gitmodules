@@ -411,6 +411,9 @@
 [submodule "contrib/mapbox-geometry"]
 	path = contrib/mapbox-geometry
 	url = https://github.com/ClickHouse/geometry.hpp
+[submodule "contrib/pcodec"]
+	path = contrib/pcodec
+	url = https://github.com/ClickHouse/pcodec.git
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/ClickHouse/zxc

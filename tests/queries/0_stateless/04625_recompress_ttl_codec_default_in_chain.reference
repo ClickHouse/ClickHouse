@@ -1,0 +1,5 @@
+before merge
+ZSTD(3)
+after recompress
+Delta(1), ZSTD(3)
+100000	4999950000

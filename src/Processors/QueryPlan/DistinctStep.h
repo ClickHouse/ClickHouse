@@ -36,13 +36,18 @@ public:
         String temporary_files_codec = "LZ4";
         UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
+        /// Whether the session that provided `temporary_files_codec` authorized it as a spill codec,
+        /// see `spillCodecAuthorizedBySession`. The codec string is resolved at the first spill, long
+        /// after the query settings are gone, so the authorization travels with it.
+        bool spill_codec_authorized = false;
+
         /// Disables external `DISTINCT` for internal operations, such as merge deduplication, that do
         /// not use query settings or query memory tracking.
         Settings() = default;
         explicit Settings(const DB::Settings & settings_);
         explicit Settings(const QueryPlanSerializationSettings & settings_);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings, bool distinct_is_reachable, UInt64 version) const;
     };
 
     DistinctStep(

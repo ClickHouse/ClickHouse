@@ -1,0 +1,4 @@
+detect_codec	UNKNOWN
+chain_codec	UNKNOWN
+detect_after_mutation	1000	500500
+chain_after_mutation	1000	500500
