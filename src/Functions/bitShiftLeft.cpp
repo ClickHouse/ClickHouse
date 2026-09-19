@@ -153,13 +153,20 @@ struct BitShiftLeftImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// Compiled code cannot throw, and the decline is by type: a big-integer count has no
+    /// implementation at all, and a signed count is declined whole though only a negative one raises.
+    static constexpr bool compilable = !is_big_int_v<B> && !is_signed_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftLeftImpl expected an integral type");
-        return b.CreateShl(left, right);
+        /// The shift runs in the result type, which is at least as wide as `A`, but the shifted value is
+        /// an `A`: a count reaching the width of `A` yields zero. The comparison also keeps the count
+        /// below the width of the result type, where the shift would be poison.
+        auto * width_of_a = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
+        auto * zero = llvm::ConstantInt::get(left->getType(), 0);
+        return b.CreateSelect(b.CreateICmpUGE(right, width_of_a), zero, b.CreateShl(left, right));
     }
 #endif
 };
@@ -184,7 +191,7 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
         {"a", "A value to shift.", {"(U)Int*", "String", "FixedString"}},
         {"N", "The number of positions to shift.", {"UInt8/16/32/64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`."};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value. For a numeric `a` the result has as many bits as the wider of the two arguments and is signed if either of them is signed; for `String` and `FixedString` it has the type of `a`."};
     FunctionDocumentation::Examples examples = {{"Usage example with binary encoding",
         R"(
 SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
