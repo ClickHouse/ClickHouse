@@ -1005,7 +1005,8 @@ uintptr_t visitClickHouseSchema(void * schema_void, ffi::KernelSchemaVisitorStat
 /// Recursively check that a ClickHouse type maps to a round-tripping Delta type, throwing otherwise.
 static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_type)
 {
-    DB::DataTypePtr type = full_type->isNullable() ? DB::removeNullable(full_type) : full_type;
+    const bool nullable = full_type->isNullable();
+    DB::DataTypePtr type = nullable ? DB::removeNullable(full_type) : full_type;
     switch (type->getTypeId())
     {
         case DB::TypeIndex::Array:
@@ -1020,6 +1021,10 @@ static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_ty
         }
         case DB::TypeIndex::Tuple:
         {
+            if (nullable)
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "DeltaLake does not support a Nullable Tuple/struct type for CREATE TABLE; declare the Tuple as non-Nullable");
             const auto & tuple_type = assert_cast<const DB::DataTypeTuple &>(*type);
             const auto & elements = tuple_type.getElements();
             if (elements.empty())
