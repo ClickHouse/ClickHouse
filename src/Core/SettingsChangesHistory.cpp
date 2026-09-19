@@ -49,6 +49,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a private cache capped at 100 MiB, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"allow_experimental_time_decay_aggregate_functions", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."},
+            {"exponential_time_decay_aggregate_function_calculation_budget", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -66,8 +68,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
-            {"allow_experimental_time_decay_aggregate_functions", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."},
-            {"exponential_time_decay_aggregate_function_calculation_budget", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
             {"load_marks_asynchronously", false, true, "Load marks of all streams in parallel by default. On remote disks, synchronous loading of marks of columns with many substreams (such as `JSON`) took one network round trip per stream."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
