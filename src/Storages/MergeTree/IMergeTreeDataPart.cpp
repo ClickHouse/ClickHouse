@@ -727,11 +727,8 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     if (!needs_conversion)
         return physical_index;
 
-    /// The logical index can be requested by many readers, but its columns are still part-lifetime
-    /// data. Keep the conversion out of the query memory tracker, just like the physical index.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
+    /// The physical index is part-lifetime data, but this widened view is a transient per-reader copy.
+    /// Keep its allocations in the query memory tracker.
     Columns logical_index = *physical_index;
     for (size_t i = 0; i < key_size; ++i)
     {

@@ -41,7 +41,7 @@ wait_for_mutation()
 
 cleanup()
 {
-    for table in merge_tree_integer_key_widening merge_tree_sorting_key_widening merge_tree_signed_key_widening merge_tree_integer_key_widening_reject merge_tree_partition_key_widening merge_tree_sample_key_widening; do
+    for table in merge_tree_integer_key_widening merge_tree_sorting_key_widening merge_tree_signed_key_widening merge_tree_enum_key_widening merge_tree_integer_key_widening_reject merge_tree_partition_key_widening merge_tree_sample_key_widening; do
         $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES $table" >/dev/null 2>&1 || true
         $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $table" >/dev/null 2>&1 || true
     done
@@ -53,6 +53,9 @@ client "CREATE TABLE merge_tree_integer_key_widening (k UInt16, value String) EN
 client "SYSTEM STOP MERGES merge_tree_integer_key_widening"
 client "INSERT INTO merge_tree_integer_key_widening VALUES (1, 'one'), (65535, 'old-max')"
 client "ALTER TABLE merge_tree_integer_key_widening MODIFY COLUMN k UInt32"
+client "DETACH TABLE merge_tree_integer_key_widening"
+client "ATTACH TABLE merge_tree_integer_key_widening"
+client "SELECT toTypeName(k), k, value FROM merge_tree_integer_key_widening WHERE k IN (1, 65535) ORDER BY k"
 client "SELECT toTypeName(k), k, value FROM merge_tree_integer_key_widening WHERE k IN (1, 65535) ORDER BY k"
 client "INSERT INTO merge_tree_integer_key_widening VALUES (70000, 'new')"
 client "SELECT toTypeName(k), k, value FROM merge_tree_integer_key_widening ORDER BY k"
@@ -77,6 +80,18 @@ client "ALTER TABLE merge_tree_signed_key_widening MODIFY COLUMN k Int64"
 client "SELECT toTypeName(k), k, value FROM merge_tree_signed_key_widening ORDER BY k"
 client "SYSTEM START MERGES merge_tree_signed_key_widening"
 wait_for_mutation merge_tree_signed_key_widening
+
+client "DROP TABLE IF EXISTS merge_tree_enum_key_widening"
+client "CREATE TABLE merge_tree_enum_key_widening (k Enum8('one' = 1, 'two' = 2), value String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
+client "SYSTEM STOP MERGES merge_tree_enum_key_widening"
+client "INSERT INTO merge_tree_enum_key_widening VALUES (1, 'a'), (2, 'b')"
+client "ALTER TABLE merge_tree_enum_key_widening MODIFY COLUMN k Int8"
+client "ALTER TABLE merge_tree_enum_key_widening MODIFY COLUMN k Int16"
+client "SYSTEM START MERGES merge_tree_enum_key_widening"
+wait_for_mutation merge_tree_enum_key_widening
+client "DETACH TABLE merge_tree_enum_key_widening"
+client "ATTACH TABLE merge_tree_enum_key_widening"
+client "SELECT toTypeName(k), k, value FROM merge_tree_enum_key_widening WHERE k IN (1, 2) ORDER BY k"
 
 client "DROP TABLE IF EXISTS merge_tree_integer_key_widening_reject"
 client "CREATE TABLE merge_tree_integer_key_widening_reject (k UInt32) ENGINE = MergeTree ORDER BY k"
