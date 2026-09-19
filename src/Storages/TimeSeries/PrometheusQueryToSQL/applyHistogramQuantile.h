@@ -8,8 +8,17 @@ namespace DB::PrometheusQueryToSQL
 /// Checks if a function name is histogram_quantile.
 bool isHistogramQuantile(std::string_view function_name);
 
+/// Checks if a function name is histogram_fraction.
+bool isHistogramFraction(std::string_view function_name);
+
 /// Applies the histogram_quantile function to its arguments.
 SQLQueryPiece applyHistogramQuantile(
+    const PrometheusQueryTree::Function * function_node,
+    std::vector<SQLQueryPiece> && arguments,
+    ConverterContext & context);
+
+/// Applies the histogram_fraction function to its arguments.
+SQLQueryPiece applyHistogramFraction(
     const PrometheusQueryTree::Function * function_node,
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context);
