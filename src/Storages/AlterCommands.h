@@ -63,6 +63,7 @@ struct AlterCommand
         MODIFY_DATABASE_COMMENT,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
+        DROP_PARTITION_KEY,
         MODIFY_SQL_SECURITY,
     };
 

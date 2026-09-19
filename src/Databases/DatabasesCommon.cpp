@@ -247,6 +247,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.primary_key.definition_ast)
                 storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
 
+            if (metadata.partition_key.definition_ast)
+                storage_ast.set(storage_ast.partition_by, metadata.partition_key.definition_ast);
+            else if (storage_ast.partition_by != nullptr)
+                storage_ast.reset(storage_ast.partition_by);
+
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed

@@ -49,6 +49,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -407,6 +408,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::REMOVE_SAMPLE_BY;
+        return command;
+    }
+    if (command_ast->type == ASTAlterCommand::DROP_PARTITION_KEY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_PARTITION_KEY;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::ADD_INDEX)
@@ -904,6 +912,11 @@ void AlterCommand::apply(
     else if (type == REMOVE_SAMPLE_BY)
     {
         metadata.sampling_key = {};
+    }
+    else if (type == DROP_PARTITION_KEY)
+    {
+        metadata.partition_key = KeyDescription::buildEmptyKey();
+        metadata.virtuals.remove(PartitionValueColumn::name);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -1601,7 +1614,7 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
     if (ignore)
         return decision;
 
-    if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
+    if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY || type == DROP_PARTITION_KEY)
         return decision;
 
     if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
@@ -1804,9 +1817,17 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     if (metadata_copy.partition_key.definition_ast != nullptr)
     {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+    }
 
-        /// If partition key expression is changed, we also need to rebuild minmax_count_projection
-        if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+    /// If partition key expression is changed, we also need to rebuild minmax_count_projection.
+    if (metadata_copy.minmax_count_projection
+        && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+    {
+        if (metadata_copy.partition_key.definition_ast == nullptr)
+        {
+            metadata_copy.minmax_count_projection.reset();
+        }
+        else
         {
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
@@ -2471,6 +2492,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata->hasSamplingKey())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have SAMPLE BY, cannot remove");
+        }
+        else if (command.type == AlterCommand::DROP_PARTITION_KEY && !metadata->hasPartitionKey())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have a partition key, cannot drop");
         }
 
         /// Collect default expressions for MODIFY and ADD commands
