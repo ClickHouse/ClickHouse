@@ -160,6 +160,10 @@ public:
     /// TODO add ability to rename nested columns
     void rename(const String & column_from, const String & column_to);
 
+    /// Sets a column's comment without changing its registered subcolumns. Unlike modify(), which
+    /// re-derives them from the type and so registers them even for an ALIAS column, which has none.
+    void setComment(const String & column_name, const String & comment);
+
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
