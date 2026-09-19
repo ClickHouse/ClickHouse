@@ -65,7 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool enable_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -111,6 +111,44 @@ bool isSameSetting(const String & left, const String & right)
     auto resolve = [](const String & name)
     { return MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name); };
     return resolve(left) == resolve(right);
+}
+
+/// Removes the settings with the given names from the `SETTINGS` clause of a table definition.
+void resetSettings(SettingsChanges & settings_from_storage, const std::set<String> & settings_resets)
+{
+    for (const auto & setting_name : settings_resets)
+    {
+        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+        auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
+
+        if (it != settings_from_storage.end())
+        {
+            settings_from_storage.erase(it, settings_from_storage.end());
+        }
+        else
+        {
+            /// Intentionally ignore if there is no such setting name
+            LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+        }
+    }
+}
+
+/// Splits a parsed `SETTINGS` clause into changes and resets.
+/// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
+void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
+{
+    settings_changes = set_query.changes;
+
+    for (const auto & setting_name : set_query.default_settings)
+    {
+        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+        if (std::ranges::any_of(settings_changes, same_setting))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is both modified and reset in one command", backQuote(setting_name));
+
+        auto insertion = settings_resets.emplace(setting_name);
+        if (!insertion.second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(setting_name));
+    }
 }
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
@@ -565,7 +603,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        parseSettingsChangesAndResets(command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
         return command;
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
@@ -1186,6 +1224,8 @@ void AlterCommand::apply(
         }
 
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        resetSettings(settings_from_storage, settings_resets);
+
         for (const auto & change : settings_changes)
         {
             auto same_setting = [&change](const SettingChange & c) { return isSameSetting(c.name, change.name); };
@@ -1238,22 +1278,7 @@ void AlterCommand::apply(
         if (!metadata.settings_changes)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
-        for (const auto & setting_name : settings_resets)
-        {
-            auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
-            auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
-
-            if (it != settings_from_storage.end())
-            {
-                settings_from_storage.erase(it, settings_from_storage.end());
-            }
-            else
-            {
-                /// Intentionally ignore if there is no such setting name
-                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
-            }
-        }
+        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1423,7 +1448,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool isJSONLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
-    if (!context || !context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
+    if (!context || !context->getSettingsRef()[Setting::enable_json_lazy_type_hints])
         return false;
 
     /// Identical types are byte-identical, not a lazy conversion.
@@ -1530,7 +1555,7 @@ bool isNamedTupleSubfieldAddition(
         }
         if (isJSONLazyMetadataConversion(old_elem, new_elem, context))
         {
-            nested_lazy_settings.emplace("allow_experimental_json_lazy_type_hints");
+            nested_lazy_settings.emplace("enable_json_lazy_type_hints");
             continue;
         }
         if (!isTrueMetadataOnlyConversion(old_elem, new_elem))
@@ -1557,7 +1582,7 @@ std::set<std::string_view> getLazyMetadataConversionSettings(
     }
 
     if (isJSONLazyMetadataConversion(from, to, context))
-        settings.emplace("allow_experimental_json_lazy_type_hints");
+        settings.emplace("enable_json_lazy_type_hints");
 
     return settings;
 }
@@ -1831,6 +1856,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
+    for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
+        new_projections.addUnavailable(definition_ast->clone());
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
@@ -2055,6 +2082,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
+    /// - `apply()` runs the commands one after another - so that a command is screened below only when
+    /// it will really install a declaration.
+    NameSet constraint_names;
+    for (const auto & constraint : metadata->constraints.getConstraints())
+        constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2062,6 +2095,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
+
+        /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
+        /// it would check a row against another row's value, or read past the end of a shorter column.
+        /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
+        /// just like `ADD CONSTRAINT` does.
+        ///
+        /// Only a declaration that `apply()` will really install is screened. An
+        /// `ADD CONSTRAINT IF NOT EXISTS` of a name that is taken, and a `MODIFY CONSTRAINT` of a name
+        /// that is not there, install nothing, so they keep meaning what they meant before this check
+        /// existed - the same way a no-op `ADD COLUMN IF NOT EXISTS` skips the validation of its column
+        /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
+        if (command.type == AlterCommand::ADD_CONSTRAINT)
+        {
+            if (command.constraint_decl && !(command.if_not_exists && constraint_names.contains(command.constraint_name)))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+            constraint_names.insert(command.constraint_name);
+        }
+        else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
+        {
+            if (command.constraint_decl && constraint_names.contains(command.constraint_name))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+        }
+        else if (command.type == AlterCommand::DROP_CONSTRAINT)
+            constraint_names.erase(command.constraint_name);
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
@@ -2076,13 +2133,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// doesn't depend on how the same logical alter is spelled.
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
-
-        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
-        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
-        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
-        /// way around it.
-        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
-            ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

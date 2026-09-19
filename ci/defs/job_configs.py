@@ -2,10 +2,11 @@ from praktika import Job
 from praktika.utils import Utils
 
 from ci.defs.defs import (
+    ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_S3_DB_REPL_NUM_BATCHES,
+    LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -264,7 +265,10 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
-        enable_commit_status=True,
+        enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
@@ -272,9 +276,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
-        ],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -587,8 +588,14 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_FUZZERS,
+            parameter=BuildTypes.AMD_FUZZERS,
             provides=[],
+            # The target arch comes from the toolchain file, not from the host, so this
+            # cross-compiles on arm like every other Linux `amd_*` build. It has to: the
+            # ~18 fuzzers each statically link the whole of ClickHouse with its own copy
+            # of the ASan+debug DWARF, ~94 GiB of build output, which does not fit in the
+            # ~135 GiB free on `amd-large` (`m7i.8xlarge`) and dies linking one of the
+            # last targets. Only the job that *runs* the binaries needs an amd64 host.
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -887,28 +894,28 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_parallel_{batch}"
+                    + f"_ft_s3_db_repl_parallel_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_S3_DB_REPL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_sequential_{batch}"
+                    + f"_ft_s3_db_repl_sequential_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -1285,30 +1292,15 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # Despite the name, only release_branches.py uses these.
-    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
-    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
-    # however well they are balanced. At four batches this job timed out on roughly half of
-    # all release-branch runs.
-    integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
+    integration_test_jobs_required = common_integration_test_job_config.parametrize(
+        # `ASAN_IT_NUM_BATCHES` in ci/defs/defs.py explains the batch count.
         *[
             Job.ParamSet(
                 parameter=f"amd_asan_ubsan, db disk, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
-            for batch in range(1, total_batches + 1)
-        ]
-    )
-    integration_test_jobs_required = common_integration_test_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_asan_ubsan, db disk, old analyzer, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-            )
-            for total_batches in (6,)
+            for total_batches in (ASAN_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1752,6 +1744,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1768,6 +1761,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1942,13 +1936,13 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         # Five hours of fuzzing per target, all targets in parallel, plus
         # artifact download and corpus upload. Praktika's default is exactly
         # five hours, which would kill the job mid-run.
         timeout=5.5 * 3600,
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
@@ -1958,12 +1952,12 @@ class JobConfigs:
     )
     libfuzzer_corpus_minimization_job = Job.Config(
         name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command=(
             "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
             "'libFuzzer corpus minimization'"
         ),
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
@@ -2014,6 +2008,21 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/parser_memory_check.py",
                 "./utils/parser-memory-profiler/",
+            ],
+        ),
+    )
+    storage_memory_check_job = Job.Config(
+        name=JobNames.STORAGE_MEMORY_CHECK,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/storage_memory_check.py",
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
+        result_name_for_cidb="Tests",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/storage_memory_check.py",
+                "./ci/jobs/parser_memory_check.py",
+                "./utils/storage-memory-profiler/",
             ],
         ),
     )

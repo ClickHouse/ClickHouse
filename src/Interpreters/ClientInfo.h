@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/HTTPFieldLess.h>
 #include <Common/OpenTelemetryTracingContext.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Poco/Net/SocketAddress.h>
 
 /// On ppc64le, Poco's socket headers transitively include <termios.h>, which defines the CR1/CR2/CR3
@@ -230,4 +231,16 @@ private:
 
 String toString(ClientInfo::Interface interface);
 String toString(ClientInfo::HTTPMethod method);
+
+/// Exactly the values of `ClientInfo::Interface`, for a column whose value this server sets itself.
+DataTypePtr getClientInterfaceEnum();
+/// The same values plus `Unknown`, for a column carrying the interface a client reported: `ClientInfo::read`
+/// accepts any byte off the wire, and an `Enum8` cannot render a value outside its own domain.
+DataTypePtr getReportedClientInterfaceEnum();
+/// Maps a reported interface into the domain of `getReportedClientInterfaceEnum`.
+Int8 reportedClientInterfaceEnumValue(ClientInfo::Interface interface);
+
+/// One type is enough here: `HTTPMethod::UNKNOWN` is an enumerator, so it is both the non-HTTP value and the fallback.
+DataTypePtr getClientHTTPMethodEnum();
+Int8 reportedClientHTTPMethodEnumValue(ClientInfo::HTTPMethod method);
 }
