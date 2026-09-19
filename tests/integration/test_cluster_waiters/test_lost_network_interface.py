@@ -19,14 +19,20 @@ to fire on the real state (otherwise the job stays red on infrastructure), and i
 fire on a network error alone (otherwise a genuine failure is relabelled `SKIPPED` and
 disappears from the report).
 
-The verdict reaches a pytest result through one gate, `ClickHouseInstance.describe_transport_error`,
-which every request made through the instance's `Client` consults - so it is attached
-wherever the state surfaces, and not only on the entrypoints that raise. `query` is one of
-those; `query_and_get_error` and `query_and_get_answer_with_error` hand the error back for
-the test to assert on, and `get_query_request` hands back a handle the test collects from
-later. The arms below drive the real `CommandRequest` over a failing command, so they pin
-that path rather than a description of it. The HTTP helpers do not go through `Client` and
-have their own arms.
+The verdict reaches a pytest result through one gate,
+`ClickHouseInstance.describe_transport_error`, which every request consults - so it is
+attached wherever the state surfaces, and not only on the entrypoints that raise. `query`
+is one of those; `query_and_get_error` and `query_and_get_answer_with_error` hand the error
+back for the test to assert on, and `get_query_request` hands back a handle the test
+collects from later. The arms below drive the real `CommandRequest` over a failing command,
+so they pin that path rather than a description of it. The HTTP helpers do not go through
+`Client` and have their own arms.
+
+Which instance the gate belongs to is decided by the address the failed request named, not
+by the client that carried it, and that routing has arms of its own: a `Client` a test
+builds straight against a node's IP is covered without being wired up, and
+`query(host=...)` investigates the node it was re-aimed at rather than the one the client
+belongs to.
 
 `describe_lost_network_interface`, the gate and the HTTP wrapper are loaded out of
 helpers/cluster.py by AST extraction and executed against stubs, so these assertions track
@@ -50,7 +56,8 @@ JOB_PY = os.path.normpath(
 )
 
 sys.path.insert(0, os.path.normpath(os.path.join(HELPERS_DIR, "..")))
-from helpers.client import CommandRequest, QueryRuntimeException  # noqa: E402
+import helpers.client as client_module  # noqa: E402
+from helpers.client import Client, CommandRequest, QueryRuntimeException  # noqa: E402
 
 DESCRIBE = "describe_lost_network_interface"
 GATE = "describe_transport_error"
@@ -73,6 +80,9 @@ CONSTANTS = [
 DOCKER_ID = "roottesthttpsreplication-gw0-node1-1"
 INSTANCE_NAME = "node1"
 IP_ADDRESS = "172.16.1.7"
+# The node a test re-aims a client at with `query(host=...)`, and the node the harness
+# never built a client for at all.
+OTHER_IP_ADDRESS = "172.16.1.8"
 
 # What the collision leaves on the client's stderr, as the CI report rendered it.
 UNREACHABLE = (
@@ -211,6 +221,89 @@ def _connection_error(message):
     return requests.exceptions.ConnectionError(
         message, request="the-request", response="the-response"
     )
+
+
+# Stands in for the shipped verdict in the arms that pin the routing rather than the
+# verdict, so a failure there names the wiring and not the wording.
+CAUSE = "a stand-in verdict"
+
+
+@pytest.fixture(autouse=True)
+def _uninstalled_describer():
+    """The describer is module state of `helpers/client.py`, which `helpers/cluster.py`
+    installs into at import time. These arms install their own, so each one starts from
+    nothing installed and leaves nothing behind for the next."""
+    client_module.set_transport_error_describer(None)
+    yield
+    client_module.set_transport_error_describer(None)
+
+
+def _failing_client():
+    """The shipped `Client`, aimed at `IP_ADDRESS`, over a command that fails the way
+    `clickhouse-client` does when the interface is gone."""
+    client = Client(IP_ADDRESS, command="/bin/bash")
+    # `Client` builds `[command, --host, <ip>, --port, <port>, --stacktrace]`, and `host=`
+    # rewrites the token after `--host`. Keep that tail exactly as shipped so the arms
+    # exercise the real argv, and make `bash` run the failing script instead of reading the
+    # flags by putting `-c <script> <argv0>` in front of it.
+    client.command = (
+        _failing_command(UNREACHABLE, 210) + ["clickhouse-client"] + client.command[1:]
+    )
+    return client
+
+
+def _recording_describer_and_client():
+    calls = []
+
+    def describer(host, error_text):
+        calls.append((host, error_text))
+        return CAUSE
+
+    client_module.set_transport_error_describer(describer)
+    return calls, _failing_client()
+
+
+def _registry():
+    """The shipped address registry: the mirror, the lookup that reads it, and the
+    `ip_address` property that maintains it, executed against a stub instance."""
+    with open(CLUSTER_PY, encoding="utf-8") as f:
+        module = ast.parse(f.read())
+
+    instance_class = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == "ClickHouseInstance"
+    )
+    members = [
+        node
+        for node in instance_class.body
+        if (isinstance(node, ast.Assign) and node.targets[0].id == "_ip_address")
+        or (isinstance(node, ast.FunctionDef) and node.name == "ip_address")
+    ]
+    assert len(members) == 3, f"expected `_ip_address` and both halves of the property"
+
+    stub = ast.parse(
+        f"class Instance:\n"
+        f"    name = {INSTANCE_NAME!r}\n"
+        f"    def describe_transport_error(self, error_text):\n"
+        f"        return f'{{self.name}} says so'\n"
+    ).body[0]
+    stub.body.extend(members)
+
+    namespace = {}
+    exec(  # pylint:disable=exec-used
+        compile(
+            ast.Module(
+                body=_module_nodes(CLUSTER_PY, ["_INSTANCES_BY_ADDRESS"])
+                + [_func_ast("describe_transport_error_for_host"), stub],
+                type_ignores=[],
+            ),
+            CLUSTER_PY,
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace
 
 
 def test_a_container_with_only_loopback_is_reported():
@@ -404,24 +497,80 @@ def test_a_request_built_without_the_gate_is_unchanged():
     )
 
 
-def test_every_client_in_the_harness_is_wired_to_the_gate():
-    """A `Client` built without the gate loses the classification for that instance, and
-    nothing at runtime would notice. Checked in the shipped source, because constructing
-    one needs a cluster."""
-    with open(CLUSTER_PY, encoding="utf-8") as f:
-        module = ast.parse(f.read())
-    calls = [
-        node
-        for node in ast.walk(module)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "Client"
-    ]
-    assert calls, f"no Client(...) construction found in {CLUSTER_PY}"
-    for call in calls:
-        assert any(
-            keyword.arg == GATE for keyword in call.keywords
-        ), f"Client(...) at {CLUSTER_PY}:{call.lineno} is built without {GATE}"
+def test_a_client_built_against_a_node_address_consults_the_gate():
+    """The gate is keyed on the address a request names, not on the client that carries
+    it, so a `Client` a test constructs itself - `test_system_start_stop_listen`,
+    `test_server_reload`, `test_introspection_port` and the two TLS modules all do - is
+    covered without anything having wired it up. Drives the shipped `Client` over a
+    command that fails the way `clickhouse-client` does."""
+    calls, client = _recording_describer_and_client()
+    error = client.get_query_request("SELECT 1", stdin="").get_error()
+    assert calls == [(IP_ADDRESS, UNREACHABLE)]
+    assert error == f"{CAUSE} {UNREACHABLE}"
+
+
+def test_a_request_re_aimed_at_another_node_investigates_that_node():
+    """`query(host=...)` sends the request to a different server, and it is that server
+    that answered `No route to host`. Probing the instance the client happens to belong to
+    would withhold the verdict for every such call site."""
+    calls, client = _recording_describer_and_client()
+    error = client.get_query_request(
+        "SELECT 1", stdin="", host=OTHER_IP_ADDRESS
+    ).get_error()
+    assert calls == [(OTHER_IP_ADDRESS, UNREACHABLE)]
+    assert error == f"{CAUSE} {UNREACHABLE}"
+    # ... and the request really went there, rather than only being described as having.
+    assert "--host" in client.command
+
+
+def test_a_client_with_nothing_installed_is_unchanged():
+    """`helpers/client.py` is driven without a cluster - by `helpers/keeper_utils.py` and
+    by `test_random_inserts` - and must not need one."""
+    client_module.set_transport_error_describer(None)
+    client = _failing_client()
+    assert client.get_query_request("SELECT 1", stdin="").get_error() == UNREACHABLE
+
+
+def test_an_address_that_belongs_to_no_instance_is_not_explained():
+    """Proxies, Keeper nodes and the loopback clients `test_server_reload` builds for a
+    manually launched server all go through the same `Client`. None of them is a container
+    this harness can probe, and inventing a verdict for them would relabel a real
+    failure."""
+    namespace = _registry()
+    assert namespace["describe_transport_error_for_host"](OTHER_IP_ADDRESS, UNREACHABLE) == ""
+
+
+def test_an_address_is_registered_and_released_with_the_instance():
+    """The lookup is only as good as the mirror behind it: an instance has to appear in it
+    when docker gives it an address and disappear when `shutdown` takes it away, or a
+    later run would probe a container that no longer exists."""
+    namespace = _registry()
+    registry = namespace["_INSTANCES_BY_ADDRESS"]
+    instance = namespace["Instance"]()
+    assert instance.ip_address is None and registry == {}
+
+    instance.ip_address = IP_ADDRESS
+    assert registry == {IP_ADDRESS: instance}
+    assert namespace["describe_transport_error_for_host"](IP_ADDRESS, UNREACHABLE) == (
+        f"{instance.name} says so"
+    )
+
+    instance.ip_address = None
+    assert registry == {}
+
+
+def test_an_address_handed_on_to_another_container_follows_it():
+    """Docker reuses addresses: a restarted container can be given the one a stopped
+    container held. The entry has to name whoever holds it now, and releasing the old
+    holder must not take the new one's entry with it."""
+    namespace = _registry()
+    registry = namespace["_INSTANCES_BY_ADDRESS"]
+    old, new = namespace["Instance"](), namespace["Instance"]()
+    old.ip_address = IP_ADDRESS
+    new.ip_address = IP_ADDRESS
+    assert registry == {IP_ADDRESS: new}
+    old.ip_address = None
+    assert registry == {IP_ADDRESS: new}
 
 
 @pytest.mark.parametrize("entrypoint", HTTP_ENTRYPOINTS)

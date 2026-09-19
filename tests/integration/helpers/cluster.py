@@ -61,7 +61,7 @@ from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import Client, QueryRuntimeException
+from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
@@ -144,6 +144,38 @@ NETWORK_INTERFACE_PROBE_TIMEOUT = 30
 # the probe below only runs when a query has already failed with one of these, so the normal
 # path costs nothing and an ordinary refused connection is not investigated.
 UNREACHABLE_ADDRESS_ERRORS = ("No route to host", "Network is unreachable")
+
+# Every `ClickHouseInstance` that currently holds an address, keyed by that address.
+#
+# A request names the server it is aimed at by address and by nothing else, so the address
+# is all there is to lead a failed request back to the container that has to be probed. That
+# matters for the two ways a request reaches a server the harness did not build a client
+# for: `query(host=...)` re-aims an existing client at another node, and tests construct a
+# `Client` straight against a node's IP (`test_system_start_stop_listen`,
+# `test_server_reload`, `test_introspection_port`, `test_accept_invalid_certificate`,
+# `test_composable_protocol_without_global_ssl`). Both land here, and so will the clients
+# written next, which auditing today's call sites would not cover.
+#
+# Maintained by the `ip_address` setter, the single place an instance's address is
+# established or cleared.
+_INSTANCES_BY_ADDRESS = {}
+
+
+def describe_transport_error_for_host(host, error_text):
+    """The cause of a failed request to `host` that the client cannot see, or "".
+
+    Installed into `helpers/client.py` below, so every request made through any `Client`
+    consults it. An address that belongs to no instance - a proxy, a Keeper node, a
+    loopback client for a manually launched server - is not ours to explain, and says
+    nothing.
+    """
+    instance = _INSTANCES_BY_ADDRESS.get(host)
+    if instance is None:
+        return ""
+    return instance.describe_transport_error(error_text)
+
+
+set_transport_error_describer(describe_transport_error_for_host)
 
 
 def find_default_config_path():
@@ -2688,11 +2720,7 @@ class ClickHouseCluster:
         )
         node.ip_address = self.get_instance_ip(node.name)
         node.ipv6_address = self.get_instance_global_ipv6(node.name)
-        node.client = Client(
-            node.ip_address,
-            command=self.client_bin_path,
-            describe_transport_error=node.describe_transport_error,
-        )
+        node.client = Client(node.ip_address, command=self.client_bin_path)
 
         logging.info("Restart node with ip change")
         # In builds with sanitizer the server can take a long time to start
@@ -4406,9 +4434,7 @@ class ClickHouseCluster:
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
-                    instance.ip_address,
-                    command=self.client_bin_path,
-                    describe_transport_error=instance.describe_transport_error,
+                    instance.ip_address, command=self.client_bin_path
                 )
 
             self.is_up = True
@@ -4972,6 +4998,28 @@ services:
 
 
 class ClickHouseInstance:
+    # The address an instance is reachable at, mirrored into `_INSTANCES_BY_ADDRESS` so a
+    # failed request can be traced back from the address it named to the container behind
+    # it. A property because the address is assigned from several places - `start`, a
+    # restart with an address change, `shutdown` - and the mirror must not depend on
+    # remembering to update it at each of them.
+    _ip_address = None
+
+    @property
+    def ip_address(self):
+        return self._ip_address
+
+    @ip_address.setter
+    def ip_address(self, address):
+        if self._ip_address is not None:
+            # Only if it is still ours: a restarted container can be handed the address a
+            # stopped one used to have, and that entry now belongs to the new holder.
+            if _INSTANCES_BY_ADDRESS.get(self._ip_address) is self:
+                del _INSTANCES_BY_ADDRESS[self._ip_address]
+        self._ip_address = address
+        if address is not None:
+            _INSTANCES_BY_ADDRESS[address] = self
+
     def __init__(
         self,
         cluster,
@@ -5298,22 +5346,20 @@ class ClickHouseInstance:
         )
 
     def describe_transport_error(self, error_text):
-        """The cause of a failed request that the client cannot see from its side, or "".
+        """The cause of a failed request to this instance that the client cannot see, or "".
 
-        Handed to this instance's `Client`, so every request made through it goes through
-        the same gate - the ones that raise, the ones that hand the error back for the
-        test to assert on, and the handles a test collects later. `CommandRequest` prepends
-        whatever comes back to the text it was going to report anyway, so a caller that
-        catches the error and matches on it keeps working.
+        Reached for every request whose address resolves to this instance, through
+        `describe_transport_error_for_host` - the ones that raise, the ones that hand the
+        error back for the test to assert on, and the handles a test collects later - and
+        directly by the HTTP helpers, which do not go through `Client` at all.
+        `CommandRequest` prepends whatever comes back to the text it was going to report
+        anyway, so a caller that catches the error and matches on it keeps working.
 
         The probe only runs once the client has already reported one of
         `UNREACHABLE_ADDRESS_ERRORS`, which nothing in the suite produces deliberately -
         `PartitionManager` drops or resets connections, it does not unplug interfaces. So
         the normal path costs one substring check, and an ordinary refused connection is
         not investigated.
-
-        `query(host=...)` aims the same client at another node; the probe still looks at
-        this container, which can only withhold a verdict, never invent one.
         """
         if not error_text:
             return ""
