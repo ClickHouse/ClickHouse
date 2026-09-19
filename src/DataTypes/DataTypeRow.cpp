@@ -108,6 +108,11 @@ bool DataTypeRow::textCanContainOnlyValidUTF8() const
     return true;
 }
 
+bool DataTypeRow::hasDynamicStructure() const
+{
+    return std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasDynamicStructure(); });
+}
+
 bool DataTypeRow::haveMaximumSizeOfValue() const
 {
     for (const auto & e : elems)
