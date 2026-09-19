@@ -1,17 +1,17 @@
-#include <cstring>
-
-#include <Common/TargetSpecific.h>
-#include <Common/SipHash.h>
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
-#include <DataTypes/IDataType.h>
-#include <base/unaligned.h>
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
-#include <Core/Types.h>
+#include <array>
 #include <bit>
+#include <cstring>
 #include <utility>
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/registerCompressionCodecs.h>
+#include <Core/Types.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST.h>
+#include <base/unaligned.h>
+#include <Common/SipHash.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -225,41 +225,6 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-TypeIndex typeIdx(const IDataType * data_type)
-{
-    if (!data_type)
-        return TypeIndex::Nothing;
-
-    WhichDataType which(*data_type);
-    switch (which.idx)
-    {
-        case TypeIndex::Int8:
-        case TypeIndex::UInt8:
-        case TypeIndex::Enum8:
-        case TypeIndex::Int16:
-        case TypeIndex::UInt16:
-        case TypeIndex::Enum16:
-        case TypeIndex::Date:
-        case TypeIndex::Date32:
-        case TypeIndex::Int32:
-        case TypeIndex::UInt32:
-        case TypeIndex::IPv4:
-        case TypeIndex::Time:
-        case TypeIndex::Time64:
-        case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
-        case TypeIndex::Decimal32:
-        case TypeIndex::Int64:
-        case TypeIndex::UInt64:
-        case TypeIndex::Decimal64:
-            return which.idx;
-        default:
-            break;
-    }
-
-    return TypeIndex::Nothing;
-}
-
 /** Both transposes exchange the two indices of an 8x8 tile: the byte transpose moves the byte at
   * 8 * j + b to 8 * b + j across eight consecutive lanes, and the bit transpose does the same one
   * level down, within a lane. The scalar loops below carry out either exchange one byte (or one
@@ -310,7 +275,8 @@ ALWAYS_INLINE UInt64 transposeBitsInLane(UInt64 lane)
 }
 #endif
 
-void transpose64x8(UInt64 * src_dst)
+/// Must inline into the multiversioned callers: an out-of-line copy would run the baseline ISA.
+ALWAYS_INLINE void transpose64x8(UInt64 * src_dst)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
     /// A 64x8 bit transpose is the per-lane bit transpose followed by the byte transpose across
@@ -340,12 +306,15 @@ void transpose64x8(UInt64 * src_dst)
 #endif
 }
 
-void reverseTranspose64x8(UInt64 * src_dst)
+ALWAYS_INLINE void reverseTranspose64x8(UInt64 * src_dst)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
     transposeByteLanes(src_dst);
-    for (UInt32 lane = 0; lane < 8; ++lane)
-        src_dst[lane] = transposeBitsInLane(src_dst[lane]);
+    UInt64 lanes[8];
+    memcpy(lanes, src_dst, sizeof(lanes));
+    for (auto & lane : lanes)
+        lane = transposeBitsInLane(lane);
+    memcpy(src_dst, lanes, sizeof(lanes));
 #else
     UInt8 dst8[64];
 
@@ -364,6 +333,44 @@ void reverseTranspose64x8(UInt64 * src_dst)
 
     memcpy(src_dst, dst8, 8 * sizeof(UInt64));
 #endif
+}
+
+/// Inverse of `transpose64x8` reading only the first `num_bits` planes (the rest are 0): bit i of plane p becomes bit p of byte i.
+/// Please do not touch this function unless you really know what you are doing – it's tightly vectorised.
+ALWAYS_INLINE void reverseTransposePlanes(UInt64 * matrix, UInt32 num_bits)
+{
+    /// pattern[i] = 1 << (i % 8): the bit of output byte i inside its plane byte.
+    static constexpr UInt8 pattern[64] = {
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128, ///
+    };
+
+    /// For every output i in 0..63, if bit i of the word matrix[bit] is set, set bit bit in output[i].
+    /// Below is a fancy way to do `output[i] |= ((matrix[bit] >> i) & 1) << bit;`.
+    UInt8 output[64] = {};
+    const auto * bytes = reinterpret_cast<const unsigned char *>(matrix);
+    for (UInt32 bit = 0; bit < num_bits; ++bit)
+    {
+        const UInt8 weight = static_cast<UInt8>(1u << bit);
+
+        /// Splat each plane byte over a 32-bit lane so the test loop vectorises as 64 lanes.
+        UInt32 expanded[16];
+        for (UInt32 lane = 0; lane < 16; ++lane)
+        {
+            UInt32 byte_index = lane / 2;
+            if constexpr (std::endian::native == std::endian::big)
+                byte_index = 7 - byte_index;
+            expanded[lane] = bytes[8 * bit + byte_index] * 0x01010101u;
+        }
+
+        const auto * expanded_bytes = reinterpret_cast<const unsigned char *>(expanded);
+        for (UInt32 i = 0; i < 64; ++i)
+            output[i] |= (expanded_bytes[i] & pattern[i]) ? weight : 0;
+    }
+
+    memcpy(matrix, output, sizeof(output));
 }
 
 template <typename T>
@@ -393,28 +400,16 @@ void transposeBytes(T value, UInt64 * matrix, UInt32 col)
 }
 
 template <typename T>
-void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
+T reverseTransposeBytes(const UInt64 * matrix, UInt32 col)
 {
-    const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
+    UInt64 value = 0;
+    const auto * matrix8 = reinterpret_cast<const unsigned char *>(matrix);
 
-    if constexpr (sizeof(T) > 4)
-    {
-        value |= static_cast<UInt64>(matrix8[64 * 7 + col]) << (8 * 7);
-        value |= static_cast<UInt64>(matrix8[64 * 6 + col]) << (8 * 6);
-        value |= static_cast<UInt64>(matrix8[64 * 5 + col]) << (8 * 5);
-        value |= static_cast<UInt64>(matrix8[64 * 4 + col]) << (8 * 4);
-    }
+    /// Byte k of the value is stored at matrix row k (each row is 64 bytes) and belongs at bit 8 * k.
+    for (size_t k = 0; k < sizeof(T); ++k)
+        value |= static_cast<UInt64>(matrix8[64 * k + col]) << (8 * k);
 
-    if constexpr (sizeof(T) > 2)
-    {
-        value |= static_cast<UInt32>(matrix8[64 * 3 + col]) << (8 * 3);
-        value |= static_cast<UInt32>(matrix8[64 * 2 + col]) << (8 * 2);
-    }
-
-    if constexpr (sizeof(T) > 1)
-        value |= static_cast<UInt32>(matrix8[64 * 1 + col]) << (8 * 1);
-
-    value |= static_cast<UInt32>(matrix8[col]);
+    return static_cast<T>(value);
 }
 
 
@@ -436,24 +431,11 @@ void load(const char * src, T * buf, UInt32 tail = 64)
     }
 }
 
-template <typename T>
-void store(const T * buf, char * dst, UInt32 tail = 64)
-{
-    memcpy(dst, buf, tail * sizeof(T));
-}
-
-template <typename T>
-void clear(T * buf)
-{
-    for (UInt32 i = 0; i < 64; ++i)
-        buf[i] = 0;
-}
-
 /// `matrix8[64 * byte + col]` = byte-th byte of `src[col]`, for a full matrix of 8-byte values. One
 /// iteration transposes the 8 columns whose bytes occupy one 64-byte group, then spreads the
 /// resulting rows across the eight matrix lines they belong to.
 template <typename T>
-void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 tail)
+ALWAYS_INLINE void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 tail)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
     if constexpr (sizeof(T) == sizeof(UInt64))
@@ -478,31 +460,52 @@ void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 tail)
 }
 
 template <typename T>
-void reverseTransposeMatrixBytes(const UInt64 * matrix, T * buf, UInt32 tail)
+T restoreCommonBits(T value, T common_negative, T common_positive, T sign_bit)
+{
+    if constexpr (is_signed_v<T>)
+    {
+        if (sign_bit && !(value & sign_bit))
+            return static_cast<T>(value | common_positive);
+    }
+
+    return static_cast<T>(value | common_negative);
+}
+
+/// Inverse of `transposeMatrixBytes`, fused with `restoreCommonBits` and the stores. A full matrix of 8-byte values goes
+/// through the byte shuffle eight values at a time, about twice as fast as `reverseTransposeBytes` on NEON. A separate
+/// helper because `#if` cannot sit inside `MULTITARGET_FUNCTION_BODY`.
+template <typename T>
+ALWAYS_INLINE void reverseTransposeMatrixBytes(const UInt64 * matrix, char * dst, UInt32 tail, T common_negative, T common_positive, T sign_bit)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
     if constexpr (sizeof(T) == sizeof(UInt64))
     {
         if (tail == 64)
         {
-            const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
             for (UInt32 group = 0; group < 8; ++group)
             {
                 UInt64 rows[8];
                 for (UInt32 byte = 0; byte < 8; ++byte)
-                    memcpy(&rows[byte], matrix8 + 64 * byte + 8 * group, sizeof(UInt64));
+                    rows[byte] = matrix[8 * byte + group];
                 transposeByteLanes(rows);
-                memcpy(buf + 8 * group, rows, sizeof(rows));
+                for (UInt32 row = 0; row < 8; ++row)
+                {
+                    T value = restoreCommonBits(static_cast<T>(rows[row]), common_negative, common_positive, sign_bit);
+                    unalignedStore<T>(dst + row * sizeof(T), value);
+                }
+                dst += 8 * sizeof(T);
             }
             return;
         }
     }
 #endif
-    clear(buf);
     for (UInt32 col = 0; col < tail; ++col)
-        reverseTransposeBytes(matrix, col, buf[col]);
+    {
+        T value = reverseTransposeBytes<T>(matrix, col);
+        value = restoreCommonBits(value, common_negative, common_positive, sign_bit);
+        unalignedStore<T>(dst + col * sizeof(T), value);
+    }
 }
-
 
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
@@ -552,16 +555,87 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
     }
 }
 
+/// one_bit_expansion[b][j] = bit j of byte b.
+/// With one stored bit, eight consecutive values share a byte. The row unpacks it with one 8-byte load instead of eight shifts.
+constexpr auto one_bit_expansion = []
+{
+    std::array<std::array<UInt8, 8>, 256> table{};
+    for (size_t value = 0; value < table.size(); ++value)
+        for (size_t bit = 0; bit < 8; ++bit)
+            table[value][bit] = (value >> bit) & 1;
+    return table;
+}();
+
+/// `num_bits == 1` (flags, booleans) is common. With one stored bit, there are no planes to transpose, so the transpose is skipped.
+/// Tightly vectorised. Better not to touch this function unless you really know what you are doing.
+template <typename T>
+NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_elements, T common_negative, T common_positive, T sign_bit)
+{
+    const UInt32 full_bytes = num_elements / 8;
+    /// The loop within is vectorised. Vectorising this outer loop gave `Int8`, `Int16` and `Int32` a second copy that spilled registers.
+#pragma clang loop vectorize(disable)
+    for (UInt32 i = 0; i < full_bytes; ++i)
+    {
+        UInt32 byte_index = i;
+        if constexpr (std::endian::native == std::endian::big)
+            byte_index ^= 7;
+        const auto & values = one_bit_expansion[static_cast<UInt8>(src[byte_index])];
+        for (UInt32 bit = 0; bit < 8; ++bit)
+        {
+            T value = restoreCommonBits(static_cast<T>(values[bit]), common_negative, common_positive, sign_bit);
+            unalignedStore<T>(dst + bit * sizeof(T), value);
+        }
+        dst += 8 * sizeof(T);
+    }
+
+    const UInt32 tail = num_elements % 8;
+    if (tail)
+    {
+        UInt32 byte_index = full_bytes;
+        if constexpr (std::endian::native == std::endian::big)
+            byte_index ^= 7;
+        const auto & values = one_bit_expansion[static_cast<UInt8>(src[byte_index])];
+        for (UInt32 bit = 0; bit < tail; ++bit)
+        {
+            T value = restoreCommonBits(static_cast<T>(values[bit]), common_negative, common_positive, sign_bit);
+            unalignedStore<T>(dst + bit * sizeof(T), value);
+        }
+    }
+}
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
-void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
+void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
+    const char * src, char * dst, UInt32 num_bits, T common_negative, T common_positive, T sign_bit, UInt32 tail) /// NOLINT
 {
+    UInt32 part_bits = num_bits % 8;
+
+    /// Small ranges often need at most eight stored bits.
+    /// A 64-byte matrix avoids clearing unused planes and reconstructing zero high bytes.
+    if (num_bits <= 8)
+    {
+        UInt64 matrix[8] = {};
+        memcpy(matrix, src, num_bits * sizeof(UInt64));
+
+        /// Always the plane loop. The shuffle measured slower here even at six to eight planes.
+        if (full || part_bits)
+            reverseTransposePlanes(matrix, num_bits);
+
+        const auto * values = reinterpret_cast<const unsigned char *>(matrix);
+        for (UInt32 col = 0; col < tail; ++col)
+        {
+            T value = static_cast<T>(values[col]);
+            value = restoreCommonBits(value, common_negative, common_positive, sign_bit);
+            unalignedStore<T>(dst + col * sizeof(T), value);
+        }
+        return;
+    }
+
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
 
     UInt32 full_bytes = num_bits / 8;
-    UInt32 part_bits = num_bits % 8;
 
     if constexpr (full)
     {
@@ -573,53 +647,31 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * bu
     if (part_bits)
     {
         UInt64 * matrix_line = &matrix[full_bytes * 8];
-        reverseTranspose64x8(matrix_line);
+        /// The shuffle wins from four planes in the bit variant (`full`) and loses at every count in the byte variant.
+        if (full && part_bits >= 4)
+            reverseTranspose64x8(matrix_line);
+        else
+            reverseTransposePlanes(matrix_line, part_bits);
     }
 
-    reverseTransposeMatrixBytes(matrix, buf, tail);
+    reverseTransposeMatrixBytes(matrix, dst, tail, common_negative, common_positive, sign_bit);
 })
 )
 
-/// UInt64[N] transposed matrix -> UIntX[64]
+/// UInt64[N] transposed matrix -> T[tail], upper bits restored
 template <typename T, bool full = false>
-ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
+ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bits, T common_negative, T common_positive, T sign_bit, UInt32 tail = 64)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
-        reverseTransposeImpl_x86_64_v4<T, full>(src, buf, num_bits, tail);
+        reverseTransposeImpl_x86_64_v4<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
         return;
     }
 #endif
     {
-        reverseTransposeImpl<T, full>(src, buf, num_bits, tail);
+        reverseTransposeImpl<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
     }
-}
-
-template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>
-void restoreUpperBits(T * buf, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]], UInt32 tail = 64)
-{
-    if constexpr (is_signed_v<T>)
-    {
-        /// Restore some data as negatives and others as positives
-        if (sign_bit)
-        {
-            for (UInt32 col = 0; col < tail; ++col)
-            {
-                T & value = buf[col];
-
-                if (value & sign_bit)
-                    value |= upper_min;
-                else
-                    value |= upper_max;
-            }
-
-            return;
-        }
-    }
-
-    for (UInt32 col = 0; col < tail; ++col)
-        buf[col] |= upper_min;
 }
 
 
@@ -770,11 +822,6 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
     src += bytes_to_skip;
     dst += bytes_to_skip;
 
-    if (uncompressed_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
-                        " isn't a multiple of the data type size ({})",
-                        uncompressed_size, sizeof(T));
-
     if (uncompressed_size == 0)
         return static_cast<UInt32>(dst - original_dst);
 
@@ -820,36 +867,38 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
                         " is not equal to the expected number of elements in the decompressed data ({})",
                         expected, num_elements);
 
-    T upper_min = 0;
-    T upper_max [[maybe_unused]] = 0;
-    T sign_bit [[maybe_unused]] = 0;
+    T common_negative = 0;
+    T common_positive = 0;
+    T sign_bit = 0;
     if (num_bits < 64)
-        upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
+        common_negative = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
 
     if constexpr (is_signed_v<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {
             sign_bit = static_cast<T>(1ull << (num_bits - 1));
-            upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
+            common_positive = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
         }
     }
 
-    T buf[CompressionCodecT64::MATRIX_SIZE];
+    if (num_bits == 1)
+    {
+        decompressOneBit(src, dst, static_cast<UInt32>(num_elements), common_negative, common_positive, sign_bit);
+        dst += uncompressed_size;
+        return static_cast<UInt32>(dst - original_dst);
+    }
+
     for (UInt32 i = 0; i < num_full; ++i)
     {
-        reverseTranspose<T, full>(src, buf, num_bits);
-        restoreUpperBits(buf, upper_min, upper_max, sign_bit);
-        store<T>(buf, dst, CompressionCodecT64::MATRIX_SIZE);
+        reverseTranspose<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit);
         src += src_shift;
         dst += dst_shift;
     }
 
     if (tail)
     {
-        reverseTranspose<T, full>(src, buf, num_bits, tail);
-        restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
-        store<T>(buf, dst, tail);
+        reverseTranspose<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
         dst += tail * sizeof(T);
     }
 
@@ -1030,8 +1079,8 @@ void registerCodecT64(CompressionCodecFactory & factory)
         std::optional<TypeIndex> type_idx;
         if (type)
         {
-            type_idx = typeIdx(type);
-            if (type_idx == TypeIndex::Nothing)
+            type_idx = type->getTypeId();
+            if (baseType(*type_idx) == TypeIndex::Nothing)
                 throw Exception(
                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
         }
