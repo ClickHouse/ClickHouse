@@ -851,7 +851,7 @@ namespace
                 const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value;
                 String expected_partition_by = partition_by
                     ? partition_by->formatWithSecretsOneLine()
-                    : "toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))";
+                    : "toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))";
                 if (partitioning_equals(expected_partition_by))
                     inner_engine.reset(inner_engine.partition_by);
 
@@ -1495,9 +1495,11 @@ namespace
                 {
                     /// Otherwise a declared partition key is kept; if there is none, the default one (5-hour buckets) is used.
                     /// `toDateTime` makes the default partition key work for any timestamp type (e.g. a raw `UInt32`),
-                    /// same as the TTL expression.
+                    /// same as the TTL expression. Its timezone is pinned because `toStartOfInterval` counts hours from
+                    /// local midnight, so without one every stored partition value moves when the server timezone does.
                     set_partition_by(makeASTFunction("toStartOfInterval",
-                        makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
+                        makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                        make_intrusive<ASTLiteral>(String{"UTC"})),
                         makeASTFunction("toIntervalHour", make_intrusive<ASTLiteral>(static_cast<UInt64>(5)))));
                 }
 
