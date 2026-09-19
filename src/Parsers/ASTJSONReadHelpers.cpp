@@ -321,6 +321,13 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Expected a string 'value' (Field dump) for field type '{}' during AST JSON deserialization", field_type);
     String dump_str = obj.getValue<String>("value");
 
+    /// Every dump-encoded type is written by `FieldVisitorDump` as `<type name>_<payload>`, so a
+    /// payload of a different type (or plain garbage) is rejected here with `BAD_ARGUMENTS` instead
+    /// of by whichever text reader `Field::restoreFromDump` happens to pick for it.
+    if (!dump_str.starts_with(field_type) || dump_str.size() <= field_type.size() || dump_str[field_type.size()] != '_')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field 'value' dump must start with '{}_' for field type '{}' during AST JSON deserialization", field_type, field_type);
+
     /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps
     /// without an internal depth limit, so a hostile JSON payload could trigger unbounded
     /// recursion even when the JSON object itself is shallow. Reject overly deep payloads

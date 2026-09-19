@@ -809,6 +809,34 @@ Field Field::restoreFromDump(std::string_view dump_)
         return str;
     }
 
+    /// `FieldVisitorDump` writes these as `UUID_'...'`, `IPv4_'...'`, `IPv6_'...'`.
+    prefix = std::string_view{"UUID_"};
+    if (dump.starts_with(prefix))
+    {
+        UUID value;
+        ReadBufferFromString buf{dump.substr(prefix.length())};
+        readQuoted(value, buf);
+        return value;
+    }
+
+    prefix = std::string_view{"IPv4_"};
+    if (dump.starts_with(prefix))
+    {
+        IPv4 value;
+        ReadBufferFromString buf{dump.substr(prefix.length())};
+        readQuoted(value, buf);
+        return value;
+    }
+
+    prefix = std::string_view{"IPv6_"};
+    if (dump.starts_with(prefix))
+    {
+        IPv6 value;
+        ReadBufferFromString buf{dump.substr(prefix.length())};
+        readQuoted(value, buf);
+        return value;
+    }
+
     prefix = std::string_view{"Bool_"};
     if (dump.starts_with(prefix))
     {
