@@ -104,18 +104,20 @@ CODE=$?
 
 # A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
 # replica it later cancels held the slot all the same, and one the limit refuses reports its parts too.
-# Each replica reports exactly one such row, on a connection the statement above does not wait for, so a
-# row can be queued after the statement's own flush and all three are waited for before they are counted.
+# Each replica logs one terminal row, on a connection the statement above does not wait for, so a row can
+# be queued after the statement's own flush: read the counts once all three replicas have logged one.
 TIMELIMIT=$((SECONDS + 30))
 while [ $SECONDS -lt "$TIMELIMIT" ]; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    read -r replicas refused <<< "$(${CLICKHOUSE_CLIENT} --query "
-        SELECT uniqExactIf(query_id, exception_code != 202), countIf(exception_code = 202)
+    read -r replicas refused reported <<< "$(${CLICKHOUSE_CLIENT} --query "
+        SELECT uniqExactIf(query_id, exception_code != 202 AND ProfileEvents['SelectedParts'] > 0),
+               countIf(exception_code = 202 AND ProfileEvents['SelectedParts'] > 0),
+               uniqExactIf(query_id, type != 'QueryStart')
         FROM system.query_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND is_initial_query = 0
-          AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
+          AND initial_query_id = '$query_id'
         SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
-    [ $((replicas + refused)) -ge 3 ] && break
+    [ "$reported" -ge 3 ] && break
     sleep 0.2
 done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
