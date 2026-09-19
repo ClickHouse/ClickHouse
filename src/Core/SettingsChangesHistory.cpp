@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"allow_experimental_macaddress_type", false, false, "New experimental setting to allow the use of `MacAddress` data type"},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."},
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
@@ -242,7 +243,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_trivial_view_pushdown_to_distributed", false, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
             {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
-            {"allow_experimental_macaddress_type", false, false, "New experimental setting to allow the use of `MacAddress` data type"},
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
