@@ -75,10 +75,12 @@ public:
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
     int64_t getDeadBlobsQueueEstimate() override;
+    bool hasDeadBlobsQueue() const override;
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override;
     bool hasUnreplicatedBlobs(const Location & location_to_check) override;
+    bool hasMissingBlobsQueue() const override;
 
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override;
     void updateCacheFromSerializedDescription(const std::string & serialized_cache_update_description) override;

@@ -314,6 +314,11 @@ public:
         return delegate->hasPendingRemovalBlobs(blobs);
     }
 
+    bool hasDeadBlobsQueue() const override
+    {
+        return delegate->hasDeadBlobsQueue();
+    }
+
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override
     {
         return delegate->getBlobsToReplicate(cluster, max_count);
@@ -322,6 +327,11 @@ public:
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override
     {
         return delegate->recordAsReplicated(blobs);
+    }
+
+    bool hasMissingBlobsQueue() const override
+    {
+        return delegate->hasMissingBlobsQueue();
     }
 };
 
