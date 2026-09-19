@@ -103,17 +103,18 @@ CODE=$?
 [ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-# A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so
-# every replica of the statement holds it. Replicas whose ranges another one covers are cancelled,
-# and report their selected parts on a cancelled query rather than on a finished one.
-replicas=$(${CLICKHOUSE_CLIENT} --query "
-    SELECT uniqExact(query_id)
+# A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
+# replica it later cancels held the slot all the same. The parts are reported just before the slot is
+# taken, so a replica the limit refuses reports them too, and only the others witness a shared slot.
+read -r replicas refused <<< "$(${CLICKHOUSE_CLIENT} --query "
+    SELECT uniqExactIf(query_id, exception_code != 202), countIf(exception_code = 202)
     FROM system.query_log
     WHERE event_date >= yesterday() AND is_initial_query = 0
       AND initial_query_id = '$query_id' AND ProfileEvents['SelectedParts'] > 0
-    SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
+    SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
-[ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement selected parts: $replicas" && exit 1
+[ "$refused" -ne "0" ] && echo "the table's limit refused $refused replicas of the statement" && exit 1
+[ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement took the table's slot: $replicas" && exit 1
 
 # A replica's read carries the default database rather than this test's, which is why the rows above are
 # found through the initiator's id; this anchors that id to a statement this test ran.
