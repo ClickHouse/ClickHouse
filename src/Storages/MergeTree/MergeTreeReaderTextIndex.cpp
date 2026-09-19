@@ -823,10 +823,11 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
                 return;
             }
 
-            /// Convert postings to a sorted array and build a cursor from it.
+            /// Convert postings to a sorted array and build a cursor from it. The analyzer clipped the postings
+            /// to the rows this query reads, so the array is shared with this query's other readers only.
             auto key = TextIndexPostingsCache::hash(granule->getIndexIdForCaches(), columns_to_read[column_idx].name, static_cast<UInt8>(TextIndexPostingsCacheKind::Flat));
 
-            auto cell = condition_text->postingsCache()->getOrSet(key, [&]
+            auto cell = condition_text->queryPostingsCache()->getOrSet(key, [&]
             {
                 auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
                 query_builder.postings->toUint32Array(flat->data());

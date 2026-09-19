@@ -125,6 +125,7 @@ public:
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
+    TextIndexPostingsCachePtr queryPostingsCache() const { return query_postings_cache; }
     TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
     bool useGlobalHeaderCache() const { return use_global_header_cache; }
 
@@ -253,6 +254,9 @@ private:
     bool use_global_header_cache = false;
     /// Cache for posting lists of tokens (and phrase-search results, keyed with the Phrase discriminator).
     TextIndexPostingsCachePtr postings_cache;
+    /// Cache for the postings the analyzer folds for this query. They are clipped to the rows this query
+    /// reads, so they are shared between the readers of this query only, never through the server-wide cache.
+    TextIndexPostingsCachePtr query_postings_cache;
     /// Cache for tokens cardinalities
     TokensCardinalitiesCachePtr cardinalities_cache;
 };

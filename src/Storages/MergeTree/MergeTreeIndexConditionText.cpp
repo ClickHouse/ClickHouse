@@ -185,9 +185,15 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
     if (settings[Setting::use_text_index_postings_cache])
+    {
         postings_cache = context_->getTextIndexPostingsCache();
+        query_postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
+    }
     else
+    {
         postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        query_postings_cache = postings_cache;
+    }
 
     rpn = std::move(RPNBuilder<RPNElement>(
         predicate,
