@@ -108,7 +108,11 @@ WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish';"""
     assert TSV(analyzer_enabled) == TSV("1")
 
     # A new-version initiator sends the setting under its canonical name, which the old version
-    # understands.
+    # understands. `enable_analyzer` is only an alias here; the old version has never heard of it and
+    # would reject the query outright if it were sent under that name. What the old instance recorded
+    # for its part of the query is the only place that shows which name arrived, so this asks it and
+    # not the initiator: the initiator's own log would say `1` even if it had sent nothing at all,
+    # because that is the value it ran with.
     query_id = str(uuid.uuid4())
     current.query(
         "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1, serialize_query_plan=0;",
@@ -118,7 +122,7 @@ WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish';"""
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
-    analyzer_enabled = current.query(
+    analyzer_enabled = backward.query(
         f"""
 SELECT
 DISTINCT Settings['allow_experimental_analyzer']
