@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Common/escapeForFileName.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -267,6 +268,16 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
     Block block_to_filter;
 
+    /// A condition on `table` prunes the enumeration below, which resolves every storage of
+    /// every database that survived the condition on `database`. The sets of `filter_by_other_columns`
+    /// were built in `applyFilters` with their elements kept, so an `IN` over a subquery is readable
+    /// here too. A condition that names the database together with the table, such as
+    /// `(database, table) IN (...)`, cannot be split off into `filter_by_database`; the exact
+    /// database names are read from the same filter so such a condition also shortlists the databases.
+    const auto * other_columns_predicate = filter_by_other_columns ? filter_by_other_columns->getOutputs().at(0) : nullptr;
+    const auto table_name_filter = extractNameFilter(other_columns_predicate, table_column_name, context);
+    const auto database_name_filter = extractNameFilter(other_columns_predicate, database_column_name, context);
+
     MutableColumnPtr table_column_mut = ColumnString::create();
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
@@ -284,8 +295,11 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
         {
             /// Check if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
-            if (!database.second->isExternal())
-                database_column_mut->insert(database.first);
+            if (database.second->isExternal())
+                continue;
+            if (database_name_filter && !database_name_filter(database.first))
+                continue;
+            database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
             std::move(database_column_mut), std::make_shared<DataTypeString>(), database_column_name));
@@ -322,7 +336,9 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 const bool check_access_for_tables_in_db
                     = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                offsets[i] = offsets[i - 1];
+                auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+                for (; iterator->isValid(); iterator->next())
                 {
                     if (query_status && !query_status->checkTimeLimit())
                     {
@@ -464,8 +480,10 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), storage_uuid_column_name));
 
         filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+        /// `StoragesInfoStream` reads the condition on `table` back from this filter to narrow the
+        /// enumeration, which needs the elements of an `IN` over a subquery: keep them.
         if (filter_by_other_columns)
-            VirtualColumnUtils::buildSetsForDAG(*filter_by_other_columns, context);
+            VirtualColumnUtils::buildSetsForDAGKeepingElements(*filter_by_other_columns, context);
     }
 }
 
