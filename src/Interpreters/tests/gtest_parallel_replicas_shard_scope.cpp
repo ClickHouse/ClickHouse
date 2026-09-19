@@ -592,6 +592,31 @@ TEST(ParallelReplicasShardScope, ConfigClusterUnnamedShardReplicaOrderIsNotAnIde
     EXPECT_EQ(getShardScopeCompat(context, *shards_reordered).kind, SCOPE_FOREIGN);
 }
 
+/// Two names for the same ordered shards are one numbering: a distributed hop that ships `_shard_num`
+/// from `alias_a` and a nested `SETTINGS cluster_for_parallel_replicas = 'alias_b'` still reads the shard
+/// the number denotes, so the scope must hold rather than turn parallel replicas off. Shard `<name>`s are
+/// chosen per cluster and say nothing outside it, so aliases whose shards only share names stay foreign.
+TEST(ParallelReplicasShardScope, ConfigClusterAliasWithTheSameShardsIsScoped)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    const HostsByShard shards = {{"127.0.0.1", "127.0.0.2"}, {"127.0.0.3", "127.0.0.4"}};
+
+    auto alias_a = makeConfigCluster(settings, "alias_a", shards);
+    auto alias_b = makeConfigCluster(settings, "alias_b", shards);
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*alias_a)));
+    const auto scope = getShardScopeCompat(context, *alias_b);
+    EXPECT_EQ(scope.kind, SCOPE_SCOPED);
+    EXPECT_EQ(scope.shard_num, 2u);
+    EXPECT_EQ(getShardScopeIdentityCompat(*alias_b), getShardScopeIdentityCompat(*alias_a));
+
+    auto named_a = makeConfigCluster(settings, "named_a", {{"127.0.0.1"}, {"127.0.0.3"}}, {"s1", "s2"});
+    auto named_b = makeConfigCluster(settings, "named_b", {{"127.0.0.5"}, {"127.0.0.6"}}, {"s1", "s2"});
+
+    auto named_context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*named_a)));
+    EXPECT_EQ(getShardScopeCompat(named_context, *named_b).kind, SCOPE_FOREIGN);
+}
+
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the
 /// identity must carry over: `optimize_skip_unused_shards` reads through such a cluster.
 TEST(ParallelReplicasShardScope, ShardSubsetKeepsIdentity)

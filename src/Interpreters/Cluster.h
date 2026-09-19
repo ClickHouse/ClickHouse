@@ -338,9 +338,14 @@ private:
     static constexpr auto REPLICAS_BY_SHARD_SCOPE = "replicas-by-shard ";
 
     /// Builds a shard-scope identity out of the ordered shard keys a constructor renumbered away.
-    /// Every part is written length-prefixed, so no two different (prefix, name, keys) triples can spell
+    /// Every part is written length-prefixed, so no two different (prefix, key, keys) triples can spell
     /// the same identity however the parts are punctuated. No keys means no identity.
-    static String makeShardScopeIdentity(std::string_view prefix, const String & cluster_name, const Strings & shard_keys);
+    ///
+    /// `scope_key` is the namespace the shard keys are chosen in, and is empty when they need none:
+    /// replica sets identify a shard wherever they are read, while shard `<name>`s and the shard names
+    /// of a `Replicated` database only identify one within their cluster or database. Leaving it out
+    /// where it is not needed is what lets two names for the same ordered shards compare equal.
+    static String makeShardScopeIdentity(std::string_view prefix, const String & scope_key, const Strings & shard_keys);
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};

@@ -610,12 +610,17 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     if (addresses_with_failover.empty())
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
 
-    shard_scope_identity = makeShardScopeIdentity(CONFIG_SHARDS_SCOPE, cluster_name, shard_keys);
+    /// The shard keys identify the numbering on their own as soon as they are the shards' replica sets,
+    /// so two names for the same ordered shards describe one numbering and keep parallel replicas. Shard
+    /// `<name>`s are chosen per cluster and repeat across clusters, so those need the cluster name to say
+    /// whose names they are - the same role `shard_scope_key` plays for a `Replicated` database.
+    shard_scope_identity
+        = makeShardScopeIdentity(CONFIG_SHARDS_SCOPE, use_shards_names ? cluster_name : String{}, shard_keys);
 
     initMisc();
 }
 
-String Cluster::makeShardScopeIdentity(std::string_view prefix, const String & cluster_name, const Strings & shard_keys)
+String Cluster::makeShardScopeIdentity(std::string_view prefix, const String & scope_key, const Strings & shard_keys)
 {
     /// No keys means the numbering cannot be identified, which must decline a shard scope rather than
     /// fall back on the cluster name: the name is equal on both sides by construction (the initiator
@@ -628,7 +633,7 @@ String Cluster::makeShardScopeIdentity(std::string_view prefix, const String & c
     out << prefix;
     /// Length-prefixed, so a key that happens to be spelled like the punctuation cannot move a boundary.
     auto write_part = [&out](std::string_view part) { out << part.size() << ':' << part << ' '; };
-    write_part(cluster_name);
+    write_part(scope_key);
     for (const auto & key : shard_keys)
         write_part(key);
     return out.str();
