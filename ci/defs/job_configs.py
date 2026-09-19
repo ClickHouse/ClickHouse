@@ -265,7 +265,10 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
-        enable_commit_status=True,
+        enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
@@ -273,9 +276,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
-        ],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -2008,6 +2008,21 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/parser_memory_check.py",
                 "./utils/parser-memory-profiler/",
+            ],
+        ),
+    )
+    storage_memory_check_job = Job.Config(
+        name=JobNames.STORAGE_MEMORY_CHECK,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/storage_memory_check.py",
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
+        result_name_for_cidb="Tests",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/storage_memory_check.py",
+                "./ci/jobs/parser_memory_check.py",
+                "./utils/storage-memory-profiler/",
             ],
         ),
     )
