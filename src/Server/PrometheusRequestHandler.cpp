@@ -447,7 +447,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "stats", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -507,6 +507,7 @@ public:
                 String end = params->get("end", "");
                 String step = params->get("step", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                String stats = params->get("stats", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
@@ -521,6 +522,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .lookback_delta_param = lookback_delta,
+                    .include_stats = !stats.empty(),
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -530,6 +532,7 @@ public:
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                String stats = params->get("stats", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -542,6 +545,7 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .lookback_delta_param = lookback_delta,
+                    .include_stats = !stats.empty(),
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);

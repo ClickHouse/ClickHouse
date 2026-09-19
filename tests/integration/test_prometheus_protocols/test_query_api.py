@@ -130,6 +130,77 @@ def test_range_query_post_urlencoded():
     assert get_data == post_data
 
 
+def test_query_stats():
+    instant_with_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": "true"},
+    )
+    instant_without_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+    )
+
+    assert instant_with_stats.status_code == requests.codes.ok, instant_with_stats.text
+    assert instant_without_stats.status_code == requests.codes.ok, instant_without_stats.text
+    instant_data = instant_with_stats.json()["data"]
+    instant_data_without_stats = instant_without_stats.json()["data"]
+    assert instant_data["result"] == instant_data_without_stats["result"]
+    assert "stats" not in instant_data_without_stats
+    assert instant_data["stats"]["timings"]["evalTotalTime"] >= 0
+    assert instant_data["stats"]["clickhouse"]["readRows"] > 0
+    assert instant_data["stats"]["clickhouse"]["readBytes"] > 0
+    assert instant_data["stats"]["clickhouse"]["peakMemoryUsage"] >= 0
+
+    instant_empty_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": ""},
+    )
+    assert instant_empty_stats.status_code == requests.codes.ok, instant_empty_stats.text
+    assert "stats" not in instant_empty_stats.json()["data"]
+
+    range_with_stats = get_response_to_http_api_range_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        999,
+        1002,
+        1,
+        params={"stats": "all"},
+    )
+    range_without_stats = get_response_to_http_api_range_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        999,
+        1002,
+        1,
+    )
+
+    assert range_with_stats.status_code == requests.codes.ok, range_with_stats.text
+    assert range_without_stats.status_code == requests.codes.ok, range_without_stats.text
+    range_data = range_with_stats.json()["data"]
+    range_data_without_stats = range_without_stats.json()["data"]
+    assert range_data["result"] == range_data_without_stats["result"]
+    assert "stats" not in range_data_without_stats
+    assert range_data["stats"]["timings"]["evalTotalTime"] >= 0
+    assert range_data["stats"]["clickhouse"]["readRows"] > 0
+    assert range_data["stats"]["clickhouse"]["readBytes"] > 0
+    assert range_data["stats"]["clickhouse"]["peakMemoryUsage"] >= 0
+
+
 def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
     for step in (0, -1):
         error = execute_range_query_via_http_api(

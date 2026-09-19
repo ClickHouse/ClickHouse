@@ -1,7 +1,11 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <base/hex.h>
+#include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
@@ -46,6 +50,7 @@
 
 #include <fmt/format.h>
 
+#include <optional>
 
 namespace DB
 {
@@ -196,6 +201,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params,
     QueryFinishCallback query_finish_callback)
 {
+    std::optional<Stopwatch> evaluation_watch;
+    ThreadGroupPtr thread_group;
+    std::optional<ProfileEvents::Counters::Snapshot> counters_before;
+    if (params.include_stats)
+    {
+        evaluation_watch.emplace();
+        thread_group = CurrentThread::getGroup();
+        chassert(thread_group);
+    }
+
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     evaluation_settings.time_series_version = time_series_storage->getVersion();
@@ -253,14 +268,39 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     query_context->setSetting("allow_experimental_analyzer", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
+    if (params.include_stats)
+        counters_before.emplace(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
+        QueryStatsCallback query_stats_callback;
+        if (params.include_stats)
+        {
+            query_stats_callback = [thread_group, counters_before = std::move(counters_before), &evaluation_watch](WriteBuffer & output)
+            {
+                const auto counters_after = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+                const auto read_rows = counters_after[ProfileEvents::SelectedRows] - (*counters_before)[ProfileEvents::SelectedRows];
+                const auto read_bytes = counters_after[ProfileEvents::SelectedBytes] - (*counters_before)[ProfileEvents::SelectedBytes];
+                const auto peak_memory_usage = thread_group->memory_tracker.getPeak();
+
+                writeString(R"(,"stats":{"timings":{"evalTotalTime":)", output);
+                writeFloatText(evaluation_watch->elapsedSeconds(), output);
+                writeString(R"(},"clickhouse":{"readRows":)", output);
+                writeIntText(read_rows, output);
+                writeString(R"(,"readBytes":)", output);
+                writeIntText(read_bytes, output);
+                writeString(R"(,"peakMemoryUsage":)", output);
+                writeIntText(peak_memory_usage > 0 ? peak_memory_usage : 0, output);
+                writeString("}}", output);
+            };
+        }
+
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
+        writeQueryResponse(response, executor, converter.getResultType(), std::move(query_stats_callback));
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
         /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
@@ -278,7 +318,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response,
+    PullingAsyncPipelineExecutor & pulling_executor,
+    PrometheusQueryResultType result_type,
+    QueryStatsCallback query_stats_callback)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
@@ -308,6 +351,9 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
     }
 
     writeQueryResponseFooter(response);
+    if (query_stats_callback)
+        query_stats_callback(response);
+    writeString("}}", response);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type)
@@ -336,7 +382,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response,
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response)
 {
-    writeString("]}}", response);
+    writeString("]", response);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)
