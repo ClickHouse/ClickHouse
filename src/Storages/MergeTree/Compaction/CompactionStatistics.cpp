@@ -45,9 +45,12 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
 
     for (const MergeTreeData::DataPartPtr & part : source_parts)
     {
-        /// Exclude expired parts
+        /// Exclude expired parts.
+        /// A part that holds rows whose TTL evaluates to the epoch is not described by its bounds:
+        /// such a timestamp means "no TTL" to the machinery and is left out of `part_max_ttl`, so the
+        /// part still holds rows a merge has to write out even though the bounds are entirely in the past.
         time_t part_max_ttl = part->ttl_infos.part_max_ttl;
-        if (part_max_ttl && part_max_ttl <= current_time)
+        if (part_max_ttl && part_max_ttl <= current_time && !part->ttl_infos.table_ttl.has_epoch_timestamps)
             continue;
 
         if (account_for_deleted)

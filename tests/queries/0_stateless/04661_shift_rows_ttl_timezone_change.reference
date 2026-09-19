@@ -1,0 +1,4 @@
+stored bound minus naive shift	-3600
+mutations after MODIFY COLUMN	0
+new bound minus naive shift	0
+rows	10
