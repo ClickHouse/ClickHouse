@@ -1,0 +1,39 @@
+<test run_all_queries="1">
+    <!--
+        Keep the input nonconstant so the functions receive a ColumnString.
+        The first six full-scan queries process about 2 GiB each and use
+        FORMAT Null so client output does not dominate the result.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>1024</max_block_size>
+    </settings>
+
+    <!-- One delimiter: the XML decoder scans for '&amp;'. -->
+    <query>SELECT decodeXMLComponent(concat(repeat('a', 4095), toString(number % 10))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT decodeXMLComponent(concat(repeat('a', 65535), toString(number % 10))) FROM numbers(32000) FORMAT Null</query>
+
+    <!-- Two delimiters: the URL decoder scans for '%' and '+'. -->
+    <query>SELECT decodeURLComponent(concat(repeat('a', 4095), toString(number % 10))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT decodeURLComponent(concat(repeat('a', 65535), toString(number % 10))) FROM numbers(32000) FORMAT Null</query>
+
+    <!-- Four delimiters: the URL parser enters the query string, then scans a payload with no separators. -->
+    <query>SELECT extractURLParameters(concat('?', repeat('a', 4095), toString(number % 10))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT extractURLParameters(concat('?', repeat('a', 65535), toString(number % 10))) FROM numbers(32000) FORMAT Null</query>
+
+    <!-- Exact dispatch crossover: no match in 1023-byte and 1024-byte inputs. -->
+    <query>SELECT firstLine(concat(repeat('a', 1022), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT firstLine(concat(repeat('a', 1023), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+
+    <!-- These representative caller queries cover the SSE2 prefix and the AVX2 body. -->
+    <query>SELECT fragment(concat('#', repeat('a', 4093), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT fragment(concat(repeat('a', 16), '#', repeat('a', 4077), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT fragment(concat(repeat('a', 511), '#', repeat('a', 3582), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT fragment(concat(repeat('a', 512), '#', repeat('a', 3581), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT fragment(concat(repeat('a', 1023), '#', repeat('a', 3070), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT firstLine(concat('\n', repeat('a', 4093), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT firstLine(concat(repeat('a', 16), '\n', repeat('a', 4077), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT firstLine(concat(repeat('a', 511), '\n', repeat('a', 3582), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT firstLine(concat(repeat('a', 512), '\n', repeat('a', 3581), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT firstLine(concat(repeat('a', 1023), '\n', repeat('a', 3070), toString(number % 10))) FROM numbers(100000) FORMAT Null</query>
+</test>
