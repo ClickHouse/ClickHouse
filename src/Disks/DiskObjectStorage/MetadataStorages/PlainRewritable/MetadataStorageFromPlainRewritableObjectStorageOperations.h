@@ -146,6 +146,7 @@ private:
     StoredObjects & removed_objects;
 
     std::filesystem::path remote_source_path;
+    std::string tmp_name;
     std::filesystem::path remote_tmp_path;
     /// Set once both keys are known and before the first write; see `blob_move_attempted` of the move operation.
     bool blob_removal_attempted = false;
@@ -213,6 +214,8 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
+    std::string tmp_name_from;
+    std::string tmp_name_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
@@ -268,10 +271,12 @@ private:
 
     const LoggerPtr log;
 
+    std::string tmp_name;
     std::filesystem::path tmp_path;
     std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_remote_info;
     bool move_tried = false;
+    bool marker_written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(

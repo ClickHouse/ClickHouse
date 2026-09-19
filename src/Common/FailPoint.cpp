@@ -228,6 +228,9 @@ static struct InitFiu
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
+    PAUSEABLE(plain_object_storage_pause_before_unlink_file_finalize) \
+    PAUSEABLE(plain_object_storage_pause_before_remove_recursive_finalize) \
+    PAUSEABLE(plain_object_storage_pause_before_remove_recursive_metadata) \
     ONCE(plain_object_storage_fail_after_copy_on_file_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
