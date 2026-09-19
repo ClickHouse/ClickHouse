@@ -431,6 +431,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalJoinMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for JOIN in external memory.
 - `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for JOIN in external memory.
 - `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for JOIN in external memory.
+- `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for DISTINCT in external memory.
+- `ProfileEvent_ExternalDistinctMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for DISTINCT in external memory.
+- `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for DISTINCT in external memory.
+- `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for DISTINCT in external memory.
 - `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of skipped files during Iceberg partition pruning
 - `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list
 - `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/reference/data-types/int-uint)) — Trivial count optimization applied while reading from Iceberg
@@ -950,6 +954,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/reference/data-types/int-uint)) — How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.
 - `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/reference/data-types/int-uint)) — How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
 - `ProfileEvent_DistinctTransformsAbandonedDeduplication` ([UInt64](/reference/data-types/int-uint)) — How many deduplication transforms dropped their hash table and stopped deduplicating because the observed input was almost entirely unique and a consumer downstream deduplicates anyway: the preliminary `DISTINCT` (see `allow_preliminary_distinct_abandoning`) and the per-stream pre-deduplication in front of an `IN`-subquery set fill.
+- `ProfileEvent_DistinctTransformsSwitchedToPassThrough` ([UInt64](/reference/data-types/int-uint)) — How many preliminary `DISTINCT` transforms freed their hash table and started passing every row through because query memory exceeded the external `DISTINCT` threshold, or projected hashing allocations would exceed the remaining threshold budget (see `max_bytes_before_external_distinct`): the final `DISTINCT`, which spills to disk, resolves the duplicates instead.
 - `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for hash join.
 - `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request was answered from cache without making request to Keeper
 - `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request had to be answered from Keeper
@@ -1345,7 +1350,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/reference/data-types/int-uint)) — Number of part fetches deduplicated because the part was already being fetched or produced by another thread
 - `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time of tryUpdateDiskMetadataCacheForPart in scheduleDataProcessingJob
 - `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time of loadColumnsChecksumsIndexes only for SharedMergeTree
-- `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/reference/data-types/int-uint)) — How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments appended to commit multis)
+- `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/reference/data-types/int-uint)) — How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments staged in commit transactions, before accumulation into one update per counter node)
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/reference/data-types/int-uint)) — How many times SnapshotCleanerThread decides to clean a part
 - `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/reference/data-types/int-uint)) — How long time SnapshotCleanerThread tries to clean a part
 - `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/reference/data-types/int-uint)) — How many times SnapshotCleanerThread successfully clean a part
@@ -1672,6 +1677,7 @@ It is safe to truncate or drop this table at any time.
 - `CurrentMetric_TemporaryFilesForSort` ([Int64](/reference/data-types/int-uint)) — Number of temporary files created for external sorting
 - `CurrentMetric_TemporaryFilesForAggregation` ([Int64](/reference/data-types/int-uint)) — Number of temporary files created for external aggregation
 - `CurrentMetric_TemporaryFilesForJoin` ([Int64](/reference/data-types/int-uint)) — Number of temporary files created for JOIN
+- `CurrentMetric_TemporaryFilesForDistinct` ([Int64](/reference/data-types/int-uint)) — Number of temporary files created for external DISTINCT
 - `CurrentMetric_TemporaryFilesForMerge` ([Int64](/reference/data-types/int-uint)) — Number of temporary files for vertical merge
 - `CurrentMetric_TemporaryFilesUnknown` ([Int64](/reference/data-types/int-uint)) — Number of temporary files created without known purpose
 - `CurrentMetric_Read` ([Int64](/reference/data-types/int-uint)) — Number of read (read, pread, io_getevents, etc.) syscalls in fly

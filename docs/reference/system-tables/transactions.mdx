@@ -23,7 +23,7 @@ Contains a list of transactions and their state.
 
 ## Columns {#columns}
 
-- `tid` ([Tuple(UInt64, UInt64, UUID)](/reference/data-types/tuple)) — The identifier of the transaction.
+- `tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/reference/data-types/tuple)) — The identifier of the transaction.
 - `tid_hash` ([UInt64](/reference/data-types/int-uint)) — The hash of the identifier.
 - `elapsed` ([Float64](/reference/data-types/float)) — The amount of time the transaction being processed.
 - `is_readonly` ([UInt8](/reference/data-types/int-uint)) — The flag which shows whether the transaction has executed any write operation.

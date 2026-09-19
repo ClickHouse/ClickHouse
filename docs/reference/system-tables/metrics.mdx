@@ -2014,6 +2014,10 @@ Number of threads in the StorageS3 thread pool running a task.
 
 Number of queued or active jobs in the StorageS3 thread pool.
 
+### StreamingExchangeSinksWithFullSendQueue {#streamingexchangesinkswithfullsendqueue}
+
+Number of streaming exchange sinks that take no chunks because their queue of packets waiting for the socket is full.
+
 ### SystemDatabaseReplicasThreads {#systemdatabasereplicasthreads}
 
 Number of threads in the system.database_replicas thread pool.
@@ -2085,6 +2089,10 @@ Number of connections to TCP server (clients with native interface), also includ
 ### TemporaryFilesForAggregation {#temporaryfilesforaggregation}
 
 Number of temporary files created for external aggregation
+
+### TemporaryFilesForDistinct {#temporaryfilesfordistinct}
+
+Number of temporary files created for external DISTINCT
 
 ### TemporaryFilesForJoin {#temporaryfilesforjoin}
 

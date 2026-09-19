@@ -266,6 +266,10 @@ Data size in bytes of asynchronous INSERT queries.
 
 Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.
 
+### AsyncInsertFlush {#asyncinsertflush}
+
+Number of flushes of the asynchronous INSERT queue. Every flush inserts a batch of asynchronous INSERT queries as a single part. Compare with AsyncInsertQuery to see how many queries are batched together on average.
+
 ### AsyncInsertQuery {#asyncinsertquery}
 
 Same as InsertQuery, but only for asynchronous INSERT queries.
@@ -904,6 +908,10 @@ Number of times the mutation of a MergeTree table was throttled due to high numb
 
 Total number of milliseconds spent while the mutation of a MergeTree table was throttled due to high number of unfinished mutations for table.
 
+### DeltaLakeDeltaLogExistenceChecks {#deltalakedeltalogexistencechecks}
+
+Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).
+
 ### DeltaLakePartitionPrunedFiles {#deltalakepartitionprunedfiles}
 
 Number of skipped files during DeltaLake partition pruning
@@ -1124,6 +1132,10 @@ Number of directories created by the 'plain_rewritable' metadata storage for S3O
 
 Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 
+### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
+
+Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.
+
 ### DiskReadElapsedMicroseconds {#diskreadelapsedmicroseconds}
 
 Total time spent waiting for read syscall. This include reads from page cache.
@@ -1264,6 +1276,10 @@ Total time spent waiting for write syscall. This include writes to page cache.
 
 How many deduplication transforms dropped their hash table and stopped deduplicating because the observed input was almost entirely unique and a consumer downstream deduplicates anyway: the preliminary `DISTINCT` (see `allow_preliminary_distinct_abandoning`) and the per-stream pre-deduplication in front of an `IN`-subquery set fill.
 
+### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
+
+How many preliminary `DISTINCT` transforms freed their hash table and started passing every row through because query memory exceeded the external `DISTINCT` threshold, or projected hashing allocations would exceed the remaining threshold budget (see `max_bytes_before_external_distinct`): the final `DISTINCT`, which spills to disk, resolves the duplicates instead.
+
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
 Distributed Cache write buffer event. Number of cache writes that ran on a background thread (a background write slot was acquired)
@@ -1302,7 +1318,7 @@ Distributed Cache registry event. Number of distributed cache hash ring rebuilds
 
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
-Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (no background write slot was free, or the write was for temporary data)
+Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (writes of temporary data, which has no object storage write to overlap with)
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -1564,6 +1580,10 @@ Distributed Cache read buffer event. Number of server switches between distribut
 
 Distributed Cache event. The number of server switches during read or write because the hash-chosen server changed (e.g. due to server deregistration)
 
+### DistrCacheSkippedWrites {#distrcacheskippedwrites}
+
+Distributed Cache write buffer event. Number of write buffers that skipped the write-through cache write because no background write slot was free (the limit set by the `distributed_cache_write_pool_size` server setting was reached) or a background write could not be started. The data is still written to object storage
+
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
 Distributed Cache connection event. The number of reconnections due to stale (peer-closed) pooled connections
@@ -1740,6 +1760,18 @@ Set to 1 when a make_distributed_plan query was executed in-process via the loca
 
 Number of tasks dispatched to remote workers when executing a query with make_distributed_plan. A non-zero value means the query was actually executed distributedly.
 
+### DistributedPlanWorkerPartsPruned {#distributedplanworkerpartspruned}
+
+Number of the assigned data parts the worker's own index analysis pruned, so the worker does not read them. The coordinator selects parts without that analysis, so it can assign a part no row of the query can match. `DistributedPlanWorkerPartsReceived` is the sum of this and `DistributedPlanWorkerPartsScanned`.
+
+### DistributedPlanWorkerPartsReceived {#distributedplanworkerpartsreceived}
+
+Number of data parts the coordinator assigned to a worker of a distributed query plan, summed over the bucketed reads a query runs on that worker. A part assigned to several buckets counts once per read.
+
+### DistributedPlanWorkerPartsScanned {#distributedplanworkerpartsscanned}
+
+Number of the assigned data parts the worker keeps to read.
+
 ### DistributedRejectedInserts {#distributedrejectedinserts}
 
 Number of times the INSERT of a block to a Distributed table was rejected with 'Too many bytes' exception due to high number of pending bytes.
@@ -1839,6 +1871,22 @@ Number of times a temporary file was written to disk for aggregation in external
 ### ExternalDataSourceLocalCacheReadBytes {#externaldatasourcelocalcachereadbytes}
 
 Bytes read from local cache buffer in RemoteReadBufferCache
+
+### ExternalDistinctCompressedBytes {#externaldistinctcompressedbytes}
+
+Number of compressed bytes written for DISTINCT in external memory.
+
+### ExternalDistinctMerge {#externaldistinctmerge}
+
+Number of times temporary files were merged for DISTINCT in external memory.
+
+### ExternalDistinctUncompressedBytes {#externaldistinctuncompressedbytes}
+
+Amount of data (uncompressed, before compression) written for DISTINCT in external memory.
+
+### ExternalDistinctWritePart {#externaldistinctwritepart}
+
+Number of times a temporary file was written to disk for DISTINCT in external memory.
 
 ### ExternalJoinCompressedBytes {#externaljoincompressedbytes}
 
@@ -3600,6 +3648,14 @@ Number of times metadata transaction commit was retried
 
 Number of times a cache update for one level of directory tree was done
 
+### MetadataTransactionRollbacks {#metadatatransactionrollbacks}
+
+Number of metadata transactions that failed to commit and were rolled back.
+
+### MetadataTransactionRollbacksFailed {#metadatatransactionrollbacksfailed}
+
+Number of metadata transaction rollbacks that did not run to completion, so the metadata keeps a part of a transaction that was reported as failed.
+
 ### MMappedFileCacheHits {#mmappedfilecachehits}
 
 Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.
@@ -5118,7 +5174,7 @@ Total time spend on application of new state in SharedDatabaseCatalog
 
 ### SharedMergeTreeBlobRefCounterSharedBlobs {#sharedmergetreeblobrefcountersharedblobs}
 
-How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments appended to commit multis)
+How many data blobs were path-shared between SharedMergeTree blob-list parts (reference-count increments staged in commit transactions, before accumulation into one update per counter node)
 
 ### SharedMergeTreeBlobsListBlobsWritten {#sharedmergetreeblobslistblobswritten}
 
@@ -5735,6 +5791,50 @@ Number of reset connections for storages
 ### StorageConnectionsReused {#storageconnectionsreused}
 
 Number of reused connections for storages
+
+### StreamingExchangeConnectionWaitMicroseconds {#streamingexchangeconnectionwaitmicroseconds}
+
+Time a streaming exchange sink waited for the receiving task to connect.
+
+### StreamingExchangeDeserializeMicroseconds {#streamingexchangedeserializemicroseconds}
+
+Time spent decompressing and deserializing streaming exchange packets into chunks.
+
+### StreamingExchangeEarlyCloses {#streamingexchangeearlycloses}
+
+How many times a streaming exchange source told its sender to stop before the stream was read to the end, for example because a LIMIT was satisfied. A sender that was already gone is not counted.
+
+### StreamingExchangePacketsReceived {#streamingexchangepacketsreceived}
+
+Data packets read from streaming exchanges, one per chunk plus one end-of-stream packet per stream.
+
+### StreamingExchangePacketsSent {#streamingexchangepacketssent}
+
+Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. A packet is counted when it is written whole; a packet cut short because the receiver needed no more data is not counted.
+
+### StreamingExchangeReceiveBytes {#streamingexchangereceivebytes}
+
+Bytes read from the sockets of the streaming exchanges of a distributed query plan. `NetworkReceiveBytes` does not count them.
+
+### StreamingExchangeReceiveWaitMicroseconds {#streamingexchangereceivewaitmicroseconds}
+
+Time a streaming exchange source waited for the next bytes from its sender.
+
+### StreamingExchangeSendBytes {#streamingexchangesendbytes}
+
+Bytes written to the sockets of the streaming exchanges of a distributed query plan. `NetworkSendBytes` does not count them.
+
+### StreamingExchangeSendQueueFullMicroseconds {#streamingexchangesendqueuefullmicroseconds}
+
+Time a streaming exchange sink did not take chunks because its queue of packets waiting for the socket was full.
+
+### StreamingExchangeSerializedBytes {#streamingexchangeserializedbytes}
+
+Bytes of the Native blocks in streaming exchange packets before compression, counted once per packet where it is serialized. Against `StreamingExchangeSendBytes` this gives the compression ratio of a shuffle or a gather; a broadcast sends every packet to each destination, so there `StreamingExchangeSendBytes` grows with the number of destinations.
+
+### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
+
+Time spent serializing and compressing chunks into streaming exchange packets.
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

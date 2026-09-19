@@ -463,14 +463,25 @@ This entry came from live runtime state.
         ASYNC_METRIC_DOCUMENTATION_CATALOG.read_text(encoding="utf-8")
         == generated_cpp_catalog
     )
+
+    # The whole catalog, headings and metric descriptions alike, is carried into the page
+    # verbatim. Comparing the rendered Markdown instead of the metric names alone is what
+    # detects an edited description whose metric name did not change.
+    published_async_metrics_page = ASYNC_METRICS_PAGE.read_text(encoding="utf-8")
+    generated_markdown_catalog, generated_metric_count = (
+        async_metrics_generator.generate_markdown()
+    )
+    assert generated_metric_count > 200
+    assert generated_markdown_catalog.strip() in published_async_metrics_page, (
+        "The asynchronous metric descriptions generated from C++ source are not in "
+        f"{ASYNC_METRICS_PAGE.relative_to(REPO_ROOT)}; regenerate it with "
+        "`utils/generate-system-tables-docs`"
+    )
     assert "Source-backed introduction." in asynchronous_metrics_body
     assert "### AsynchronousMetricsUpdateInterval" in asynchronous_metrics_body
     assert "### jemalloc.epoch {#jemallocepoch}" in asynchronous_metrics_body
     published_metric_anchors = dict(
-        re.findall(
-            r"(?m)^### (.+) \{#([^}\n]+)\}$",
-            ASYNC_METRICS_PAGE.read_text(encoding="utf-8"),
-        )
+        re.findall(r"(?m)^### (.+) \{#([^}\n]+)\}$", published_async_metrics_page)
     )
     generated_metric_anchors = dict(
         re.findall(r"(?m)^### (.+) \{#([^}\n]+)\}$", asynchronous_metrics_body)
