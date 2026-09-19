@@ -480,7 +480,7 @@ static bool decideParensEmission(const IAST & node, const IAST::FormatSettings &
     if (!frame.need_parens)
     {
         if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&node);
-            with_alias && (!with_alias->alias.empty() || with_alias->parametrised_alias) && !dynamic_cast<const ASTSubquery *>(&node))
+            with_alias && with_alias->hasAlias() && !dynamic_cast<const ASTSubquery *>(&node))
         {
             /// Skip the deferral for `ASTSubquery`: its `formatImplWithoutAlias` already emits
             /// `(SELECT ...)` itself, so deferring would produce `((SELECT ...)) AS alias`,

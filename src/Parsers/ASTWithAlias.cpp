@@ -30,7 +30,7 @@ static void writeParametrisedAlias(const ASTQueryParameter & parameter, WriteBuf
 
 void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const bool has_alias = !alias.empty() || parametrised_alias;
+    const bool has_alias = hasAlias();
     /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     if (settings.collapse_identical_nodes_to_aliases && !alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)

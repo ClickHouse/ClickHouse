@@ -55,7 +55,7 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     auto reject_alias = [](const ASTPtr & node, std::string_view field)
     {
         if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(node.get());
-            with_alias && (!with_alias->tryGetAlias().empty() || with_alias->parametrised_alias))
+            with_alias && with_alias->hasAlias())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Output '{}' cannot carry an alias during AST JSON deserialization", field);
     };
 

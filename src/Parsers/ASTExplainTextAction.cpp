@@ -127,7 +127,7 @@ void ASTExplainTextAction::validateShape() const
                     toString(kind), children.size());
 
             const auto * expression = dynamic_cast<const ASTWithAlias *>(children.front().get());
-            if (!expression || (!expression->tryGetAlias().empty() || expression->parametrised_alias))
+            if (!expression || expression->hasAlias())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "{} requires one expression operand without an alias",
@@ -147,8 +147,7 @@ void ASTExplainTextAction::validateShape() const
             if (!literal
                 || literal->value.getType() != Field::Types::UInt64
                 || literal->value.safeGet<UInt64>() == 0
-                || !literal->tryGetAlias().empty()
-                || literal->parametrised_alias)
+                || literal->hasAlias())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -170,8 +169,7 @@ void ASTExplainTextAction::validateShape() const
             if (!identifier
                 || !identifier->isShort()
                 || identifier->isParam()
-                || !identifier->tryGetAlias().empty()
-                || identifier->parametrised_alias)
+                || identifier->hasAlias())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,

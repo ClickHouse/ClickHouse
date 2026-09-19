@@ -45,6 +45,7 @@ public:
     void appendColumnNameWithoutAlias(WriteBuffer & ostr) const final;
     String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
     String tryGetAlias() const override { return alias; }
+    bool hasAlias() const override { return !alias.empty() || parametrised_alias; }
     void setAlias(const String & to) override { alias = to; }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;

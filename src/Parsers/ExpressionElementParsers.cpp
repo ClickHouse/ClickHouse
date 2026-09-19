@@ -2437,7 +2437,7 @@ bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected &
     /// but it can parse
     /// (1 AS x)
     /// which we should not allow as well.
-    if (!expr_elem->tryGetAlias().empty())
+    if (expr_elem->hasAlias())
         return false;
 
     if (!allow_order)
