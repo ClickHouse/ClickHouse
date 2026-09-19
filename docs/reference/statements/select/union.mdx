@@ -28,6 +28,21 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Result columns are matched by their index (order inside `SELECT`). If column names do not match, names for the final result are taken from the first query.
 
+`UNION ALL BY NAME` matches columns by their output names instead of their positions. The result columns keep the order of their first appearance from left to right. A column that is missing from an operand is filled with `NULL` when its type supports nullable values. Duplicate output names inside one operand are not allowed.
+
+```sql title="Query"
+SELECT 1 AS a, 'one' AS b
+UNION ALL BY NAME
+SELECT 'two' AS b, 3 AS c
+```
+
+```text title="Response"
+a    one    NULL
+NULL two    3
+```
+
+`BY NAME` is currently supported only with `UNION ALL`.
+
 Type casting is performed for unions. For example, if two queries being combined have the same field with non-`Nullable` and `Nullable` types from a compatible type, the resulting `UNION` has a `Nullable` type field.
 
 Queries that are parts of `UNION` can be enclosed in `()`. [ORDER BY](/reference/statements/select/order-by) and [LIMIT](/reference/statements/select/limit) are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with `UNION` in a subquery in the [FROM](/reference/statements/select/from) clause.
@@ -82,6 +97,8 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 
 ```sql
 SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
+
+SELECT ... UNION ALL BY NAME SELECT ... [UNION ALL BY NAME SELECT ...]
 ```
 
 **Part of:** `SELECT`

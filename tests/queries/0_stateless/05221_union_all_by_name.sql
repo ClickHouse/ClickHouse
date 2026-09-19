@@ -159,7 +159,7 @@ SELECT formatQueryFromJSON(
             '"union_mode":"UNION_ALL"',
             '"union_mode":"UNION_DISTINCT"'),
         '"is_normalized":false',
-        '"is_normalized":true')) -- { serverError BAD_ARGUMENTS }
+        '"is_normalized":true')); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'recursive CTE';
 WITH RECURSIVE r AS
