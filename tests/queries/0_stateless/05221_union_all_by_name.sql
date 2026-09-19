@@ -96,6 +96,15 @@ FROM
     SELECT 1 AS y
 );
 
+SELECT 'missing LowCardinality';
+SELECT x, y, toTypeName(x), toTypeName(y)
+FROM
+(
+    SELECT toLowCardinality('hello') AS x
+    UNION ALL BY NAME
+    SELECT 1 AS y
+);
+
 SELECT 'missing Variant';
 SELECT x, y, toTypeName(x), toTypeName(y)
 FROM
@@ -116,6 +125,22 @@ FROM
 
 SELECT 'AST JSON roundtrip';
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'));
+
+SELECT 'normalized AST JSON roundtrip';
+SELECT formatQueryFromJSON(
+    replace(
+        replace(
+            parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+            '"is_normalized":false',
+            '"is_normalized":true'),
+        '"list_of_column_match_modes":["NAME"]',
+        '"list_of_column_match_modes":[]'));
+
+SELECT formatQueryFromJSON(
+    replace(
+        parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
+        '"list_of_modes":["UNION_ALL"]',
+        '"list_of_modes":[]')); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'duplicate output names';
 SELECT 1 AS x, 2 AS x
@@ -141,3 +166,39 @@ WITH RECURSIVE r AS
     SELECT a + 1 AS a FROM r WHERE a < 2
 )
 SELECT * FROM r; -- { serverError UNSUPPORTED_METHOD }
+
+SELECT 'UNION BY NAME with INTERSECT';
+SELECT *
+FROM
+(
+    SELECT 1 AS a
+    UNION ALL BY NAME
+    SELECT 2 AS a
+    INTERSECT ALL
+    SELECT 2 AS a
+)
+ORDER BY a;
+
+SELECT 'EXCEPT with UNION BY NAME';
+SELECT *
+FROM
+(
+    SELECT 1 AS a
+    EXCEPT ALL
+    SELECT 2 AS a
+    UNION ALL BY NAME
+    SELECT 3 AS a
+)
+ORDER BY a;
+
+SELECT 'UNION BY NAME with reordered INTERSECT operands';
+SELECT *
+FROM
+(
+    SELECT 1 AS a, 'x' AS b
+    UNION ALL BY NAME
+    SELECT 'y' AS b, 2 AS a
+    INTERSECT ALL
+    SELECT 'y' AS b, 2 AS a
+)
+ORDER BY a;

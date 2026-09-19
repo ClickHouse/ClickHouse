@@ -1,5 +1,6 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -68,7 +69,7 @@ const char * toString(SetOperationColumnMatchMode mode)
             return "NAME";
     }
 
-    return "POSITION";
+    UNREACHABLE();
 }
 
 SetOperationColumnMatchMode parseSetOperationColumnMatchMode(const std::string & str)
