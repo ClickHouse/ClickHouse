@@ -400,18 +400,26 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # different value at every stack depth and each one takes a fresh entry in the stack depot,
     # which is never freed.
     #
-    # What this covers is the code the compiler generates from the sources it is given, so anything
-    # compiled with a flag set of its own, assembled rather than compiled, or built by another
-    # compiler keeps unsigned return addresses:
+    # What this covers is the code the compiler generates from the C and C++ sources it is given,
+    # plus the assembly sources that opt in themselves through the feature macro it defines, so
+    # anything compiled with a flag set of its own, assembled without that opt-in, or built by
+    # another compiler keeps unsigned return addresses:
     #   - the in-tree `compiler-rt` runtimes. `contrib/compiler-rt-cmake` filters the inherited
     #     flags down to an allowlist (`_compiler_rt_keep_re`) which drops the hardening ones, and
     #     that is also why their unwinder does not strip the signature: `sanitizer_ptrauth.h` keys
     #     stripping on `__ARM_FEATURE_PAC_DEFAULT`, which is precisely what this flag defines, so
     #     adding it to that allowlist is what it would take to sign them and to make sanitizer
     #     builds readable again.
-    #   - hand-written assembly. A `.s` input assembles to a byte-identical object with and without
-    #     the flag, so `longjmp.s` and `syscall.s` under `base/glibc-compatibility/musl/aarch64`
-    #     stay unsigned, as does every prebuilt library we link.
+    #   - raw `.s` inputs and prebuilt libraries. The flag is a code-generation option and says
+    #     nothing about an input that is assembled rather than compiled: a `.s` file assembles to a
+    #     byte-identical object with and without it, so `longjmp.s` and `syscall.s` under
+    #     `base/glibc-compatibility/musl/aarch64` stay unsigned, as does every prebuilt library we
+    #     link. Preprocessed `.S` sources can opt in on their own, though, because `COMPILER_FLAGS`
+    #     also feeds `CMAKE_ASM_FLAGS` below and the flag defines `__ARM_FEATURE_PAC_DEFAULT`: 13 of
+    #     the 19 AArch64 OpenSSL sources the build assembles include `crypto/arm_arch.h`, where that
+    #     macro expands `AARCH64_SIGN_LINK_REGISTER` and `AARCH64_VALIDATE_LINK_REGISTER` to
+    #     `paciasp` and `autiasp`, so they do get signed returns and the PAC property note - by
+    #     their own `#if`, not because the flag instruments them.
     #   - the Rust objects (`skim`, `delta-kernel`, `chdig`, `wasmtime`, ...). `rustc` treats
     #     `-Zbranch-protection` as ABI-affecting and refuses it while `std` comes precompiled
     #     without it ("mixing `-Zbranch-protection` will cause an ABI mismatch"), so signing them
