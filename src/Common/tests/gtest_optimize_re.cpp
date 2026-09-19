@@ -158,3 +158,32 @@ TEST(OptimizeRE, anchoredLiteralIsCaseSensitiveOnly)
     EXPECT_TRUE(case_insensitive.match("ABCdef", 6));
     EXPECT_FALSE(case_insensitive.match("xABCdef", 7));
 }
+
+TEST(OptimizeRE, searchRequiredSubstringAcceptsEverythingMatchAccepts)
+{
+    /// A caller may skip `match` for a subject where `searchRequiredSubstring` does not find the literal,
+    /// whatever the pattern's kind or case sensitivity.
+    auto search_finds = [](const DB::OptimizedRegularExpression & regexp, std::string_view subject)
+    {
+        const auto * data = reinterpret_cast<const UInt8 *>(subject.data());
+        const bool found = data + subject.size() != regexp.searchRequiredSubstring(data, subject.size());
+        if (regexp.match(subject.data(), subject.size()))
+            EXPECT_TRUE(found) << subject;
+        return found;
+    };
+
+    for (int options : {0, static_cast<int>(DB::OptimizedRegularExpression::RE_CASELESS)})
+    {
+        for (const auto * pattern : {"^abc", "abc$", "^abc$", "abc", "abc.*d"})
+        {
+            const DB::OptimizedRegularExpression regexp(pattern, options);
+            ASSERT_EQ(regexp.getRequiredSubstring(), "abc") << pattern;
+
+            EXPECT_TRUE(search_finds(regexp, "abcd")) << pattern;
+            EXPECT_TRUE(search_finds(regexp, "xxabcd")) << pattern;
+            EXPECT_EQ(search_finds(regexp, "ABCd"), options == DB::OptimizedRegularExpression::RE_CASELESS) << pattern;
+            EXPECT_FALSE(search_finds(regexp, "abd")) << pattern;
+            EXPECT_FALSE(search_finds(regexp, "ab")) << pattern;
+        }
+    }
+}
