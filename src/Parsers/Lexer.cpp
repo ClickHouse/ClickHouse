@@ -388,7 +388,7 @@ Token Lexer::nextTokenImpl()
                     /// # hello - a comment
                     /// #!/usr/bin/clickhouse-local --queries-file - a comment
             ++pos;
-            if (pos == end || *pos == ' ' || *pos == '!')
+            if (pos < end && (*pos == ' ' || *pos == '!'))
                 return comment_until_end_of_line();
             return Token(TokenType::Error, token_begin, pos);
         }

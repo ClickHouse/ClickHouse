@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # just stop, no exception
 ${CLICKHOUSE_CLIENT} --query="#" 2>&1 | grep -F -q 'Syntax error' && echo 'OK' || echo 'FAIL'
 ${CLICKHOUSE_CLIENT} --query="#not a comemnt" 2>&1 | grep -F -q 'Syntax error' && echo 'OK' || echo 'FAIL'
-# An empty comment at EOF is valid after a query.
+# syntax error
 ${CLICKHOUSE_CLIENT} --query="select 1 #not a comemnt" 2>&1 | grep -F -q 'Syntax error' && echo 'OK' || echo 'FAIL'
-${CLICKHOUSE_CLIENT} --query="select 1 #" 2>&1 | grep -q '^1$' && echo 'OK' || echo 'FAIL'
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "select 42 #" 2>&1 | grep -q '^42$' && echo 'OK' || echo 'FAIL'
+${CLICKHOUSE_CLIENT} --query="select 1 #" 2>&1 | grep -F -q 'Syntax error' && echo 'OK' || echo 'FAIL'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "select 42 #" 2>&1 | grep -F -q 'Syntax error' && echo 'OK' || echo 'FAIL'
