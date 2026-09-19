@@ -30,18 +30,19 @@ SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.
 
 SELECT 'worker tasks run with the unsupported settings disabled';
 SYSTEM FLUSH LOGS query_log;
--- Worker task entries log the task id ('main', 'stage_N_M' - not SQL) as the query text and share
--- the initiator's query_id; their Settings column shows the task context, where the overrides
--- appear as changed settings. Scoping to the query_id of the latest 'main' task makes the probe
--- immune to earlier runs of this test in the same database, and the task-id filter excludes the
--- initiator row itself (logged before the auto-switch, so it keeps the user-set values). The probe
--- runs with make_distributed_plan = 0 so it does not spawn 'main' tasks of its own.
+-- Worker task entries log the task id ('main', 'stage_N_M' - not SQL) as the query text and carry a
+-- query_id of their own ('<plan uuid>::<task id>'), rooted at the initiator through initial_query_id;
+-- their Settings column shows the task context, where the overrides appear as changed settings.
+-- Scoping to the initiator of the latest 'main' task makes the probe immune to earlier runs of this
+-- test in the same database, and the task-id filter excludes the initiator row itself (logged before
+-- the auto-switch, so it keeps the user-set values). The probe runs with make_distributed_plan = 0 so
+-- it does not spawn 'main' tasks of its own.
 SELECT DISTINCT Settings['use_skip_indexes_on_data_read'], Settings['compile_expressions']
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryStart'
   AND query NOT ILIKE '%SELECT%'
-  AND query_id = (
-      SELECT query_id FROM system.query_log
+  AND initial_query_id = (
+      SELECT initial_query_id FROM system.query_log
       WHERE event_date >= yesterday() AND type = 'QueryStart'
         AND current_database = currentDatabase()
         AND Settings['log_comment'] = '04656_distributed_plan_auto_switch'

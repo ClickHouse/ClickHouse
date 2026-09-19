@@ -63,13 +63,11 @@ SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JO
 FORMAT Null
 SETTINGS log_comment = '05047_cascades_spill_probe';
 
--- Spill evidence from `system.text_log` rather than `ProfileEvents` in `system.query_log`:
--- under `distributed_plan_execute_locally` the fragment pipelines run on executor-pool threads
--- whose profile counters do not reach any `query_log` entry (verified: the initiator and every
--- `stage_*`/`main` fragment entry report `ExternalAggregationWritePart = 0` while the server log
--- shows the writes), so the `Aggregator` log line is the reliable server-side proof. The
--- `query_log` subquery collects the whole fragment family: `log_comment` propagates to the
--- fragment queries. The evidence query must be planned classically: a distributed plan pins
+-- Spill evidence from `system.text_log` rather than `ProfileEvents` in `system.query_log`: the
+-- `Aggregator` log line records the write itself, independently of which entry a fragment's
+-- counters are attributed to. The `query_log` subquery collects the whole fragment family:
+-- `log_comment` propagates to the fragment queries. The evidence query must be planned
+-- classically: a distributed plan pins
 -- concrete log-table part names at planning time, and background merges of the log tables
 -- invalidate them between planning and fragment execution.
 SYSTEM FLUSH LOGS query_log, text_log;
