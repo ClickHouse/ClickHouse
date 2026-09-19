@@ -29,6 +29,7 @@
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/FuseSiblingAggregateSubqueriesPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
@@ -341,6 +342,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<LikePerfectAffixRewritePass>());
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
+
+    /// Before CrossToInnerJoinPass turns the join equalities the branches share into join conditions.
+    manager.addPass(std::make_unique<FuseSiblingAggregateSubqueriesPass>());
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());

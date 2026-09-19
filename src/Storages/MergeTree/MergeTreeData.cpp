@@ -264,6 +264,7 @@ namespace Setting
     extern const SettingsBool optimize_dry_run_check_part;
     extern const SettingsBool materialize_ttl_after_modify;
     extern const SettingsUInt64 max_partition_size_to_drop;
+    extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
@@ -322,9 +323,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_avg_part_size_for_too_many_parts;
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_table_size_rows;
@@ -339,6 +342,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
+    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 min_rows_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_delay;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_throw;
@@ -13828,6 +13832,38 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
         return supports_trivial_count();
 
     return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasLightweightDeletedMask();
+}
+
+bool MergeTreeData::readsColumnsWithoutTransformations(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// A missing mutations snapshot reads as "nothing pending" below, which is the unsafe answer here.
+    const auto * snapshot_data = storage_snapshot ? dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()) : nullptr;
+    if (!snapshot_data || !snapshot_data->mutations_snapshot)
+        return false;
+
+    /// The snapshot overload answers what this read will apply; the live one answers what is pending at
+    /// all, which the snapshot omits when the on-the-fly settings are off, and covers masking policies.
+    return getColumnDefaultnessStatsUnavailableReason(query_context, snapshot_data->mutations_snapshot)
+            == ColumnDefaultnessStatsUnavailableReason::None
+        && getColumnDefaultnessStatsUnavailableReason(query_context) == ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+bool MergeTreeData::readIsBoundedBySpanLimit(ContextPtr query_context) const
+{
+    /// Mirrors ReadFromMergeTree::AnalysisResult::checkLimits: the query setting decides when it is set.
+    const auto & settings = query_context->getSettingsRef();
+    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : (*getSettings())[MergeTreeSetting::max_partitions_to_read].value;
+    if (max_partitions_to_read > 0)
+        return true;
+
+    /// checkLimits also throws when a read selecting this many marks cannot take the table-wide slot.
+    if ((*getSettings())[MergeTreeSetting::max_concurrent_queries] > 0
+        && (*getSettings())[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0)
+        return true;
+
+    return false;
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)

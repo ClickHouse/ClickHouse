@@ -6381,6 +6381,62 @@ Rewrite sumIf() and sum(if()) function countIf() function when logically equival
 Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
 only when col is of String or FixedString type.
 )", 0) \
+    DECLARE(Bool, optimize_fuse_sibling_aggregate_subqueries, false, R"(
+Answer sibling single-row aggregate subqueries that read the same tables with a single pass. Disabled
+by default.
+
+A cross/comma join of derived tables that each aggregate the same `FROM` and differ only in their own
+`WHERE` conjuncts reads those tables once per branch. When enabled, the conjuncts shared by every
+branch become the fused filter and each branch's own residual conjuncts become the condition of an
+`-If` combinator on that branch's aggregates, so the tables are read once. For example,
+`SELECT * FROM (SELECT count() AS a FROM t WHERE c AND x) AS s1, (SELECT count() AS b FROM t WHERE c AND y) AS s2`
+is answered as
+`SELECT * FROM (SELECT countIf(x) AS a, countIf(y) AS b FROM t WHERE c AND (x OR y)) AS s1`.
+
+The rewrite is deliberately restricted to the cases where it is provably answer-preserving: aggregates
+that take no arguments (such as `count()`), MergeTree sources that read stored values with no
+expression evaluated on the way out, and branch filters built from comparisons and logical
+connectives. The conjuncts a branch does not share with its siblings must all read a single one of
+those tables; the shared ones may read any of them.
+
+Three shapes are known to lose:
+
+- When the branches' residual conjuncts are each prunable by the sorting key, the unfused branches
+prune to a few marks apiece while the single fused scan keeps the rows of all of them, so one broad
+read replaces several narrow ones.
+- When a branch's `count()` could be answered from partition and minmax metadata without reading any
+rows at all, the `-If` rewrite makes the read ineligible for that projection, so the fused query reads
+the rows instead.
+- When the branches join more than one table, the fused residual widens the join build side by up to
+the number of fused branches, so a query close to an external-join spill threshold (see
+`max_bytes_ratio_before_external_join`, which defaults to `0.5`) can spill to disk where the unfused
+branches did not. Spilling costs, and it is not always graceful: a grace hash join doubles its bucket
+count as its build side grows and raises `LIMIT_EXCEEDED` rather than passing
+`grace_hash_join_max_buckets`, so a fused build wide enough to need more buckets than that fails where
+the unfused branches answered.
+
+A query tree cannot see access paths, hence the opt-in default.
+
+The rewrite is also skipped for the whole query when any of `max_rows_to_read`, `max_bytes_to_read`,
+`max_rows_to_read_leaf`, `max_bytes_to_read_leaf`, `max_columns_to_read`, `max_temporary_columns`,
+`max_temporary_non_const_columns`, `max_rows_in_join` or `max_bytes_in_join` is set to a non-zero
+value, whatever that value is: each of them is checked against the fused read or join instead of the
+per-branch ones, and a query tree cannot tell how either compares to the bound.
+
+A single table is skipped the same way when a limit on how far one read may span is in force for it:
+an effective non-zero `max_partitions_to_read` (the query setting when it is set, the table's own
+otherwise), or a table that sets both `max_concurrent_queries` and
+`min_marks_to_honor_max_concurrent_queries` to non-zero values. The fused read spans the union of the
+partitions and the marks the branches read, so each of those is evaluated against that union.
+
+A comma join is skipped when `cross_to_inner_join_rewrite` is `2`, which asks for a comma join with no
+equi-join condition in `WHERE` to be rejected: fusing every branch of such a join would leave nothing
+to reject.
+
+:::note
+Supported only with the analyzer (`enable_analyzer = 1`).
+:::
+)", 0) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.

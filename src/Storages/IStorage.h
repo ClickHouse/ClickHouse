@@ -321,6 +321,17 @@ public:
         return false;
     }
 
+    /// Return true if reading a row yields the stored values, with no expression evaluated on the way out.
+    /// The default is false: a storage that has not proven this is assumed to transform what it reads.
+    virtual bool readsColumnsWithoutTransformations(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
+    {
+        return false;
+    }
+
+    /// Return true if a read is bounded by a limit whose outcome depends on how much one read covers
+    /// (the partitions it spans, the marks it selects). The default is true: assumed to be bounded.
+    virtual bool readIsBoundedBySpanLimit(ContextPtr /*query_context*/) const { return true; }
+
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
 

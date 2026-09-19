@@ -61,6 +61,9 @@ struct AggregateFunctionWithProperties
 class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionWithProperties>
 {
 public:
+    /// A longer name is answered by a TOO_LARGE_STRING_SIZE throw rather than by "not an aggregate function".
+    static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
+
     static AggregateFunctionFactory & instance();
 
     /// Register a function by its name.
