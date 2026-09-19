@@ -11087,7 +11087,13 @@ void MergeTreeData::assertNoUnappliedMetadataMutationsForParts(
     if (!mutations_snapshot->hasMetadataMutations())
         return;
 
-    auto table_columns = metadata_snapshot->getColumns().getAllPhysical();
+    /// Under a concurrent `ALTER` neither view of the schema is authoritative: the caller's snapshot can
+    /// predate a rename this mutation list already has, and the live one can already have dropped its
+    /// target. A name in either view is one some reader still resolves, so ask about their union.
+    auto live_metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/ true);
+    auto table_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+    for (const auto & column : live_metadata->getColumns().getAllPhysical())
+        table_columns.insert(column.name);
 
     for (const auto & part : parts)
     {
@@ -11103,21 +11109,21 @@ void MergeTreeData::assertNoUnappliedMetadataMutationsForParts(
         auto part_columns = part->getColumns().getNameSet();
         const auto & serialization_infos = part->getSerializationInfos();
 
-        bool reads_differently = std::ranges::any_of(table_columns, [&](const auto & column)
+        bool reads_differently = std::ranges::any_of(table_columns, [&](const auto & column_name)
         {
-            auto name_in_part = conversions.isColumnRenamed(column.name)
-                ? conversions.getColumnOldName(column.name)
-                : column.name;
+            auto name_in_part = conversions.isColumnRenamed(column_name)
+                ? conversions.getColumnOldName(column_name)
+                : column_name;
 
             bool dropped_in_part = conversions.isColumnDropped(name_in_part, share_nested);
             /// A marker is invalidated by a drop of the name the table has now as well.
-            bool marker_dropped = dropped_in_part || conversions.isColumnDropped(column.name, share_nested);
+            bool marker_dropped = dropped_in_part || conversions.isColumnDropped(column_name, share_nested);
 
             bool read_in_source = (part_columns.contains(name_in_part) && !dropped_in_part)
                 || (serialization_infos.isMissingColumn(name_in_part) && !marker_dropped);
-            bool read_in_clone = part_columns.contains(column.name) || serialization_infos.isMissingColumn(column.name);
+            bool read_in_clone = part_columns.contains(column_name) || serialization_infos.isMissingColumn(column_name);
 
-            return read_in_source != read_in_clone || (read_in_source && name_in_part != column.name);
+            return read_in_source != read_in_clone || (read_in_source && name_in_part != column_name);
         });
 
         if (!reads_differently)
