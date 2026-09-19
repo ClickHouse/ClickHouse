@@ -1,0 +1,110 @@
+--- 1. the definer replaces stored credentials, so rotating the password does not break the dictionary
+one
+two
+--- 1b. control: with the credentials stored in the source, the same rotation breaks the reload
+AUTHENTICATION_FAILED
+definer dictionary still loads	one
+--- 2. the load runs with the definer privileges, not as a privileged default user
+ACCESS_DENIED
+nine
+--- 2b. the definer settings constraints bound what the dictionary definition can set
+constrained setting wins:	1
+unconstrained definer takes the dictionary setting:	1
+--- 3. SET DEFINER is required to name another user as the definer
+ACCESS_DENIED
+created with the grant	1
+--- 4. DEFINER = CURRENT_USER is resolved to the creating user
+1
+--- 5. the clause survives formatting, re-parsing and a detach/attach round trip
+DEFINER = <definer> SQL SECURITY DEFINER
+round trip is stable
+loads after attach	one
+--- 5b. a short ATTACH cannot carry the clause, because it has no definition to apply it to
+ATTACH applies the table definition from stored metadata
+persisted:	0
+ATTACH applies the table definition from stored metadata
+persisted:	0
+ATTACH applies the table definition from stored metadata
+persisted:	0
+server is alive	1
+--- 6. only DEFINER is accepted: INVOKER and NONE are both rejected
+SQL SECURITY INVOKER can't be specified for DICTIONARY
+SQL SECURITY NONE can't be specified for DICTIONARY
+persisted:	0
+definer load identity is the definer	1
+no clause load identity is the source user	1
+--- 7. a source that cannot honour a definer is rejected by the CREATE itself, and nothing is persisted
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+persisted:	0
+SQL SECURITY NONE can't be specified for DICTIONARY
+none persisted:	0
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+persisted:	0
+SQL SECURITY NONE can't be specified for DICTIONARY
+none persisted:	0
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+persisted:	0
+SQL SECURITY NONE can't be specified for DICTIONARY
+none persisted:	0
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+persisted:	0
+SQL SECURITY NONE can't be specified for DICTIONARY
+none persisted:	0
+--- 7a. a function-valued source parameter is evaluated before locality is decided
+function-valued local port accepted	one
+function-valued local host accepted	two
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+persisted:	0
+--- 7f. an unqualified name is judged the same way, before the current database is filled in
+unqualified local accepted:	one
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+persisted:	0
+--- 7b. locality is decided on the effective configuration, so a named collection is resolved first
+DEFINER is only supported for a dictionary with a local CLICKHOUSE source
+local collection accepted	one
+--- 7c. a rejected CREATE leaves no ephemeral definer account behind
+definer is ephemeral:	memory
+definer accounts after the rejection:	0
+definer accounts after an accepted create:	1
+loads as the ephemeral definer:	one
+--- 7d. a rejected CREATE does not keep its named collection alive
+NAMED_COLLECTION_IS_USED
+collection dropped:	1
+--- 7e. the collection is still authorized, so an unprivileged creator cannot resolve it
+ACCESS_DENIED
+created with the collection grant:	1
+--- 8. a dictionary with no clause keeps its current definition and behaviour
+1	1
+one
+1	1
+one
+--- 8c. a clause carrying no explicit type is judged by the type it will be given
+SQL SECURITY INVOKER can't be specified for DICTIONARY
+SQL SECURITY INVOKER can't be specified for DICTIONARY
+persisted:	0
+definer default accepted:	1
+--- 8e. a DEFINER clause that names nobody is rejected, because nothing later fills the identity in
+definer identity removed from the payload
+SQL SECURITY DEFINER for DICTIONARY requires a definer
+persisted:	0
+server alive:	1
+payload with an identity accepted:	1
+--- 8d. a create whose eager load fails leaves no ephemeral definer account behind
+ACCESS_DENIED
+persisted:	0
+definer accounts after the failed load:	0
+server alive after the rollback:	1
+--- 9. the definer cannot be dropped while a dictionary uses it
+HAVE_DEPENDENT_OBJECTS
+definer dropped:	1
+ephemeral definer clone collected:	1
+--- 9b. a dictionary that gains a UUID by being renamed still protects its definer
+untracked definer was droppable:	1
+renamed into a UUID database:	1
+loads after the rename:	one
+HAVE_DEPENDENT_OBJECTS
+definer survived the drop attempt:	1
+reloads with the definer:	one
+--- 10. a table over a dictionary still rejects the clause, because that engine cannot enforce it
+Engine Dictionary doesn't support SQL SECURITY clause
+table over a dictionary persisted:	0
