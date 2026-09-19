@@ -62,6 +62,7 @@ public:
     /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
     bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isVariadic() const override { return true; }
