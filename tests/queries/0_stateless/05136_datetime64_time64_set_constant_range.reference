@@ -1,0 +1,12 @@
+-- DateTime64: UInt64 max must not match -1
+0
+1
+-- DateTime64: representable UInt64 values still match
+1
+-- The VALUES path rejects an unrepresentable UInt64
+-- Time64: UInt64 max must not match -1
+0
+1
+-- Time64: representable UInt64 values still match
+1
+-- The Time64 VALUES path rejects an unrepresentable UInt64
