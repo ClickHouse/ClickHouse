@@ -39,7 +39,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-template <typename NameParser>
+template <typename NameParser, bool allow_default = false>
 class IParserNameTypePair : public IParserBase
 {
 protected:
@@ -49,9 +49,13 @@ protected:
 
 /** The name and type are separated by a space. For example, URL String. */
 using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
+/** The same, but also accepts an optional DEFAULT expression after the type.
+  * Used for the elements of Tuple and Nested data types, e.g. `Tuple(s String DEFAULT 'Hello')`.
+  */
+using ParserNameTypePairWithDefault = IParserNameTypePair<ParserIdentifier, true>;
 
-template <typename NameParser>
-bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+template <typename NameParser, bool allow_default>
+bool IParserNameTypePair<NameParser, allow_default>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
     ParserDataType type_parser;
@@ -65,6 +69,23 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
         tryGetIdentifierNameInto(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
+
+        /// Optional DEFAULT expression, e.g. `Tuple(s String DEFAULT 'Hello')`.
+        /// It is accepted only at the syntax level here; InterpreterCreateQuery pulls it up to the
+        /// column level, and an attempt to build a data type while it is set throws.
+        if constexpr (allow_default)
+        {
+            if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+            {
+                ParserExpression expr_parser;
+                ASTPtr default_expression;
+                if (!expr_parser.parse(pos, default_expression, expected))
+                    return false;
+                name_type_pair->default_expression = default_expression;
+                name_type_pair->children.push_back(default_expression);
+            }
+        }
+
         node = name_type_pair;
         return true;
     }
