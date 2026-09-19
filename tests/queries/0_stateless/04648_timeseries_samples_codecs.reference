@@ -1,12 +1,3 @@
-default codecs:
-id	Tuple(UInt64, UUID)	
-timestamp	DateTime64(3)	CODEC(DoubleDelta, ZSTD(1))
-value	Float64	CODEC(Gorilla(8), ZSTD(1))
-after detach/attach:
-id	Tuple(UInt64, UUID)	
-timestamp	DateTime64(3)	CODEC(DoubleDelta, ZSTD(1))
-value	Float64	CODEC(Gorilla(8), ZSTD(1))
-explicit columns keep user codecs:
-id	UUID	
-timestamp	DateTime64(3)	
-value	Float64	
+id	Tuple(UInt64, LowCardinality(UUID))	
+timestamp	DateTime64(3)	CODEC(Delta(8), T64, ZSTD(3))
+value	Float64	CODEC(ALP, ZSTD(3))

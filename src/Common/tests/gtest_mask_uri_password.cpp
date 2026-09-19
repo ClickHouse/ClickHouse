@@ -83,7 +83,7 @@ TEST(MaskURIPassword, AgreesWithTheRegularExpressionOnRandomStrings)
     /// The fixed corpus above documents the interesting cases; this is the safety net for the ones
     /// nobody thought of. The alphabet is the characters the regular expression assigns meaning to.
     constexpr std::string_view alphabet = "ab:@/.\n";
-    std::mt19937_64 rng(20260731); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     std::uniform_int_distribution<size_t> length_dist(0, 32);
     std::uniform_int_distribution<size_t> char_dist(0, alphabet.size() - 1);
 
@@ -206,7 +206,7 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
         "https://", "s3://", "1://", "-x://", ":/", "user", "pass", ":", "@", "/", "?", "&", "=", "#",
         "Signature", "AWSAccessKeyId", "Expires", "GoogleAccessId", "X-Amz-", "X-Goog-", "Credential", "_", "a", "\n", "",
     };
-    std::mt19937_64 rng(20260731); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     std::uniform_int_distribution<size_t> count_dist(0, 12);
     std::uniform_int_distribution<size_t> token_dist(0, tokens.size() - 1);
 

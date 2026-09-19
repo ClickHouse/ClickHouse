@@ -1,0 +1,60 @@
+---
+description: 'يحتوي على صف واحد لكل عقدة في شجرة البيانات المخزنة على عقدة ClickHouse Keeper المحلية التي تعمل ضمن العملية.'
+keywords: ['جدول النظام', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: 'مرجع'
+---
+
+import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
+
+<SystemTableCloud />
+
+<div id="description">
+  ## الوصف
+</div>
+
+لا يتوفر هذا الجدول إلا في عمليات نشر ClickHouse Keeper التي تستخدم عملية `clickhouse server` (وليس `clickhouse keeper`). ويحتوي على صف واحد لكل عقدة في شجرة البيانات المخزنة على عقدة Keeper المحلية، بما في ذلك عقد النظام `/keeper`.
+
+بخلاف `system.zookeeper`، لا يرسل هذا الجدول طلبات إلى عنقود Keeper. إذ يقرأ مباشرةً الحالة المُعتمدة لـ Keeper المحلي من عرض متسق خالٍ من الأقفال، دون التأثير في معالجة الطلبات. ولا تتطلب قراءة الجدول شرطًا للمسار، وتُرجع الشجرة كاملةً، لذا فهو مناسب للاستعلامات التي تفحص جميع العقد، مثل العثور على العقد ذات العدد الأكبر من العقد الفرعية أو البيانات الأكبر حجمًا.
+
+<div id="columns">
+  ## الأعمدة
+</div>
+
+* `path` ([String](/ar/reference/data-types/string)) — المسار المطلق للعقدة.
+* `data` ([String](/ar/reference/data-types/string)) — البيانات المخزنة في العقدة.
+* `czxid` ([Int64](/ar/reference/data-types/int-uint)) — معرّف المعاملة التي أنشأت العقدة.
+* `mzxid` ([Int64](/ar/reference/data-types/int-uint)) — معرّف المعاملة التي عدّلت العقدة للمرة الأخيرة.
+* `ctime` ([DateTime64(3)](/ar/reference/data-types/datetime64)) — وقت إنشاء العقدة.
+* `mtime` ([DateTime64(3)](/ar/reference/data-types/datetime64)) — وقت آخر تعديل للعقدة.
+* `version` ([Int32](/ar/reference/data-types/int-uint)) — عدد تعديلات بيانات العقدة.
+* `cversion` ([Int32](/ar/reference/data-types/int-uint)) — عدد تعديلات العقد الفرعية للعقدة.
+* `aversion` ([Int32](/ar/reference/data-types/int-uint)) — عدد تعديلات ACL الخاصة بالعقدة.
+* `ephemeral_owner` ([Int64](/ar/reference/data-types/int-uint)) — معرّف الجلسة المالكة للعقدة إذا كانت مؤقتة، و`0` خلاف ذلك.
+* `data_length` ([UInt32](/ar/reference/data-types/int-uint)) — حجم بيانات العقدة بالبايت.
+* `num_children` ([Int32](/ar/reference/data-types/int-uint)) — عدد العقد الفرعية للعقدة.
+* `pzxid` ([Int64](/ar/reference/data-types/int-uint)) — معرّف المعاملة التي أضافت أو أزالت العقد الفرعية للعقدة للمرة الأخيرة.
+* `seq_num` ([Int64](/ar/reference/data-types/int-uint)) — عدّاد يُستخدم لإنشاء أسماء العقد الفرعية المتسلسلة للعقدة.
+* `ttl` ([Int64](/ar/reference/data-types/int-uint)) — TTL للعقدة بالمللي ثانية إذا كانت عقدة TTL، و`0` خلاف ذلك.
+* `acl_id` ([UInt32](/ar/reference/data-types/int-uint)) — المعرّف الداخلي لـ ACL الخاصة بالعقدة، و`0` إذا لم تكن للعقدة ACL.
+
+<div id="example">
+  ## مثال
+</div>
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```

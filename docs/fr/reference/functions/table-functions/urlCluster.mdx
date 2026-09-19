@@ -29,7 +29,7 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Format](/fr/reference/formats/index) des données. Type : [String](/fr/reference/data-types/string).                                                               |
 | `structure`    | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string). |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valeur renvoyée
 </div>
 
@@ -68,7 +68,7 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 </div>
 
 Les motifs dans `{ }` sont utilisés pour générer un ensemble de shards ou pour spécifier des adresses de basculement. Pour connaître les types de motifs pris en charge ainsi que des exemples, consultez la description de la fonction [remote](/fr/reference/functions/table-functions/remote#globs-in-addresses).
-Le caractère `|` à l’intérieur des motifs est utilisé pour spécifier des adresses de basculement. Celles-ci sont parcourues dans le même ordre que celui dans lequel elles sont listées dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings#glob_expansion_max_elements).
+Le caractère `|` à l’intérieur des motifs est utilisé pour spécifier des adresses de basculement. Celles-ci sont parcourues dans le même ordre que celui dans lequel elles sont listées dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings/other#glob_expansion_max_elements).
 
 <div id="related">
   ## Voir aussi

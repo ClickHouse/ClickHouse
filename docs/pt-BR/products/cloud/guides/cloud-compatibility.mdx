@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', 'compatibilidade']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/pt-BR/_cloud_unsupported_features.mdx';
+
 Este guia apresenta uma visão geral do que esperar, do ponto de vista funcional e operacional, no ClickHouse Cloud. Embora o ClickHouse Cloud seja baseado na distribuição open source do ClickHouse, pode haver algumas diferenças de arquitetura e implementação. Como material de apoio, talvez seja interessante ler este post no blog sobre [como criamos o ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year).
 
 <div id="clickhouse-cloud-architecture">
@@ -48,7 +50,7 @@ O ClickHouse Cloud é um serviço altamente disponível e replicado por padrão,
 
 Os motores `Replicated*` são convertidos para os mesmos equivalentes `Shared*`. A substituição fica visível em `SHOW CREATE TABLE`, que mostra o motor `Shared*` mesmo que sua instrução tenha especificado a variante simples.
 
-Os motores a seguir também têm suporte e são usados exatamente como escritos:
+Os motores de tabela a seguir também têm suporte e são usados exatamente como escritos. O motor de tabela `MySQL` com suporte é diferente do motor de banco de dados `MySQL` sem suporte:
 
 * URL
 * View
@@ -57,6 +59,7 @@ Os motores a seguir também têm suporte e são usados exatamente como escritos:
 * Null
 * Buffer
 * Memory
+* `IcebergS3` e `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -66,6 +69,8 @@ Os motores a seguir também têm suporte e são usados exatamente como escritos:
 * PostgreSQL
 * S3
 * Kafka
+
+Os motores de tabela experimentais `PaimonS3` e `PaimonAzure` podem ser habilitados em determinados serviços do ClickHouse Cloud. Entre em contato com o Suporte para confirmar a disponibilidade.
 
 <div id="interfaces">
   ### Interfaces
@@ -85,6 +90,8 @@ Dictionaries são uma forma popular de acelerar buscas no ClickHouse. Atualmente
 
 Oferecemos suporte a consultas federadas do ClickHouse para comunicação entre clusters na nuvem e com clusters ClickHouse autogerenciados externos. No momento, o ClickHouse Cloud oferece suporte a consultas federadas com os seguintes motores de integração:
 
+* `IcebergS3` e `IcebergAzure`
+* `PaimonS3` e `PaimonAzure` (experimental; entre em contato com o Suporte para verificar a disponibilidade)
 * Deltalake
 * Hudi
 * MySQL
@@ -128,7 +135,7 @@ Os recursos experimentais são desativados nos serviços do ClickHouse Cloud par
   ### Coleções nomeadas
 </div>
 
-[Coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) não são compatíveis no momento com o ClickHouse Cloud.
+[Coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) criadas por DDL podem ser habilitadas em determinados serviços do ClickHouse Cloud. Entre em contato com o Suporte para confirmar a disponibilidade. Coleções nomeadas definidas em arquivos de configuração não estão disponíveis porque os usuários não podem modificar os arquivos de configuração do servidor no ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## Padrões operacionais e considerações
@@ -151,9 +158,7 @@ O valor padrão da configuração `max_parts_in_total` para tabelas MergeTree fo
 </div>
 
 Essa configuração por servidor foi aumentada do valor padrão de `100` para `1000` para permitir mais concorrência.
-Isso resultará em `número de réplicas * 1.000` consultas simultâneas para os serviços dos tiers oferecidos.
-`1000` consultas simultâneas para o serviço do tier Basic, limitado a uma única réplica, e `1000+` para Scale e Enterprise,
-dependendo do número de réplicas configuradas.
+Isso resulta em `número de réplicas * 1.000` consultas simultâneas para um serviço. Um serviço com uma única réplica aceita até `1000` consultas simultâneas, independentemente do tier. Serviços com múltiplas réplicas nos tiers Scale e Enterprise aceitam até `1000` consultas simultâneas por réplica.
 
 <div id="max_table_size_to_drop-1000000000000">
   #### `max_table_size_to_drop: 1,000,000,000,000`
@@ -172,6 +177,12 @@ O ClickHouse Cloud é otimizado para cargas de trabalho variáveis e, por esse m
 </div>
 
 Como parte da criação do serviço ClickHouse, criamos um banco de dados padrão e o usuário padrão `default`, que tem permissões amplas nesse banco de dados. Esse usuário inicial pode criar usuários adicionais e atribuir a eles permissões para esse banco de dados. Além disso, no momento não há suporte para habilitar, no banco de dados, os seguintes recursos de segurança por meio de autenticação Kerberos, LDAP ou por certificado SSL X.509.
+
+<div id="list-of-unsupported-features">
+  ## Lista de funcionalidades sem suporte
+</div>
+
+<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## Roadmap

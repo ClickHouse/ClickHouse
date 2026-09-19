@@ -1,0 +1,85 @@
+-- The conversion of the JOIN keys to the type of the values that they have in common must not depend
+-- on `join_algorithm`: a Tuple key with a NULL element matches nothing, the same way an element out
+-- of the common range does.
+-- https://github.com/ClickHouse/ClickHouse/issues/117102
+
+SET enable_analyzer = 1;
+
+{% for algorithm in ['hash', 'parallel_hash', 'grace_hash', 'partial_merge', 'full_sorting_merge'] -%}
+SELECT '{{ algorithm }}';
+
+-- Mixed signedness: the common subtype fallback fires. Only the in-range element matches.
+SELECT * FROM
+(
+    SELECT tuple(CAST(1, 'Nullable(UInt64)')) AS t
+    UNION ALL SELECT tuple(CAST(NULL, 'Nullable(UInt64)'))
+    UNION ALL SELECT tuple(CAST(18446744073709551615, 'Nullable(UInt64)'))
+) AS a
+INNER JOIN
+(
+    SELECT tuple(CAST(1, 'Nullable(Int64)')) AS t
+    UNION ALL SELECT tuple(CAST(NULL, 'Nullable(Int64)'))
+    UNION ALL SELECT tuple(CAST(-1, 'Nullable(Int64)'))
+) AS b ON a.t = b.t
+ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+
+-- Same types: the fallback does not fire, and the keys keep the behavior they had before.
+SELECT * FROM
+(
+    SELECT tuple(CAST(1, 'Nullable(Int64)')) AS t
+    UNION ALL SELECT tuple(CAST(NULL, 'Nullable(Int64)'))
+) AS a
+INNER JOIN
+(
+    SELECT tuple(CAST(1, 'Nullable(Int64)')) AS t
+    UNION ALL SELECT tuple(CAST(NULL, 'Nullable(Int64)'))
+) AS b ON a.t = b.t
+ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+
+-- The USING key of the result holds the original value of the matched row.
+SELECT t FROM
+(SELECT tuple(CAST(1, 'Nullable(UInt64)')) AS t UNION ALL SELECT tuple(CAST(NULL, 'Nullable(UInt64)'))) AS a
+INNER JOIN
+(SELECT tuple(CAST(1, 'Nullable(Int64)')) AS t UNION ALL SELECT tuple(CAST(NULL, 'Nullable(Int64)'))) AS b
+USING (t)
+ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
+
+-- A LowCardinality(Nullable) element is rejected: converting it to a non-Nullable element cannot report
+-- the NULL at the top level.
+SELECT * FROM
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(UInt64)')), 'Tuple(LowCardinality(Nullable(UInt64)))') AS t) AS a
+INNER JOIN
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(Int64)')), 'Tuple(LowCardinality(Nullable(Int64)))') AS t) AS b
+ON a.t = b.t
+SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError NO_COMMON_TYPE }
+SELECT * FROM
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(UInt64)')), 'Tuple(LowCardinality(Nullable(UInt64)))') AS t) AS a
+INNER JOIN
+(SELECT CAST(tuple(CAST(NULL, 'Nullable(Int64)')), 'Tuple(LowCardinality(Nullable(Int64)))') AS t) AS b
+USING (t)
+SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError NO_COMMON_TYPE }
+
+-- A plain LowCardinality element is stripped before the common subtype is computed.
+SELECT * FROM
+(SELECT CAST(tuple(CAST(1, 'UInt64')), 'Tuple(LowCardinality(UInt64))') AS t) AS a
+INNER JOIN
+(SELECT CAST(tuple(CAST(1, 'Int64')), 'Tuple(LowCardinality(Int64))') AS t) AS b
+ON a.t = b.t
+ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge', allow_suspicious_low_cardinality_types = 1;
+
+-- The fallback does not apply to a null-safe comparison, where NULL matches NULL and the values
+-- converted to NULL would match each other.
+SELECT count() FROM
+(SELECT tuple(CAST(NULL, 'Nullable(UInt64)')) AS t) AS a
+INNER JOIN
+(SELECT tuple(CAST(NULL, 'Nullable(Int64)')) AS t) AS b
+ON a.t IS NOT DISTINCT FROM b.t; -- { serverError NO_COMMON_TYPE }
+
+-- A null-safe comparison of keys of the same type still matches NULL, through the tuple wrapping.
+SELECT count() FROM
+(SELECT CAST(NULL, 'Nullable(Int64)') AS k) AS a
+INNER JOIN
+(SELECT CAST(NULL, 'Nullable(Int64)') AS k) AS b
+ON a.k IS NOT DISTINCT FROM b.k
+SETTINGS join_algorithm = 'full_sorting_merge';

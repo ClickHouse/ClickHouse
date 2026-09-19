@@ -133,6 +133,14 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
         auto path_info = it.getCurrentPathInfo();
+
+        /// When type_json_skip_null_typed_paths is enabled, treat NULL in typed paths
+        /// as absence of the path, matching the behavior of dynamic paths.
+        if (settings.json.type_json_skip_null_typed_paths
+            && path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
+            && path_info.column->isNullAt(path_info.row))
+            continue;
+
         PathElements path_elements(path_info.path);
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
@@ -270,8 +278,6 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
-    updateMaxDynamicPathsLimitIfNeeded(column, settings);
-
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
     if (!parser->parse(object, document))
@@ -378,7 +384,7 @@ template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
-    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
+    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
     deserializeObject(column, object_view, settings);
 }
 

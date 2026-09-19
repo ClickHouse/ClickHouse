@@ -108,9 +108,9 @@ The values are not decoded.
 SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2');
         )",
         R"(
-┌─extractURLPa⋯m2=value2')─┐
-│ ['param1','param2']      │
-└──────────────────────────┘
+┌─extractURLParameterNames('http://example.com/?param1=value1&param2=value2')─┐
+│ ['param1','param2']                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

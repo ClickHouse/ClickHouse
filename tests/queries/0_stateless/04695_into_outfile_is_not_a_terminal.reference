@@ -1,0 +1,6 @@
+Vertical INTO OUTFILE, pty stdout: no escapes
+Vertical INTO OUTFILE AND STDOUT, pty stdout: no escapes
+Vertical to pty stdout: escapes
+PrettyCompact INTO OUTFILE, pty stdout: no escapes
+PrettyCompact INTO OUTFILE AND STDOUT, pty stdout: no escapes
+PrettyCompact to pty stdout: escapes

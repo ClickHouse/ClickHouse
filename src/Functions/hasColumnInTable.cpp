@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
@@ -15,6 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_TABLE;
 }
@@ -108,6 +110,13 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     const StoragePtr & table = DatabaseCatalog::instance().getTable(
         {database_name, table_name},
         const_pointer_cast<Context>(getContext()));
+
+    /// An `Alias` reports the columns of its target, so seeing them takes the privilege on the target.
+    if (const auto * alias = table->as<StorageAlias>();
+        alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to check metadata exposed by {}",
+                        StorageID{database_name, table_name}.getNameForLogs());
+
     auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     bool has_column = table_metadata->getColumns().hasPhysical(column_name);
     bool has_alias_column = table_metadata->getColumns().hasAlias(column_name);
@@ -124,10 +133,10 @@ Checks if a specific column exists in a database table.
 For elements in a nested data structure, the function checks for the existence of a column.
 For the nested data structure itself, the function returns `0`.
 
-:::note Privilege `SHOW COLUMNS` is required
+<Note title="Privilege `SHOW COLUMNS` is required">
 The function requires the `SHOW COLUMNS` privilege on the target table (the same grant needed by `DESCRIBE` and `SHOW CREATE TABLE`).
 Without it the call fails with `ACCESS_DENIED` instead of returning `1` or `0`, so column names cannot be probed without access.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "hasColumnInTable(database, table, column)";
     FunctionDocumentation::Arguments arguments = {

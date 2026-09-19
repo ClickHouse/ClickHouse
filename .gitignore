@@ -45,7 +45,6 @@ xray-log.*
 /docs/tools/venv
 /docs/tools/translate/venv
 /docs/tools/translate/output.md
-/docs/en/single.md
 /docs/ru/single.md
 /docs/zh/single.md
 /docs/ja/single.md
@@ -53,6 +52,9 @@ xray-log.*
 
 # callgrind files
 callgrind.out.*
+
+# jemalloc heap profiles
+jeprof.*.heap
 
 # ignore kdevelop files
 *.kdev4

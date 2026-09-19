@@ -30,6 +30,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
+        in_prewhere = parent_scope->in_prewhere;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -45,6 +46,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
             union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
 
         context = union_node->getContext();
+        in_prewhere = false;
     }
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
@@ -54,6 +56,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
             && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        in_prewhere = false;
     }
 
     if (context)
@@ -211,6 +214,11 @@ bool IdentifierResolveScope::canCacheIdentifier(
     /// tryResolveIdentifierFromAliases: a compound lookup like `value.a` binds to an
     /// in-flight alias named `value`, so it must be excluded from the cache as well.
     if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
+        return false;
+
+    /// Cannot use cache for a hidden lambda argument: outside of the hiding window the same name
+    /// resolves to the argument, inside it resolves to whatever the enclosing scopes provide.
+    if (!hidden_expression_arguments.empty() && hidden_expression_arguments.contains(lookup.identifier.front()))
         return false;
 
     return true;

@@ -16,8 +16,10 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   ## interserver_listen_host
 </div>
 
-ClickHouse servers 間でデータを交換できる hosts を制限します。
+ClickHouse サーバー 間でデータを交換できる hosts を制限します。
 Keeper を使用している場合、異なる Keeper インスタンス間の通信にも同じ制限が適用されます。
+
+* **デフォルト:** `listen_host`
 
 <Note>
   デフォルトでは、値は [`listen_host`](/ja/reference/settings/server-settings/settings/listen#listen_host) 設定と同じです。

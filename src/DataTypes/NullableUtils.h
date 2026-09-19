@@ -46,7 +46,7 @@ DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const Da
   * by the caller.
   */
 void applyParentNullMapToExtractedSubcolumn(
-    const MutableColumnPtr & column,
+    IColumn & column,
     const NullMap & parent_null_map,
     size_t column_offset,
     size_t parent_null_map_offset);

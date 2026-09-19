@@ -346,10 +346,12 @@ def test_mixed_setting_escape_index_filenames_on_cluster(started_cluster):
     # PARTITION BY x so each replica writes its own part in its own partition; a part
     # keeps the index filenames of whoever wrote it, even after replication fetches it,
     # so inspecting a node's own partition isolates that node's in-memory policy.
+    # packed_skip_index_max_bytes = 0 keeps the index in its own skp_idx_<name>.idx2 file
+    # instead of the skp_idx.packed archive, which is what makes the filename observable.
     create_sql = (
         "CREATE TABLE escape_mixed (x UInt64, INDEX `idx-esc` x TYPE minmax GRANULARITY 1) "
         "ENGINE=ReplicatedMergeTree('{zk}', '{replica}') ORDER BY x PARTITION BY x "
-        "SETTINGS escape_index_filenames = 1, min_bytes_for_wide_part = 0"
+        "SETTINGS escape_index_filenames = 1, min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0"
     )
     ch1.query(database="test_db", sql=create_sql.format(zk=zookeeper_path, replica="r1"))
     ch2.query(database="test_db", sql=create_sql.format(zk=zookeeper_path, replica="r2"))
