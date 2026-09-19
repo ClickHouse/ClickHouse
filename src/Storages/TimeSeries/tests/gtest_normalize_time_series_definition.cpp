@@ -527,6 +527,31 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 }
 
 
+TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
+{
+    static constexpr std::string_view legacy_engine
+        = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+    static constexpr std::string_view pinned_engine
+        = "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+
+    /// The timezone is named only from the version that introduced it, so an earlier version keeps
+    /// generating the expression it always generated and stays reproducible.
+    EXPECT_EQ(
+        extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5"), "RECENT SAMPLES"),
+        legacy_engine);
+    EXPECT_EQ(extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries"), "RECENT SAMPLES"), pinned_engine);
+
+    /// A copy is a new table at the latest version. The source's own spelling is what identifies its
+    /// key as generated, so it is stripped rather than carried over as if it had been declared.
+    auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5"));
+    EXPECT_TRUE(copy.contains("version = 6")) << copy;
+    EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), pinned_engine);
+}
+
+
 TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
 {
     /// A stored definition is normalized again on ATTACH, and it can be replayed as a new table (e.g. on another replica):
