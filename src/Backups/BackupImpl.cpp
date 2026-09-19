@@ -152,7 +152,10 @@ namespace
         /// The name is kept verbatim, and `listFiles` cuts a directory prefix off it by byte offset, so a
         /// name that is not already normalized yields a remainder that is rooted or escapes its directory.
         /// Compare the strings: two `fs::path` objects compare element-wise, so "a//b" equals "a/b".
-        if (normalized.string() != file_name)
+        /// `generic_string`, not `string`: a path inside a backup is always `/`-separated, while
+        /// `string` renders the preferred separator of the host, which on Windows would make every
+        /// name with a directory in it compare unequal to itself.
+        if (normalized.generic_string() != file_name)
             throw Exception(
                 ErrorCodes::INSECURE_PATH,
                 "Backup {}: <{}> {} is not a normalized path, which is not allowed",

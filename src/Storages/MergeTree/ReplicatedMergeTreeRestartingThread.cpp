@@ -305,7 +305,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     auto zookeeper = storage.getZooKeeper();
 
     String quorum_str;
-    if (zookeeper->tryGet(fs::path(storage.zookeeper_path) / "quorum" / "status", quorum_str))
+    if (zookeeper->tryGet(zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "status"), quorum_str))
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
@@ -318,12 +318,12 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     }
 
     Strings part_names;
-    String parallel_quorum_parts_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel";
+    String parallel_quorum_parts_path = zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "parallel");
     if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
     {
         for (auto & part_name : part_names)
         {
-            if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
+            if (zookeeper->tryGet(zkutil::joinZooKeeperPath(parallel_quorum_parts_path, part_name), quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
                 if (!quorum_entry.replicas.contains(storage.replica_name)
@@ -345,13 +345,13 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// How other replicas can access this one.
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
-    String is_active_path = fs::path(storage.replica_path) / "is_active";
+    String is_active_path = zkutil::joinZooKeeperPath(storage.replica_path, "is_active");
     zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
+    ops.emplace_back(zkutil::makeSetRequest(zkutil::joinZooKeeperPath(storage.replica_path, "host"), address.toString(), -1));
 
     try
     {
@@ -360,7 +360,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     catch (const Coordination::Exception & e)
     {
         String existing_replica_host;
-        zookeeper->tryGet(fs::path(storage.replica_path) / "host", existing_replica_host);
+        zookeeper->tryGet(zkutil::joinZooKeeperPath(storage.replica_path, "host"), existing_replica_host);
 
         if (existing_replica_host.empty())
             existing_replica_host = "without host node";
@@ -473,7 +473,7 @@ Int32 ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded(zku
             return metadata_version;
 
         Coordination::Stat table_stat;
-        zookeeper->get(fs::path(zookeeper_path) / "metadata", &table_stat);
+        zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_path, "metadata"), &table_stat);
         if (table_stat.version == 0)
             return metadata_version;
 
@@ -486,8 +486,8 @@ Int32 ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded(zku
         }
 
         const Coordination::Requests ops = {
-            zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(table_stat.version), replica_stat.version),
-            zkutil::makeCheckRequest(fs::path(zookeeper_path) / "metadata", table_stat.version),
+            zkutil::makeSetRequest(zkutil::joinZooKeeperPath(replica_path, "metadata_version"), std::to_string(table_stat.version), replica_stat.version),
+            zkutil::makeCheckRequest(zkutil::joinZooKeeperPath(zookeeper_path, "metadata"), table_stat.version),
         };
         Coordination::Responses ops_responses;
         const Coordination::Error code = zookeeper->tryMulti(ops, ops_responses);

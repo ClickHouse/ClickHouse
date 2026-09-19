@@ -7,6 +7,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/AtomicLogger.h>
+#include <Common/IO.h>
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
@@ -123,9 +124,9 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     /* because we assume that the user code is to be blamed. Still it means that we have to catch errors that were not a user's fault. */ \
     catch (const std::bad_alloc & logger_exception)                                                                 \
     {                                                                                                               \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)writeRetry(STDERR_FILENO, MESSAGE_FOR_EXCEPTION_ON_LOGGING, sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
         const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        (void)writeRetry(STDERR_FILENO, logger_exception_message); \
     }                                                                                                               \
                                                                                                                     \
     try                                                                                                             \
@@ -138,19 +139,19 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
     {                                                                                                               \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)writeRetry(STDERR_FILENO, MESSAGE_FOR_EXCEPTION_ON_LOGGING, sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
         const std::string & logger_exception_message = logger_exception.message();                                  \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
+        (void)writeRetry(STDERR_FILENO, logger_exception_message.data(), logger_exception_message.size()); \
     }                                                                                                               \
     catch (const std::exception & logger_exception)                                                                 \
     {                                                                                                               \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)writeRetry(STDERR_FILENO, MESSAGE_FOR_EXCEPTION_ON_LOGGING, sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
         const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        (void)writeRetry(STDERR_FILENO, logger_exception_message); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)writeRetry(STDERR_FILENO, MESSAGE_FOR_EXCEPTION_ON_LOGGING, sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
     }                                                                                                               \
     ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
 } while (false)

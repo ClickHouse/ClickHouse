@@ -23,7 +23,9 @@
 #include "Poco/Timestamp.h"
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/File_WIN32U.h"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/File_UNIX.h"
 #endif
 

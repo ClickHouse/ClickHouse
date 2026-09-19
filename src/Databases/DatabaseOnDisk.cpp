@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <filesystem>
@@ -320,7 +321,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
-        db_disk->removeFileIfExists(detached_permanently_flag);
+        db_disk->removeFileIfExists(pathToGenericString(detached_permanently_flag));
     }
     catch (Exception & e)
     {
@@ -362,7 +363,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     try
     {
         auto db_disk = getDisk();
-        db_disk->createFile(detached_permanently_flag);
+        db_disk->createFile(pathToGenericString(detached_permanently_flag));
 
         std::lock_guard lock(mutex);
         const auto it = snapshot_detached_tables.find(table_name);
@@ -443,7 +444,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
-        if (db_disk->existsFile(detached_permanently_flag))
+        if (db_disk->existsFile(pathToGenericString(detached_permanently_flag)))
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
                             "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
@@ -640,7 +641,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
     const auto & settings = getContext()->getSettingsRef();
     {
         auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, metadata_file_path, true);
+        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, pathToGenericString(metadata_file_path), true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.setDatabase(database_name);
@@ -738,7 +739,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
-        if (db_disk->existsFileOrDirectory(fs::path(data_path) / object_name))
+        if (db_disk->existsFileOrDirectory(pathToGenericString(fs::path(data_path) / object_name)))
         {
             db_disk->replaceFile(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
@@ -779,13 +780,13 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         {
             /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
             LOG_INFO(log, "Removing file {}", sub_path.string());
-            db_disk->removeFileIfExists(sub_path);
+            db_disk->removeFileIfExists(pathToGenericString(sub_path));
         }
         else if (endsWith(file_name, ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
             LOG_INFO(log, "Removing file {}", sub_path.string());
-            db_disk->removeFileIfExists(sub_path);
+            db_disk->removeFileIfExists(pathToGenericString(sub_path));
         }
         else if (endsWith(file_name, ".sql"))
         {
@@ -889,7 +890,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.table && create.uuid != UUIDHelpers::Nil)
     {
-        String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
+        String table_name = unescapeForFileName(pathToGenericString(fs::path(metadata_file_path).stem()));
 
         if (create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(
@@ -995,11 +996,11 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
         default_db_disk,
-        /*file_path=*/metadata_tmp_file_path,
+        pathToGenericString(metadata_tmp_file_path),
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-    default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
+    default_db_disk->replaceFile(pathToGenericString(metadata_tmp_file_path), pathToGenericString(metadata_file_path));
 }
 
 void DatabaseOnDisk::checkTablesLimit(size_t tables_to_add) const

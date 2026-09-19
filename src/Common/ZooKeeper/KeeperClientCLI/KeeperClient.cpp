@@ -90,18 +90,17 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
     confirmation_callback = callback;
 }
 
-fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
+String KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    String result;
+    /// A ZooKeeper path, not a filesystem one, so it is joined and normalized as a string.
+    /// `weakly_canonical` - which this used to call - stats every prefix against the local
+    /// filesystem and resolves any symlink it finds there, which for a znode path is both wasted
+    /// work and wrong; and `std::filesystem` on Windows treats `\` as a separator and reads the
+    /// path through the active code page. `lexicallyNormalizeZooKeeperPath` leaves no trailing
+    /// separator, so there is nothing to trim afterwards.
     if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
-
-    if (result.ends_with('/') && result.size() > 1)
-        result.pop_back();
-
-    return result;
+        return zkutil::lexicallyNormalizeZooKeeperPath(relative);
+    return zkutil::lexicallyNormalizeZooKeeperPath(zkutil::joinZooKeeperPath(cwd, relative));
 }
 
 void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)

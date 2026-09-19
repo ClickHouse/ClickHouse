@@ -21,7 +21,9 @@
 #include "Poco/Foundation.h"
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/PipeImpl_WIN32.h"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/PipeImpl_POSIX.h"
 #else
 #    include "Poco/PipeImpl_DUMMY.h"

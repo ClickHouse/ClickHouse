@@ -36,14 +36,14 @@ void FormatParserSharedResources::finishStream()
 size_t FormatParserSharedResources::getParsingThreadsPerReader() const
 {
     size_t n = num_streams.load(std::memory_order_relaxed);
-    n = std::max(n, 1ul);
+    n = std::max(n, 1uz);
     return (max_parsing_threads + n - 1) / n;
 }
 
 size_t FormatParserSharedResources::getIOThreadsPerReader() const
 {
     size_t n = num_streams.load(std::memory_order_relaxed);
-    n = std::max(n, 1ul);
+    n = std::max(n, 1uz);
     return (max_io_threads + n - 1) / n;
 }
 

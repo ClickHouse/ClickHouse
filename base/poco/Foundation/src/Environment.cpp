@@ -18,7 +18,9 @@
 #include <cstdio> // sprintf()
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#include "Environment_WIN32U.cpp"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #include "Environment_UNIX.cpp"
 #endif
 

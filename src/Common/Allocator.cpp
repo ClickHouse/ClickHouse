@@ -13,7 +13,9 @@
 
 #include <Poco/Environment.h>
 #include <Poco/Logger.h>
+#if !defined(OS_WINDOWS)
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
+#endif
 
 
 namespace DB

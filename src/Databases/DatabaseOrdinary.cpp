@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <memory>
 
@@ -93,7 +94,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          DatabaseCatalog::getDataDirPath(name_) / "",
+          pathToGenericString(DatabaseCatalog::getDataDirPath(name_) / ""),
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)
@@ -207,12 +208,12 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
 
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
 {
-    return fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+    return pathToGenericString(fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
 {
-    return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+    return pathToGenericString(fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -253,7 +254,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
-    String table_metadata_path = full_path;
+    String table_metadata_path = pathToGenericString(full_path);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
     writeMetadataFile(

@@ -164,7 +164,7 @@ bool ReplicatedMergeTreeQueue::checkPartInQueueAndGetSourceParts(const String & 
 
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
-    String queue_path = fs::path(replica_path) / "queue";
+    String queue_path = zkutil::joinZooKeeperPath(replica_path, "queue");
     LOG_DEBUG(log, "Loading queue from {}", queue_path);
 
     bool updated = false;
@@ -200,7 +200,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         paths.reserve(children_num);
 
         for (const String & child : children)
-            paths.emplace_back(fs::path(queue_path) / child);
+            paths.emplace_back(zkutil::joinZooKeeperPath(queue_path, child));
 
         auto results = zookeeper->get(paths);
         for (size_t i = 0; i < children_num; ++i)
@@ -219,7 +219,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         {  /// Mutation pointer is a part of "state" and must be updated with state mutex
             std::lock_guard lock(state_mutex);
             Coordination::Stat mutation_pointer_stat;
-            if (zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer, &mutation_pointer_stat))
+            if (zookeeper->tryGet(zkutil::joinZooKeeperPath(replica_path, "mutation_pointer"), mutation_pointer, &mutation_pointer_stat))
                 mutation_pointer_mtime = mutation_pointer_stat.mtime / 1000;
         }
     }
@@ -806,7 +806,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     if (!need_remove_from_zk)
         return;
 
-    auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / entry->znode_name);
+    auto code = zookeeper->tryRemove(zkutil::joinZooKeeperPath(replica_path, "queue", entry->znode_name));
     if (code != Coordination::Error::ZOK)
         LOG_ERROR(log, "Couldn't remove {}/queue/{}: {}. This shouldn't happen often.", replica_path, entry->znode_name, code);
 
@@ -839,15 +839,15 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
     if (pull_log_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
 
-    String index_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
+    String index_str = zookeeper->get(zkutil::joinZooKeeperPath(replica_path, "log_pointer"));
     UInt64 index = 0;
 
     /// The version of "/log" is modified when new entries to merge/mutate/drop appear.
     Coordination::Stat stat;
-    zookeeper->get(fs::path(zookeeper_path) / "log", &stat);
+    zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_path, "log"), &stat);
 
     Strings log_entries = zookeeper->getChildrenWatch(
-        fs::path(zookeeper_path) / "log",
+        zkutil::joinZooKeeperPath(zookeeper_path, "log"),
         nullptr,
         Coordination::WatchCallbackPtrOrEventPtr{watch_callback, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLog});
 
@@ -862,7 +862,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
         /// If we do not already have a pointer to the log, put a pointer to the first entry in it.
         index = log_entries.empty() ? 0 : parse<UInt64>(std::min_element(log_entries.begin(), log_entries.end())->substr(strlen("log-")));
 
-        zookeeper->set(fs::path(replica_path) / "log_pointer", toString(index));
+        zookeeper->set(zkutil::joinZooKeeperPath(replica_path, "log_pointer"), toString(index));
     }
     else
     {
@@ -907,7 +907,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
             get_paths.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
-                get_paths.emplace_back(fs::path(zookeeper_path) / "log" / *it);
+                get_paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path, "log", *it));
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
@@ -926,7 +926,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat, format_version));
 
                 ops.emplace_back(zkutil::makeCreateRequest(
-                    fs::path(replica_path) / "queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
+                    zkutil::joinZooKeeperPath(replica_path, "queue/queue-"), res.data, zkutil::CreateMode::PersistentSequential));
 
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
@@ -941,11 +941,11 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
             }
 
             ops.emplace_back(zkutil::makeSetRequest(
-                fs::path(replica_path) / "log_pointer", toString(last_entry_index + 1), -1));
+                zkutil::joinZooKeeperPath(replica_path, "log_pointer"), toString(last_entry_index + 1), -1));
 
             if (min_unprocessed_insert_time_changed)
                 ops.emplace_back(zkutil::makeSetRequest(
-                    fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
+                    zkutil::joinZooKeeperPath(replica_path, "min_unprocessed_insert_time"), toString(*min_unprocessed_insert_time_changed), -1));
 
             auto responses = zookeeper->multi(ops, /* check_session_valid */ true);
 
@@ -1160,7 +1160,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
     Coordination::Stat mutations_stat;
     Strings entries_in_zk = zookeeper->getChildrenWatch(
-        fs::path(zookeeper_path) / "mutations",
+        zkutil::joinZooKeeperPath(zookeeper_path, "mutations"),
         &mutations_stat,
         Coordination::WatchCallbackPtrOrEventPtr{watch_callback, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations});
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
@@ -1228,7 +1228,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
         entry_paths.reserve(entries_to_load.size());
 
         for (const String & entry : entries_to_load)
-            entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
+            entry_paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path, "mutations", entry));
 
         auto entries = zookeeper->tryGet(entry_paths);
 
@@ -1299,7 +1299,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
 {
     std::lock_guard lock(update_mutations_mutex);
 
-    auto rc = zookeeper->tryRemove(fs::path(zookeeper_path) / "mutations" / mutation_id);
+    auto rc = zookeeper->tryRemove(zkutil::joinZooKeeperPath(zookeeper_path, "mutations", mutation_id));
     if (rc == Coordination::Error::ZOK)
         LOG_DEBUG(log, "Removed mutation {} from ZooKeeper.", mutation_id);
 
@@ -1456,9 +1456,10 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
 
-            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / znode_name);
+            const String entry_path = zkutil::joinZooKeeperPath(replica_path, "queue", znode_name);
+            auto code = zookeeper->tryRemove(entry_path);
             if (code != Coordination::Error::ZOK)
-                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / znode_name).string(), code);
+                LOG_INFO(log, "Couldn't remove {}: {}", entry_path, code);
 
             updateStateOnQueueEntryRemoval(
                 *it, /* is_successful = */ false,
@@ -2280,12 +2281,12 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
 CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
 {
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeQueue::buildPromoters");
-    const Strings partition_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+    const Strings partition_ids = zookeeper->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, "block_numbers"));
 
     std::vector<zkutil::ZooKeeper::FutureGetChildren> futures;
     futures.reserve(partition_ids.size());
     for (const auto & partition_id : partition_ids)
-        futures.push_back(zookeeper->asyncGetChildren(fs::path(zookeeper_path) / "block_numbers" / partition_id));
+        futures.push_back(zookeeper->asyncGetChildren(zkutil::joinZooKeeperPath(zookeeper_path, "block_numbers", partition_id)));
 
     std::map<String, std::set<Int64>> committing_block_numbers;
     for (size_t i = 0; i < partition_ids.size(); ++i)
@@ -2294,7 +2295,7 @@ CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr
         auto response = futures[i].get();
 
         if (response.error != Coordination::Error::ZOK)
-            throw Coordination::Exception::fromPath(response.error, fs::path(zookeeper_path) / "block_numbers" / partition_id);
+            throw Coordination::Exception::fromPath(response.error, zkutil::joinZooKeeperPath(zookeeper_path, "block_numbers", partition_id));
 
         auto & set = committing_block_numbers[partition_id];
         for (const String & entry : response.names)
@@ -2606,7 +2607,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     if (!finished.empty())
     {
         Coordination::Stat mutation_pointer_stat;
-        zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1, &mutation_pointer_stat);
+        zookeeper->set(zkutil::joinZooKeeperPath(replica_path, "mutation_pointer"), finished.back()->znode_name, -1, &mutation_pointer_stat);
 
         std::lock_guard lock(state_mutex);
 

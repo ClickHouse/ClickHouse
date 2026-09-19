@@ -1,4 +1,5 @@
 #pragma once
+#include <base/pathToString.h>
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -31,7 +32,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
         /// and path is actually not used
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
-        path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
+        path = pathToGenericString(DatabaseCatalog::getStoreDirPath(table_id.uuid));
     }
 
     std::shared_ptr<StorageT> storage;

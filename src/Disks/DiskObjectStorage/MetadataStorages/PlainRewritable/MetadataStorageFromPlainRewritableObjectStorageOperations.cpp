@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
@@ -75,25 +76,25 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
 {
-    chassert(path.empty() || path.string().ends_with('/'));
+    chassert(path.empty() || pathToGenericString(path).ends_with('/'));
     chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 {
-    if (fs_tree->getDirectoryRemoteInfo(path))
+    if (fs_tree->getDirectoryRemoteInfo(pathToGenericString(path)))
         return;
 
-    if (fs_tree->existsFile(path))
+    if (fs_tree->existsFile(pathToGenericString(path)))
         throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "File '{}' already exists", path.parent_path());
 
     if (!recursive)
-        if (!fs_tree->existsDirectory(path.parent_path().parent_path()))
+        if (!fs_tree->existsDirectory(pathToGenericString(path.parent_path().parent_path())))
             throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path.parent_path().parent_path());
 
     auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
 
-    if (fs_tree->existsDirectory(path))
+    if (fs_tree->existsDirectory(pathToGenericString(path)))
         LOG_TRACE(
             getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
             "Materializing virtual directory '{}' with remote path='{}'",
@@ -106,7 +107,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
             path,
             metadata_object_key);
 
-    auto metadata_object = StoredObject(metadata_object_key, path);
+    auto metadata_object = StoredObject(metadata_object_key, pathToGenericString(path));
 
     write_attempted = true;
     auto buf = object_storage->writeObject(
@@ -116,7 +117,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
         /*buf_size*/ 128,
         /*settings*/ getWriteSettings());
 
-    writeString(path.string(), *buf);
+    writeString(pathToGenericString(path), *buf);
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
     });
@@ -124,7 +125,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
     ProfileEvents::increment(metrics->directory_created);
     auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path, /*with_tags=*/ false);
-    fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{directory_remote_path, metadata.etag, metadata.last_modified.epochTime(), {}});
+    fs_tree->recordDirectoryPath(pathToGenericString(path), DirectoryRemoteInfo{directory_remote_path, metadata.etag, metadata.last_modified.epochTime(), {}});
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
@@ -138,7 +139,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
     undoWithRetries(log, fmt::format("remove the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
-        object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path));
+        object_storage->removeObjectIfExists(StoredObject(metadata_object_key, pathToGenericString(path)));
     });
 }
 
@@ -156,8 +157,8 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
 {
-    chassert(path_from.empty() || path_from.string().ends_with('/'));
-    chassert(path_to.empty() || path_to.string().ends_with('/'));
+    chassert(path_from.empty() || pathToGenericString(path_from).ends_with('/'));
+    chassert(path_to.empty() || pathToGenericString(path_to).ends_with('/'));
     chassert(metrics);
 }
 
@@ -215,14 +216,14 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
     constexpr bool validate_content = false;
 #endif
 
-    if (!fs_tree->existsDirectory(path_from))
+    if (!fs_tree->existsDirectory(pathToGenericString(path_from)))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_from);
-    else if (fs_tree->existsDirectory(path_to))
+    else if (fs_tree->existsDirectory(pathToGenericString(path_to)))
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' already exists", path_to);
-    else if (normalizePath(path_from).empty())
+    else if (normalizePath(pathToGenericString(path_from)).empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't move root folder");
 
-    from_tree_info = fs_tree->getSubtreeRemoteInfo(path_from);
+    from_tree_info = fs_tree->getSubtreeRemoteInfo(pathToGenericString(path_from));
 
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
@@ -235,7 +236,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
             continue;
         }
 
-        auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
+        auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(pathToGenericString(sub_path_from)) : std::nullopt);
 
         /// Forward pass only: the reversal rewrites markers through the same helper, and a fault that never stops
         /// firing cannot be retried to an end.
@@ -248,7 +249,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
         rewriteSingleDirectory(sub_path_from, sub_path_to, *write_buf);
     }
 
-    fs_tree->moveDirectory(path_from, path_to);
+    fs_tree->moveDirectory(pathToGenericString(path_from), pathToGenericString(path_to));
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
@@ -286,29 +287,30 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
 {
-    chassert(path.empty() || path.string().ends_with('/'));
+    chassert(path.empty() || pathToGenericString(path).ends_with('/'));
     chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
 {
-    if (!fs_tree->existsDirectory(path))
+    if (!fs_tree->existsDirectory(pathToGenericString(path)))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path);
-    else if (auto children = fs_tree->listDirectory(path); !children.empty())
+    else if (auto children = fs_tree->listDirectory(pathToGenericString(path)); !children.empty())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty. Children: [{}]", path, fmt::join(children, ", "));
-    else if (normalizePath(path).empty())
+    else if (normalizePath(pathToGenericString(path)).empty())
         return;
 
-    info = fs_tree->getDirectoryRemoteInfo(path).value();
+    info = fs_tree->getDirectoryRemoteInfo(pathToGenericString(path)).value();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 
     remove_attempted = true;
     auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, /*local_path*/ path, path.string().length());
+    const auto path_string = pathToGenericString(path);
+    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, path_string, path_string.length());
     object_storage->removeObjectIfExists(metadata_object);
 
-    fs_tree->removeDirectory(path);
+    fs_tree->removeDirectory(pathToGenericString(path));
     ProfileEvents::increment(metrics->directory_removed);
 }
 
@@ -323,7 +325,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
     undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-        auto metadata_object = StoredObject(metadata_object_key, path);
+        auto metadata_object = StoredObject(metadata_object_key, pathToGenericString(path));
 
         auto buf = object_storage->writeObject(
             metadata_object,
@@ -357,10 +359,10 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
-    if (fs_tree->existsFile(path))
-        fs_tree->removeFile(path);
+    if (fs_tree->existsFile(pathToGenericString(path)))
+        fs_tree->removeFile(pathToGenericString(path));
 
-    fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
+    fs_tree->recordFile(pathToGenericString(path), {object.bytes_size, std::time(nullptr)});
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -389,7 +391,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         "Unlinking metadata for a write '{}'",
         path);
 
-    if (!fs_tree->existsFile(path))
+    if (!fs_tree->existsFile(pathToGenericString(path)))
     {
         if (if_exists)
             return;
@@ -397,17 +399,17 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path);
     }
 
-    const auto normalized_path_from = normalizePath(path);
-    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
+    const auto normalized_path_from = normalizePath(pathToGenericString(path));
+    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()))->remote_path;
+    remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, pathToGenericString(normalized_path_from.filename()));
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
 
     blob_removal_attempted = true;
 
-    object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
-    object_storage->removeObjectIfExists(StoredObject(remote_source_path));
+    object_storage->copyObject(StoredObject(pathToGenericString(remote_source_path)), StoredObject(pathToGenericString(remote_tmp_path)), getReadSettings(), getWriteSettings());
+    object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_source_path)));
 
-    fs_tree->removeFile(path);
+    fs_tree->removeFile(pathToGenericString(path));
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
@@ -420,10 +422,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
     /// The temporary copy is dropped in a later stage, so a failure never strands the restore.
     undoWithRetries(log, fmt::format("restore the blob of the file '{}'", path), [&]
     {
-        if (object_storage->exists(StoredObject(remote_source_path)))
+        if (object_storage->exists(StoredObject(pathToGenericString(remote_source_path))))
             return;
 
-        if (!object_storage->exists(StoredObject(remote_tmp_path)))
+        if (!object_storage->exists(StoredObject(pathToGenericString(remote_tmp_path))))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
@@ -432,21 +434,21 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
                 remote_source_path,
                 remote_tmp_path);
 
-        object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
+        object_storage->copyObject(StoredObject(pathToGenericString(remote_tmp_path)), StoredObject(pathToGenericString(remote_source_path)), getReadSettings(), getWriteSettings());
     });
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_tmp_path)));
     });
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
-    removed_objects.push_back(StoredObject(remote_source_path));
+    removed_objects.push_back(StoredObject(pathToGenericString(remote_source_path)));
 
     if (blob_removal_attempted)
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_tmp_path)));
 }
 
 MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
@@ -470,26 +472,26 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
 
-    if (!fs_tree->existsFile(path_from))
+    if (!fs_tree->existsFile(pathToGenericString(path_from)))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
-    else if (!fs_tree->existsDirectory(path_to.parent_path()))
+    else if (!fs_tree->existsDirectory(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
-    else if (!fs_tree->getDirectoryRemoteInfo(path_to.parent_path()))
+    else if (!fs_tree->getDirectoryRemoteInfo(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());
-    else if (fs_tree->existsFile(path_to))
+    else if (fs_tree->existsFile(pathToGenericString(path_to)))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
-    const auto normalized_path_from = normalizePath(path_from);
-    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
+    const auto normalized_path_from = normalizePath(pathToGenericString(path_from));
+    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()))->remote_path;
+    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, pathToGenericString(normalized_path_from.filename()));
 
-    const auto normalized_path_to = normalizePath(path_to);
-    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
-    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+    const auto normalized_path_to = normalizePath(pathToGenericString(path_to));
+    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()))->remote_path;
+    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, pathToGenericString(normalized_path_to.filename()));
 
     copy_attempted = true;
-    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
-    fs_tree->recordFile(path_to, fs_tree->getFileRemoteInfo(path_from).value());
+    object_storage->copyObject(StoredObject(pathToGenericString(remote_path_from)), StoredObject(pathToGenericString(remote_path_to)), getReadSettings(), getWriteSettings());
+    fs_tree->recordFile(pathToGenericString(path_to), fs_tree->getFileRemoteInfo(pathToGenericString(path_from)).value());
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
@@ -503,7 +505,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     /// The target held no file before the copy, so the key has to be empty again whether or not the copy said so.
     undoWithRetries(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
     });
 }
 
@@ -537,27 +539,27 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         path_from,
         path_to);
 
-    if (!fs_tree->existsFile(path_from))
+    if (!fs_tree->existsFile(pathToGenericString(path_from)))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path_from);
-    else if (!fs_tree->existsDirectory(path_to.parent_path()))
+    else if (!fs_tree->existsDirectory(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
-    else if (!fs_tree->getDirectoryRemoteInfo(path_to.parent_path()))
+    else if (!fs_tree->getDirectoryRemoteInfo(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());
 
-    const auto normalized_path_from = normalizePath(path_from);
-    const auto normalized_path_to = normalizePath(path_to);
-    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
+    const auto normalized_path_from = normalizePath(pathToGenericString(path_from));
+    const auto normalized_path_to = normalizePath(pathToGenericString(path_to));
+    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()))->remote_path;
+    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()))->remote_path;
 
-    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, pathToGenericString(normalized_path_from.filename()));
+    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, pathToGenericString(normalized_path_to.filename()));
     tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
     tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
+    file_from_remote_info = fs_tree->getFileRemoteInfo(pathToGenericString(path_from)).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
 
-    had_existing_target = fs_tree->existsFile(path_to);
+    had_existing_target = fs_tree->existsFile(pathToGenericString(path_to));
     if (had_existing_target && !replaceable)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
@@ -570,19 +572,19 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         });
 
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_to),
-            /*object_to=*/StoredObject(tmp_remote_path_to),
+            /*object_from=*/StoredObject(pathToGenericString(remote_path_to)),
+            /*object_to=*/StoredObject(pathToGenericString(tmp_remote_path_to)),
             read_settings,
             write_settings);
 
-        fs_tree->removeFile(path_to);
-        fs_tree->recordFile(path_to, file_from_remote_info.value());
+        fs_tree->removeFile(pathToGenericString(path_to));
+        fs_tree->recordFile(pathToGenericString(path_to), file_from_remote_info.value());
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
     }
     else
     {
-        fs_tree->recordFile(path_to, file_from_remote_info.value());
+        fs_tree->recordFile(pathToGenericString(path_to), file_from_remote_info.value());
     }
 
     {
@@ -591,8 +593,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         });
 
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from),
-            /*object_to=*/StoredObject(tmp_remote_path_from),
+            /*object_from=*/StoredObject(pathToGenericString(remote_path_from)),
+            /*object_to=*/StoredObject(pathToGenericString(tmp_remote_path_from)),
             read_settings,
             write_settings);
     }
@@ -602,17 +604,17 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
+            /*object_from=*/StoredObject(pathToGenericString(remote_path_from)), /*object_to=*/StoredObject(pathToGenericString(remote_path_to)), read_settings, write_settings);
 
         /// Fires once the blob is published and before this method knows it.
         fiu_do_on(FailPoints::plain_object_storage_fail_after_copy_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving from '{}' to '{}'", path_from, path_to);
         });
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_from));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_from)));
     }
 
-    fs_tree->removeFile(path_from);
+    fs_tree->removeFile(pathToGenericString(path_from));
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
@@ -630,10 +632,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     /// whether the matching step of `execute` never ran, ran, or ran and lost its answer.
     undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
     {
-        if (object_storage->exists(StoredObject(remote_path_from)))
+        if (object_storage->exists(StoredObject(pathToGenericString(remote_path_from))))
             return;
 
-        if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
+        if (!object_storage->exists(StoredObject(pathToGenericString(tmp_remote_path_from))))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
@@ -643,8 +645,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
                 tmp_remote_path_from);
 
         object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_from),
-            /*object_to=*/StoredObject(remote_path_from),
+            /*object_from=*/StoredObject(pathToGenericString(tmp_remote_path_from)),
+            /*object_to=*/StoredObject(pathToGenericString(remote_path_from)),
             read_settings,
             write_settings);
     });
@@ -654,14 +656,14 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         if (!had_existing_target)
         {
             /// The key held no file before the move, so nothing of value can be there.
-            object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+            object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
             return;
         }
 
-        if (object_storage->exists(StoredObject(tmp_remote_path_to)))
+        if (object_storage->exists(StoredObject(pathToGenericString(tmp_remote_path_to))))
             object_storage->copyObject(
-                /*object_from=*/StoredObject(tmp_remote_path_to),
-                /*object_to=*/StoredObject(remote_path_to),
+                /*object_from=*/StoredObject(pathToGenericString(tmp_remote_path_to)),
+                /*object_to=*/StoredObject(pathToGenericString(remote_path_to)),
                 read_settings,
                 write_settings);
 
@@ -672,23 +674,23 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_from)));
     });
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the target file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_to)));
     });
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 {
-    removed_objects.push_back(StoredObject(remote_path_from));
+    removed_objects.push_back(StoredObject(pathToGenericString(remote_path_from)));
 
     if (blob_move_attempted)
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_from)));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_to)));
     }
 }
 
@@ -717,16 +719,16 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
     /// Unfortunately we are able to create merge tree unlinked from database directory.
     /// In this case during the dropAllData method removeRecursive can be called pointing to the root folder.
     /// I don't know what to do in this case, so right now it is a no-op.
-    if (normalizePath(path).empty())
+    if (normalizePath(pathToGenericString(path)).empty())
         return;
 
-    if (fs_tree->existsDirectory(path))
+    if (fs_tree->existsDirectory(pathToGenericString(path)))
     {
         move_tried = true;
         move_to_tmp_op->execute();
 
-        subtree_remote_info = fs_tree->getSubtreeRemoteInfo(tmp_path);
-        fs_tree->removeDirectory(tmp_path);
+        subtree_remote_info = fs_tree->getSubtreeRemoteInfo(pathToGenericString(tmp_path));
+        fs_tree->removeDirectory(pathToGenericString(tmp_path));
     }
 }
 
@@ -757,7 +759,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
         auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info->remote_path);
-        objects_to_remove.emplace_back(metadata_object_key, path);
+        objects_to_remove.emplace_back(metadata_object_key, pathToGenericString(path));
 
         /// We also need to remove all files inside each of the subdirectories.
         for (const auto & [filename, file_info] : remote_info->files)
@@ -767,7 +769,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
             LOG_TRACE(log, "Removing file '{}'", file_path);
 
             auto file_object_key = layout->constructFileObjectKey(remote_info->remote_path, filename);
-            objects_to_remove.emplace_back(file_object_key, file_path);
+            objects_to_remove.emplace_back(file_object_key, pathToGenericString(file_path));
         }
     }
 

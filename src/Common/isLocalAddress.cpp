@@ -1,13 +1,21 @@
 #include <Common/isLocalAddress.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <winsock2.h>
+#include <ws2ipdef.h>
+#include <iphlpapi.h>
+#include <vector>
+#else
 #include <ifaddrs.h>
+#endif
 #include <algorithm>
 #include <cstring>
-#include <optional>
+#include <vector>
 #include <ranges>
 #include <base/types.h>
-#include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/ErrnoException.h>
 #include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
@@ -25,62 +33,95 @@ namespace ErrorCodes
 namespace
 {
 
-struct NetworkInterfaces : public boost::noncopyable
+/** Compare the addresses without taking into account `scope`.
+  * Theoretically, this may not be correct - depends on `route` setting
+  *  - through which interface we will actually access the specified address.
+  */
+bool hasAddress(const std::vector<Poco::Net::IPAddress> & interface_addresses, const Poco::Net::IPAddress & address)
 {
-    ifaddrs * ifaddr{};
-    NetworkInterfaces()
+    for (const auto & interface_address : interface_addresses)
     {
-        if (getifaddrs(&ifaddr) == -1)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getifaddrs");
+        if (interface_address.length() == address.length()
+            && 0 == memcmp(interface_address.addr(), address.addr(), address.length()))
+            return true;
     }
-
-    bool hasAddress(const Poco::Net::IPAddress & address) const
-    {
-        ifaddrs * iface = nullptr;
-        for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
-        {
-            /// Point-to-point (VPN) addresses may have NULL ifa_addr
-            if (!iface->ifa_addr)
-                continue;
-
-            auto family = iface->ifa_addr->sa_family;
-            std::optional<Poco::Net::IPAddress> interface_address;
-            switch (family)
-            {
-                /// We interested only in IP-addresses
-                case AF_INET:
-                {
-                    interface_address.emplace(*(iface->ifa_addr));
-                    break;
-                }
-                case AF_INET6:
-                {
-                    interface_address.emplace(&reinterpret_cast<const struct sockaddr_in6*>(iface->ifa_addr)->sin6_addr, sizeof(struct in6_addr));
-                    break;
-                }
-                default:
-                    continue;
-            }
-
-            /** Compare the addresses without taking into account `scope`.
-              * Theoretically, this may not be correct - depends on `route` setting
-              *  - through which interface we will actually access the specified address.
-              */
-            if (interface_address->length() == address.length()
-                && 0 == memcmp(interface_address->addr(), address.addr(), address.length()))
-                return true;
-        }
-        return false;
-    }
-
-    ~NetworkInterfaces()
-    {
-        freeifaddrs(ifaddr);
-    }
-};
+    return false;
+}
 
 }
 
+std::vector<Poco::Net::IPAddress> getLocalInterfaceAddresses()
+{
+    std::vector<Poco::Net::IPAddress> addresses;
+
+#if defined(OS_WINDOWS)
+    /// Windows has no `getifaddrs`. `GetAdaptersAddresses` walks the adapters and, for each, a
+    /// list of unicast addresses. Unlike `ifaddrs` the result is one buffer that the caller owns,
+    /// so collect what is needed out of it rather than keeping the buffer alive.
+    ///
+    /// The call reports the size it needs; the recommended starting buffer is 15 KB, and the set
+    /// of adapters can change between the two calls, hence the retry.
+    ULONG size = 15 * 1024;
+    std::vector<char> buffer;
+    ULONG result = ERROR_BUFFER_OVERFLOW;
+    for (int attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; ++attempt)
+    {
+        buffer.assign(size, 0);
+        result = GetAdaptersAddresses(
+            AF_UNSPEC,
+            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME,
+            nullptr,
+            reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buffer.data()),
+            &size);
+    }
+
+    if (result != NO_ERROR)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot GetAdaptersAddresses, error code: {}", result);
+
+    for (auto * adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buffer.data()); adapter; adapter = adapter->Next)
+    {
+        for (auto * unicast = adapter->FirstUnicastAddress; unicast; unicast = unicast->Next)
+        {
+            const auto * address = unicast->Address.lpSockaddr;
+            if (!address)
+                continue;
+
+            /// Only IP addresses.
+            if (address->sa_family == AF_INET)
+                addresses.emplace_back(&reinterpret_cast<const sockaddr_in *>(address)->sin_addr, sizeof(in_addr));
+            else if (address->sa_family == AF_INET6)
+            {
+                const auto & in6 = *reinterpret_cast<const sockaddr_in6 *>(address);
+                addresses.emplace_back(&in6.sin6_addr, sizeof(in6_addr), in6.sin6_scope_id);
+            }
+        }
+    }
+#else
+    ifaddrs * ifaddr = nullptr;
+    if (getifaddrs(&ifaddr) == -1)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getifaddrs");
+
+    SCOPE_EXIT({ freeifaddrs(ifaddr); });
+
+    for (const ifaddrs * iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
+    {
+        /// Point-to-point (VPN) addresses may have NULL ifa_addr
+        if (!iface->ifa_addr)
+            continue;
+
+        /// Only IP addresses.
+        if (iface->ifa_addr->sa_family == AF_INET)
+            addresses.emplace_back(*(iface->ifa_addr));
+        else if (iface->ifa_addr->sa_family == AF_INET6)
+        {
+            const auto & in6 = *reinterpret_cast<const sockaddr_in6 *>(iface->ifa_addr);
+            addresses.emplace_back(&in6.sin6_addr, sizeof(in6_addr), in6.sin6_scope_id);
+        }
+    }
+#endif
+
+    return addresses;
+}
 
 bool isLocalAddress(const Poco::Net::IPAddress & address)
 {
@@ -112,8 +153,8 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
         return true;
     }
 
-    static NetworkInterfaces network_interfaces;
-    return network_interfaces.hasAddress(address);
+    static const std::vector<Poco::Net::IPAddress> interface_addresses = getLocalInterfaceAddresses();
+    return hasAddress(interface_addresses, address);
 }
 
 

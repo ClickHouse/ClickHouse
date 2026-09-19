@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/re2.h>
@@ -10,6 +11,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+
+#include <Poco/URI.h>
 
 #include <boost/program_options.hpp>
 #include <filesystem>
@@ -33,10 +36,36 @@ namespace ErrorCodes
  * If test-mode option is added, files will be put by given url via PUT request.
  */
 
-static void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
+/// The destination is a URL in test mode, so it must never be given `std::filesystem::path`
+/// semantics: joining it as a path mangles the URL on Windows. Both modes therefore keep the
+/// destination in plain string space and only the local filesystem operations convert to a path.
+static String joinDestinationPath(const String & base, const String & suffix)
+{
+    if (base.empty())
+        return suffix;
+    if (suffix.empty())
+        return base;
+    if (base.ends_with('/'))
+        return base + suffix;
+    return base + "/" + suffix;
+}
+
+/// In test mode the destination is a URL and `Poco::URI` percent-decodes whatever path it is
+/// given. Physical file names already carry `%XX` produced by `escapeForFileName` - a hyphen in
+/// a quoted column name becomes `%2D` - so the relative path has to be percent-encoded before
+/// it becomes part of the URL, otherwise the file would be uploaded under its decoded name.
+static String encodeUrlPath(const String & path)
+{
+    String encoded;
+    /// `/` stays a separator; `%` is illegal in a URL and is encoded by `Poco::URI::encode` itself.
+    Poco::URI::encode(path, "?#", encoded);
+    return encoded;
+}
+
+static void processFile(const fs::path & file_path, const String & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
-    RE2::FullMatch(file_path.string(), EXTRACT_PATH_PATTERN, &remote_path);
+    RE2::FullMatch(pathToGenericString(file_path), EXTRACT_PATH_PATTERN, &remote_path);
     bool is_directory = fs::is_directory(file_path);
 
     writeText(file_path.filename().string(), metadata_buf);
@@ -52,17 +81,17 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
     if (is_directory)
         return;
 
-    auto dst_file_path = fs::path(dst_path) / remote_path;
+    auto dst_file_path = joinDestinationPath(dst_path, test_mode ? encodeUrlPath(remote_path) : remote_path);
 
     if (link)
     {
-        fs::create_symlink(file_path, dst_file_path);
+        fs::create_symlink(file_path, pathFromString(dst_file_path));
     }
     else
     {
         ReadSettings read_settings{};
         read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-        auto src_buf = createReadBufferFromFileBase(file_path, read_settings, fs::file_size(file_path));
+        auto src_buf = createReadBufferFromFileBase(pathToGenericString(file_path), read_settings, fs::file_size(file_path));
         std::shared_ptr<WriteBuffer> dst_buf;
 
         /// test mode for integration tests.
@@ -83,29 +112,29 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
 }
 
 
-static void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
+static void processTableFiles(const fs::path & data_path, String dst_path, bool test_mode, bool link)
 {
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 
     String prefix;
-    RE2::FullMatch(data_path.string(), EXTRACT_PATH_PATTERN, &prefix);
+    RE2::FullMatch(pathToGenericString(data_path), EXTRACT_PATH_PATTERN, &prefix);
 
     std::shared_ptr<WriteBuffer> root_meta;
     if (test_mode)
     {
-        dst_path /= "store";
-        auto files_root = dst_path / prefix;
-        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(files_root / ".index"))
+        dst_path = joinDestinationPath(dst_path, "store");
+        auto files_root = joinDestinationPath(dst_path, encodeUrlPath(prefix));
+        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(files_root, ".index")))
                       .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                       .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
                       .create();
     }
     else
     {
-        dst_path = fs::canonical(dst_path);
-        auto files_root = dst_path / prefix;
-        fs::create_directories(files_root);
-        root_meta = std::make_shared<WriteBufferFromFile>(files_root / ".index");
+        dst_path = pathToGenericString(fs::canonical(pathFromString(dst_path)));
+        auto files_root = joinDestinationPath(dst_path, prefix);
+        fs::create_directories(pathFromString(files_root));
+        root_meta = std::make_shared<WriteBufferFromFile>(joinDestinationPath(files_root, ".index"));
     }
 
     fs::directory_iterator dir_end;
@@ -116,21 +145,22 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             processFile(dir_it->path(), dst_path, test_mode, link, *root_meta);
 
             String directory_prefix;
-            RE2::FullMatch(dir_it->path().string(), EXTRACT_PATH_PATTERN, &directory_prefix);
+            RE2::FullMatch(pathToGenericString(dir_it->path()), EXTRACT_PATH_PATTERN, &directory_prefix);
 
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(dst_path / directory_prefix / ".index"))
+                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(joinDestinationPath(dst_path, encodeUrlPath(directory_prefix)), ".index")))
                                     .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                                     .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
                                     .create();
             }
             else
             {
-                dst_path = fs::canonical(dst_path);
-                fs::create_directories(dst_path / directory_prefix);
-                directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
+                dst_path = pathToGenericString(fs::canonical(pathFromString(dst_path)));
+                const auto directory_root = joinDestinationPath(dst_path, directory_prefix);
+                fs::create_directories(pathFromString(directory_root));
+                directory_meta = std::make_shared<WriteBufferFromFile>(joinDestinationPath(directory_root, ".index"));
             }
 
             fs::directory_iterator files_end;
@@ -205,7 +235,7 @@ try
         if (options.contains("output-dir"))
             root_path = options["output-dir"].as<std::string>();
         else
-            root_path = fs::current_path();
+            root_path = pathToGenericString(fs::current_path());
     }
 
     processTableFiles(fs_path, root_path, test_mode, options.contains("link"));

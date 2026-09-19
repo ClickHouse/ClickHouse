@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
@@ -111,7 +112,7 @@ void SetOrJoinSink::consume(Chunk & chunk)
     {
         if (!backup_buf)
         {
-            backup_buf = table.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name);
+            backup_buf = table.disk->writeFile(pathToGenericString(fs::path(backup_tmp_path) / backup_file_name));
             compressed_backup_buf.emplace(*backup_buf);
             backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
         }
@@ -128,7 +129,7 @@ void SetOrJoinSink::onFinish()
         compressed_backup_buf->finalize();
         backup_buf->finalize();
 
-        table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+        table.disk->replaceFile(pathToGenericString(fs::path(backup_tmp_path) / backup_file_name), pathToGenericString(fs::path(backup_path) / backup_file_name));
     }
 }
 
@@ -137,7 +138,7 @@ SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Sto
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(
-        context, *this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
+        context, *this, metadata_snapshot, path, pathToGenericString(fs::path(path) / "tmp/"), toString(id) + ".bin", persistent);
 }
 
 
@@ -257,7 +258,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
         LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+    disk->createDirectories(pathToGenericString(fs::path(path) / "tmp/"));
 
     Block header = metadata_snapshot->getSampleBlock();
 
@@ -274,9 +275,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->existsDirectory(fs::path(path) / "tmp"))
+    if (!disk->existsDirectory(pathToGenericString(fs::path(path) / "tmp")))
     {
-        disk->createDirectories(fs::path(path) / "tmp");
+        disk->createDirectories(pathToGenericString(fs::path(path) / "tmp"));
         return;
     }
 

@@ -63,6 +63,14 @@ CODE_REVIEW_BLOCKING_JOBS = [
 
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
+WINDOWS_BUILD_JOB = next(
+    job for job in JobConfigs.special_build_jobs if "(amd_windows)" in job.name
+)
+
+SPECIAL_BUILD_JOBS_EXCEPT_WINDOWS = [
+    job for job in JobConfigs.special_build_jobs if job.name != WINDOWS_BUILD_JOB.name
+]
+
 PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
@@ -90,7 +98,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.special_build_jobs
+            for job in SPECIAL_BUILD_JOBS_EXCEPT_WINDOWS
         ],
         # Gated like the regular builds rather than like the special ones: it is the only job
         # that compiles the standalone parser at all, and it needs no build artifact, so there
@@ -99,6 +107,7 @@ workflow = Workflow.Config(
             job.set_run_after(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.wasm_parser_build_jobs
         ],
+        WINDOWS_BUILD_JOB,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,

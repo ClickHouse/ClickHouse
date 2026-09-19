@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -23,6 +24,53 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
+
+namespace
+{
+
+/// The base URL of a web disk is a URL, not a filesystem path: joining it with `std::filesystem`
+/// gives it path semantics (on Windows it is not even parsed the same way), so the whole class
+/// keeps it in plain URL string space instead.
+String joinUrl(const String & base, const String & suffix)
+{
+    if (base.empty())
+        return suffix;
+    if (suffix.empty())
+        return base;
+    if (base.ends_with('/'))
+        return suffix.starts_with('/') ? base + suffix.substr(1) : base + suffix;
+    return suffix.starts_with('/') ? base + suffix : base + "/" + suffix;
+}
+
+/// The remote path of an object, relative to the base URL, with the file name escaped
+/// the same way `escapeForFileName` escapes it for the uploaded static files.
+String makeRemotePath(const String & path)
+{
+    std::string_view rest = path;
+    while (rest.starts_with('/'))
+        rest.remove_prefix(1);
+
+    const size_t slash_pos = rest.find_last_of('/');
+    const std::string_view directory = slash_pos == std::string_view::npos ? std::string_view{} : rest.substr(0, slash_pos + 1);
+    const std::string_view file_name = slash_pos == std::string_view::npos ? rest : rest.substr(slash_pos + 1);
+
+    /// The extension starts at the last dot, unless the name is "." or ".." or the dot is leading.
+    std::string_view stem = file_name;
+    std::string_view extension;
+    if (file_name != "." && file_name != "..")
+    {
+        const size_t dot_pos = file_name.find_last_of('.');
+        if (dot_pos != std::string_view::npos && dot_pos != 0)
+        {
+            stem = file_name.substr(0, dot_pos);
+            extension = file_name.substr(dot_pos);
+        }
+    }
+
+    return fmt::format("/{}{}{}", directory, escapeForFileName(String(stem)), extension);
+}
+
+}
 
 MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer(
     const WebObjectStorage & object_storage_)
@@ -99,9 +147,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
 {
     assertExists(path);
 
-    auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
-    remote_path = remote_path.substr(object_storage.getBaseURL().size());
+    const std::string remote_path = makeRemotePath(path);
 
     auto file_info = getFileInfo(path);
     return {StoredObject(remote_path, path, file_info->size)};
@@ -109,9 +155,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
 
 std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorageObjectsIfExist(const std::string & path) const
 {
-    auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
-    remote_path = remote_path.substr(object_storage.getBaseURL().size());
+    const std::string remote_path = makeRemotePath(path);
 
     if (auto file_info = tryGetFileInfo(path))
         return StoredObjects{StoredObject(remote_path, path, file_info->size)};
@@ -132,7 +176,7 @@ std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(
 
 DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(const std::string & path) const
 {
-    std::vector<fs::path> dir_file_paths;
+    std::vector<String> dir_file_paths;
 
     if (!existsDirectory(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
@@ -142,11 +186,11 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }
 
-std::pair<MetadataStorageFromStaticFilesWebServer::FileDataPtr, std::vector<fs::path>>
+std::pair<MetadataStorageFromStaticFilesWebServer::FileDataPtr, std::vector<String>>
 MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
 {
-    std::vector<fs::path> loaded_files;
-    auto full_url = fs::path(object_storage.getBaseURL()) / path;
+    std::vector<String> loaded_files;
+    const String full_url = joinUrl(object_storage.getBaseURL(), path);
 
     LOG_TRACE(log, "Adding directory: {} ({})", path, full_url);
 
@@ -159,7 +203,7 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
             object_storage.getContext()->getSettingsRef(),
             object_storage.getContext()->getServerSettings());
 
-        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
+        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(joinUrl(full_url, ".index")))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
                                 .withSettings(object_storage.getContext()->getReadSettings())
                                 .withTimeouts(timeouts)
@@ -189,7 +233,8 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
                 ? FileData::createDirectoryInfo(false)
                 : FileData::createFileInfo(size);
 
-            auto file_path = fs::path(path) / file_name;
+            /// A logical path on the web server, `/`-separated by definition.
+            const String file_path = path.empty() || path.ends_with('/') ? path + file_name : path + "/" + file_name;
             const bool inserted = files.add(file_path, file_data).second;
             if (!inserted)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
@@ -238,7 +283,7 @@ MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFi
         shared_lock.unlock();
 
         const auto parent_path = fs::path(path).parent_path();
-        auto parent_info = tryGetFileInfo(parent_path);
+        auto parent_info = tryGetFileInfo(pathToGenericString(parent_path));
         if (!parent_info)
         {
             return nullptr;
@@ -248,7 +293,7 @@ MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFi
         {
             std::unique_lock unique_lock(metadata_mutex);
             if (!parent_info->loaded_children)
-                loadFiles(parent_path, unique_lock);
+                loadFiles(pathToGenericString(parent_path), unique_lock);
         }
 
         shared_lock.lock();
@@ -281,7 +326,7 @@ MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFi
     return loadFiles(path, unique_lock).first;
 }
 
-std::vector<std::filesystem::path> MetadataStorageFromStaticFilesWebServer::listDirectoryInternal(const String & path) const
+std::vector<String> MetadataStorageFromStaticFilesWebServer::listDirectoryInternal(const String & path) const
 {
     auto file_info = tryGetFileInfo(path);
     if (!file_info)
@@ -290,7 +335,7 @@ std::vector<std::filesystem::path> MetadataStorageFromStaticFilesWebServer::list
     if (file_info->type != FileType::Directory)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not a directory", path);
 
-    std::vector<std::filesystem::path> result;
+    std::vector<String> result;
     if (!file_info->loaded_children)
     {
         std::unique_lock unique_lock(metadata_mutex);

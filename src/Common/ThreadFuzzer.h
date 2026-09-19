@@ -1,4 +1,39 @@
 #pragma once
+
+/// Injects scheduling noise by interposing pthread primitives and delivering signals, to shake
+/// out races in testing. Both halves are POSIX-specific, and this is a test aid rather than
+/// something the client needs - so on Windows the same interface is present and does nothing,
+/// which is what its callers already expect when it is switched off. That keeps the ~10
+/// `maybeInjectSleep` sites scattered through MergeTree free of platform guards.
+#if defined(OS_WINDOWS)
+
+#include <base/defines.h>
+
+namespace DB
+{
+
+class ThreadFuzzer
+{
+public:
+    static ThreadFuzzer & instance()
+    {
+        static ThreadFuzzer res;
+        return res;
+    }
+
+    static bool isEffective() { return false; }
+    static void setup() { }
+    static void stop() { }
+    static void start() { }
+    static bool isStarted() { return false; }
+    static void maybeInjectSleep() { }
+    static void maybeInjectMemoryLimitException() { }
+};
+
+}
+
+#else
+
 #include <cstdint>
 #include <atomic>
 #include <base/defines.h>
@@ -81,3 +116,5 @@ private:
 };
 
 }
+
+#endif

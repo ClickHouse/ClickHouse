@@ -223,7 +223,7 @@ ReturnType deserializeImpl(
             "Cannot parse boolean value here: '{}', should be '{}' or '{}' controlled by setting bool_true_representation and "
             "bool_false_representation or one of "
             "True/False/T/F/Y/N/Yes/No/On/Off/Enable/Disable/Enabled/Disabled/1/0",
-            String(buf.position(), std::min(10lu, buf.available())),
+            String(buf.position(), std::min(10uz, buf.available())),
             settings.bool_true_representation, settings.bool_false_representation);
 
     return ReturnType(false);
@@ -447,7 +447,7 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
                     ErrorCodes::CANNOT_PARSE_BOOL,
                     "Cannot parse boolean value here: '{}', should be true/false, 1/0 or on of "
                     "True/False/T/F/Y/N/Yes/No/On/Off/Enable/Disable/Enabled/Disabled/1/0 in quotes",
-                    String(istr.position(), std::min(10ul, istr.available())));
+                    String(istr.position(), std::min(10uz, istr.available())));
             return ReturnType(false);
         }
     }

@@ -8,6 +8,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/timespanFromSeconds.h>
 
 namespace DB
 {
@@ -95,7 +96,7 @@ void CompletedPipelineExecutor::execute()
 
         while (!data->is_finished)
         {
-            if (data->finish_event.tryWait(interactive_timeout_ms))
+            if (data->finish_event.tryWait(toPocoMilliseconds(interactive_timeout_ms)))
                 break;
 
             if (is_cancelled_callback())
