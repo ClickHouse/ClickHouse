@@ -1,0 +1,45 @@
+inner chain plan	0	4
+inner chain pipeline	0	2
+left chain plan	0	4
+right chain plan	0	4
+left chain other side plan	1	3
+full chain plan	1	3
+order by plan	0	3
+order by result	1400	1
+using chain plan	0	4
+using	936	683928	284928
+using	936	683928	284928
+using order by plan old analyzer	0	3
+using old analyzer	1400	1023600	428600
+right using order by plan old analyzer	0	3
+right using order by result old analyzer	1550	1
+right using order by result sharded old analyzer	1550	1
+right using old analyzer	1550	1023600	555950
+right using old analyzer	1550	1023600	555950
+right using old analyzer	1550	1023600	555950
+right using renamed key plan old analyzer	0	3
+right using renamed key other side plan old analyzer	1	2
+right using renamed key old analyzer	1550	1023600	555950	156
+right using renamed key old analyzer	1550	1023600	555950	156
+unsorted keys chain plan	3	1
+parallel unsorted keys chain pipeline	4	4	0
+inner	936	683928	359464	235376
+inner	936	683928	359464	235376
+inner	936	683928	359464	235376
+left	2869	2116765	719032	366010	1013	1443
+left	2869	2116765	719032	366010	1013	1443
+left	2869	2116765	719032	366010	1013	1443
+right	1002	683928	385798	262832	78
+right	1002	683928	385798	262832	78
+right	1002	683928	385798	262832	78
+left use nulls	2869	2116765	719032	366010	1001	1431
+left use nulls	2869	2116765	719032	366010	1001	1431
+unsorted keys	600	179700	259400	269100
+unsorted keys	600	179700	259400	269100
+unsorted keys	600	179700	259400	269100
+pk range sharding mixed plan	1
+pk range sharding mixed	1300	923700	506850	551100
+pk range sharding mixed	1300	923700	506850	551100
+pk range sharding sorted subquery	1300	363700	551100
+pk range sharding sorted subquery	1300	363700	551100
+pk range sharding sorted subquery	1300	363700	551100
