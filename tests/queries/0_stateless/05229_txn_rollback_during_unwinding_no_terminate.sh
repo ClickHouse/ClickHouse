@@ -50,7 +50,10 @@ $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FAILPOINT"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_txn_unwind SETTINGS async_insert = 0 VALUES (2)"
 
 # The assignee's catch (...) reports the injected exception at Error level, which is the witness that
-# the unwinding path was both reached and survived.
+# the unwinding path was both reached and survived. The failpoint is server wide, so the witness is keyed
+# to this table: any other transactional table left on a reused server throws the very same exception.
+# text_log keeps the exception's format string and its arguments in their own columns, so the table is
+# matched exactly rather than as a substring of the rendered message.
 injected=0
 for _ in {1..60}; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
@@ -60,7 +63,8 @@ for _ in {1..60}; do
         FROM system.text_log
         WHERE event_time_microseconds > toDateTime64('$START', 6, 'UTC')
           AND logger_name LIKE '%BackgroundJobsAssignee%'
-          AND message LIKE '%Injected failure after beginning a background transaction%'
+          AND message_format_string = 'Injected failure after beginning a background transaction for {}'
+          AND value1 = currentDatabase() || '.t_txn_unwind'
     ")
 
     if [ "$injected" = "1" ]; then

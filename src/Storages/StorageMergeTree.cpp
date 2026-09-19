@@ -2243,7 +2243,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         fiu_do_on(FailPoints::mt_throw_after_background_transaction_begin,
         {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after beginning a background transaction");
+            throw Exception(
+                ErrorCodes::FAULT_INJECTED,
+                "Injected failure after beginning a background transaction for {}",
+                getStorageID().getFullTableName());
         });
     }
 
