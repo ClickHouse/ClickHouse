@@ -22,6 +22,10 @@ lowcardinality literal type	UInt8
 lowcardinality literal not	17
 lowcardinality scalar	5
 lowcardinality scalar plan	1
+lowcardinality array scalar	2
+lowcardinality array scalar plan	1
+lowcardinality array literal	2
+lowcardinality array literal plan	1
 nothas	15
 nothas plan	1
 transform_null_in 1	5

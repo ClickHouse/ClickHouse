@@ -67,6 +67,16 @@ SELECT 'lowcardinality scalar plan', count() FROM (
     EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)))
     ) WHERE explain LIKE '%FUNCTION in%';
 
+-- An Array(LowCardinality(T)) source is rewritten too: the element and needle types are compared with LowCardinality stripped.
+SELECT 'lowcardinality array scalar', count() FROM numbers(20) WHERE has((SELECT [toLowCardinality('1'), toLowCardinality('2')]), toString(number));
+SELECT 'lowcardinality array scalar plan', count() FROM (
+    EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has((SELECT [toLowCardinality('1'), toLowCardinality('2')]), toString(number))
+    ) WHERE explain LIKE '%FUNCTION in%';
+SELECT 'lowcardinality array literal', count() FROM numbers(20) WHERE has([toLowCardinality('1'), toLowCardinality('2')], toString(number));
+SELECT 'lowcardinality array literal plan', count() FROM (
+    EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has([toLowCardinality('1'), toLowCardinality('2')], toString(number))
+    ) WHERE explain LIKE '%FUNCTION in%';
+
 -- notHas goes through notIn, and NOT IN is renamed by transform_null_in.
 SELECT 'nothas', count() FROM numbers(20) WHERE notHas((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number));
 SELECT 'nothas plan', count() FROM (
