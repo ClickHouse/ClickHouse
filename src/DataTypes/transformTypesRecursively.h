@@ -22,4 +22,19 @@ void transformTypesRecursively(
 
 void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback);
 
+/// Answers with the type to put in place of `left`, which may be `left` itself, or nullptr to refuse the pair.
+using PairedLeafCallback = std::function<DataTypePtr(const DataTypePtr & left, const DataTypePtr & right)>;
+
+/// Walks `left` and `right` together through Nullable, LowCardinality, Array, Map, Tuple and Variant, and
+/// rebuilds `left` out of what `on_leaf` answers for the pairs of leaves the walk reaches. Returns `left`
+/// itself when no leaf moved, a rebuilt type when one did, and nullptr when `on_leaf` refused a pair or the
+/// two structures do not line up.
+///
+/// A level is rebuilt only if one of its children moved, because a rebuild loses that level's customization
+/// (`Point` is a named `Tuple`). Where the two sides carry different custom names neither survives a rebuild,
+/// so such a level resolves to `right` when the pair is `equals`-equal and every child cleared, and is
+/// refused otherwise. A `Nullable` or `LowCardinality` present on `right` alone is stepped over, since
+/// neither wrapper hides a leaf.
+DataTypePtr replaceNestedTypesInPair(const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf);
+
 }
