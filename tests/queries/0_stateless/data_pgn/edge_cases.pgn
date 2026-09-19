@@ -1,0 +1,23 @@
+[White "Player A"]
+[Black "Player B"]
+[Result "1-0"]
+
+1.e4 e5 1-0
+
+[White "Player C"]
+[Black "Player D"]
+[Result "0-1"]
+
+1.d4 d5 0-1
+
+[White "Alice"]
+[Black "Bob"]
+[Result "1/2-1/2"]
+
+1.c4 c5 1/2-1/2
+
+[White "Charlie"]
+[Black "Diana"]
+[Result "*"]
+
+1.Nf3 *

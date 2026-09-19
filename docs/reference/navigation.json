@@ -893,6 +893,7 @@
             "reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "reference/formats/PGN",
         "reference/formats/PNG",
         "reference/formats/PostgreSQLWire",
         {

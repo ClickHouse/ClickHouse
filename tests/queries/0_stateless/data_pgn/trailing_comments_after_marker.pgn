@@ -1,0 +1,10 @@
+[Event "Trailing Comments"]
+[Result "1/2-1/2"]
+
+1.e4 e5 1/2-1/2 {agreed} ; line comment
+(1.d4 d5)
+% escape line 2.Nf3
+
+[Event "Second Game"]
+
+1.d4 d5 *

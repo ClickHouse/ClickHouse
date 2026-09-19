@@ -112,6 +112,7 @@ void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
+void registerInputFormatPGN(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -161,6 +162,7 @@ void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+void registerPGNSchemaReader(FormatFactory & factory);
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
 void registerOutputFormatGeoJSON(FormatFactory & factory);
@@ -281,6 +283,7 @@ void registerFormats()
     registerInputFormatPuffin(factory);
     registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
+    registerInputFormatPGN(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -325,6 +328,7 @@ void registerFormats()
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
+    registerPGNSchemaReader(factory);
 }
 
 }
