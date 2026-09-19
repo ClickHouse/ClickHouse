@@ -1,0 +1,56 @@
+-- A stateful function in the filter does not allow converting.
+Type: LEFT
+-- A non-deterministic function between the filter and the join does not allow converting.
+Type: INNER
+Type: LEFT
+-- A non-deterministic function in the enclosing join condition does not allow converting.
+Type: INNER
+Type: LEFT
+-- A RIGHT join below allows converting.
+20	890
+Type: INNER
+Type: INNER
+-- An enclosing RIGHT join allows converting.
+20	890
+Type: RIGHT
+Type: INNER
+-- An enclosing ANY join allows converting.
+2	4
+Type: INNER
+Type: INNER
+-- An enclosing LEFT SEMI join allows converting.
+20	890
+Type: LEFT
+Strictness: SEMI
+Type: INNER
+-- An enclosing RIGHT ANTI join allows converting.
+0
+Type: RIGHT
+Strictness: ANTI
+Type: INNER
+-- An enclosing LEFT ANTI join does not allow converting.
+Type: LEFT
+Strictness: ANTI
+Type: LEFT
+-- A PASTE JOIN does not allow converting.
+Type: PASTE
+Type: LEFT
+-- A FULL join with a rejected left column becomes LEFT.
+100
+Type: INNER
+Type: LEFT
+-- A FULL join with a rejected right column becomes RIGHT.
+10
+Type: INNER
+Type: RIGHT
+-- A FULL join rejected on both sides becomes INNER.
+10
+Type: INNER
+Type: INNER
+-- A `Join` engine source does not allow converting.
+Type: INNER
+Type: LEFT
+-- A distributed plan fragment allows converting.
+10	420
+Type: INNER
+Type: INNER
