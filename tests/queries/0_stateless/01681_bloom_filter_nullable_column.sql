@@ -13,6 +13,9 @@ INSERT INTO bloom_filter_nullable_index VALUES (1, 'test');
 INSERT INTO bloom_filter_nullable_index VALUES (2, 'test2');
 
 SELECT 'NullableTuple with transform_null_in=0';
+-- A two-column set against a one-column left side is an error whichever `transform_null_in` is set,
+-- and with `use_skip_indexes = 0` as well. It used to be masked here: the index hashed the tuple set
+-- against a `String` element, matched no granule, and the filter that raises it never ran.
 SELECT * FROM bloom_filter_nullable_index WHERE str IN
     (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0, enable_analyzer = 1; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT * FROM bloom_filter_nullable_index WHERE str IN
