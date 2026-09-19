@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTToJSON.h>
@@ -72,10 +73,14 @@ public:
         auto result = ColumnString::create();
 
         const auto * col = arguments[0].column.get();
+        size_t bytes_since_check = 0;
+        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto sql = col->getDataAt(i);
+
+            checkQueryCancellationThrottled(query_status, name, sql.size(), bytes_since_check);
 
             ParserQuery parser(sql.data() + sql.size(), allow_settings_after_format_in_insert, implicit_select);
             auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "",
