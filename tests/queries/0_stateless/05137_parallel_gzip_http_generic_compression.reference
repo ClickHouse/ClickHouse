@@ -1,0 +1,4 @@
+generic compression response is valid gzip
+generic compression response decompresses to the expected result
+parallel and serial generic compression framing differ
+parallel and serial generic compression responses decompress identically
