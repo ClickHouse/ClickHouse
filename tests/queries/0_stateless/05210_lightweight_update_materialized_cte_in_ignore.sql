@@ -1,3 +1,8 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the multi-stream pin reads the mutation's own `ProfileEvents`
+-- back from `system.query_log`, and a `Replicated` database enqueues the `UPDATE` as a
+-- replicated DDL, so the initiator logs no `SelectedParts`.
+
 -- A lightweight UPDATE / DELETE whose predicate feeds an `IN` subquery that defines a
 -- reused MATERIALIZED CTE into `ignore`. The `in` result is then consumed by `ignore`
 -- instead of being a condition of the predicate, so the mutation plan gates nothing,
@@ -43,11 +48,10 @@ SELECT * FROM t_lwu_cte_in_ignore ORDER BY id;
 -- multi-stream - with a single reading stream no reader of the set's source plan is
 -- scheduled and the bug this test guards is invisible.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] > 1
+SELECT max(ProfileEvents['SelectedParts']) > 1
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND query_kind = 'Update' AND query LIKE '%SET v = 100%'
-ORDER BY event_time_microseconds DESC LIMIT 1;
+  AND query_kind = 'Update' AND query LIKE '%SET v = 100%';
 
 -- The same with a second, ordinary `IN` conjunct whose set is needed.
 UPDATE t_lwu_cte_in_ignore SET v = 200 WHERE (v IN (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT a.x FROM c AS a, c AS b)) AND ignore(id IN (WITH c AS MATERIALIZED (SELECT number * 2 AS x FROM numbers(3)) SELECT a.x FROM c AS a, c AS b));
