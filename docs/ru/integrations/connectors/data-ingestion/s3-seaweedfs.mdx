@@ -47,8 +47,10 @@ import SelfManaged from '/snippets/ru/_self_managed_only_no_roadmap.mdx';
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
 ```
+
+`-admin.port=12646` обеспечивает, чтобы административный порт gRPC, который SeaweedFS на его основе определяет, находился ниже диапазона эфемерных портов Linux, иначе при запуске его первым могло бы занять соединение.
 
 Конечная точка S3 доступна на порту 8333; прежде чем продолжить, дождитесь ответа:
 

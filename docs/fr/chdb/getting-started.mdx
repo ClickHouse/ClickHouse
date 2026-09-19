@@ -213,11 +213,20 @@ from chdb import session as chs
 
 Ensuite, nous allons initialiser une session.
 Si nous voulons que la session soit enregistrée sur disque, nous devons fournir un nom de répertoire.
-Si nous le laissons vide, la base de données sera en mémoire et sera perdue dès que nous arrêtons le processus Python.
+Si nous le laissons vide, la session est temporaire : chDB conserve ses données dans un répertoire temporaire sur disque et les supprime lorsque la session est fermée ; elles ne sont donc pas conservées.
 
 ```python
 sess = chs.Session("gettingStarted.chdb")
 ```
+
+<Note>
+  chDB exécute un seul moteur embarqué par processus. Le répertoire de la base de données (son chemin) respecte donc quelques règles :
+
+  * **Un processus par chemin** : un répertoire de données chDB ne peut être ouvert que par un seul processus du système d’exploitation à la fois. Toute tentative d’ouverture du même chemin par un second processus échoue jusqu’à la fermeture du premier.
+  * **Un chemin par processus** : tant qu’une session ou une connexion est ouverte, l’ouverture d’une autre pour un chemin *différent* échoue ; fermez d’abord la ou les sessions/connexions ouvertes pour éviter cette erreur. Plusieurs sessions ou connexions sur le *même* chemin peuvent coexister.
+  * **Concurrence** : les sessions ou connexions sur le même chemin peuvent exécuter des requêtes simultanément.
+  * **Les sessions sans chemin sont partagées** : sans chemin, les sessions utilisent la base de données `:memory:` du processus (les sessions vides voient donc les tables des autres), et son répertoire temporaire n’est supprimé que lorsque la dernière se ferme.
+</Note>
 
 Ensuite, nous allons créer une base de données :
 

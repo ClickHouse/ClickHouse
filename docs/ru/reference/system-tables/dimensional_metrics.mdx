@@ -97,6 +97,30 @@ FORMAT Prometheus
 
 Общее количество байтов сегментов файла, вытесненных из файлового кэша, с метками имени кэша и идентификатора пользователя. По умолчанию отключено; включите с помощью `expose_prometheus_eviction_metrics` и `expose_prometheus_eviction_metrics_per_user`.
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+Количество сбоев `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) с метками базы данных, таблицы, стадии обработки (`read`, `set_processing`, `insert`, `commit`) и кода ошибки.
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+Количество файлов `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), обработка которых была окончательно прекращена после исчерпания попыток повтора (или при отключённых повторах), с метками базы данных и таблицы. Каждый такой файл содержит данные, которые никогда не будут обработаны.
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+Unix-временная метка последнего изменения самого нового объекта, обнаруженного к настоящему моменту таблицей `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), с метками базы данных и таблицы.
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+Unix-временная метка времени последнего изменения новейшего объекта, полностью обработанного на данный момент таблицей `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), с метками базы данных и таблицы.
+
 <div id="see-also">
   ## См. также
 </div>

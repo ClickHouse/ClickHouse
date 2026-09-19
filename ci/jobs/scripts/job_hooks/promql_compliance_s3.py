@@ -68,9 +68,9 @@ def upload_pr_result(local_path: Path, pr_number: int, sha: str) -> Optional[str
     """Upload JSON to PRs/<pr>/<sha>/promql_compliance/; return public URL or None."""
     if not local_path.is_file():
         return None
-    prefix = Settings.S3_ARTIFACT_PATH or ""
+    prefix = Settings.S3_ARTIFACT_BUCKET or ""
     if not prefix:
-        print("PromQL compliance S3: S3_ARTIFACT_PATH empty, skip PR upload")
+        print("PromQL compliance S3: S3_ARTIFACT_BUCKET empty, skip PR upload")
         return None
     s3_dir = f"{prefix}/PRs/{pr_number}/{sha}/{S3_KEY_DIR}"
     try:
@@ -141,9 +141,9 @@ def upload_master_result(local_path: Path, commit_sha: str) -> Optional[str]:
     """Upload JSON to canonical S3 path; return public URL or None on failure."""
     if not local_path.is_file():
         return None
-    prefix = Settings.S3_ARTIFACT_PATH or ""
+    prefix = Settings.S3_ARTIFACT_BUCKET or ""
     if not prefix:
-        print("PromQL compliance S3: S3_ARTIFACT_PATH empty, skip upload")
+        print("PromQL compliance S3: S3_ARTIFACT_BUCKET empty, skip upload")
         return None
     s3_dir = f"{prefix}/REFs/{MASTER_BRANCH}/{commit_sha}/{S3_KEY_DIR}"
     try:

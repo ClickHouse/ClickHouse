@@ -310,7 +310,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на чтение патч-частей
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на построение индексов для применения патч-частей в режиме Merge
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на построение индексов и хеш-таблиц для применения патч-частей в режиме Join
-* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на циклы слияния по ключу сортировки в applyPatchesMergeOnKey
+* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное внутри циклов слияния по ключу сортировки в applyPatchesMergeOnKey
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на анализ индекса патч-частей
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество задач чтения, для которых была применена хотя бы одна мутация на лету
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество мутаций, применённых на лету, среди всех задач чтения
@@ -821,6 +821,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_CachedWriteBufferCacheWriteBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байтов, записанных из источника (удалённой файловой системы и т. д.) в файловый кэш
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на запись данных в файловый кэш
 * `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда сквозное кэширование записи прерывалось (не удалось зарезервировать место или выполнить запись в кэш либо вытеснялся перекрывающий сегмент), после чего запись продолжалась без заполнения кэша
+* `ProfileEvent_CachedWriteBufferCoveringSegmentShrunk` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда сквозное кэширование записи уменьшало перекрывающий сегмент файла, который оставался перед смещением, в которое выполнялась запись (диапазоны между ними направлялись на другой сервер распределённого кэша), чтобы продолжить кэширование в новом сегменте файла
+* `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда сквозное кэширование записи приходилось прекращать, поскольку перекрывающий сегмент файла, оставшийся перед смещением, в которое выполнялась запись, нельзя было уменьшить (он удерживается кем-то другим, поэтому содержащуюся в нём дыру нельзя разрешить) или он одновременно вытеснялся
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на загрузку метаданных файлового кэша
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байтов, вытесненных из файлового кэша
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/ru/reference/data-types/int-uint)) — Количество созданных каталогов ключей
@@ -918,7 +920,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/ru/reference/data-types/int-uint)) — Количество промежуточных записей, удалённых адаптивной агрегацией как дубликаты ключей при публикации и запечатывании.
 * `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байтов ключей, помещённых адаптивной агрегацией в промежуточное хранилище для выгрузки во время слияния.
 * `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество объединённых фрагментов, запечатанных адаптивной агрегацией из буферизованных промежуточных батчей.
-* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда при запечатывании адаптивная агрегация нормализовала представления столбцов, поскольку буферизованные батчи различались в одной позиции аргумента.
+* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/ru/reference/data-types/int-uint)) — Количество промежуточных столбцов аргументов, нормализованных при запечатывании адаптивной агрегации из обёрнутого представления (Const, Replicated, Sparse, LowCardinality) в плотную форму, используемую при выгрузке.
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ru/reference/data-types/int-uint)) — Количество отложенных записей, выгруженных адаптивной агрегацией в общую таблицу во время слияния.
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда адаптивная агрегация выгружала промежуточные записи досрочно из-за нехватки памяти.
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ru/reference/data-types/int-uint)) — Количество промежуточных записей, досрочно выгруженных адаптивной агрегацией при нехватке памяти.
@@ -927,6 +929,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько хеш-таблиц было инициализировано как двухуровневые для агрегации.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько раз одноуровневая хеш-таблица агрегации преобразовывалась в двухуровневую во время выполнения.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ru/reference/data-types/int-uint)) — Для скольких блоков была применена оптимизация равных диапазонов ключей
+* `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, пропущенных при агрегации, поскольку их ключ группировки не мог попасть в результат top-K (см. `enable_group_by_top_k_optimization`).
+* `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/ru/reference/data-types/int-uint)) — Количество ключей группировки, вытесненных из ограниченной кучи top-K при агрегации (см. `enable_group_by_top_k_optimization`).
+* `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ru/reference/data-types/int-uint)) — Количество вытесненных ключей группировки, также удалённых из промежуточной хеш-таблицы с уничтожением их состояний агрегатных функций (см. `enable_group_by_top_k_optimization`). Меньше `AggregationTopKKeysEvicted`, когда метод агрегации не может удалять ключи либо ранжируется только префикс ключа: тогда куча по-прежнему пропускает строки, но хеш-таблица сохраняет каждую принятую группу.
+* `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ru/reference/data-types/int-uint)) — Количество замороженных куч агрегации top-K с переходом к обычной агрегации. Либо куча почти ничего не отклоняла в окне наблюдения (например, число различных ключей группировки не превышает LIMIT), либо набор равных значений на границе кучи — который невозможно вытеснить — разросся сверх её размера (см. `enable_group_by_top_k_optimization`).
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько элементов было заранее выделено в хеш-таблицах для hash JOIN.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда на запрос метаданных Объектного хранилища был получен ответ из кэша без обращения к Keeper
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда на запрос метаданных Объектного хранилища приходилось отвечать через Keeper
@@ -1146,7 +1152,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheReadRequestRetriesExhausted` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера чтения Distributed Cache. Количество случаев, когда ошибку чтения, допускающую повторную попытку, не удалось устранить в пределах лимита повторных попыток запроса на чтение
 * `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/ru/reference/data-types/int-uint)) — событие клиента Distributed Cache. Общее количество ошибок Distributed Cache при выполнении запросов на запись (равно DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). Инициированная сервером команда `Stop` для кэша со сквозной записью является механизмом управления потоком, а не ошибкой, и не учитывается
 * `ProfileEvent_DistrCacheWriteErrorsRetriable` ([UInt64](/ru/reference/data-types/int-uint)) — событие клиента Distributed Cache. Количество ошибок Distributed Cache при выполнении запросов на запись, допускающих повторную попытку (учитывается каждое возникновение, включая ошибки, устранённые повторной попыткой)
-* `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/ru/reference/data-types/int-uint)) — событие клиента Distributed Cache. Количество ошибок Distributed Cache при выполнении запросов на запись, не допускающих повторной попытки
+* `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/ru/reference/data-types/int-uint)) — событие клиента Distributed Cache. Количество ошибок Distributed Cache при выполнении запросов на запись, не допускающих повторную попытку
 * `ProfileEvent_DistrCacheWriteRequestRetriesExhausted` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера записи Distributed Cache. Количество случаев, когда ошибку записи, допускающую повторную попытку, не удалось устранить в пределах лимита повторных попыток запроса на запись
 * `ProfileEvent_DistrCacheWriteRequestRetries` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера записи Distributed Cache. Количество повторных попыток выполнить запрос на запись после ошибки, допускающей повторную попытку
 * `ProfileEvent_DistrCacheWriteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера записи Distributed Cache. Время, затраченное в WriteBufferFromDistributedCache::writeToFileSegment
@@ -1181,6 +1187,15 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheSuccessfulRegistryUpdates` ([UInt64](/ru/reference/data-types/int-uint)) — Событие реестра Distributed Cache. Количество успешных обновлений реестра серверов
 * `ProfileEvent_DistrCacheUnsuccessfulRegistryUpdates` ([UInt64](/ru/reference/data-types/int-uint)) — Событие реестра Distributed Cache. Количество неуспешных обновлений реестра серверов
 * `ProfileEvent_DistrCacheReadBytesFromFallbackBuffer` ([UInt64](/ru/reference/data-types/int-uint)) — Событие буфера чтения Distributed Cache. Количество байтов, прочитанных из резервного буфера
+* `ProfileEvent_DistrCacheReadBytesSkippedOnSeek` ([UInt64](/ru/reference/data-types/int-uint)) — Событие буфера чтения Distributed Cache. Байты в процессе передачи, отброшенные при перемещении вперёд для повторного использования открытого потока
+* `ProfileEvent_DistrCacheSeekReRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Событие буфера чтения Distributed Cache. Количество случаев, когда seek запрашивал новый диапазон чтения в том же соединении
+* `ProfileEvent_DistrCacheSeekCancelledRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Событие буфера чтения Distributed Cache. Количество случаев, когда seek отменял открытый запрос вместо повторного использования потока
+* `ProfileEvent_DistrCacheSeekSkips` ([UInt64](/ru/reference/data-types/int-uint)) — Событие буфера чтения Distributed Cache. Количество перемещений вперёд, при которых пропускался разрыв в открытом потоке
+* `ProfileEvent_DistrCacheSeekSkipDeclinedGapNotBuffered` ([UInt64](/ru/reference/data-types/int-uint)) — Событие буфера чтения Distributed Cache. Количество перемещений вперёд, при которых пропуск был невозможен, поскольку разрыв не был буферизован локально
+* `ProfileEvent_DistrCacheSeekBufferedBytesShortfall` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера чтения Distributed Cache. Количество байтов, на которое локально буферизованных данных не хватило для заполнения разрыва при отклонении операции seek
+* `ProfileEvent_DistrCacheSeekReRequestFirstPacketMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера чтения Distributed Cache. Время между запросом нового диапазона чтения в открытом потоке из-за seek и получением первого пакета
+* `ProfileEvent_DistrCacheEstimatedInflightBytesOnSeek` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера чтения Distributed Cache. Расчётное количество байтов в обработке при операциях seek, в ходе которых рассматривалось закрытие соединения (сравните с DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
+* `ProfileEvent_DistrCacheReadBytesUnconsumedOnEndRequest` ([UInt64](/ru/reference/data-types/int-uint)) — событие буфера чтения Distributed Cache. Количество байтов запрошенного диапазона чтения, оставшихся необработанными при досрочном завершении запроса
 * `ProfileEvent_DistrCacheOpenedConnections` ([UInt64](/ru/reference/data-types/int-uint)) — Событие подключения к распределённому кэшу. Количество открытых подключений к Distributed Cache
 * `ProfileEvent_DistrCacheReusedConnections` ([UInt64](/ru/reference/data-types/int-uint)) — Событие подключения к распределённому кэшу. Количество повторно использованных подключений к Distributed Cache
 * `ProfileEvent_DistrCacheStaleReconnections` ([UInt64](/ru/reference/data-types/int-uint)) — Событие подключения к распределённому кэшу. Количество повторных подключений из-за устаревших соединений в пуле (закрытых удалённой стороной)
@@ -1245,6 +1260,9 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время обновления virtual parts в микросекундах
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeper` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обновлений virtual parts из ZooKeeper
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время обновления virtual parts из ZooKeeper в микросекундах
+* `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperPartitionsFromCache` ([UInt64](/ru/reference/data-types/int-uint)) — Количество партиций, пропущенных при обнаружении virtual parts, поскольку их stat был актуален в кэше обнаружения
+* `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperPartitions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество партиций, обнаруженных в ZooKeeper при обнаружении virtual parts, поскольку их stat отсутствовал в кэше обнаружения или был устаревшим
+* `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperFullyCached` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обнаружений virtual parts, при которых все партиции были использованы из кэша обнаружения и ничего не было получено из ZooKeeper
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesPeerNotFound` ([UInt64](/ru/reference/data-types/int-uint)) — Не удалось обновить virtual parts из peer, потому что peer не найден
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromPeer` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обновлений virtual parts из peer
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromPeerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время обновления virtual parts из peer в микросекундах
@@ -1268,6 +1286,9 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreePartsKillerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько времени занимает основной поток процесса удаления частей
 * `ProfileEvent_SharedMergeTreePartsKillerParts` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько частей было запланировано процессом удаления
 * `ProfileEvent_SharedMergeTreePartsKillerPartsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько времени требуется на удаление частей (выполняется несколькими потоками)
+* `ProfileEvent_SharedMergeTreeBlobsListPartsWritten` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записанных частей blob-list SharedMergeTree (по одному консолидированному узлу blobs.list на каждую часть)
+* `ProfileEvent_SharedMergeTreeBlobsListBlobsWritten` ([UInt64](/ru/reference/data-types/int-uint)) — Количество blob-объектов данных, зарегистрированных в картах blobs.list SharedMergeTree
+* `ProfileEvent_SharedMergeTreeBlobsListInlineFilesWritten` ([UInt64](/ru/reference/data-types/int-uint)) — Количество небольших файлов, сохранённых встроенными в картах blobs.list SharedMergeTree вместо отдельных blob-объектов
 * `ProfileEvent_SharedMergeTreeMergeSelectingTaskMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Микросекунды, затраченные задачей выбора слияния для SMT
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdateTaskRuns` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запусков updateReplicaSetTask
 * `ProfileEvent_SharedMergeTreeOptimizeAsync` ([UInt64](/ru/reference/data-types/int-uint)) — Выполненные асинхронные запросы OPTIMIZE
@@ -1287,14 +1308,17 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeSelectPartsForCoordinatedFetchParts` ([UInt64](/ru/reference/data-types/int-uint)) — количество частей, выбранных функцией selectPartsForCoordinatedFetch
 * `ProfileEvent_SharedMergeTreeSelectPartsForFullFetchMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — время выполнения selectPartsForFullFetch
 * `ProfileEvent_SharedMergeTreeSelectPartsForFullFetchParts` ([UInt64](/ru/reference/data-types/int-uint)) — количество частей, выбранных функцией selectPartsForFullFetch
+* `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество дедуплицированных загрузок частей, поскольку часть уже загружалась или создавалась другим потоком
 * `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — время выполнения tryUpdateDiskMetadataCacheForPart в scheduleDataProcessingJob
 * `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — время выполнения loadColumnsChecksumsIndexes только для SharedMergeTree
+* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/ru/reference/data-types/int-uint)) — Количество blob-объектов данных, совместно используемых по пути между частями blob-list SharedMergeTree (увеличения счётчика ссылок добавляются в commit multi)
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/ru/reference/data-types/int-uint)) — сколько раз SnapshotCleanerThread принимал решение очистить часть
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/ru/reference/data-types/int-uint)) — сколько времени SnapshotCleanerThread пытается очистить часть
 * `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/ru/reference/data-types/int-uint)) — сколько раз SnapshotCleanerThread успешно очищал часть
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerRuns` ([UInt64](/ru/reference/data-types/int-uint)) — сколько раз запускался SnapshotCleanerThread
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — сколько времени работал SnapshotCleanerThread
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerPartsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — сколько времени SnapshotCleanerThread тратит на очистку частей
+* `ProfileEvent_SharedMergeTreeSnapshotDeadLocksReclaimed` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько узлов или поддеревьев Keeper, относящихся к более не активным легковесным снимкам, было освобождено
 * `ProfileEvent_SharedMergeTreeDataPartsFetchAttempt` ([UInt64](/ru/reference/data-types/int-uint)) — сколько раз предпринималась попытка получить части данных
 * `ProfileEvent_SharedMergeTreeDataPartsFetchFromPeer` ([UInt64](/ru/reference/data-types/int-uint)) — сколько раз части данных получались от peer
 * `ProfileEvent_SharedMergeTreeDataPartsFetchFromPeerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — время получения частей данных от peer в микросекундах
@@ -1320,6 +1344,46 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество физических байтов (контрольная сумма + заголовок + blob), прочитанных из файлов журнала изменений параллельным модулем чтения при запуске Keeper
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество байт, записанных в файлы снимков в Keeper
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на fsync для файлов снимков в Keeper
+* `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешно завершённых сбросов memtable в Keeper LSMT
+* `ProfileEvent_KeeperLSMTMerges` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешно завершённых слияний в Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество исключений при сбросе memtable в Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество исключений при слияниях в Keeper LSMT
+* `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/ru/reference/data-types/int-uint)) — Количество исключений при удалении файлов в Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сжатых байтов, записанных в файлы при сбросе memtable в Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество несжатых байтов, записанных в файлы при сбросе memtable в Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество выходных файлов, опубликованных при слияниях Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сжатых байтов в выходных файлах, опубликованных при слияниях Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество несжатых байтов в выходных файлах, опубликованных при слияниях Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество входных файлов, полностью обработанных и удалённых при слияниях Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество несжатых байтов во входных файлах, полностью обработанных и удалённых при слияниях Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей Create, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей Create, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей Update, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей Update, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей Remove, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей Remove, добавленных в незафиксированные memtable Keeper LSMT
+* `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Сериализованные байты записей, добавленных в зафиксированную мемтаблицу Keeper LSMT
+* `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/ru/reference/data-types/int-uint)) — Количество операций записи, отложенных из-за отставания фоновых сбросов или слияний Keeper LSMT
+* `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество зафиксированных мемтаблиц, созданных Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество незафиксированных мемтаблиц, созданных Keeper LSMT
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков узлов Keeper LSMT, при которых узел был найден в незафиксированных мемтаблицах
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков узлов Keeper LSMT, при которых узел не был найден в незафиксированных мемтаблицах и выполнялся переход к зафиксированному состоянию
+* `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков зафиксированных узлов Keeper LSMT, при которых блок узла уже находился в памяти
+* `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков зафиксированных узлов Keeper LSMT для несуществующих узлов
+* `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/ru/reference/data-types/int-uint)) — Количество поисков зафиксированных узлов Keeper LSMT, при которых требовалось загрузить блок узла
+* `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество записей кэша узлов Keeper LSMT, перенаправленных на только что загруженный блок
+* `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/ru/reference/data-types/int-uint)) — Имена дочерних узлов, включая метки удаления, полученные из мемтаблиц операциями перечисления Keeper LSMT
+* `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Имена дочерних узлов, включая метки удаления, полученные из файлов операциями перечисления Keeper LSMT
+* `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/ru/reference/data-types/int-uint)) — Блоки в файлах, просканированные операциями перечисления Keeper LSMT
+* `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/ru/reference/data-types/int-uint)) — Записи в файлах, просканированные операциями перечисления Keeper LSMT
+* `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сканирований файлов, пропущенных операциями перечисления Keeper LSMT, поскольку фильтр путей родительских узлов исключил наличие дочерних узлов
+* `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сканирований файлов, не пропущенных фильтром путей родительских узлов Keeper LSMT, в которых не было найдено дочерних узлов
+* `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сканирований файлов, не пропущенных фильтром путей родительских узлов Keeper LSMT, в которых были найдены дочерние узлы
+* `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обращений к блокам Keeper LSMT, обслуженных слабым указателем из информации о блоке файла
+* `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обращений к блокам Keeper LSMT, обслуженных кэшем блоков
+* `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обращений к блокам Keeper LSMT, при которых требовалось загрузить с диска группу блоков
+* `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/ru/reference/data-types/int-uint)) — Количество блоков, загруженных Keeper LSMT с диска
+* `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Несжатые байты блоков, загруженных Keeper LSMT с диска
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/ru/reference/data-types/int-uint)) — Количество созданных подключений к хранилищу
 * `ProfileEvent_StorageConnectionsReused` ([UInt64](/ru/reference/data-types/int-uint)) — Количество повторно использованных подключений к хранилищу
 * `ProfileEvent_StorageConnectionsReset` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сброшенных подключений к хранилищу
@@ -1445,6 +1509,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество случаев, когда не удалось отследить sample выделения памяти в jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество случаев, когда не удалось отследить sample освобождения памяти в jemalloc
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Затраченное время на загрузку статистики из частей
+* `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ru/reference/data-types/int-uint)) — Количество условий `IN`, которые оценщик селективности не смог проанализировать, поскольку набор ещё не был построен и для его заполнения нельзя выполнять подзапрос
+* `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ru/reference/data-types/int-uint)) — Количество условий `IN`, для которых селективность была оценена по размеру и границам набора, а не по его точным диапазонам, поскольку размер набора превышает `statistics_max_set_size_for_exact_selectivity_estimation`
 * `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Собранная статистика по числу байтов, которые реплики прочитали бы, если бы запрос выполнялся с использованием параллельных реплик
 * `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Собранная статистика по числу байтов, которые реплики отправили бы инициатору, если бы запрос выполнялся с использованием параллельных реплик
 * `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество providers учетных данных, повторно использованных из кэша
@@ -1458,6 +1524,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, рассмотренных JOIN Runtime Filters для отсечения при чтении
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, отсечённых JOIN Runtime Filters при чтении
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на этапы постобработки после построения правой стороны JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на преобразование полезной нагрузки правой стороны JOIN в построчный формат.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество токенов промпта, использованных во всех вызовах функции ИИ в запросе.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество выходных токенов, использованных во всех вызовах функции ИИ в запросе.
 * `ProfileEvent_AIAPICalls` ([UInt64](/ru/reference/data-types/int-uint)) — Количество HTTP-запросов, отправленных провайдерам ИИ.
@@ -1467,6 +1534,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerProvided` ([UInt64](/ru/reference/data-types/int-uint)) — Количество воркеров без состояния, предоставленных запросам для выполнения распределённого запроса.
 * `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время ожидания запросами подготовки воркеров без состояния.
 * `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда запросу приходилось ждать предоставления воркеров службой обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerNotAccessible` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда арендованный воркер без состояния оказывался ещё недоступным и исключался из распределения запросов до прохождения проверки доступности.
+* `ProfileEvent_StatelessWorkerTimeToAvailableMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время (суммарно по воркерам) от первого появления арендованного воркера без состояния в службе обнаружения до прохождения им проверки доступности для выполнения запросов.
 * `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов create&#95;lease, отправленных службе обнаружения воркеров без состояния для получения воркеров.
 * `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на запросы create&#95;lease к службе обнаружения воркеров без состояния.
 * `ProfileEvent_StatelessWorkerCreateLeaseErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество неудачных запросов create&#95;lease к службе обнаружения воркеров без состояния (из-за ошибки или тайм-аута).
@@ -1484,6 +1553,40 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerServerHeartbeatErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество неудачных сигналов активности от воркеров без состояния к сервису обнаружения воркеров без состояния (из-за ошибки или тайм-аута).
 * `ProfileEvent_StatelessWorkerServerTenantBindings` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда воркер без состояния назначался тенанту для обработки его запросов.
 * `ProfileEvent_StatelessWorkerServerLeasesLost` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда срок аренды воркера без состояния истекал и он начинал ожидать завершения работы.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов create&#95;lease, обработанных службой обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов create&#95;lease, на которые служба обнаружения воркеров без состояния ответила ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное службой обнаружения воркеров без состояния на обработку запросов create&#95;lease.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов update&#95;lease, обработанных службой обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов update&#95;lease, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов update&#95;lease.
+* `ProfileEvent_StatelessWorkerDiscoveryGetLeaseRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов get&#95;lease, обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryGetLeaseErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов get&#95;lease, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryGetLeaseMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов get&#95;lease.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов create&#95;worker, обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов create&#95;worker, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов create&#95;worker.
+* `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов delete&#95;worker, обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов delete&#95;worker, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов delete&#95;worker.
+* `ProfileEvent_StatelessWorkerDiscoveryGetWorkerRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов get&#95;worker, обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryGetWorkerErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов get&#95;worker, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryGetWorkerMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов get&#95;worker.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов heartbeat, обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов heartbeat, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов heartbeat.
+* `ProfileEvent_StatelessWorkerDiscoveryListWorkersRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов list&#95;workers, обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryListWorkersErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов list&#95;workers, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryListWorkersMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов list&#95;workers.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов на управление тенантами (создание, обновление, удаление, получение или перечисление тенантов), обработанных сервисом обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов на управление тенантами, на которые сервис обнаружения воркеров без состояния ответил ошибкой.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное сервисом обнаружения воркеров без состояния на обработку запросов на управление тенантами.
+* `ProfileEvent_StatelessWorkerDiscoveryInternalErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов, которые служба обнаружения воркеров без состояния не смогла обработать из-за внутренней ошибки (исключения или сбоя хранилища координации), а не отклонила как недопустимые.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersLeased` ([UInt64](/ru/reference/data-types/int-uint)) — Количество воркеров без состояния, переданных в аренду тенантам службой обнаружения воркеров без состояния.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersUnavailable` ([UInt64](/ru/reference/data-types/int-uint)) — Количество воркеров без состояния, запрошенных тенантами, но не предоставленных службой обнаружения воркеров без состояния из-за отсутствия свободных воркеров или достижения лимита воркеров тенанта.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersLeaseExpired` ([UInt64](/ru/reference/data-types/int-uint)) — Количество воркеров без состояния, изъятых службой обнаружения воркеров без состояния после истечения срока аренды.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersHeartbeatExpired` ([UInt64](/ru/reference/data-types/int-uint)) — Количество воркеров без состояния, изъятых службой обнаружения воркеров без состояния, потому что они перестали отправлять сигналы активности.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatsRejected` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сигналов активности, отклонённых службой обнаружения воркеров без состояния, поскольку воркер уже был вытеснен.
+* `ProfileEvent_StatelessWorkerDiscoveryKeeperTransactionRetries` ([UInt64](/ru/reference/data-types/int-uint)) — Количество повторных попыток выполнения транзакций записи службой обнаружения воркеров без состояния, поскольку состояние её хранилища координации (Keeper) было изменено параллельно.
 
 {/*AUTOGENERATED_END*/}
 

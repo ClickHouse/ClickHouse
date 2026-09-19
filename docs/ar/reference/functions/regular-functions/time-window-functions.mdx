@@ -35,7 +35,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 ونظرًا لأن السجل الواحد يمكن إسناده إلى عدة نوافذ قافزة، فإن الدالة لا تُرجع إلا حدّ النافذة الأولى عند استخدام الدالة hop بدون WINDOW VIEW.
 
-**الصيغة**
+**البنية**
 
 ```sql
 hop(time_attr, hop_interval, window_interval[, timezone])
@@ -57,30 +57,30 @@ hop(time_attr, hop_interval, window_interval[, timezone])
 **النافذة القافزة**
 
 ```sql title=Query
-SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hop(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-('2024-07-03 00:00:00','2024-07-05 00:00:00')
+('2026-01-01 00:00:00','2026-01-03 00:00:00')
 ```
 
 <div id="hopEnd">
   ## hopEnd
 </div>
 
-ظهر في: v22.1.0
+أُضيف في: v22.1.0
 
-يعيد الحدّ العلوي غير المتضمَّن للنافذة القافزة المقابلة.
+يعيد الحد العلوي غير الشامل للنافذة القافزة المقابلة.
 
 وبما أن السجل الواحد يمكن أن يُسنَد إلى عدة نوافذ قافزة، فإن الدالة لا تعيد إلا حدّ النافذة الأولى عند استخدام الدالة hop بدون `WINDOW VIEW`.
 
-**الصياغة**
+**البنية**
 
 ```sql
 hopEnd(time_attr, hop_interval, window_interval[, timezone])
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `time_attr` — التاريخ والوقت. [`DateTime`](/ar/reference/data-types/datetime)
 * `hop_interval` — فاصل قفز موجب. [`Interval`](/ar/reference/data-types/int-uint)
@@ -89,25 +89,25 @@ hopEnd(time_attr, hop_interval, window_interval[, timezone])
 
 **القيمة المُعادة**
 
-تعيد الحدّ العلوي غير الشامل للنافذة القافزة المقابلة. [`DateTime`](/ar/reference/data-types/datetime)
+تعيد الحد العلوي غير الشامل للنافذة القافزة المقابلة. [`DateTime`](/ar/reference/data-types/datetime)
 
 **أمثلة**
 
 **نهاية النافذة القافزة**
 
 ```sql title=Query
-SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hopEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-2024-07-05 00:00:00
+2026-01-03 00:00:00
 ```
 
 <div id="hopStart">
   ## hopStart
 </div>
 
-استُحدث في: v22.1.0
+أُضيف في: v22.1.0
 
 تعيد الحد السفلي الشامل للنافذة القافزة المقابلة.
 
@@ -135,18 +135,18 @@ hopStart(time_attr, hop_interval, window_interval[, timezone])
 **بداية النافذة القافزة**
 
 ```sql title=Query
-SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hopStart(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-2024-07-03 00:00:00
+2026-01-01 00:00:00
 ```
 
 <div id="tumble">
   ## tumble
 </div>
 
-قُدِّمت في: v21.12.0
+أُضيف في: v21.12.0
 
 تُوزِّع النافذة الزمنية المتعاقبة السجلات على نوافذ متواصلة غير متداخلة ذات مدة ثابتة (`interval`).
 
@@ -171,11 +171,11 @@ tumble(time_attr, interval[, timezone])
 **النافذة المتعاقبة**
 
 ```sql title=Query
-SELECT tumble(now(), toIntervalDay('1'))
+SELECT tumble(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-('2024-07-04 00:00:00','2024-07-05 00:00:00')
+('2026-01-02 00:00:00','2026-01-03 00:00:00')
 ```
 
 <div id="tumbleEnd">
@@ -186,13 +186,13 @@ SELECT tumble(now(), toIntervalDay('1'))
 
 يعيد الحد العلوي غير الشامل للنافذة المتعاقبة المقابلة.
 
-**الصياغة**
+**البنية**
 
 ```sql
 tumbleEnd(time_attr, interval[, timezone])
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `time_attr` — التاريخ والوقت. [`DateTime`](/ar/reference/data-types/datetime)
 * `interval` — فاصل النافذة من نوع Interval. [`Interval`](/ar/reference/data-types/int-uint)
@@ -207,18 +207,18 @@ tumbleEnd(time_attr, interval[, timezone])
 **نهاية النافذة المتعاقبة**
 
 ```sql title=Query
-SELECT tumbleEnd(now(), toIntervalDay('1'))
+SELECT tumbleEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-2024-07-05 00:00:00
+2026-01-03 00:00:00
 ```
 
 <div id="tumbleStart">
   ## tumbleStart
 </div>
 
-قُدِّمت في: v22.1.0
+أُضيف في: v22.1.0
 
 تعيد الحدّ السفلي المتضمَّن للنافذة المتعاقبة المقابلة.
 
@@ -228,7 +228,7 @@ SELECT tumbleEnd(now(), toIntervalDay('1'))
 tumbleStart(time_attr, interval[, timezone])
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `time_attr` — التاريخ والوقت. [`DateTime`](/ar/reference/data-types/datetime)
 * `interval` — فاصل النافذة من النوع [`Interval`](/ar/reference/data-types/int-uint)
@@ -243,11 +243,11 @@ tumbleStart(time_attr, interval[, timezone])
 **بداية النافذة المتعاقبة**
 
 ```sql title=Query
-SELECT tumbleStart(now(), toIntervalDay('1'))
+SELECT tumbleStart(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-2024-07-04 00:00:00
+2026-01-02 00:00:00
 ```
 
 <div id="windowID">
@@ -259,16 +259,16 @@ SELECT tumbleStart(now(), toIntervalDay('1'))
 تعرض هذه الدالة معرّف نافذة متعاقبة أو نافذة قافزة المقابلة.
 لا يمكن استخدام هذه الدالة إلا مع `WINDOW VIEW`.
 
-**الصياغة**
+**البنية**
 
 ```sql
 windowID(time_attr, interval[, timezone])
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `time_attr` — التاريخ والوقت. [`DateTime`](/ar/reference/data-types/datetime)
-* `interval` — الفاصل الزمني للنافذة من نوع Interval. [`Interval`](/ar/reference/data-types/int-uint)
+* `interval` — فاصل النافذة من نوع Interval. [`Interval`](/ar/reference/data-types/int-uint)
 * `timezone` — اختياري. اسم المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -280,7 +280,11 @@ windowID(time_attr, interval[, timezone])
 **معرّف النافذة**
 
 ```sql title=Query
-SELECT windowID(now(), toIntervalDay('1'))
+SELECT windowID(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
+```
+
+```response title=Response
+1767398400
 ```
 
 {/*AUTOGENERATED_END*/}

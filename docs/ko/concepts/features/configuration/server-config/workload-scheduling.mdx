@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - 정적 precedence에 따라 축출을 적용합니다(값이 낮을수록 precedence가 높음). precedence가 더 높은 대기 중인 할당은 precedence가 더 낮은 할당을 축출합니다. 자식 노드는 `precedence`를 지정해야 합니다(기본값은 0).
 * `queue` - 실행 중인 할당과 대기 중인 할당을 보관할 수 있는 계층 구조의 리프 노드입니다.
 
-<div id="deprecated-configuration">
-  ## 더 이상 권장되지 않는 XML 구성
-</div>
-
-리소스에서 어떤 디스크를 사용하는지 지정하는 또 다른 방법은 server의 `storage_configuration`입니다:
-
-특정 디스크에 대해 IO 스케줄링을 활성화하려면 storage configuration에서 `read_resource` 및/또는 `write_resource`를 지정해야 합니다. 이렇게 하면 지정된 디스크의 각 읽기 및 쓰기 요청에 어떤 리소스를 사용할지 ClickHouse에 알려줄 수 있습니다. 읽기 리소스와 쓰기 리소스는 동일한 리소스 이름을 참조할 수 있으며, 이는 로컬 SSD 또는 HDD에서 유용합니다. 여러 서로 다른 디스크가 동일한 리소스를 참조할 수도 있으며, 이는 원격 디스크에서 유용합니다. 예를 들어 &quot;production&quot; 워크로드와 &quot;development&quot; 워크로드 간에 네트워크 대역폭을 공정하게 분배하려는 경우에 유용합니다.
-
-예시:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-리소스를 정의하는 SQL 방식보다 서버 구성 옵션이 우선 적용된다는 점에 유의하십시오.
-
 <div id="see-also">
   ## 관련 항목
 </div>
