@@ -9475,8 +9475,9 @@ decision is revisited while the query runs.
 
 The setting applies to the expressions evaluated by the query pipeline and by the data sources: `SELECT` and
 `WHERE` expressions, `PREWHERE` and row-level filters of `MergeTree` and of the object storage and `Parquet`
-readers, a filter fused into `ARRAY JOIN`, and the residual `JOIN ON` expression of a hash join or an
-`IEJoin`. It does not apply to the auxiliary expressions evaluated outside of the query pipeline, such as
+readers, a filter fused into `ARRAY JOIN`, the residual `JOIN ON` expression of a hash join or an `IEJoin`,
+the boundary conditions of `LIMIT ... AFTER` and `LIMIT ... UNTIL`, and the watermark expression of a
+streaming query. It does not apply to the auxiliary expressions evaluated outside of the query pipeline, such as
 `TTL`, `DEFAULT` and `MATERIALIZED` column expressions, table constraints, or partition key calculation:
 those are evaluated by short-lived expression objects with no room for profiling, and they keep the static
 short-circuit behavior controlled by `short_circuit_function_evaluation`.
