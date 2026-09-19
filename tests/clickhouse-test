@@ -2598,6 +2598,128 @@ class TestCase:
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
         os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
 
+    # A fail point armed with `SYSTEM ENABLE FAILPOINT` is server-wide: it is scoped
+    # neither to the session nor to the database that armed it. A test that never reaches
+    # its own `SYSTEM DISABLE FAILPOINT` therefore leaves it armed for every test that runs
+    # after it against the same server - a `.sql` test stops at its first unexpected error,
+    # and a `.sh` test can exit early or be killed on timeout. Whichever test next walks
+    # that code path then fails for a reason that is not its own, which is the hardest kind
+    # of CI failure to attribute: in #118831 / #118832 a racy `.sql` test aborted before its
+    # own `DISABLE`, and the test that ran eight minutes later took the blame - the two
+    # failed together, fleet-wide, for three days.
+    #
+    # So once a test that mentions a fail point is over, whatever its outcome, disarm what it
+    # left behind. The source of truth is the server itself: `system.fail_points` reports
+    # which fail points are armed right now, and only those are ever disabled. The test file
+    # is not trusted to say what the test armed - a name in prose, in an `EXPLAIN`, or in a
+    # `clickhouse-local` invocation never touched the shared server, and a name built at
+    # runtime (`$FP`) is invisible to any scraping.
+    #
+    # Which of the armed fail points belong to this test depends on how it ran:
+    # - A sequential test (`no-parallel`, or the whole run with `--jobs 1`) owns the server
+    #   for its duration, so every fail point still armed when it finishes is its own leftover.
+    # - A concurrent test shares the server with the tests running next to it, and a fail
+    #   point armed by one of them must stay armed. So only names this test itself arms with
+    #   a server-side statement are disabled, and only if the server reports them armed.
+    #   The names come from the literal `SYSTEM ENABLE FAILPOINT <name>` statements in the
+    #   test file, skipping comments and any shell test that also runs `clickhouse-local`;
+    #   a concurrent test that builds the name at runtime still has to disable it itself,
+    #   for which a `trap` is the usual way.
+    FAILPOINT_ENABLE_RE = re.compile(
+        r"SYSTEM\s+ENABLE\s+FAILPOINT\s+([A-Za-z_][A-Za-z_0-9]*)", re.IGNORECASE
+    )
+    # Anything that runs a query in a separate process rather than on the shared server.
+    LOCAL_INVOCATION_RE = re.compile(
+        r"clickhouse-local|CLICKHOUSE_LOCAL|clickhouse_local"
+    )
+
+    def failpoints_armed_by_test(self):
+        """Names the test arms with a literal `SYSTEM ENABLE FAILPOINT` sent to the shared
+        server. Comments do not count. A shell test that runs `clickhouse-local` anywhere
+        contributes nothing: its statements may well go to that process rather than to the
+        server, and a query string spanning several lines or a shell function wrapping the
+        invocation defeats any line-by-line attribution, so nothing is assumed."""
+        with open(self.case_file, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+
+        if self.ext != ".sql" and self.LOCAL_INVOCATION_RE.search(text):
+            return set()
+
+        # Block comments can span lines, so they go first.
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+        names = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped.startswith("--"):
+                continue
+            # A trailing `--` comment can carry a statement in prose. In a shell test `--`
+            # is mostly `--query`, so there only a `--` followed by whitespace is a comment.
+            if self.ext == ".sql":
+                line = re.sub(r"--.*$", "", line)
+            else:
+                line = re.sub(r"(^|\s)--\s.*$", "", line)
+            names.update(self.FAILPOINT_ENABLE_RE.findall(line))
+
+        return names
+
+    def disable_failpoints(self):
+        # `testcase_args` is set only once the test starts running, so a skipped test
+        # sends nothing.
+        if self.testcase_args is None:
+            return
+
+        try:
+            with open(self.case_file, "r", encoding="utf-8", errors="replace") as f:
+                mentions_failpoint = "FAILPOINT" in f.read().upper()
+        except OSError:
+            return
+        # A test that never talks about fail points has nothing to disarm; do not spend a
+        # query per test on it.
+        if not mentions_failpoint:
+            return
+
+        try:
+            settings = {
+                "log_comment": f"{self.testcase_args.testcase_basename}-{self.testcase_args.testcase_database}",
+            }
+            armed = set(
+                clickhouse_execute(
+                    self.testcase_args,
+                    "SELECT name FROM system.fail_points WHERE enabled ORDER BY name",
+                    timeout=30,
+                    # Best-effort teardown: do not spend the HTTP retry budget here, the
+                    # test result already reports a server that stopped answering.
+                    max_http_retries=1,
+                    settings=settings,
+                )
+                .decode()
+                .split()
+            )
+            # A build without FIU registers no fail points, so `armed` is empty there.
+            if not armed:
+                return
+
+            if self.is_concurrent:
+                armed &= self.failpoints_armed_by_test()
+
+            for name in sorted(armed):
+                clickhouse_execute(
+                    self.testcase_args,
+                    f"SYSTEM DISABLE FAILPOINT {name}",
+                    timeout=30,
+                    max_http_retries=1,
+                    settings=settings,
+                )
+        except Exception as e:
+            # Best-effort: a server that stopped answering is reported by the test result
+            # and by the hung check, not from here.
+            print(
+                f"WARNING: could not disable fail points after {self.name}: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+
     def add_info_about_settings(self, description):
         if self.effective_settings:
             description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}"
@@ -2974,6 +3096,7 @@ class TestCase:
 
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
+        self.is_concurrent = is_concurrent
 
         file_suffix = f".{os.getpid()}" if is_concurrent else ""
         self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
@@ -4246,6 +4369,7 @@ class TestCase:
                 self.get_description_from_exception_info(sys.exc_info()),
             )
         finally:
+            self.disable_failpoints()
             self.remove_settings_from_env()
 
     def _cleanup(self, passed):
