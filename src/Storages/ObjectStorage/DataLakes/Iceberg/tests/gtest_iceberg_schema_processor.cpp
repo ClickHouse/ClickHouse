@@ -565,3 +565,29 @@ TEST(IcebergSchemaProcessor, FlatNameAbsentFromSchemaIsNotIdentified)
     EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
     EXPECT_FALSE(processor.flatNameIdentifiesOneColumn(0, "no.such.name"));
 }
+
+/// The census counts names rather than marking them, and the paths outlive nothing, so both have to
+/// go when a metadata.json copy replaces a schema that came from a manifest header: a retained count
+/// reads as a second column sharing the name, and a retained path describes a field that is gone.
+TEST(IcebergSchemaProcessor, ReplacingManifestSchemaDropsFlatNamesAndPaths)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":2,"name":"c","required":false,"type":"string"},
+            {"id":3,"name":"dropped","required":false,"type":"long"}]}}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":2,"name":"c","required":false,"type":"string"}]}}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    ASSERT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
+    ASSERT_EQ(processor.getFieldPath(0, 3), (DB::Names{"s", "dropped"}));
+
+    processor.addIcebergTableSchema(from_metadata);
+
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
+    EXPECT_EQ(processor.getFieldPath(0, 2), (DB::Names{"s", "c"}));
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(0, 3).has_value());
+    EXPECT_THROW(processor.getFieldPath(0, 3), DB::Exception);
+}

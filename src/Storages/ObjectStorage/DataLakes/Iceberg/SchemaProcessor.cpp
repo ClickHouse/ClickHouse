@@ -401,6 +401,9 @@ void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
     std::erase_if(transform_dags_by_ids, [schema_id](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
     std::erase_if(clickhouse_types_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
     std::erase_if(clickhouse_ids_by_source_names, [schema_id](const auto & item) { return item.first.first == schema_id; });
+    std::erase_if(clickhouse_paths_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
+    /// A count, not a presence bit, so a copy left behind here reads as an ambiguous name later.
+    std::erase_if(flat_name_counts, [schema_id](const auto & item) { return item.first.first == schema_id; });
 }
 
 void IcebergSchemaProcessor::addIcebergTableSchema(
