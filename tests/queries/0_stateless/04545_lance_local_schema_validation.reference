@@ -1,0 +1,4 @@
+Int32	Nullable(Float32)
+1	a	10
+2	b	\N
+3	c	30

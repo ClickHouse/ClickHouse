@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <optional>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
@@ -9,6 +10,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
@@ -82,6 +84,11 @@ public:
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
     virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
 
+    /// Distributed table-function workers receive an explicit schema from the initiator.
+    /// Return true when individual task objects also carry the exact data snapshot needed
+    /// by the custom reader, so the worker must not replace that schema with its local latest one.
+    virtual bool supportsDistributedReadWithExplicitSchema() const { return false; }
+
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
@@ -94,6 +101,43 @@ public:
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+
+    /// Some data lake formats are datasets rather than file formats. They can create
+    /// a custom read pipeline instead of asking FormatFactory to read a single object.
+    /// `limit` is an optional row upper bound (typically limit+offset from SourceStepWithFilter).
+    /// Default implementations ignore it; engines that can stop early (e.g. Lance) may consume it.
+    virtual std::optional<Pipe> read(
+        ObjectInfoPtr,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        FormatParserSharedResourcesPtr,
+        FormatFilterInfoPtr,
+        bool,
+        std::optional<size_t> limit) const
+    {
+        (void)limit;
+        return std::nullopt;
+    }
+
+    /// Dataset formats may provide one logical read pipeline before file iteration.
+    virtual std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr &,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        size_t,
+        FormatFilterInfoPtr,
+        bool,
+        std::optional<size_t>,
+        bool) const
+    {
+        return std::nullopt;
+    }
+
+    virtual std::optional<size_t> getMaxCustomReadThreads(bool) const { return std::nullopt; }
 
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
