@@ -32,13 +32,14 @@ During an active [support session](/products/bring-your-own-cloud/connector/supp
 
 ### How do I stop ClickHouse from changing my clusters? {#stop-managed-mode}
 
-Run without managed mode. At install time, pass `--no-managed` to `clicklink clctl init`, or answer no when it asks; only the scraper and the troubleshooter are deployed, and the connector changes nothing in your environment. On an existing install, stop the executor (set `executor.enabled: false` in your Helm values and run `helm upgrade`, or `systemctl disable --now clicklink-executor` on a VM) and remove its grant as cluster admin:
+Run without managed mode. At install time, pass `--no-managed` to `clicklink clctl init`, or answer no when it asks; only the scraper and the troubleshooter are deployed, and the connector changes nothing in your environment. On an existing install, stop the executor (set `executor.enabled: false` in your Helm values and run `helm upgrade`, or `systemctl disable --now clicklink-executor` on a VM) and remove its grant as cluster admin. The last command removes the ServiceAccount itself; its namespace is `clicklink-system` for a VM install and the connector namespace for a Kubernetes install:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
 kubectl delete validatingadmissionpolicy pcm-executor-prefix-guard
 kubectl delete clusterrolebinding pcm-executor-cluster
 kubectl delete clusterrole pcm-executor-cluster
+kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 ```
 
 Services ClickHouse created keep running, but ClickHouse Cloud can no longer scale, upgrade, back up, or delete them, and pending commands for them fail. Platform updates never apply unless you run `clicklink clctl platform approve`, so leaving that command unrun is enough to freeze the platform layer while keeping the rest of managed mode.

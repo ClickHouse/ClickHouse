@@ -74,8 +74,8 @@ Add `--connector-namespace "${CONNECTOR_NAMESPACE}"` when the connector namespac
 `approve` ends with a line like:
 
 ```text
-Approved: 41 permission object(s) applied, platform token valid until 2026-09-18T16:04:11Z.
-The executor may now apply the 23 workload object(s) of this bundle inside <namespaces>.
+Approved: <n> permission object(s) applied, platform token valid until <expiry>.
+The executor may now apply the <n> workload object(s) of this bundle inside <namespaces>.
 ```
 
 ClickHouse Cloud re-sends the sync once the executor's next heartbeat shows the approval; the executor applies the workload half and reports the platform as `synced`. You can watch the sync land with:
