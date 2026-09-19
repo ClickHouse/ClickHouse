@@ -52,6 +52,7 @@
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Planner/ActionsChain.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
@@ -2024,6 +2025,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 stage.filter_column_names.push_back(expression_nodes[0]->result_name);
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(filter_actions)));
+                stage.new_correlated_subtrees.emplace_back();
             }
 
             /// 5. Build update step.
@@ -2047,7 +2049,16 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 update_actions->dag = ActionsDAG(available_columns_for_step);
                 PlannerActionsVisitor update_visitor(planner_context, empty_correlated_columns, false);
                 auto [update_expression_nodes, update_correlated_subtrees] = update_visitor.visit(update_actions->dag, update_tree);
-                update_correlated_subtrees.assertEmpty("in mutation update");
+                if (!settings.allow_correlated_subqueries)
+                    update_correlated_subtrees.assertEmpty("in mutation update");
+
+                /// Correlated subquery plans use these outer columns while the action chain is
+                /// executed. Keep them in the stage output so ActionsChain::finalize propagates
+                /// them to the source and the query plan header. The lightweight-update path
+                /// projects them out before writing the patch, using the updated header below.
+                for (const auto & correlated_subquery : update_correlated_subtrees.subqueries)
+                    for (const auto & identifier : correlated_subquery.correlated_column_identifiers)
+                        stage.output_columns.insert(identifier);
 
                 /// Add aliases: expression result name -> target column name.
                 size_t idx = 0;
@@ -2100,6 +2111,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(update_actions)));
+                stage.new_correlated_subtrees.push_back(std::move(update_correlated_subtrees));
             }
 
             /// 6. Build initial step if chain is empty (needed for first stage).
@@ -2118,6 +2130,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 initial_actions->dag = ActionsDAG(initial_columns);
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(initial_actions)));
+                stage.new_correlated_subtrees.emplace_back();
             }
 
             /// 7. Build projection step - keep only output_columns.
@@ -2151,6 +2164,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 proj_actions->project_input = true;
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(proj_actions)));
+                stage.new_correlated_subtrees.emplace_back();
             }
 
             actions_chain.finalize();
@@ -2167,16 +2181,26 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             if (i == 0 && actions_chain.getStepsSize() > 0)
                 actions_chain[0]->getActions()->project_input = false;
 
-            /// 8. Store prepared sets (aliasing shared_ptr keeps planner_context alive).
+            chassert(stage.new_correlated_subtrees.size() == actions_chain.getStepsSize());
+
+            /// 8. Store planner context and prepared sets. The context owns query-tree metadata
+            /// required while correlated subquery plans are attached to the mutation pipeline.
+            stage.new_planner_context = planner_context;
             stage.new_prepared_sets = std::shared_ptr<PreparedSets>(
                 planner_context, &planner_context->getPreparedSets());
 
             /// 9. Propagate required columns to previous stage.
             if (i > 0)
             {
+                NameSet correlated_subquery_names;
+                for (const auto & correlated_subtrees : stage.new_correlated_subtrees)
+                    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+                        correlated_subquery_names.insert(correlated_subquery.action_node_name);
+
                 const auto & first_step = actions_chain.getSteps().front();
                 for (const auto & col_name : first_step->getInputColumnNames())
-                    prepared_stages[i - 1].output_columns.insert(col_name);
+                    if (!correlated_subquery_names.contains(col_name))
+                        prepared_stages[i - 1].output_columns.insert(col_name);
             }
 
         }
@@ -2488,6 +2512,39 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
+    auto add_correlated_subquery_plans = [&](const Stage & stage, size_t step_index)
+    {
+        if (stage.new_correlated_subtrees.empty())
+            return;
+
+        chassert(stage.new_planner_context);
+        chassert(step_index < stage.new_correlated_subtrees.size());
+
+        const auto & correlated_subtrees = stage.new_correlated_subtrees[step_index];
+        if (correlated_subtrees.subqueries.empty())
+            return;
+
+        NameSet input_columns;
+        for (const auto & column : plan.getCurrentHeader()->getColumnsWithTypeAndName())
+            input_columns.insert(column.name);
+
+        for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+        {
+            for (const auto & identifier : correlated_subquery.correlated_column_identifiers)
+            {
+                if (!input_columns.contains(identifier))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Current mutation is not supported yet, because can't find correlated column '{}' in current header: {}",
+                        identifier,
+                        plan.getCurrentHeader()->dumpNames());
+            }
+
+            buildQueryPlanForCorrelatedSubquery(
+                stage.new_planner_context, plan, correlated_subquery, select_limits);
+        }
+    };
+
     for (const Stage & stage : prepared_stages)
     {
         if (stage.analyzer)
@@ -2528,6 +2585,8 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
                 const auto & step = chain_steps[i];
                 if (step->getActions()->dag.hasArrayJoin())
                     throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
+
+                add_correlated_subquery_plans(stage, i);
 
                 auto dag = step->getActions()->dag.clone();
                 if (step->getActions()->project_input)

@@ -344,14 +344,15 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
     target_storage->mutate(commands, local_context);
 }
 
-QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
+QueryPipeline StorageAlias::updateLightweight(
+    const MutationCommands & commands, ContextPtr local_context, LightweightUpdateSettings settings)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto pipeline = target_storage->updateLightweight(commands, local_context);
+    auto pipeline = target_storage->updateLightweight(commands, local_context, settings);
 
     /// The caller locks the alias, not the target, so the target needs its own share lock held
     /// until the pipeline has committed the patch part.

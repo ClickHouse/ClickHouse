@@ -2205,7 +2205,8 @@ protected:
     };
 
     /// Builds a pipeline that reads the updated rows and the metadata of the new patch part.
-    LightweightUpdateResult updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
+    LightweightUpdateResult updateLightweightImpl(
+        const MutationCommands & commands, ContextPtr query_context, LightweightUpdateSettings settings);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 

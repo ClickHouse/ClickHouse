@@ -8945,7 +8945,8 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {}", sync_timeout_ms);
 }
 
-QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
+QueryPipeline StorageReplicatedMergeTree::updateLightweight(
+    const MutationCommands & commands, ContextPtr query_context, LightweightUpdateSettings settings)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
@@ -8977,7 +8978,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
-    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy, settings);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(
         *this,

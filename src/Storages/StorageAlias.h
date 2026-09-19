@@ -113,7 +113,8 @@ public:
         ContextPtr local_context) override;
 
     /// Lightweight update on target table
-    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr local_context) override;
+    QueryPipeline updateLightweight(
+        const MutationCommands & commands, ContextPtr local_context, LightweightUpdateSettings settings) override;
 
     CancellationCode killMutation(const String & mutation_id) override;
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;

@@ -220,7 +220,7 @@ BlockIO InterpreterUpdateQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
     BlockIO res;
-    res.pipeline = table->updateLightweight(commands, getContext());
+    res.pipeline = table->updateLightweight(commands, getContext(), {.allow_correlated_subqueries = true});
     res.pipeline.addStorageHolder(table);
 
     /// The patch part is committed while the pipeline runs, so the share lock must outlive this
