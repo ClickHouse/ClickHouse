@@ -18,17 +18,13 @@ UntrackedMemoryCounter::~UntrackedMemoryCounter()
 
 UntrackedMemoryRegistry & UntrackedMemoryRegistry::instance()
 {
-    /// Function-local static, destroyed during static destruction.
-    /// Counters live in ThreadStatus and unregister themselves in the destructor,
-    /// so every thread that owns a ThreadStatus must be joined before main returns
-    /// (GlobalThreadPool::shutdown, StaticThreadPool::shutdownAll in each entry point);
-    /// otherwise the counter destructor touches an already destroyed registry.
-    /// Poco's default thread pool needs special care: its singleton is a namespace-scope
-    /// static constructed before main, hence destroyed *after* this registry, and its
-    /// pooled threads create a ThreadStatus in PooledThread::run - such threads must be
-    /// stopped explicitly via Poco::ThreadPool::defaultPool().stopAll().
-    static UntrackedMemoryRegistry registry;
-    return registry;
+    /// Never destroyed. Counters live in ThreadStatus and unregister themselves in the
+    /// destructor, and a thread owning a ThreadStatus can outlive static destruction: the
+    /// libFuzzer entry points do not own main, so they cannot join the global thread pool
+    /// before it runs. A destroyed registry would then be written to by ~UntrackedMemoryCounter.
+    /// The object stays reachable through this pointer, so it is not reported as a leak.
+    static UntrackedMemoryRegistry * registry = new UntrackedMemoryRegistry;
+    return *registry;
 }
 
 void UntrackedMemoryRegistry::add(UntrackedMemoryCounter * counter)
