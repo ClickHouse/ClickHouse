@@ -22,6 +22,8 @@ SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET use_text_index_like_pattern_bypass = 0;
 SET text_index_like_max_postings_to_read = 1000;
 SET text_index_like_max_postings_rows_to_read = 1000000000;
+-- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
+SET use_text_index_postings_cache = 0;
 
 DROP TABLE IF EXISTS t_text_index_like_large;
 
