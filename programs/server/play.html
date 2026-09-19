@@ -4536,15 +4536,32 @@ class QueryResultElement extends HTMLElement
     {
         if (value === null || value === '' || value === 0 || value === '0') return;
 
+        const copyIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        const copiedIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
         let btn = document.createElement('span');
         btn.className = 'cell-copy';
         btn.title = 'Copy to clipboard';
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-        btn.onclick = (e) => {
+        btn.innerHTML = copyIcon;
+        let revertTimer = null;
+        btn.onclick = async (e) => {
             e.stopPropagation();
             if (navigator.clipboard && navigator.clipboard.writeText)
             {
-                navigator.clipboard.writeText(text);
+                try
+                {
+                    await navigator.clipboard.writeText(text);
+                    btn.innerHTML = copiedIcon;
+                    btn.title = 'Copied';
+                    if (revertTimer)
+                        clearTimeout(revertTimer);
+                    revertTimer = setTimeout(() => {
+                        btn.innerHTML = copyIcon;
+                        btn.title = 'Copy to clipboard';
+                        revertTimer = null;
+                    }, 1000);
+                }
+                catch (_) {}
             }
         };
         td.appendChild(btn);
