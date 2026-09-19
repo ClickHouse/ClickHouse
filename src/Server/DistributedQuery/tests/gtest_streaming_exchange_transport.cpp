@@ -165,7 +165,7 @@ QueryPipeline makeSendingPipeline(const SharedHeader & header, std::vector<Chunk
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
     });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
 }
@@ -390,7 +390,7 @@ TEST(StreamingExchangeTransport, EmptyChunkIsDataOnAColumnlessStream)
         auto future_connection = exchange.connections->getConnection("query", "stream");
         builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
         {
-            return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+            return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
         });
         auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 
@@ -448,7 +448,7 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
     });
     auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 

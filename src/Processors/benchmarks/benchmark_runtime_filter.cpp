@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/registerFunctions.h>
 #include <Processors/Chunk.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <base/defines.h>
@@ -39,6 +40,21 @@ constexpr UInt64 ADAPTIVE_EXACT_VALUES_LIMIT = 1;
 constexpr UInt64 BLOOM_FILTER_BYTES = 512 * 1024;
 constexpr UInt64 BLOOM_FILTER_HASH_FUNCTIONS = 3;
 constexpr Float64 DISABLE_BLOOM_FULLNESS_CHECK = 1.0;
+
+/// The sizing the filters are built with; the exact phase is byte-bounded by the bloom size, as for a
+/// filter that lives in one pipeline.
+DB::RuntimeFilterGeometry makeGeometry(UInt64 exact_values_limit, Float64 pass_ratio_threshold_for_disabling = DISABLE_ADAPTIVE_SKIP_THRESHOLD)
+{
+    return DB::RuntimeFilterGeometry{
+        .exact_values_limit = exact_values_limit,
+        .exact_bytes_limit = BLOOM_FILTER_BYTES,
+        .bloom_filter_bytes = BLOOM_FILTER_BYTES,
+        .bloom_filter_hash_functions = BLOOM_FILTER_HASH_FUNCTIONS,
+        .pass_ratio_threshold_for_disabling = pass_ratio_threshold_for_disabling,
+        .blocks_to_skip_before_reenabling = BLOCKS_TO_SKIP_BEFORE_REENABLING,
+        .max_ratio_of_set_bits_in_bloom_filter = DISABLE_BLOOM_FULLNESS_CHECK,
+    };
+}
 
 void ensureFunctionsRegistered()
 {
@@ -245,10 +261,7 @@ UniqueRuntimeFilterPtr buildAdaptiveRuntimeFilter(
         config,
         AdaptiveSetRuntimeFilter(
             type,
-            BLOOM_FILTER_BYTES,
-            ADAPTIVE_EXACT_VALUES_LIMIT,
-            BLOOM_FILTER_HASH_FUNCTIONS,
-            DISABLE_BLOOM_FULLNESS_CHECK,
+            makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT, adaptive_skip_threshold),
             /*distinct_keys_hint_=*/std::nullopt,
             /*distinct_keys_hint_matches_filter_key_=*/false));
     if (build_column)
@@ -601,10 +614,7 @@ static void BM_AdaptiveSetRuntimeFilterExactToApproximateTransitionUInt64(benchm
         {
             AdaptiveSetRuntimeFilter filter(
                 type,
-                BLOOM_FILTER_BYTES,
-                exact_rows,
-                BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_BLOOM_FULLNESS_CHECK,
+                makeGeometry(exact_rows),
                 /*distinct_keys_hint_=*/std::nullopt,
                 /*distinct_keys_hint_matches_filter_key_=*/false);
             filter.insert(exact_column);
@@ -661,12 +671,7 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64(benchmark::St
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                ADAPTIVE_EXACT_VALUES_LIMIT,
-                BLOOM_FILTER_BYTES,
-                BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                DISABLE_BLOOM_FULLNESS_CHECK,
+                makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
                 /*allow_to_use_not_exact_filter_=*/true,
                 /*track_key_range_=*/false,
                 /*distinct_keys_hint_=*/std::nullopt,
@@ -709,12 +714,7 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyCastUInt32ToUInt64(b
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                ADAPTIVE_EXACT_VALUES_LIMIT,
-                BLOOM_FILTER_BYTES,
-                BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                DISABLE_BLOOM_FULLNESS_CHECK,
+                makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
                 /*allow_to_use_not_exact_filter_=*/true,
                 /*track_key_range_=*/false,
                 /*distinct_keys_hint_=*/std::nullopt,

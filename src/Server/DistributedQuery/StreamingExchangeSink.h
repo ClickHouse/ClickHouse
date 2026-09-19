@@ -25,10 +25,17 @@ class StreamingExchangeSink final : public ISink
 public:
     /// The input chunks are packets made by `StreamingExchangeSerializingTransform`, one per chunk,
     /// and are sent as they are. The sink adds the end-of-stream packet when the input ends.
-    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_)
+    ///
+    /// An advisory sink carries data the receiver is free to stop reading at any moment, for
+    /// example a runtime filter: a receiver task that finished early disconnects or never connects.
+    /// For an advisory sink every peer-side problem (disconnect, reset, unexpected bytes) means
+    /// only "this destination gets nothing" - without this a vanished receiver would fail the
+    /// producing task and with it the whole query.
+    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool advisory_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
+        , advisory(advisory_)
     {
         wait_events_epoll.add(port_update_wakeup.fd());
     }
@@ -45,7 +52,14 @@ private:
     void work() override;
 
     /// Drain any inbound NoMoreDataNeeded packet or peer half-close. Safe to call at any time.
+    /// On an advisory sink a misbehaving or vanished peer stops the delivery instead of throwing.
     void tryReceiveControlPacket();
+
+    /// The strict body of `tryReceiveControlPacket`: throws when the peer misbehaves or disconnects.
+    void receiveControlPacket();
+
+    /// Stop delivering to this destination without an error: log, count, drop pending output.
+    void abandonDelivery(const String & reason);
 
     /// Non-blocking read into `buffer[position .. buffer_size]`, advancing `position`.
     /// Returns true on progress (including EAGAIN), false on peer half-close. Throws on hard errors.
@@ -92,6 +106,7 @@ private:
     FutureConnectionPtr future_connection;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
+    const bool advisory;
 
     /// Buffers in send order. The front buffer is being written to the socket, `send_position`
     /// bytes of it are sent.

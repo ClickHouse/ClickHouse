@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/Epoll.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/NetException.h>
@@ -19,6 +20,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event RuntimeFilterDeliveriesAbandoned;
     extern const Event StreamingExchangeSendBytes;
     extern const Event StreamingExchangePacketsSent;
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
@@ -155,6 +157,13 @@ void StreamingExchangeSink::sendToSocket()
             tryReceiveControlPacket();
             if (no_more_data_needed)
                 return;
+            /// An advisory stream carries a runtime filter, which the probe side can do without,
+            /// so a failed send abandons the delivery instead of failing the query.
+            if (advisory)
+            {
+                abandonDelivery("send failed: " + e.displayText());
+                return;
+            }
             StreamingExchangeProtocol::rethrowSocketException(*socket, "send data to exchange stream " + stream_name);
         }
     }
@@ -396,7 +405,34 @@ bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t b
     return true;
 }
 
+void StreamingExchangeSink::abandonDelivery(const String & reason)
+{
+    LOG_DEBUG(log, "Abandoning delivery to exchange stream {}: {}", stream_name, reason);
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterDeliveriesAbandoned);
+    markNoMoreDataNeeded();
+}
+
 void StreamingExchangeSink::tryReceiveControlPacket()
+{
+    if (!advisory)
+    {
+        receiveControlPacket();
+        return;
+    }
+
+    try
+    {
+        receiveControlPacket();
+    }
+    catch (...)
+    {
+        /// Whatever went wrong on the peer's side of an advisory stream, the outcome is the
+        /// same: this destination gets nothing more, and that is not an error.
+        abandonDelivery(getCurrentExceptionMessage(/*with_stacktrace*/ false));
+    }
+}
+
+void StreamingExchangeSink::receiveControlPacket()
 {
     if (no_more_data_needed)
         return;

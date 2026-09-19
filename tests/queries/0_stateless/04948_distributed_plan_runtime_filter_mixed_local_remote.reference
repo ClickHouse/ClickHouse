@@ -1,0 +1,6 @@
+-- mixed local+remote apply
+10
+-- local apply pruned the same-stage probe
+1
+-- the producer also shipped the filter over the exchange
+1

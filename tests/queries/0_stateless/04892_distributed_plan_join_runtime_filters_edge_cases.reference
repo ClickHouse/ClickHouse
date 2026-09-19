@@ -1,0 +1,16 @@
+-- tiny probe side, huge build side: the filter cannot arrive in time, rows pass unfiltered
+100
+-- Nullable key is not transportable, the local filter stays
+100
+-- persisted exchanges
+100
+-- streaming exchanges
+100
+-- early close under LIMIT
+10
+-- two joins, each with its own filter
+100
+-- Nullable key sent no states
+1
+-- two joins, each with a transported filter
+1
