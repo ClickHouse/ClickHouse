@@ -1099,14 +1099,11 @@ Header blocks (rows = 0) and empty blocks therefore emit nothing, and a decoder 
 | | | `1` | `STRING` | Native-format compatibility mode — Object transmitted as a single `String` column containing JSON text. |
 | | | `2` | `V2` | V1 layout minus the `max_dynamic_paths` parameter. |
 | | | `3` | `FLATTENED` | Native-format compatibility mode — flattened path representation. |
-| | | `4` | `V3` | V2 plus a shared-data serialization version sub-field and a statistics flag. |
-| **Object shared data** (sub-stream used in Object `V3`) | VarUInt | `0` | `MAP` | Shared data encoded as `Map(String, String)`. |
-| | | `1` | `MAP_WITH_BUCKETS` | Same as `MAP` but split into N buckets for scan efficiency. |
-| | | `2` | `ADVANCED` | Compact granule format with separate streams for paths / marks / metadata. |
+| | | `4` | `V3` | Written into MergeTree parts only, never onto the wire; the layout is not specified here. |
 | **Dynamic** | UInt64 LE | `1` | `V1` | Original encoding. Includes `max_dynamic_types` and a list of runtime variant types. |
 | | | `2` | `V2` | V1 minus the `max_dynamic_types` parameter. |
 | | | `3` | `FLATTENED` | Native-format compatibility mode. |
-| | | `4` | `V3` | V2 plus binary-encoded variant type names and empty-statistics support. |
+| | | `4` | `V3` | Written into MergeTree parts only, never onto the wire; the layout is not specified here. |
 | **Variant** discriminators mode | UInt64 LE | `0` | `BASIC` | Every row's discriminator is written literally. |
 | | | `1` | `COMPACT` | If all rows in a granule share one discriminator, only a single value + granule marker is written. |
 | **Variant** granule format (when mode is `COMPACT`) | UInt8 | `0` | `PLAIN` | Granule has heterogeneous discriminators. |
@@ -1118,7 +1115,7 @@ A few things worth noting about the table:
 
 - **The values are not contiguous.** `Dynamic` uses `1`, `2`, `3`, `4` with `V3` at `4` and `FLATTENED` at `3`. A higher number is not necessarily newer.
 - **Some values are native-format-only.** `Object::STRING`, `Object::FLATTENED`, and `Dynamic::FLATTENED` exist for native-protocol compatibility with clients that do not implement full Object/Dynamic. They do not appear in MergeTree on-disk storage.
-- **`V3` is primarily on-disk.** Clients consuming the native TCP protocol typically see `FLATTENED` (value `3`) rather than `V3` (value `4`).
+- **`V3` is on-disk only.** `Object::V3` and `Dynamic::V3` are listed because the values are assigned and must not be reused, not because a decoder can meet them: ClickHouse never sends them over `Native` and rejects them there with `INCORRECT_DATA`. Everything they carry — the shared-data sub-version of `Object::V3` and its bucket and granule layouts — describes a part rather than a block, and is therefore out of scope for this page. Clients consuming the native TCP protocol see `V1`, `V2`, `STRING` or `FLATTENED`.
 
 #### LowCardinality(T) {#lowcardinality}
 
@@ -1304,11 +1301,17 @@ The state prefix (version + type list) is read at the start of every block with 
 Do **not**, however, bound the **flattened** `num_types` by `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` in ClickHouse): the flattened type list carries *every* distinct runtime type, including those that had overflowed into the shared variant, so a valid flattened block can legitimately list far more than that. The `MAX_DYNAMIC_TYPES_LIMIT` bound applies only to the `num_dynamic_types` count in the non-flat `V1`/`V2`/`V3` prefixes, which counts regular-variant slots and is capped by the limit (ClickHouse validates it there before the `+ 1` for the shared variant).
 </Info>
 
+<Info>
+**Truncated streams**
+
+The discriminator run holds exactly `num_rows` entries, and a decoder must verify that it read that many rather than accepting whatever the stream contained. A shorter run does not contradict anything that follows it: the per-type value counts are derived from the discriminators actually read, so they stay consistent with the value runs, and a run made entirely of NULL markers demands no value bytes at all. ClickHouse rejects a short discriminator run with `INCORRECT_DATA` ("Mismatch in flattened `Dynamic` column: N rows are expected, but the indexes stream contains only M rows") before any per-type check, because the reconstructed column is then used for `num_rows` rows regardless of its actual size.
+</Info>
+
 <Note>
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
 </Note>
 
-The runtime type list normally follows the `Variant` canonicalization — the regular variant slots are written in `DataTypeVariant` (type-name) order, so the wire order does not follow insertion order. It is **not always** globally sorted, however: types that overflowed into the shared variant (for example under `Dynamic(max_types=N)`) are appended after the regular slots in first-seen order, so the tail of the list can break type-name order. A decoder must therefore treat the transmitted type list as authoritative for discriminator assignment and must not re-sort it itself. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
+The runtime type list normally follows the `Variant` canonicalization — the regular variant slots are written in `DataTypeVariant` (type-name) order, so the wire order does not follow insertion order. It is **not always** globally sorted, however: types that overflowed into the shared variant (for example under `Dynamic(max_types=N)`) are appended after the regular slots in first-seen order, so the tail of the list can break type-name order. A decoder must therefore treat the transmitted type list as authoritative for discriminator assignment and must not re-sort it itself. What the list may not contain is a repeated type or `Nothing`: two equal entries map onto one discriminator and `Nothing` is not a variant at all, so in both cases part of the list has nowhere to be reconstructed into. ClickHouse rejects either with `INCORRECT_DATA`. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
@@ -1346,14 +1349,18 @@ In FLATTENED mode there is **no shared-data column** (that overflow store belong
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
 
-Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
+Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key. The dynamic path names must be distinct and none of them may repeat a path that the type string already declares as typed — either would give the assembled object two values under one key, so ClickHouse rejects both with `INCORRECT_DATA`. The same applies to the dynamic path list of the non-flat encodings.
 
 <Info>
 **Malformed counts**
 
-`num_dynamic_paths` in the FLATTENED layout documented here — and the dynamic-paths count in the non-flat `V1`/`V2`/`V3` encodings — is read from the stream before the path names. (There is no separate flattened-paths field in the non-flat prefixes: `V1`/`V2`/`V3` carry only the dynamic-paths count, plus a `max_dynamic_paths` value in `V1` that is read and discarded, and the `V3` shared-data metadata below.) As with [`Dynamic`](#dynamic), a decoder must treat these counts as untrusted and must not size an allocation on them directly — neither a `SIZE_MAX`-family count nor a large-but-representable one. ClickHouse reads the path names one entry at a time with only a capped pre-allocation hint, so a corrupted count is rejected either as `INCORRECT_DATA` ("JSON/Object column has too many paths", when it exceeds what the container can hold) or as an ordinary read error once the stream runs out of path names.
+`num_dynamic_paths` in the FLATTENED layout documented here — and the dynamic-paths count in the non-flat `V1`/`V2` encodings — is read from the stream before the path names. (There is no separate flattened-paths field in the non-flat prefixes: they carry only the dynamic-paths count, plus a `max_dynamic_paths` value in `V1` that is read and discarded.) As with [`Dynamic`](#dynamic), a decoder must treat these counts as untrusted and must not size an allocation on them directly — neither a `SIZE_MAX`-family count nor a large-but-representable one. ClickHouse reads the path names one entry at a time with only a capped pre-allocation hint, so a corrupted count is rejected either as `INCORRECT_DATA` ("JSON/Object column has too many paths", when it exceeds what the container can hold) or as an ordinary read error once the stream runs out of path names.
+</Info>
 
-The non-flat `V3` prefix additionally carries a `shared_data_buckets` count (present when the shared-data serialization version is `MAP_WITH_BUCKETS` or `ADVANCED`). It sizes the per-bucket reader state and column vectors directly (not via a grow-on-demand loop), so a decoder must reject an implausible bucket count up front. Unlike the path and type counts, this count has a tight writer-side invariant: the number of buckets is chosen from small MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) that are non-zero and capped at `256`, so the only valid on-wire range is `1 … 256`. ClickHouse rejects any value outside that range — including a large-but-representable count such as `100000`, which is far below the container's `max_size()` — with `INCORRECT_DATA` ("JSON/Object column has an invalid number of shared data buckets").
+<Info>
+**Truncated streams**
+
+The `num_rows` values per path column are a hard requirement, not an upper bound: a decoder must check every path column, typed and dynamic, against the block's row count instead of trusting the stream to end where it should. The assembled object has no independent size to compare against — its row count is whatever the unflattening produced — so a path column that came up short is not detectable later, and reading row `r` of it goes past its end. ClickHouse rejects it with `INCORRECT_DATA` ("Unexpected size of typed path / flattened path *p* in flattened Object column"). For a dynamic path this is on top of the equivalent check inside its [`Dynamic`](#dynamic) column.
 </Info>
 
 `JSON` value `{"a": 42, "b": "hi"}` (one row, both paths dynamic). A JSON integer is inferred as `Int64`:
@@ -1369,9 +1376,9 @@ The non-flat `V3` prefix additionally carries a `shared_data_buckets` count (pre
 00 02 68 69                  "b" data: discriminator 0, String "hi"
 ```
 
-#### JSON non-flat (V2/V3) {#json-non-flat}
+#### JSON non-flat (V1/V2) {#json-non-flat}
 
-The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-disk storage and are what the server emits over the wire when the flattened flag is off — `V1` over `clickhouse-client` / HTTP `FORMAT Native` (revision `0`), `V2` over the native TCP protocol. They carry a shared-data column and are **not** specified on this page. Note that they do **not** carry per-path statistics over the Native wire: `NativeWriter` leaves statistics disabled, so the `Object` structure prefix has no statistics section and the bytes after it are the typed/dynamic/shared-data prefixes and data directly. Statistics appear only on the MergeTree on-disk paths that enable them. To decode a `JSON` column with this page, a client must select one of the documented tiers: set `output_format_native_write_json_as_string = 1` for the [String fallback](#json-tier-1-string-fallback), or `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (with `output_format_native_write_json_as_string = 0`) for the [FLATTENED Object](#json-tier-2-flattened-object) layout.
+The non-flattened `Object` encodings are what the server emits over the wire when the flattened flag is off — `V1` over `clickhouse-client` / HTTP `FORMAT Native` (revision `0`), `V2` over the native TCP protocol. (`V3`, the third non-flat encoding, is written into MergeTree parts only and is rejected on the wire.) They carry a shared-data column and are **not** specified on this page. Note that they do **not** carry per-path statistics over the Native wire: `NativeWriter` leaves statistics disabled, so the `Object` structure prefix has no statistics section and the bytes after it are the typed/dynamic/shared-data prefixes and data directly. Statistics appear only on the MergeTree on-disk paths that enable them. To decode a `JSON` column with this page, a client must select one of the documented tiers: set `output_format_native_write_json_as_string = 1` for the [String fallback](#json-tier-1-string-fallback), or `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (with `output_format_native_write_json_as_string = 0`) for the [FLATTENED Object](#json-tier-2-flattened-object) layout.
 
 ## Compression frame {#compression-frame}
 

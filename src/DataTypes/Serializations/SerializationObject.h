@@ -60,6 +60,8 @@ public:
         Value value;
 
         static void checkVersion(UInt64 version);
+        /// Each version is written into one channel only, so reading data of the other channel means the data is corrupted.
+        static void checkVersion(UInt64 version, bool native_format);
 
         explicit SerializationVersion(UInt64 version);
         explicit SerializationVersion(MergeTreeObjectSerializationVersion version);
@@ -181,6 +183,8 @@ protected:
     SerializationPtr dynamic_serialization;
 
 private:
+    void checkPathIsNotTyped(const String & path, bool native_format) const;
+
     std::vector<String> sorted_typed_paths;
 };
 
