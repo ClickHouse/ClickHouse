@@ -61,7 +61,7 @@ from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import Client, QueryRuntimeException
+from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
@@ -94,6 +94,88 @@ DEFAULT_ENV_NAME = ".env"
 # `temp_dir` is relative to tests/integration; anchoring it here makes it independent of
 # the cwd, which differs between a CI job and a native pytest run.
 TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
+
+# Marker of the one docker failure mode that looks exactly like a broken server: the
+# container keeps running but has no network interface at all, so every connection to it
+# fails with `No route to host` and every connection out of it with `Network is unreachable`
+# until the module ends.
+#
+# Docker picks the name of a new endpoint's host-side `veth` by generating a random
+# `veth<7 hex digits>` and checking that no interface of that name exists in the *host*
+# network namespace. The peer name it hands to a container comes from the same space, but it
+# is invisible to that check once the container has renamed it to `eth0`. So a new endpoint
+# can legitimately be given the name that a live container's interface will revert to, and
+# when that older container is destroyed the bridge driver deletes the interface *by name* -
+# unregistering the host-side `veth` of the unrelated running container instead. Present at
+# least up to moby 28.3.3 (`endpoint.srcName = containerIfName` in `CreateEndpoint`, deleted
+# through `LinkByName(ep.srcName)` in `DeleteEndpoint`).
+#
+# We cannot fix moby from here, but the resulting state is unambiguous and cheap to
+# recognise, so the harness says so instead of blaming the server. The CI job matches this
+# marker to label such results as infrastructure errors, so it is part of the contract with
+# `ci/jobs/integration_test_job.py` - see `LOST_NETWORK_INTERFACE_ERROR` there.
+LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
+
+# Echoed by the interface probe below so a `docker exec` that never ran is told apart from
+# one that ran and found nothing. Without it a dead container or a busy daemon would read as
+# "the interface is gone".
+NETWORK_INTERFACE_PROBE_TOKEN = "__INTERFACE_PROBE_OK__"
+
+# The probe lists the network namespace's devices straight out of sysfs: no `iproute2` in the
+# image to depend on, and nothing to parse. A trailing slash in the glob keeps it to
+# directories, so the plain files that also live there (`bonding_masters`) are not mistaken
+# for interfaces; an unmatched glob yields the pattern itself, which reads as "something is
+# there" and so withholds the verdict rather than inventing one.
+NETWORK_INTERFACE_PROBE = (
+    'for d in /sys/class/net/*/; do d="${d%/}"; echo "${d##*/}"; done; '
+    f"echo {NETWORK_INTERFACE_PROBE_TOKEN}"
+)
+
+# Interface names that do not connect a container to anything, so a container left with only
+# these has been cut off from its network.
+DISCONNECTED_INTERFACE_NAMES = frozenset(["lo"])
+
+# The probe reads one directory of kernel state, so it either answers at once or the docker
+# daemon is not answering at all. Far below `RUN_AND_CHECK_DEFAULT_TIMEOUT`, because it runs
+# inside retry loops of failing queries and must not extend them noticeably.
+NETWORK_INTERFACE_PROBE_TIMEOUT = 30
+
+# The errors the lost-interface state produces on the client side. Kept narrow on purpose:
+# the probe below only runs when a query has already failed with one of these, so the normal
+# path costs nothing and an ordinary refused connection is not investigated.
+UNREACHABLE_ADDRESS_ERRORS = ("No route to host", "Network is unreachable")
+
+# Every `ClickHouseInstance` that currently holds an address, keyed by that address.
+#
+# A request names the server it is aimed at by address and by nothing else, so the address
+# is all there is to lead a failed request back to the container that has to be probed. That
+# matters for the two ways a request reaches a server the harness did not build a client
+# for: `query(host=...)` re-aims an existing client at another node, and tests construct a
+# `Client` straight against a node's IP (`test_system_start_stop_listen`,
+# `test_server_reload`, `test_introspection_port`, `test_accept_invalid_certificate`,
+# `test_composable_protocol_without_global_ssl`). Both land here, and so will the clients
+# written next, which auditing today's call sites would not cover.
+#
+# Maintained by the `ip_address` setter, the single place an instance's address is
+# established or cleared.
+_INSTANCES_BY_ADDRESS = {}
+
+
+def describe_transport_error_for_host(host, error_text):
+    """The cause of a failed request to `host` that the client cannot see, or "".
+
+    Installed into `helpers/client.py` below, so every request made through any `Client`
+    consults it. An address that belongs to no instance - a proxy, a Keeper node, a
+    loopback client for a manually launched server - is not ours to explain, and says
+    nothing.
+    """
+    instance = _INSTANCES_BY_ADDRESS.get(host)
+    if instance is None:
+        return ""
+    return instance.describe_transport_error(error_text)
+
+
+set_transport_error_describer(describe_transport_error_for_host)
 
 
 def find_default_config_path():
@@ -4916,6 +4998,28 @@ services:
 
 
 class ClickHouseInstance:
+    # The address an instance is reachable at, mirrored into `_INSTANCES_BY_ADDRESS` so a
+    # failed request can be traced back from the address it named to the container behind
+    # it. A property because the address is assigned from several places - `start`, a
+    # restart with an address change, `shutdown` - and the mirror must not depend on
+    # remembering to update it at each of them.
+    _ip_address = None
+
+    @property
+    def ip_address(self):
+        return self._ip_address
+
+    @ip_address.setter
+    def ip_address(self, address):
+        if self._ip_address is not None:
+            # Only if it is still ours: a restarted container can be handed the address a
+            # stopped one used to have, and that entry now belongs to the new holder.
+            if _INSTANCES_BY_ADDRESS.get(self._ip_address) is self:
+                del _INSTANCES_BY_ADDRESS[self._ip_address]
+        self._ip_address = address
+        if address is not None:
+            _INSTANCES_BY_ADDRESS[address] = self
+
     def __init__(
         self,
         cluster,
@@ -5183,6 +5287,105 @@ class ClickHouseInstance:
 
     def is_built_with_memory_sanitizer(self):
         return self.is_built_with_sanitizer("memory")
+
+    def describe_lost_network_interface(self):
+        """Whether docker removed this container's network interface behind our back.
+
+        Returns the message to report, or an empty string when the interface is in place -
+        so a caller can use the result as the condition itself.
+
+        The verdict needs both sides to disagree: docker attached the container to the
+        cluster network - which is why the harness has an address to aim every connection in
+        this module at - yet the still-running container holds no interface that could carry
+        it. Nothing a test does produces that: `PartitionManager` only adds `iptables` rules
+        and leaves the interface in place, a stopped server does not touch it either, and no
+        test takes an interface down. So a match is always
+        `LOST_NETWORK_INTERFACE_ERROR`.
+
+        A state that answers only one half reports nothing rather than guessing: before
+        `start` and after `shutdown` there is no attachment to contradict, and a `docker
+        exec` that never ran (container gone, daemon busy) leaves the inside unknown - which
+        is why the probe echoes a token instead of trusting empty output.
+        """
+        expected_ip = self.ip_address
+        if not expected_ip:
+            return ""
+
+        try:
+            probe = self.exec_in_container(
+                ["bash", "-c", NETWORK_INTERFACE_PROBE],
+                nothrow=True,
+                user="root",
+                timeout=NETWORK_INTERFACE_PROBE_TIMEOUT,
+            )
+        except Exception as ex:
+            # Not a fallback path: this is a diagnostic about an error that has already
+            # happened, and every caller reports that error next. Letting the probe's own
+            # failure out would replace the failure under investigation with a note about
+            # the investigation, so it is logged and the verdict is withheld.
+            logging.warning(
+                "Cannot probe the interfaces of %s, not classifying its network error: %s",
+                self.name,
+                ex,
+            )
+            return ""
+
+        if NETWORK_INTERFACE_PROBE_TOKEN not in probe:
+            return ""
+
+        interfaces = set(probe.split()) - {NETWORK_INTERFACE_PROBE_TOKEN}
+        if interfaces - DISCONNECTED_INTERFACE_NAMES:
+            return ""
+
+        return (
+            f"{LOST_NETWORK_INTERFACE_ERROR} {self.docker_id}: docker attached it to the "
+            f"cluster network with address {expected_ip}, but the running container is "
+            f"left with no network interface at all (/sys/class/net holds "
+            f"{sorted(interfaces)}). The server under test did not fail - this is the moby "
+            "veth name collision."
+        )
+
+    def describe_transport_error(self, error_text):
+        """The cause of a failed request to this instance that the client cannot see, or "".
+
+        Reached for every request whose address resolves to this instance, through
+        `describe_transport_error_for_host` - the ones that raise, the ones that hand the
+        error back for the test to assert on, and the handles a test collects later - and
+        directly by the HTTP helpers, which do not go through `Client` at all.
+        `CommandRequest` prepends whatever comes back to the text it was going to report
+        anyway, so a caller that catches the error and matches on it keeps working.
+
+        The probe only runs once the client has already reported one of
+        `UNREACHABLE_ADDRESS_ERRORS`, which nothing in the suite produces deliberately -
+        `PartitionManager` drops or resets connections, it does not unplug interfaces. So
+        the normal path costs one substring check, and an ordinary refused connection is
+        not investigated.
+        """
+        if not error_text:
+            return ""
+        if not any(error in error_text for error in UNREACHABLE_ADDRESS_ERRORS):
+            return ""
+        return self.describe_lost_network_interface()
+
+    def _http_request_naming_transport_error(self, request):
+        """Run an HTTP request, naming a lost interface if that is what it ran into.
+
+        The HTTP helpers reach the server directly rather than through `Client`, so the
+        gate has to be applied to them here. The exception keeps its class and its
+        `request`/`response`, because tests catch `requests.exceptions.ConnectionError`
+        and read those; only the message gains the cause.
+        """
+        try:
+            return request()
+        except requests.exceptions.ConnectionError as ex:
+            cause = self.describe_transport_error(str(ex))
+            if not cause:
+                raise
+            raise requests.exceptions.ConnectionError(
+                f"{cause} HTTP request failed with: {ex}",
+                request=ex.request,
+                response=ex.response,
+            ) from ex
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(
@@ -5482,7 +5685,11 @@ class ClickHouseInstance:
         if method is None:
             method = "POST" if data else "GET"
 
-        r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        r = self._http_request_naming_transport_error(
+            lambda: requester.request(
+                method, url, data=data, auth=auth, timeout=timeout
+            )
+        )
         # Force encoding to UTF-8
         r.encoding = "UTF-8"
 
@@ -5497,8 +5704,10 @@ class ClickHouseInstance:
     def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
         logging.debug(f"Sending HTTP request '{url}' to {self.name}")
         url = f"http://{self.ip_address}:8123/{url}"
-        return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+        return self._http_request_naming_transport_error(
+            lambda: requests.request(
+                method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+            )
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
@@ -6164,9 +6373,16 @@ class ClickHouseInstance:
 
             current_time = time.time()
             if current_time >= deadline:
+                # `EHOSTUNREACH` is retried below, so a container whose interface docker
+                # removed spins here until the deadline and then reports a timeout that
+                # reads like a slow server. Name the real cause while the evidence is
+                # still there - this is the path that loses a whole test module.
+                lost_interface = self.describe_lost_network_interface()
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
+                    f"Container status: {status}, "
+                    + (f"{lost_interface} " if lost_interface else "")
+                    + f"logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
