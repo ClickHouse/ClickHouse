@@ -110,9 +110,20 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// creating a file iterator just to get a sample path string.
     if (containsOnlyEnumGlobs(path.path))
     {
-        auto expanded = expandSelectionGlob(path.path);
-        if (!expanded.empty())
-            return expanded.front() + archive_suffix;
+        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
+        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
+        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
+        /// and, for a table definition, persist it - from a path that the reader always refuses to
+        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
+        /// never built, so taking each group's first alternative is enough and is always possible.
+        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
+        {
+            auto expanded = expandSelectionGlob(path.path);
+            if (!expanded.empty())
+                return expanded.front() + archive_suffix;
+        }
+        else
+            return expandSelectionGlobFirst(path.path) + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
