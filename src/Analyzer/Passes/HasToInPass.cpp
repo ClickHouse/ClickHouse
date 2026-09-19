@@ -125,7 +125,8 @@ public:
             return;
 
         if (expr_data_type.isLowCardinality())
-            has_function_arguments_nodes[1] = buildCastFunction(has_function_arguments_nodes[1], unwrapped_second_arg_type, getContext());
+            has_function_arguments_nodes[1]
+                = foldConstantCast(buildCastFunction(has_function_arguments_nodes[1], unwrapped_second_arg_type, getContext()));
 
         std::swap(has_function_arguments_nodes[0], has_function_arguments_nodes[1]);
         resolveOrdinaryFunctionNodeByName(*has_function_node, *in_function_name, getContext());
