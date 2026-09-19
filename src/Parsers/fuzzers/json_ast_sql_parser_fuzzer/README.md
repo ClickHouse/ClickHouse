@@ -292,7 +292,10 @@ JIT forced; the row count and an order-independent row hash (floats rounded to n
 digits) must agree. Mismatches and error asymmetries are appended, with the SQL and the JSON, to
 `oracle_mismatches.log` (`JSON_AST_FUZZER_ORACLE_LOG`); `JSON_AST_FUZZER_ORACLE=0` disables the
 oracle. Functions whose result depends on the run (randomness, time, environment, ordering-dependent
-or approximate aggregates, `arrayShuffle`, `viewExplain`) exclude a query from the oracle.
+or approximate aggregates, `arrayShuffle`, `viewExplain`) exclude a query from the oracle. The
+default plan runs first; when it hits a resource limit or takes longer than 0.7 s the variants are
+skipped (they are compared only when both sides finish, and the one-row-block variant is many times
+slower), which keeps the time spent on timeouts down (`variants skipped` in the exit statistics).
 
 Query errors are expected outcomes. Findings are crashes, sanitizer reports, `LOGICAL_ERROR`
 exceptions (fatal in sanitizer and debug builds), hangs and oracle mismatches.

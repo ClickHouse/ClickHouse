@@ -49,6 +49,7 @@
 #include <Parsers/fuzzers/json_ast_sql_parser_fuzzer/JSONASTFuzzerPipeline.h>
 
 #include <Columns/IColumn.h>
+#include <Common/Stopwatch.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
@@ -234,6 +235,7 @@ void cleanupFuzzerObjects()
 bool oracle_enabled = true;
 std::string oracle_log_path = "oracle_mismatches.log";
 size_t oracle_runs = 0;
+size_t oracle_variants_skipped = 0; /// baseline hit a resource limit or was too slow for the variants
 size_t oracle_mismatches = 0;
 size_t oracle_error_asymmetries = 0;
 
@@ -415,6 +417,7 @@ void runOracle(const std::string & sql, const std::string & json)
           ", short_circuit_function_evaluation = 'force_enable', query_plan_optimize_lazy_materialization = 0, max_block_size = 3";
 
     OracleResult results[4];
+    bool variants_run = false;
     static const char * variant_names[4] = {"default", "optimizations off", "parallel/external", "jit"};
     static const std::string * variant_settings[4] = {&baseline_settings, &flipped_settings, &parallel_settings, &jit_settings};
     DB::LocalFuzzerRunner::runOnRunnerThread([&](DB::ContextMutablePtr context)
@@ -425,12 +428,28 @@ void runOracle(const std::string & sql, const std::string & json)
         std::thread worker([&]
         {
             DB::ThreadStatus thread_status;
-            for (size_t i = 0; i < 4; ++i)
+            Stopwatch watch;
+            results[0] = runOracleQuery(context, sql, *variant_settings[0]);
+            /// The variants are only compared when both runs finished, and a resource-limit error on either
+            /// side is ignored below. A baseline that hit a limit, or that used most of the time budget
+            /// already (the `max_block_size = 1` variant is many times slower), would only burn three more
+            /// timeouts, so skip the variants; the timeouts were a quarter of all query errors before.
+            const bool baseline_hit_limit = !results[0].ok
+                && (results[0].error_code == 159 || results[0].error_code == 158 || results[0].error_code == 241 || results[0].error_code == 396);
+            if (baseline_hit_limit || watch.elapsedMilliseconds() > 700)
+            {
+                ++oracle_variants_skipped;
+                return;
+            }
+            variants_run = true;
+            for (size_t i = 1; i < 4; ++i)
                 results[i] = runOracleQuery(context, sql, *variant_settings[i]);
         });
         worker.join();
     });
     ++oracle_runs;
+    if (!variants_run)
+        return;
 
     const OracleResult & baseline = results[0];
     for (size_t i = 1; i < 4; ++i)
@@ -465,8 +484,9 @@ void runOracle(const std::string & sql, const std::string & json)
 void printOracleStats()
 {
     if (oracle_runs)
-        std::cerr << "json_ast_sql_execution_fuzzer oracle: runs " << oracle_runs << ", mismatches " << oracle_mismatches
-            << ", error asymmetries " << oracle_error_asymmetries << " (see " << oracle_log_path << ")\n";
+        std::cerr << "json_ast_sql_execution_fuzzer oracle: runs " << oracle_runs << " (variants skipped after a slow baseline: "
+            << oracle_variants_skipped << "), mismatches " << oracle_mismatches << ", error asymmetries " << oracle_error_asymmetries
+            << " (see " << oracle_log_path << ")\n";
     if (executed_modifying)
         std::cerr << "json_ast_sql_execution_fuzzer: executed " << executed_modifying << " statements that create or change objects\n";
 }
