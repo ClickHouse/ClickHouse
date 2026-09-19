@@ -166,13 +166,15 @@ _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.BUZZHOUSE,
 )
 
-# Digest inputs of the skippable jobs that must not switch the skip off: almost
-# every PR touches them, so exempting them would make the rule never fire. The
-# narrow `tests/config/...` files the fuzzer jobs name one by one are not in this
-# list and do keep their exemption.
+# Digest inputs of the skippable jobs that must not switch the skip off: a fifth
+# of all commits touches the stateless suite, so exempting it would make the rule
+# never fire. Only paths of that frequency belong here - `tests/config` is a
+# digest input as well, and it is deliberately absent because the stress and
+# fuzzer runners install their server config from it (`run-fuzzer.sh` copies
+# `listen.xml`, `ssl_certs.xml`, `server.crt` and friends, `stress.py` installs
+# `cannot_allocate_thread_injection.xml`), while 0.2% of commits change it.
 _COMMON_TEST_PATHS = (
     "tests/queries/0_stateless/",
-    "tests/config",
     "tests/*.txt",
 )
 
