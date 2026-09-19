@@ -10,8 +10,17 @@ for key 'where_expr' has no 'arguments' list
 for key 'children' has no 'arguments' list
 for key 'order_by' has no 'arguments' list
 for key 'sample_by' has no 'arguments' list
+for key 'predicate' has no 'arguments' list
+for key 'select' has no 'arguments' list
+for key 'select' has no 'arguments' list
+for key 'select' has no 'arguments' list
+for key 'predicate' has no 'arguments' list
+for key 'table_function' has no 'arguments' list
+for key 'as_table_function' has no 'arguments' list
 for key 'ttl' has no 'arguments' list
 must be a list of TTL elements
+must not be an empty list
+must not be an empty list
 for key 'partition_by' has no 'arguments' list
 for key 'engine' has no 'arguments' list
 for key 'order_by' has no 'arguments' list

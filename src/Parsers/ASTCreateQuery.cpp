@@ -178,6 +178,11 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTExpressionList>("ttl_table");
     if (child)
     {
+        /// `ParserTTLExpressionList` reads at least one element, and an empty list formats as a bare
+        /// `TTL` clause that the metadata reparse rejects.
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ttl_table` must not be an empty list during AST JSON deserialization");
         for (const auto & ttl_element : child->children)
             if (!ttl_element || !ttl_element->as<ASTTTLElement>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -718,7 +723,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
-    child = r.readChildOfType<ASTFunction>("as_table_function");
+    child = r.readScreenedChildOfType<ASTFunction>("as_table_function");
     if (child)
         set(as_table_function, child);
 
@@ -728,7 +733,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` declares both 'storage' and 'as_table_function' during AST JSON deserialization");
 
-    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
         set(select, child);
 

@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
@@ -112,6 +113,11 @@ ASTPtr JSONObjectReader::readFunctionChildWithExpressionArguments(const char * k
             rejectArgumentlessFunctions(*arguments, key);
     }
     return child;
+}
+
+void JSONObjectReader::screenArgumentlessFunctions(const IAST & ast, const char * key)
+{
+    rejectArgumentlessFunctions(ast, key);
 }
 
 ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const

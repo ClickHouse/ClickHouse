@@ -17,12 +17,9 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (d Date, x UInt64) E
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ORDER BY (a, b), MODIFY SAMPLE BY a, ADD INDEX i a TYPE minmax GRANULARITY 1, UPDATE a = a + 1 WHERE a > 0, MODIFY TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY TTL d + toIntervalDay(1) GROUP BY a SET d = max(d)'));
 
--- Slots deliberately left out of the screen, each measured non-fatal: a column `DEFAULT` and the
--- `ALTER ... DELETE WHERE` predicate reach an analyser that checks arity first. They keep formatting, so
--- these are the columns that change if a later PR widens the screen; `countSubstrings` keeps them honest
--- by proving the payload really lost its argument list.
+-- A column `DEFAULT` is deliberately left out of the screen, measured non-fatal: it reaches an analyser
+-- that checks arity first. It keeps formatting, so this is the column that changes if a later PR widens
+-- the screen; `countSubstrings` keeps it honest by proving the payload really lost its argument list.
 SELECT
     countSubstrings(parseQueryToJSON('CREATE TABLE t (a UInt8, b UInt8 DEFAULT a IN (1)) ENGINE = MergeTree ORDER BY a'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}') = 1
-        AND length(formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (a UInt8, b UInt8 DEFAULT a IN (1)) ENGINE = MergeTree ORDER BY a'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}', ''))) > 0,
-    countSubstrings(parseQueryToJSON('ALTER TABLE t (DELETE WHERE a IN (1))'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}') = 1
-        AND length(formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (DELETE WHERE a IN (1))'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}', ''))) > 0;
+        AND length(formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (a UInt8, b UInt8 DEFAULT a IN (1)) ENGINE = MergeTree ORDER BY a'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}', ''))) > 0;

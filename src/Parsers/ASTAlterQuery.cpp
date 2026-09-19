@@ -252,7 +252,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
-    /// `predicate`, `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single parser-produced node type.
+    /// `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single parser-produced node type.
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
@@ -363,7 +363,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         partitions = partitions_child.get();
         children.push_back(std::move(partitions_child));
     }
-    readRawChild("predicate", predicate);
+    readExprChild("predicate", predicate);
     /// `update_assignments` is an `ASTExpressionList` of `ASTAssignment` (`MutationCommand::parse`
     /// downcasts each child to `ASTAssignment`).
     readTypedChild.operator()<ASTExpressionList>("update_assignments", update_assignments);
@@ -388,6 +388,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         if (!ttl_list)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'ttl' must be a list of TTL elements during AST JSON deserialization");
+        if (ttl_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'ttl' must not be an empty list during AST JSON deserialization");
         for (const auto & ttl_element : ttl_list->children)
             if (!ttl_element || !ttl_element->as<ASTTTLElement>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -401,7 +404,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (!setting || !setting->as<ASTIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER 'settings_resets' must contain only setting identifiers during AST JSON deserialization");
     /// `select` (MODIFY QUERY) is an `ASTSelectWithUnionQuery`; `refresh` (MODIFY REFRESH) an `ASTRefreshStrategy`.
-    readTypedChild.operator()<ASTSelectWithUnionQuery>("select", select);
+    if (auto select_child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select"))
+    {
+        select = select_child.get();
+        children.push_back(std::move(select_child));
+    }
     readTypedChild.operator()<ASTSQLSecurity>("sql_security", sql_security);
     readTypedChild.operator()<ASTIdentifier>("rename_to", rename_to);
     readRawChild("snapshot_desc", snapshot_desc);

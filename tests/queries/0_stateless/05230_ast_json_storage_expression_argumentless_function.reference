@@ -3,4 +3,4 @@ CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY tuple()
 CREATE TABLE t (`d` Date, `x` UInt64) ENGINE = MergeTree(d, x, 8192)
 ALTER TABLE t (MODIFY ORDER BY (a, b)), (MODIFY SAMPLE BY a), (ADD INDEX i a TYPE minmax GRANULARITY 1), (UPDATE  a = a + 1 WHERE a > 0), (MODIFY TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4))
 ALTER TABLE t (MODIFY TTL d + toIntervalDay(1) GROUP BY a SET d = max(d))
-1	1
+1
