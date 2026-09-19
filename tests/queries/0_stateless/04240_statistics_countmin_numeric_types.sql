@@ -11,22 +11,21 @@ SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 
 -- b matches exactly 1 of 1010 rows (selectivity ~0.001, well below default_cond_equal_factor 0.01),
--- so PREWHERE keeps b first even if a's estimate falls back to the default; refresh_statistics_interval = 0
--- disables the background statistics cache so EXPLAIN never reads a stale single-part snapshot where a and b tie.
+-- so PREWHERE keeps b first even if a's estimate falls back to the default.
 DROP TABLE IF EXISTS test_f32;
-CREATE TABLE test_f32 (a Float32 STATISTICS(countmin), b Float32 STATISTICS(countmin)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+CREATE TABLE test_f32 (a Float32 STATISTICS(countmin), b Float32 STATISTICS(countmin)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO test_f32 SELECT 1.5, 1.5 FROM numbers(1);
 INSERT INTO test_f32 SELECT 1.5, 99.5 FROM numbers(999);
 INSERT INTO test_f32 SELECT 99.5, 99.5 FROM numbers(10);
 
 DROP TABLE IF EXISTS test_f64;
-CREATE TABLE test_f64 (a Float64 STATISTICS(countmin), b Float64 STATISTICS(countmin)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+CREATE TABLE test_f64 (a Float64 STATISTICS(countmin), b Float64 STATISTICS(countmin)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO test_f64 SELECT 1.5, 1.5 FROM numbers(1);
 INSERT INTO test_f64 SELECT 1.5, 99.5 FROM numbers(999);
 INSERT INTO test_f64 SELECT 99.5, 99.5 FROM numbers(10);
 
 DROP TABLE IF EXISTS test_i16;
-CREATE TABLE test_i16 (a Int16 STATISTICS(countmin), b Int16 STATISTICS(countmin)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+CREATE TABLE test_i16 (a Int16 STATISTICS(countmin), b Int16 STATISTICS(countmin)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO test_i16 SELECT 15, 15 FROM numbers(1);
 INSERT INTO test_i16 SELECT 15, 995 FROM numbers(999);
 INSERT INTO test_i16 SELECT 995, 995 FROM numbers(10);

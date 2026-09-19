@@ -1,0 +1,6 @@
+stats_cache_1_cold	1	1	0
+stats_cache_2_warm	0	0	1
+stats_cache_3_pruned	0	0	1
+stats_cache_4_new_part	1	1	0
+stats_cache_5_dropped	1	1	0
+1	1

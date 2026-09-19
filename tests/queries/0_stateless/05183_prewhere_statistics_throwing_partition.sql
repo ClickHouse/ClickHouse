@@ -1,11 +1,11 @@
 SET enable_analyzer = 1, enable_parallel_replicas = 0;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
-SET use_statistics = 1, use_statistics_cache = 0, use_statistics_for_part_pruning = 0;
+SET use_statistics = 1, use_statistics_for_part_pruning = 0;
 SET materialize_statistics_on_insert = 1, short_circuit_function_evaluation = 'disable';
 
 CREATE TABLE prewhere_statistics_throwing_partition (p Int64, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval = 0;
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
 INSERT INTO prewhere_statistics_throwing_partition VALUES (1, 10), (2, 20), (3, 30);
 
