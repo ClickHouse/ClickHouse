@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -409,6 +410,23 @@ bool writeMetadataFileAndVersionHint(
             boost::algorithm::trim(version_hint_value);
             etag = object_metadata.etag;
             write_if_none_match.clear();
+
+            /// The rewrite of an existing hint is kept monotonic by a compare-and-swap on the tag of
+            /// the copy that was just read. `ETag` is an optional response header, and without it the
+            /// write would degrade into an unconditional overwrite, so two concurrent writers could
+            /// move `version-hint.text` backwards and a reader with `iceberg_use_version_hint = 1`
+            /// would resolve a stale snapshot. Fail close: leave the hint alone rather than overwrite
+            /// it without a precondition. The metadata file itself is already committed, and a hint
+            /// that lags is the state this code path is designed to tolerate.
+            if (etag.empty())
+            {
+                LOG_WARNING(
+                    getLogger("IcebergMetadata"),
+                    "The object storage did not report an ETag for {}, so the version hint cannot be updated "
+                    "without losing its compare-and-swap. Leaving it unchanged.",
+                    storage_version_hint_path);
+                break;
+            }
         }
         else if (!try_write_version_hint)
         {

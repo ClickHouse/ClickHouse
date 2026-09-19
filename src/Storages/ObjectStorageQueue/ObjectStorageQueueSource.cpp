@@ -1423,8 +1423,15 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
                     etag = etag.substr(1, etag.size() - 2);
 
-                /// Create unique token per chunk: etag + row offset
-                dedup_token = fmt::format("{}:{}", etag, row_offset);
+                /// Create unique token per chunk: etag + row offset. The token identifies a chunk only
+                /// as far as the `ETag` identifies the file, and `ETag` is an optional response header:
+                /// against an endpoint that omits it the first chunk of every file would get the same
+                /// token `:0`, the second `:<rows in the first chunk>`, and so on, so distinct files would
+                /// deduplicate against each other and their rows would disappear from the dependent
+                /// materialized views. Leave the token empty in that case - `getBlockUnifiedHash` then
+                /// falls back to the hash of the data, which deduplicates on content.
+                if (!etag.empty())
+                    dedup_token = fmt::format("{}:{}", etag, row_offset);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
