@@ -49,7 +49,7 @@ EOF
 PIN_SETTINGS="--enable_parallel_replicas 0 --extremes 0 --exact_rows_before_limit 0 \
     --prefer_column_name_to_alias 0 --optimize_read_in_order 0"
 
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $PIN_SETTINGS $settings --user "$invoker" --query \
         "SELECT k FROM $db.security_view_obp_filtered ORDER BY k LIMIT 1"

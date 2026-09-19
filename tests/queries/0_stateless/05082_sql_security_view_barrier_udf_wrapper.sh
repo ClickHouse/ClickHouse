@@ -56,30 +56,24 @@ CREATE VIEW $db.v05082_sum_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER A
     SELECT $f_sum(key) AS s FROM $db.t05082;
 EOF
 
-for analyzer in 1 0; do
-    if [ "$analyzer" = 1 ]; then label="analyzer"; else label="legacy analyzer"; fi
+# The INVOKER view stays fully optimizable, so the outer predicate reaches the row that the
+# empty array hides. This is the positive control proving that the oracle discriminates.
+echo "invoker: $($CLIENT --query "SELECT count() FROM $db.v05082_invoker WHERE throwIf(key = 42, 'DISCLOSED') = 0" 2>&1 | grep -q -F FUNCTION_THROW_IF_VALUE_IS_NON_ZERO && echo 1 || echo 0)"
 
-    # The INVOKER view stays fully optimizable, so the outer predicate reaches the row that the
-    # empty array hides. This is the positive control proving that the oracle discriminates.
-    echo "invoker, $label: $($CLIENT --enable_analyzer "$analyzer" --query "SELECT count() FROM $db.v05082_invoker WHERE throwIf(key = 42, 'DISCLOSED') = 0" 2>&1 | grep -q -F FUNCTION_THROW_IF_VALUE_IS_NON_ZERO && echo 1 || echo 0)"
+# The barrier views keep the predicate above the row-dropping arrayJoin hidden in the UDF.
+$CLIENT --query "SELECT 'definer:', count() FROM $db.v05082_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
+$CLIENT --query "SELECT 'none:', count() FROM $db.v05082_none WHERE throwIf(key = 42, 'DISCLOSED') = 0"
+$CLIENT --query "SELECT 'nested udf definer:', count() FROM $db.v05082_nested_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
 
-    # The barrier views keep the predicate above the row-dropping arrayJoin hidden in the UDF.
-    $CLIENT --enable_analyzer "$analyzer" --query "SELECT 'definer, $label:', count() FROM $db.v05082_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
-    $CLIENT --enable_analyzer "$analyzer" --query "SELECT 'none, $label:', count() FROM $db.v05082_none WHERE throwIf(key = 42, 'DISCLOSED') = 0"
-    $CLIENT --enable_analyzer "$analyzer" --query "SELECT 'nested udf definer, $label:', count() FROM $db.v05082_nested_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
-
-    if [ "$analyzer" = 1 ]; then
-        $CLIENT --enable_analyzer 1 --analyzer_inline_views 1 --query "SELECT 'definer, analyzer, inline views:', count() FROM $db.v05082_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
-        $CLIENT --enable_analyzer 1 --analyzer_inline_views 1 --query "SELECT 'nested udf definer, analyzer, inline views:', count() FROM $db.v05082_nested_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
-    fi
-done
+$CLIENT --analyzer_inline_views 1 --query "SELECT 'definer, inline views:', count() FROM $db.v05082_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
+$CLIENT --analyzer_inline_views 1 --query "SELECT 'nested udf definer, inline views:', count() FROM $db.v05082_nested_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0"
 
 # The barrier only drops the optimization, never the result.
-$CLIENT --enable_analyzer 1 --query "SELECT 'definer results:', count(), min(key), max(key) FROM $db.v05082_definer WHERE key % 2 = 0"
+$CLIENT --query "SELECT 'definer results:', count(), min(key), max(key) FROM $db.v05082_definer WHERE key % 2 = 0"
 
-$CLIENT --enable_analyzer 1 --analyzer_inline_views 1 --query "SELECT 'plain udf definer kept as a table expression:', countIf(explain LIKE '%table_name: %v05082_plain_definer%') FROM (EXPLAIN QUERY TREE SELECT k FROM $db.v05082_plain_definer)"
-$CLIENT --enable_analyzer 1 --analyzer_inline_views 1 --query "SELECT 'sum udf definer kept as a table expression:', countIf(explain LIKE '%table_name: %v05082_sum_definer%') FROM (EXPLAIN QUERY TREE SELECT s FROM $db.v05082_sum_definer)"
-$CLIENT --enable_analyzer 1 --analyzer_inline_views 1 --query "SELECT 'sum udf definer result:', s FROM $db.v05082_sum_definer"
+$CLIENT --analyzer_inline_views 1 --query "SELECT 'plain udf definer kept as a table expression:', countIf(explain LIKE '%table_name: %v05082_plain_definer%') FROM (EXPLAIN QUERY TREE SELECT k FROM $db.v05082_plain_definer)"
+$CLIENT --analyzer_inline_views 1 --query "SELECT 'sum udf definer kept as a table expression:', countIf(explain LIKE '%table_name: %v05082_sum_definer%') FROM (EXPLAIN QUERY TREE SELECT s FROM $db.v05082_sum_definer)"
+$CLIENT --analyzer_inline_views 1 --query "SELECT 'sum udf definer result:', s FROM $db.v05082_sum_definer"
 
 $CLIENT <<EOF
 DROP VIEW $db.v05082_invoker;

@@ -1,6 +1,4 @@
-analyzer:
 definer top-K markers (expect 0):	0
 invoker top-K markers (expect 2):	2
-legacy analyzer:
 definer top-K markers (expect 0):	0
 invoker top-K markers (expect 2):	2

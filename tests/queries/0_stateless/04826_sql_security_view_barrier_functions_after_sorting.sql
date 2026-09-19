@@ -4,10 +4,6 @@
 -- order and top-K walks could then descend through the wrapper again and shape the source's read
 -- by the invoker's `ORDER BY`. This pins the plan of an `ORDER BY ... LIMIT` over such a view.
 
--- The old analyzer does not read a `Merge` wrapper in order at all, so the `INVOKER` control
--- below would show nothing to compare against; the barrier behavior under the old analyzer is
--- covered by 04822.
-SET enable_analyzer = 1;
 -- `optimize_sorting_by_input_stream_properties` produces the `Prefix sort description` marker that
 -- the `INVOKER` control below asserts on; the test harness randomizes it, so pin it.
 SET query_plan_execute_functions_after_sorting = 1, optimize_read_in_order = 1, enable_parallel_replicas = 0, optimize_sorting_by_input_stream_properties = 1;

@@ -48,12 +48,12 @@ EOF
 # read-path injections the test harness enables must be pinned off, and a single thread keeps the
 # read pool deterministic — none of them affects the index analysis the test guards.
 probe() {
-    local query_id="probe_${CLICKHOUSE_DATABASE}_$1_$2"
-    ${CLICKHOUSE_CLIENT} --enable_analyzer "$1" --user "$user" --query_id "$query_id" \
+    local query_id="probe_${CLICKHOUSE_DATABASE}_$1"
+    ${CLICKHOUSE_CLIENT} --user "$user" --query_id "$query_id" \
         --max_threads 1 \
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0 \
         --page_cache_inject_eviction 0 \
-        --query "SELECT count() FROM $db.owned_view WHERE key = $2" > /dev/null
+        --query "SELECT count() FROM $db.owned_view WHERE key = $1" > /dev/null
     echo "$query_id"
 }
 
@@ -61,21 +61,19 @@ echo "===== the view exposes no row ====="
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.owned_view"
 
 echo "===== reading the view costs the same whether or not the hidden row matches ====="
-for analyzer in 1 0; do
-    hidden_id=$(probe "$analyzer" 99999)
-    absent_id=$(probe "$analyzer" 500000)
+hidden_id=$(probe 99999)
+absent_id=$(probe 500000)
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    # `count() = 2` guards against the comparison passing vacuously on an empty match.
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT multiIf(
-            count() != 2, 'MISSING',
-            anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
-            'same', 'DISCLOSED')
-        FROM system.query_log
-        WHERE current_database = currentDatabase()
-          AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
-done
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+# `count() = 2` guards against the comparison passing vacuously on an empty match.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT multiIf(
+        count() != 2, 'MISSING',
+        anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
+        'same', 'DISCLOSED')
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
 
 echo "===== lazy FINAL does not consume an outer limit through the barrier ====="
 # The third part has a non-overlapping key range. Lazy FINAL may split it out only when the outer

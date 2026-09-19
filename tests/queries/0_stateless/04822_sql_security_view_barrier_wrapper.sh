@@ -41,36 +41,32 @@ echo "===== the view exposes no row ====="
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.v"
 
 echo "===== an exception oracle over a hidden value cannot fire ====="
-for analyzer in 1 0; do
-    ${CLICKHOUSE_CLIENT} --enable_analyzer "$analyzer" --user "$user" \
-        --query "SELECT count() FROM $db.v WHERE throwIf(val = 'secret-99999', 'DISCLOSED')" 2>&1 \
-        | grep -o 'DISCLOSED' || echo "not disclosed"
-done
+${CLICKHOUSE_CLIENT} --user "$user" \
+    --query "SELECT count() FROM $db.v WHERE throwIf(val = 'secret-99999', 'DISCLOSED')" 2>&1 \
+    | grep -o 'DISCLOSED' || echo "not disclosed"
 
 echo "===== reading the view costs the same whether or not the hidden row matches ====="
 probe() {
-    local query_id="probe_${CLICKHOUSE_DATABASE}_$1_$2"
-    ${CLICKHOUSE_CLIENT} --enable_analyzer "$1" --user "$user" --query_id "$query_id" \
+    local query_id="probe_${CLICKHOUSE_DATABASE}_$1"
+    ${CLICKHOUSE_CLIENT} --user "$user" --query_id "$query_id" \
         --max_threads 1 \
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0 \
         --page_cache_inject_eviction 0 \
-        --query "SELECT count() FROM $db.v WHERE key = $2" > /dev/null
+        --query "SELECT count() FROM $db.v WHERE key = $1" > /dev/null
     echo "$query_id"
 }
 
-for analyzer in 1 0; do
-    hidden_id=$(probe "$analyzer" 99999)
-    absent_id=$(probe "$analyzer" 500000)
+hidden_id=$(probe 99999)
+absent_id=$(probe 500000)
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT multiIf(
-            count() != 2, 'MISSING',
-            anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
-            'same', 'DISCLOSED')
-        FROM system.query_log
-        WHERE current_database = currentDatabase()
-          AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
-done
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT multiIf(
+        count() != 2, 'MISSING',
+        anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
+        'same', 'DISCLOSED')
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"

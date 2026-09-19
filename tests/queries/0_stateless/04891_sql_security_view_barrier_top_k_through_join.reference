@@ -1,4 +1,3 @@
 invoker gets Sort+Limit below the join:	1
 definer keeps the join input untouched:	0
 definer results:	1	1
-legacy analyzer, definer keeps the join input untouched:	0

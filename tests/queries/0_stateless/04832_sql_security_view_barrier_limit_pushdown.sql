@@ -38,19 +38,6 @@ FROM (SELECT explain, rowNumberInAllBlocks() AS n FROM (EXPLAIN compact = 0 SELE
 -- The barrier only drops the optimization, never the correctness of the result.
 SELECT 'definer view results:', arraySort(groupArray(x)) = [0, 1] FROM (SELECT x FROM v04832_definer LIMIT 2);
 
--- The same contract with the old analyzer, where the view is read through `StorageView::read`.
-SET enable_analyzer = 0;
-
-SELECT 'old analyzer, invoker twin, limit stays above the converting expression:',
-       minIf(n, explain LIKE '%Limit (preliminary LIMIT)%') < minIf(n, explain LIKE '%Convert VIEW subquery result%')
-FROM (SELECT explain, rowNumberInAllBlocks() AS n FROM (EXPLAIN compact = 0 SELECT * FROM v04832_invoker LIMIT 2));
-
-SELECT 'old analyzer, definer: limit stays above the seal:',
-       minIf(n, explain LIKE '%Limit (preliminary LIMIT)%') < minIf(n, explain LIKE '%Convert VIEW subquery result%')
-FROM (SELECT explain, rowNumberInAllBlocks() AS n FROM (EXPLAIN compact = 0 SELECT * FROM v04832_definer LIMIT 2));
-
-SET enable_analyzer = DEFAULT;
-
 DROP VIEW v04832_invoker;
 DROP VIEW v04832_definer;
 DROP TABLE t04832;

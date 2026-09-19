@@ -69,7 +69,7 @@ echo "===== an outer predicate cannot observe the filtered-out row ====="
 # source table, and throwIf fires on a row the view is supposed to hide. `analyzer_inline_views`
 # is a third way in: it replaces the view with its defining subquery before a plan even exists.
 for view in filtering_view filtering_view_none policy_view; do
-    for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+    for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
         # shellcheck disable=SC2086
         ${CLICKHOUSE_CLIENT} $settings --user "$user" --query \
             "SELECT * FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 |
@@ -80,7 +80,7 @@ done
 echo "===== an additional filter on a view is a security boundary ====="
 # The filter is attached to the view, rather than its base table, so both analyzers must retain
 # the view as a separate subplan and keep the outer expression above the additional filter.
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $settings --user "$user" --query \
         "SELECT * FROM $db.additional_filter_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')
@@ -107,9 +107,7 @@ for serialize in 1 0; do
 done
 
 # The checks below run as the restricted user so the row policy on `policy_view` applies. They
-# pin every setting the shape depends on, because the test also runs with randomized settings. The
-# settings are pinned on the client and not with a SETTINGS clause inside the subquery, because changing
-# `enable_analyzer` in a subquery is rejected when the server default differs.
+# pin every setting the shape depends on, because the test also runs with randomized settings.
 explain_client="${CLICKHOUSE_CLIENT} --user $user --enable_parallel_replicas 0
     --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0"
 
@@ -124,11 +122,11 @@ for view in projecting_view invoker_view filtering_view filtering_view_none; do
 done
 
 echo "===== a projection-only view stays exactly as optimizable as an INVOKER view ====="
-# On every path that substitutes the view into the outer query before a plan exists
-# (`enable_analyzer = 0`, `analyzer_inline_views = 1`) as well as on the plan-level path, a
-# `DEFINER` view that provably hides no rows must produce the very plan of the same view declared
-# `SQL SECURITY INVOKER`, while a view that filters rows must not.
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+# On the path that substitutes the view into the outer query before a plan exists
+# (`analyzer_inline_views = 1`) as well as on the plan-level path, a `DEFINER` view that provably
+# hides no rows must produce the very plan of the same view declared `SQL SECURITY INVOKER`, while
+# a view that filters rows must not.
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     for pair in "projecting_view projecting_view_invoker" "filtering_view invoker_view"; do
         # shellcheck disable=SC2086
         set -- $pair

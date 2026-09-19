@@ -37,33 +37,27 @@ for fuse in 0 1; do
     echo "===== fuse_filter_into_array_join = $fuse: the invoker's predicate stays above the barrier ====="
     # The rewritten barrier filter must not share a step with the outer `WHERE`: a merged step lists
     # both descriptions. The `INVOKER` view is the positive control proving that the oracle sees the merge.
-    for analyzer in 1 0; do
-        for view in tagged_invoker tagged_definer tagged_none; do
-            ${client} --enable_analyzer "$analyzer" --query_plan_fuse_filter_into_array_join "$fuse" --query \
-                "SELECT '$view', countIf(explain LIKE '%WHERE%' AND explain ILIKE '%additional filter%')
-                 FROM (EXPLAIN actions = 0, description = 1
-                       SELECT count() FROM $db.$view WHERE key != 42 SETTINGS ${filter/VIEW/$view})"
-        done
+    for view in tagged_invoker tagged_definer tagged_none; do
+        ${client} --query_plan_fuse_filter_into_array_join "$fuse" --query \
+            "SELECT '$view', countIf(explain LIKE '%WHERE%' AND explain ILIKE '%additional filter%')
+             FROM (EXPLAIN actions = 0, description = 1
+                   SELECT count() FROM $db.$view WHERE key != 42 SETTINGS ${filter/VIEW/$view})"
     done
 
     echo "===== fuse_filter_into_array_join = $fuse: the invoker's predicate cannot observe a hidden row ====="
     # The exception is matched by its code name and not by the message, because the client echoes
     # the query text on failure.
-    for analyzer in 1 0; do
-        for view in tagged_invoker tagged_definer tagged_none; do
-            output=$(${client} --enable_analyzer "$analyzer" --query_plan_fuse_filter_into_array_join "$fuse" --query \
-                "SELECT count() FROM $db.$view WHERE throwIf(key = 2, 'DISCLOSED') = 0 SETTINGS ${filter/VIEW/$view}" 2>&1)
-            if grep -q FUNCTION_THROW_IF_VALUE_IS_NON_ZERO <<< "$output"; then
-                echo "$view: the outer predicate saw a hidden row"
-            else
-                echo "$view: $output"
-            fi
-        done
+    for view in tagged_invoker tagged_definer tagged_none; do
+        output=$(${client} --query_plan_fuse_filter_into_array_join "$fuse" --query \
+            "SELECT count() FROM $db.$view WHERE throwIf(key = 2, 'DISCLOSED') = 0 SETTINGS ${filter/VIEW/$view}" 2>&1)
+        if grep -q FUNCTION_THROW_IF_VALUE_IS_NON_ZERO <<< "$output"; then
+            echo "$view: the outer predicate saw a hidden row"
+        else
+            echo "$view: $output"
+        fi
     done
 done
 
 echo "===== the lowered filter still hides the same rows ====="
-for analyzer in 1 0; do
-    ${client} --enable_analyzer "$analyzer" --query \
-        "SELECT key FROM $db.tagged_definer WHERE key != 42 ORDER BY key SETTINGS ${filter/VIEW/tagged_definer}"
-done
+${client} --query \
+    "SELECT key FROM $db.tagged_definer WHERE key != 42 ORDER BY key SETTINGS ${filter/VIEW/tagged_definer}"

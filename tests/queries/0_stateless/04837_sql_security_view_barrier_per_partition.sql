@@ -54,19 +54,6 @@ SELECT 'definer view results:',
        (SELECT count() FROM (SELECT DISTINCT a FROM v04837_definer)) = (SELECT count() FROM (SELECT DISTINCT a FROM v04837_invoker)),
        (SELECT count() FROM (SELECT a FROM v04837_definer LIMIT 1 BY a)) = (SELECT count() FROM (SELECT a FROM v04837_invoker LIMIT 1 BY a));
 
--- The same contract with the old analyzer, where the view is read through `StorageView::read`.
-SET enable_analyzer = 0;
-
-SELECT 'old analyzer, invoker twin, outer DISTINCT:', trim(explain)
-FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM v04837_invoker)
-WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Skip merging: 1%' OR explain LIKE '%separate port%';
-
-SELECT 'old analyzer, definer, outer DISTINCT does not reach the reading:', count()
-FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM v04837_definer)
-WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Skip merging: 1%' OR explain LIKE '%separate port%';
-
-SET enable_analyzer = DEFAULT;
-
 DROP VIEW v04837_invoker;
 DROP VIEW v04837_definer;
 

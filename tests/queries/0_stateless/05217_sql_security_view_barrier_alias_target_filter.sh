@@ -51,29 +51,24 @@ EOSQL
 # the security type of the view.
 echo "===== rows through the views ====="
 for view in target_definer target_none target_invoker alias_definer alias_none alias_invoker; do
-    for analyzer in 1 0; do
-        rows=$(${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer "$analyzer" --query "SELECT count() FROM $db.$view")
-        echo -e "$view (enable_analyzer = $analyzer):\t$rows"
-    done
+    rows=$(${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.$view")
+    echo -e "$view:\t$rows"
 done
 
 echo "===== the plan of a barrier-capable view against the plan of its invoker twin ====="
-# The settings pin the plan shape, because the test also runs with randomized settings; they are given
-# on the client because changing `enable_analyzer` in a subquery is rejected when the server default
-# differs. An entry keyed by the target leaves the view transparent, so the plans agree; an entry keyed
-# by the Alias hides rows, so the definer view is sealed and the plans differ.
+# The settings pin the plan shape, because the test also runs with randomized settings. An entry keyed
+# by the target leaves the view transparent, so the plans agree; an entry keyed by the Alias hides rows,
+# so the definer view is sealed and the plans differ.
 explain_of() {
-    ${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer "$1" --enable_parallel_replicas 0 \
+    ${CLICKHOUSE_CLIENT} --user "$user" --enable_parallel_replicas 0 \
         --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0 \
-        --query "EXPLAIN actions = 0, description = 0 SELECT count() FROM $db.$2 WHERE key = 99999"
+        --query "EXPLAIN actions = 0, description = 0 SELECT count() FROM $db.$1 WHERE key = 99999"
 }
 for keyed in target alias; do
     for view in definer none; do
-        for analyzer in 1 0; do
-            if diff <(explain_of "$analyzer" "${keyed}_${view}") <(explain_of "$analyzer" "${keyed}_invoker") > /dev/null
-            then verdict="same"; else verdict="differs"; fi
-            echo -e "${keyed}_${view} (enable_analyzer = $analyzer):\t$verdict"
-        done
+        if diff <(explain_of "${keyed}_${view}") <(explain_of "${keyed}_invoker") > /dev/null
+        then verdict="same"; else verdict="differs"; fi
+        echo -e "${keyed}_${view}:\t$verdict"
     done
 done
 

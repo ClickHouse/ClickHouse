@@ -23,15 +23,6 @@ INSERT INTO t_gbtk SELECT number % 100, number FROM numbers(10000);
 CREATE VIEW v_gbtk_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k, sum(val) AS s FROM t_gbtk WHERE k != 42 GROUP BY k;
 CREATE VIEW v_gbtk_invoker SQL SECURITY INVOKER AS SELECT k, sum(val) AS s FROM t_gbtk WHERE k != 42 GROUP BY k;
 
-SELECT 'analyzer:';
-SET enable_analyzer = 1;
-SELECT 'definer top-K markers (expect 0):', countIf(explain LIKE '%Top-K:%' OR explain LIKE '%Sorting for GROUP BY top-K%')
-FROM (EXPLAIN actions = 1 SELECT k, s FROM v_gbtk_definer LIMIT 5);
-SELECT 'invoker top-K markers (expect 2):', countIf(explain LIKE '%Top-K:%' OR explain LIKE '%Sorting for GROUP BY top-K%')
-FROM (EXPLAIN actions = 1 SELECT k, s FROM v_gbtk_invoker LIMIT 5);
-
-SELECT 'legacy analyzer:';
-SET enable_analyzer = 0;
 SELECT 'definer top-K markers (expect 0):', countIf(explain LIKE '%Top-K:%' OR explain LIKE '%Sorting for GROUP BY top-K%')
 FROM (EXPLAIN actions = 1 SELECT k, s FROM v_gbtk_definer LIMIT 5);
 SELECT 'invoker top-K markers (expect 2):', countIf(explain LIKE '%Top-K:%' OR explain LIKE '%Sorting for GROUP BY top-K%')

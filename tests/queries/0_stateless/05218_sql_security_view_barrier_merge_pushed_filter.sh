@@ -61,14 +61,12 @@ echo "===== the invoker's predicate stays out of the source read of the barrier 
 # `Prewhere filter column` lines. Pin them, and report whether the predicate got there at all rather
 # than how many lines mention it.
 for view in owned_merge_definer owned_merge_none owned_merge_invoker; do
-    for analyzer in 1 0; do
-        pushed=$(${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer "$analyzer" --enable_parallel_replicas 0 \
-            --optimize_move_to_prewhere 1 --query_plan_optimize_prewhere 1 --query_plan_merge_filters 1 \
-            --enable_multiple_prewhere_read_steps 0 \
-            --query "SELECT countIf(explain LIKE '%Prewhere filter column%' AND explain LIKE '%key%') > 0
-                     FROM (EXPLAIN actions = 1 SELECT count() FROM $db.$view WHERE key = 99999)")
-        echo -e "$view (enable_analyzer = $analyzer)\tthe invoker's predicate in PREWHERE: $pushed"
-    done
+    pushed=$(${CLICKHOUSE_CLIENT} --user "$user" --enable_parallel_replicas 0 \
+        --optimize_move_to_prewhere 1 --query_plan_optimize_prewhere 1 --query_plan_merge_filters 1 \
+        --enable_multiple_prewhere_read_steps 0 \
+        --query "SELECT countIf(explain LIKE '%Prewhere filter column%' AND explain LIKE '%key%') > 0
+                 FROM (EXPLAIN actions = 1 SELECT count() FROM $db.$view WHERE key = 99999)")
+    echo -e "$view\tthe invoker's predicate in PREWHERE: $pushed"
 done
 
 # `99999` exists in the table but is hidden by the view; `500000` exists nowhere. With the barrier the
@@ -79,32 +77,30 @@ done
 # pool deterministic, and the query condition cache is off - it remembers that the view's own
 # `WHERE` matches no granule after the first run and would make the second run read nothing.
 probe() {
-    local query_id="probe_${user}_$1_$2_$3"
-    ${CLICKHOUSE_CLIENT} --enable_analyzer "$2" --user "$user" --query_id "$query_id" \
+    local query_id="probe_${user}_$1_$2"
+    ${CLICKHOUSE_CLIENT} --user "$user" --query_id "$query_id" \
         --max_threads 1 --use_query_condition_cache 0 \
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0 \
         --page_cache_inject_eviction 0 \
-        --query "SELECT count() FROM $db.$1 WHERE key = $3" > /dev/null
+        --query "SELECT count() FROM $db.$1 WHERE key = $2" > /dev/null
     echo "$query_id"
 }
 
 echo "===== reading a barrier view costs the same whether or not the hidden row matches ====="
 for view in owned_merge_definer owned_merge_none; do
-    for analyzer in 1 0; do
-        hidden_id=$(probe "$view" "$analyzer" 99999)
-        absent_id=$(probe "$view" "$analyzer" 500000)
+    hidden_id=$(probe "$view" 99999)
+    absent_id=$(probe "$view" 500000)
 
-        ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-        # `count() = 2` guards against the comparison passing vacuously on an empty match.
-        ${CLICKHOUSE_CLIENT} --query "
-            SELECT '$view (enable_analyzer = $analyzer)', multiIf(
-                count() != 2, 'MISSING',
-                anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
-                'same', 'DISCLOSED')
-            FROM system.query_log
-            WHERE current_database = currentDatabase()
-              AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
-    done
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    # `count() = 2` guards against the comparison passing vacuously on an empty match.
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT '$view', multiIf(
+            count() != 2, 'MISSING',
+            anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
+            'same', 'DISCLOSED')
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
 done
 
 echo "===== an additional_result_filter of the invoker never sees a hidden row ====="
@@ -115,14 +111,12 @@ echo "===== an additional_result_filter of the invoker never sees a hidden row =
 # outer query projects `owner` so that the setting is well-formed for the outer query as well; it
 # returns no row, so a run that sees nothing hidden prints nothing.
 for view in owned_merge_definer owned_merge_none; do
-    for analyzer in 1 0; do
-        output=$(${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer "$analyzer" --query "
-            SELECT owner FROM $db.$view
-            SETTINGS additional_result_filter = 'throwIf(owner = ''nobody'', ''hidden row seen'')'" 2>&1)
-        if echo "$output" | grep -q FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
-        then echo "$view (enable_analyzer = $analyzer): DISCLOSED"
-        else echo "$view (enable_analyzer = $analyzer): no hidden row seen${output:+, output: $output}"; fi
-    done
+    output=$(${CLICKHOUSE_CLIENT} --user "$user" --query "
+        SELECT owner FROM $db.$view
+        SETTINGS additional_result_filter = 'throwIf(owner = ''nobody'', ''hidden row seen'')'" 2>&1)
+    if echo "$output" | grep -q FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+    then echo "$view: DISCLOSED"
+    else echo "$view: no hidden row seen${output:+, output: $output}"; fi
 done
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"

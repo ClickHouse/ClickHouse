@@ -28,8 +28,6 @@ CREATE VIEW v04891_invoker SQL SECURITY INVOKER AS
 CREATE VIEW v04891_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
     SELECT l04891.v AS v, r04891.w AS w FROM l04891 LEFT JOIN r04891 ON l04891.k = r04891.k;
 
-SET enable_analyzer = 1;
-
 -- The `INVOKER` view stays fully optimizable: `Sort + Limit` is grafted below the join, onto its
 -- preserved input. This is the positive control proving that the plan-shape oracle discriminates.
 SELECT 'invoker gets Sort+Limit below the join:',
@@ -53,21 +51,6 @@ FROM
 -- The barrier only drops the optimization, never the result.
 SELECT 'definer results:', groupArray(v) = [0, 1, 2, 3, 4], groupArray(w) = [0, 1, 2, 3, 4]
 FROM (SELECT v, w FROM v04891_definer ORDER BY v LIMIT 5);
-
--- The legacy analyzer wraps the view's sort column in `materialize`, which already fails the
--- pass's pure-pass-through check, so neither twin grafts there: non-discriminating, pinned only
--- to catch a future regression that would make it fire.
-SET enable_analyzer = 0;
-
-SELECT 'legacy analyzer, definer keeps the join input untouched:',
-    max(if(explain LIKE '%Limit%', rn, 0)) > min(if(explain LIKE '%Join%', rn, 1000000))
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn
-    FROM (EXPLAIN compact = 0 SELECT * FROM v04891_definer ORDER BY v LIMIT 10)
-);
-
-SET enable_analyzer = DEFAULT;
 
 DROP VIEW v04891_invoker;
 DROP VIEW v04891_definer;

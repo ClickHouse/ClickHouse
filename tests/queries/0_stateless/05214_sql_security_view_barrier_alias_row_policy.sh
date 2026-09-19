@@ -54,17 +54,14 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.owned_alias"
 
 echo "===== the definer view keeps the invoker's predicate above the source read ====="
 # The INVOKER twin is the baseline: there the predicate reaches the read of the source table. The
-# settings pin the plan shape, because the test also runs with randomized settings; they are given on
-# the client because changing `enable_analyzer` in a subquery is rejected when the server default differs.
-for analyzer in 1 0; do
-    explain_of() {
-        ${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer "$analyzer" --enable_parallel_replicas 0 \
-            --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0 \
-            --query "EXPLAIN actions = 0, description = 0 SELECT count() FROM $db.$1 WHERE key = 99999"
-    }
-    if diff <(explain_of owned_alias_view) <(explain_of owned_alias_view_invoker) > /dev/null
-    then echo "same"; else echo "differs"; fi
-done
+# settings pin the plan shape, because the test also runs with randomized settings.
+explain_of() {
+    ${CLICKHOUSE_CLIENT} --user "$user" --enable_parallel_replicas 0 \
+        --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0 \
+        --query "EXPLAIN actions = 0, description = 0 SELECT count() FROM $db.$1 WHERE key = 99999"
+}
+if diff <(explain_of owned_alias_view) <(explain_of owned_alias_view_invoker) > /dev/null
+then echo "same"; else echo "differs"; fi
 
 # `99999` exists in the table but is hidden by the policy; `500000` exists nowhere. With the barrier
 # the two must read the same number of rows, so the invoker learns nothing about the hidden row.
@@ -73,31 +70,29 @@ done
 # read-path injections the test harness enables must be pinned off, and a single thread keeps the
 # read pool deterministic - none of them affects the index analysis the test guards.
 probe() {
-    local query_id="probe_${CLICKHOUSE_DATABASE}_$1_$2"
-    ${CLICKHOUSE_CLIENT} --enable_analyzer "$1" --user "$user" --query_id "$query_id" \
+    local query_id="probe_${CLICKHOUSE_DATABASE}_$1"
+    ${CLICKHOUSE_CLIENT} --user "$user" --query_id "$query_id" \
         --max_threads 1 \
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0 \
         --page_cache_inject_eviction 0 \
-        --query "SELECT count() FROM $db.owned_alias_view WHERE key = $2" > /dev/null
+        --query "SELECT count() FROM $db.owned_alias_view WHERE key = $1" > /dev/null
     echo "$query_id"
 }
 
 echo "===== reading the definer view costs the same whether or not the hidden row matches ====="
-for analyzer in 1 0; do
-    hidden_id=$(probe "$analyzer" 99999)
-    absent_id=$(probe "$analyzer" 500000)
+hidden_id=$(probe 99999)
+absent_id=$(probe 500000)
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    # `count() = 2` guards against the comparison passing vacuously on an empty match.
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT multiIf(
-            count() != 2, 'MISSING',
-            anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
-            'same', 'DISCLOSED')
-        FROM system.query_log
-        WHERE current_database = currentDatabase()
-          AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
-done
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+# `count() = 2` guards against the comparison passing vacuously on an empty match.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT multiIf(
+        count() != 2, 'MISSING',
+        anyIf(read_rows, query_id = '$hidden_id') = anyIf(read_rows, query_id = '$absent_id'),
+        'same', 'DISCLOSED')
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${user}_alias ON $db.owned_alias"
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"

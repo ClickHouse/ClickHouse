@@ -22,9 +22,6 @@ CREATE VIEW v_abtk_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT
 CREATE VIEW v_abtk_none SQL SECURITY NONE AS SELECT k, count() AS c FROM t_abtk WHERE k != 42 GROUP BY k;
 CREATE VIEW v_abtk_invoker SQL SECURITY INVOKER AS SELECT k, count() AS c FROM t_abtk WHERE k != 42 GROUP BY k;
 
--- Only the analyzer path: the legacy analyzer wraps a view's outputs in `materialize`, so the
--- sort column never traces to the aggregation's `count()` and the rule does not fire even for the invoker.
-SET enable_analyzer = 1;
 SELECT 'definer bucket top-K markers (expect 0):', countIf(explain LIKE '%Bucket top-K:%')
 FROM (EXPLAIN actions = 1 SELECT k, c FROM v_abtk_definer ORDER BY c DESC LIMIT 5);
 SELECT 'none bucket top-K markers (expect 0):', countIf(explain LIKE '%Bucket top-K:%')

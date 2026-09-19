@@ -56,7 +56,7 @@ echo "===== a definer view over a lazily proxied wrapper stays a barrier ====="
 # Planning either view materializes the proxy, after which nothing is masked anymore — so the mask
 # is re-established before each round, and the `DEFINER` view is planned strictly first, while the
 # wrapper still reports `TableProxy`.
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     ${CLICKHOUSE_CLIENT} --query "DETACH DATABASE $lazy_db"
     ${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE $lazy_db"
     # shellcheck disable=SC2086
@@ -91,7 +91,7 @@ AS SELECT * FROM $db.alias_w;
 EOF
 
 echo "===== a definer view over an alias of a wrapper stays a barrier ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     if diff -q \
         <(${explain_client} ${analyzer_settings} --query "EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.v_definer WHERE val = 'x'" 2>&1) \

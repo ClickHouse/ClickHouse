@@ -71,19 +71,19 @@ function plans_the_same()
 }
 
 echo "===== a definer profile of pure execution tuning keeps the view transparent ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     plans_the_same ecs_plain_view "$analyzer_settings"
 done
 
 echo "===== a definer profile read limit that breaks instead of throwing fails closed ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     plans_the_same ecs_read_limited_view "$analyzer_settings"
 done
 
 echo "===== a definer profile final plans like the same final in the view's own SETTINGS ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     if diff -q \
         <(${explain_client} ${analyzer_settings} --query "EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.ecs_final_view WHERE secret = 'x'" 2>&1) \
@@ -92,7 +92,7 @@ for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_a
 done
 
 echo "===== the version hidden by a definer profile final is never observed ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} ${analyzer_settings} --user "$invoker" --query "SELECT count() FROM $db.ecs_final_view"
     # shellcheck disable=SC2086

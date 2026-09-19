@@ -3,8 +3,6 @@ same
 same
 same
 same
-same
-same
 ===== and it keeps PREWHERE =====
 1
 ===== a setting that can change the visible rows or the names still fails closed =====
@@ -14,12 +12,7 @@ different
 different
 different
 different
-different
-different
-different
 ===== the version hidden by the final setting is never observed =====
-2
-0
 2
 0
 2

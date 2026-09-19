@@ -61,14 +61,14 @@ function plans_the_same()
 
 for view in sho_group_view sho_distinct_view sho_sort_view; do
     echo "===== a definer profile overflow limit of an operator the view does not use keeps it transparent: $view ====="
-    for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+    for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
         # shellcheck disable=SC2086
         plans_the_same "$view" sho_invoker_view "$analyzer_settings"
     done
 done
 
 echo "===== the same sort limit over a view that does sort fails closed ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     plans_the_same sho_sorted_view sho_sorted_invoker_view "$analyzer_settings"
 done

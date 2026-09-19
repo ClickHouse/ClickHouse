@@ -1,21 +1,16 @@
 ===== a clause overflow limit of an operator the view does not use keeps it transparent: shoc_group_view =====
 same
 same
-same
 ===== a clause overflow limit of an operator the view does not use keeps it transparent: shoc_distinct_view =====
-same
 same
 same
 ===== a clause overflow limit of an operator the view does not use keeps it transparent: shoc_sort_view =====
 same
 same
-same
 ===== the same sort limit over a view that does sort fails closed =====
 different
 different
-different
 ===== a shape-independent row-hiding setting in the clause fails closed =====
-different
 different
 different
 ===== results through the transparent views are correct =====

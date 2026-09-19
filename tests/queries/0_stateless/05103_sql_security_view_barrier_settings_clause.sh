@@ -58,7 +58,7 @@ explain_client="${CLICKHOUSE_CLIENT} --user $user --enable_parallel_replicas 0
     --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0"
 
 echo "===== a view with only execution settings plans exactly like its INVOKER twin ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     for view in tuned_view tuned_view_none; do
         if diff -q \
             <(${explain_client} ${analyzer_settings} --query "EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.$view WHERE secret = 'x'" 2>&1) \
@@ -75,7 +75,7 @@ ${CLICKHOUSE_CLIENT} --user "$user" --enable_analyzer 1 --enable_parallel_replic
      ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== a setting that can change the visible rows or the names still fails closed ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     for view in final_view read_limited_view rebinding_view; do
         if diff -q \
             <(${explain_client} ${analyzer_settings} --query "EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.$view WHERE secret = 'x'" 2>&1) \
@@ -85,7 +85,7 @@ for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_a
 done
 
 echo "===== the version hidden by the final setting is never observed ====="
-for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     ${CLICKHOUSE_CLIENT} ${analyzer_settings} --user "$user" --query "SELECT count() FROM $db.final_view"
     ${CLICKHOUSE_CLIENT} ${analyzer_settings} --user "$user" --query \
         "SELECT * FROM $db.final_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 |

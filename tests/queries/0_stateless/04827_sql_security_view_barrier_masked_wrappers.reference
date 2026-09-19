@@ -3,8 +3,6 @@ TableProxy
 ===== a definer view over a lazily proxied wrapper stays a barrier =====
 different
 different
-different
 ===== a definer view over an alias of a wrapper stays a barrier =====
-different
 different
 different

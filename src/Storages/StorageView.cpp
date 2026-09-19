@@ -877,9 +877,10 @@ void StorageView::readImpl(
     /// of the rows the view hides, and the `read_rows` of the query tells the invoker about them.
     /// A view that provably hides no rows keeps it — there is nothing below it to observe.
     ///
-    /// The decision looks at the view's definition and not at `current_inner_query`: with
-    /// `enable_analyzer = 0` the latter is the rewritten query, into which the outer predicate
-    /// has already been pushed, and the invoker's own predicate is not something to protect.
+    /// The decision looks at the view's definition and not at `current_inner_query`: on the
+    /// legacy `InterpreterSelectQuery` path the latter is the rewritten query, into which the
+    /// outer predicate has already been pushed, and the invoker's own predicate is not something
+    /// to protect.
     auto storage_id = getStorageID();
     auto row_policy_filter = context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
@@ -965,9 +966,9 @@ void StorageView::readImpl(
     ///
     /// `INVOKER` views need no barrier: their inner query runs with the invoker's own rights, so
     /// there is nothing the invoker could learn that they are not already entitled to. Neither
-    /// does a view that provably hides no rows — and with `enable_analyzer = 0` its subplan may
-    /// contain the outer predicate already pushed into it, which must not be mistaken for the
-    /// view's own filtering.
+    /// does a view that provably hides no rows — and on the legacy `InterpreterSelectQuery` path
+    /// its subplan may contain the outer predicate already pushed into it, which must not be
+    /// mistaken for the view's own filtering.
     if (hides_rows)
     {
         auto * root = query_plan.getRootNode();
@@ -1159,8 +1160,8 @@ bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, co
 /// it can hide rows without any clause of the `SELECT` doing so: `limit` and `offset` truncate the
 /// result, `final` rewrites every table read as `FINAL`, `additional_table_filters` and
 /// `additional_result_filter` add predicates, `max_rows_to_read` under a `read_overflow_mode = 'break'`
-/// profile truncates the scan, `prefer_column_name_to_alias` or `enable_analyzer` change which
-/// column an identifier binds to, and so on. Rather than enumerate everything that can go wrong,
+/// profile truncates the scan, `prefer_column_name_to_alias` changes which column an identifier
+/// binds to, and so on. Rather than enumerate everything that can go wrong,
 /// only settings that tune execution and provably cannot change the rows or the names the query
 /// produces are accepted; any other change - including one that resets a setting to its default,
 /// which may undo a limit of the definer's profile - fails closed. Query parameters bind values

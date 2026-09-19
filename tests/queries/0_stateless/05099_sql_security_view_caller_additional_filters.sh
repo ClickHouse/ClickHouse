@@ -36,11 +36,10 @@ EOF
 leak_filter="throwIf(secret = ''HIDDEN'', ''LEAKED'') = 0"
 
 # shellcheck disable=SC2086
-for analyzer in 1 0 inline; do
+for analyzer in plain inline; do
     case "$analyzer" in
-        1) label="analyzer"; opts="--enable_analyzer 1" ;;
-        0) label="legacy analyzer"; opts="--enable_analyzer 0" ;;
-        inline) label="analyzer, inline views"; opts="--enable_analyzer 1 --analyzer_inline_views 1" ;;
+        plain) label="analyzer"; opts="" ;;
+        inline) label="analyzer, inline views"; opts="--analyzer_inline_views 1" ;;
     esac
 
     # A caller-supplied filter on the view's inner table must not be evaluated inside the view.

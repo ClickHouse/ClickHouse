@@ -1,33 +1,25 @@
 ===== a definer profile entry for an unrelated table keeps the view transparent: uatf_unrelated_view =====
 same
 same
-same
 ===== a definer profile entry for an unrelated table keeps the view transparent: uatf_bare_unrelated_view =====
-same
 same
 same
 ===== the same with an aliased source =====
 same
 same
-same
 ===== an entry for the unrelated table in the view's own SETTINGS clause =====
-same
 same
 same
 ===== a definer profile entry for the source table fails closed: uatf_source_view =====
 different
 different
-different
 ===== a definer profile entry for the source table fails closed: uatf_bare_source_view =====
-different
 different
 different
 ===== an entry keyed by the alias of the source table fails closed =====
 different
 different
-different
 ===== an entry for the source table in the view's own SETTINGS clause fails closed =====
-different
 different
 different
 ===== results: the unrelated entries hide nothing, the source entries do filter =====

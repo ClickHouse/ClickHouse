@@ -33,7 +33,7 @@ CREATE VIEW $db.alias_invoker_view SQL SECURITY INVOKER
 AS SELECT secret AS public, public AS leak FROM $db.alias_secrets;
 EOSQL
 
-for path in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for path in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     echo "--- $path ---"
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $path --query "SELECT leak FROM $db.alias_definer_view"

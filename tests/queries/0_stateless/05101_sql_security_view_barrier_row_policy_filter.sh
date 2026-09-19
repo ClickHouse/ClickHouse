@@ -44,39 +44,32 @@ CREATE ROW POLICY ${user}_invoker ON $db.policy_view_invoker FOR SELECT USING ow
 EOSQL
 
 # The settings pin the plan shape the assertions below depend on, because the test also runs with
-# randomized settings. They are given on the client and not in a SETTINGS clause, because changing
-# `enable_analyzer` inside a subquery is rejected when the server default differs.
+# randomized settings.
 client="${CLICKHOUSE_CLIENT} --user $user --enable_parallel_replicas 0 --query_plan_merge_filters 1
     --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0 --query_plan_max_step_description_length 10000"
 
 echo "===== the policy filter stays a separate step above a barrier view ====="
 # A merged filter carries both descriptions joined with `+`; the policy filter of a barrier view
-# must keep its own step, on both planners.
-for analyzer in 1 0; do
-    for view in policy_view_definer policy_view_none policy_view_invoker; do
-        ${client} --enable_analyzer "$analyzer" --query \
-            "SELECT '$view', countIf(explain LIKE '%Filter (Row-level security filter)%')
-             FROM (EXPLAIN actions = 0, description = 1 SELECT * FROM $db.$view WHERE secret = 'x')"
-    done
+# must keep its own step.
+for view in policy_view_definer policy_view_none policy_view_invoker; do
+    ${client} --query \
+        "SELECT '$view', countIf(explain LIKE '%Filter (Row-level security filter)%')
+         FROM (EXPLAIN actions = 0, description = 1 SELECT * FROM $db.$view WHERE secret = 'x')"
 done
 
 echo "===== an outer predicate cannot observe the row the policy hides ====="
 # Without short-circuit evaluation every argument of the merged `and` is computed on every row, so a
 # merged filter would run throwIf on the hidden row. The exception is matched by its code name and
 # not by the message, because the client echoes the query text on failure.
-for analyzer in 1 0; do
-    for view in policy_view_definer policy_view_none; do
-        ${client} --enable_analyzer "$analyzer" --short_circuit_function_evaluation disable --query \
-            "SELECT * FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 |
-            grep -c FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
-    done
+for view in policy_view_definer policy_view_none; do
+    ${client} --short_circuit_function_evaluation disable --query \
+        "SELECT * FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 |
+        grep -c FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
 done
 
 echo "===== results through the policy are still correct ====="
-for analyzer in 1 0; do
-    ${client} --enable_analyzer "$analyzer" --query \
-        "SELECT secret FROM $db.policy_view_definer WHERE secret != 'x' ORDER BY secret"
-done
+${client} --query \
+    "SELECT secret FROM $db.policy_view_definer WHERE secret != 'x' ORDER BY secret"
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${user}_definer ON $db.policy_view_definer"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${user}_none ON $db.policy_view_none"

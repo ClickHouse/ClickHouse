@@ -27,7 +27,7 @@ AS SELECT * FROM $db.security_view_arf_secrets;
 GRANT SELECT ON $db.security_view_arf TO $invoker;
 EOF
 
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $settings --user "$invoker" --query \
         "SELECT * FROM $db.security_view_arf WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 | grep -c -F LEAKED

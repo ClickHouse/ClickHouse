@@ -47,7 +47,7 @@ PIN_SETTINGS="--enable_parallel_replicas 0 --extremes 0 --exact_rows_before_limi
     --prefer_column_name_to_alias 0 --optimize_read_in_order 0"
 
 echo "===== the view exposes only the rows of the range ====="
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $PIN_SETTINGS $settings --user "$invoker" --query \
         "SELECT k FROM $db.security_view_range ORDER BY k" | tr '\n' ' '
@@ -55,7 +55,7 @@ for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1
 done
 
 echo "===== an invoker expression never runs on a row outside of the range ====="
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $PIN_SETTINGS $settings --user "$invoker" --query \
         "SELECT count() FROM $db.security_view_range WHERE NOT throwIf(secret = 'secret-7', 'DISCLOSED')" 2>&1 \
@@ -69,7 +69,7 @@ echo "===== the invoker's WHERE never merges into the range view's subplan =====
 # subplan, which is exactly what the barrier forbids. The range view keeps the seal with nothing
 # merged into it on every path; the projection-only twin, which hides nothing, either merges the
 # predicate into the conversion or (with `analyzer_inline_views = 1`) is inlined away entirely.
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     for view in security_view_range security_view_plain; do
         # shellcheck disable=SC2086
         plan=$(${CLICKHOUSE_CLIENT} $PIN_SETTINGS $settings --user "$invoker" --query \

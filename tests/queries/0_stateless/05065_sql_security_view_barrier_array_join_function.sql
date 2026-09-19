@@ -31,15 +31,6 @@ SET analyzer_inline_views = 1;
 SELECT 'definer, analyzer, inline views:', count() FROM v05065_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
 SET analyzer_inline_views = DEFAULT;
 
-SET enable_analyzer = 0;
-
-SELECT 'invoker, legacy analyzer:';
-SELECT count() FROM v05065_invoker WHERE throwIf(key = 42, 'DISCLOSED') = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT 'definer, legacy analyzer:', count() FROM v05065_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
-SELECT 'none, legacy analyzer:', count() FROM v05065_none WHERE throwIf(key = 42, 'DISCLOSED') = 0;
-
-SET enable_analyzer = DEFAULT;
-
 -- The barrier only drops the optimization, never the result.
 SELECT 'definer results:', count(), min(key), max(key) FROM v05065_definer WHERE key % 2 = 0;
 

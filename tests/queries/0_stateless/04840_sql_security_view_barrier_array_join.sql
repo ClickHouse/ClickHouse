@@ -37,14 +37,6 @@ FROM
     FROM (EXPLAIN actions = 1, compact = 0 SELECT * FROM v04840_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0)
 );
 
-SET enable_analyzer = 0;
-
-SELECT 'invoker, legacy analyzer:';
-SELECT count() FROM v04840_invoker WHERE throwIf(key = 42, 'DISCLOSED') = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT 'definer, legacy analyzer:', count() FROM v04840_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
-
-SET enable_analyzer = DEFAULT;
-
 -- The barrier only drops the optimization, never the result.
 SELECT 'definer results:', count(), min(key), max(key) FROM v04840_definer WHERE key % 2 = 0;
 

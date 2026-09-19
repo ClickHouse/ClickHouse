@@ -7,11 +7,7 @@ visible
 0
 0
 0
-0
-0
-0
 ===== an additional filter on a view is a security boundary =====
-0
 0
 0
 ===== nor through the value in a cast error message =====
@@ -25,8 +21,6 @@ visible
 2
 2
 ===== a projection-only view stays exactly as optimizable as an INVOKER view =====
-same
-different
 same
 different
 same

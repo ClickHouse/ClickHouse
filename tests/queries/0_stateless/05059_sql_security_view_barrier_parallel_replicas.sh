@@ -41,7 +41,7 @@ PR_SETTINGS="--enable_parallel_replicas 1 --max_parallel_replicas 3 \
     --parallel_replicas_for_non_replicated_merge_tree 1 --parallel_replicas_local_plan 0 \
     --parallel_replicas_min_number_of_rows_per_replica 0"
 
-for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+for settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $PR_SETTINGS $settings --user "$invoker" --query \
         "SELECT * FROM $db.security_view_pr_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 | grep -c -F LEAKED

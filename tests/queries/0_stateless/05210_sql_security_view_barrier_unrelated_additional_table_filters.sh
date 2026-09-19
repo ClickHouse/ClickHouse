@@ -85,7 +85,7 @@ function plans_the_same()
 
 function compare_on_every_analyzer()
 {
-    for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+    for analyzer_settings in "--enable_analyzer 1" "--enable_analyzer 1 --analyzer_inline_views 1"; do
         plans_the_same "$1" "$2" "$analyzer_settings"
     done
 }
