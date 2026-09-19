@@ -42,6 +42,8 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    void transform(std::exception_ptr &) override;
+
 private:
     const String filter_column_name;
     const size_t filter_column_position = -1;
