@@ -5,6 +5,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
@@ -16,6 +21,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+bool isBareSelectQuery(const IAST * node)
+{
+    return node
+        && (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectIntersectExceptQuery>()
+            || node->as<ASTProjectionSelectQuery>());
+}
+
+bool hasQueryOutputOptions(const IAST * node)
+{
+    const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(node);
+    return query_with_output && query_with_output->hasOutputOptions();
 }
 
 ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
