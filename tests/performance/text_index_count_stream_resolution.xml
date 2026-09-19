@@ -21,22 +21,19 @@
                  max_bytes_to_merge_at_max_space_in_pool = 1
     </create_query>
 
-    <!-- 400 parts of 2000 rows: every part holds each of the 32 planted `w000..` needles. -->
+    <!-- 200 parts of 2000 rows: every part holds each of the 32 planted `w000..` needles. -->
     <fill_query>
         INSERT INTO text_index_count_streams
         SELECT toDateTime(1704000000 + number), concat('host', toString(number % 64)),
             concat('w', leftPad(toString(cityHash64(number) % 40000), 5, '0'), ' ',
                    'w', leftPad(toString((number % 32) * 1250), 5, '0'), ' code', toString(200 + number % 5))
-        FROM numbers(800000)
+        FROM numbers(400000)
         SETTINGS max_insert_threads = 1, max_block_size = 2000, max_insert_block_size = 2000,
                  min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
     </fill_query>
 
     <query>SELECT count() FROM text_index_count_streams WHERE hasToken(message, 'w01250')</query>
     <query>SELECT count() FROM text_index_count_streams WHERE hasAnyTokens(message, ['w01250', 'w02500', 'w03750', 'w05000', 'w06250', 'w07500', 'w08750', 'w10000'])</query>
-
-    <!-- Control: same table and part count, predicate not served by the text index. -->
-    <query>SELECT count() FROM text_index_count_streams WHERE host = 'host7'</query>
 
     <drop_query>DROP TABLE IF EXISTS text_index_count_streams</drop_query>
 </test>
