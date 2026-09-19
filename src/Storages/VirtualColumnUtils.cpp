@@ -677,19 +677,32 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
 /// interesting call - the one that takes the lambda argument - lives in that lambda's own `ActionsDAG`, not
 /// here. `allNodeFunctions` walks the carrier (and the lambdas nested in it) for exactly that reason.
 
-bool isDeterministic(const ActionsDAG::Node * node)
+static bool isDeterministicImpl(const ActionsDAG::Node * node, bool allow_top_k_filter)
 {
     for (const auto * child : node->children)
     {
-        if (!isDeterministic(child))
+        if (!isDeterministicImpl(child, allow_top_k_filter))
             return false;
     }
 
-    /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
-    if (!node->isDeterministic())
+    /// Reject a constant folded from a non-deterministic expression (`now`); functions are checked below.
+    if (node->type == ActionsDAG::ActionType::COLUMN && !node->isDeterministic())
         return false;
 
-    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
+    return allNodeFunctions(*node, [allow_top_k_filter](const IFunctionBase & function)
+        {
+            return function.isDeterministic() || (allow_top_k_filter && function.getName() == "__topKFilter");
+        });
+}
+
+bool isDeterministic(const ActionsDAG::Node * node)
+{
+    return isDeterministicImpl(node, false /* allow_top_k_filter */);
+}
+
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    return isDeterministicImpl(node, true /* allow_top_k_filter */);
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
