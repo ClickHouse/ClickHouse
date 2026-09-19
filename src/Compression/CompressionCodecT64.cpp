@@ -460,22 +460,22 @@ ALWAYS_INLINE void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 t
 }
 
 template <typename T>
-T restoreUpperBits(T value, T upper_min, T upper_max, T sign_bit)
+T restoreCommonBits(T value, T common_negative, T common_positive, T sign_bit)
 {
     if constexpr (is_signed_v<T>)
     {
         if (sign_bit && !(value & sign_bit))
-            return static_cast<T>(value | upper_max);
+            return static_cast<T>(value | common_positive);
     }
 
-    return static_cast<T>(value | upper_min);
+    return static_cast<T>(value | common_negative);
 }
 
-/// Inverse of `transposeMatrixBytes`, fused with `restoreUpperBits` and the stores. A full matrix of 8-byte values goes
+/// Inverse of `transposeMatrixBytes`, fused with `restoreCommonBits` and the stores. A full matrix of 8-byte values goes
 /// through the byte shuffle eight values at a time, about twice as fast as `reverseTransposeBytes` on NEON. A separate
 /// helper because `#if` cannot sit inside `MULTITARGET_FUNCTION_BODY`.
 template <typename T>
-ALWAYS_INLINE void reverseTransposeMatrixBytes(const UInt64 * matrix, char * dst, UInt32 tail, T upper_min, T upper_max, T sign_bit)
+ALWAYS_INLINE void reverseTransposeMatrixBytes(const UInt64 * matrix, char * dst, UInt32 tail, T common_negative, T common_positive, T sign_bit)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
     if constexpr (sizeof(T) == sizeof(UInt64))
@@ -490,7 +490,7 @@ ALWAYS_INLINE void reverseTransposeMatrixBytes(const UInt64 * matrix, char * dst
                 transposeByteLanes(rows);
                 for (UInt32 row = 0; row < 8; ++row)
                 {
-                    T value = restoreUpperBits(static_cast<T>(rows[row]), upper_min, upper_max, sign_bit);
+                    T value = restoreCommonBits(static_cast<T>(rows[row]), common_negative, common_positive, sign_bit);
                     unalignedStore<T>(dst + row * sizeof(T), value);
                 }
                 dst += 8 * sizeof(T);
@@ -502,7 +502,7 @@ ALWAYS_INLINE void reverseTransposeMatrixBytes(const UInt64 * matrix, char * dst
     for (UInt32 col = 0; col < tail; ++col)
     {
         T value = reverseTransposeBytes<T>(matrix, col);
-        value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
+        value = restoreCommonBits(value, common_negative, common_positive, sign_bit);
         unalignedStore<T>(dst + col * sizeof(T), value);
     }
 }
@@ -569,7 +569,7 @@ constexpr auto one_bit_expansion = []
 /// `num_bits == 1` (flags, booleans) is common. With one stored bit, there are no planes to transpose, so the transpose is skipped.
 /// Tightly vectorised. Better not to touch this function unless you really know what you are doing.
 template <typename T>
-NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_elements, T upper_min, T upper_max, T sign_bit)
+NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_elements, T common_negative, T common_positive, T sign_bit)
 {
     const UInt32 full_bytes = num_elements / 8;
     /// The loop within is vectorised. Vectorising this outer loop gave `Int8`, `Int16` and `Int32` a second copy that spilled registers.
@@ -582,7 +582,7 @@ NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_element
         const auto & values = one_bit_expansion[static_cast<UInt8>(src[byte_index])];
         for (UInt32 bit = 0; bit < 8; ++bit)
         {
-            T value = restoreUpperBits(static_cast<T>(values[bit]), upper_min, upper_max, sign_bit);
+            T value = restoreCommonBits(static_cast<T>(values[bit]), common_negative, common_positive, sign_bit);
             unalignedStore<T>(dst + bit * sizeof(T), value);
         }
         dst += 8 * sizeof(T);
@@ -597,7 +597,7 @@ NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_element
         const auto & values = one_bit_expansion[static_cast<UInt8>(src[byte_index])];
         for (UInt32 bit = 0; bit < tail; ++bit)
         {
-            T value = restoreUpperBits(static_cast<T>(values[bit]), upper_min, upper_max, sign_bit);
+            T value = restoreCommonBits(static_cast<T>(values[bit]), common_negative, common_positive, sign_bit);
             unalignedStore<T>(dst + bit * sizeof(T), value);
         }
     }
@@ -607,7 +607,7 @@ MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
-    const char * src, char * dst, UInt32 num_bits, T upper_min, T upper_max, T sign_bit, UInt32 tail) /// NOLINT
+    const char * src, char * dst, UInt32 num_bits, T common_negative, T common_positive, T sign_bit, UInt32 tail) /// NOLINT
 {
     UInt32 part_bits = num_bits % 8;
 
@@ -626,7 +626,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         for (UInt32 col = 0; col < tail; ++col)
         {
             T value = static_cast<T>(values[col]);
-            value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
+            value = restoreCommonBits(value, common_negative, common_positive, sign_bit);
             unalignedStore<T>(dst + col * sizeof(T), value);
         }
         return;
@@ -654,23 +654,23 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
             reverseTransposePlanes(matrix_line, part_bits);
     }
 
-    reverseTransposeMatrixBytes(matrix, dst, tail, upper_min, upper_max, sign_bit);
+    reverseTransposeMatrixBytes(matrix, dst, tail, common_negative, common_positive, sign_bit);
 })
 )
 
 /// UInt64[N] transposed matrix -> T[tail], upper bits restored
 template <typename T, bool full = false>
-ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bits, T upper_min, T upper_max, T sign_bit, UInt32 tail = 64)
+ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bits, T common_negative, T common_positive, T sign_bit, UInt32 tail = 64)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
-        reverseTransposeImpl_x86_64_v4<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit, tail);
+        reverseTransposeImpl_x86_64_v4<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
         return;
     }
 #endif
     {
-        reverseTransposeImpl<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit, tail);
+        reverseTransposeImpl<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
     }
 }
 
@@ -867,38 +867,38 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
                         " is not equal to the expected number of elements in the decompressed data ({})",
                         expected, num_elements);
 
-    T upper_min = 0;
-    T upper_max = 0;
+    T common_negative = 0;
+    T common_positive = 0;
     T sign_bit = 0;
     if (num_bits < 64)
-        upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
+        common_negative = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
 
     if constexpr (is_signed_v<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {
             sign_bit = static_cast<T>(1ull << (num_bits - 1));
-            upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
+            common_positive = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
         }
     }
 
     if (num_bits == 1)
     {
-        decompressOneBit(src, dst, static_cast<UInt32>(num_elements), upper_min, upper_max, sign_bit);
+        decompressOneBit(src, dst, static_cast<UInt32>(num_elements), common_negative, common_positive, sign_bit);
         dst += uncompressed_size;
         return static_cast<UInt32>(dst - original_dst);
     }
 
     for (UInt32 i = 0; i < num_full; ++i)
     {
-        reverseTranspose<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit);
+        reverseTranspose<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit);
         src += src_shift;
         dst += dst_shift;
     }
 
     if (tail)
     {
-        reverseTranspose<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit, tail);
+        reverseTranspose<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
         dst += tail * sizeof(T);
     }
 
