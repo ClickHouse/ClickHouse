@@ -207,21 +207,37 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                 });
         });
 
+    /// The contract this description states has to match what the validator accepts: with schema
+    /// access disabled `validateReadOnlyQueryForAIAgent` rejects the schema-exploration statements
+    /// by their type and blocks every read of the `system` and `information_schema` databases, so
+    /// advertising them here would steer the model into calls that have to fail.
+    const String readonly_query_description = String(
+        enable_schema_access
+            ? "Run a single read-only SQL statement (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS) on the user's connection, "
+            : "Run a single read-only SQL statement (SELECT or EXPLAIN) on the user's connection, ")
+        + "without confirmation. The query and its complete result are displayed in the user's terminal exactly as if "
+          "the user ran it; you receive a summary truncated to the first and last rows. "
+          "The query is executed in readonly mode with strict limits: 30 seconds and 10 GiB of memory. "
+        + (enable_schema_access
+               ? "It can select from any ordinary table of the server: the MergeTree and Log families, Memory, and the "
+                 "`system` and `information_schema` tables. "
+               : "The user disabled schema access for this session: SHOW, DESCRIBE and EXISTS, and every read of the "
+                 "`system` and `information_schema` databases, are rejected here - only SELECT and EXPLAIN over the "
+                 "tables of the user remain, and anything that needs the schema has to go through run_query, which "
+                 "the user confirms. It can select from any ordinary table of the server: the MergeTree and Log "
+                 "families, and Memory. ")
+        + "The engine of every table named in the query is checked first, "
+          "and the query is rejected when one of them does not simply hold data of this server - a view, a "
+          "materialized view, a Merge or Buffer table, a Dictionary, a Distributed table, or a table over an "
+          "external system (S3, URL, MySQL, Kafka, ...). Also rejected are INTO OUTFILE, overriding the "
+          "readonly/time/memory limit settings, table functions reaching outside of the current server (file, url, "
+          "s3, remote, executable, ...), the AI functions calling external providers (aiGenerate, ...), dictionary "
+          "functions, and the `system` tables that read Keeper or object storage (system.zookeeper, "
+          "system.replicas, ...). Use run_query for anything that does not fit these constraints; the error message "
+          "says which table did not qualify. Add LIMIT to exploratory queries.";
+
     tools["run_readonly_query"] = makeTool(
-        "Run a single read-only SQL statement (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS) on the user's connection, "
-        "without confirmation. The query and its complete result are displayed in the user's terminal exactly as if "
-        "the user ran it; you receive a summary truncated to the first and last rows. "
-        "The query is executed in readonly mode with strict limits: 30 seconds and 10 GiB of memory. "
-        "It can select from any ordinary table of the server: the MergeTree and Log families, Memory, and the "
-        "`system` and `information_schema` tables. The engine of every table named in the query is checked first, "
-        "and the query is rejected when one of them does not simply hold data of this server - a view, a "
-        "materialized view, a Merge or Buffer table, a Dictionary, a Distributed table, or a table over an "
-        "external system (S3, URL, MySQL, Kafka, ...). Also rejected are INTO OUTFILE, overriding the "
-        "readonly/time/memory limit settings, table functions reaching outside of the current server (file, url, "
-        "s3, remote, executable, ...), the AI functions calling external providers (aiGenerate, ...), dictionary "
-        "functions, and the `system` tables that read Keeper or object storage (system.zookeeper, "
-        "system.replicas, ...). Use run_query for anything that does not fit these constraints; the error message "
-        "says which table did not qualify. Add LIMIT to exploratory queries.",
+        readonly_query_description,
         ai::JsonValue{{"query", stringParameter("The SQL statement to run")}},
         {"query"},
         [hooks, enable_schema_access](const ai::JsonValue & args, const ai::ToolExecutionContext &)
