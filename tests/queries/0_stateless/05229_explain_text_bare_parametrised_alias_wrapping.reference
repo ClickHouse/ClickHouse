@@ -1,2 +1,2 @@
-SELECT *\nFROM a\nINNER JOIN b ON (a.x = b.y AS {x:Identifier})
-SELECT n\nFROM t\nORDER BY n ASC WITH FILL\nINTERPOLATE (`n` AS (1 AS {x:Identifier}))
+SELECT * FROM a INNER JOIN b ON (a.x = b.y AS {x:Identifier})
+SELECT n FROM t ORDER BY n ASC WITH FILL INTERPOLATE (`n` AS (1 AS {x:Identifier}))
