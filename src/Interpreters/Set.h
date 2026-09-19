@@ -69,8 +69,6 @@ public:
 
     void checkIsCreated() const;
 
-    void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
-
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
@@ -105,7 +103,10 @@ public:
     /// Limitations on the maximum size of the set
     const SizeLimits limits;
 
-    /// If true, insert NULL values to set.
+    /** With `transform_null_in = 0`, an outer NULL in any key component excludes the row from the set
+      * and never matches on lookup. With `transform_null_in = 1`, NULLs match in nullable key components.
+      * A NULL field inside a non-null tuple is part of that component's value in either mode.
+      */
     const bool transform_null_in;
 
     const size_t max_elements_to_fill;
@@ -115,21 +116,6 @@ private:
     Sizes key_sizes;
 
     SetVariants data;
-
-    /** How IN works with Nullable types.
-      *
-      * For simplicity reasons, all NULL values and any tuples with at least one NULL element are ignored in the Set.
-      * And for left hand side values, that are NULLs or contain any NULLs, we return 0 (means that element is not in Set).
-      *
-      * If we want more standard compliant behaviour, we must return NULL
-      *  if lhs is NULL and set is not empty or if lhs is not in set, but set contains at least one NULL.
-      * It is more complicated with tuples.
-      * For example,
-      *      (1, NULL, 2) IN ((1, NULL, 3)) must return 0,
-      *  but (1, NULL, 2) IN ((1, 1111, 2)) must return NULL.
-      *
-      * We have not implemented such sophisticated behaviour.
-      */
 
     /** The data types from which the set was created.
       * When checking for belonging to a set, the types of columns to be checked must match with them.

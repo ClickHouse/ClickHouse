@@ -1,0 +1,62 @@
+SET enable_nullable_tuple_type = 1;
+
+DROP TABLE IF EXISTS nullable_tuple_in_keys;
+CREATE TABLE nullable_tuple_in_keys
+(
+    id UInt8,
+    k Nullable(Tuple(Nullable(UInt8))),
+    tag Nullable(UInt8)
+) ENGINE = Memory;
+INSERT INTO nullable_tuple_in_keys VALUES (1, (NULL), 1), (2, (1), 1), (3, (2), 1), (4, NULL, 1), (5, (NULL), NULL);
+
+{% for mode in [0, 1] %}
+
+SET transform_null_in = {{ mode }};
+SELECT 'null mode {{ mode }}';
+
+-- The RHS wrapper preserves non-null tuple values, including their nullable fields.
+SELECT id,
+    (k, tag) IN (SELECT assumeNotNull(k), assumeNotNull(tag) FROM nullable_tuple_in_keys WHERE id <= 2),
+    (k, tag) IN (SELECT k, tag FROM nullable_tuple_in_keys WHERE id <= 2),
+    (k, tag) NOT IN (SELECT k, tag FROM nullable_tuple_in_keys WHERE id <= 2)
+FROM nullable_tuple_in_keys ORDER BY id;
+
+-- Non-nullable input columns use the same matching semantics as nullable input columns.
+SELECT id,
+    (assumeNotNull(k), assumeNotNull(tag)) IN (SELECT k, tag FROM nullable_tuple_in_keys WHERE id <= 2),
+    (assumeNotNull(k), assumeNotNull(tag)) NOT IN (SELECT k, tag FROM nullable_tuple_in_keys WHERE id <= 2)
+FROM nullable_tuple_in_keys WHERE id <= 3 ORDER BY id;
+
+-- Outer NULLs and NULLs in another key component follow the selected null-matching mode.
+SELECT id,
+    (k, tag) IN (SELECT k, tag FROM nullable_tuple_in_keys WHERE id != 3),
+    (k, tag) NOT IN (SELECT k, tag FROM nullable_tuple_in_keys WHERE id != 3),
+    (k, tag) IN (SELECT DISTINCT k, tag FROM nullable_tuple_in_keys WHERE id != 3)
+FROM nullable_tuple_in_keys ORDER BY id;
+
+-- Literal sets and subquery sets preserve the same inner NULL values for input columns.
+SELECT id,
+    (k, tag) IN ((tuple(CAST(NULL, 'Nullable(UInt8)')), 1), (tuple(toNullable(toUInt8(1))), 1)),
+    (k, tag) NOT IN ((tuple(CAST(NULL, 'Nullable(UInt8)')), 1), (tuple(toNullable(toUInt8(1))), 1))
+FROM nullable_tuple_in_keys ORDER BY id;
+
+-- Plain and nullable constant tuples preserve their inner NULL when used as one key component.
+WITH CAST(tuple(NULL), 'Tuple(Nullable(UInt8))') AS x
+SELECT
+    (x, 1) IN (SELECT toNullable(x), 1),
+    (toNullable(x), 1) IN (SELECT x, 1),
+    (toNullable(x), 1) NOT IN (SELECT toNullable(x), 1);
+{% endfor %}
+
+-- Hash joins use the same outer-null extraction and retain non-null tuples with nullable fields.
+{% for algorithm in ['hash', 'parallel_hash'] %}
+SELECT '{{ algorithm }}';
+SELECT l.id, r.id
+FROM nullable_tuple_in_keys AS l
+INNER JOIN nullable_tuple_in_keys AS r ON l.k = r.k AND l.tag = r.tag
+WHERE r.id <= 2
+ORDER BY l.id, r.id
+SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor %}
+
+DROP TABLE nullable_tuple_in_keys;
