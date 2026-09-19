@@ -112,6 +112,7 @@ makeOutputStreams(
     const String & index_name,
     const MutableDataPartStoragePtr & data_part_storage,
     const CompressionCodecPtr & default_codec,
+    const CompressionCodecPtr & dictionary_codec,
     const String & marks_file_extension,
     const MergeTreeWriterSettings & settings)
 {
@@ -122,6 +123,8 @@ makeOutputStreams(
     for (const auto & index_substream : index_substreams)
     {
         auto stream_name = index_name + index_substream.suffix;
+        const auto & substream_codec
+            = index_substream.type == MergeTreeIndexSubstream::Type::TextIndexDictionary ? dictionary_codec : default_codec;
 
         auto stream = std::make_unique<MergeTreeIndexWriterStream>(
             stream_name,
@@ -130,7 +133,7 @@ makeOutputStreams(
             index_substream.extension,
             stream_name,
             marks_file_extension,
-            default_codec,
+            substream_codec,
             settings.max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
@@ -262,11 +265,17 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
     estimated_allocated_bytes[i] = 0;
     aggregator_text.setCurrentRow(num_processed_rows);
 
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*indexes[i]);
+    auto dictionary_codec = getTextIndexTemporarySegmentDictionaryCodec(
+        getTextIndexDictionaryCodec(text_index.getParams().dictionary_compression_codec, default_codec),
+        default_codec);
+
     auto [streams, streams_holders] = makeOutputStreams(
         index_substreams,
         index_file_name,
         temporary_storage,
         default_codec,
+        dictionary_codec,
         marks_file_extension,
         writer_settings);
 
@@ -434,6 +443,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         index_ptr->getFileName(),
         new_data_part->getDataPartStoragePtr(),
         new_data_part->default_codec,
+        getTextIndexDictionaryCodec(writer_settings.text_index_dictionary_compression_codec, new_data_part->default_codec),
         new_data_part->getMarksFileExtension(),
         writer_settings);
 
@@ -1268,6 +1278,29 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
         reader_settings);
+}
+
+CompressionCodecPtr getTextIndexDictionaryCodec(const String & codec_name, const CompressionCodecPtr & default_codec)
+{
+    if (codec_name.empty())
+        return default_codec;
+
+    auto codec = CompressionCodecFactory::instance().get(codec_name);
+
+    /// Replacing an encrypting default codec with a non-encrypting one would write the indexed tokens
+    /// in plaintext. The same rule guards the adaptive codec in MergeTreeDataPartWriterOnDisk.
+    if (default_codec->isEncryption() && !codec->isEncryption())
+        return default_codec;
+
+    return codec;
+}
+
+CompressionCodecPtr getTextIndexTemporarySegmentDictionaryCodec(
+    const CompressionCodecPtr & dictionary_codec, const CompressionCodecPtr & default_codec)
+{
+    if (dictionary_codec->isEncryption() && !default_codec->isEncryption())
+        return dictionary_codec;
+    return default_codec;
 }
 
 }

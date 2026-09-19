@@ -1533,6 +1533,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"text_index_dictionary_compression_codec", "", "LZ4", "New setting which compresses the dictionary substream of a text index with a codec chosen for decompression speed instead of the part's default data codec. An empty value restores the previous behaviour."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

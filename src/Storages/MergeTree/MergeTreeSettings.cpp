@@ -714,6 +714,19 @@ Can be overridden by explicit `dictionary_block_size` index argument.
 Default front-coding compression for text index dictionary blocks.
 Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
 )", 0) \
+    DECLARE(String, text_index_dictionary_compression_codec, "LZ4", R"(
+Compression codec of the dictionary substream of text indexes.
+
+Every unanchored `LIKE` / `ILIKE` pattern scan decompresses the whole dictionary, which is written as one
+independently seekable compressed block per `text_index_dictionary_block_size` tokens. Decompression speed
+therefore matters more for it than compression ratio. An empty value falls back to the part's default data
+codec, which is the behaviour before this setting existed.
+
+Posting lists and positions are compressed while they are built and are not affected by this codec.
+
+If the part's default codec encrypts and this codec does not, the default codec is used instead, so that the
+indexed tokens are never written in plaintext. Applies to newly written parts only.
+)", 0) \
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
 Default posting list block size for text indexes (rows).
 Can be overridden by explicit `posting_list_block_size` index argument.
@@ -2881,7 +2894,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 
-    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// The codec-valued settings below are applied without a column data type, so
     /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
     /// be used in that context: there is no floating-point column to validate against, and applying it would
     /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
@@ -2893,6 +2906,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
     if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
         CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::text_index_dictionary_compression_codec].value; !codec.empty())
         CompressionCodecFactory::instance().get(codec);
 }
 

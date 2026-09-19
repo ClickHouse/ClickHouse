@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -172,6 +173,9 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
+    CompressionCodecPtr text_index_dictionary_codec
+        = getTextIndexDictionaryCodec(settings.text_index_dictionary_compression_codec, default_codec);
+
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
 
@@ -202,6 +206,9 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             ///     spills past the size threshold.
             auto logical_stream_name = index_name + index_substream.suffix;
             auto on_disk_stream_name = replaceFileNameToHashIfNeeded(logical_stream_name, *storage_settings, data_part_storage.get());
+            const auto & substream_codec = index_substream.type == MergeTreeIndexSubstream::Type::TextIndexDictionary
+                ? text_index_dictionary_codec
+                : default_codec;
 
             SizeAdaptivePacking packing;
             if (packs_this_index)
@@ -218,7 +225,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 index_substream.extension,
                 on_disk_stream_name,
                 marks_file_extension,
-                default_codec,
+                substream_codec,
                 settings.max_compress_block_size,
                 marks_compression_codec,
                 settings.marks_compress_block_size,

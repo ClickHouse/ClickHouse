@@ -50,6 +50,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
+    extern const MergeTreeSettingsString text_index_dictionary_compression_codec;
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
@@ -91,6 +92,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , compress_primary_key((*storage_settings)[MergeTreeSetting::compress_primary_key])
     , primary_key_compression_codec((*storage_settings)[MergeTreeSetting::primary_key_compression_codec])
     , primary_key_compress_block_size(std::min<size_t>((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size], MAX_COMPRESS_BLOCK_SIZE))
+    , text_index_dictionary_compression_codec((*storage_settings)[MergeTreeSetting::text_index_dictionary_compression_codec])
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , rewrite_primary_key(rewrite_primary_key_)
     , save_marks_in_cache(save_marks_in_cache_)

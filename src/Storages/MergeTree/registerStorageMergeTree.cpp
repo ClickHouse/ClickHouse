@@ -83,6 +83,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsString text_index_dictionary_compression_codec;
 }
 
 namespace ServerSetting
@@ -1013,6 +1014,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 if (codec.empty())
                     return;
+                /// A replay must not re-judge a codec the initiator committed, and a full-definition
+                /// `ATTACH` replay passes `is_fresh_definition`, so all three replay terms are needed.
+                /// A value the definition omits is not committed: it comes from this node's own
+                /// `<merge_tree>` defaults, so the rule above still judges it on a replay.
+                if ((is_ddl_replay || is_stored_definition || is_shared_catalog_replay) && is_stored_in_definition(name))
+                    return;
                 if (is_fresh_definition || !is_stored_in_definition(name))
                     CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
             };
@@ -1020,6 +1027,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);
             validate_codec_setting("primary_key_compression_codec", (*storage_settings)[MergeTreeSetting::primary_key_compression_codec].value);
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
+            validate_codec_setting("text_index_dictionary_compression_codec", (*storage_settings)[MergeTreeSetting::text_index_dictionary_compression_codec].value);
         }
 
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];

@@ -5619,6 +5619,23 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         checkTupleElementAggregationConstraints(new_metadata);
 
 
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = metadata_txn && !metadata_txn->isInitialQuery();
+
+    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
+    /// info rather than in a ZooKeeper metadata transaction.
+    bool is_secondary_replay = is_replay_on_another_replica;
+#if CLICKHOUSE_CLOUD
+    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+        is_secondary_replay = true;
+#endif
+
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
     /// the gate for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
@@ -5634,7 +5651,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
             continue;
 
-        for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
+        for (const auto * setting_name :
+             {"marks_compression_codec",
+              "primary_key_compression_codec",
+              "default_compression_codec",
+              "text_index_dictionary_compression_codec"})
         {
             String codec;
             if (command.type == AlterCommand::MODIFY_SETTING)
@@ -5650,8 +5671,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 codec = default_settings->get(setting_name).safeGet<String>();
             }
 
-            if (!codec.empty())
-                CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
+            if (codec.empty())
+                continue;
+
+            /// A secondary replay does not re-judge a value the initiator committed. A `RESET SETTING`
+            /// value is not one: it comes from this node's own config defaults, so it is still judged.
+            if (is_secondary_replay && command.type == AlterCommand::MODIFY_SETTING)
+                continue;
+
+            CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
         }
     }
 
@@ -6275,28 +6303,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         alter_effective_settings = std::move(copy);
     }
 
-    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
-    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
-    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
-    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
-    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
-    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
-    const auto txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
-
     /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
     /// an override simply gone from the new list.
     if (!is_replay_on_another_replica)
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
-
-    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
-    /// info rather than in a ZooKeeper metadata transaction.
-    bool is_secondary_replay = is_replay_on_another_replica;
-#if CLICKHOUSE_CLOUD
-    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
-        is_secondary_replay = true;
-#endif
 
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
     /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a

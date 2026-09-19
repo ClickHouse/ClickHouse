@@ -1056,6 +1056,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         false);
     mergeTreeTableSettings.insert({{"marks_compression_codec", blockCompressSetting}});
     mergeTreeTableSettings.insert({{"primary_key_compression_codec", blockCompressSetting}});
+    mergeTreeTableSettings.insert({{"text_index_dictionary_compression_codec", blockCompressSetting}});
 
     if (!fc.storage_policies.empty())
     {
