@@ -1,0 +1,35 @@
+-- a narrowing type hint decodes the statistics and the values into different value spaces:
+-- castColumn wraps the values around while the min/max Fields keep the raw physical value
+-- (issue #118383), so the row group must not be skipped by a bound the output type cannot
+-- even hold. narrow2 stores Int32 65541 and 70000, which read as UInt16 5 and 4464
+5
+1000
+1001
+OK
+4464
+1999
+1998
+OK
+-- and when only one of the two bounds is unrepresentable the other one stops bounding the
+-- row group as well: narrow4 stores Int32 3 and 65537, which read as UInt16 3 and 1, so its
+-- decodable min of 3 would skip the very row group that holds the answer 1
+1
+2
+2
+OK
+-- a UUID sort key: Parquet orders UUID statistics bytewise while ClickHouse compares the two
+-- 64-bit halves in the opposite order (issue #118371), so the bytewise min/max neither bound
+-- the row group nor even stay in order. uuid2 holds the true top-1 behind its bytewise min
+00000000-0000-0002-0000-000000000005
+00000000-0000-0000-0000-00000000000a
+00000000-0000-0000-0000-00000000000a
+OK
+00000000-0000-0003-0000-00000000001e
+00000000-0000-0001-0000-000000000014
+00000000-0000-0000-0000-00000000000a
+OK
+-- uuid3 is the same mismatch seen from the other side: its bytewise min is above its bytewise
+-- max in ClickHouse order, which would be rejected as self-contradictory statistics
+ffffffff-ffff-ffff-0000-000000000001
+00000000-0000-0000-ffff-ffffffffffff
+OK
