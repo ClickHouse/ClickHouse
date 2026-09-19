@@ -111,13 +111,37 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
+bool isDDLQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Move:
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::System:
+            return true;
+        default:
+            return false;
+    }
+}
+
 ProcessList::EntryPtr ProcessList::insert(
     const String & query_,
     UInt64 normalized_query_hash,
     const IAST * ast,
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
-    bool is_internal)
+    bool is_internal,
+    bool skip_workload_admission)
 {
     EntryPtr res;
 
@@ -141,7 +165,11 @@ ProcessList::EntryPtr ProcessList::insert(
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
     QuerySlotPtr query_slot;
     MemoryReservationPtr memory_reservation;
-    if (!is_unlimited_query)
+    /// `skip_workload_admission` exempts DDL/administrative queries from WORKLOAD admission (the query
+    /// slot + memory reservation acquired here) when `use_ddl_workload` is disabled — WITHOUT exempting
+    /// them from the server-wide `max_concurrent_queries*` hard limits below (those stay gated by
+    /// `is_unlimited_query`). The caller reads the hot-reloadable flag once and passes the decision.
+    if (!is_unlimited_query && !skip_workload_admission)
     {
         // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
         // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
