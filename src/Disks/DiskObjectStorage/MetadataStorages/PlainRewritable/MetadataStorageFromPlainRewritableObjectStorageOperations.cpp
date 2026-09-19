@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int STD_EXCEPTION;
 };
 
 namespace FailPoints
@@ -70,7 +71,23 @@ MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainO
 
 void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
 {
-    fs.applyJournal(fs_tree->getJournal());
+    /// This is the last operation of the transaction: everything it publishes has already been written to the object
+    /// storage. Replaying the journal on top of the latest metadata allocates, and `MetadataOperationsHolder::commit`
+    /// undoes the preceding operations only for a `DB::Exception`, so an escaping `std::bad_alloc` would leave the
+    /// storage mutated with no published metadata. Translate it so that the rollback path is taken.
+    try
+    {
+        fs.applyJournal(fs_tree->getJournal());
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::STD_EXCEPTION, "Failed to publish plain_rewritable metadata: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
