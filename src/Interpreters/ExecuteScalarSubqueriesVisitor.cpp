@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
@@ -203,7 +204,16 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 if (column.column->empty())
                 {
                     auto mut_col = column.column->cloneEmpty();
-                    mut_col->insertDefault();
+                    /// The value is a placeholder, but it still takes part in the analysis of the enclosing
+                    /// expression: a header is computed by executing the functions over it, so a `NULL`
+                    /// placeholder makes a conversion to a non-Nullable type throw. A `Nullable` column
+                    /// therefore gets the default of its nested type, not `NULL`; the only exception is
+                    /// `Nothing`, which has no value other than `NULL`.
+                    auto nested_type = removeNullable(removeLowCardinality(column.type));
+                    if (isNothing(nested_type))
+                        mut_col->insertDefault();
+                    else
+                        mut_col->insert(nested_type->getDefault());
                     column.column = std::move(mut_col);
                 }
             }
