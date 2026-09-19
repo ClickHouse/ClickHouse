@@ -1,0 +1,27 @@
+FULL + LEFT JOIN USING, cross-type keys, empty tables
+FULL + RIGHT JOIN USING, cross-type keys, empty tables
+FULL + LEFT JOIN USING, cross-type keys: result
+0	4	4
+3	3	3
+FULL + LEFT JOIN USING, cross-type keys: the push-down does not change the result
+0	4	4
+3	3	3
+FULL + RIGHT JOIN USING, cross-type keys: result
+0	0	5
+0	4	4
+3	3	3
+FULL + RIGHT JOIN USING, cross-type keys: the push-down does not change the result
+0	0	5
+0	4	4
+3	3	3
+FULL + FULL JOIN USING, cross-type keys: result
+0	4	4
+3	3	3
+FULL + FULL JOIN USING, cross-type keys: the push-down does not change the result
+0	4	4
+3	3	3
+FULL + LEFT JOIN USING, Nullable cross-type keys: result
+3	3	3
+\N	4	4
+FULL + LEFT JOIN USING: the coalesced key is computed inside the pushed-down filter
+1
