@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-debug
+# Tags: long, no-fasttest, no-debug, no-asan, no-tsan, no-msan
 # The 1 GiB limit on a single JSON value is hardcoded, so the test needs more than 1 GiB of data to check it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
