@@ -193,11 +193,39 @@ std::optional<bool> VersionInfo::isVisible(CSN snapshot_version, TransactionID c
 
 bool VersionInfo::isCreated() const
 {
-    return creation_tid == Tx::NonTransactionalTID || (creation_csn > Tx::MaxReservedCSN && creation_csn != Tx::RolledBackCSN);
+    return creation_tid.isNonTransactional() || Tx::isCommittedCSN(creation_csn);
 }
 
 bool VersionInfo::isRemoved() const
 {
-    return removal_tid == Tx::NonTransactionalTID || creation_csn == Tx::RolledBackCSN || removal_csn != Tx::UnknownCSN;
+    return removal_tid.isNonTransactional() || creation_csn == Tx::RolledBackCSN || removal_csn != Tx::UnknownCSN;
 };
+
+bool VersionInfo::resetRemoval(bool stamp_rolled_back_creation)
+{
+    if (removal_tid == Tx::EmptyTID)
+        return false;
+
+    /// A set removal_csn means another operation took the lock over and committed the removal
+    /// (our own removal is uncommitted during rollback). That removal stands; leave it alone.
+    if (removal_csn != Tx::UnknownCSN)
+        return false;
+
+    /// The `creation_csn == 0` guard skips it when creation was already stamped.
+    if (stamp_rolled_back_creation && creation_tid == removal_tid && creation_csn == 0)
+        creation_csn = Tx::RolledBackCSN;
+
+    removal_tid = Tx::EmptyTID;
+    return true;
+}
+
+bool VersionInfo::resetRemovalForOwnRollback()
+{
+    return resetRemoval(/*stamp_rolled_back_creation=*/true);
+}
+
+bool VersionInfo::resetRemovalForPeerTakeover()
+{
+    return resetRemoval(/*stamp_rolled_back_creation=*/false);
+}
 }
