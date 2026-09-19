@@ -5,6 +5,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -47,6 +48,26 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
 
 }
 
+ASTs * ApplyWithSubqueryVisitor::getRecursiveBodyBranches(const ASTPtr & subquery)
+{
+    if (!subquery || subquery->children.empty())
+        return nullptr;
+
+    IAST * body = subquery->children.front().get();
+    while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
+    {
+        if (!union_query->list_of_selects)
+            return nullptr;
+        auto & branches = union_query->list_of_selects->children;
+        if (branches.size() != 1)
+            return branches.size() > 1 ? &branches : nullptr;
+        body = branches.front().get();
+    }
+    if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
+        return &intersect_except->children;
+    return nullptr;
+}
+
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     checkStackSize();
@@ -83,8 +104,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     {
         for (auto & child : with->children)
         {
-            visit(child, new_data ? *new_data : scope);
             auto * ast_with_elem = child->as<ASTWithElement>();
+            if (ast.recursive_with && ast_with_elem)
+                visitRecursiveWithElement(*ast_with_elem, new_data ? *new_data : scope);
+            else
+                visit(child, new_data ? *new_data : scope);
             auto child_alias = child->tryGetAlias();
             if (ast_with_elem || !child_alias.empty())
             {
@@ -103,6 +127,32 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         if (child != ast.with())
             visit(child, new_data ? *new_data : scope);
     }
+}
+
+/// The recursive members of a recursive element, every branch of its body after the first,
+/// reference the element itself, so there its name must not be replaced by the body of a
+/// same-named element of an enclosing `SELECT`. The first branch is the seed, which the analyzer
+/// resolves like any other query, so an enclosing element stays visible in it. An `INTERSECT` /
+/// `EXCEPT` body is a recursive element too: the analyzer rejects it as unsupported, and it must
+/// keep its self-reference for that rejection to happen, both live and when a stored query is
+/// created or loaded.
+void ApplyWithSubqueryVisitor::visitRecursiveWithElement(ASTWithElement & with_element, const Data & data)
+{
+    auto * branches = getRecursiveBodyBranches(with_element.subquery);
+    bool shadows = data.subqueries.contains(with_element.name) || data.literals.contains(with_element.name);
+    if (!branches || !shadows)
+    {
+        visit(with_element.subquery, data);
+        return;
+    }
+
+    Data shadowed = data;
+    shadowed.subqueries.erase(with_element.name);
+    shadowed.literals.erase(with_element.name);
+
+    visit(branches->front(), data);
+    for (size_t i = 1; i < branches->size(); ++i)
+        visit((*branches)[i], shadowed);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)

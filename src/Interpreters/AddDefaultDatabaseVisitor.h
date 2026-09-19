@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
@@ -17,13 +18,18 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <deque>
+#include <optional>
 #include <set>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -39,20 +45,7 @@ public:
         ContextPtr context_,
         const String & database_name_,
         bool only_replace_current_database_function_ = false,
-        bool only_replace_in_join_ = false)
-        : context(context_)
-        , database_name(database_name_)
-        , only_replace_current_database_function(only_replace_current_database_function_)
-        , only_replace_in_join(only_replace_in_join_)
-    {
-        if (!context->isGlobalContext())
-        {
-            for (const auto & [table_name, _ /* storage */] : context->getExternalTables())
-            {
-                external_tables.insert(table_name);
-            }
-        }
-    }
+        bool only_replace_in_join_ = false);
 
     void visitDDL(ASTPtr & ast) const
     {
@@ -74,6 +67,23 @@ public:
 
     void visit(ASTPtr & ast) const
     {
+        /// A `WITH` reference may already be a copy of the element's body tagged with its name, put
+        /// there by `ApplyWithSubqueryVisitor`. The copy is the body of the element that was in
+        /// effect where the reference stood, and it is resolved as that body is: in the declaring
+        /// `SELECT`, which a nearer binding of the same name does not reach.
+        if (const auto * subquery = ast->as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
+        {
+            if (auto producer = findProducerScope(subquery->cte_name))
+            {
+                visitElementBody(ast, BodyWalk{
+                    .name = subquery->cte_name,
+                    .scope_index = *producer,
+                    .depth = scopes.size(),
+                    .recursive = scopes[*producer].recursive.contains(subquery->cte_name)});
+                return;
+            }
+        }
+
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
             !tryVisit<ASTFunction>(ast) &&
@@ -125,11 +135,176 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    mutable std::unordered_set<String> with_aliases;
     mutable std::unordered_set<String> expression_aliases;
+
+    /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
+    struct Scope
+    {
+        /// `enable_global_with_statement` in effect at this `SELECT`.
+        bool inherit_from_outer = true;
+        /// The settings in effect at this `SELECT`. A nested `SETTINGS` clause is applied on top of
+        /// these, as the query tree does, so an inner clause sees what the enclosing ones left.
+        ContextPtr settings_context;
+        std::unordered_set<String> recursive;
+        std::unordered_set<String> plain;
+        /// The names whose element has been walked. `ApplyWithSubqueryVisitor` registers an element
+        /// only after its body, so a reference is substituted by the innermost element registered
+        /// so far, and a copy tagged with a name is the body of that element.
+        std::unordered_set<String> registered;
+    };
+
+    /// Innermost last. A `deque` keeps references valid while inner scopes are pushed and popped.
+    mutable std::deque<Scope> scopes;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+
+    struct WithAliasesScope
+    {
+        WithAliasesScope(std::deque<Scope> & scopes_, ContextPtr settings_context, bool inherit_from_outer)
+            : scopes(scopes_)
+        {
+            Scope & scope = scopes.emplace_back();
+            scope.settings_context = std::move(settings_context);
+            scope.inherit_from_outer = inherit_from_outer;
+        }
+        ~WithAliasesScope() { scopes.pop_back(); }
+
+        std::deque<Scope> & scopes;
+    };
+
+    /// The body of a `WITH` element being walked: the element itself, or a copy of it that
+    /// `ApplyWithSubqueryVisitor` substituted for a reference. The body is resolved in the `SELECT`
+    /// that declares the element, so inside it the scopes between that `SELECT` and the reference
+    /// are not visible, and the name itself denotes the element in a recursive member and a table
+    /// otherwise: `QueryAnalyzer` binds the recursive table in the member's own scope rather than
+    /// looking it up as a CTE, while a plain element, and the seed of a recursive one, are not in
+    /// scope in their own body.
+    struct BodyWalk
+    {
+        String name;
+        /// The declaring `SELECT`.
+        size_t scope_index;
+        /// `scopes.size()` when the walk began; the scopes at this index and above are inside the body.
+        size_t depth;
+        /// Whether the part of the body being walked is a recursive member.
+        bool recursive;
+    };
+
+    /// Innermost last.
+    mutable std::vector<BodyWalk> body_walks;
+
+    struct BodyWalkGuard
+    {
+        BodyWalkGuard(std::vector<BodyWalk> & body_walks_, BodyWalk body_walk) : body_walks(body_walks_)
+        {
+            body_walks.push_back(std::move(body_walk));
+        }
+        ~BodyWalkGuard() { body_walks.pop_back(); }
+
+        BodyWalkGuard(const BodyWalkGuard &) = delete;
+        BodyWalkGuard & operator=(const BodyWalkGuard &) = delete;
+
+        std::vector<BodyWalk> & body_walks;
+    };
+
+    /// The body walk of `name` that began when exactly `depth` scopes were in place, if any.
+    const BodyWalk * findBodyWalk(const String & name, size_t depth) const
+    {
+        for (auto it = body_walks.rbegin(); it != body_walks.rend(); ++it)
+            if (it->depth == depth && it->name == name)
+                return &*it;
+        return nullptr;
+    }
+
+    static void appendSettings(SettingsChanges & changes, const ASTSelectQuery & select);
+
+    /// The settings in effect at `select`, and whether a plain `WITH` alias of an enclosing
+    /// `SELECT` is visible in it.
+    std::pair<ContextPtr, bool> scopeSettings(const ASTSelectQuery & select) const;
+
+    /// Whether `with_element` of a `WITH RECURSIVE` list is a recursive element. `RECURSIVE` is a
+    /// property of the whole list, but `QueryTreeBuilder` marks only the elements it builds as a
+    /// `UnionNode`: a body of two or more `UNION` branches, or an `INTERSECT`/`EXCEPT` body. A
+    /// single-`SELECT` element of a recursive list is an ordinary CTE, and inside its own body its
+    /// name still denotes a table.
+    static bool isRecursiveElement(const ASTSelectQuery & select, const ASTWithElement & with_element)
+    {
+        return select.recursive_with && ApplyWithSubqueryVisitor::getRecursiveBodyBranches(with_element.subquery) != nullptr;
+    }
+
+    /// Walks the scopes from the innermost outwards, as a lookup of `name` sees them. A name is
+    /// visible in the declaring `SELECT`, and reaches a nested one only when every scope in between
+    /// inherits. Inside the body of an element named `name` the walk continues from the declaring
+    /// `SELECT` of that element: the body is resolved there, whatever stands between it and a copy.
+    /// `predicate(scope_index, own_body)` is called for each visible scope and stops the walk when it
+    /// returns true; `own_body` is the walk of `name`'s body when the scope is its declaring one,
+    /// which is reached at any depth whatever the setting says, and null otherwise.
+    std::optional<size_t> walkVisibleScopes(const String & name, auto && predicate) const
+    {
+        bool inherited_visible = true;
+        for (size_t i = scopes.size(); i > 0;)
+        {
+            --i;
+            const BodyWalk * own_body = findBodyWalk(name, i + 1);
+            if (own_body)
+                i = own_body->scope_index;
+            if ((inherited_visible || own_body) && predicate(i, own_body))
+                return i;
+            inherited_visible = inherited_visible && scopes[i].inherit_from_outer;
+        }
+        return std::nullopt;
+    }
+
+    /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
+    Scope * findScopeDeclaring(const String & name) const
+    {
+        auto index = walkVisibleScopes(name, [&](size_t i, const BodyWalk * own_body)
+        {
+            /// A recursive name is visible everywhere inside its recursive members, whose
+            /// self-reference may sit in a nested `SELECT`; a plain name, and a recursive one in its
+            /// seed, denote a table there.
+            if (own_body)
+                return own_body->recursive;
+            return scopes[i].plain.contains(name) || scopes[i].recursive.contains(name);
+        });
+        return index ? &scopes[*index] : nullptr;
+    }
+
+    /// The scope of the element that `ApplyWithSubqueryVisitor` substituted for a reference to `name`
+    /// at this point: the innermost visible one whose element has been walked. An element is not in
+    /// effect inside its own body, and a same-named element of a nested `SELECT` that has not been
+    /// walked yet does not hide it.
+    std::optional<size_t> findProducerScope(const String & name) const
+    {
+        return walkVisibleScopes(name, [&](size_t i, const BodyWalk * own_body)
+        {
+            return !own_body && scopes[i].registered.contains(name);
+        });
+    }
+
+    /// Walks the body of a `WITH` element, or a copy of it, as `body_walk` describes. The seed of a
+    /// recursive element, its first branch, is resolved like any other query, so there the element's
+    /// name is a table or an enclosing element; the branches after it are the recursive members.
+    void visitElementBody(ASTPtr & subquery, BodyWalk body_walk) const
+    {
+        if (body_walk.recursive)
+        {
+            if (ASTs * branches = ApplyWithSubqueryVisitor::getRecursiveBodyBranches(subquery))
+            {
+                for (size_t i = 0; i < branches->size(); ++i)
+                {
+                    body_walk.recursive = i > 0;
+                    BodyWalkGuard body_walk_guard(body_walks, body_walk);
+                    visit((*branches)[i]);
+                }
+                return;
+            }
+        }
+
+        BodyWalkGuard body_walk_guard(body_walks, std::move(body_walk));
+        visitChildren(*subquery);
+    }
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -144,12 +319,10 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
-        if (select.recursive_with)
-            for (const auto & child : select.with()->children)
-            {
-                if (typeid_cast<ASTWithElement *>(child.get()))
-                    with_aliases.insert(child->as<ASTWithElement>()->name);
-            }
+        /// An alias is visible only inside the subtree of the `SELECT` that declares it.
+        auto [settings_context, inherit] = scopeSettings(select);
+        WithAliasesScope with_aliases_scope(scopes, std::move(settings_context), inherit);
+        Scope & scope = scopes.back();
 
         /// The right argument of IN may refer to an alias of an expression defined elsewhere
         /// in the query, possibly after the point of use - then it is not a table name.
@@ -161,10 +334,45 @@ private:
         for (const auto & child : select.children)
             collectAliases(child);
 
+        const ASTPtr with = select.with();
+        if (with)
+        {
+            /// Every name is bound before any element is walked, as `QueryAnalyzer` does, so an
+            /// element may reference a later one. Inside its own definition a plain name still
+            /// denotes a table and a recursive name references itself in its recursive members; the
+            /// bucket is chosen per element, since a `WITH RECURSIVE` list may mix recursive elements
+            /// with ordinary ones. An element is registered after its body is walked, as
+            /// `ApplyWithSubqueryVisitor` does.
+            for (const auto & child : with->children)
+                if (const auto * with_element = child->as<ASTWithElement>())
+                    (isRecursiveElement(select, *with_element) ? scope.recursive : scope.plain).insert(with_element->name);
+
+            for (auto & child : with->children)
+            {
+                auto * with_element = child->as<ASTWithElement>();
+                if (!with_element)
+                {
+                    visit(child);
+                    continue;
+                }
+
+                visitElementBody(with_element->subquery, BodyWalk{
+                    .name = with_element->name,
+                    .scope_index = scopes.size() - 1,
+                    .depth = scopes.size(),
+                    .recursive = isRecursiveElement(select, *with_element)});
+                scope.registered.insert(with_element->name);
+            }
+        }
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
-        visitChildren(select);
+        for (auto & child : select.children)
+        {
+            if (child != with)
+                visit(child);
+        }
 
         expression_aliases = std::move(enclosing_query_aliases);
     }
@@ -300,8 +508,8 @@ private:
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
-        /// This is WITH RECURSIVE alias.
-        if (with_aliases.contains(identifier.name()))
+        /// This is a `WITH` alias in scope here.
+        if (findScopeDeclaring(identifier.name()))
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());

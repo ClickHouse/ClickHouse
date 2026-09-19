@@ -1,0 +1,10 @@
+live seed	[1,2,3]
+live copied plain cte	[1,2,3]
+seed in the creating session	[1,2,3]
+copied plain cte in the creating session	[1,2,3]
+stored seed	1
+stored copied plain cte	1
+seed after reload	[1,2,3]
+copied plain cte after reload	[1,2,3]
+mutation seed	6
+mutation copied plain cte	6
