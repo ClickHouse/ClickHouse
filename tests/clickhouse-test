@@ -1003,6 +1003,11 @@ def get_processlist_size(args):
 # aggregating, so it is the only one that needs the per-user limit lifted.
 HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
+# One attempt, no retries: this dump runs under a caller that kills the process
+# group on its own deadline, so it has to fail with time left for the hung check
+# to report what it saw.
+HUNG_CHECK_STACKTRACES_RETRIES = 1
+
 
 def get_processlist_with_stacktraces(args):
     if args.replicated_database:
@@ -1031,6 +1036,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     if args.shared_catalog:
         return clickhouse_execute(
@@ -1058,6 +1064,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     return clickhouse_execute(
         args,
@@ -1080,6 +1087,7 @@ def get_processlist_with_stacktraces(args):
             "allow_introspection_functions": 1,
         },
         timeout=120,
+        max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
     )
 
 
@@ -2083,7 +2091,7 @@ class MergeTreeSettingsRandomizer:
     }
 
     @staticmethod
-    def get_random_settings(args):
+    def get_random_settings(args, tags):
         random_settings = {}
         # Tiny granules multiply the number of marks per part (marks ~ rows /
         # index_granularity), which is disproportionately expensive on slow
@@ -2094,13 +2102,19 @@ class MergeTreeSettingsRandomizer:
             or BuildFlags.DEBUG in args.build_flags
             or BuildFlags.WITH_COVERAGE in args.build_flags
         )
+        # A `long` test already writes enough data to sit close to the per-test
+        # timeout, so the same multiplier blows past it even on a release build:
+        # `03209_json_type_merges_small` went from 2 seconds to over 600 with
+        # `index_granularity = 1`. Raise the bounds for those tests as well; tiny
+        # granules stay covered by every test that is not tagged `long`.
+        coarse_granularity = slow_build or (tags and "long" in tags)
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting in args.changed_merge_tree_settings:
                 continue
 
-            if slow_build and setting == "index_granularity":
+            if coarse_granularity and setting == "index_granularity":
                 value = random.randint(100, 65536)
-            elif slow_build and setting == "index_granularity_bytes":
+            elif coarse_granularity and setting == "index_granularity_bytes":
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
@@ -3013,7 +3027,9 @@ class TestCase:
 
         base_mt_settings = {}
         if allow_random_mt_settings:
-            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(args)
+            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(
+                args, self.tags
+            )
             self.apply_random_settings_limits(base_mt_settings)
 
         # User-specified fixed dicts
@@ -6847,6 +6863,13 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
+                    # stdout is a pipe and the dumps below can outlast the deadline.
+                    sys.stdout.flush()
+                    # The query that failed is an expensive aggregate over
+                    # system.stack_trace via HTTP; the plain read goes over TCP,
+                    # and the C stacks need no answer from the server at all.
+                    print_sql_stacktraces(args)
+                    print_c_stacktraces(args)
                     exit_code.value = 1
                     hung_check_failed = True
                 else:

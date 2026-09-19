@@ -393,6 +393,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
 #       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
 #       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
+# `Cannot convert string 'b' to type UInt64` while executing `equals(c0.size` is the same class, from
+#       `03640_multiple_mutations_with_error_with_rewrite_parts`: its asserted-to-fail `DELETE WHERE c0.size = 'b'`
+#       mutation outlives the test when the closing `KILL MUTATION` is skipped, which happens when an earlier
+#       statement draws the stress runner's injected memory fault and the client stops the file. Only that command
+#       builds this comparison, and the entry pins `Code: 53` as well, so the code, the literal, the target type
+#       and the expression together mask nothing else: the same text under any other code still fails this job.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -406,6 +412,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
 #       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
 #       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
+# `StorageKeeperMap` + a `05024_keeper_map_parenthesized_metadata*` table + `Failed to activate table because of
+#       invalid metadata in ZooKeeper` is the same class: that test rewrites its own `metadata` znode into shapes a
+#       server must refuse and reverts them at the end of the file, but stress worker 1 (`--database=test_1`) runs
+#       with `memory_tracker_fault_probability`, so an injected `Code: 241` can stop the file before the `DROP`s at
+#       its end run, leaving the tables it created behind with an unreadable znode. The upgrade restart re-attaches
+#       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
+#       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
+#       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -585,6 +599,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
            -e "Cannot parse string 'fail' as Int8" \
+           -e "Code: 53. DB::Exception: Cannot convert string 'b' to type UInt64: while executing 'FUNCTION equals(c0.size" \
            -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
@@ -625,6 +640,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
+    | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \

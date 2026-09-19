@@ -8,6 +8,8 @@ trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# The server resolves a relative user_files_path against the resolved --path, not against the cwd.
+perf_wd="$(pwd -P)"
 
 # upstream/master
 LEFT_SERVER_PORT=9001
@@ -108,7 +110,7 @@ function configure
         --
         # server *config* directives overrides
         --path db0
-        --user_files_path db0/user_files
+        --user_files_path "$perf_wd/db0/user_files"
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
@@ -329,7 +331,7 @@ function restart
         --
         # server *config* directives overrides
         --path left/db
-        --user_files_path left/db/user_files
+        --user_files_path "$perf_wd/left/db/user_files"
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
         # The perf-comparison config removes <http_port>; re-enable it on the
@@ -354,7 +356,7 @@ function restart
         --
         # server *config* directives overrides
         --path right/db
-        --user_files_path right/db/user_files
+        --user_files_path "$perf_wd/right/db/user_files"
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
         --http_port $RIGHT_SERVER_HTTP_PORT
