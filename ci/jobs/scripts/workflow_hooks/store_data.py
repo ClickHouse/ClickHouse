@@ -417,7 +417,7 @@ def parse_settings_history_changes(patch, file_lines):
 
 
 # Paths whose changed lines decide whether a PR is "small" for the purpose of
-# skipping the stress tests and fuzzers (see `filter_job.py`): the product-code
+# skipping the stress tests, fuzzers and SQL suites (see `filter_job.py`): the product-code
 # part of `build_digest_config.include_paths`, i.e. everything whose change ends
 # up in the built server. Tests, docs and CI scripts do not count: only changes
 # to the server itself can introduce the bugs those jobs look for.
@@ -553,7 +553,7 @@ if __name__ == "__main__":
 
     if info.pr_number > 0:
         # Store how many lines of product code the PR changes: `filter_job.py` skips
-        # the stress tests and fuzzers on small PRs. On failure the key stays absent,
+        # the stress tests, fuzzers and SQL suites on small PRs. On failure the key stays absent,
         # and the hook then runs those jobs rather than skipping them on a missing
         # count.
         try:

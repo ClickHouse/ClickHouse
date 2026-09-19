@@ -142,8 +142,9 @@ def _has_coverage_pipeline_changes(changed_files):
     return False
 
 
-# Stress tests and fuzzers are skipped in a PR that changes fewer than this many
-# lines (additions + deletions) of product code - counted by the `store_data.py`
+# Stress tests, fuzzers and the SQL conformance suites (`SQLLogic test`,
+# `SQLStorm test`) are skipped in a PR that changes fewer than this many lines
+# (additions + deletions) of product code - counted by the `store_data.py`
 # pre-hook as `product_changed_lines` over `PRODUCT_CODE_PATHS`, the part of the
 # build digest that ends up in the built server. Tests, docs and CI scripts do
 # not count. The `ci-force-all` label (`Labels.CI_FORCE_ALL`) bypasses every
@@ -160,11 +161,16 @@ SMALL_PR_WORKFLOW = "PR"
 
 # The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
 # symbols, i.e. they are designed for exactly the small PRs this rule skips the
-# untargeted fuzzers on, so they keep running.
+# untargeted fuzzers on, so they keep running. `SQLLogic test` and `SQLStorm test`
+# run fixed third-party suites unrelated to the change: over the 30 days before
+# 2026-09-19 their only PR failures were infrastructure (`Start ClickHouse`,
+# `Download dataset`), at 108 and 19 minutes per run.
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
     JobNames.BUZZHOUSE,
+    JobNames.SQL_LOGIC_TEST,
+    JobNames.SQL_STORM_TEST,
 )
 
 # Digest inputs of the skippable jobs that must not switch the skip off: a fifth
@@ -200,7 +206,7 @@ _EXTRA_STRESS_AND_FUZZER_PATHS = (
 
 
 def _stress_and_fuzzer_paths():
-    """Paths whose change makes a PR run the stress tests and fuzzers whatever its
+    """Paths whose change makes a PR run the stress tests, fuzzers and SQL suites whatever its
     size. Derived from the digest `include_paths` of the very jobs this rule can
     skip, so an input added to one of them keeps its exemption here without a
     second edit, minus `_COMMON_TEST_PATHS` and plus
@@ -211,6 +217,8 @@ def _stress_and_fuzzer_paths():
         *JobConfigs.stress_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
+        JobConfigs.sqllogic_test_master_job,
+        JobConfigs.sqlstorm_test_job,
     ):
         for path in job.digest_config.include_paths:
             path = path.removeprefix("./")
@@ -299,7 +307,7 @@ def _is_small_pr(info):
         return False
     product_changed_lines = info.get_kv_data("product_changed_lines")
     if not isinstance(product_changed_lines, int):
-        print("WARNING: product_changed_lines is not stored - do not skip stress tests and fuzzers")
+        print("WARNING: product_changed_lines is not stored - do not skip stress tests, fuzzers and SQL suites")
         return False
     return product_changed_lines < SMALL_PR_CHANGED_LINES
 
@@ -431,8 +439,9 @@ def should_skip_job(job_name):
             )
         return False, ""
 
-    # Skip the stress tests and fuzzers on small PRs. Each of these jobs takes
-    # 1-3 hours and they rarely catch anything a change of this size introduces;
+    # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
+    # of these jobs takes up to 1-3 hours and they rarely catch anything a change
+    # of this size introduces;
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
     # master once more. Bypass: the `ci-force-all` label.
     if (
