@@ -171,7 +171,7 @@ void StorageMySQL::readImpl(
             column_names,
             storage_snapshot->metadata->getColumns().getOrdinary(),
             IdentifierQuotingStyle::BackticksMySQL,
-            LiteralEscapingStyle::Regular,
+            LiteralEscapingStyle::MySQL,
             remote_database_name,
             remote_table_or_query.getTableName(),
             context_);
@@ -558,7 +558,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::MySQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
