@@ -413,6 +413,11 @@ bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
+bool StorageMerge::supportsSubcolumnOptimizationWithFinal() const
+{
+    return traverseTablesUntil([](const auto & table) { return !table->supportsSubcolumnOptimizationWithFinal(); }) == nullptr;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying
