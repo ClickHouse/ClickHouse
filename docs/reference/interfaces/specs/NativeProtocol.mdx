@@ -244,7 +244,7 @@ The happy path runs straight down — `HANDSHAKE → READY → READING_RESPONSE 
 | State              | Description |
 |--------------------|-------------|
 | `HANDSHAKE`        | Initial state after the TCP connection opens. Only [handshake](#handshake-phase) messages are valid. Transitions to `READY` on success or terminates on failure. |
-| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), or close. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). A `Data` (2) or `Scalar` (7) packet here is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. |
+| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), or close. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). A `Hello` (0), `Data` (2), `Scalar` (7), or `IgnoredPartUUIDs` (8) packet here is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. See [Protocol violations](#protocol-violations). |
 | `READING_RESPONSE` | Entered when the client sends a Query. The client must fully drain the server's response stream before returning to `READY`. The only allowed client→server packet here is Cancel (not specified on this page). |
 | Terminated         | No longer usable. The client must open a new TCP connection and restart the handshake. |
 
@@ -362,7 +362,7 @@ On error at any point the server sends an `Exception` instead of `EndOfStream`, 
    | `Exception` (2)       | Decode and return as error. Exit the loop and return to `READY`. |
    | anything else         | Unexpected during the query phase. Terminate the connection. |
 
-On `EndOfStream` or a handled `Exception` the connection returns to `READY`. A protocol violation or I/O error terminates it.
+On `EndOfStream` or a handled `Exception` the connection returns to `READY`. A protocol violation or I/O error terminates it — see [Protocol violations](#protocol-violations) for which client packets are violations while the server is still reading the query's input, and what the server does with their bodies.
 
 <Note>
 The `num_rows == 0` case trips up new implementations. A zero-row block is a boundary marker or schema header, not an end-of-stream signal. Only `EndOfStream` or `Exception` ends the response.
@@ -411,6 +411,28 @@ sequenceDiagram
 **Asynchronous INSERT (v54484+).** When the query carries `async_insert = 1`, the server queues the rows and flushes them as part of a batch. At negotiated version ≥ 54484 (`PROGRESS_IN_ASYNC_INSERT`), once the flush completes the server emits an extra [`Progress`](#progress) packet, immediately followed by the insert's `ProfileEvents`, then `EndOfStream`. Below 54484 the server skips that trailing Progress. The packet is an ordinary `Progress`; because the server resets the query pipeline before folding in the write counts, the increment in practice carries only the elapsed time, and the written-row and byte stats reach the client via the accompanying `ProfileEvents`. A client that already drains interleaved Progress in step 6 needs only to accept one more packet.
 
 The connection returns to `READY` on `EndOfStream` or a handled `Exception`. Protocol violations and I/O errors terminate it.
+
+A failed `INSERT` is a handled `Exception`, not a violation: if the server rejects the rows (for example a `CHECK` constraint fails) while the client is still streaming, it sends the `Exception` at once and then keeps reading the client's remaining `Data` packets up to the end-of-input terminator, decoding each only far enough to find where it ends, so that the connection stays usable for the next query. A client that reads the `Exception` may either finish its row stream and reuse the connection, or close the socket.
+
+This applies only when the failure happened between packets, which is the case for a rejected row: the packet carrying it was read in full first. A failure *while decoding* a packet — a column type that does not exist, a malformed value, a memory limit reached mid-block — leaves that packet half-read, and the rest of its body cannot be told apart from the packet that follows it. The server sends the `Exception` and terminates the connection in that case, without reading any further, so the client must not expect to reuse it. Here too the unread bytes mean the client may see a TCP reset instead of an orderly close, and may lose the `Exception` with it.
+
+### Protocol violations {#protocol-violations}
+
+A client packet that cannot appear at the current point of the exchange is a protocol violation. The server rejects it as soon as it has read the packet-type code — **it never reads the body**. Nothing sent after the type byte is decoded, and since the body is left unread the client may observe a TCP reset rather than an orderly close. The response depends on the state the connection was in:
+
+| Connection state                                      | Violating client packets | Server response |
+|-------------------------------------------------------|--------------------------|-----------------|
+| `READY` (waiting for a `Query` or `Ping`)             | `Hello` (0), `Data` (2), `Scalar` (7), `IgnoredPartUUIDs` (8) | Terminates the connection. No `Exception` packet is sent, because the peer has not necessarily authenticated yet — in the [inter-server secret](#inter-server-secret) mode authentication happens only while the `Query` packet is being read. |
+| Reading the query's input (after `Query`, before the end-of-data marker or the end of an `INSERT` row stream) | `Hello` (0), `Query` (1), `TablesStatusRequest` (5), `IgnoredPartUUIDs` (8), and a `QueryPlan` (13) that is out of place — one that does not follow a `Query` with `stage = QueryPlan`, a second one for the same query, or one arriving after the query's input has ended | Sends an [`Exception`](#exception) with code `101` (`UNEXPECTED_PACKET_FROM_CLIENT`) and terminates the connection. |
+| Any state                                             | An unknown packet-type code | Terminates the connection. |
+
+The `Exception` in the second row is sent only while the query is still live. Once a query has failed, the server keeps reading its remaining input to discard it (see the paragraph above on a failed `INSERT`), and a violating packet arriving during that discard is rejected the same way but silently: the connection is closed without a further `Exception`, so the client sees only the original query's exception, and only if that had already been flushed to it.
+
+Because the body is never consumed, the offending packet's bytes are not parsed as later packets either: after rejecting a `Query` packet sent in the middle of an `INSERT`, for example, the server does not go on to interpret the rest of that packet's body as a new packet stream. A client that has sent a violating packet must open a new connection; nothing further can be read from or written to the old one.
+
+Rejecting the packet before its body also means the body's length does not matter. A client that sends only a type code and then waits will get the response above immediately rather than after `receive_timeout`.
+
+`IgnoredPartUUIDs` (8) is an obsolete packet: it belonged to the removed setting `allow_experimental_query_deduplication`, and no current server accepts it in any state. Its `Exception` message names the removed setting.
 
 ## Message reference {#message-reference}
 
@@ -903,7 +925,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 5    | TablesStatusRequest       | not specified       | Table status check |
 | 6    | KeepAlive                 | not specified       | Connection keepalive |
 | 7    | Scalar                    | not specified       | Scalar data block |
-| 8    | IgnoredPartUUIDs          | not specified       | Parts to exclude from query |
+| 8    | IgnoredPartUUIDs          | not specified       | Obsolete (query deduplication was removed). Rejected without reading the body in every state — see [Protocol violations](#protocol-violations). |
 | 9    | ReadTaskResponse          | not specified       | S3 cluster read response |
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
