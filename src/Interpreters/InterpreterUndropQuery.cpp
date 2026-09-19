@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -14,6 +15,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+}
 
 namespace ErrorCodes
 {
@@ -82,7 +88,8 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
             query_status->throwIfKilled();
     };
 
-    DatabaseCatalog::instance().undropTable(table_id, throw_if_cancelled);
+    DatabaseCatalog::instance().undropTable(
+        table_id, context->getSettingsRef()[Setting::fsync_metadata], throw_if_cancelled);
     return {};
 }
 
