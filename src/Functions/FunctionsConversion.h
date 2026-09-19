@@ -1959,7 +1959,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
                 convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
 
             if (!convert_result)
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
+            {
+                const auto value = [&]
+                {
+                    if constexpr (IsDataTypeDecimal<FromDataType>)
+                        return toString(vec_from[i], col_from->getScale());
+                    else
+                        return toString(vec_from[i]);
+                }();
+
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", value, ToDataType::family_name);
+            }
 
             vec_to[i] = result;
         }
