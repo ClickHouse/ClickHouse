@@ -207,22 +207,29 @@ SELECT 'small dictionary hasAny', countIf(hasAny(lc, ['s3', 's4'])), countIf(has
 
 -- MergeTreeIndexBloomFilter coerces a hasAll/hasAny constant to the least supertype and hashes that,
 -- so pruning and the function must agree: the two counts per row differ if they do not.
+-- force_data_skipping_indices names the one index each arm must have found useful: without it
+-- use_skip_indexes = 1 merely permits pruning, so an arm passes even with the index never consulted.
 DROP TABLE IF EXISTS indexed_string;
-CREATE TABLE indexed_string (id UInt64, lc Array(LowCardinality(String)), plain Array(String), INDEX bf lc TYPE bloom_filter GRANULARITY 1, INDEX txt lc TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1)
+CREATE TABLE indexed_string (id UInt64, lc Array(LowCardinality(String)), plain Array(String), INDEX bf lc TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
 INSERT INTO indexed_string SELECT number, arr, arr FROM (SELECT number, arrayMap(j -> concat('b', toString((number + j) % 12)), range(1 + number % 3)) AS arr FROM numbers(200));
-SELECT 'bloom_filter hasAll', (SELECT count() FROM indexed_string WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 1), (SELECT count() FROM indexed_string WHERE hasAll(plain, ['b3', 'b4']));
-SELECT 'bloom_filter hasAny', (SELECT count() FROM indexed_string WHERE hasAny(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAny(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 1), (SELECT count() FROM indexed_string WHERE hasAny(plain, ['b3', 'b4']));
-SELECT 'text index hasAll', (SELECT count() FROM indexed_string WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1);
-SELECT 'bloom_filter absent needle', (SELECT count() FROM indexed_string WHERE hasAny(lc, ['absent']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAny(lc, ['absent']) SETTINGS use_skip_indexes = 1);
+SELECT 'bloom_filter hasAll', (SELECT count() FROM indexed_string WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_string WHERE hasAll(plain, ['b3', 'b4']));
+SELECT 'bloom_filter hasAny', (SELECT count() FROM indexed_string WHERE hasAny(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAny(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_string WHERE hasAny(plain, ['b3', 'b4']));
+SELECT 'bloom_filter absent needle', (SELECT count() FROM indexed_string WHERE hasAny(lc, ['absent']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_string WHERE hasAny(lc, ['absent']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf');
+
+DROP TABLE IF EXISTS indexed_text;
+CREATE TABLE indexed_text (id UInt64, lc Array(LowCardinality(String)), plain Array(String), INDEX txt lc TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO indexed_text SELECT number, arr, arr FROM (SELECT number, arrayMap(j -> concat('b', toString((number + j) % 12)), range(1 + number % 3)) AS arr FROM numbers(200));
+SELECT 'text index hasAll', (SELECT count() FROM indexed_text WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_text WHERE hasAll(lc, ['b3', 'b4']) SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1, force_data_skipping_indices = 'txt');
 
 DROP TABLE IF EXISTS indexed_fixed_string;
 CREATE TABLE indexed_fixed_string (id UInt64, lc Array(LowCardinality(FixedString(3))), plain Array(FixedString(3)), INDEX bf lc TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
 INSERT INTO indexed_fixed_string SELECT number, arr, arr FROM (SELECT number, arrayMap(j -> toFixedString(concat('p', toString((number + j) % 12)), 3), range(1 + number % 3)) AS arr FROM numbers(200));
-SELECT 'bloom_filter FixedString needle', (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, [toFixedString('p3', 3)]) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, [toFixedString('p3', 3)]) SETTINGS use_skip_indexes = 1), (SELECT count() FROM indexed_fixed_string WHERE hasAll(plain, [toFixedString('p3', 3)]));
-SELECT 'bloom_filter String needle', (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, ['p3']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, ['p3']) SETTINGS use_skip_indexes = 1), (SELECT count() FROM indexed_fixed_string WHERE hasAll(plain, ['p3']));
-SELECT 'bloom_filter NUL tail needle', (SELECT count() FROM indexed_fixed_string WHERE hasAny(lc, ['p3\0']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAny(lc, ['p3\0']) SETTINGS use_skip_indexes = 1), (SELECT count() FROM indexed_fixed_string WHERE hasAny(plain, ['p3\0']));
+SELECT 'bloom_filter FixedString needle', (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, [toFixedString('p3', 3)]) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, [toFixedString('p3', 3)]) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_fixed_string WHERE hasAll(plain, [toFixedString('p3', 3)]));
+SELECT 'bloom_filter String needle', (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, ['p3']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, ['p3']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_fixed_string WHERE hasAll(plain, ['p3']));
+SELECT 'bloom_filter NUL tail needle', (SELECT count() FROM indexed_fixed_string WHERE hasAny(lc, ['p3\0']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAny(lc, ['p3\0']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_fixed_string WHERE hasAny(plain, ['p3\0']));
 
 DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS nullable_tags;
@@ -231,4 +238,5 @@ DROP TABLE IF EXISTS outer_nullable_tags;
 DROP TABLE IF EXISTS typed;
 DROP TABLE IF EXISTS small_dictionary;
 DROP TABLE IF EXISTS indexed_string;
+DROP TABLE IF EXISTS indexed_text;
 DROP TABLE IF EXISTS indexed_fixed_string;

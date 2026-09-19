@@ -65,8 +65,8 @@ small dictionary	10	10	1
 small dictionary hasAny	15	15	1
 bloom_filter hasAll	17	17	17
 bloom_filter hasAny	51	51	51
-text index hasAll	17	17
 bloom_filter absent needle	0	0
+text index hasAll	17	17
 bloom_filter FixedString needle	34	34	34
 bloom_filter String needle	34	34	34
 bloom_filter NUL tail needle	0	0	0
