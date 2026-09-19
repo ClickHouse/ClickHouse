@@ -1082,7 +1082,7 @@ void lazyIntersectPostingLists(
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
-    float density_threshold)
+    TextIndexPostingsCursorIntersectionAlgorithm algorithm)
 {
     requireRowOffsetRepresentable(row_offset);
 
@@ -1101,27 +1101,29 @@ void lazyIntersectPostingLists(
         return;
     }
 
-    /// Algorithm selection. Leapfrog pays off only when the sparsest cursor can skip whole packed blocks of
-    /// the densest one: a block of BLOCK_SIZE postings of a list with density `max_density` spans about
-    /// BLOCK_SIZE / max_density rows, and the sparsest list has about min_density * BLOCK_SIZE / max_density
-    /// postings in that span. Once that is >= 1 every block gets decoded anyway and leapfrog only adds a
-    /// search per posting on top; the linear counting pass is then 2.5-3x cheaper on correlated lists of
-    /// density 0.05-0.11. `density_threshold` stays an absolute cap: `min_density >= threshold` also selects
-    /// brute force, `threshold <= 0` forces it and `threshold >= 1` forces leapfrog (tests pin either path).
-    double min_density = std::numeric_limits<double>::max();
-    double max_density = 0.0;
-    for (size_t i = 0; i < n; ++i)
+    bool use_brute_force = algorithm == TextIndexPostingsCursorIntersectionAlgorithm::BruteForce;
+
+    /// `Auto` picks leapfrog only where it can skip whole packed blocks of the densest list.
+    /// A block of that list spans about `BLOCK_SIZE / max_density` rows.
+    /// Over that span, the sparsest list has about `min_density * BLOCK_SIZE / max_density` postings.
+    /// Once that reaches one, leapfrog decodes every block anyway
+    /// and only adds a search per posting on top of the brute-force counting pass.
+    if (algorithm == TextIndexPostingsCursorIntersectionAlgorithm::Auto)
     {
-        min_density = std::min(min_density, cursors[i]->density());
-        max_density = std::max(max_density, cursors[i]->density());
+        double min_density = std::numeric_limits<double>::max();
+        double max_density = 0.0;
+
+        for (size_t i = 0; i < n; ++i)
+        {
+            min_density = std::min(min_density, cursors[i]->density());
+            max_density = std::max(max_density, cursors[i]->density());
+        }
+
+        use_brute_force = min_density * static_cast<double>(BLOCK_SIZE) >= max_density;
     }
 
-    const bool force_leapfrog = density_threshold >= 1.0f;
-    const bool dense_by_threshold = min_density >= static_cast<double>(density_threshold);
-    const bool cannot_skip_blocks = min_density * static_cast<double>(BLOCK_SIZE) >= max_density;
-
     /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
-    if (n < 256 && !force_leapfrog && (dense_by_threshold || cannot_skip_blocks))
+    if (n < 256 && use_brute_force)
     {
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
         intersectBruteForce(out, cursors, row_offset, num_rows);

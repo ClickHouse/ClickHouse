@@ -9153,16 +9153,19 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to cache deserialized text index posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::LAZY, R"(
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::Lazy, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' eagerly decodes posting lists into Roaring Bitmaps.
 'lazy' (default) uses cursor-based on-demand decoding (requires an index format with a serialized codec).
 'lazy' is applied only where it is supported: queries with patterns (such as `LIKE`) and parts with an index written by an older version fall back to 'materialize'.
 )", 0) \
-    DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
-Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
-Brute-force bitmap intersection is used when the minimum density across the posting lists is at or above the threshold, or when the sparsest posting list has at least one posting per packed block of the densest one (`min_density * 128 >= max_density`), because leapfrog cannot skip whole blocks then. Otherwise leapfrog intersection is used. `0` always selects brute force, `1` always selects leapfrog.
-)", 0, text_index_density_threshold) \
+    DECLARE(TextIndexPostingsCursorIntersectionAlgorithm, text_index_postings_cursor_intersection_algorithm, TextIndexPostingsCursorIntersectionAlgorithm::Auto, R"(
+Selects the algorithm that intersects posting lists in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
+- `auto` (default): leapfrog is used only when the sparsest posting list can skip whole packed blocks of the densest one (`min_density * 128 < max_density`), and brute-force bitmap intersection otherwise.
+- `bruteforce`: always use the brute-force bitmap intersection.
+- `leapfrog`: always use the leapfrog intersection.
+Leapfrog is used regardless of this setting for 256 or more posting lists, which the brute-force counters cannot represent.
+)", 0) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
@@ -9605,7 +9608,8 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
-    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
+    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1) \
+    ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, text_index_density_threshold)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

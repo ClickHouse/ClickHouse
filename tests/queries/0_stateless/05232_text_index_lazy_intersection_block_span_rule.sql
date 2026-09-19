@@ -1,9 +1,8 @@
 -- The lazy AND over bitpacked posting lists chooses between leapfrog and the brute-force counting pass.
 -- Leapfrog pays off only when the sparsest list can skip whole packed blocks (128 postings) of the
 -- densest one, i.e. when `min_density * 128 < max_density`; otherwise every block is decoded anyway
--- and leapfrog only adds a search per posting. This test pins that rule for the default threshold and
--- the two forcing values of `text_index_lazy_intersection_density_threshold` (0 -> brute force,
--- 1 -> leapfrog).
+-- and leapfrog only adds a search per posting. This test pins that rule for the default `auto` and for
+-- the two forcing values of `text_index_postings_cursor_intersection_algorithm`.
 
 SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
@@ -49,13 +48,13 @@ SELECT count() FROM tab_lazy_rule WHERE hasAllTokens(s, ['bmid', 'cmid'])
 SELECT count() FROM tab_lazy_rule WHERE hasAllTokens(s, ['adense', 'dsparse'])
     SETTINGS log_comment = '05232_rule_sparse_dense_default';
 
--- Threshold 1 forces leapfrog even where the rule would pick brute force.
+-- 'leapfrog' forces leapfrog even where the rule would pick brute force.
 SELECT count() FROM tab_lazy_rule WHERE hasAllTokens(s, ['bmid', 'cmid'])
-    SETTINGS text_index_lazy_intersection_density_threshold = 1.0, log_comment = '05232_rule_mid_pair_threshold_1';
+    SETTINGS text_index_postings_cursor_intersection_algorithm = 'leapfrog', log_comment = '05232_rule_mid_pair_leapfrog';
 
--- Threshold 0 forces brute force even where the rule would pick leapfrog.
+-- 'bruteforce' forces brute force even where the rule would pick leapfrog.
 SELECT count() FROM tab_lazy_rule WHERE hasAllTokens(s, ['adense', 'dsparse'])
-    SETTINGS text_index_lazy_intersection_density_threshold = 0.0, log_comment = '05232_rule_sparse_dense_threshold_0';
+    SETTINGS text_index_postings_cursor_intersection_algorithm = 'bruteforce', log_comment = '05232_rule_sparse_dense_bruteforce';
 
 SYSTEM FLUSH LOGS query_log;
 
