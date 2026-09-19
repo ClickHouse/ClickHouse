@@ -497,6 +497,9 @@ because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
 
+`skip_unavailable_shards` does not silence this: a replica the initiator had no free connection
+slot for was never contacted, so the shard is not treated as unavailable.
+
 Possible values:
 
 - Positive integer.
@@ -627,9 +630,6 @@ Limit on Azure PUT request per second rate before throttling. Zero means unlimit
 )", 0) \
     DECLARE(UInt64, azure_max_put_burst, 0, R"(
 Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
-)", 0) \
-    DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
-The maximum number of connections per server.
 )", 0) \
     DECLARE(UInt64, s3_max_get_rps, 0, R"(
 Limit on S3 GET request per second rate before throttling. Zero means unlimited.
@@ -1040,7 +1040,7 @@ Possible values:
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
-- `3` - Only wait for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `alter_sync = 2`.
+- `3` - Only wait for active replicas. Inactive replicas apply the change when they become active.
 
 Cloud default value: `0`.
 
@@ -1767,6 +1767,13 @@ When enabled, during SELECT FINAL queries, parts from different partitions will 
     DECLARE(Bool, enable_automatic_decision_for_merging_across_partitions_for_final, true, R"(
 If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
+
+Floating-point key columns are excluded from this derivation. The `FINAL` comparator is coarser than value
+identity for `Float32`, `Float64` and `BFloat16`: `-0.0` compares equal to `0.0`, and every `NaN` bit pattern
+compares equal to every other. A partition expression can tell exactly those values apart, so rows the comparator treats as
+one key can land in different partitions, and skipping the cross-partition merge would return all of them.
+The exclusion also applies when a float is nested inside a key column, for example `Tuple(Float64, UInt8)`
+or `Array(Float64)`.
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -5147,7 +5154,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
 | `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+| `3`   | The query waits only for the active replicas. Inactive replicas apply the mutations when they become active.                                          |
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -5170,7 +5177,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
 | `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+| `3`   | The query waits only for the active replicas. Inactive replicas apply the lightweight deletes when they become active.                                |
 
 **See Also**
 
@@ -5309,6 +5316,8 @@ These functions can be transformed:
 - [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [has](/reference/functions/regular-functions/array-functions#has) and [notHas](/reference/functions/regular-functions/array-functions#notHas) for `Map` to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -9162,8 +9171,8 @@ The negative tokens cache uses the text index tokens cache and avoids repeated d
 Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(Bool, use_text_index_postings_cache, false, R"(
-Whether to cache deserialized text index deserialized posting lists in memory.
+    DECLARE(Bool, use_text_index_postings_cache, true, R"(
+Whether to cache deserialized text index posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::LAZY, R"(
@@ -9440,13 +9449,12 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
-reorderings are valid using the CD-A conflict detector).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
+    DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::NONE, R"(
+Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
+decide which join reorderings are valid. The following values are available:
+ - `''` (default) - no conflict detector, DPsub uses the per-relation `ON` clause restriction
+ - `'a'` - the CD-A conflict detector, which is correct but incomplete
+ - `'c'` - the CD-C conflict detector, which is correct and complete
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -9550,6 +9558,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
+    MAKE_OBSOLETE(M, UInt64, s3_max_connections, 1024) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
