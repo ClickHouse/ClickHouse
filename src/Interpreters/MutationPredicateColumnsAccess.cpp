@@ -356,7 +356,7 @@ private:
             /// A name that is still dotted is either a column of a table this level does not name,
             /// or a real dotted column name - without the table's metadata the two are
             /// indistinguishable here, so stop attributing.
-            if (bare.find('.') != std::string_view::npos)
+            if (bare.contains('.'))
                 return {};
 
             columns.emplace_back(bare);
