@@ -784,6 +784,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 
 ClickHouse also supports a Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Let's look at an example.
 
+The same handlers can also be defined from SQL, without editing the server configuration file - see [`CREATE HANDLER`](/reference/statements/create/handler).
+
 First of all, add this section to your server configuration file.
 
 `http_handlers` is configured to contain multiple `rule`. ClickHouse will match the HTTP requests received to the predefined type in `rule` and the first rule matched runs the handler. Then ClickHouse will execute the corresponding predefined query if the match is successful.
