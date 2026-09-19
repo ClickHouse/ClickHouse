@@ -285,6 +285,19 @@ python -m ci.praktika run "Build (amd_debug)"
 这是耗时最长的一项检查，运行时间接近 6 小时。
 有关性能测试报告的详细说明，请参见[此处](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report)。
 
+## 回退拉取请求 {#revert-pull-requests}
+
+用于回退某个已合并改动的拉取请求会立即获得放行：除风格检查之外的所有 CI 作业都会被跳过，以便该回退尽快合并。
+这样做的理由是：回退恢复的是 CI 已经验证过的 `master` 状态，而它所替换的状态是有问题的；花在该拉取请求自身检查上的每一分钟，都意味着 `master` 多损坏一分钟。
+风格检查仍会运行，因为它速度很快，并且能发现因解决冲突而未经 formatted 的回退。
+合并队列仍会运行自己的一小组检查，合并之后也会在 `master` 上运行完整的 CI。
+
+一个拉取请求是否算作回退，仅依据其规范标题形态判定，也就是 `git revert` 和 GitHub 的 &quot;Revert&quot; 按钮所生成的形态：`Revert "<title of the reverted change>"`。
+回退一个回退会使这些 wrappers 嵌套 (`Revert "Revert "..."`) ，因此嵌套深度决定了最终效果：奇数深度是真正的回退，会被跳过；而偶数深度相当于重新应用原始改动，因此按常规方式测试。
+仅在正文中提及回退的拉取请求，仍按常规方式测试。
+
+如果仍希望在回退拉取请求上运行完整 CI，例如该回退需要解决冲突，或你不确定它是否为正确的修复方式，可添加 `ci-force-all` 标签并推送一个空提交以重新触发检查。
+
 ## 回退 CI 回归问题 {#revert-ci-regressions}
 
 这不是针对你的拉取请求运行的检查：它每小时在 `master` 上运行，可能会回退已合并的拉取请求。

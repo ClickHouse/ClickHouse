@@ -286,6 +286,19 @@ Meça as mudanças no desempenho das consultas.
 Esta é a verificação mais demorada e leva pouco menos de 6 horas para ser executada.
 O relatório do teste de desempenho é descrito em detalhes [aqui](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).
 
+## Reversão de pull requests {#revert-pull-requests}
+
+Um pull request que faz a reversão de uma alteração já mesclada recebe luz verde de imediato: todos os jobs de CI, exceto o Style Verificação, são ignorados, para que a reversão possa ser mesclada o mais rápido possível.
+A lógica é que uma reversão restaura um estado do `master` que o CI já validou, enquanto o estado que ele substitui está quebrado, e cada minuto gasto nas verificações do próprio pull request é um minuto em que o `master` continua quebrado.
+O Style Verificação ainda é executado porque é rápido e detecta uma reversão que ficou sem formatação adequada após a resolução de conflitos.
+A merge queue ainda executa seu próprio (pequeno) conjunto de verificações, e o CI completo é executado no `master` depois da mesclagem.
+
+Um pull request só é considerado uma reversão pela shape canônica do seu título, que é o que `git revert` e o botão &quot;Revert&quot; do GitHub produzem: `Revert "<título da alteração revertida>"`.
+Reverter uma reversão aninha os wrappers (`Revert "Revert "..."`), então a profundidade do aninhamento determina o efeito líquido: uma profundidade ímpar é uma reversão real e é ignorada, enquanto uma profundidade par reaplica a alteração original e é testada normalmente.
+Um pull request que apenas menciona uma reversão em texto corrido é testado normalmente.
+
+Para executar o CI completo em um pull request de reversão mesmo assim — por exemplo, quando a reversão precisou resolver conflitos ou quando você tem dúvidas se é a correção adequada —, adicione o rótulo `ci-force-all` e envie um commit vazio para reiniciar as verificações.
+
 ## Reverter regressões na CI {#revert-ci-regressions}
 
 Esta não é uma verificação do seu pull request: ela é executada em `master` a cada hora e pode reverter um pull request já mesclado.

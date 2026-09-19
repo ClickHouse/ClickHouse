@@ -286,6 +286,19 @@ Mide los cambios en el rendimiento de las consultas.
 Esta es la comprobación más larga y tarda algo menos de 6 horas en ejecutarse.
 El informe de pruebas de rendimiento se describe en detalle [aquí](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).
 
+## Revertir pull requests {#revert-pull-requests}
+
+Un pull request que revierte un cambio ya integrado obtiene luz verde de inmediato: se omiten todos los jobs de CI salvo la comprobación de estilo, de modo que el revert pueda integrarse lo antes posible.
+La razón es que un revert restaura un estado de `master` que CI ya ha validado, mientras que el estado al que sustituye está roto, y cada minuto dedicado a las comprobaciones propias del pull request es un minuto más que `master` sigue roto.
+La comprobación de estilo sí se ejecuta porque es rápido y detecta un revert que la resolución de conflictos haya dejado sin formatear.
+La cola de fusión sí ejecuta su propio conjunto (reducido) de comprobaciones, y el CI completo se ejecuta en `master` después de la fusión.
+
+Un pull request se considera un revert únicamente por la forma canónica de su título, que es la que producen `git revert` y el botón &quot;Revert&quot; de GitHub: `Revert "<title of the reverted change>"`.
+Revertir un revert anida las envolturas (`Revert "Revert "..."`), por lo que la profundidad de anidamiento determina el efecto neto: una profundidad impar es un revert real y se omite, mientras que una profundidad par vuelve a aplicar el cambio original y se prueba con normalidad.
+Un pull request que solo menciona un revert en el texto se prueba con normalidad.
+
+Si aun así quieres ejecutar el CI completo en un pull request de revert, por ejemplo cuando el revert tuvo que resolver conflictos o dudas de que sea la corrección adecuada, añade la etiqueta `ci-force-all` y sube un commit vacío para reiniciar las comprobaciones.
+
 ## Revertir regresiones de CI {#revert-ci-regressions}
 
 Esto no es una comprobación de tu pull request: se ejecuta en `master` cada hora y puede revertir un pull request que ya se haya fusionado.
