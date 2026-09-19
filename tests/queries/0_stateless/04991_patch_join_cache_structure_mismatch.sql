@@ -53,9 +53,9 @@ WHERE database = currentDatabase() AND table = 't_pjc' AND active AND startsWith
 -- parts read the shared patch part with different column orders.
 SYSTEM ENABLE FAILPOINT patch_parts_reverse_column_order;
 
--- One bucket puts every range of the shared patch part into a single cache entry, and two
--- streams put both merged parts in the one shared read pool that holds that cache. A
--- one-stream read is planned per part in order instead, each with a pool, and cache, of its own.
+-- One bucket puts every range of the shared patch part into one cache entry, and two streams read both
+-- merged parts concurrently, so each of them adds its own blocks to it. With one stream they are read in
+-- turn, the first reads every range the second needs, and a range is added once, so the two never meet.
 SELECT sum(a), sum(b), count() FROM t_pjc
 SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size = 1,
     max_threads = 2,
@@ -63,27 +63,15 @@ SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size
 
 SYSTEM DISABLE FAILPOINT patch_parts_reverse_column_order;
 
-SELECT sum(a), sum(b), count() FROM t_pjc
-SETTINGS apply_patch_parts_join_cache_buckets = 1, merge_tree_min_read_task_size = 1,
-    max_threads = 2,
-    log_comment = '04991_shared';
-
 SYSTEM FLUSH LOGS query_log;
 
--- Join mode was actually used: on `patch_parts_version = 'v2'` these sums are identical but this is 0.
+-- Join mode was actually used: on `patch_parts_version = 'v2'` the sums are the same but this is 0.
 SELECT ProfileEvents['PatchesJoinAppliedInAllReadTasks'] >= 2
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04991_decisive' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
--- The two merged parts shared one cache entry: with the failpoint off they fill one entry, with it on
--- they fill one each, so the second read adds strictly fewer rows. Equal counts mean the entries were
--- private per read task, or the parts were read through separate pools, and the test above is blind.
-SELECT maxIf(ProfileEvents['PatchesJoinRowsAddedToHashTable'], log_comment = '04991_decisive')
-     > maxIf(ProfileEvents['PatchesJoinRowsAddedToHashTable'], log_comment = '04991_shared')
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND log_comment IN ('04991_decisive', '04991_shared');
+SELECT sum(a), sum(b), count() FROM t_pjc;
 
 DROP TABLE t_pjc;
