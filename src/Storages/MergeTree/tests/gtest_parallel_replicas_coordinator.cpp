@@ -206,7 +206,7 @@ InitialAllRangesAnnouncement makeDefaultAnnouncement(size_t replica_num, RangesI
 ///   `Trying to get non existing mark 120, while size is 62`
 /// (STID 4920-51f2, observed on PR #105706 on 2026-05-23).
 ///
-/// The crash is triggered when `parallel_replicas_for_non_replicated_merge_tree = 1` is used on
+/// The exception is triggered when `parallel_replicas_for_non_replicated_merge_tree = 1` is used on
 /// a cluster whose members each have INDEPENDENT non-replicated `MergeTree` data: each member's
 /// local "first part" is named `all_1_1_0` but the underlying parts on disk hold a different
 /// number of marks. The coordinator previously deduplicated parts purely by part info (name +
@@ -273,7 +273,7 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsIdenticalAnnouncementsFromMultip
 
 /// Same check for `Default` coordination mode (consistent-hash dispatch). Without this check the
 /// coordinator would later assign hash-mapped segments of replica-0's larger-version part to
-/// replica-1, whose local copy is smaller, producing the same crash inside the mark-range reader.
+/// replica-1, whose local copy is smaller, producing the same exception inside the mark-range reader.
 TEST(ParallelReplicasCoordinator, DefaultRejectsDivergentTotalMarksInPart)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
