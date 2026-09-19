@@ -1,0 +1,20 @@
+-- text after the query
+Code: 36. Unexpected text after the query: 'garbage'
+Code: 36. Unexpected text after the query: 'oops'
+Code: 36. Unexpected text after the query: '.limt(1)'
+Code: 36. Unexpected text after the query: '.explain()'
+Code: 36. Unexpected text after the query: 'tail'
+Code: 36. Unexpected text after the query: 'x'
+Code: 36. Unexpected text after the query: 'and more'
+-- the recognized suffixes and the argument list are not affected
+1	alpha
+-- malformed inserts
+Code: 36. The argument of 'insertOne' must be a document
+Code: 36. An inserted document must not be empty
+Code: 36. The argument of 'insertMany' must hold at least one document
+Code: 36. The argument of 'insertMany' must be an array of documents
+Code: 48. Every document of one insert must consist of the same fields: the rows of one 'INSERT' share a column list
+Code: 36. A field name of an inserted document must not start with '$', got '$id'
+Code: 36. A field name of an inserted document must not be empty
+-- the server is still healthy
+1	alpha
