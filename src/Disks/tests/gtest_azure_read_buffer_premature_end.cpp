@@ -23,9 +23,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int HTTP_RANGE_NOT_SATISFIABLE;
     extern const int UNEXPECTED_END_OF_FILE;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace ProfileEvents
@@ -63,14 +61,12 @@ private:
 /// A fake Azure endpoint holding one blob whose byte at position `i` is `i` (modulo 256), so that
 /// every byte a reader receives can be attributed to its position in the blob. The blob holds
 /// `served_size` bytes and is advertised as `advertised_size` bytes long in `Content-Range`. Every
-/// response carries at most `max_response_size` bytes. With `ignore_range`, the endpoint answers
-/// every request with `200 OK` and the blob from byte 0, the way an endpoint or a proxy that does
-/// not understand ranges does.
+/// response carries at most `max_response_size` bytes.
 class BlobEndpoint : public Azure::Core::Http::HttpTransport
 {
 public:
-    BlobEndpoint(size_t served_size_, size_t advertised_size_, size_t max_response_size_, bool ignore_range_ = false)
-        : served_size(served_size_), advertised_size(advertised_size_), max_response_size(max_response_size_), ignore_range(ignore_range_)
+    BlobEndpoint(size_t served_size_, size_t advertised_size_, size_t max_response_size_)
+        : served_size(served_size_), advertised_size(advertised_size_), max_response_size(max_response_size_)
     {
     }
 
@@ -79,7 +75,7 @@ public:
         /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional and `end` is inclusive.
         size_t range_start = 0;
         size_t range_limit = served_size;
-        if (auto range = request.GetHeader("x-ms-range"); range.HasValue() && !ignore_range)
+        if (auto range = request.GetHeader("x-ms-range"); range.HasValue())
         {
             const std::string & value = range.Value();
             if (const size_t eq_pos = value.find('='); eq_pos != std::string::npos)
@@ -94,16 +90,13 @@ public:
         const size_t response_size = range_start < range_limit ? std::min(max_response_size, range_limit - range_start) : 0;
         const size_t range_end = range_start + (response_size == 0 ? 0 : response_size - 1);
 
-        auto response = ignore_range
-            ? std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Ok, "OK")
-            : std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::PartialContent, "Partial Content");
+        auto response = std::make_unique<Azure::Core::Http::RawResponse>(
+            1, 1, Azure::Core::Http::HttpStatusCode::PartialContent, "Partial Content");
 
         response->SetHeader("Content-Length", std::to_string(response_size));
-        /// A `200 OK` response carries no `Content-Range`.
-        if (!ignore_range)
-            response->SetHeader(
-                "Content-Range",
-                "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(advertised_size));
+        response->SetHeader(
+            "Content-Range",
+            "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(advertised_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         response->SetHeader("ETag", "\"0x8DA000000000000\"");
         response->SetHeader("x-ms-blob-type", "BlockBlob");
@@ -122,7 +115,6 @@ private:
     size_t served_size;
     size_t advertised_size;
     size_t max_response_size;
-    bool ignore_range;
 };
 
 std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeBuffer(
