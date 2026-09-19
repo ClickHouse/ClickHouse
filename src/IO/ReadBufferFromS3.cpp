@@ -18,6 +18,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
 
 #include <cstdint>
@@ -608,6 +609,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
     /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
+    HTTPConnectionInfoScope connection_info_scope;
     Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
