@@ -635,7 +635,9 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
 
     if (info_.cache_settings.read_if_exists_otherwise_bypass)
     {
-        if (download_state == FileSegment::State::DOWNLOADED)
+        /// A DETACHED segment keeps `downloaded_size` but has no key metadata, so getPath() throws.
+        if (download_state == FileSegment::State::DOWNLOADED
+            || (download_state != FileSegment::State::DETACHED && canStartFromCache(offset, file_segment)))
             return create(ReadType::CACHED);
 
         LOG_TEST(
