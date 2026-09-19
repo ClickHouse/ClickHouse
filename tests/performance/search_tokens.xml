@@ -10,4 +10,30 @@
 
     <query>SELECT count() FROM hits_10m_single WHERE hasAnyTokens(URL, ['market'])</query>
     <query>SELECT count() FROM hits_10m_single WHERE hasAnyTokens(URL, ['market', 'video', 'com'])</query>
+
+    <create_query>
+        CREATE TABLE t_search_tokens_bloom_filter
+        (
+            s String,
+            INDEX idx_s s TYPE tokenbf_v1(32768, 3, 0)
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+    </create_query>
+
+    <!-- `common` is in every row and `medium<n>` in every 1000th one, so both are in every granule;
+         `rare<n>` is in one row. -->
+    <fill_query>INSERT INTO t_search_tokens_bloom_filter SELECT concat('common ', 'medium' || (number % 1000), ' rare' || number) FROM numbers(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_search_tokens_bloom_filter FINAL</fill_query>
+
+    <!-- Needles the index prunes on: 1 of 611 granules. -->
+    <query>SELECT count() FROM t_search_tokens_bloom_filter WHERE hasAnyTokens(s, ['rare123456'])</query>
+    <query>SELECT count() FROM t_search_tokens_bloom_filter WHERE hasAllTokens(s, ['medium456', 'rare123456'])</query>
+
+    <!-- Needles it cannot prune on: all 611 granules are read and the probe is added cost. These arms
+         are here to measure that cost, not because they are expected to improve. -->
+    <query>SELECT count() FROM t_search_tokens_bloom_filter WHERE hasAnyTokens(s, ['common'])</query>
+    <query>SELECT count() FROM t_search_tokens_bloom_filter WHERE hasAllTokens(s, ['medium123', 'common'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_search_tokens_bloom_filter</drop_query>
 </test>
