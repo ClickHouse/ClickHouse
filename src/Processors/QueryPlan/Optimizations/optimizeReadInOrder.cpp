@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
@@ -564,18 +565,33 @@ SortingInputOrder buildInputOrderFromSortDescription(
         int reverse_indicator = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[next_sort_key]) ? -1 : 1;
         const auto & sort_column_description = description[next_description_column];
 
+        /// The NULL/NaN placement check below can only run after this iteration consumed the key, so
+        /// remember how much was consumed and undo it when the check rejects the key. Otherwise the
+        /// rejected key would still widen `next_sort_key`, which becomes
+        /// `InputOrderInfo::used_prefix_of_sorting_key_size` - the width the storage actually reads with
+        /// and applies a hard `LIMIT` to - and the read would stop on a row the advertised prefix does
+        /// not order.
+        const size_t prev_sort_key = next_sort_key;
+        const size_t prev_match_infos_size = match_infos.size();
+        const size_t prev_order_key_prefix_size = order_key_prefix_descr.size();
+
         /// If required order depend on collation, it cannot be matched with primary key order.
         /// Because primary keys cannot have collations.
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with
-        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
-        /// supported only this direction, other cases are represented as nulls_direction==-1
-        /// Also actual for floating point values NaN.
-        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
-        if (column_is_nullable && sort_column_description.nulls_direction == -1)
-            break;
+        /// A part stores a `Nullable` or `Float` key with its NULLs and NaNs at one physical end - the
+        /// forward end for an ordinary key column, the other one for a key column declared `DESC` (a
+        /// reverse flag) - and reading the part cannot move them. Whether the requested order is
+        /// satisfiable therefore depends on the direction the key is read in, which is known only below,
+        /// after the monotonicity of the match is applied: `ORDER BY negate(x)` over an ascending key is
+        /// served by a *backward* read, which surfaces the NaNs first while `ASC NULLS LAST` wants them
+        /// last. The check is at the end of the iteration; here we only note the column's kind.
+        /// `LowCardinality` is unwrapped as well: a `LowCardinality(Float64)` key (allowed with
+        /// `allow_suspicious_low_cardinality_types`) holds `NaN`s at a physical end just like a plain one.
+        const auto & sorting_key_type = sorting_key.data_types[next_sort_key];
+        const auto column_is_nullable
+            = isNullableOrLowCardinalityNullable(sorting_key_type) || isFloat(*removeLowCardinalityAndNullable(sorting_key_type));
 
         /// Direction for current sort key.
         int current_direction = 0;
@@ -688,6 +704,29 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
                 order_key_prefix_descr.push_back(sort_column_description);
                 ++next_description_column;
+            }
+        }
+
+        /** The NULLs and NaNs of this key column come out at the end of the stream when the part is read
+          * in the direction that has them last, and at its beginning otherwise; `nulls_direction` asks for
+          * them last exactly when it agrees with `direction` (`ASC NULLS LAST`, `DESC NULLS FIRST`). A
+          * mismatch cannot be repaired downstream - the sort is elided, which is the point of this
+          * optimization - so the match ends here.
+          *
+          * `current_direction` is the direction the key is read in, with the monotonicity of the match
+          * already applied, and `reverse_indicator` says which physical end holds the NULLs and NaNs.
+          */
+        if (column_is_nullable && current_direction != 0)
+        {
+            const bool produces_nulls_last = current_direction * reverse_indicator == 1;
+            const bool requests_nulls_last = sort_column_description.direction == sort_column_description.nulls_direction;
+            if (produces_nulls_last != requests_nulls_last)
+            {
+                /// `next_description_column` is not read after the loop, so it is left alone.
+                next_sort_key = prev_sort_key;
+                match_infos.resize(prev_match_infos_size);
+                order_key_prefix_descr.resize(prev_order_key_prefix_size);
+                break;
             }
         }
 
