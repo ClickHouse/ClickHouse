@@ -1108,14 +1108,21 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << " CLONE";
     };
 
-    if (!as_table.empty())
+    /// `ATTACH TABLE t AS ...` is read by the parser as `ATTACH TABLE t AS [NOT] REPLICATED`, so for an
+    /// `ATTACH` query the `AS table` clause has to follow the storage (`ATTACH TABLE t ENGINE = E AS other`),
+    /// the only order the parser accepts.
+    const bool as_table_after_storage = attach && storage;
+    auto write_as_table = [&]
     {
         add_empty_if_needed();
         add_clone_if_needed();
         ostr
             << " AS "
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
-    }
+    };
+
+    if (!as_table.empty() && !as_table_after_storage)
+        write_as_table();
 
     if (as_table_function)
     {
@@ -1166,6 +1173,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (storage)
         storage->format(ostr, settings, state, frame);
+
+    if (!as_table.empty() && as_table_after_storage)
+        write_as_table();
 
     if (auto * inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {

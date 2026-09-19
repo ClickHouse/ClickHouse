@@ -156,7 +156,8 @@ void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
                                      FormatState & state,
                                      FormatStateStacked frame) const
 {
-    ostr << "LAYOUT(" << Poco::toUpper(layout_type);
+    ostr << "LAYOUT(";
+    writeKeyValueName(ostr, layout_type);
 
     if (has_brackets)
         ostr << "(";
