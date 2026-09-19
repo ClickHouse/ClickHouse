@@ -13,6 +13,23 @@ SELECT
 FROM numbers(2);
 Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) \N 1 \N 1
 Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) Nullable(UInt64) 0 \N 0 \N
+-- Calls without an explicit default must not access a third argument.
+SELECT lag(number) OVER (ORDER BY number)
+FROM numbers(2);
+0
+0
+SELECT lead(number, 1) OVER (ORDER BY number)
+FROM numbers(2);
+1
+0
+SELECT lagInFrame(number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM numbers(2);
+0
+0
+SELECT leadInFrame(number, 1) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM numbers(2);
+1
+0
 -- A typed NULL default is supported as well.
 SELECT
     toTypeName(leadInFrame(number, 1, CAST(NULL, 'Nullable(UInt64)')) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)),

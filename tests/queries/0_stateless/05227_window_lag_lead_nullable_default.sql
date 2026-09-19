@@ -12,6 +12,19 @@ SELECT
     leadInFrame(number, 1, NULL) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 FROM numbers(2);
 
+-- Calls without an explicit default must not access a third argument.
+SELECT lag(number) OVER (ORDER BY number)
+FROM numbers(2);
+
+SELECT lead(number, 1) OVER (ORDER BY number)
+FROM numbers(2);
+
+SELECT lagInFrame(number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM numbers(2);
+
+SELECT leadInFrame(number, 1) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM numbers(2);
+
 -- A typed NULL default is supported as well.
 SELECT
     toTypeName(leadInFrame(number, 1, CAST(NULL, 'Nullable(UInt64)')) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)),
