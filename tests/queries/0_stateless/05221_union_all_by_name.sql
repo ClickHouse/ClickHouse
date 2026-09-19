@@ -18,7 +18,8 @@ FROM
     SELECT 'middle' AS c, 2 AS b
     UNION ALL BY NAME
     SELECT 3 AS d, 'right' AS a
-);
+)
+ORDER BY isNull(b), b;
 
 SELECT 'duplicate rows are preserved';
 SELECT a
@@ -80,7 +81,8 @@ FROM
     SELECT 2 AS a, 'two' AS b
     UNION ALL BY NAME
     SELECT 'three' AS b, 3 AS a
-);
+)
+ORDER BY a;
 
 SELECT 'missing nullable value';
 SELECT *

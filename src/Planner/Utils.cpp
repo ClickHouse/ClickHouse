@@ -178,8 +178,11 @@ void addConvertingToCommonHeaderActionsIfNeeded(
             if (auto it = inputs.find(result_element.name); it != inputs.end())
                 node = it->second;
             else
+            {
                 node = &actions_dag.addColumn(
                     result_element.type->createColumnConst(0, Null()), result_element.type, result_element.name);
+                node = &actions_dag.materializeNode(*node);
+            }
 
             if (!result_element.type->equals(*node->result_type))
                 node = &actions_dag.addCast(*node, result_element.type, result_element.name, context);
