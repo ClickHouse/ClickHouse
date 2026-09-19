@@ -3,6 +3,8 @@
 
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -82,6 +84,15 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
 
     FunctionNameNormalizer::visit(query_ptr.get());
+
+    /// Inline SQL UDFs before the read columns are extracted below, as `InterpreterAlterQuery` does:
+    /// a UDF body can reference a column of the updated table, which is a read of it, and the call
+    /// site alone does not show it. There is no later access pass on this path - a local lightweight
+    /// update goes straight to `updateLightweight`, and the replicated / `ON CLUSTER` paths return
+    /// even earlier.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
     /// Resolve the target table up front and qualify the query with its database, so the access
@@ -95,6 +106,15 @@ BlockIO InterpreterUpdateQuery::execute()
     /// the initiating user's read access is enforced on every path, including ON CLUSTER, where the
     /// remote DDL worker may not run as the initiating user.
     AccessRightsElements read_access;
+
+    /// Reads hidden behind a subquery or a `dictGet`/`joinGet` name their own objects, so they are
+    /// collected without the updated table's metadata - which also covers the paths where it is not
+    /// present locally, and holds when `validate_mutation_query` is disabled.
+    addExpressionIndirectReadsAccess(read_access, update_query.predicate.get(), getContext());
+    for (const ASTPtr & assignment : update_query.assignments->children)
+        addExpressionIndirectReadsAccess(
+            read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext());
+
     StoragePtr resolved_table;
     auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
     if (resolved_id)

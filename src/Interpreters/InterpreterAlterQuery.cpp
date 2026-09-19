@@ -444,12 +444,22 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                             read_access, assignment->as<const ASTAssignment &>().expression().get(),
                             table_id.database_name, table_id.table_name, *metadata_ptr);
                 }
+
+                /// Reads hidden behind a subquery or a `dictGet`/`joinGet` name their own objects, so
+                /// they are collected without the mutated table's metadata - which also covers the
+                /// paths where it is not present locally.
+                addExpressionIndirectReadsAccess(read_access, command.predicate, getContext());
+                for (const ASTPtr & assignment : command.update_assignments->children)
+                    addExpressionIndirectReadsAccess(
+                        read_access, assignment->as<const ASTAssignment &>().expression().get(), getContext());
             }
             else if (command.type == ASTAlterCommand::DELETE)
             {
                 has_mutation_command = true;
                 if (metadata_ptr)
                     addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
+
+                addExpressionIndirectReadsAccess(read_access, command.predicate, getContext());
             }
         }
         /// Table is not present locally (e.g. ON CLUSTER issued from a node without it): the read

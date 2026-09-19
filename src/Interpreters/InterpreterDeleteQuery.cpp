@@ -6,6 +6,8 @@
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -66,6 +68,14 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
+
+    /// Inline SQL UDFs before the read columns are extracted below, as `InterpreterAlterQuery` does:
+    /// a UDF body can reference a column of the mutated table, which is a read of it, and the call
+    /// site alone does not show it. There is no later access pass on this path - the rewrite to a
+    /// lightweight update, the replicated enqueue and `ON CLUSTER` all return before one.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
@@ -88,6 +98,7 @@ BlockIO InterpreterDeleteQuery::execute()
         addExpressionColumnsSelectAccess(
             read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
             *metadata_snapshot);
+        addExpressionIndirectReadsAccess(read_access, delete_query.predicate.get(), getContext());
         if (!read_access.empty())
             getContext()->checkAccess(read_access);
     }

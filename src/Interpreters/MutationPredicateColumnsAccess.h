@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 
 namespace DB
@@ -25,5 +26,30 @@ void addExpressionColumnsSelectAccess(
     const String & database,
     const String & table,
     const StorageInMemoryMetadata & metadata);
+
+/// Appends the access requirements for the reads a mutation expression performs indirectly, which
+/// `addExpressionColumnsSelectAccess` cannot see: `RequiredSourceColumnsVisitor` stops at a
+/// subquery, and the table a `dictGet` or `joinGet` reads is named by an argument rather than
+/// referenced as a column. Covers a subquery (`... WHERE id IN (SELECT secret FROM other)`,
+/// `... UPDATE visible = (SELECT secret FROM other)`), a table on the right of `IN`
+/// (`... WHERE id IN other`), the `dictGet` family and `joinGet`.
+///
+/// The requirements are derived from names only, without resolving or analyzing anything, so they
+/// hold when `validate_mutation_query = 0` defers validation because the objects do not exist yet -
+/// and, unlike that validation, they cannot be turned off by a setting. A background mutation runs
+/// with no user and therefore full access, so the submitting user's read access has to be
+/// established here.
+///
+/// A subquery level that reads a single plain table and whose column references all attribute to it
+/// produces a column-level requirement. Every other shape - a join, several tables, a nested
+/// subquery or table function in `FROM`, an asterisk, a dotted name that may itself be a column -
+/// falls back to requiring `SELECT` on the whole table, which is a superset and so never
+/// under-requires. `WITH` names and session temporary tables are not tables to grant on and are
+/// skipped. A table function inside a subquery is not covered: its privilege is derived from an
+/// instance of the function, which is what validation builds.
+void addExpressionIndirectReadsAccess(
+    AccessRightsElements & required_access,
+    const IAST * expression,
+    const ContextPtr & context);
 
 }
