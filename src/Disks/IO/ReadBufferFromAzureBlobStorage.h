@@ -69,10 +69,6 @@ public:
 
 private:
     void initialize(size_t attempt);
-
-    /// Drops the current response and the bytes buffered from it, so that the next read reopens
-    /// the download at the current position of the reader.
-    void discardCurrentDownload();
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
     /// Creates the client on first use. Thread-safe.

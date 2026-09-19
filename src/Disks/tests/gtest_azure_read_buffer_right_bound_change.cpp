@@ -70,17 +70,22 @@ public:
 
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
-        /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional.
+        /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional and `end` is inclusive.
         size_t range_start = 0;
+        size_t range_limit = served_size;
         if (auto range = request.GetHeader("x-ms-range"); range.HasValue() && !ignore_range)
         {
             const std::string & value = range.Value();
             if (const size_t eq_pos = value.find('='); eq_pos != std::string::npos)
+            {
                 range_start = std::stoull(value.substr(eq_pos + 1));
+                if (const size_t dash_pos = value.find('-', eq_pos + 1); dash_pos != std::string::npos && dash_pos + 1 < value.size())
+                    range_limit = std::min(range_limit, static_cast<size_t>(std::stoull(value.substr(dash_pos + 1))) + 1);
+            }
         }
         requested_offsets.push_back(range_start);
 
-        const size_t response_size = range_start < served_size ? std::min(max_response_size, served_size - range_start) : 0;
+        const size_t response_size = range_start < range_limit ? std::min(max_response_size, range_limit - range_start) : 0;
         const size_t range_end = range_start + (response_size == 0 ? 0 : response_size - 1);
 
         auto response = ignore_range
@@ -162,14 +167,14 @@ TEST(AzureReadUntilPositionChange, BoundLoweredBelowBufferedBytes)
     ASSERT_EQ(tail.size(), static_cast<size_t>(8));
     assertCountsFrom(tail, 32);
     ASSERT_EQ(buffer->getPosition(), 40);
-    /// The download was reopened at the position of the reader, under the new bound.
-    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 32}));
+    /// The bytes up to the new bound were already buffered, so no download was reopened.
+    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0}));
 }
 
 /// The right bound is raised while the reader still holds bytes from the response of the previous
 /// bound: the response answered the range 0..63, the caller consumes 32 bytes and asks to read
-/// until byte 80. The read must continue from byte 32, reopening the download under the new bound,
-/// and deliver exactly bytes 32..79.
+/// until byte 80. The buffered bytes 32..63 lie within the new bound and are kept; the download is
+/// reopened after them, under the new bound, and the read delivers exactly bytes 32..79.
 TEST(AzureReadUntilPositionChange, BoundRaisedAfterBufferedBytes)
 {
     auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 100, /* advertised_size */ 100, /* max_response_size */ 100);
@@ -187,7 +192,7 @@ TEST(AzureReadUntilPositionChange, BoundRaisedAfterBufferedBytes)
     ASSERT_EQ(tail.size(), static_cast<size_t>(48));
     assertCountsFrom(tail, 32);
     ASSERT_EQ(buffer->getPosition(), 80);
-    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 32}));
+    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 64}));
 }
 
 /// Setting the same right bound again is not a new logical read: nothing already buffered is
