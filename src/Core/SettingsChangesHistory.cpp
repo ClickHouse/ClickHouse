@@ -50,6 +50,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_conflict_detector", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."},
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a private cache capped at 100 MiB, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"input_format_protobuf_datetime64_legacy_seconds", true, false, "From 26.10, integer Protobuf fields mapped to DateTime64 are read as scaled DateTime64 ticks (preserving subseconds). Set this to true (or SET compatibility = '26.9') to restore the pre-26.10 behavior of reading whole Unix seconds. float/double fields always store fractional Unix seconds and are unaffected."},
+            {"output_format_protobuf_datetime64_legacy_seconds", true, false, "From 26.10, integer Protobuf fields mapped from DateTime64 are written as scaled DateTime64 ticks (preserving subseconds). Set this to true (or SET compatibility = '26.9') to restore the pre-26.10 behavior of writing whole Unix seconds. float/double fields always store fractional Unix seconds and are unaffected."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
