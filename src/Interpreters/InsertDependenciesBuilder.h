@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
@@ -31,6 +32,8 @@ class ViewErrorsRegistry;
 using ViewErrorsRegistryPtr = std::shared_ptr<ViewErrorsRegistry>;
 
 class DeduplicationInfo;
+
+struct Settings;
 
 class InsertDependenciesBuilder : public std::enable_shared_from_this<InsertDependenciesBuilder>
 {
@@ -110,6 +113,12 @@ public:
     Chain createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const;
     bool isViewsInvolved() const;
 
+    /// Whether the dependent-view branches of this non-parallel quorum insert must be pushed
+    /// sequentially: two of them converge on one `ReplicatedMergeTree` table (racing two in-flight
+    /// quorum parts of one query against each other), or a hidden write target makes such a
+    /// convergence impossible to rule out. See `computeQuorumStreamRequirements`.
+    bool quorumRequiresSequentialViews() const { return quorum_sequential_views; }
+
     void logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start = false) const;
     StorageIDMaybeEmpty getRootViewID() const { return root_view; }
 
@@ -151,7 +160,7 @@ public:
     /// materialized view and rows are silently dropped. This resolves the forwarding chain to the concrete
     /// local target and reports whether it has any dependent view; it fails closed (returns true) when the
     /// ultimate target is not cheaply known here (`Distributed`, `Buffer`, unresolvable, or too deep).
-    static bool forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth = 0);
+    static bool forwardedInsertReachesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     /// Whether inserting into `storage` can reach a dependent materialized view that is *hidden* from
     /// `collectAllDependencies`. An `Alias` executes a full nested `INSERT` into its target per sink
@@ -167,7 +176,61 @@ public:
     /// views also make the write fan-out bypass `parallel_view_processing = 0` (each branch's nested
     /// `INSERT` pushes the hidden views concurrently), so `InterpreterInsertQuery` also keeps the
     /// insert single-stream when this probe reports true and that setting is disabled.
-    static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
+    static bool forwardedInsertHidesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// Whether `storage` has a dependent materialized view which the nested `INSERT` will execute.
+    /// This mirrors the pruning done by `collectAllDependencies` for unavailable views, dropped
+    /// targets, stale dependency entries, and errors ignored by `materialized_views_ignore_errors`.
+    static bool hasExecutableDependentView(const StoragePtr & storage, ContextPtr context);
+
+    /// Whether the INSERT is a non-parallel quorum insert (`insert_quorum >= 2` or `'auto'`, with
+    /// `insert_quorum_parallel = 0`). Such an insert permits a single in-flight quorum part per table:
+    /// every `ReplicatedMergeTreeSink` checks in `onStart` that the quorum of all previous writes is
+    /// already satisfied (`checkQuorumPrecondition`) and throws `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`
+    /// otherwise. Concurrent sibling sinks of the same query - the write fan-out to
+    /// `max_insert_threads` sink chains as well as the branches of dependent materialized views
+    /// converging on one target table - would race against the not-yet-satisfied quorum node of the
+    /// part committed by a sibling, so such an insert must keep a single sink stream and push its
+    /// dependent views sequentially (a sequential sink blocks in `commitPart` until the quorum of its
+    /// part is satisfied, so the next sink starts with the quorum node already gone).
+    ///
+    /// The settings alone do not tell whether a given insert can actually violate that contract: only
+    /// writes reaching a `ReplicatedMergeTree` table are quorum writes, and only two of them racing on
+    /// the *same* table conflict. `computeQuorumStreamRequirements` derives the two serialization
+    /// requirements from the collected sink graph, so a global quorum profile does not cost the write
+    /// fan-out of inserts that never reach a replicated table, nor the view parallelism of branches
+    /// that write to distinct replicated tables.
+    static bool isSequentialQuorumInsert(const Settings & settings);
+
+    /// Whether an insert into `storage` may create a part in a `ReplicatedMergeTree` table: the storage
+    /// is one (directly or behind a `MaterializedView` / proxy target chain), or it forwards the write
+    /// through a nested `INSERT` whose destination graph is not visible here (a `Distributed` shard, a
+    /// `Buffer` flush, a `WindowView` inner table) - in which case the probe fails closed (returns true),
+    /// like it does when a target cannot be resolved or the chain is too deep. An `Alias` target is known
+    /// locally, so the probe follows it and its hidden dependent-view graph precisely.
+    bool storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
+    static bool storageMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// Whether a dependent-view graph hidden behind an `Alias` may write to a `ReplicatedMergeTree`.
+    /// It fails closed when a view or its target cannot be resolved.
+    bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
+    static bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// Whether a quorum writer reached through `storage` cannot be tied to a concrete target in
+    /// `computeQuorumStreamRequirements`. Unlike other forwarding storages, an `Alias` can be
+    /// resolved locally, so a direct alias to a replicated table is not hidden.
+    bool storageHidesQuorumWriteTarget(const StoragePtr & storage, size_t depth = 0) const;
+
+    /// Returns the physical target id for a visible forwarding chain, so two `Alias` branches
+    /// resolving to the same replicated table still participate in the same convergence check.
+    StorageIDMaybeEmpty getVisibleQuorumWriteTargetID(const StoragePtr & storage) const;
+
+    /// Whether the physical write target behind `storage` is hidden from this builder: the write is
+    /// forwarded through a nested `INSERT` (an `Alias`, a `Distributed` shard, a `Buffer` flush, a
+    /// `WindowView` inner table), or a `MaterializedView` / proxy target chain cannot be resolved. Two
+    /// branches whose targets are hidden cannot be proven to write to distinct tables, so quorum
+    /// convergence checks fail closed on them.
+    static bool storageHidesWriteTarget(const StoragePtr & storage, size_t depth = 0);
 
     /// Whether inserting into `storage` reaches a `Buffer` or a `Distributed`, whose final write runs in a
     /// context other than this query's, so this query's deduplication settings (`deduplicate_insert` /
@@ -217,7 +280,8 @@ protected:
         bool async_insert_,
         bool skip_destination_table_,
         size_t max_insert_threads,
-        ContextPtr context);
+        ContextPtr context,
+        InsertStartGatesPtr insert_start_gates_ = nullptr);
 
 private:
     bool isView(StorageIDMaybeEmpty id) const;
@@ -227,6 +291,10 @@ private:
     String debugTree() const;
     String debugPath(const DependencyPath & path) const;
     void collectAllDependencies();
+
+    /// Derives `quorum_single_stream` and `quorum_sequential_views` from the sink graph collected by
+    /// `collectAllDependencies` for a non-parallel quorum insert (see `isSequentialQuorumInsert`).
+    void computeQuorumStreamRequirements();
 
     Chain createPreSink(StorageIDMaybeEmpty view_id) const;
     Chain createSelect(StorageIDMaybeEmpty view_id) const;
@@ -248,6 +316,10 @@ private:
 
     bool async_insert = false;
     bool skip_destination_table = false;
+    bool sequential_quorum_insert = false;
+    /// Graph-derived quorum serialization requirements, see `computeQuorumStreamRequirements`.
+    bool quorum_single_stream = false;
+    bool quorum_sequential_views = false;
     size_t sink_stream_size = 1;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
@@ -267,6 +339,10 @@ private:
     MapIdBlock input_headers;
     MapIdBlock output_headers;
     MapIdThreadGroup thread_groups;
+    /// The gates of this query's destination tables, shared by the sinks of all the parallel streams
+    /// writing into them - including the sinks a forwarding destination (an `Alias`) creates inside
+    /// its nested INSERT, which receives this registry instead of creating its own.
+    InsertStartGatesPtr insert_start_gates;
 
     using SquashingProcessorsMap = std::unordered_map<
         StorageIDMaybeEmpty,
