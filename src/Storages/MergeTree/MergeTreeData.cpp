@@ -13337,7 +13337,8 @@ std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdat
     return {};
 }
 
-MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context)
+MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(
+    const MutationCommands & commands, ContextPtr query_context, LightweightUpdateSettings settings)
 {
     auto it = std::ranges::find_if(commands, [](const auto & cmd) { return cmd.type != MutationCommand::UPDATE; });
     if (it != commands.end())
@@ -13394,7 +13395,7 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
 
     MutationsInterpreter::Settings mutation_settings(true);
     mutation_settings.return_mutated_rows = true;
-    mutation_settings.allow_correlated_subqueries = true;
+    mutation_settings.allow_correlated_subqueries = settings.allow_correlated_subqueries;
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 

@@ -70,6 +70,11 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
+struct LightweightUpdateSettings
+{
+    bool allow_correlated_subqueries = false;
+};
+
 class ConditionSelectivityEstimator;
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
@@ -627,7 +632,8 @@ public:
         ContextPtr /*context*/);
 
     /// Executes update query. More lightweight than mutation.
-    virtual QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context);
+    virtual QueryPipeline updateLightweight(
+        const MutationCommands & commands, ContextPtr context, LightweightUpdateSettings settings = {});
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
