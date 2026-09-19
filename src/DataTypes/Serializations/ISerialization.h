@@ -367,6 +367,8 @@ public:
         MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
+        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
+        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -440,6 +442,8 @@ public:
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
+        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
+        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -494,10 +498,9 @@ public:
         /// Callback to start prefetches for specific substreams during prefixes deserialization.
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
+        /// Setting it requires all the callbacks in these settings to be thread safe: prefixes are then
+        /// deserialized from several pool threads at once, each one owning a disjoint set of subcolumns.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
-        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
-        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
-        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
