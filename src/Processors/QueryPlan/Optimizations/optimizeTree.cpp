@@ -254,7 +254,8 @@ void optimizeTreeSecondPass(
     {
         traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
         {
-            predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+            predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(
+                &frame_node, nodes, optimization_settings.index_analysis_enabled, extra_settings) > 0;
         });
     }
 
