@@ -156,7 +156,7 @@ SELECT formatQueryFromJSON(
                 replace(
                     replace(
                         parseQueryToJSON('SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a'),
-                        '"union_mode":"UNION"',
+                        '"union_mode":"UNION_DEFAULT"',
                         '"union_mode":"UNION_ALL"'),
                     '"column_match_mode":"POSITION"',
                     '"column_match_mode":"NAME"'),
