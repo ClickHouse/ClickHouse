@@ -98,7 +98,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -138,7 +138,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
 
 ```
@@ -593,6 +593,7 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+- `pfor` - apply differential (delta) coding, followed by PFor bit-packing (each within blocks of fixed size). Like `bitpacking`, but the per-block bit width is chosen to minimise the total size and the values that do not fit are stored separately as patched exceptions, so a single large gap no longer widens the whole block. Blocks whose deltas are all equal collapse to a constant.
 
 The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.
@@ -1458,22 +1459,20 @@ As a special case, if the index tokenizer is `array`, then _any_ pattern qualifi
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Several guards bound that cost:
 
 1. If the alphanumeric needle of the pattern is shorter than [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length), the dictionary scan is skipped and the pattern is evaluated on the column as usual.
-2. During the dictionary scan, ClickHouse adds up what reading the posting lists of the matched tokens would cost. Two limits bound that cost: [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read) limits how many posting lists the index may read, and [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index) limits how many rows those posting lists may point at in total. Each matched token whose posting list is too large to be stored inside the dictionary counts once against the first limit and with its number of rows against the second; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. If either limit is exceeded, the scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual. The rows limit applies when the index is used to skip granules; a [direct read](#direct-read) applies only the posting-list limit.
-3. If the scan stays within the limits but the matched tokens are known to occur in every row of the part, their posting lists could not skip anything anyway. With [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text) enabled, the posting lists are then not read, and the pattern is evaluated on the column directly. This decision uses only what the index already stores - either a matched token's row count equals the row count of the part, or the small posting lists kept inside the dictionary (and read during the scan) together cover every row - never an estimate. It applies only when the index is used to skip granules, not to a [direct read](#direct-read), and not to a pattern whose posting lists are all read already.
+2. While scanning the dictionary, ClickHouse adds up how much work reading the matched tokens would be. Two limits bound it: [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read) caps how many posting lists are read, and [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_rows_to_read) caps how many rows those lists point at in total. If either limit is exceeded, the index gives up on the pattern, and the rows are read and filtered as usual. A [direct read](#direct-read) applies only the first limit.
+3. A token that occurs in every row of a part cannot skip anything, so reading its posting list is wasted work. [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text#use_text_index_like_pattern_bypass) lets ClickHouse skip reading such posting lists and evaluate the pattern on the column instead. It decides this from row counts the index already stores, never from an estimate, so a token that could have pruned something is never skipped. This does not apply to a [direct read](#direct-read).
 
 The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
 
 The optimization is controlled by the following settings:
 
-| Setting                                                                                                                                                | Default   | Description                                                                                                                                                      |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)   | `true`    | Enables evaluation of LIKE/ILIKE queries by scanning the text index dictionary.                                                                                  |
-| [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)                               | `4`       | Minimum length of the alphanumeric needle in the pattern. Shorter patterns match too many dictionary tokens and skip the dictionary scan.                        |
-| [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)                           | `50`      | Maximum number of posting lists the index may read for a pattern. Each matched token whose posting list is stored outside the dictionary counts once, regardless of its size. |
-| [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index)                                                           | `1000000` | Maximum total number of rows the posting lists read for a pattern may point at. Each matched token with a large posting list counts its number of rows, so a single very common token can exhaust the limit. |
-| [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text)                                                                    | `true`    | Allows skipping the posting lists of a pattern whose matched tokens are known to occur in every row of the part, because they could not skip anything.       |
+- [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
+- [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+- [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
+- [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_rows_to_read)
+- [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text#use_text_index_like_pattern_bypass)
 
-`text_index_like_max_postings_rows_to_read` and `use_text_index_like_pattern_bypass` were introduced in version 26.9. Setting [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) to an older version restores the previous planning: the rows budget becomes unlimited and the bypass is disabled.
+`text_index_like_max_postings_rows_to_read` and `use_text_index_like_pattern_bypass` were introduced in version 26.10. Setting [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) to an older version restores the previous planning: the rows budget becomes unlimited and the bypass is disabled.
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
@@ -1565,6 +1564,7 @@ The text index currently has the following limitations:
 The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index) (default: `v2_with_positions`).
 The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
+The posting list codec is not governed by this version: a part written with `posting_list_codec = 'pfor'` (or the `text_index_posting_list_codec` setting) cannot be read by servers that predate the codec, and neither `text_index_serialization_version` nor `compatibility` prevents it from being used, because a codec named for the index takes precedence over the version preference in the same way `support_phrase_search` does. Do not enable `pfor` until every server that may read the table has been upgraded.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 
