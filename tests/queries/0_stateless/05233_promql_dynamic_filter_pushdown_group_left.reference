@@ -1,0 +1,4 @@
+-- group_left with dynamic filter pushdown pruning dc=b and dc=c
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+-- group_left with empty left side

@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
@@ -173,8 +174,19 @@ namespace
                     make_intrusive<ASTLiteral>(0u));
             }
 
+            if (group_left && (side == right))
+            {
+                // Dynamic filter pushdown: filter right-side join_groups by left side.
+                SelectQueryBuilder filter_builder;
+                filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+                filter_builder.from_table = left;
+                auto subquery = make_intrusive<ASTSubquery>(filter_builder.getSelectQuery());
+                builder.where = makeASTFunction("in", join_group->clone(), std::move(subquery));
+            }
+
             ASTPtr ast = builder.getSelectQuery();
-            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), SQLSubqueryType::TABLE});
+            auto subquery_type = (group_left && (side == left)) ? SQLSubqueryType::MATERIALIZED_TABLE : SQLSubqueryType::TABLE;
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), subquery_type});
 
             side = context.subqueries.back().name;
         }
