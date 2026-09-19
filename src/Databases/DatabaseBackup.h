@@ -28,11 +28,29 @@ public:
 
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
 
-    /// Authorizes reading this engine's backup destination against `context`'s SOURCES grants, and
-    /// does nothing for a destination that cannot decode (creation rejects it anyway). Performs no
-    /// I/O, so it also serves as a preflight before an `ON CLUSTER` query is distributed or a
-    /// definition found in a backup is created.
-    static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context);
+    /// Whether a locator arrived with the query being executed, or was read back from a definition
+    /// this server stored or an archive holds.
+    enum class LocatorSource
+    {
+        Query,
+        StoredDefinition,
+    };
+
+    /// Authorizes reading this engine's backup destination against `context`'s SOURCES grants, in
+    /// either spelling of the locator. An argument written in neither is left to creation, which
+    /// rejects it. Performs no I/O, so it also serves as a preflight before an `ON CLUSTER` query is
+    /// distributed or a definition found in a backup is created.
+    static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context, LocatorSource locator_source);
+
+    /// Older servers persisted the locator as a string literal, a form nothing can open. Returns the
+    /// function form such an argument holds, and any other argument unchanged; a string that does not
+    /// decode is rejected without quoting it, because it carries credentials.
+    /// Parses without limits: a stored definition must decode whatever was accepted when it was
+    /// written, or the database it names can no longer be loaded.
+    static ASTPtr normalizeLegacyLocator(const ASTPtr & locator);
+
+    /// As above, under the parser and tree limits of `query_context`'s session.
+    static ASTPtr normalizeLegacyLocatorFromQuery(const ASTPtr & locator, const ContextPtr & query_context);
 
     String getEngineName() const override { return "Backup"; }
 
