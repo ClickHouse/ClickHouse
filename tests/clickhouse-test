@@ -4934,6 +4934,8 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
         multiprocessing.sharedctypes.Synchronized,
+        multiprocessing.sharedctypes.Synchronized,
+        int,
         multiprocessing.managers.ListProxy,
         int,
         multiprocessing.sharedctypes.Synchronized,
@@ -4951,6 +4953,8 @@ def run_tests_array(
         exit_code,
         stop_testing,
         workers_to_shed,
+        live_workers,
+        min_workers,
         restarted_tests,
         process_index,
         total_failures_shared,
@@ -5020,22 +5024,61 @@ def run_tests_array(
         proc_name = multiprocessing.current_process().name
         print(f"Running {about}{num_tests} {test_suite.suite} tests ({proc_name}).")
 
+    # A worker-local queue (--no-self-parallel) is a plain list; a shared queue
+    # is a manager proxy, so every access to it is a round trip to another
+    # process.
+    queue_is_local = isinstance(all_tests, list)
+
     while True:
-        # Check whether this worker has been asked to shed (stop after finishing
-        # its previous test). The check happens before popping the next test so
-        # no work is lost — the remaining workers will pick up the queue.
+        # Decide whether to take another test, under the lock that also guards
+        # `live_workers`, so that leaving the pool is atomic with respect to
+        # every other worker's decision. `live_workers` is decremented here, at
+        # the moment a worker decides to stop, and never counts one that has
+        # decided - which is what makes the parent's cap exact.
+        #
+        # The parent caps the requests it issues by the same floor, but it reads
+        # its count between two of its own five-second samples, so a worker that
+        # left the pool in between - or during the very query that takes the
+        # sample - is still counted there. Only this check, taken at the instant
+        # a worker would act on the request, can tell that the pool is already at
+        # the floor, and it declines then, leaving the request pending for
+        # whenever the pool is larger again. Without it a `--no-self-parallel`
+        # run, where every worker owns its queue, could be told to stop its last
+        # busy worker and end with that worker's queue unrun and nothing to
+        # report it, since a shed worker is not a failure.
+        #
+        # The shed check comes before taking the next test so no work is lost -
+        # the remaining workers pick the queue up.
+        case = None
         with workers_to_shed.get_lock():
-            if workers_to_shed.value > 0:
+            if workers_to_shed.value > 0 and live_workers.value > min_workers:
                 workers_to_shed.value -= 1
+                live_workers.value -= 1
                 break
 
-        if all_tests:
+            if queue_is_local:
+                # Taking the test belongs in the same critical section: a worker
+                # that took one is still working and a worker that found its
+                # queue empty is gone, and the pool must not be seen in both
+                # states at once. The queue is this worker's own list, so the
+                # lock - which is on every worker's path between two tests -
+                # only covers a list access.
+                if not all_tests:
+                    live_workers.value -= 1
+                    break
+                case = all_tests.pop(0)
+
+        if case is None:
+            # Shared queue: keep the round trip out of the lock. It does not need
+            # the care above, because a worker only reaches the end of a shared
+            # queue once it is empty - there is nothing left for the worker that
+            # would stop in its place to run.
             try:
                 case = all_tests.pop(0)
             except IndexError:
+                with workers_to_shed.get_lock():
+                    live_workers.value -= 1
                 break
-        else:
-            break
 
         if stop_testing.is_set():
             if is_concurrent:
@@ -6001,6 +6044,10 @@ def do_run_tests(
             random.shuffle(test_suite.parallel_tests)
 
         workers_to_shed = multiprocessing.Value('i', 0)
+        # Workers that have not yet decided to stop, guarded by the lock of
+        # `workers_to_shed` so that a worker leaving the pool and a worker
+        # taking a shed request cannot be observed out of order.
+        live_workers = multiprocessing.Value('i', 0)
         total_failures_shared = multiprocessing.Value('i', 0)
 
         if args.no_self_parallel:
@@ -6018,7 +6065,26 @@ def do_run_tests(
 
         batch_size = len(test_suite.parallel_tests) // jobs
 
+        # Shedding is a one-way door when every worker owns its queue: a worker
+        # that stops takes its remaining tests with it, and starting it again
+        # would re-run the ones it already did. Those runs (--no-self-parallel is
+        # only used together with --flaky-check) are bounded by a time limit and
+        # not by a test count, so a pool that drains only costs reruns, and it may
+        # drain to a single worker as it always has. A shared queue instead has to
+        # finish a fixed set of tests within the job's own timeout, and dropping
+        # from `jobs` to one worker multiplies what is left of the run by `jobs` -
+        # turning a server that survived into a job killed mid-suite. Keep half of
+        # the pool there: halving the load is the largest cut whose worst case,
+        # paid from the very first test, still fits a budget sized at twice the
+        # median run. The half is rounded up, so an odd pool keeps the contract
+        # too - `jobs // 2` would let `jobs = 3` shed down to one worker, a 3x
+        # worst case, and `jobs` is clamped to the number of selected tests, so
+        # an ordinarily even configuration can still come out odd here.
+        MIN_WORKERS = 1 if args.no_self_parallel else max(1, (jobs + 1) // 2)
+
         def start_worker(process_index, queue, queue_size):
+            with workers_to_shed.get_lock():
+                live_workers.value += 1
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=(
@@ -6031,6 +6097,8 @@ def do_run_tests(
                         exit_code,
                         stop_testing,
                         workers_to_shed,
+                        live_workers,
+                        MIN_WORKERS,
                         restarted_tests,
                         process_index,
                         total_failures_shared,
@@ -6069,19 +6137,6 @@ def do_run_tests(
         # oscillates in - the observed runs hover just above the shed threshold,
         # not far below it.
         MEMORY_RECOVERY_THRESHOLD = 0.75
-        # Shedding is a one-way door when every worker owns its queue: a worker
-        # that stops takes its remaining tests with it, and starting it again
-        # would re-run the ones it already did. Those runs (--no-self-parallel is
-        # only used together with --flaky-check) are bounded by a time limit and
-        # not by a test count, so a pool that drains only costs reruns, and it may
-        # drain to a single worker as it always has. A shared queue instead has to
-        # finish a fixed set of tests within the job's own timeout, and dropping
-        # from `jobs` to one worker multiplies what is left of the run by `jobs` -
-        # turning a server that survived into a job killed mid-suite. Keep half of
-        # the pool there: halving the load is the largest cut whose worst case,
-        # paid from the very first test, still fits a budget sized at twice the
-        # median run.
-        MIN_WORKERS = 1 if args.no_self_parallel else max(1, jobs // 2)
         last_memory_check = time()
         # Shed requests issued so far, and how many of the workers that honoured
         # one have been started again. `workers_to_shed` only counts the requests
@@ -6090,6 +6145,17 @@ def do_run_tests(
         # committed to stopping.
         shed_requests = 0
         workers_restored = 0
+
+        def reap_finished_workers():
+            for p in processes[:]:
+                if not p.is_alive():
+                    # Check if process was killed with exception
+                    if p.exitcode is not None and p.exitcode != 0:
+                        print(
+                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
+                        )
+                        runner_process_killed.set()
+                    processes.remove(p)
 
         hung_check_monitor = HungCheckMonitor(args)
 
@@ -6107,45 +6173,41 @@ def do_run_tests(
             now = time()
             if now - last_memory_check >= MEMORY_CHECK_INTERVAL:
                 last_memory_check = now
+                # Drop the workers that have already exited before deciding, so
+                # that what is printed alongside the decision is what the pool
+                # looks like now rather than what it looked like an iteration
+                # ago. The decision itself reads `live_workers`, which does not
+                # depend on this.
+                reap_finished_workers()
                 memory_fraction = get_server_memory_fraction(args)
                 pool_changed = False
                 if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
                     # Cap outstanding shed requests so we never drain the pool
-                    # past its floor. Two counts bound how many workers are left
-                    # once every request issued has been honoured, and each is
-                    # blind to something the other sees, so the cap is the
-                    # smaller of them:
+                    # past its floor. `live_workers` counts the workers that have
+                    # not yet decided to stop - a worker leaves that count in the
+                    # same critical section in which it takes a shed request or
+                    # finds its queue empty - so subtracting the requests nobody
+                    # has taken yet gives exactly how many workers are left once
+                    # every request issued has been honoured.
                     #
-                    #  * `jobs + workers_restored - shed_requests` counts a
-                    #    worker that has claimed a request - and so committed to
-                    #    stopping - but has not exited yet. A live count does
-                    #    not: a worker claims by decrementing `workers_to_shed`,
-                    #    yet stays in `processes` until it is actually gone, so a
-                    #    cap read off that alone lags by the window in between
-                    #    and lets one more request through - enough, when they
-                    #    come in a streak, to take the pool one below its
-                    #    minimum and at the limit to zero, which ends the
-                    #    `while processes:` loop with part of the suite never
-                    #    run.
+                    # A count read off `processes` cannot say that: a worker
+                    # stays there until it has actually exited, and one that
+                    # exits on its own between two of these five-second samples
+                    # is counted here until the next reap. With
+                    # `--no-self-parallel` the tests are dealt out by hash, so a
+                    # worker whose share comes out empty exits immediately -
+                    # under `--flaky-check`, the only user of that mode, every
+                    # rerun of a selected test hashes into the same queue, so
+                    # most of the pool can be gone while `processes` still lists
+                    # it, and the last worker carrying the run would be told to
+                    # stop, leaving its queue unrun with nothing to report it.
                     #
-                    #  * `len(processes) - workers_to_shed.value` counts the
-                    #    workers that exited on their own (the reap at the end of
-                    #    each iteration drops one as soon as it is gone), which
-                    #    `jobs` does not. With `--no-self-parallel` the tests are
-                    #    dealt out by hash, so a worker whose share comes out
-                    #    empty exits immediately: under `--flaky-check`, the only
-                    #    user of that mode, every rerun of a selected test hashes
-                    #    into the same queue, and with few enough tests selected
-                    #    the rest of the pool is gone before the first memory
-                    #    check. The other count still reads the whole configured
-                    #    fan-out there and would stop the single worker carrying
-                    #    the run - leaving its queue unrun with nothing to report
-                    #    it, since a shed worker is not a failure.
+                    # The request is still only an ask: the pool can shrink
+                    # between this decision and the moment a worker acts on it,
+                    # so the worker re-checks the same floor under the same lock
+                    # before honouring one.
                     with workers_to_shed.get_lock():
-                        workers_left = min(
-                            jobs + workers_restored - shed_requests,
-                            len(processes) - workers_to_shed.value,
-                        )
+                        workers_left = live_workers.value - workers_to_shed.value
                         if workers_left > MIN_WORKERS:
                             workers_to_shed.value += 1
                             shed_requests += 1
@@ -6153,7 +6215,7 @@ def do_run_tests(
                             print(
                                 f"Server memory at {memory_fraction:.0%} of limit — "
                                 f"signalling one worker to stop after its current test "
-                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                                f"({live_workers.value} live, {workers_to_shed.value} pending shed)"
                             )
                 elif (
                     memory_fraction is not None
@@ -6165,6 +6227,7 @@ def do_run_tests(
                     # proxy, so `len` is a round trip to another process, and the
                     # lock is on a worker's path between two tests.
                     queue_left = len(shared_queue)
+                    start_replacement = False
                     with workers_to_shed.get_lock():
                         workers_stopped = shed_requests - workers_to_shed.value
                         if workers_to_shed.value > 0:
@@ -6177,25 +6240,30 @@ def do_run_tests(
                             print(
                                 f"Server memory back at {memory_fraction:.0%} of limit — "
                                 f"withdrawing a shed request that no worker has taken "
-                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                                f"({live_workers.value} live, {workers_to_shed.value} pending shed)"
                             )
                         elif workers_stopped > workers_restored and queue_left > 0:
                             workers_restored += 1
-                            # The process index only names this worker's profile
-                            # file, so give the replacement one of its own rather
-                            # than reuse the index of a worker that may still be
-                            # writing. `jobs + 1` belongs to the sequential runner
-                            # below, hence the offset past it.
-                            start_worker(
-                                jobs + 1 + workers_restored, shared_queue, batch_size
-                            )
-                            pool_changed = True
-                            print(
-                                f"Server memory back at {memory_fraction:.0%} of limit — "
-                                f"starting a worker in place of a shed one "
-                                f"({len(processes)} tracked, "
-                                f"{workers_stopped - workers_restored} still shed)"
-                            )
+                            start_replacement = True
+                    if start_replacement:
+                        # Started outside the lock, since starting a worker takes
+                        # it too.
+                        #
+                        # The process index only names this worker's profile
+                        # file, so give the replacement one of its own rather
+                        # than reuse the index of a worker that may still be
+                        # writing. `jobs + 1` belongs to the sequential runner
+                        # below, hence the offset past it.
+                        start_worker(
+                            jobs + 1 + workers_restored, shared_queue, batch_size
+                        )
+                        pool_changed = True
+                        print(
+                            f"Server memory back at {memory_fraction:.0%} of limit — "
+                            f"starting a worker in place of a shed one "
+                            f"({live_workers.value} live, "
+                            f"{workers_stopped - workers_restored} still shed)"
+                        )
                 if pool_changed:
                     # Use a longer cooldown so memory has time to settle before
                     # we consider changing the pool again.
@@ -6266,15 +6334,7 @@ def do_run_tests(
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
                 raise_stop_from_carrier(stop_exit_code)
 
-            for p in processes[:]:
-                if not p.is_alive():
-                    # Check if process was killed with exception
-                    if p.exitcode is not None and p.exitcode != 0:
-                        print(
-                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
-                        )
-                        runner_process_killed.set()
-                    processes.remove(p)
+            reap_finished_workers()
 
         # The reap above is the loop's exit condition, so a cause claimed after
         # the check at the top of the iteration is only observable here.
@@ -6295,6 +6355,8 @@ def do_run_tests(
                 exit_code,
                 stop_testing,
                 multiprocessing.Value('i', 0),  # sequential runner is never shed
+                multiprocessing.Value('i', 1),  # itself, and it is the only one
+                0,  # no floor to stay above: nothing sheds it
                 restarted_tests,
                 jobs + 1,
                 seq_total_failures,
