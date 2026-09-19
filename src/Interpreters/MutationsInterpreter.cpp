@@ -1814,7 +1814,11 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             }
 
             has_filters = true;
-            settings.apply_deleted_mask = true;
+            /// A full-part rewrite requested by the caller may still need to preserve the
+            /// lightweight-delete mask. Filter stages, such as ALTER DELETE, explicitly turn
+            /// the mask back on below; do not override the caller for return_all_columns alone.
+            if (prepared_stages[i].affects_all_columns)
+                settings.apply_deleted_mask = true;
         }
         else
         {

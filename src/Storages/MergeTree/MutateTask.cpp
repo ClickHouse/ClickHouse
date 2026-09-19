@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeKeyTypeCompatibility.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -212,6 +213,28 @@ static bool rewritesAllPartColumns(
         /// format (e.g. the packing threshold changed) needs a full rewrite.
         || source_part->getDataPartStorage().getType() != future_storage_type
         || (interpreter && interpreter->isAffectingAllColumns());
+}
+
+static bool hasPrimaryKeyIntegerWidening(
+    const MergeTreeData::DataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MutationCommands & commands)
+{
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::READ_COLUMN || !command.data_type
+            || !std::ranges::contains(primary_key.column_names, command.column_name))
+            continue;
+
+        auto physical_column = source_part->tryGetColumn(command.column_name);
+        if (physical_column
+            && isOrderPreservingIntegerWidening(physical_column->type.get(), command.data_type.get()))
+            return true;
+    }
+
+    return false;
 }
 
 static UInt64 getExistingRowsCount(const Block & block)
@@ -1835,7 +1858,7 @@ static void finalizeMutatedPart(
 
     /// It's important to set index after index granularity.
     if (!new_data_part->storage.getPrimaryIndexCache())
-        new_data_part->setIndex(*source_part->getIndex());
+        new_data_part->setIndex(*source_part->getPhysicalIndex());
 
     /// Load rest projections which are hardlinked
     bool noop = false;
@@ -4127,6 +4150,9 @@ bool MutateTask::prepare()
         ctx->for_file_renames,
         ctx->log);
 
+    const bool primary_key_integer_widening = hasPrimaryKeyIntegerWidening(
+        ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part);
+
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
     bool lightweight_delete_mode = false;
@@ -4136,6 +4162,7 @@ bool MutateTask::prepare()
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = primary_key_integer_widening;
         settings.apply_deleted_mask = false;
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(

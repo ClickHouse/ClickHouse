@@ -521,6 +521,12 @@ public:
     /// It is set while rebuilding projections in merges or mutations.
     std::optional<UInt64> temp_projection_block_number;
 
+    /// Returns the primary index decoded with the part's physical key types.
+    /// This is the representation that may be stored in PrimaryIndexCache or copied to a
+    /// partially-mutated part.
+    IndexPtr getPhysicalIndex() const;
+
+    /// Returns the primary index using the table's current logical key types.
     IndexPtr getIndex() const;
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
