@@ -1,11 +1,11 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
-#include <DataTypes/DataTypeEnum.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -133,47 +133,41 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field,
-    const DataTypePtr & value_type)
+    const DataTypePtr & value_type,
+    const ContextPtr & context)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
     if (canContainNull(*key_expression_type))
         return true;
 
-    /// Non-nullable type: missing path produces the type's default value.
-    /// If comparing to the default, we cannot safely skip the granule.
-    /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
-    /// than the underlying number, so it has to be converted with that type.
-    DataTypePtr unwrapped_value_type;
-    const IDataTypeEnum * enum_source = nullptr;
-    if (value_type)
-    {
-        unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
-
-        /// A `Variant` or `Dynamic` constant hides its active alternative, so an `Enum` cannot be ruled out.
-        const WhichDataType which_value(unwrapped_value_type);
-        if (which_value.isVariant() || which_value.isDynamic())
-            return false;
-
-        enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
-
-        /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
-        /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
-        /// hold one, is absent from the converted value.
-        bool nested_source_type_lost = false;
-        unwrapped_value_type->forEachChild([&](const IDataType & nested)
-        {
-            const WhichDataType which_nested(nested);
-            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
-        });
-        if (nested_source_type_lost)
-            return false;
-    }
-    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
-    if (converted == key_expression_type->getDefault())
+    if (!value_type)
         return false;
 
-    return true;
+    /// A `Variant` or `Dynamic` constant reaches index analysis as a bare `Field` that no longer names
+    /// the alternative it came from, so its value cannot be put back into that type to be compared.
+    const auto unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
+    const WhichDataType which_value(unwrapped_value_type);
+    bool alternative_not_recoverable = which_value.isVariant() || which_value.isDynamic();
+    unwrapped_value_type->forEachChild([&](const IDataType & nested)
+    {
+        const WhichDataType which_nested(nested);
+        alternative_not_recoverable |= which_nested.isVariant() || which_nested.isDynamic();
+    });
+    if (alternative_not_recoverable)
+        return false;
+
+    /// A missing path reads as the key type's default, so the granule may be skipped only when the
+    /// comparison does not hold on that default. Evaluate it: a `FixedString` default `Field` is empty
+    /// while its column reads the full width, and the key side is a vector, not a constant, at run time.
+    ColumnsWithTypeAndName arguments{
+        {key_expression_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), key_expression_type, "key"},
+        {value_type->createColumnConst(1, value_field), value_type, "value"}};
+
+    auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);
+    auto result = equals->execute(arguments, equals->getResultType(), 1, /*dry_run=*/false);
+
+    return !result->getBool(0);
 }
 
 }
