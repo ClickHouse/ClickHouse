@@ -61,8 +61,11 @@ SELECT id FROM tab_regex_extract_nogroup WHERE hasAnyTokens(doc, ['a']) ORDER BY
 
 DROP TABLE tab_regex_extract_nogroup;
 
--- 3. `hasPhrase` on a `splitByRegexp` index combined with a postprocessor stays rejected regardless of
--- `match_tokens` - the row-level rewrite still assumes whitespace-splitting, `splitByNonAlpha`-style tokens.
+-- 3. `hasPhrase` on a `splitByRegexp` index combined with a postprocessor, in `match_tokens` mode. This
+-- used to be rejected with `BAD_ARGUMENTS` because the row-level rewrite rejoined the postprocessed
+-- tokens with a space and re-tokenized them. The postprocessed token sequences are compared directly
+-- now, so the phrase is matched against exactly the matches the index positions, and the phrase itself
+-- goes through the same tokenizer - a phrase without a `tag:` match yields no token and matches nothing.
 
 DROP TABLE IF EXISTS tab_extract_phrase_pp;
 
@@ -78,7 +81,14 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab_extract_phrase_pp VALUES (1, 'tag:Red tag:Green');
 
-SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') SETTINGS use_skip_indexes = 1; -- { serverError BAD_ARGUMENTS }
+SELECT 'extract postprocessor: hasPhrase([tag:RED tag:GREEN]) -> 1';
+SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'tag:RED tag:GREEN') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT 'extract postprocessor: the same without the skip index';
+SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'tag:RED tag:GREEN') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'extract postprocessor: the reversed phrase matches nothing';
+SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'tag:green tag:red') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT 'extract postprocessor: a phrase the tokenizer finds no token in matches nothing';
+SELECT id FROM tab_extract_phrase_pp WHERE hasPhrase(doc, 'red green') ORDER BY id SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab_extract_phrase_pp;
 
