@@ -124,10 +124,8 @@ private:
     PODArray<UInt64> current_page_values;
     Arena arena;
 
-    /// Inserted values are strictly increasing. A merge that does not interleave this part's rows
-    /// with rows of other parts - parts covering disjoint ranges of the sorting key, or a table
-    /// without one - leaves them consecutive, and then the map is the affine function
-    /// first_value + i.
+    /// A merge that does not interleave this part's rows with rows of other parts - parts covering
+    /// disjoint ranges of the sorting key, or a table without one - leaves the inserted values consecutive.
     UInt64 first_value = 0;
     UInt64 last_value = 0;
     bool consecutive = false;
